@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     if (!tagsCache || now - cacheTimestamp > CACHE_DURATION) {
       try {
         // Try to load from local tags.json
-        const tagsModule = await import('./../../tags.json')
+        const tagsModule = await import('../../../tags.json')
         tagsCache = tagsModule.default || tagsModule
         cacheTimestamp = now
       } catch (error) {

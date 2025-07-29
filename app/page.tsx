@@ -26,6 +26,30 @@ interface DanbooruPost {
 const LOCAL_CACHE = new Map<string, { data: DanbooruPost[]; timestamp: number }>()
 const LOCAL_CACHE_DURATION = 2 * 60 * 1000 // 2 minutes
 
+// API configuration and caching
+const API_CONFIG = {
+  baseUrl: "https://danbooru.donmai.us",
+  timeout: 10000,
+  retryAttempts: 3,
+  retryDelay: 1000,
+  maxConcurrent: 5,
+  defaultParams: {
+    limit: "20",
+    tags: "",
+  },
+}
+
+// Request pooling for rate limiting
+const REQUEST_POOL = {
+  activeRequests: 0,
+  maxConcurrent: API_CONFIG.maxConcurrent,
+  queue: [] as Array<() => void>,
+}
+
+// Global cache for API responses
+const API_CACHE = new Map<string, { data: DanbooruPost[]; timestamp: number }>()
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
 function loadTagsToRemove(category?: number): Set<string> {
   try {
     const tagsData = require('./../tags.json')

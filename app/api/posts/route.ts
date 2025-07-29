@@ -5,7 +5,7 @@ export const runtime = 'edge'
 const API_CONFIG = {
   baseUrl: "https://danbooru.donmai.us",
   defaultParams: {
-    limit: 20,
+    limit: "20",
     only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score",
   },
   timeout: 10000,
