@@ -25,10 +25,12 @@ const fetcher = async (url: string) => {
   const res = await fetch(url)
   
   if (!res.ok) {
-    const error = new Error('An error occurred while fetching the data.')
-    // @ts-ignore
-    error.info = await res.json()
-    // @ts-ignore
+    const error = new Error('An error occurred while fetching the data.') as Error & { info?: any; status?: number }
+    try {
+      error.info = await res.json()
+    } catch {
+      error.info = { message: res.statusText }
+    }
     error.status = res.status
     throw error
   }
