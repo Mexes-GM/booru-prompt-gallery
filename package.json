@@ -6,7 +6,12 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start"
+    "start": "next start",
+    "validate-prompts": "node validate-prompts.js",
+    "validate-loop": "node validate-loop.js",
+    "test-prompts": "node validate-prompts.js prompts-example.txt",
+    "test-real-api": "node test-real-api.js",
+    "test-real-data": "node test-real-data.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -66,6 +71,7 @@
     "@types/react-dom": "^19",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5"
+    "typescript": "^5",
+    "ts-node": "^10.9.2"
   }
 }
