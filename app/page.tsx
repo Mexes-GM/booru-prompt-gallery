@@ -21,18 +21,15 @@ interface DanbooruPost {
   score: number
 }
 
-// Cache para requests de API
 const API_CACHE = new Map<string, { data: DanbooruPost[]; timestamp: number }>()
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutos
+const CACHE_DURATION = 5 * 60 * 1000
 
-// Pool de conexiones reutilizables
 const REQUEST_POOL = {
   maxConcurrent: 3,
   activeRequests: 0,
   queue: [] as Array<() => void>,
 }
 
-// Configuración optimizada para Danbooru API
 const API_CONFIG = {
   baseUrl: "https://danbooru.donmai.us",
   defaultParams: {
@@ -44,150 +41,42 @@ const API_CONFIG = {
   timeout: 10000,
 }
 
-// Convertir a Set para búsquedas más eficientes O(1)
-const METATAGS_SET = new Set([
-  "signature",
-  "twitter username",
-  "artist name",
-  "artist logo",
-  "pixiv request",
-  "watermark",
-  "virtual youtuber",
-  "weibo watermark",
-  "copyright",
-  "character name",
-  "inactive account",
-  "copyright name",
-  "english text",
-  "patreon username",
-  "artist signature",
-  "logo",
-  "username",
-  "url",
-  "website",
-  "commission",
-  "request",
-  "patreon",
-  "fanbox",
-  "twitter",
-  "pixiv",
-  "deviantart",
-  "tumblr",
-  "commentary",
-  "commentary request",
-  "translated",
-  "translation request",
-  "check translation",
-  "partial translation",
-  "bad translation",
-  "tagme",
-  "revision",
-  "md5 mismatch",
-  "duplicate",
-  "bad id",
-  "bad link",
-  "bad source",
-  "source request",
-  "artist request",
-  "character request",
-  "copyright request",
-  "general",
-  "sensitive",
-  "questionable",
-  "explicit",
-  "banned artist",
-  "third-party source",
-  "official art",
-  "scan",
-  "traditional media",
-  "sketch",
-  "lineart",
-  "monochrome",
-  "greyscale",
-  "sepia",
-  "dated",
-  "signed",
-  "sample",
-  "cropped",
-  "letterboxed",
-  "pillarboxed",
-  "upscaled",
-  "downscaled",
-  "resized",
-  "jpeg artifacts",
-  "aliasing",
-  "moiré",
-  "text focus",
-  "english",
-  "japanese",
-  "chinese",
-  "korean",
-  "spanish",
-  "french",
-  "german",
-  "russian",
-  "thai",
-  "vietnamese",
-  "portuguese",
-  "highres",
-  "absurdres",
-  "lowres",
-  "bad anatomy",
-  "bad hands",
-  "error",
-  "missing fingers",
-  "extra digits",
-  "fewer digits",
-  "worst quality",
-  "low quality",
-  "normal quality",
-  "blurry",
-  "bad feet",
-  "missing arms",
-  "missing legs",
-  "extra arms",
-  "extra legs",
-  "mutated hands",
-  "poorly drawn hands",
-  "poorly drawn face",
-  "mutation",
-  "deformed",
-  "ugly",
-  "bad proportions",
-  "extra limbs",
-  "disfigured",
-  "gross proportions",
-  "malformed limbs",
-  "fused fingers",
-  "too many fingers",
-  "long neck",
-  "morbid",
-  "mutilated",
-  "out of frame",
-  "cloned face",
-  "text",
-  "missing",
-  "extra",
-  "fewer",
-  "bad",
-  "worst",
-  "low",
-  "normal",
-  "poor",
-  "poorly",
-  "gross",
-  "malformed",
-  "mutated",
-  "mutilated",
-  "deformed",
-  "disfigured",
-  "ugly",
-  "morbid",
-  "duplicate",
-  "cloned",
-  "fused",
-  "blurry",
-  "out of frame",
+function loadTagsToRemove(category?: number): Set<string> {
+  try {
+    const tagsData = require('./../tags.json')
+    const tagsToRemove = new Set<string>()
+    
+    if (Array.isArray(tagsData)) {
+      tagsData.forEach((tag: any) => {
+        if (category === undefined || tag.category === category) {
+          tagsToRemove.add(tag.name.toLowerCase())
+          if (tag.aliases && Array.isArray(tag.aliases)) {
+            tag.aliases.forEach((alias: string) => {
+              tagsToRemove.add(alias.toLowerCase())
+            })
+          }
+        }
+      })
+    }
+    
+    return tagsToRemove
+  } catch (error) {
+    return new Set([
+      "signature", "twitter username", "artist name", "watermark", "copyright",
+      "artist", "unknown artist", "official art", "fan art", "commission"
+    ])
+  }
+}
+
+const ARTIST_TAGS_SET = loadTagsToRemove(1)
+const META_TAGS_SET = loadTagsToRemove(5)
+
+const commonMetaTags = new Set([
+  "highres", "absurdres", "commentary", "commentary_request", "english_commentary",
+  "chinese_commentary", "translated", "translation_request", "official_art",
+  "commission", "bad_id", "bad_pixiv_id", "bad_twitter_id", "photoshop_(medium)",
+  "symbol-only_commentary", "artist_request", "copyright_request", "non-web_source",
+  "signature", "watermark", "artist_name", "twitter_username", "request"
 ])
 
 // Convertir arrays de categorías a Sets para búsquedas más rápidas
@@ -211,109 +100,29 @@ const HAIR_LENGTHS_SET = new Set([
 ])
 
 const EYE_COLORS_SET = new Set([
-  "blue eyes",
-  "brown eyes",
-  "green eyes",
-  "red eyes",
-  "purple eyes",
-  "yellow eyes",
-  "pink eyes",
-  "orange eyes",
-  "black eyes",
-  "white eyes",
-  "gray eyes",
-  "grey eyes",
+  "blue eyes", "brown eyes", "green eyes", "red eyes", "purple eyes",
+  "yellow eyes", "pink eyes", "orange eyes", "black eyes", "white eyes",
+  "gray eyes", "grey eyes"
 ])
 
 const QUALITY_TAGS_SET = new Set([
-  "masterpiece",
-  "best quality",
-  "high quality",
-  "ultra-detailed",
-  "detailed",
-  "extremely detailed",
-  "highly detailed",
+  "masterpiece", "best quality", "high quality", "ultra-detailed",
+  "detailed", "extremely detailed", "highly detailed"
 ])
 
 const SUBJECT_TAGS_SET = new Set(["1girl", "1boy", "2girls", "2boys", "multiple girls", "multiple boys"])
 
 const COMPOSITION_TAGS_SET = new Set(["portrait", "full body", "upper body", "close-up", "wide shot"])
 
-// Mapeo de redundancias - el valor reemplaza a la clave
 const REDUNDANCY_MAP: Record<string, string> = {
-  // Tamaños de pechos
-  breasts: "medium breasts",
-  chest: "medium breasts",
-  boobs: "medium breasts",
-
-  // Tamaños específicos de pechos
-  "small breasts": "small breasts",
-  "medium breasts": "medium breasts",
-  "large breasts": "large breasts",
-  "huge breasts": "huge breasts",
-
-  // Pelo
-  hair: "hair",
-  "long hair": "long hair",
-  "short hair": "short hair",
-  "medium hair": "medium hair",
-  "very long hair": "very long hair",
-
-  // Ojos
-  eyes: "eyes",
-  "blue eyes": "blue eyes",
-  "brown eyes": "brown eyes",
-  "green eyes": "green eyes",
-  "red eyes": "red eyes",
-  "purple eyes": "purple eyes",
-  "yellow eyes": "yellow eyes",
-  "pink eyes": "pink eyes",
-  "orange eyes": "orange eyes",
-
-  // Ropa
-  clothing: "",
-  clothes: "",
-  outfit: "",
-
-  // Poses generales vs específicas
-  sitting: "sitting",
-  standing: "standing",
-  lying: "lying",
-  pose: "",
-
-  // Expresiones
-  smile: "smile",
-  smiling: "smile",
-  happy: "smile",
-  sad: "sad",
-  angry: "angry",
-  surprised: "surprised",
-  expression: "",
-
-  // Anatomía redundante
-  face: "",
-  head: "",
-  body: "",
-  skin: "",
-
-  // Términos genéricos
-  girl: "1girl",
-  boy: "1boy",
-  woman: "1girl",
-  man: "1boy",
-  person: "",
-  people: "",
-  human: "",
-
-  // Calidad redundante
-  good: "",
-  nice: "",
-  cute: "cute",
-  kawaii: "cute",
-  adorable: "cute",
-  pretty: "beautiful",
-  gorgeous: "beautiful",
-  stunning: "beautiful",
+  breasts: "medium breasts", chest: "medium breasts", boobs: "medium breasts",
+  hair: "hair", eyes: "eyes", clothing: "", clothes: "", outfit: "",
+  sitting: "sitting", standing: "standing", lying: "lying", pose: "",
+  smile: "smile", smiling: "smile", happy: "smile", sad: "sad", angry: "angry", surprised: "surprised", expression: "",
+  face: "", head: "", body: "", skin: "", person: "", people: "", human: "",
+  good: "", nice: "", cute: "cute", kawaii: "cute", adorable: "cute",
+  pretty: "beautiful", gorgeous: "beautiful", stunning: "beautiful",
+  girl: "1girl", boy: "1boy", woman: "1girl", man: "1boy"
 }
 
 function processRedundancy(tags: string[]): string[] {
@@ -412,44 +221,35 @@ function processRedundancy(tags: string[]): string[] {
 }
 
 function cleanPrompt(tagString: string, artistTags: string, characterTags: string, copyrightTags: string): string {
-  // Pre-procesar arrays una sola vez
   const allTags = tagString.split(" ").filter((tag) => tag.length > 0)
   const artistTagsSet = new Set(artistTags.split(" "))
-  const characterTagsSet = new Set(characterTags.split(" "))
-  const copyrightTagsSet = new Set(copyrightTags.split(" "))
+  const characterTagsArray = characterTags.split(" ").filter(tag => tag.length > 0)
+  const copyrightTagsArray = copyrightTags.split(" ").filter(tag => tag.length > 0)
+  const characterTagsSet = new Set(characterTagsArray)
+  const copyrightTagsSet = new Set(copyrightTagsArray)
 
-  // Compilar regex una sola vez para mejor rendimiento
   const numberRegex = /^\d+$/
   const urlRegex = /:/
 
-  // Primera pasada: filtrado optimizado con Sets
   const filteredTags = allTags.filter((tag) => {
     if (tag.length <= 1) return false
-    if (artistTagsSet.has(tag)) return false // Solo eliminar tags de artista
-    // NO eliminar characterTagsSet ni copyrightTagsSet
+    const lowerTag = tag.toLowerCase()
+    
+    if (artistTagsSet.has(lowerTag)) return false
+    if (META_TAGS_SET.has(lowerTag)) return false
+    if (commonMetaTags.has(lowerTag)) return false
+    
     if (numberRegex.test(tag)) return false
     if (tag.includes("@") || tag.includes("#") || urlRegex.test(tag)) return false
-    if (
-      tag.includes("(") ||
-      tag.includes(")") ||
-      tag.includes("{") ||
-      tag.includes("}") ||
-      tag.includes("[") ||
-      tag.includes("]")
-    )
+    if (tag.includes("(") || tag.includes(")") || tag.includes("{") || tag.includes("}") || tag.includes("[") || tag.includes("]"))
       return false
 
-    const lowerTag = tag.toLowerCase()
-    return !METATAGS_SET.has(lowerTag)
+    return true
   })
 
-  // Formatear tags una sola vez
   const formattedTags = filteredTags.map((tag) => tag.replace(/_/g, " ").toLowerCase().trim())
-
-  // Procesar redundancias
   const processedTags = processRedundancy(formattedTags)
 
-  // Separar tags de calidad del resto usando Set
   const qualityTags: string[] = []
   const contentTags: string[] = []
 
@@ -461,7 +261,6 @@ function cleanPrompt(tagString: string, artistTags: string, characterTags: strin
     }
   }
 
-  // Ordenar tags de contenido con Sets pre-compilados
   const sortedContentTags = contentTags.sort((a, b) => {
     const aIsSubject = SUBJECT_TAGS_SET.has(a)
     const bIsSubject = SUBJECT_TAGS_SET.has(b)
@@ -476,26 +275,33 @@ function cleanPrompt(tagString: string, artistTags: string, characterTags: strin
     return b.length - a.length
   })
 
-  // Combinar: contenido + calidad al final
-  const finalTags = [...sortedContentTags, ...qualityTags]
+  const characterAndFranchiseTags = [...characterTagsArray, ...copyrightTagsArray]
+    .map(tag => tag.replace(/_/g, " ").toLowerCase().trim())
+    .filter(tag => tag.length > 0)
 
-  // Si no hay tags de calidad pero había "masterpiece" en los tags originales, agregarlo
+  const allFinalTags = new Set<string>()
+  characterAndFranchiseTags.forEach(tag => allFinalTags.add(tag))
+  
+  const combinedTags = [...sortedContentTags, ...qualityTags]
+  combinedTags.forEach(tag => {
+    if (!allFinalTags.has(tag)) {
+      allFinalTags.add(tag)
+    }
+  })
+
+  const finalTags = Array.from(allFinalTags)
+
   if (qualityTags.length === 0 && allTags.some((tag) => tag.toLowerCase() === "masterpiece")) {
     finalTags.push("masterpiece")
   }
 
-  // Después de procesar los tags, agregar:
-  console.log("🏷️ Tags de calidad encontrados:", qualityTags)
-  console.log("📝 Tags finales:", finalTags)
-
-  // Combinar: contenido + calidad al final
   return finalTags.join(", ")
 }
 
 // Función para validar y limpiar queries de búsqueda
-const validateAndCleanQuery = (query: string): string => {
+const validateAndCleanQuery = (query: string, ratingFilter: string): string => {
   if (!query || query.trim() === "") {
-    return "rating:safe score:>5"
+    return ratingFilter ? `${ratingFilter} score:>5` : "score:>5"
   }
 
   // Limpiar caracteres problemáticos
@@ -527,12 +333,13 @@ const fetchPosts = async (
   searchTags: any,
   toast: any,
   setIsSearching: any,
+  ratingFilter: string,
 ) => {
   setLoading(true)
 
   try {
     const searchQuery = customTags || searchTags
-    const baseQuery = "rating:safe score:>5"
+    const baseQuery = `${ratingFilter} score:>5`
     const finalQuery = searchQuery ? `${baseQuery} ${searchQuery}` : baseQuery
 
     // Crear clave de cache única
@@ -551,7 +358,7 @@ const fetchPosts = async (
     }
 
     // Validar y limpiar tags antes de enviar
-    const cleanedQuery = validateAndCleanQuery(finalQuery)
+    const cleanedQuery = validateAndCleanQuery(finalQuery, ratingFilter)
 
     // Construir URL optimizada con parámetros específicos
     const params = new URLSearchParams({
@@ -591,88 +398,80 @@ const fetchPosts = async (
 
         if (!response.ok) {
           if (response.status === 429) {
-            // Rate limit - esperar más tiempo
-            const retryAfter = response.headers.get("Retry-After")
-            const delay = retryAfter ? Number.parseInt(retryAfter) * 1000 : API_CONFIG.retryDelay * attempt
-            console.log(`⏳ Rate limited, esperando ${delay}ms`)
-            await sleep(delay)
-            continue
-          } else if (response.status === 422) {
-            // Unprocessable Entity - problema con los tags
-            console.log(`❌ Error 422: Tags inválidos o query malformada`)
-            const errorText = await response.text()
-            console.log(`Detalles del error:`, errorText)
+          const retryAfter = response.headers.get("Retry-After")
+          const delay = retryAfter ? Number.parseInt(retryAfter) * 1000 : API_CONFIG.retryDelay * attempt
+          await sleep(delay)
+          continue
+        } else if (response.status === 422) {
+          if (searchQuery && searchQuery !== baseQuery) {
+            const fallbackParams = new URLSearchParams({
+              ...API_CONFIG.defaultParams,
+              page: pageNum.toString(),
+              tags: "rating:safe score:>5",
+            })
+            const fallbackUrl = `${API_CONFIG.baseUrl}/posts.json?${fallbackParams}`
 
-            // Si es una búsqueda personalizada, intentar con query base
-            if (searchQuery && searchQuery !== baseQuery) {
-              console.log(`🔄 Intentando con query base sin tags personalizados`)
-              const fallbackParams = new URLSearchParams({
-                ...API_CONFIG.defaultParams,
-                page: pageNum.toString(),
-                tags: baseQuery,
-              })
-              const fallbackUrl = `${API_CONFIG.baseUrl}/posts.json?${fallbackParams}`
+            const fallbackResponse = await fetch(fallbackUrl, {
+              signal: controller.signal,
+              headers: {
+                Accept: "application/json",
+                "User-Agent": "DanbooruPromptGenerator/1.0",
+              },
+            })
 
-              const fallbackResponse = await fetch(fallbackUrl, {
-                signal: controller.signal,
-                headers: {
-                  Accept: "application/json",
-                  "User-Agent": "DanbooruPromptGenerator/1.0",
-                },
-              })
+            if (fallbackResponse.ok) {
+              const data: DanbooruPost[] = await fallbackResponse.json()
+              const validPosts = data.filter(
+                (post) => post && post.file_url && !post.file_url.includes("deleted") && post.id && post.tag_string,
+              )
 
-              if (fallbackResponse.ok) {
-                const data: DanbooruPost[] = await fallbackResponse.json()
-                const validPosts = data.filter(
-                  (post) => post && post.file_url && !post.file_url.includes("deleted") && post.id && post.tag_string,
-                )
-
-                if (append) {
-                  setPosts((prev: DanbooruPost[]) => [...prev, ...validPosts])
-                } else {
-                  setPosts(validPosts)
-                }
-
-                toast({
-                  title: "Búsqueda modificada",
-                  description: "Se usaron tags por defecto debido a un problema con la búsqueda personalizada",
-                  variant: "default",
+              if (append) {
+                setPosts((prev: DanbooruPost[]) => {
+                  const existingIds = new Set(prev.map(p => p.id))
+                  const newPosts = validPosts.filter(post => !existingIds.has(post.id))
+                  return [...prev, ...newPosts]
                 })
-
-                return
+              } else {
+                setPosts(validPosts)
               }
-            }
 
-            throw new Error(`Tags inválidos o query malformada. Verifica la sintaxis de búsqueda.`)
-          } else if (response.status >= 500) {
-            // Error del servidor - reintentar
-            throw new Error(`Error del servidor: ${response.status}`)
-          } else {
-            // Otros errores HTTP
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+              toast({
+                title: "Búsqueda modificada",
+                description: "Se usaron tags por defecto debido a un problema con la búsqueda personalizada",
+                variant: "default",
+              })
+
+              return
+            }
           }
+
+          throw new Error(`Tags inválidos o query malformada. Verifica la sintaxis de búsqueda.`)
+        } else if (response.status >= 500) {
+          throw new Error(`Error del servidor: ${response.status}`)
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
         }
 
         const data: DanbooruPost[] = await response.json()
 
-        // Filtrar y validar datos
         const validPosts = data.filter(
           (post) => post && post.file_url && !post.file_url.includes("deleted") && post.id && post.tag_string,
         )
 
-        // Guardar en cache solo si es exitoso
         API_CACHE.set(cacheKey, {
           data: validPosts,
           timestamp: Date.now(),
         })
 
-        // Limpiar cache viejo
         cleanOldCache()
 
-        console.log(`✅ Obtenidos ${validPosts.length} posts válidos`)
-
         if (append) {
-          setPosts((prev: DanbooruPost[]) => [...prev, ...validPosts])
+          setPosts((prev: DanbooruPost[]) => {
+            const existingIds = new Set(prev.map(p => p.id))
+            const newPosts = validPosts.filter(post => !existingIds.has(post.id))
+            return [...prev, ...newPosts]
+          })
         } else {
           setPosts(validPosts)
         }
@@ -683,29 +482,19 @@ const fetchPosts = async (
         REQUEST_POOL.activeRequests = Math.max(0, REQUEST_POOL.activeRequests - 1)
         processQueue()
 
-        if (error instanceof Error && error.name === "AbortError") {
-          console.log(`⏰ Timeout en intento ${attempt}`)
-        } else {
-          console.log(`❌ Error en intento ${attempt}:`, error)
-        }
-
-        // No reintentar en errores 422 (son permanentes)
         if (error instanceof Error && error.message.includes("Tags inválidos")) {
           break
         }
 
         if (attempt < API_CONFIG.retryAttempts) {
-          const delay = API_CONFIG.retryDelay * Math.pow(2, attempt - 1) // Backoff exponencial
-          console.log(`🔄 Reintentando en ${delay}ms...`)
+          const delay = API_CONFIG.retryDelay * Math.pow(2, attempt - 1)
           await sleep(delay)
         }
       }
     }
 
-    // Si llegamos aquí, todos los intentos fallaron
     throw lastError || new Error("Todos los intentos de conexión fallaron")
   } catch (error) {
-    console.error("💥 Error final en fetchPosts:", error)
     toast({
       title: "Error de conexión",
       description: error instanceof Error ? error.message : "No se pudieron cargar las imágenes",
@@ -748,23 +537,22 @@ const cleanOldCache = () => {
   }
 }
 
-// Prefetch de la siguiente página para mejor UX
 const prefetchNextPage = async (
-  page: number,
-  searchTags: any,
-  setPosts: any,
-  setLoading: any,
-  toast: any,
-  setIsSearching: any,
-) => {
-  const nextPage = page + 1
-  const searchQuery = searchTags
-  const baseQuery = "rating:safe score:>5"
-  const finalQuery = searchQuery ? `${baseQuery} ${searchQuery}` : baseQuery
-  const cleanedQuery = validateAndCleanQuery(finalQuery)
-  const cacheKey = `${cleanedQuery}-${nextPage}`
+    page: number,
+    searchTags: string,
+    setPosts: any,
+    setLoading: any,
+    toast: any,
+    setIsSearching: any,
+    ratingFilter: string,
+  ) => {
+    const nextPage = page + 1
+    const searchQuery = searchTags
+    const baseQuery = `${ratingFilter} score:>5`
+    const finalQuery = searchQuery ? `${baseQuery} ${searchQuery}` : baseQuery
+    const cleanedQuery = validateAndCleanQuery(finalQuery, ratingFilter)
+    const cacheKey = `${cleanedQuery}-${nextPage}`
 
-  // Solo prefetch si no está en cache
   if (!API_CACHE.has(cacheKey)) {
     try {
       const params = new URLSearchParams({
@@ -796,13 +584,9 @@ const prefetchNextPage = async (
           data: validPosts,
           timestamp: Date.now(),
         })
-
-        console.log(`🚀 Prefetch completado para página ${nextPage}`)
-      } else if (response.status === 422) {
-        console.log(`⚠️ Prefetch falló con error 422 - tags inválidos`)
       }
     } catch (error) {
-      console.log("⚠️ Prefetch falló:", error)
+      // Prefetch failed silently
     }
   }
 }
@@ -814,6 +598,7 @@ export default function DanbooruPromptGenerator() {
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [searchTags, setSearchTags] = useState("")
   const [isSearching, setIsSearching] = useState(false)
+  const [ratingFilter, setRatingFilter] = useState("rating:safe")
   const { toast } = useToast()
 
   const copyToClipboard = async (prompt: string, postId: number) => {
@@ -837,17 +622,17 @@ export default function DanbooruPromptGenerator() {
   const loadMore = () => {
     const nextPage = page + 1
     setPage(nextPage)
-    fetchPosts(nextPage, true, searchTags, setLoading, setPosts, searchTags, toast, setIsSearching)
+    fetchPosts(nextPage, true, searchTags, setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
 
     // Prefetch de la página siguiente
     setTimeout(() => {
-      prefetchNextPage(page, searchTags, setPosts, setLoading, toast, setIsSearching)
+      prefetchNextPage(page, searchTags, setPosts, setLoading, toast, setIsSearching, ratingFilter)
     }, 1000)
   }
 
   const refresh = () => {
     setPage(1)
-    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching)
+    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
   }
 
   const handleSearch = (e: React.FormEvent) => {
@@ -855,26 +640,26 @@ export default function DanbooruPromptGenerator() {
     if (searchTags.trim()) {
       setIsSearching(true)
       setPage(1)
-      fetchPosts(1, false, searchTags.trim(), setLoading, setPosts, searchTags, toast, setIsSearching)
+      fetchPosts(1, false, searchTags.trim(), setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
     }
   }
 
   const clearSearch = () => {
     setSearchTags("")
     setPage(1)
-    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching)
+    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
   }
 
   useEffect(() => {
-    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching)
+    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
 
     // Prefetch después de cargar la primera página
     const timer = setTimeout(() => {
-      prefetchNextPage(page, searchTags, setPosts, setLoading, toast, setIsSearching)
+      prefetchNextPage(page, searchTags, setPosts, setLoading, toast, setIsSearching, ratingFilter)
     }, 2000)
 
     return () => clearTimeout(timer)
-  }, [])
+  }, [ratingFilter])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
@@ -886,28 +671,45 @@ export default function DanbooruPromptGenerator() {
 
           {/* Search Bar */}
           <div className="max-w-2xl mx-auto mb-6">
-            <form onSubmit={handleSearch} className="flex gap-2">
-              <div className="flex-1">
-                <input
-                  type="text"
-                  value={searchTags}
-                  onChange={(e) => setSearchTags(e.target.value)}
-                  placeholder="Buscar por tags (ej: cat girl, blue eyes, long hair)"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                />
-              </div>
-              <Button type="submit" disabled={loading || isSearching}>
-                {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Buscar"}
-              </Button>
-              {searchTags && (
-                <Button type="button" variant="outline" onClick={clearSearch}>
-                  Limpiar
+            <form onSubmit={handleSearch} className="space-y-4">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={searchTags}
+                    onChange={(e) => setSearchTags(e.target.value)}
+                    placeholder="Buscar por tags (ej: cat girl, blue eyes, long hair)"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+                <Button type="submit" disabled={loading || isSearching}>
+                  {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Buscar"}
                 </Button>
-              )}
+                {searchTags && (
+                  <Button type="button" variant="outline" onClick={clearSearch}>
+                    Limpiar
+                  </Button>
+                )}
+              </div>
+              
+              {/* Rating Filter */}
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium text-gray-700">Filtro de contenido:</label>
+                <select
+                  value={ratingFilter}
+                  onChange={(e) => setRatingFilter(e.target.value)}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="rating:safe">Safe</option>
+                  <option value="rating:questionable">Questionable</option>
+                  <option value="rating:explicit">Explicit</option>
+                  <option value="">Todos</option>
+                </select>
+              </div>
             </form>
             {searchTags && (
               <p className="text-sm text-gray-500 mt-2">
-                Buscando: <span className="font-medium">{searchTags}</span>
+                Buscando: <span className="font-medium">{searchTags}</span> | Filtro: <span className="font-medium">{ratingFilter.replace('rating:', '') || 'Todos'}</span>
               </p>
             )}
           </div>
@@ -929,7 +731,7 @@ export default function DanbooruPromptGenerator() {
             )
 
             return (
-              <Card key={post.id} className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
+              <Card key={`${post.id}-${posts.indexOf(post)}`} className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
                 <div className="relative bg-gray-100 h-80">
                   <Image
                     src={post.large_file_url || post.file_url}
