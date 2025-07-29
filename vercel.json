@@ -11,8 +11,8 @@
     }
   },
   "env": {
-    "NEXT_PUBLIC_APP_URL": "@next_public_app_url",
-    "API_BASE_URL": "@api_base_url",
-    "API_KEY": "@api_key"
+    "NEXT_PUBLIC_APP_URL": "",
+    "API_BASE_URL": "",
+    "API_KEY": ""
   }
 }
