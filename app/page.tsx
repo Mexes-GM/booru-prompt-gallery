@@ -1,12 +1,13 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Copy, Check, Loader2, RefreshCw } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
+import { useInfinitePosts } from "@/lib/api-client"
 
 interface DanbooruPost {
   id: number
@@ -21,25 +22,9 @@ interface DanbooruPost {
   score: number
 }
 
-const API_CACHE = new Map<string, { data: DanbooruPost[]; timestamp: number }>()
-const CACHE_DURATION = 5 * 60 * 1000
-
-const REQUEST_POOL = {
-  maxConcurrent: 3,
-  activeRequests: 0,
-  queue: [] as Array<() => void>,
-}
-
-const API_CONFIG = {
-  baseUrl: "https://danbooru.donmai.us",
-  defaultParams: {
-    limit: 20,
-    only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score",
-  },
-  retryAttempts: 3,
-  retryDelay: 1000,
-  timeout: 10000,
-}
+// Client-side cache for immediate access
+const LOCAL_CACHE = new Map<string, { data: DanbooruPost[]; timestamp: number }>()
+const LOCAL_CACHE_DURATION = 2 * 60 * 1000 // 2 minutes
 
 function loadTagsToRemove(category?: number): Set<string> {
   try {
@@ -537,69 +522,63 @@ const cleanOldCache = () => {
   }
 }
 
-const prefetchNextPage = async (
-    page: number,
-    searchTags: string,
-    setPosts: any,
-    setLoading: any,
-    toast: any,
-    setIsSearching: any,
-    ratingFilter: string,
-  ) => {
-    const nextPage = page + 1
-    const searchQuery = searchTags
-    const baseQuery = `${ratingFilter} score:>5`
-    const finalQuery = searchQuery ? `${baseQuery} ${searchQuery}` : baseQuery
-    const cleanedQuery = validateAndCleanQuery(finalQuery, ratingFilter)
-    const cacheKey = `${cleanedQuery}-${nextPage}`
+// Optimized data fetching with SWR and edge caching
+const useOptimizedPosts = (searchTags: string, ratingFilter: string) => {
+  const query = searchTags ? `${ratingFilter} score:>5 ${searchTags}` : `${ratingFilter} score:>5`
+  
+  const {
+    data,
+    error,
+    size,
+    setSize,
+    isValidating,
+    mutate,
+  } = useInfinitePosts(query, ratingFilter)
 
-  if (!API_CACHE.has(cacheKey)) {
-    try {
-      const params = new URLSearchParams({
-        ...API_CONFIG.defaultParams,
-        page: nextPage.toString(),
-        tags: cleanedQuery,
-      })
-
-      const url = `${API_CONFIG.baseUrl}/posts.json?${params}`
-
-      await waitForSlot()
-      REQUEST_POOL.activeRequests++
-
-      const response = await fetch(url, {
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "DanbooruPromptGenerator/1.0",
-        },
-      })
-
-      REQUEST_POOL.activeRequests--
-      processQueue()
-
-      if (response.ok) {
-        const data: DanbooruPost[] = await response.json()
-        const validPosts = data.filter((post) => post && post.file_url && !post.file_url.includes("deleted"))
-
-        API_CACHE.set(cacheKey, {
-          data: validPosts,
-          timestamp: Date.now(),
-        })
-      }
-    } catch (error) {
-      // Prefetch failed silently
+  const posts = data ? data.flat() : []
+  const isLoading = !data && !error
+  const isLoadingMore = isLoading || (size > 0 && data && typeof data[size - 1] === "undefined")
+  
+  const loadMore = useCallback(() => {
+    if (!isLoadingMore) {
+      setSize(size + 1)
     }
+  }, [setSize, size, isLoadingMore])
+
+  const refresh = useCallback(() => {
+    mutate()
+  }, [mutate])
+
+  return {
+    posts,
+    isLoading,
+    isLoadingMore,
+    loadMore,
+    refresh,
+    error,
+    size,
   }
 }
 
 export default function DanbooruPromptGenerator() {
-  const [posts, setPosts] = useState<DanbooruPost[]>([])
-  const [loading, setLoading] = useState(false)
-  const [page, setPage] = useState(1)
-  const [copiedId, setCopiedId] = useState<number | null>(null)
   const [searchTags, setSearchTags] = useState("")
-  const [isSearching, setIsSearching] = useState(false)
   const [ratingFilter, setRatingFilter] = useState("rating:safe")
+  const [copiedId, setCopiedId] = useState<number | null>(null)
   const { toast } = useToast()
+
+  const {
+    data: pages,
+    error,
+    isLoading,
+    isValidating,
+    size,
+    setSize,
+  } = useInfinitePosts(searchTags, ratingFilter)
+  
+  const posts = pages ? pages.flat() : []
+  const isLoadingMore = isValidating && size > 1
+  const loadMore = () => setSize(size + 1)
+  const refresh = () => setSize(1)
 
   const copyToClipboard = async (prompt: string, postId: number) => {
     try {
@@ -619,47 +598,28 @@ export default function DanbooruPromptGenerator() {
     }
   }
 
-  const loadMore = () => {
-    const nextPage = page + 1
-    setPage(nextPage)
-    fetchPosts(nextPage, true, searchTags, setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
-
-    // Prefetch de la página siguiente
-    setTimeout(() => {
-      prefetchNextPage(page, searchTags, setPosts, setLoading, toast, setIsSearching, ratingFilter)
-    }, 1000)
-  }
-
-  const refresh = () => {
-    setPage(1)
-    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
-  }
-
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (searchTags.trim()) {
-      setIsSearching(true)
-      setPage(1)
-      fetchPosts(1, false, searchTags.trim(), setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
+      refresh()
     }
   }
 
   const clearSearch = () => {
     setSearchTags("")
-    setPage(1)
-    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
+    refresh()
   }
 
+  // Handle errors
   useEffect(() => {
-    fetchPosts(1, false, "", setLoading, setPosts, searchTags, toast, setIsSearching, ratingFilter)
-
-    // Prefetch después de cargar la primera página
-    const timer = setTimeout(() => {
-      prefetchNextPage(page, searchTags, setPosts, setLoading, toast, setIsSearching, ratingFilter)
-    }, 2000)
-
-    return () => clearTimeout(timer)
-  }, [ratingFilter])
+    if (error) {
+      toast({
+        title: "Error de conexión",
+        description: error.message || "No se pudieron cargar las imágenes",
+        variant: "destructive",
+      })
+    }
+  }, [error, toast])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
@@ -682,8 +642,8 @@ export default function DanbooruPromptGenerator() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   />
                 </div>
-                <Button type="submit" disabled={loading || isSearching}>
-                  {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Buscar"}
+                <Button type="submit" disabled={isLoading}>
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Buscar"}
                 </Button>
                 {searchTags && (
                   <Button type="button" variant="outline" onClick={clearSearch}>
@@ -714,8 +674,8 @@ export default function DanbooruPromptGenerator() {
             )}
           </div>
 
-          <Button onClick={refresh} disabled={loading} variant="outline">
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+          <Button onClick={refresh} disabled={isLoading} variant="outline">
+            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
             Actualizar
           </Button>
         </div>
@@ -733,14 +693,31 @@ export default function DanbooruPromptGenerator() {
             return (
               <Card key={`${post.id}-${posts.indexOf(post)}`} className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
                 <div className="relative bg-gray-100 h-80">
-                  <Image
-                    src={post.large_file_url || post.file_url}
-                    alt={`Danbooru post ${post.id}`}
-                    fill
-                    className="object-contain"
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-                    priority={posts.indexOf(post) < 4}
-                  />
+                  {(post.large_file_url || post.file_url)?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i) ? (
+                    <Image
+                      src={post.large_file_url || post.file_url}
+                      alt={`Danbooru post ${post.id}`}
+                      fill
+                      className="object-contain"
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+                      priority={posts.indexOf(post) < 4}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                      <div className="text-center">
+                        <div className="text-gray-500 mb-2">📹</div>
+                        <p className="text-sm text-gray-600">Video content</p>
+                        <a 
+                          href={post.file_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs text-purple-600 hover:underline"
+                        >
+                          View original
+                        </a>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <CardContent className="p-4">
@@ -779,8 +756,8 @@ export default function DanbooruPromptGenerator() {
         {/* Load More Button */}
         {posts.length > 0 && (
           <div className="text-center">
-            <Button onClick={loadMore} disabled={loading} size="lg" className="px-8">
-              {loading ? (
+            <Button onClick={loadMore} disabled={isLoadingMore} size="lg" className="px-8">
+              {isLoadingMore ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Cargando...
@@ -793,7 +770,7 @@ export default function DanbooruPromptGenerator() {
         )}
 
         {/* Loading State */}
-        {loading && posts.length === 0 && (
+        {isLoading && posts.length === 0 && (
           <div className="text-center py-12">
             <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-purple-600" />
             <p className="text-gray-600">Cargando imágenes...</p>
