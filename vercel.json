@@ -10,6 +10,7 @@
       "maxDuration": 30
     }
   },
+  "analytics": true,
   "env": {
     "NEXT_PUBLIC_APP_URL": "",
     "API_BASE_URL": "",
