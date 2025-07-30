@@ -1,34 +1,37 @@
-import type { Metadata } from 'next'
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
-import { Analytics } from '@vercel/analytics/react'
-import './globals.css'
+import type React from "react"
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import "./globals.css"
+import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/toaster"
+
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: 'Booru Prompt Gallery',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  title: "Booru Prompt Gallery - AI Art Prompt Generator",
+  description: "Discover and generate high-quality AI art prompts from curated image collections",
+  keywords: ["AI art", "prompts", "danbooru", "image generation", "stable diffusion"],
+  authors: [{ name: "Booru Gallery" }],
+  openGraph: {
+    title: "Booru Prompt Gallery",
+    description: "Discover and generate high-quality AI art prompts from curated image collections",
+    type: "website",
+  },
+    generator: 'v0.dev'
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
-    <html lang="en">
-      <head>
-        <style>{`
-html {
-  font-family: ${GeistSans.style.fontFamily};
-  --font-sans: ${GeistSans.variable};
-  --font-mono: ${GeistMono.variable};
-}
-        `}</style>
-      </head>
-      <body>
-        {children}
-        <Analytics />
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          {children}
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   )
