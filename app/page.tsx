@@ -1,13 +1,35 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Copy, Check, Loader2, RefreshCw } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import {
+  Copy,
+  Check,
+  Loader2,
+  RefreshCw,
+  Search,
+  Filter,
+  Grid3X3,
+  List,
+  ExternalLink,
+  Heart,
+  Eye,
+  Download,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
 import { useInfinitePosts } from "@/lib/api-client"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Slider } from "@/components/ui/slider"
+import { cleanPrompt } from "@/lib/cleanPrompt"
 
 interface DanbooruPost {
   id: number
@@ -22,537 +44,17 @@ interface DanbooruPost {
   score: number
 }
 
-// Client-side cache for immediate access
-const LOCAL_CACHE = new Map<string, { data: DanbooruPost[]; timestamp: number }>()
-const LOCAL_CACHE_DURATION = 2 * 60 * 1000 // 2 minutes
-
-// API configuration and caching
-const API_CONFIG = {
-  baseUrl: "https://danbooru.donmai.us",
-  timeout: 10000,
-  retryAttempts: 3,
-  retryDelay: 1000,
-  maxConcurrent: 5,
-  defaultParams: {
-    limit: "20",
-    tags: "",
-  },
-}
-
-// Request pooling for rate limiting
-const REQUEST_POOL = {
-  activeRequests: 0,
-  maxConcurrent: API_CONFIG.maxConcurrent,
-  queue: [] as Array<() => void>,
-}
-
-// Global cache for API responses
-const API_CACHE = new Map<string, { data: DanbooruPost[]; timestamp: number }>()
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
-
-function loadTagsToRemove(category?: number): Set<string> {
-  try {
-    const tagsData = require('./../tags.json')
-    const tagsToRemove = new Set<string>()
-    
-    if (Array.isArray(tagsData)) {
-      tagsData.forEach((tag: any) => {
-        if (category === undefined || tag.category === category) {
-          tagsToRemove.add(tag.name.toLowerCase())
-          if (tag.aliases && Array.isArray(tag.aliases)) {
-            tag.aliases.forEach((alias: string) => {
-              tagsToRemove.add(alias.toLowerCase())
-            })
-          }
-        }
-      })
-    }
-    
-    return tagsToRemove
-  } catch (error) {
-    return new Set([
-      "signature", "twitter username", "artist name", "watermark", "copyright",
-      "artist", "unknown artist", "official art", "fan art", "commission"
-    ])
-  }
-}
-
-const ARTIST_TAGS_SET = loadTagsToRemove(1)
-const META_TAGS_SET = loadTagsToRemove(5)
-
-const commonMetaTags = new Set([
-  "highres", "absurdres", "commentary", "commentary_request", "english_commentary",
-  "chinese_commentary", "translated", "translation_request", "official_art",
-  "commission", "bad_id", "bad_pixiv_id", "bad_twitter_id", "photoshop_(medium)",
-  "symbol-only_commentary", "artist_request", "copyright_request", "non-web_source",
-  "signature", "watermark", "artist_name", "twitter_username", "request"
-])
-
-// Convertir arrays de categorías a Sets para búsquedas más rápidas
-const BREAST_SIZES_SET = new Set([
-  "flat chest",
-  "small breasts",
-  "medium breasts",
-  "large breasts",
-  "huge breasts",
-  "gigantic breasts",
-])
-
-const HAIR_LENGTHS_SET = new Set([
-  "bald",
-  "very short hair",
-  "short hair",
-  "medium hair",
-  "long hair",
-  "very long hair",
-  "absurdly long hair",
-])
-
-const EYE_COLORS_SET = new Set([
-  "blue eyes", "brown eyes", "green eyes", "red eyes", "purple eyes",
-  "yellow eyes", "pink eyes", "orange eyes", "black eyes", "white eyes",
-  "gray eyes", "grey eyes"
-])
-
-const QUALITY_TAGS_SET = new Set([
-  "masterpiece", "best quality", "high quality", "ultra-detailed",
-  "detailed", "extremely detailed", "highly detailed"
-])
-
-const SUBJECT_TAGS_SET = new Set(["1girl", "1boy", "2girls", "2boys", "multiple girls", "multiple boys"])
-
-const COMPOSITION_TAGS_SET = new Set(["portrait", "full body", "upper body", "close-up", "wide shot"])
-
-const REDUNDANCY_MAP: Record<string, string> = {
-  breasts: "medium breasts", chest: "medium breasts", boobs: "medium breasts",
-  hair: "hair", eyes: "eyes", clothing: "", clothes: "", outfit: "",
-  sitting: "sitting", standing: "standing", lying: "lying", pose: "",
-  smile: "smile", smiling: "smile", happy: "smile", sad: "sad", angry: "angry", surprised: "surprised", expression: "",
-  face: "", head: "", body: "", skin: "", person: "", people: "", human: "",
-  good: "", nice: "", cute: "cute", kawaii: "cute", adorable: "cute",
-  pretty: "beautiful", gorgeous: "beautiful", stunning: "beautiful",
-  girl: "1girl", boy: "1boy", woman: "1girl", man: "1boy"
-}
-
-function processRedundancy(tags: string[]): string[] {
-  const processedTags: string[] = []
-  const seenCategories = new Set<string>()
-
-  // Sistema robusto de eliminación de redundancia por especificidad
-  function removeRedundantTags(tagList: string[]): string[] {
-    const result: string[] = []
-    const tagSet = new Set<string>()
-
-    // Ordenar por longitud (más específicos primero)
-    const sortedTags = [...tagList].sort((a, b) => b.length - a.length)
-
-    for (const tag of sortedTags) {
-      if (tagSet.has(tag)) continue // Evitar duplicados
-
-      let isRedundant = false
-
-      // Verificar si este tag es redundante con alguno ya agregado
-      for (const existingTag of result) {
-        // Si el tag actual está completamente contenido en uno más específico, es redundante
-        if (existingTag.includes(tag) && existingTag !== tag) {
-          // Verificar que sea una redundancia real usando split una sola vez
-          const tagWords = tag.split(" ")
-          const existingWords = existingTag.split(" ")
-
-          // Solo es redundante si todas las palabras del tag están en el existente
-          const allWordsIncluded = tagWords.every((word) => existingWords.includes(word))
-
-          if (allWordsIncluded) {
-            isRedundant = true
-            break
-          }
-        }
-      }
-
-      if (!isRedundant) {
-        result.push(tag)
-        tagSet.add(tag)
-      }
-    }
-
-    return result
-  }
-
-  // Procesar tags de pechos usando Set
-  const breastTags = tags.filter((tag) => BREAST_SIZES_SET.has(tag))
-  if (breastTags.length > 0) {
-    const breastHierarchy = [
-      "gigantic breasts",
-      "huge breasts",
-      "large breasts",
-      "medium breasts",
-      "small breasts",
-      "flat chest",
-    ]
-    const bestBreast = breastHierarchy.find((size) => breastTags.includes(size))
-    if (bestBreast) {
-      processedTags.push(bestBreast)
-      seenCategories.add("breasts")
-    }
-  }
-
-  // Procesar tags de pelo usando Set
-  const hairTags = tags.filter((tag) => HAIR_LENGTHS_SET.has(tag))
-  if (hairTags.length > 0) {
-    const uniqueHairTags = [...new Set(hairTags)]
-    processedTags.push(...uniqueHairTags)
-    seenCategories.add("hair_length")
-  }
-
-  // Procesar color de ojos usando Set
-  const eyeTags = tags.filter((tag) => EYE_COLORS_SET.has(tag))
-  if (eyeTags.length > 0) {
-    const uniqueEyeTags = [...new Set(eyeTags)]
-    processedTags.push(...uniqueEyeTags)
-    seenCategories.add("eye_color")
-  }
-
-  // Procesar el resto de tags con filtrado optimizado
-  const remainingTags = tags.filter((tag) => {
-    if (BREAST_SIZES_SET.has(tag) && seenCategories.has("breasts")) return false
-    if (HAIR_LENGTHS_SET.has(tag) && seenCategories.has("hair_length")) return false
-    if (EYE_COLORS_SET.has(tag) && seenCategories.has("eye_color")) return false
-    return true
-  })
-
-  // Aplicar mapeo de redundancia básico con cache
-  const mappedTags = remainingTags.map((tag) => REDUNDANCY_MAP[tag] ?? tag).filter((tag) => tag.length > 0)
-
-  // Aplicar sistema robusto de eliminación de redundancia
-  const cleanedTags = removeRedundantTags([...processedTags, ...mappedTags])
-
-  return cleanedTags
-}
-
-function cleanPrompt(tagString: string, artistTags: string, characterTags: string, copyrightTags: string): string {
-  const allTags = tagString.split(" ").filter((tag) => tag.length > 0)
-  const artistTagsSet = new Set(artistTags.split(" "))
-  const characterTagsArray = characterTags.split(" ").filter(tag => tag.length > 0)
-  const copyrightTagsArray = copyrightTags.split(" ").filter(tag => tag.length > 0)
-  const characterTagsSet = new Set(characterTagsArray)
-  const copyrightTagsSet = new Set(copyrightTagsArray)
-
-  const numberRegex = /^\d+$/
-  const urlRegex = /:/
-
-  const filteredTags = allTags.filter((tag) => {
-    if (tag.length <= 1) return false
-    const lowerTag = tag.toLowerCase()
-    
-    if (artistTagsSet.has(lowerTag)) return false
-    if (META_TAGS_SET.has(lowerTag)) return false
-    if (commonMetaTags.has(lowerTag)) return false
-    
-    if (numberRegex.test(tag)) return false
-    if (tag.includes("@") || tag.includes("#") || urlRegex.test(tag)) return false
-    if (tag.includes("(") || tag.includes(")") || tag.includes("{") || tag.includes("}") || tag.includes("[") || tag.includes("]"))
-      return false
-
-    return true
-  })
-
-  const formattedTags = filteredTags.map((tag) => tag.replace(/_/g, " ").toLowerCase().trim())
-  const processedTags = processRedundancy(formattedTags)
-
-  const qualityTags: string[] = []
-  const contentTags: string[] = []
-
-  for (const tag of processedTags) {
-    if (QUALITY_TAGS_SET.has(tag)) {
-      qualityTags.push(tag)
-    } else {
-      contentTags.push(tag)
-    }
-  }
-
-  const sortedContentTags = contentTags.sort((a, b) => {
-    const aIsSubject = SUBJECT_TAGS_SET.has(a)
-    const bIsSubject = SUBJECT_TAGS_SET.has(b)
-    const aIsComposition = COMPOSITION_TAGS_SET.has(a)
-    const bIsComposition = COMPOSITION_TAGS_SET.has(b)
-
-    if (aIsSubject && !bIsSubject) return -1
-    if (!aIsSubject && bIsSubject) return 1
-    if (aIsComposition && !bIsComposition) return -1
-    if (!aIsComposition && bIsComposition) return 1
-
-    return b.length - a.length
-  })
-
-  const characterAndFranchiseTags = [...characterTagsArray, ...copyrightTagsArray]
-    .map(tag => tag.replace(/_/g, " ").toLowerCase().trim())
-    .filter(tag => tag.length > 0)
-
-  const allFinalTags = new Set<string>()
-  characterAndFranchiseTags.forEach(tag => allFinalTags.add(tag))
-  
-  const combinedTags = [...sortedContentTags, ...qualityTags]
-  combinedTags.forEach(tag => {
-    if (!allFinalTags.has(tag)) {
-      allFinalTags.add(tag)
-    }
-  })
-
-  const finalTags = Array.from(allFinalTags)
-
-  // Always add "masterpiece" tag at the end
-  if (!finalTags.includes("masterpiece")) {
-    finalTags.push("masterpiece")
-  }
-
-  return finalTags.join(", ")
-}
-
-// Función para validar y limpiar queries de búsqueda
-const validateAndCleanQuery = (query: string, ratingFilter: string): string => {
-  if (!query || query.trim() === "") {
-    return ratingFilter || ""
-  }
-
-  // Limpiar caracteres problemáticos
-  let cleanedQuery = query
-    .replace(/[<>]/g, "") // Remover < >
-    .replace(/\s+/g, " ") // Normalizar espacios
-    .trim()
-
-  // Validar longitud máxima (Danbooru tiene límites)
-  if (cleanedQuery.length > 1000) {
-    cleanedQuery = cleanedQuery.substring(0, 1000)
-  }
-
-  // Validar número de tags (máximo ~40 tags)
-  const tags = cleanedQuery.split(" ").filter((tag) => tag.length > 0)
-  if (tags.length > 40) {
-    cleanedQuery = tags.slice(0, 40).join(" ")
-  }
-
-  return cleanedQuery
-}
-
-const fetchPosts = async (
-  pageNum = 1,
-  append = false,
-  customTags = "",
-  setLoading: any,
-  setPosts: any,
-  searchTags: any,
-  toast: any,
-  setIsSearching: any,
-  ratingFilter: string,
-  order: string = "popular",
-) => {
-  setLoading(true)
-
-  try {
-    const searchQuery = customTags || searchTags
-    const baseQuery = `${ratingFilter}`
-    const finalQuery = searchQuery ? `${baseQuery} ${searchQuery}` : baseQuery
-
-    // Crear clave de cache única
-    const cacheKey = `${finalQuery}-${pageNum}-${order}`
-
-    // Verificar cache primero
-    const cached = API_CACHE.get(cacheKey)
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      console.log("📦 Usando datos del cache")
-      if (append) {
-        setPosts((prev: DanbooruPost[]) => [...prev, ...cached.data])
-      } else {
-        setPosts(cached.data)
-      }
-      return
-    }
-
-    // Validar y limpiar tags antes de enviar
-    const cleanedQuery = validateAndCleanQuery(finalQuery, ratingFilter)
-
-    // Construir URL optimizada con parámetros específicos
-    const params = new URLSearchParams({
-      ...API_CONFIG.defaultParams,
-      page: pageNum.toString(),
-      tags: cleanedQuery,
-    })
-
-    const url = `${API_CONFIG.baseUrl}/posts.json?${params}`
-
-    // Implementar retry con backoff exponencial
-    let lastError: Error | null = null
-
-    for (let attempt = 1; attempt <= API_CONFIG.retryAttempts; attempt++) {
-      try {
-        // Control de concurrencia
-        await waitForSlot()
-
-        console.log(`🌐 Fetching página ${pageNum} (intento ${attempt})`)
-
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout)
-
-        REQUEST_POOL.activeRequests++
-
-        const response = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-            Accept: "application/json",
-            "User-Agent": "DanbooruPromptGenerator/1.0",
-          },
-        })
-
-        clearTimeout(timeoutId)
-        REQUEST_POOL.activeRequests--
-        processQueue()
-
-        if (!response.ok) {
-          if (response.status === 429) {
-          const retryAfter = response.headers.get("Retry-After")
-          const delay = retryAfter ? Number.parseInt(retryAfter) * 1000 : API_CONFIG.retryDelay * attempt
-          await sleep(delay)
-          continue
-        } else if (response.status === 422) {
-          if (searchQuery && searchQuery !== baseQuery) {
-            const fallbackParams = new URLSearchParams({
-              ...API_CONFIG.defaultParams,
-              page: pageNum.toString(),
-              tags: "rating:safe score:>5",
-            })
-            const fallbackUrl = `${API_CONFIG.baseUrl}/posts.json?${fallbackParams}`
-
-            const fallbackResponse = await fetch(fallbackUrl, {
-              signal: controller.signal,
-              headers: {
-                Accept: "application/json",
-                "User-Agent": "DanbooruPromptGenerator/1.0",
-              },
-            })
-
-            if (fallbackResponse.ok) {
-              const data: DanbooruPost[] = await fallbackResponse.json()
-              const validPosts = data.filter(
-                (post) => post && post.file_url && !post.file_url.includes("deleted") && post.id && post.tag_string,
-              )
-
-              if (append) {
-                setPosts((prev: DanbooruPost[]) => {
-                  const existingIds = new Set(prev.map(p => p.id))
-                  const newPosts = validPosts.filter(post => !existingIds.has(post.id))
-                  return [...prev, ...newPosts]
-                })
-              } else {
-                setPosts(validPosts)
-              }
-
-              toast({
-                title: "Búsqueda modificada",
-                description: "Se usaron tags por defecto debido a un problema con la búsqueda personalizada",
-                variant: "default",
-              })
-
-              return
-            }
-          }
-
-          throw new Error(`Tags inválidos o query malformada. Verifica la sintaxis de búsqueda.`)
-        } else if (response.status >= 500) {
-          throw new Error(`Error del servidor: ${response.status}`)
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
-        }
-
-        const data: DanbooruPost[] = await response.json()
-
-        const validPosts = data.filter(
-          (post) => post && post.file_url && !post.file_url.includes("deleted") && post.id && post.tag_string,
-        )
-
-        API_CACHE.set(cacheKey, {
-          data: validPosts,
-          timestamp: Date.now(),
-        })
-
-        cleanOldCache()
-
-        if (append) {
-          setPosts((prev: DanbooruPost[]) => {
-            const existingIds = new Set(prev.map(p => p.id))
-            const newPosts = validPosts.filter(post => !existingIds.has(post.id))
-            return [...prev, ...newPosts]
-          })
-        } else {
-          setPosts(validPosts)
-        }
-
-        return // Éxito, salir del loop de retry
-      } catch (error) {
-        lastError = error as Error
-        REQUEST_POOL.activeRequests = Math.max(0, REQUEST_POOL.activeRequests - 1)
-        processQueue()
-
-        if (error instanceof Error && error.message.includes("Tags inválidos")) {
-          break
-        }
-
-        if (attempt < API_CONFIG.retryAttempts) {
-          const delay = API_CONFIG.retryDelay * Math.pow(2, attempt - 1)
-          await sleep(delay)
-        }
-      }
-    }
-
-    throw lastError || new Error("Todos los intentos de conexión fallaron")
-  } catch (error) {
-    toast({
-      title: "Error de conexión",
-      description: error instanceof Error ? error.message : "No se pudieron cargar las imágenes",
-      variant: "destructive",
-    })
-  } finally {
-    setLoading(false)
-    setIsSearching(false)
-  }
-}
-
-// Funciones auxiliares para optimización
-const waitForSlot = (): Promise<void> => {
-  return new Promise((resolve) => {
-    if (REQUEST_POOL.activeRequests < REQUEST_POOL.maxConcurrent) {
-      resolve()
-    } else {
-      REQUEST_POOL.queue.push(resolve)
-    }
-  })
-}
-
-const processQueue = () => {
-  if (REQUEST_POOL.queue.length > 0 && REQUEST_POOL.activeRequests < REQUEST_POOL.maxConcurrent) {
-    const next = REQUEST_POOL.queue.shift()
-    if (next) next()
-  }
-}
-
-const sleep = (ms: number): Promise<void> => {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-const cleanOldCache = () => {
-  const now = Date.now()
-  for (const [key, value] of API_CACHE.entries()) {
-    if (now - value.timestamp > CACHE_DURATION) {
-      API_CACHE.delete(key)
-    }
-  }
-}
+type CardScale = "small" | "medium" | "large"
 
 export default function DanbooruPromptGenerator() {
   const [searchTags, setSearchTags] = useState("")
   const [ratingFilter, setRatingFilter] = useState("rating:safe")
   const [order, setOrder] = useState<"popular" | "recent">("popular")
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [cardScale, setCardScale] = useState<CardScale>("medium")
+  const [scaleValue, setScaleValue] = useState([2]) // 1=small, 2=medium, 3=large
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const { toast } = useToast()
 
   const {
@@ -564,35 +66,53 @@ export default function DanbooruPromptGenerator() {
     setSize,
     mutate,
   } = useInfinitePosts(searchTags, ratingFilter, order)
-  
+
   const posts = pages ? pages.flat() : []
   const isLoadingMore = isValidating && size > 1
   const loadMore = () => setSize(size + 1)
   const refresh = () => mutate()
+
+  // Update card scale based on slider value
+  useEffect(() => {
+    const scale = scaleValue[0]
+    if (scale === 1) setCardScale("small")
+    else if (scale === 2) setCardScale("medium")
+    else setCardScale("large")
+  }, [scaleValue])
 
   const copyToClipboard = async (prompt: string, postId: number) => {
     try {
       await navigator.clipboard.writeText(prompt)
       setCopiedId(postId)
       toast({
-        title: "¡Copiado!",
-        description: "Prompt copiado al portapapeles",
+        title: "Copied!",
+        description: "Prompt copied to clipboard",
       })
       setTimeout(() => setCopiedId(null), 2000)
     } catch (error) {
       toast({
         title: "Error",
-        description: "No se pudo copiar el prompt",
+        description: "Could not copy prompt",
         variant: "destructive",
       })
     }
   }
 
+  const toggleFavorite = (postId: number) => {
+    setFavorites((prev) => {
+      const newFavorites = new Set(prev)
+      if (newFavorites.has(postId)) {
+        newFavorites.delete(postId)
+      } else {
+        newFavorites.add(postId)
+      }
+      return newFavorites
+    })
+  }
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    if (searchTags.trim()) {
-      refresh()
-    }
+    refresh()
   }
 
   const clearSearch = () => {
@@ -600,12 +120,20 @@ export default function DanbooruPromptGenerator() {
     refresh()
   }
 
+  const decreaseScale = () => {
+    setScaleValue([Math.max(1, scaleValue[0] - 1)])
+  }
+
+  const increaseScale = () => {
+    setScaleValue([Math.min(3, scaleValue[0] + 1)])
+  }
+
   // Handle errors
   useEffect(() => {
     if (error) {
       toast({
-        title: "Error de conexión",
-        description: error.message || "No se pudieron cargar las imágenes",
+        title: "Connection error",
+        description: error.message || "Could not load images",
         variant: "destructive",
       })
     }
@@ -616,177 +144,554 @@ export default function DanbooruPromptGenerator() {
     refresh()
   }, [order, ratingFilter])
 
+  const getGridClass = () => {
+    switch (cardScale) {
+      case "small":
+        return "grid-small"
+      case "medium":
+        return "grid-medium"
+      case "large":
+        return "grid-large"
+      default:
+        return "grid-medium"
+    }
+  }
+
+  const getCardContentClass = () => {
+    switch (cardScale) {
+      case "small":
+        return "card-content-small"
+      case "medium":
+        return "card-content-medium"
+      case "large":
+        return "card-content-large"
+      default:
+        return "card-content-medium"
+    }
+  }
+
+  const getBadgeClass = () => {
+    switch (cardScale) {
+      case "small":
+        return "badge-small"
+      case "medium":
+        return "badge-medium"
+      case "large":
+        return "badge-large"
+      default:
+        return "badge-medium"
+    }
+  }
+
+  const getIconClass = () => {
+    switch (cardScale) {
+      case "small":
+        return "icon-small"
+      case "medium":
+        return "icon-medium"
+      case "large":
+        return "icon-large"
+      default:
+        return "icon-medium"
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
-      <div className="max-w-7xl mx-auto">
+    <TooltipProvider>
+      <div className="min-h-screen bg-background">
         {/* Header */}
-        <div className="text-center mb-6">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Booru Prompt Gallery</h1>
-
-          {/* Search Bar */}
-          <div className="max-w-2xl mx-auto mb-6">
-            <form onSubmit={handleSearch} className="space-y-4">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={searchTags}
-                    onChange={(e) => setSearchTags(e.target.value)}
-                    placeholder="Buscar por tags (ej: cat girl, blue eyes, long hair)"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
-                </div>
-                <Button type="submit" disabled={isLoading}>
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Buscar"}
-                </Button>
-                {searchTags && (
-                  <Button type="button" variant="outline" onClick={clearSearch}>
-                    Limpiar
-                  </Button>
-                )}
+        <header className="sticky top-0 z-50 w-full border-b glass-effect">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                  Booru Gallery
+                </h1>
+                <Badge variant="secondary" className="hidden sm:inline-flex">
+                  AI Prompt Generator
+                </Badge>
               </div>
-              
-              {/* Filters */}
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Filtro de contenido:</label>
-                  <select
-                    value={ratingFilter}
-                    onChange={(e) => setRatingFilter(e.target.value)}
-                    className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  >
-                    <option value="rating:safe">Safe</option>
-                    <option value="rating:questionable">Questionable</option>
-                    <option value="rating:explicit">Explicit</option>
-                    <option value="">Todos</option>
-                  </select>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Ordenar por:</label>
-                  <select
-                    value={order}
-                    onChange={(e) => setOrder(e.target.value as "popular" | "recent")}
-                    className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  >
-                    <option value="popular">Más populares</option>
-                    <option value="recent">Más recientes</option>
-                  </select>
-                </div>
-              </div>
-            </form>
-            {searchTags && (
-              <p className="text-sm text-gray-500 mt-2">
-                Buscando: <span className="font-medium">{searchTags}</span> | 
-                Filtro: <span className="font-medium">{ratingFilter.replace('rating:', '') || 'Todos'}</span> | 
-                Orden: <span className="font-medium">{order === 'popular' ? 'Más populares' : 'Más recientes'}</span>
-              </p>
-            )}
-          </div>
 
-          <Button onClick={refresh} disabled={isLoading} variant="outline">
-            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-            Actualizar
-          </Button>
-        </div>
-
-        {/* Gallery Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5 md:gap-6 mb-8">
-          {posts.map((post) => {
-            const cleanedPrompt = cleanPrompt(
-              post.tag_string,
-              post.tag_string_artist,
-              post.tag_string_character,
-              post.tag_string_copyright,
-            )
-
-            return (
-              <Card key={`${post.id}-${posts.indexOf(post)}`} className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
-                <div className="relative bg-gray-100 h-80">
-                  {(post.large_file_url || post.file_url)?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i) ? (
-                    <Image
-                      src={post.large_file_url || post.file_url}
-                      alt={`Danbooru post ${post.id}`}
-                      fill
-                      className="object-contain"
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-                      priority={posts.indexOf(post) < 4}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gray-200">
-                      <div className="text-center">
-                        <div className="text-gray-500 mb-2">📹</div>
-                        <p className="text-sm text-gray-600">Video content</p>
-                        <a 
-                          href={post.file_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-xs text-purple-600 hover:underline"
+              <div className="flex items-center space-x-2">
+                {/* Card Scale Controls - Only show in grid view */}
+                {viewMode === "grid" && (
+                  <div className="flex items-center space-x-2 border-r pr-2 mr-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={decreaseScale}
+                          disabled={scaleValue[0] === 1}
+                          className="focus-ring h-8 w-8"
+                          aria-label="Decrease card size"
                         >
-                          View original
-                        </a>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                          <ZoomOut className="h-3 w-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Decrease card size</TooltipContent>
+                    </Tooltip>
 
-                <CardContent className="p-4">
-                  <div className="space-y-3">
-                    <div className="bg-gray-50 p-3 rounded-lg max-h-32 overflow-y-auto">
-                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                        {cleanedPrompt || "No hay tags disponibles"}
-                      </p>
+                    <div className="w-16 px-1">
+                      <Slider
+                        value={scaleValue}
+                        onValueChange={setScaleValue}
+                        max={3}
+                        min={1}
+                        step={1}
+                        className="w-full"
+                        aria-label="Card scale"
+                      />
                     </div>
 
-                    <Button
-                      onClick={() => copyToClipboard(cleanedPrompt, post.id)}
-                      className="w-full"
-                      variant={copiedId === post.id ? "default" : "outline"}
-                      disabled={!cleanedPrompt}
-                    >
-                      {copiedId === post.id ? (
-                        <>
-                          <Check className="w-4 h-4 mr-2" />
-                          ¡Copiado!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4 mr-2" />
-                          Copiar Prompt
-                        </>
-                      )}
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={increaseScale}
+                          disabled={scaleValue[0] === 3}
+                          className="focus-ring h-8 w-8"
+                          aria-label="Increase card size"
+                        >
+                          <ZoomIn className="h-3 w-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Increase card size</TooltipContent>
+                    </Tooltip>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+                )}
 
-        {/* Load More Button */}
-        {posts.length > 0 && (
-          <div className="text-center">
-            <Button onClick={loadMore} disabled={isLoadingMore} size="lg" className="px-8">
-              {isLoadingMore ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Cargando...
-                </>
-              ) : (
-                "Cargar Más"
-              )}
-            </Button>
-          </div>
-        )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+                      className="focus-ring"
+                      aria-label={`Switch to ${viewMode === "grid" ? "list" : "grid"} view`}
+                    >
+                      {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid3X3 className="h-4 w-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Switch to {viewMode === "grid" ? "list" : "grid"} view</TooltipContent>
+                </Tooltip>
 
-        {/* Loading State */}
-        {isLoading && posts.length === 0 && (
-          <div className="text-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-purple-600" />
-            <p className="text-gray-600">Cargando imágenes...</p>
+                <ThemeToggle />
+              </div>
+            </div>
           </div>
-        )}
+        </header>
+
+        <main className="container mx-auto px-4 py-8">
+          {/* Search Section */}
+          <div className="max-w-4xl mx-auto mb-8 space-y-6">
+            <div className="text-center space-y-2">
+              <h2 className="text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                Explore curated image collections and generate high-quality prompts for your AI art projects
+              </p>
+            </div>
+
+            {/* Search Form */}
+            <Card className="glass-effect">
+              <CardContent className="p-6">
+                <form onSubmit={handleSearch} className="space-y-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                    <Input
+                      type="text"
+                      value={searchTags}
+                      onChange={(e) => setSearchTags(e.target.value)}
+                      placeholder="Search by tags (e.g., cat girl, blue eyes, long hair)"
+                      className="pl-10 focus-ring"
+                      aria-label="Search tags"
+                    />
+                  </div>
+
+                  {/* Filters */}
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">Filters:</span>
+                    </div>
+
+                    <Select value={ratingFilter} onValueChange={setRatingFilter}>
+                      <SelectTrigger className="w-[140px] focus-ring">
+                        <SelectValue placeholder="Content rating" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="rating:safe">Safe</SelectItem>
+                        <SelectItem value="rating:questionable">Questionable</SelectItem>
+                        <SelectItem value="rating:explicit">Explicit</SelectItem>
+                        <SelectItem value="all">All ratings</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Select value={order} onValueChange={(value: "popular" | "recent") => setOrder(value)}>
+                      <SelectTrigger className="w-[140px] focus-ring">
+                        <SelectValue placeholder="Sort by" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="popular">Most popular</SelectItem>
+                        <SelectItem value="recent">Most recent</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <div className="flex gap-2 ml-auto">
+                      <Button type="submit" disabled={isLoading} className="focus-ring">
+                        {isLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <Search className="w-4 h-4 mr-2" />
+                        )}
+                        Search
+                      </Button>
+
+                      {searchTags && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={clearSearch}
+                          className="focus-ring bg-transparent"
+                        >
+                          Clear
+                        </Button>
+                      )}
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={refresh}
+                        disabled={isLoading}
+                        className="focus-ring bg-transparent"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+
+                {/* Active filters display */}
+                {(searchTags || ratingFilter !== "rating:safe") && (
+                  <div className="mt-4 pt-4 border-t border-border/50">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                      <span>Active filters:</span>
+                      {searchTags && <Badge variant="secondary">Tags: {searchTags}</Badge>}
+                      {ratingFilter && ratingFilter !== "rating:safe" && (
+                        <Badge variant="secondary">Rating: {ratingFilter.replace("rating:", "")}</Badge>
+                      )}
+                      <Badge variant="secondary">Sort: {order === "popular" ? "Most popular" : "Most recent"}</Badge>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Gallery */}
+          {viewMode === "grid" ? (
+            <div className={`${getGridClass()} mb-8`}>
+              {posts.map((post, index) => {
+                const cleanedPrompt = cleanPrompt(
+                  post.tag_string,
+                  post.tag_string_artist,
+                  post.tag_string_character,
+                  post.tag_string_copyright,
+                )
+
+                return (
+                  <Card key={`${post.id}-${index}`} className="overflow-hidden card-hover group">
+                    <div className="image-container-2-3">
+                      {(post.large_file_url || post.file_url)?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i) ? (
+                        <Image
+                          src={post.large_file_url || post.file_url}
+                          alt={`Danbooru post ${post.id}`}
+                          fill
+                          className="object-cover transition-transform duration-300 group-hover:scale-105"
+                          sizes={
+                            cardScale === "small"
+                              ? "(max-width: 640px) 50vw, 20vw"
+                              : cardScale === "medium"
+                                ? "(max-width: 640px) 50vw, 25vw"
+                                : "(max-width: 640px) 100vw, 33vw"
+                          }
+                          priority={index < 8}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-muted">
+                          <div className="text-center space-y-2">
+                            <div className={cardScale === "small" ? "text-2xl" : "text-4xl"}>🎬</div>
+                            <p className={`text-muted-foreground ${cardScale === "small" ? "text-xs" : "text-sm"}`}>
+                              Video content
+                            </p>
+                            <Button variant="outline" size={cardScale === "small" ? "sm" : "sm"} asChild>
+                              <a href={post.file_url} target="_blank" rel="noopener noreferrer" className="focus-ring">
+                                <ExternalLink className={`${getIconClass()} mr-1`} />
+                                View
+                              </a>
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Overlay actions */}
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="secondary"
+                              className={`glass-effect ${cardScale === "small" ? "h-6 w-6" : "h-8 w-8"}`}
+                              onClick={() => toggleFavorite(post.id)}
+                              aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+                            >
+                              <Heart
+                                className={`${getIconClass()} ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
+                              />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+
+                      {/* Score badge */}
+                      {post.score > 0 && (
+                        <div className="absolute bottom-2 left-2">
+                          <Badge variant="secondary" className={`glass-effect ${getBadgeClass()}`}>
+                            <Eye className={`${getIconClass()} mr-1`} />
+                            {post.score}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+
+                    <CardContent className={getCardContentClass()}>
+                      <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container">
+                        <p className="text-foreground/80 leading-relaxed">{cleanedPrompt || "No tags available"}</p>
+                      </div>
+
+                      <div className="flex button-group">
+                        <Button
+                          onClick={() => copyToClipboard(cleanedPrompt, post.id)}
+                          className="flex-1 focus-ring"
+                          variant={copiedId === post.id ? "default" : "outline"}
+                          disabled={!cleanedPrompt}
+                        >
+                          {copiedId === post.id ? (
+                            <>
+                              <Check className={`${getIconClass()} mr-1`} />
+                              {cardScale === "small" ? "✓" : "Copied!"}
+                            </>
+                          ) : (
+                            <>
+                              <Copy className={`${getIconClass()} mr-1`} />
+                              {cardScale === "small" ? "Copy" : "Copy"}
+                            </>
+                          )}
+                        </Button>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              asChild
+                              className={`focus-ring bg-transparent ${cardScale === "small" ? "h-7 w-7" : ""}`}
+                            >
+                              <a
+                                href={`https://danbooru.donmai.us/posts/${post.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="View original post"
+                              >
+                                <ExternalLink className={getIconClass()} />
+                              </a>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>View original post</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          ) : (
+            /* List View */
+            <div className="space-y-4 mb-8">
+              {posts.map((post, index) => {
+                const cleanedPrompt = cleanPrompt(
+                  post.tag_string,
+                  post.tag_string_artist,
+                  post.tag_string_character,
+                  post.tag_string_copyright,
+                )
+
+                return (
+                  <Card key={`${post.id}-${index}`} className="overflow-hidden card-hover">
+                    <CardContent className="p-6">
+                      <div className="flex gap-6">
+                        <div className="image-container-list-2-3">
+                          {(post.large_file_url || post.file_url)?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i) ? (
+                            <Image
+                              src={post.large_file_url || post.file_url}
+                              alt={`Danbooru post ${post.id}`}
+                              fill
+                              className="object-cover"
+                              sizes="128px"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <div className="text-2xl">🎬</div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">ID: {post.id}</Badge>
+                                {post.score > 0 && (
+                                  <Badge variant="secondary">
+                                    <Eye className="w-3 h-3 mr-1" />
+                                    {post.score}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => toggleFavorite(post.id)}
+                                className="focus-ring"
+                                aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+                              >
+                                <Heart
+                                  className={`h-4 w-4 ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
+                                />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="bg-muted/50 p-3 rounded-lg max-h-20 overflow-y-auto">
+                            <p className="text-sm text-foreground/80 leading-relaxed">
+                              {cleanedPrompt || "No tags available"}
+                            </p>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => copyToClipboard(cleanedPrompt, post.id)}
+                              variant={copiedId === post.id ? "default" : "outline"}
+                              disabled={!cleanedPrompt}
+                              className="focus-ring"
+                            >
+                              {copiedId === post.id ? (
+                                <>
+                                  <Check className="w-4 h-4 mr-2" />
+                                  Copied!
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-4 h-4 mr-2" />
+                                  Copy Prompt
+                                </>
+                              )}
+                            </Button>
+
+                            <Button variant="outline" asChild className="focus-ring bg-transparent">
+                              <a
+                                href={`https://danbooru.donmai.us/posts/${post.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <ExternalLink className="w-4 h-4 mr-2" />
+                                View Original
+                              </a>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Load More Button */}
+          {posts.length > 0 && (
+            <div className="text-center">
+              <Button onClick={loadMore} disabled={isLoadingMore} size="lg" className="px-8 focus-ring">
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Loading more...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    Load More
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* Loading State */}
+          {isLoading && posts.length === 0 && (
+            <div className="text-center py-12">
+              <div className="space-y-4">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+                <div className="space-y-2">
+                  <p className="text-lg font-medium">Loading images...</p>
+                  <p className="text-sm text-muted-foreground">Fetching the latest content from Danbooru</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!isLoading && posts.length === 0 && (
+            <div className="text-center py-12">
+              <div className="space-y-4">
+                <div className="text-6xl">🎨</div>
+                <div className="space-y-2">
+                  <p className="text-lg font-medium">No images found</p>
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                    Try adjusting your search terms or filters to discover more content
+                  </p>
+                </div>
+                <Button onClick={clearSearch} variant="outline" className="focus-ring bg-transparent">
+                  Clear Search
+                </Button>
+              </div>
+            </div>
+          )}
+        </main>
+
+        {/* Footer */}
+        <footer className="border-t bg-muted/30 mt-16">
+          <div className="container mx-auto px-4 py-8">
+            <div className="text-center space-y-4">
+              <div className="flex items-center justify-center space-x-2">
+                <span className="text-sm text-muted-foreground">Powered by</span>
+                <Badge variant="outline">Danbooru API</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground max-w-2xl mx-auto">
+                This tool helps generate AI art prompts from curated image collections. All images are sourced from
+                Danbooru and belong to their respective creators.
+              </p>
+            </div>
+          </div>
+        </footer>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
