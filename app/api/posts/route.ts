@@ -27,18 +27,22 @@ interface DanbooruPost {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const page = searchParams.get('page') || '1'
-  const tags = searchParams.get('tags') || 'rating:safe score:>5'
+  const tags = searchParams.get('tags') || 'rating:safe'
+  const order = searchParams.get('order') || 'popular'
   
   // Cache configuration
-  const cacheKey = `danbooru-${tags}-${page}`
+  const cacheKey = `danbooru-${tags}-${page}-${order}`
   const cacheDuration = 300 // 5 minutes in seconds
   
   try {
     // Build optimized URL
+    const orderParam = order === 'recent' ? 'id:desc' : 'rank'
+    const finalTags = tags ? `${tags} order:${orderParam}` : `order:${orderParam}`
+    
     const params = new URLSearchParams({
       ...API_CONFIG.defaultParams,
       page,
-      tags,
+      tags: finalTags,
     })
 
     const url = `${API_CONFIG.baseUrl}/posts.json?${params}`

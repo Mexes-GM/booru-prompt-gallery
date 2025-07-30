@@ -310,7 +310,7 @@ function cleanPrompt(tagString: string, artistTags: string, characterTags: strin
 // Función para validar y limpiar queries de búsqueda
 const validateAndCleanQuery = (query: string, ratingFilter: string): string => {
   if (!query || query.trim() === "") {
-    return ratingFilter ? `${ratingFilter} score:>5` : "score:>5"
+    return ratingFilter || ""
   }
 
   // Limpiar caracteres problemáticos
@@ -343,16 +343,17 @@ const fetchPosts = async (
   toast: any,
   setIsSearching: any,
   ratingFilter: string,
+  order: string = "popular",
 ) => {
   setLoading(true)
 
   try {
     const searchQuery = customTags || searchTags
-    const baseQuery = `${ratingFilter} score:>5`
+    const baseQuery = `${ratingFilter}`
     const finalQuery = searchQuery ? `${baseQuery} ${searchQuery}` : baseQuery
 
     // Crear clave de cache única
-    const cacheKey = `${finalQuery}-${pageNum}`
+    const cacheKey = `${finalQuery}-${pageNum}-${order}`
 
     // Verificar cache primero
     const cached = API_CACHE.get(cacheKey)
@@ -587,6 +588,7 @@ const useOptimizedPosts = (searchTags: string, ratingFilter: string) => {
 export default function DanbooruPromptGenerator() {
   const [searchTags, setSearchTags] = useState("")
   const [ratingFilter, setRatingFilter] = useState("rating:safe")
+  const [order, setOrder] = useState<"popular" | "recent">("popular")
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const { toast } = useToast()
 
@@ -597,7 +599,7 @@ export default function DanbooruPromptGenerator() {
     isValidating,
     size,
     setSize,
-  } = useInfinitePosts(searchTags, ratingFilter)
+  } = useInfinitePosts(searchTags, ratingFilter, order)
   
   const posts = pages ? pages.flat() : []
   const isLoadingMore = isValidating && size > 1
@@ -645,6 +647,11 @@ export default function DanbooruPromptGenerator() {
     }
   }, [error, toast])
 
+  // Refresh when order changes
+  useEffect(() => {
+    refresh()
+  }, [order])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
       <div className="max-w-7xl mx-auto">
@@ -676,24 +683,40 @@ export default function DanbooruPromptGenerator() {
                 )}
               </div>
               
-              {/* Rating Filter */}
-              <div className="flex items-center gap-4">
-                <label className="text-sm font-medium text-gray-700">Filtro de contenido:</label>
-                <select
-                  value={ratingFilter}
-                  onChange={(e) => setRatingFilter(e.target.value)}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="rating:safe">Safe</option>
-                  <option value="rating:questionable">Questionable</option>
-                  <option value="rating:explicit">Explicit</option>
-                  <option value="">Todos</option>
-                </select>
+              {/* Filters */}
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700">Filtro de contenido:</label>
+                  <select
+                    value={ratingFilter}
+                    onChange={(e) => setRatingFilter(e.target.value)}
+                    className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="rating:safe">Safe</option>
+                    <option value="rating:questionable">Questionable</option>
+                    <option value="rating:explicit">Explicit</option>
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700">Ordenar por:</label>
+                  <select
+                    value={order}
+                    onChange={(e) => setOrder(e.target.value as "popular" | "recent")}
+                    className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="popular">Más populares</option>
+                    <option value="recent">Más recientes</option>
+                  </select>
+                </div>
               </div>
             </form>
             {searchTags && (
               <p className="text-sm text-gray-500 mt-2">
-                Buscando: <span className="font-medium">{searchTags}</span> | Filtro: <span className="font-medium">{ratingFilter.replace('rating:', '') || 'Todos'}</span>
+                Buscando: <span className="font-medium">{searchTags}</span> | 
+                Filtro: <span className="font-medium">{ratingFilter.replace('rating:', '') || 'Todos'}</span> | 
+                Orden: <span className="font-medium">{order === 'popular' ? 'Más populares' : 'Más recientes'}</span>
               </p>
             )}
           </div>
