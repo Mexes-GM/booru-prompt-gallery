@@ -39,12 +39,12 @@ const fetcher = async (url: string) => {
 }
 
 // Get posts with caching
-export const usePosts = (page: number, tags: string = '', ratingFilter: string = 'rating:safe') => {
-  const query = tags ? `${ratingFilter} score:>5 ${tags}` : `${ratingFilter} score:>5`
+export const usePosts = (page: number, tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
+  const query = tags ? `${ratingFilter} ${tags}` : `${ratingFilter}`
   const encodedQuery = encodeURIComponent(query)
   
   return useSWR<DanbooruPost[]>(
-    `/api/posts?page=${page}&tags=${encodedQuery}`,
+    `/api/posts?page=${page}&tags=${encodedQuery}&order=${order}`,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -56,17 +56,17 @@ export const usePosts = (page: number, tags: string = '', ratingFilter: string =
 }
 
 // Infinite scroll for posts
-export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rating:safe') => {
-  const query = tags ? `${ratingFilter} score:>5 ${tags}` : `${ratingFilter} score:>5`
+export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
+  const query = tags ? `${ratingFilter} ${tags}` : `${ratingFilter}`
   const encodedQuery = encodeURIComponent(query)
   
   return useSWRInfinite<DanbooruPost[]>(
-    (pageIndex: number) => `/api/posts?page=${pageIndex + 1}&tags=${encodedQuery}`,
+    (pageIndex: number) => `/api/posts?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`,
     fetcher,
     {
       revalidateFirstPage: false,
       revalidateAll: false,
-      persistSize: true,
+      persistSize: false,
       revalidateOnFocus: false,
       dedupingInterval: 60000,
     }
@@ -89,10 +89,10 @@ export const useTags = (category?: number) => {
 }
 
 // Prefetch posts for next page
-export const prefetchPosts = async (page: number, tags: string = '', ratingFilter: string = 'rating:safe') => {
-  const query = tags ? `${ratingFilter} score:>5 ${tags}` : `${ratingFilter} score:>5`
+export const prefetchPosts = async (page: number, tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
+  const query = tags ? `${ratingFilter} ${tags}` : `${ratingFilter}`
   const encodedQuery = encodeURIComponent(query)
-  const url = `/api/posts?page=${page}&tags=${encodedQuery}`
+  const url = `/api/posts?page=${page}&tags=${encodedQuery}&order=${order}`
   
   try {
     await fetch(url, { method: 'HEAD' })
@@ -102,9 +102,9 @@ export const prefetchPosts = async (page: number, tags: string = '', ratingFilte
 }
 
 // Batch prefetch
-export const prefetchBatch = async (pages: number[], tags: string = '', ratingFilter: string = 'rating:safe') => {
+export const prefetchBatch = async (pages: number[], tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
   const promises = pages.map(page => 
-    prefetchPosts(page, tags, ratingFilter)
+    prefetchPosts(page, tags, ratingFilter, order)
   )
   
   await Promise.allSettled(promises)
