@@ -20,12 +20,17 @@ export interface TagData {
   aliases?: string[]
 }
 
-// Custom fetcher with error handling
+// Production fetcher with error handling and retry logic
 const fetcher = async (url: string) => {
-  const res = await fetch(url)
+  const res = await fetch(url, {
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'BooruPromptGallery/1.0',
+    }
+  })
   
   if (!res.ok) {
-    const error = new Error('An error occurred while fetching the data.') as Error & { info?: any; status?: number }
+    const error = new Error('Failed to fetch data') as Error & { info?: any; status?: number }
     try {
       error.info = await res.json()
     } catch {
@@ -38,9 +43,10 @@ const fetcher = async (url: string) => {
   return res.json()
 }
 
-// Get posts with caching
+// Get posts with production caching
 export const usePosts = (page: number, tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
-  const query = tags ? `${ratingFilter} ${tags}` : `${ratingFilter}`
+  const ratingPart = ratingFilter ? `${ratingFilter} ` : ''
+  const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
   return useSWR<DanbooruPost[]>(
@@ -48,32 +54,40 @@ export const usePosts = (page: number, tags: string = '', ratingFilter: string =
     fetcher,
     {
       revalidateOnFocus: false,
-      revalidateOnReconnect: false,
-      dedupingInterval: 60000, // 1 minute
-      focusThrottleInterval: 30000, // 30 seconds
+      revalidateOnReconnect: true,
+      dedupingInterval: 300000, // 5 minutes for production
+      focusThrottleInterval: 60000, // 1 minute
+      shouldRetryOnError: true,
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
     }
   )
 }
 
-// Infinite scroll for posts
+// Infinite scroll for posts - production optimized
 export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
-  const query = tags ? `${ratingFilter} ${tags}` : `${ratingFilter}`
+  const ratingPart = ratingFilter ? `${ratingFilter} ` : ''
+  const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
   return useSWRInfinite<DanbooruPost[]>(
     (pageIndex: number) => `/api/posts?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`,
     fetcher,
     {
-      revalidateFirstPage: false,
-      revalidateAll: false,
+      revalidateFirstPage: true,
+      revalidateAll: true,
       persistSize: false,
       revalidateOnFocus: false,
-      dedupingInterval: 60000,
+      revalidateOnReconnect: true,
+      dedupingInterval: 300000, // 5 minutes for production
+      shouldRetryOnError: true,
+      errorRetryCount: 3,
+      errorRetryInterval: 1000,
     }
   )
 }
 
-// Get tags with caching
+// Get tags with production caching
 export const useTags = (category?: number) => {
   const url = category !== undefined ? `/api/tags?category=${category}` : '/api/tags'
   
@@ -82,27 +96,43 @@ export const useTags = (category?: number) => {
     fetcher,
     {
       revalidateOnFocus: false,
-      revalidateOnReconnect: false,
-      dedupingInterval: 300000, // 5 minutes
+      revalidateOnReconnect: true,
+      dedupingInterval: 600000, // 10 minutes for production
+      shouldRetryOnError: true,
+      errorRetryCount: 2,
+      errorRetryInterval: 2000,
     }
   )
 }
 
-// Prefetch posts for next page
+// Prefetch posts for next page - production optimized
 export const prefetchPosts = async (page: number, tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
-  const query = tags ? `${ratingFilter} ${tags}` : `${ratingFilter}`
+  const ratingPart = ratingFilter ? `${ratingFilter} ` : ''
+  const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   const url = `/api/posts?page=${page}&tags=${encodedQuery}&order=${order}`
   
   try {
-    await fetch(url, { method: 'HEAD' })
+    await fetch(url, { 
+      method: 'HEAD',
+      headers: {
+        'User-Agent': 'BooruPromptGallery/1.0',
+      }
+    })
   } catch (error) {
-    console.warn('Prefetch failed:', error)
+    // Silently fail prefetch in production
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('Prefetch failed:', error)
+    }
   }
 }
 
-// Batch prefetch
+// Batch prefetch - production optimized
 export const prefetchBatch = async (pages: number[], tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
+  if (pages.length > 5) {
+    pages = pages.slice(0, 5) // Limit prefetch to 5 pages in production
+  }
+  
   const promises = pages.map(page => 
     prefetchPosts(page, tags, ratingFilter, order)
   )
