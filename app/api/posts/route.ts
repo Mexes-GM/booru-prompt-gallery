@@ -27,7 +27,7 @@ interface DanbooruPost {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const page = searchParams.get('page') || '1'
-  const tags = searchParams.get('tags') || 'rating:safe'
+  const tags = searchParams.get('tags') || ''
   const order = searchParams.get('order') || 'popular'
   
   // Cache configuration
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   try {
     // Build optimized URL
     const orderParam = order === 'recent' ? 'id:desc' : 'rank'
-    const finalTags = tags ? `${tags} order:${orderParam}` : `order:${orderParam}`
+    const finalTags = tags ? `${tags} order:${orderParam}` : `score:>5 order:${orderParam}`
     
     const params = new URLSearchParams({
       ...API_CONFIG.defaultParams,
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       signal: controller.signal,
       headers: {
         'Accept': 'application/json',
-        'User-Agent': 'DanbooruPromptGenerator/1.0',
+        'User-Agent': 'BooruPromptGallery/1.0',
         'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
       },
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json()
     
-    // Filter valid posts (exclude video files)
+    // Filter valid posts (exclude video files and deleted)
     const validPosts: DanbooruPost[] = data.filter((post: any) => 
       post && 
       post.file_url && 

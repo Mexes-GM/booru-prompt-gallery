@@ -300,7 +300,8 @@ function cleanPrompt(tagString: string, artistTags: string, characterTags: strin
 
   const finalTags = Array.from(allFinalTags)
 
-  if (qualityTags.length === 0 && allTags.some((tag) => tag.toLowerCase() === "masterpiece")) {
+  // Always add "masterpiece" tag at the end
+  if (!finalTags.includes("masterpiece")) {
     finalTags.push("masterpiece")
   }
 
@@ -547,44 +548,6 @@ const cleanOldCache = () => {
   }
 }
 
-// Optimized data fetching with SWR and edge caching
-const useOptimizedPosts = (searchTags: string, ratingFilter: string) => {
-  const query = searchTags ? `${ratingFilter} score:>5 ${searchTags}` : `${ratingFilter} score:>5`
-  
-  const {
-    data,
-    error,
-    size,
-    setSize,
-    isValidating,
-    mutate,
-  } = useInfinitePosts(query, ratingFilter)
-
-  const posts = data ? data.flat() : []
-  const isLoading = !data && !error
-  const isLoadingMore = isLoading || (size > 0 && data && typeof data[size - 1] === "undefined")
-  
-  const loadMore = useCallback(() => {
-    if (!isLoadingMore) {
-      setSize(size + 1)
-    }
-  }, [setSize, size, isLoadingMore])
-
-  const refresh = useCallback(() => {
-    mutate()
-  }, [mutate])
-
-  return {
-    posts,
-    isLoading,
-    isLoadingMore,
-    loadMore,
-    refresh,
-    error,
-    size,
-  }
-}
-
 export default function DanbooruPromptGenerator() {
   const [searchTags, setSearchTags] = useState("")
   const [ratingFilter, setRatingFilter] = useState("rating:safe")
@@ -599,12 +562,13 @@ export default function DanbooruPromptGenerator() {
     isValidating,
     size,
     setSize,
+    mutate,
   } = useInfinitePosts(searchTags, ratingFilter, order)
   
   const posts = pages ? pages.flat() : []
   const isLoadingMore = isValidating && size > 1
   const loadMore = () => setSize(size + 1)
-  const refresh = () => setSize(1)
+  const refresh = () => mutate()
 
   const copyToClipboard = async (prompt: string, postId: number) => {
     try {
@@ -647,18 +611,17 @@ export default function DanbooruPromptGenerator() {
     }
   }, [error, toast])
 
-  // Refresh when order changes
+  // Refresh when order or ratingFilter changes
   useEffect(() => {
     refresh()
-  }, [order])
+  }, [order, ratingFilter])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Danbooru Prompt Generator</h1>
-          <p className="text-gray-600 mb-6">Genera prompts de alta calidad para IA a partir de imágenes de Danbooru</p>
+        <div className="text-center mb-6">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Booru Prompt Gallery</h1>
 
           {/* Search Bar */}
           <div className="max-w-2xl mx-auto mb-6">
@@ -728,7 +691,7 @@ export default function DanbooruPromptGenerator() {
         </div>
 
         {/* Gallery Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5 md:gap-6 mb-8">
           {posts.map((post) => {
             const cleanedPrompt = cleanPrompt(
               post.tag_string,
