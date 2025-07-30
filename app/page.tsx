@@ -274,7 +274,7 @@ export default function DanbooruPromptGenerator() {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                  Booru Gallery
+                  Danbooru Prompt Gallery
                 </h1>
                 <Badge variant="secondary" className="hidden sm:inline-flex">
                   AI Prompt Generator
@@ -357,9 +357,9 @@ export default function DanbooruPromptGenerator() {
           <div className="max-w-4xl mx-auto mb-8 space-y-6">
             <div className="text-center space-y-2">
               <h2 className="text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
-              <p className="text-muted-foreground max-w-2xl mx-auto">
-                Explore curated image collections and generate high-quality prompts for your AI art projects
-              </p>
+                <p className="text-muted-foreground max-w-2xl mx-auto">
+                  Generate prompts from Danbooru image tags. Our system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for your AI art generation.
+                </p>
             </div>
 
             {/* Search Form */}
@@ -555,15 +555,7 @@ export default function DanbooruPromptGenerator() {
                         </Tooltip>
                       </div>
 
-                      {/* Score badge */}
-                      {post.score > 0 && (
-                        <div className="absolute bottom-2 left-2">
-                          <Badge variant="secondary" className={`glass-effect ${getBadgeClass()}`}>
-                            <Eye className={`${getIconClass()} mr-1`} />
-                            {post.score}
-                          </Badge>
-                        </div>
-                      )}
+
                     </div>
 
                     <CardContent className={getCardContentClass()}>
@@ -653,12 +645,6 @@ export default function DanbooruPromptGenerator() {
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline">ID: {post.id}</Badge>
-                                {post.score > 0 && (
-                                  <Badge variant="secondary">
-                                    <Eye className="w-3 h-3 mr-1" />
-                                    {post.score}
-                                  </Badge>
-                                )}
                               </div>
                             </div>
 
@@ -794,8 +780,7 @@ export default function DanbooruPromptGenerator() {
                 <Badge variant="outline">Danbooru API</Badge>
               </div>
               <p className="text-xs text-muted-foreground max-w-2xl mx-auto">
-                This tool helps generate AI art prompts from curated image collections. All images are sourced from
-                Danbooru and belong to their respective creators.
+                Generate prompts from Danbooru image tags. Our system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation. All images are sourced from Danbooru and belong to their respective creators.
               </p>
             </div>
           </div>

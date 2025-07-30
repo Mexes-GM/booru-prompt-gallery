@@ -8,13 +8,13 @@ import { Toaster } from "@/components/ui/toaster"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Booru Prompt Gallery - AI Art Prompt Generator",
-  description: "Discover and generate high-quality AI art prompts from curated image collections",
+  title: "Danbooru Prompt Gallery - AI Art Prompt Generator",
+  description: "Generate high-quality prompts from Danbooru image tags. Our system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
   keywords: ["AI art", "prompts", "danbooru", "image generation", "stable diffusion"],
-  authors: [{ name: "Booru Gallery" }],
+  authors: [{ name: "Danbooru Prompt Gallery" }],
   openGraph: {
-    title: "Booru Prompt Gallery",
-    description: "Discover and generate high-quality AI art prompts from curated image collections",
+    title: "Danbooru Prompt Gallery",
+    description: "Generate high-quality prompts from Danbooru image tags. Our system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
     type: "website",
   },
     generator: 'v0.dev'
