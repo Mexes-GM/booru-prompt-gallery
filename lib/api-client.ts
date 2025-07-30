@@ -44,8 +44,8 @@ const fetcher = async (url: string) => {
 }
 
 // Get posts with production caching
-export const usePosts = (page: number, tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
-  const ratingPart = ratingFilter ? `${ratingFilter} ` : ''
+export const usePosts = (page: number, tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
+  const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
   const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
@@ -65,8 +65,8 @@ export const usePosts = (page: number, tags: string = '', ratingFilter: string =
 }
 
 // Infinite scroll for posts - production optimized
-export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
-  const ratingPart = ratingFilter ? `${ratingFilter} ` : ''
+export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
+  const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
   const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
@@ -75,7 +75,7 @@ export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rati
     fetcher,
     {
       revalidateFirstPage: true,
-      revalidateAll: true,
+      revalidateAll: false,
       persistSize: false,
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
@@ -106,8 +106,8 @@ export const useTags = (category?: number) => {
 }
 
 // Prefetch posts for next page - production optimized
-export const prefetchPosts = async (page: number, tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
-  const ratingPart = ratingFilter ? `${ratingFilter} ` : ''
+export const prefetchPosts = async (page: number, tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
+  const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
   const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   const url = `/api/posts?page=${page}&tags=${encodedQuery}&order=${order}`
@@ -128,7 +128,7 @@ export const prefetchPosts = async (page: number, tags: string = '', ratingFilte
 }
 
 // Batch prefetch - production optimized
-export const prefetchBatch = async (pages: number[], tags: string = '', ratingFilter: string = 'rating:safe', order: string = 'popular') => {
+export const prefetchBatch = async (pages: number[], tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
   if (pages.length > 5) {
     pages = pages.slice(0, 5) // Limit prefetch to 5 pages in production
   }
