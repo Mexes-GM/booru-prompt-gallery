@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,13 +48,14 @@ type CardScale = "small" | "medium" | "large"
 
 export default function DanbooruPromptGenerator() {
   const [searchTags, setSearchTags] = useState("")
-  const [ratingFilter, setRatingFilter] = useState("rating:safe")
+  const [ratingFilter, setRatingFilter] = useState("rating:general")
   const [order, setOrder] = useState<"popular" | "recent">("popular")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [cardScale, setCardScale] = useState<CardScale>("medium")
   const [scaleValue, setScaleValue] = useState([2]) // 1=small, 2=medium, 3=large
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
+  const [showFavorites, setShowFavorites] = useState(false)
   const { toast } = useToast()
 
   const {
@@ -67,10 +68,21 @@ export default function DanbooruPromptGenerator() {
     mutate,
   } = useInfinitePosts(searchTags, ratingFilter, order)
 
-  const posts = pages ? pages.flat() : []
+  // Ensure initial load
+  useEffect(() => {
+    if (size === 0 && !isLoading) {
+      setSize(1)
+    }
+  }, [size, isLoading, setSize])
+
+  const allPosts = pages ? pages.flat() : []
+  const posts = showFavorites ? allPosts.filter(post => favorites.has(post.id)) : allPosts
   const isLoadingMore = isValidating && size > 1
   const loadMore = () => setSize(size + 1)
-  const refresh = () => mutate()
+  const refresh = () => {
+    // Force revalidation of current data
+    mutate(undefined, { revalidate: true })
+  }
 
   // Update card scale based on slider value
   useEffect(() => {
@@ -99,6 +111,8 @@ export default function DanbooruPromptGenerator() {
   }
 
   const toggleFavorite = (postId: number) => {
+    const isCurrentlyFavorited = favorites.has(postId)
+    
     setFavorites((prev) => {
       const newFavorites = new Set(prev)
       if (newFavorites.has(postId)) {
@@ -108,16 +122,41 @@ export default function DanbooruPromptGenerator() {
       }
       return newFavorites
     })
+    
+    // Show toast based on the action that will be performed
+    if (isCurrentlyFavorited) {
+      toast({
+        title: "Removed from favorites",
+        description: "Image removed from your favorites",
+      })
+    } else {
+      toast({
+        title: "Added to favorites",
+        description: "Image added to your favorites",
+      })
+    }
   }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    refresh()
+    setSize(1)
   }
 
   const clearSearch = () => {
     setSearchTags("")
-    refresh()
+    setSize(1)
+  }
+
+  const toggleShowFavorites = () => {
+    setShowFavorites(!showFavorites)
+  }
+
+  const clearFavorites = () => {
+    setFavorites(new Set())
+    toast({
+      title: "Favorites cleared",
+      description: "All favorites have been removed",
+    })
   }
 
   const decreaseScale = () => {
@@ -128,21 +167,51 @@ export default function DanbooruPromptGenerator() {
     setScaleValue([Math.min(3, scaleValue[0] + 1)])
   }
 
-  // Handle errors
+  // Load favorites from localStorage on mount
   useEffect(() => {
-    if (error) {
+    if (typeof window !== 'undefined') {
+      const savedFavorites = localStorage.getItem('booruFavorites')
+      if (savedFavorites) {
+        try {
+          const favoritesArray = JSON.parse(savedFavorites)
+          setFavorites(new Set(favoritesArray))
+        } catch (error) {
+          console.error('Error loading favorites:', error)
+          setFavorites(new Set())
+        }
+      }
+    }
+  }, [])
+
+  // Save favorites to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('booruFavorites', JSON.stringify(Array.from(favorites)))
+      } catch (error) {
+        console.error('Error saving favorites:', error)
+      }
+    }
+  }, [favorites])
+
+  // Handle errors
+  const hasMounted = useRef(false)
+  
+  useEffect(() => {
+    if (hasMounted.current && error) {
       toast({
         title: "Connection error",
         description: error.message || "Could not load images",
         variant: "destructive",
       })
     }
+    hasMounted.current = true
   }, [error, toast])
 
-  // Refresh when order or ratingFilter changes
+  // Reset to first page when filters change
   useEffect(() => {
-    refresh()
-  }, [order, ratingFilter])
+    setSize(1)
+  }, [order, ratingFilter, searchTags])
 
   const getGridClass = () => {
     switch (cardScale) {
@@ -321,10 +390,11 @@ export default function DanbooruPromptGenerator() {
                         <SelectValue placeholder="Content rating" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="rating:safe">Safe</SelectItem>
+                        <SelectItem value="rating:general">General</SelectItem>
+                        <SelectItem value="rating:sensitive">Sensitive</SelectItem>
                         <SelectItem value="rating:questionable">Questionable</SelectItem>
                         <SelectItem value="rating:explicit">Explicit</SelectItem>
-                        <SelectItem value="all">All ratings</SelectItem>
+                        <SelectItem value="all">No filter (All)</SelectItem>
                       </SelectContent>
                     </Select>
 
@@ -337,6 +407,16 @@ export default function DanbooruPromptGenerator() {
                         <SelectItem value="recent">Most recent</SelectItem>
                       </SelectContent>
                     </Select>
+
+                    <Button
+                      type="button"
+                      variant={showFavorites ? "default" : "outline"}
+                      onClick={toggleShowFavorites}
+                      className="focus-ring"
+                    >
+                      <Heart className={`w-4 h-4 mr-2 ${showFavorites ? "fill-white" : ""}`} />
+                      Favorites ({favorites.size})
+                    </Button>
 
                     <div className="flex gap-2 ml-auto">
                       <Button type="submit" disabled={isLoading} className="focus-ring">
@@ -363,25 +443,43 @@ export default function DanbooruPromptGenerator() {
                         type="button"
                         variant="outline"
                         onClick={refresh}
-                        disabled={isLoading}
+                        disabled={isValidating}
                         className="focus-ring bg-transparent"
                       >
-                        <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`w-4 h-4 ${isValidating ? "animate-spin" : ""}`} />
                       </Button>
                     </div>
                   </div>
                 </form>
 
                 {/* Active filters display */}
-                {(searchTags || ratingFilter !== "rating:safe") && (
+                {(searchTags || ratingFilter !== "rating:general" || showFavorites) && (
                   <div className="mt-4 pt-4 border-t border-border/50">
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                       <span>Active filters:</span>
                       {searchTags && <Badge variant="secondary">Tags: {searchTags}</Badge>}
-                      {ratingFilter && ratingFilter !== "rating:safe" && (
+                      {ratingFilter && ratingFilter !== "rating:general" && ratingFilter !== "all" && (
                         <Badge variant="secondary">Rating: {ratingFilter.replace("rating:", "")}</Badge>
                       )}
+                      {ratingFilter === "all" && (
+                        <Badge variant="secondary">No rating filter</Badge>
+                      )}
                       <Badge variant="secondary">Sort: {order === "popular" ? "Most popular" : "Most recent"}</Badge>
+                      {showFavorites && (
+                        <Badge variant="secondary" className="bg-red-500/20 text-red-500">
+                          Favorites Only ({favorites.size})
+                        </Badge>
+                      )}
+                      {favorites.size > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={clearFavorites}
+                          className="text-xs h-6 px-2"
+                        >
+                          Clear Favorites
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -626,7 +724,7 @@ export default function DanbooruPromptGenerator() {
           )}
 
           {/* Load More Button */}
-          {posts.length > 0 && (
+          {posts.length > 0 && !showFavorites && (
             <div className="text-center">
               <Button onClick={loadMore} disabled={isLoadingMore} size="lg" className="px-8 focus-ring">
                 {isLoadingMore ? (
@@ -661,16 +759,27 @@ export default function DanbooruPromptGenerator() {
           {!isLoading && posts.length === 0 && (
             <div className="text-center py-12">
               <div className="space-y-4">
-                <div className="text-6xl">🎨</div>
+                <div className="text-6xl">{showFavorites ? "❤️" : "🎨"}</div>
                 <div className="space-y-2">
-                  <p className="text-lg font-medium">No images found</p>
+                  <p className="text-lg font-medium">
+                    {showFavorites ? "No favorites yet" : "No images found"}
+                  </p>
                   <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                    Try adjusting your search terms or filters to discover more content
+                    {showFavorites 
+                      ? "Add images to your favorites by clicking the heart icon on any image"
+                      : "Try adjusting your search terms or filters to discover more content"
+                    }
                   </p>
                 </div>
-                <Button onClick={clearSearch} variant="outline" className="focus-ring bg-transparent">
-                  Clear Search
-                </Button>
+                {showFavorites ? (
+                  <Button onClick={() => setShowFavorites(false)} variant="outline" className="focus-ring bg-transparent">
+                    Browse All Images
+                  </Button>
+                ) : (
+                  <Button onClick={clearSearch} variant="outline" className="focus-ring bg-transparent">
+                    Clear Search
+                  </Button>
+                )}
               </div>
             </div>
           )}
