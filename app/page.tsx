@@ -398,7 +398,7 @@ export default function DanbooruPromptGenerator() {
               <CardContent className="p-6">
                 <form onSubmit={handleSearch} className="space-y-4">
                   {/* API Query Tags Display */}
-                  {(searchTags || ratingFilter !== "rating:general" || order === "popular") && (
+                  {getFinalQueryTags(searchTags, ratingFilter, order).length > 0 && (
                     <div className="mb-4">
                       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-2">
                         <span className="font-medium">Sending to Danbooru API:</span>
