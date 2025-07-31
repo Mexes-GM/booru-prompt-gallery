@@ -48,6 +48,7 @@ type CardScale = "small" | "medium" | "large"
 
 export default function DanbooruPromptGenerator() {
   const [searchTags, setSearchTags] = useState("")
+  const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
   const [ratingFilter, setRatingFilter] = useState("rating:general")
   const [order, setOrder] = useState<"popular" | "recent">("popular")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
@@ -208,10 +209,21 @@ export default function DanbooruPromptGenerator() {
     hasMounted.current = true
   }, [error, toast])
 
+  // Debounce search tags
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTags(searchTags)
+    }, 500) // 500ms debounce delay
+
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [searchTags])
+
   // Reset to first page when filters change
   useEffect(() => {
     setSize(1)
-  }, [order, ratingFilter, searchTags])
+  }, [order, ratingFilter, debouncedSearchTags])
 
   const getGridClass = () => {
     switch (cardScale) {
