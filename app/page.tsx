@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Copy,
   Check,
@@ -21,11 +22,12 @@ import {
   Download,
   ZoomIn,
   ZoomOut,
+  AlertTriangle,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
-import { useInfinitePosts } from "@/lib/api-client"
+import { useInfinitePosts, hasMultipleTags } from "@/lib/api-client"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
@@ -384,11 +386,24 @@ export default function DanbooruPromptGenerator() {
                       type="text"
                       value={searchTags}
                       onChange={(e) => setSearchTags(e.target.value)}
-                      placeholder="Search by tags (e.g., cat girl, blue eyes, long hair)"
+                      placeholder="Search by one tag only (e.g., cat_girl)"
                       className="pl-10 focus-ring"
                       aria-label="Search tags"
                     />
                   </div>
+
+                  {/* Warning for multiple tags */}
+                  {hasMultipleTags(searchTags) && (
+                    <Alert 
+                      variant="destructive" 
+                      className="mt-2 bg-red-50 border-red-200 text-red-800 dark:bg-red-950/50 dark:border-red-800/50 dark:text-red-200"
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        Danbooru API only allows searching by 1 tag. Only the first tag "{searchTags.split(',')[0].trim()}" will be used for the search.
+                      </AlertDescription>
+                    </Alert>
+                  )}
 
                   {/* Filters */}
                   <div className="flex flex-wrap items-center gap-4">

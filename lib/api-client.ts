@@ -43,10 +43,39 @@ const fetcher = async (url: string) => {
   return res.json()
 }
 
+// Function to process user input tags for Danbooru API
+// Danbooru API only allows 2 tags total, and order: counts as 1 tag, so we limit to 1 user tag
+const processTagsForAPI = (tags: string): string => {
+  if (!tags.trim()) return ''
+  
+  // Split by commas and process each tag
+  const processedTags = tags
+    .split(',')
+    .map(tag => tag.trim())
+    .filter(tag => tag.length > 0)
+    .map(tag => tag.replace(/\s+/g, '_')) // Replace spaces with underscores
+  
+  // Only use the first tag to avoid API errors (Danbooru limit: 2 tags total, order: counts as 1)
+  return processedTags.length > 0 ? processedTags[0] : ''
+}
+
+// Function to check if user entered multiple tags
+export const hasMultipleTags = (tags: string): boolean => {
+  if (!tags.trim()) return false
+  
+  const tagCount = tags
+    .split(',')
+    .map(tag => tag.trim())
+    .filter(tag => tag.length > 0).length
+  
+  return tagCount > 1
+}
+
 // Get posts with production caching
 export const usePosts = (page: number, tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
+  const processedTags = processTagsForAPI(tags)
+  const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
   return useSWR<DanbooruPost[]>(
@@ -67,7 +96,8 @@ export const usePosts = (page: number, tags: string = '', ratingFilter: string =
 // Infinite scroll for posts - production optimized
 export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
+  const processedTags = processTagsForAPI(tags)
+  const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
   return useSWRInfinite<DanbooruPost[]>(
@@ -108,7 +138,8 @@ export const useTags = (category?: number) => {
 // Prefetch posts for next page - production optimized
 export const prefetchPosts = async (page: number, tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const query = tags ? `${ratingPart}${tags}` : ratingPart.trim()
+  const processedTags = processTagsForAPI(tags)
+  const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   const url = `/api/posts?page=${page}&tags=${encodedQuery}&order=${order}`
   
