@@ -8,8 +8,7 @@ interface TagData {
   aliases?: string[]
 }
 
-// In-memory cache for tags
-let tagsCache: TagData[] | null = null
+let tagsCache: any = null
 let cacheTimestamp = 0
 const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours
 
@@ -18,7 +17,6 @@ export async function GET(request: NextRequest) {
   const category = searchParams.get('category')
   
   try {
-    // Check if we have cached tags
     const now = Date.now()
     if (!tagsCache || now - cacheTimestamp > CACHE_DURATION) {
       try {
@@ -62,8 +60,6 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error fetching tags:', error)
-    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500, headers: { 'Cache-Control': 'no-cache' } }

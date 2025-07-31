@@ -4,12 +4,22 @@
   "installCommand": "npm install",
   "framework": "nextjs",
   "outputDirectory": ".next",
-  "regions": ["iad1"],
   "functions": {
     "app/api/**/*": {
-      "maxDuration": 30
+      "maxDuration": 10
     }
   },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, s-maxage=300, stale-while-revalidate=600"
+        }
+      ]
+    }
+  ],
   "env": {
     "NEXT_PUBLIC_APP_URL": "",
     "API_BASE_URL": "",

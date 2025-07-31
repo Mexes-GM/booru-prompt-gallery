@@ -8,7 +8,7 @@ const API_CONFIG = {
     limit: "20",
     only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score",
   },
-  timeout: 10000,
+  timeout: 8000,
 }
 
 interface DanbooruPost {
@@ -30,12 +30,10 @@ export async function GET(request: NextRequest) {
   const tags = searchParams.get('tags') || ''
   const order = searchParams.get('order') || 'popular'
   
-  // Cache configuration
   const cacheKey = `danbooru-${tags}-${page}-${order}`
-  const cacheDuration = 300 // 5 minutes in seconds
+  const cacheDuration = 600
   
   try {
-    // Build optimized URL
     let finalTags: string
     if (order === 'recent') {
       // For recent posts, don't use any order tag
@@ -51,9 +49,9 @@ export async function GET(request: NextRequest) {
       tags: finalTags,
     })
 
-    const url = `${API_CONFIG.baseUrl}/posts.json?${params}`
+    const url = new URL('https://danbooru.donmai.us/posts.json')
+    url.search = params.toString()
 
-    // Make request with timeout
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout)
 
@@ -95,7 +93,6 @@ export async function GET(request: NextRequest) {
       !post.file_url.match(/\.(mp4|webm|avi|mov|mkv)$/i)
     )
 
-    // Return response with aggressive caching
     return NextResponse.json(validPosts, {
       headers: {
         'Cache-Control': `public, s-maxage=${cacheDuration}, stale-while-revalidate=${cacheDuration * 2}`,
@@ -106,7 +103,6 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error fetching posts:', error)
     
     let errorMessage = 'Internal server error'
     if (error instanceof Error) {

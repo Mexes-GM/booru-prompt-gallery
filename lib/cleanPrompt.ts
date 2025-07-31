@@ -578,7 +578,6 @@ function processRedundancy(tags: string[]): string[] {
     return true
   })
 
-  // Aplicar mapeo de redundancia básico con cache
   const mappedTags = remainingTags.map((tag) => REDUNDANCY_MAP[tag] ?? tag).filter((tag) => tag.length > 0)
 
   // Aplicar sistema robusto de eliminación de redundancia

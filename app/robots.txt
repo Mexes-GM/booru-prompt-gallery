@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /_next/
+Disallow: /admin/
+
+# Sitemap
+Sitemap: https://your-domain.vercel.app/sitemap.xml
+
+# Crawl delay to reduce server load
+Crawl-delay: 1
