@@ -182,7 +182,7 @@ export default function DanbooruPromptGenerator() {
           const favoritesArray = JSON.parse(savedFavorites)
           setFavorites(new Set(favoritesArray))
         } catch (error) {
-          console.error('Error loading favorites:', error)
+        // Error loading favorites, continue with empty array
           setFavorites(new Set())
         }
       }
@@ -195,7 +195,7 @@ export default function DanbooruPromptGenerator() {
       try {
         localStorage.setItem('booruFavorites', JSON.stringify(Array.from(favorites)))
       } catch (error) {
-        console.error('Error saving favorites:', error)
+        // Error saving favorites, continue silently
       }
     }
   }, [favorites])
@@ -389,7 +389,7 @@ export default function DanbooruPromptGenerator() {
             <div className="text-center space-y-2">
               <h2 className="text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
                 <p className="text-muted-foreground max-w-2xl mx-auto">
-                  Generate prompts from Danbooru image tags. Our system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for your AI art generation.
+                  Generate prompts from Danbooru image tags. This web app system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for your AI art generation.
                 </p>
             </div>
 
@@ -808,7 +808,7 @@ export default function DanbooruPromptGenerator() {
                 <Badge variant="outline">Danbooru API</Badge>
               </div>
               <p className="text-xs text-muted-foreground max-w-2xl mx-auto">
-                Generate prompts from Danbooru image tags. Our system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation. All images are sourced from Danbooru and belong to their respective creators.
+                Generate prompts from Danbooru image tags. This web app system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation. All images are sourced from Danbooru and belong to their respective creators.
               </p>
             </div>
           </div>

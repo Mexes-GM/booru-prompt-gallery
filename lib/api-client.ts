@@ -118,8 +118,7 @@ export const usePosts = (page: number, tags: string = '', ratingFilter: string =
   )
 }
 
-// Infinite scroll for posts - production optimized
-export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
+export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular') => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
   const processedTags = processTagsForAPI(tags, order)
   const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
@@ -160,13 +159,12 @@ export const useTags = (category?: number) => {
   )
 }
 
-// Prefetch posts for next page - production optimized
-export const prefetchPosts = async (page: number, tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
+export const prefetchNextPage = async (tags: string, currentPage: number, ratingFilter: string = 'rating:general', order: string = 'popular') => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
   const processedTags = processTagsForAPI(tags, order)
   const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
-  const url = `/api/posts?page=${page}&tags=${encodedQuery}&order=${order}`
+  const url = `/api/posts?page=${currentPage}&tags=${encodedQuery}&order=${order}`
   
   try {
     await fetch(url, { 
@@ -176,21 +174,20 @@ export const prefetchPosts = async (page: number, tags: string = '', ratingFilte
       }
     })
   } catch (error) {
-    // Silently fail prefetch in production
+    // Prefetch failed, continue silently
     if (process.env.NODE_ENV === 'development') {
       console.warn('Prefetch failed:', error)
     }
   }
 }
 
-// Batch prefetch - production optimized
-export const prefetchBatch = async (pages: number[], tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
+export const batchPrefetch = async (pages: number[], tags: string, ratingFilter: string = 'rating:general', order: string = 'popular') => {
   if (pages.length > 5) {
     pages = pages.slice(0, 5) // Limit prefetch to 5 pages in production
   }
   
   const promises = pages.map(page => 
-    prefetchPosts(page, tags, ratingFilter, order)
+    prefetchNextPage(tags, page, ratingFilter, order)
   )
   
   await Promise.allSettled(promises)

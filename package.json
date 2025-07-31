@@ -6,12 +6,7 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start",
-    "test-prompts": "node validate-prompts.js prompts-example.txt",
-    "test-real-api": "node test-real-api.js",
-    "test-real-data": "node test-real-data.js",
-    "validate-loop": "node validate-loop.js",
-    "validate-prompts": "node validate-prompts.js"
+    "start": "next start"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
