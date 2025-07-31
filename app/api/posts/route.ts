@@ -36,8 +36,14 @@ export async function GET(request: NextRequest) {
   
   try {
     // Build optimized URL
-    const orderParam = order === 'recent' ? 'id:desc' : 'rank'
-    const finalTags = tags ? `${tags} order:${orderParam}` : `score:>5 order:${orderParam}`
+    let finalTags: string
+    if (order === 'recent') {
+      // For recent posts, don't use any order tag
+      finalTags = tags || ''
+    } else {
+      // For popular posts, use order:rank
+      finalTags = tags ? `${tags} order:rank` : 'order:rank'
+    }
     
     const params = new URLSearchParams({
       ...API_CONFIG.defaultParams,

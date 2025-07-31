@@ -23,11 +23,13 @@ import {
   ZoomIn,
   ZoomOut,
   AlertTriangle,
+  X,
+  ChevronUp,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
-import { useInfinitePosts, hasMultipleTags } from "@/lib/api-client"
+import { useInfinitePosts, hasMultipleTags, getFinalQueryTags } from "@/lib/api-client"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
@@ -59,6 +61,7 @@ export default function DanbooruPromptGenerator() {
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const [showFavorites, setShowFavorites] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
   const { toast } = useToast()
 
   const {
@@ -197,6 +200,23 @@ export default function DanbooruPromptGenerator() {
     }
   }, [favorites])
 
+  // Handle scroll for back to top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 400)
+    }
+
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    })
+  }
+
   // Handle errors
   const hasMounted = useRef(false)
   
@@ -290,9 +310,6 @@ export default function DanbooruPromptGenerator() {
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                   Danbooru Prompt Gallery
                 </h1>
-                <Badge variant="secondary" className="hidden sm:inline-flex">
-                  AI Prompt Generator
-                </Badge>
               </div>
 
               <div className="flex items-center space-x-2">
@@ -380,27 +397,54 @@ export default function DanbooruPromptGenerator() {
             <Card className="glass-effect">
               <CardContent className="p-6">
                 <form onSubmit={handleSearch} className="space-y-4">
+                  {/* API Query Tags Display */}
+                  {(searchTags || ratingFilter !== "rating:general" || order === "popular") && (
+                    <div className="mb-4">
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-2">
+                        <span className="font-medium">Sending to Danbooru API:</span>
+                        {getFinalQueryTags(searchTags, ratingFilter, order).map((tag, index) => (
+                          <Badge key={index} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/50 dark:border-blue-800/50 dark:text-blue-300">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                     <Input
                       type="text"
                       value={searchTags}
                       onChange={(e) => setSearchTags(e.target.value)}
-                      placeholder="Search by one tag only (e.g., cat_girl)"
-                      className="pl-10 focus-ring"
+                      placeholder={order === "recent" ? "Search by up to 2 tags (e.g., cat_girl, blue_eyes)" : "Search by one tag only (e.g., cat_girl)"}
+                      className="pl-10 pr-10 focus-ring"
                       aria-label="Search tags"
                     />
+                    {searchTags && (
+                      <button
+                        type="button"
+                        onClick={clearSearch}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-sm"
+                        aria-label="Clear search"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Warning for multiple tags */}
-                  {hasMultipleTags(searchTags) && (
+                  {hasMultipleTags(searchTags, order) && (
                     <Alert 
                       variant="destructive" 
                       className="mt-2 bg-red-50 border-red-200 text-red-800 dark:bg-red-950/50 dark:border-red-800/50 dark:text-red-200"
                     >
                       <AlertTriangle className="h-4 w-4" />
                       <AlertDescription>
-                        Danbooru API only allows searching by 1 tag. Only the first tag "{searchTags.split(',')[0].trim()}" will be used for the search.
+                        {order === "popular" 
+                          ? `Danbooru API only allows 1 tag when using popularity sort. Only the first tag "${searchTags.split(',')[0].trim()}" will be used.`
+                          : `Danbooru API only allows 2 tags maximum. Only the first 2 tags will be used for the search.`
+                        }
                       </AlertDescription>
                     </Alert>
                   )}
@@ -455,17 +499,6 @@ export default function DanbooruPromptGenerator() {
                         Search
                       </Button>
 
-                      {searchTags && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={clearSearch}
-                          className="focus-ring bg-transparent"
-                        >
-                          Clear
-                        </Button>
-                      )}
-
                       <Button
                         type="button"
                         variant="outline"
@@ -478,38 +511,6 @@ export default function DanbooruPromptGenerator() {
                     </div>
                   </div>
                 </form>
-
-                {/* Active filters display */}
-                {(searchTags || ratingFilter !== "rating:general" || showFavorites) && (
-                  <div className="mt-4 pt-4 border-t border-border/50">
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                      <span>Active filters:</span>
-                      {searchTags && <Badge variant="secondary">Tags: {searchTags}</Badge>}
-                      {ratingFilter && ratingFilter !== "rating:general" && ratingFilter !== "all" && (
-                        <Badge variant="secondary">Rating: {ratingFilter.replace("rating:", "")}</Badge>
-                      )}
-                      {ratingFilter === "all" && (
-                        <Badge variant="secondary">No rating filter</Badge>
-                      )}
-                      <Badge variant="secondary">Sort: {order === "popular" ? "Most popular" : "Most recent"}</Badge>
-                      {showFavorites && (
-                        <Badge variant="secondary" className="bg-red-500/20 text-red-500">
-                          Favorites Only ({favorites.size})
-                        </Badge>
-                      )}
-                      {favorites.size > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={clearFavorites}
-                          className="text-xs h-6 px-2"
-                        >
-                          Clear Favorites
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
@@ -590,10 +591,10 @@ export default function DanbooruPromptGenerator() {
                         <p className="text-foreground/80 leading-relaxed">{cleanedPrompt || "No tags available"}</p>
                       </div>
 
-                      <div className="flex button-group">
+                      <div className="flex button-group items-stretch">
                         <Button
                           onClick={() => copyToClipboard(cleanedPrompt, post.id)}
-                          className="flex-1 focus-ring"
+                          className="flex-1 focus-ring h-auto"
                           variant={copiedId === post.id ? "default" : "outline"}
                           disabled={!cleanedPrompt}
                         >
@@ -616,7 +617,7 @@ export default function DanbooruPromptGenerator() {
                               variant="outline"
                               size="icon"
                               asChild
-                              className={`focus-ring bg-transparent ${cardScale === "small" ? "h-7 w-7" : ""}`}
+                              className={`focus-ring bg-transparent h-auto ${cardScale === "small" ? "w-7" : ""}`}
                             >
                               <a
                                 href={`https://danbooru.donmai.us/posts/${post.id}`}
@@ -812,6 +813,22 @@ export default function DanbooruPromptGenerator() {
             </div>
           </div>
         </footer>
+
+        {/* Back to Top Button */}
+        <div className={`fixed bottom-6 right-6 z-50 transition-all duration-500 ${
+          showBackToTop 
+            ? 'opacity-100 translate-y-0 scale-100' 
+            : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
+        }`}>
+          <Button
+            onClick={scrollToTop}
+            className="h-12 w-12 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 focus-ring hover:scale-110 active:scale-95"
+            size="icon"
+            aria-label="Volver al inicio"
+          >
+            <ChevronUp className="h-5 w-5 transition-transform duration-200 hover:animate-bounce" />
+          </Button>
+        </div>
       </div>
     </TooltipProvider>
   )

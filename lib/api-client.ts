@@ -44,8 +44,8 @@ const fetcher = async (url: string) => {
 }
 
 // Function to process user input tags for Danbooru API
-// Danbooru API only allows 2 tags total, and order: counts as 1 tag, so we limit to 1 user tag
-const processTagsForAPI = (tags: string): string => {
+// Danbooru API allows 2 tags total. When using order:rank, we limit to 1 user tag. When not using order, we allow 2 user tags.
+const processTagsForAPI = (tags: string, order: string = 'popular'): string => {
   if (!tags.trim()) return ''
   
   // Split by commas and process each tag
@@ -55,12 +55,13 @@ const processTagsForAPI = (tags: string): string => {
     .filter(tag => tag.length > 0)
     .map(tag => tag.replace(/\s+/g, '_')) // Replace spaces with underscores
   
-  // Only use the first tag to avoid API errors (Danbooru limit: 2 tags total, order: counts as 1)
-  return processedTags.length > 0 ? processedTags[0] : ''
+  // For recent posts (no order tag), allow 2 user tags. For popular posts (with order:rank), limit to 1 user tag
+  const maxTags = order === 'recent' ? 2 : 1
+  return processedTags.slice(0, maxTags).join(' ')
 }
 
-// Function to check if user entered multiple tags
-export const hasMultipleTags = (tags: string): boolean => {
+// Function to check if user entered multiple tags and if it's allowed
+export const hasMultipleTags = (tags: string, order: string = 'popular'): boolean => {
   if (!tags.trim()) return false
   
   const tagCount = tags
@@ -68,13 +69,37 @@ export const hasMultipleTags = (tags: string): boolean => {
     .map(tag => tag.trim())
     .filter(tag => tag.length > 0).length
   
-  return tagCount > 1
+  const maxTags = order === 'recent' ? 2 : 1
+  return tagCount > maxTags
+}
+
+// Function to get the final query tags that will be sent to Danbooru API
+export const getFinalQueryTags = (userTags: string, ratingFilter: string, order: string): string[] => {
+  const tags: string[] = []
+  
+  // Add rating filter if not 'all'
+  if (ratingFilter && ratingFilter !== 'all') {
+    tags.push(ratingFilter)
+  }
+  
+  // Add order tag if popular
+  if (order === 'popular') {
+    tags.push('order:rank')
+  }
+  
+  // Add processed user tags
+  const processedUserTags = processTagsForAPI(userTags, order)
+  if (processedUserTags) {
+    tags.push(...processedUserTags.split(' '))
+  }
+  
+  return tags
 }
 
 // Get posts with production caching
 export const usePosts = (page: number, tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const processedTags = processTagsForAPI(tags)
+  const processedTags = processTagsForAPI(tags, order)
   const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
@@ -96,7 +121,7 @@ export const usePosts = (page: number, tags: string = '', ratingFilter: string =
 // Infinite scroll for posts - production optimized
 export const useInfinitePosts = (tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const processedTags = processTagsForAPI(tags)
+  const processedTags = processTagsForAPI(tags, order)
   const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
@@ -138,7 +163,7 @@ export const useTags = (category?: number) => {
 // Prefetch posts for next page - production optimized
 export const prefetchPosts = async (page: number, tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const processedTags = processTagsForAPI(tags)
+  const processedTags = processTagsForAPI(tags, order)
   const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   const url = `/api/posts?page=${page}&tags=${encodedQuery}&order=${order}`
