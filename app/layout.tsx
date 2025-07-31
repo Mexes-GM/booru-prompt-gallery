@@ -13,12 +13,12 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Danbooru Prompt Gallery - AI Art Prompt Generator",
-  description: "Generate prompts from Danbooru image tags. This web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
+  description: "Generate prompts from Danbooru image tags. The system of this web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
   keywords: ["AI art", "prompts", "danbooru", "image generation", "stable diffusion"],
   authors: [{ name: "Danbooru Prompt Gallery" }],
   openGraph: {
     title: "Danbooru Prompt Gallery",
-    description: "Generate prompts from Danbooru image tags. This web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
+    description: "Generate prompts from Danbooru image tags. The system of this web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
     type: "website",
   },
   generator: 'v0.dev',

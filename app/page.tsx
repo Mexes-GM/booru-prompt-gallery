@@ -389,7 +389,7 @@ export default function DanbooruPromptGenerator() {
             <div className="text-center space-y-2">
               <h2 className="text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
                 <p className="text-muted-foreground max-w-2xl mx-auto">
-                  Generate prompts from Danbooru image tags. This web app system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for your AI art generation.
+                  Generate prompts from Danbooru image tags. The system of this web app system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for your AI art generation.
                 </p>
             </div>
 
@@ -808,7 +808,7 @@ export default function DanbooruPromptGenerator() {
                 <Badge variant="outline">Danbooru API</Badge>
               </div>
               <p className="text-xs text-muted-foreground max-w-2xl mx-auto">
-                Generate prompts from Danbooru image tags. This web app system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation. All images are sourced from Danbooru and belong to their respective creators.
+                Generate prompts from Danbooru image tags. The system of this web app system extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation. All images are sourced from Danbooru and belong to their respective creators.
               </p>
             </div>
           </div>
