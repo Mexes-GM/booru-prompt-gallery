@@ -106,8 +106,8 @@ export default function DanbooruPromptGenerator() {
       toast({
         title: "No more results",
         description: order === "popular" 
-          ? "No more popular posts found for this search. Try different search terms or switch to 'Most recent'."
-          : "No more recent posts found for this search. Try different search terms.",
+          ? "No more popular posts found for this search. Try different search terms, switch to 'Most recent', or change the rating filter."
+          : "No more recent posts found for this search. Try different search terms or change the rating filter.",
         variant: "default",
       })
       setLastLoadAttempt(0)
@@ -803,8 +803,8 @@ export default function DanbooruPromptGenerator() {
               {noMoreResults && (
                 <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto">
                   {order === "popular" 
-                    ? "Try switching to 'Most recent' or use different search terms"
-                    : "Try using different search terms to find more content"
+                    ? "Try switching to 'Most recent', changing the rating filter, or use different search terms"
+                    : "Try changing the rating filter or use different search terms to find more content"
                   }
                 </p>
               )}
