@@ -62,6 +62,8 @@ export default function DanbooruPromptGenerator() {
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const [showFavorites, setShowFavorites] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
+  const [noMoreResults, setNoMoreResults] = useState(false)
+  const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
   const { toast } = useToast()
 
   const {
@@ -84,11 +86,43 @@ export default function DanbooruPromptGenerator() {
   const allPosts = pages ? pages.flat() : []
   const posts = showFavorites ? allPosts.filter(post => favorites.has(post.id)) : allPosts
   const isLoadingMore = isValidating && size > 1
-  const loadMore = () => setSize(size + 1)
+  
+  // Enhanced loadMore function with feedback
+  const loadMore = () => {
+    const currentPostCount = posts.length
+    setLastLoadAttempt(currentPostCount)
+    setSize(size + 1)
+  }
+  
   const refresh = () => {
     // Force revalidation of current data
     mutate(undefined, { revalidate: true })
   }
+
+  // Check if no new results were loaded after attempting to load more
+  useEffect(() => {
+    if (lastLoadAttempt > 0 && !isLoadingMore && posts.length === lastLoadAttempt) {
+      setNoMoreResults(true)
+      toast({
+        title: "No more results",
+        description: order === "popular" 
+          ? "No more popular posts found for this search. Try different search terms or switch to 'Most recent'."
+          : "No more recent posts found for this search. Try different search terms.",
+        variant: "default",
+      })
+      setLastLoadAttempt(0)
+    } else if (lastLoadAttempt > 0 && posts.length > lastLoadAttempt) {
+      // New results were loaded, reset the no more results state
+      setNoMoreResults(false)
+      setLastLoadAttempt(0)
+    }
+  }, [posts.length, isLoadingMore, lastLoadAttempt, order, toast])
+
+  // Reset noMoreResults when search parameters change
+  useEffect(() => {
+    setNoMoreResults(false)
+    setLastLoadAttempt(0)
+  }, [searchTags, ratingFilter, order])
 
   // Update card scale based on slider value
   useEffect(() => {
@@ -742,11 +776,22 @@ export default function DanbooruPromptGenerator() {
           {/* Load More Button */}
           {posts.length > 0 && !showFavorites && (
             <div className="text-center">
-              <Button onClick={loadMore} disabled={isLoadingMore} size="lg" className="px-8 focus-ring">
+              <Button 
+                onClick={loadMore} 
+                disabled={isLoadingMore || noMoreResults} 
+                size="lg" 
+                className="px-8 focus-ring"
+                variant={noMoreResults ? "outline" : "default"}
+              >
                 {isLoadingMore ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Loading more...
+                  </>
+                ) : noMoreResults ? (
+                  <>
+                    <AlertTriangle className="w-4 h-4 mr-2" />
+                    No more results
                   </>
                 ) : (
                   <>
@@ -755,6 +800,14 @@ export default function DanbooruPromptGenerator() {
                   </>
                 )}
               </Button>
+              {noMoreResults && (
+                <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto">
+                  {order === "popular" 
+                    ? "Try switching to 'Most recent' or use different search terms"
+                    : "Try using different search terms to find more content"
+                  }
+                </p>
+              )}
             </div>
           )}
 
