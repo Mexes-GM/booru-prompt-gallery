@@ -114,24 +114,47 @@
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   }
 
-  /* Responsive adjustments for small screens */
+  /* Responsive adjustments for small screens - minimum 2 columns */
   @media (max-width: 640px) {
     .grid-small {
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(calc(50% - 4px), 1fr));
       @apply gap-2;
     }
 
     .grid-medium {
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(calc(50% - 6px), 1fr));
       @apply gap-3;
     }
 
     .grid-large {
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(calc(50% - 8px), 1fr));
       @apply gap-4;
     }
   }
 
+  /* Extra small screens - single column for very small devices */
+  @media (max-width: 480px) {
+    .grid-small,
+    .grid-medium,
+    .grid-large {
+      grid-template-columns: repeat(auto-fit, minmax(calc(50% - 4px), 1fr));
+      @apply gap-2;
+    }
+  }
+
+  /* Very small screens - ensure minimum usability */
+  @media (max-width: 360px) {
+    .container {
+      @apply px-2;
+    }
+    
+    .grid-small,
+    .grid-medium,
+    .grid-large {
+      grid-template-columns: 1fr 1fr;
+      @apply gap-1;
+    }
+  }
   /* Card content scaling */
   .card-content-small {
     @apply p-2 space-y-2;
