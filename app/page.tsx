@@ -307,15 +307,15 @@ export default function DanbooruPromptGenerator() {
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                   Danbooru Prompt Gallery
                 </h1>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1 sm:space-x-2">
                 {/* Card Scale Controls - Only show in grid view */}
                 {viewMode === "grid" && (
-                  <div className="flex items-center space-x-2 border-r pr-2 mr-2">
+                  <div className="hidden sm:flex items-center space-x-2 border-r pr-2 mr-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -387,15 +387,15 @@ export default function DanbooruPromptGenerator() {
           {/* Search Section */}
           <div className="max-w-4xl mx-auto mb-8 space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
-                <p className="text-muted-foreground max-w-2xl mx-auto">
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
                   Generate prompts from Danbooru image tags. The system of this web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for your AI art generation.
                 </p>
             </div>
 
             {/* Search Form */}
             <Card className="glass-effect">
-              <CardContent className="p-6">
+              <CardContent className="p-4 sm:p-6">
                 <form onSubmit={handleSearch} className="space-y-4">
                   {/* API Query Tags Display */}
                   {getFinalQueryTags(searchTags, ratingFilter, order).length > 0 && (
@@ -403,7 +403,7 @@ export default function DanbooruPromptGenerator() {
                       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-2">
                         <span className="font-medium">Sending to Danbooru API:</span>
                         {getFinalQueryTags(searchTags, ratingFilter, order).map((tag, index) => (
-                          <Badge key={index} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/50 dark:border-blue-800/50 dark:text-blue-300">
+                          <Badge key={index} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/50 dark:border-blue-800/50 dark:text-blue-300 text-xs">
                             {tag}
                           </Badge>
                         ))}
@@ -418,7 +418,7 @@ export default function DanbooruPromptGenerator() {
                       value={searchTags}
                       onChange={(e) => setSearchTags(e.target.value)}
                       placeholder={order === "recent" ? "Search by up to 2 tags (e.g., cat_girl, blue_eyes)" : "Search by one tag only (e.g., cat_girl)"}
-                      className="pl-10 pr-10 focus-ring"
+                      className="pl-10 pr-10 focus-ring text-sm sm:text-base"
                       aria-label="Search tags"
                     />
                     {searchTags && (
@@ -440,7 +440,7 @@ export default function DanbooruPromptGenerator() {
                       className="mt-2 bg-red-50 border-red-200 text-red-800 dark:bg-red-950/50 dark:border-red-800/50 dark:text-red-200"
                     >
                       <AlertTriangle className="h-4 w-4" />
-                      <AlertDescription>
+                      <AlertDescription className="text-sm">
                         {order === "popular" 
                           ? `Danbooru API only allows 1 tag when using popularity sort. Only the first tag "${searchTags.split(',')[0].trim()}" will be used.`
                           : `Danbooru API only allows 2 tags maximum. Only the first 2 tags will be used for the search.`
@@ -450,47 +450,49 @@ export default function DanbooruPromptGenerator() {
                   )}
 
                   {/* Filters */}
-                  <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-4">
                     <div className="flex items-center gap-2">
                       <Filter className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm font-medium">Filters:</span>
                     </div>
 
-                    <Select value={ratingFilter} onValueChange={setRatingFilter}>
-                      <SelectTrigger className="w-[140px] focus-ring">
-                        <SelectValue placeholder="Content rating" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="rating:general">General</SelectItem>
-                        <SelectItem value="rating:sensitive">Sensitive</SelectItem>
-                        <SelectItem value="rating:questionable">Questionable</SelectItem>
-                        <SelectItem value="rating:explicit">Explicit</SelectItem>
-                        <SelectItem value="all">No filter (All)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                      <Select value={ratingFilter} onValueChange={setRatingFilter}>
+                        <SelectTrigger className="w-full sm:w-[140px] focus-ring">
+                          <SelectValue placeholder="Content rating" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="rating:general">General</SelectItem>
+                          <SelectItem value="rating:sensitive">Sensitive</SelectItem>
+                          <SelectItem value="rating:questionable">Questionable</SelectItem>
+                          <SelectItem value="rating:explicit">Explicit</SelectItem>
+                          <SelectItem value="all">No filter (All)</SelectItem>
+                        </SelectContent>
+                      </Select>
 
-                    <Select value={order} onValueChange={(value: "popular" | "recent") => setOrder(value)}>
-                      <SelectTrigger className="w-[140px] focus-ring">
-                        <SelectValue placeholder="Sort by" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="popular">Most popular</SelectItem>
-                        <SelectItem value="recent">Most recent</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <Select value={order} onValueChange={(value: "popular" | "recent") => setOrder(value)}>
+                        <SelectTrigger className="w-full sm:w-[140px] focus-ring">
+                          <SelectValue placeholder="Sort by" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="popular">Most popular</SelectItem>
+                          <SelectItem value="recent">Most recent</SelectItem>
+                        </SelectContent>
+                      </Select>
 
-                    <Button
-                      type="button"
-                      variant={showFavorites ? "default" : "outline"}
-                      onClick={toggleShowFavorites}
-                      className="focus-ring"
-                    >
-                      <Heart className={`w-4 h-4 mr-2 ${showFavorites ? "fill-white" : ""}`} />
-                      Favorites ({favorites.size})
-                    </Button>
+                      <Button
+                        type="button"
+                        variant={showFavorites ? "default" : "outline"}
+                        onClick={toggleShowFavorites}
+                        className="focus-ring w-full sm:w-auto"
+                      >
+                        <Heart className={`w-4 h-4 mr-2 ${showFavorites ? "fill-white" : ""}`} />
+                        Favorites ({favorites.size})
+                      </Button>
+                    </div>
 
-                    <div className="flex gap-2 ml-auto">
-                      <Button type="submit" disabled={isLoading} className="focus-ring">
+                    <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
+                      <Button type="submit" disabled={isLoading} className="focus-ring flex-1 sm:flex-none">
                         {isLoading ? (
                           <Loader2 className="w-4 h-4 animate-spin mr-2" />
                         ) : (
@@ -568,12 +570,12 @@ export default function DanbooruPromptGenerator() {
                             <Button
                               size="icon"
                               variant="secondary"
-                              className={`glass-effect ${cardScale === "small" ? "h-6 w-6" : "h-8 w-8"}`}
+                              className={`glass-effect ${cardScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
                               onClick={() => toggleFavorite(post.id)}
                               aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
                             >
                               <Heart
-                                className={`${getIconClass()} ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
+                                className={`${cardScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
                               />
                             </Button>
                           </TooltipTrigger>
@@ -650,9 +652,9 @@ export default function DanbooruPromptGenerator() {
 
                 return (
                   <Card key={`${post.id}-${index}`} className="overflow-hidden card-hover">
-                    <CardContent className="p-6">
-                      <div className="flex gap-6">
-                        <div className="image-container-list-2-3">
+                    <CardContent className="p-4 sm:p-6">
+                      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
+                        <div className="image-container-list-2-3 mx-auto sm:mx-0">
                           {(post.large_file_url || post.file_url)?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i) ? (
                             <Image
                               src={post.large_file_url || post.file_url}
@@ -672,7 +674,7 @@ export default function DanbooruPromptGenerator() {
                           <div className="flex items-start justify-between">
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
-                                <Badge variant="outline">ID: {post.id}</Badge>
+                                <Badge variant="outline" className="text-xs">ID: {post.id}</Badge>
                               </div>
                             </div>
 
@@ -681,7 +683,7 @@ export default function DanbooruPromptGenerator() {
                                 size="icon"
                                 variant="ghost"
                                 onClick={() => toggleFavorite(post.id)}
-                                className="focus-ring"
+                                className="focus-ring h-8 w-8"
                                 aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
                               >
                                 <Heart
@@ -697,12 +699,12 @@ export default function DanbooruPromptGenerator() {
                             </p>
                           </div>
 
-                          <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2">
                             <Button
                               onClick={() => copyToClipboard(cleanedPrompt, post.id)}
                               variant={copiedId === post.id ? "default" : "outline"}
                               disabled={!cleanedPrompt}
-                              className="focus-ring"
+                              className="focus-ring flex-1 sm:flex-none"
                             >
                               {copiedId === post.id ? (
                                 <>
@@ -717,7 +719,7 @@ export default function DanbooruPromptGenerator() {
                               )}
                             </Button>
 
-                            <Button variant="outline" asChild className="focus-ring bg-transparent">
+                            <Button variant="outline" asChild className="focus-ring bg-transparent flex-1 sm:flex-none">
                               <a
                                 href={`https://danbooru.donmai.us/posts/${post.id}`}
                                 target="_blank"
@@ -762,8 +764,8 @@ export default function DanbooruPromptGenerator() {
               <div className="space-y-4">
                 <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
                 <div className="space-y-2">
-                  <p className="text-lg font-medium">Loading images...</p>
-                  <p className="text-sm text-muted-foreground">Fetching the latest content from Danbooru</p>
+                  <p className="text-base sm:text-lg font-medium">Loading images...</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground px-4">Fetching the latest content from Danbooru</p>
                 </div>
               </div>
             </div>
@@ -771,14 +773,14 @@ export default function DanbooruPromptGenerator() {
 
           {/* Empty State */}
           {!isLoading && posts.length === 0 && (
-            <div className="text-center py-12">
+            <div className="text-center py-12 px-4">
               <div className="space-y-4">
-                <div className="text-6xl">{showFavorites ? "❤️" : "🎨"}</div>
+                <div className="text-4xl sm:text-6xl">{showFavorites ? "❤️" : "🎨"}</div>
                 <div className="space-y-2">
-                  <p className="text-lg font-medium">
+                  <p className="text-base sm:text-lg font-medium">
                     {showFavorites ? "No favorites yet" : "No images found"}
                   </p>
-                  <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
                     {showFavorites 
                       ? "Add images to your favorites by clicking the heart icon on any image"
                       : "Try adjusting your search terms or filters to discover more content"
@@ -801,13 +803,13 @@ export default function DanbooruPromptGenerator() {
 
         {/* Footer */}
         <footer className="border-t bg-muted/30 mt-16">
-          <div className="container mx-auto px-4 py-8">
+          <div className="container mx-auto px-4 py-6 sm:py-8">
             <div className="text-center space-y-4">
               <div className="flex items-center justify-center space-x-2">
-                <span className="text-sm text-muted-foreground">Powered by</span>
-                <Badge variant="outline">Danbooru API</Badge>
+                <span className="text-xs sm:text-sm text-muted-foreground">Powered by</span>
+                <Badge variant="outline" className="text-xs">Danbooru API</Badge>
               </div>
-              <p className="text-xs text-muted-foreground max-w-2xl mx-auto">
+              <p className="text-xs text-muted-foreground max-w-2xl mx-auto leading-relaxed">
                 Generate prompts from Danbooru image tags. The system of this web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation. All images are sourced from Danbooru and belong to their respective creators.
               </p>
             </div>
@@ -815,18 +817,18 @@ export default function DanbooruPromptGenerator() {
         </footer>
 
         {/* Back to Top Button */}
-        <div className={`fixed bottom-6 right-6 z-50 transition-all duration-500 ${
+        <div className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 transition-all duration-500 ${
           showBackToTop 
             ? 'opacity-100 translate-y-0 scale-100' 
             : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
         }`}>
           <Button
             onClick={scrollToTop}
-            className="h-12 w-12 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 focus-ring hover:scale-110 active:scale-95"
+            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 focus-ring hover:scale-110 active:scale-95"
             size="icon"
             aria-label="Volver al inicio"
           >
-            <ChevronUp className="h-5 w-5 transition-transform duration-200 hover:animate-bounce" />
+            <ChevronUp className="h-4 w-4 sm:h-5 sm:w-5 transition-transform duration-200 hover:animate-bounce" />
           </Button>
         </div>
       </div>
