@@ -18,7 +18,6 @@ import {
   List,
   ExternalLink,
   Heart,
-  Eye,
   Download,
   ZoomIn,
   ZoomOut,
@@ -29,7 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
-import { useInfinitePosts, hasMultipleTags, getFinalQueryTags } from "@/lib/api-client"
+import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags } from "@/lib/api-client"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
@@ -54,12 +53,13 @@ export default function DanbooruPromptGenerator() {
   const [searchTags, setSearchTags] = useState("")
   const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
   const [ratingFilter, setRatingFilter] = useState("rating:general")
-  const [order, setOrder] = useState<"popular" | "recent">("popular")
+  const [order, setOrder] = useState<"popular" | "recent" | "random">("popular")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [cardScale, setCardScale] = useState<CardScale>("medium")
-  const [scaleValue, setScaleValue] = useState([2]) // 1=small, 2=medium, 3=large
+  const [scaleValue, setScaleValue] = useState([2])
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
+  const [favoritesLoaded, setFavoritesLoaded] = useState(false)
   const [showFavorites, setShowFavorites] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [noMoreResults, setNoMoreResults] = useState(false)
@@ -76,6 +76,19 @@ export default function DanbooruPromptGenerator() {
     mutate,
   } = useInfinitePosts(searchTags, ratingFilter, order)
 
+  // Fetch favorite posts separately
+  const {
+    posts: favoritePosts,
+    error: favoritesError,
+    isLoading: favoritesLoading,
+    mutate: mutateFavorites,
+  } = useFavoritePosts(Array.from(favorites))
+
+  // Debug logs for favorites
+  useEffect(() => {
+    setFavorites(favorites)
+  }, [favorites, favoritesLoaded, showFavorites, favoritePosts, favoritesLoading, favoritesError])
+
   // Ensure initial load
   useEffect(() => {
     if (size === 0 && !isLoading) {
@@ -84,23 +97,34 @@ export default function DanbooruPromptGenerator() {
   }, [size, isLoading, setSize])
 
   const allPosts = pages ? pages.flat() : []
-  const posts = showFavorites ? allPosts.filter(post => favorites.has(post.id)) : allPosts
+  // Use dedicated favorites API when showing favorites
+  const posts = showFavorites ? (favoritePosts || []) : allPosts
+  
+  // Debug log for posts rendering
+  useEffect(() => {
+    // Posts rendering logic
+  }, [showFavorites, allPosts.length, favoritePosts?.length, posts.length, favoritesLoading, isLoading])
   const isLoadingMore = isValidating && size > 1
   
-  // Enhanced loadMore function with feedback
   const loadMore = () => {
     const currentPostCount = posts.length
     setLastLoadAttempt(currentPostCount)
-    setSize(size + 1)
+    
+    if (order === 'random') {
+      setSize(1)
+      mutate(undefined, { revalidate: true })
+    } else {
+      setSize(size + 1)
+    }
   }
   
   const refresh = () => {
-    // Force revalidation of current data
     mutate(undefined, { revalidate: true })
   }
 
-  // Check if no new results were loaded after attempting to load more
   useEffect(() => {
+    if (order === 'random') return
+    
     if (lastLoadAttempt > 0 && !isLoadingMore && posts.length === lastLoadAttempt) {
       setNoMoreResults(true)
       toast({
@@ -112,19 +136,16 @@ export default function DanbooruPromptGenerator() {
       })
       setLastLoadAttempt(0)
     } else if (lastLoadAttempt > 0 && posts.length > lastLoadAttempt) {
-      // New results were loaded, reset the no more results state
       setNoMoreResults(false)
       setLastLoadAttempt(0)
     }
   }, [posts.length, isLoadingMore, lastLoadAttempt, order, toast])
 
-  // Reset noMoreResults when search parameters change
   useEffect(() => {
     setNoMoreResults(false)
     setLastLoadAttempt(0)
   }, [searchTags, ratingFilter, order])
 
-  // Update card scale based on slider value
   useEffect(() => {
     const scale = scaleValue[0]
     if (scale === 1) setCardScale("small")
@@ -163,7 +184,6 @@ export default function DanbooruPromptGenerator() {
       return newFavorites
     })
     
-    // Show toast based on the action that will be performed
     if (isCurrentlyFavorited) {
       toast({
         title: "Removed from favorites",
@@ -193,6 +213,13 @@ export default function DanbooruPromptGenerator() {
 
   const clearFavorites = () => {
     setFavorites(new Set())
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('booruFavorites')
+      } catch (error) {
+        console.warn('Error clearing favorites from localStorage:', error)
+      }
+    }
     toast({
       title: "Favorites cleared",
       description: "All favorites have been removed",
@@ -211,28 +238,34 @@ export default function DanbooruPromptGenerator() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedFavorites = localStorage.getItem('booruFavorites')
+      
       if (savedFavorites) {
         try {
           const favoritesArray = JSON.parse(savedFavorites)
-          setFavorites(new Set(favoritesArray))
+          
+          if (Array.isArray(favoritesArray)) {
+            const favoritesSet = new Set(favoritesArray)
+            setFavorites(favoritesSet)
+          }
         } catch (error) {
-        // Error loading favorites, continue with empty array
           setFavorites(new Set())
         }
       }
+      setFavoritesLoaded(true)
     }
   }, [])
 
-  // Save favorites to localStorage whenever they change
+  // Save favorites to localStorage whenever they change (only after initial load)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && favoritesLoaded) {
       try {
-        localStorage.setItem('booruFavorites', JSON.stringify(Array.from(favorites)))
+        const favoritesArray = Array.from(favorites)
+        localStorage.setItem('booruFavorites', JSON.stringify(favoritesArray))
       } catch (error) {
-        // Error saving favorites, continue silently
+        console.warn('Error saving favorites to localStorage:', error)
       }
     }
-  }, [favorites])
+  }, [favorites, favoritesLoaded])
 
   // Handle scroll for back to top button
   useEffect(() => {
@@ -251,32 +284,37 @@ export default function DanbooruPromptGenerator() {
     })
   }
 
-  // Handle errors
   const hasMounted = useRef(false)
   
   useEffect(() => {
     if (hasMounted.current && error) {
-      toast({
-        title: "Connection error",
-        description: error.message || "Could not load images",
-        variant: "destructive",
-      })
+      if (error.status === 422 && order === "random") {
+        toast({
+          title: "Random search timeout",
+          description: "Random searches can be slow. Try using more specific tags or switch to 'Most recent' for faster results.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Connection error",
+          description: error.message || "Could not load images",
+          variant: "destructive",
+        })
+      }
     }
     hasMounted.current = true
-  }, [error, toast])
+  }, [error, toast, order])
 
-  // Debounce search tags
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTags(searchTags)
-    }, 500) // 500ms debounce delay
+    }, 500)
 
     return () => {
       clearTimeout(timer)
     }
   }, [searchTags])
 
-  // Reset to first page when filters change
   useEffect(() => {
     setSize(1)
   }, [order, ratingFilter, debouncedSearchTags])
@@ -336,7 +374,6 @@ export default function DanbooruPromptGenerator() {
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-background">
-        {/* Header */}
         <header className="sticky top-0 z-50 w-full border-b glass-effect">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
@@ -347,7 +384,6 @@ export default function DanbooruPromptGenerator() {
               </div>
 
               <div className="flex items-center space-x-1 sm:space-x-2">
-                {/* Card Scale Controls - Only show in grid view */}
                 {viewMode === "grid" && (
                   <div className="hidden sm:flex items-center space-x-2 border-r pr-2 mr-2">
                     <Tooltip>
@@ -418,7 +454,6 @@ export default function DanbooruPromptGenerator() {
         </header>
 
         <main className="container mx-auto px-4 py-8">
-          {/* Search Section */}
           <div className="max-w-4xl mx-auto mb-8 space-y-6">
             <div className="text-center space-y-2">
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
@@ -427,11 +462,10 @@ export default function DanbooruPromptGenerator() {
                 </p>
             </div>
 
-            {/* Search Form */}
             <Card className="glass-effect">
               <CardContent className="p-4 sm:p-6">
                 <form onSubmit={handleSearch} className="space-y-4">
-                  {/* API Query Tags Display */}
+
                   {getFinalQueryTags(searchTags, ratingFilter, order).length > 0 && (
                     <div className="mb-4">
                       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-2">
@@ -451,7 +485,7 @@ export default function DanbooruPromptGenerator() {
                       type="text"
                       value={searchTags}
                       onChange={(e) => setSearchTags(e.target.value)}
-                      placeholder={order === "recent" ? "Search by up to 2 tags (e.g., cat_girl, blue_eyes)" : "Search by one tag only (e.g., cat_girl)"}
+                      placeholder={order === "recent" ? "Search by up to 2 tags (e.g., cat_girl, blue_eyes)" : order === "random" ? "Search by one tag only (e.g., cat_girl)" : "Search by one tag only (e.g., cat_girl)"}
                       className="pl-10 pr-10 focus-ring text-sm sm:text-base"
                       aria-label="Search tags"
                     />
@@ -467,7 +501,7 @@ export default function DanbooruPromptGenerator() {
                     )}
                   </div>
 
-                  {/* Warning for multiple tags */}
+                  {/* Filters */}
                   {hasMultipleTags(searchTags, order) && (
                     <Alert 
                       variant="destructive" 
@@ -477,13 +511,14 @@ export default function DanbooruPromptGenerator() {
                       <AlertDescription className="text-sm">
                         {order === "popular" 
                           ? `Danbooru API only allows 1 tag when using popularity sort. Only the first tag "${searchTags.split(',')[0].trim()}" will be used.`
+                          : order === "random"
+                          ? `Danbooru API only allows 1 tag when using random sort. Only the first tag "${searchTags.split(',')[0].trim()}" will be used.`
                           : `Danbooru API only allows 2 tags maximum. Only the first 2 tags will be used for the search.`
                         }
                       </AlertDescription>
                     </Alert>
                   )}
 
-                  {/* Filters */}
                   <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-4">
                     <div className="flex items-center gap-2">
                       <Filter className="h-4 w-4 text-muted-foreground" />
@@ -504,13 +539,14 @@ export default function DanbooruPromptGenerator() {
                         </SelectContent>
                       </Select>
 
-                      <Select value={order} onValueChange={(value: "popular" | "recent") => setOrder(value)}>
+                      <Select value={order} onValueChange={(value: "popular" | "recent" | "random") => setOrder(value)}>
                         <SelectTrigger className="w-full sm:w-[140px] focus-ring">
                           <SelectValue placeholder="Sort by" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="popular">Most popular</SelectItem>
                           <SelectItem value="recent">Most recent</SelectItem>
+                          <SelectItem value="random">Random</SelectItem>
                         </SelectContent>
                       </Select>
 
@@ -773,7 +809,7 @@ export default function DanbooruPromptGenerator() {
             </div>
           )}
 
-          {/* Load More Button */}
+          {/* Load More / Get New Results Button */}
           {posts.length > 0 && !showFavorites && (
             <div className="text-center">
               <Button 
@@ -786,7 +822,7 @@ export default function DanbooruPromptGenerator() {
                 {isLoadingMore ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Loading more...
+                    {order === "random" ? "Getting new results..." : "Loading more..."}
                   </>
                 ) : noMoreResults ? (
                   <>
@@ -796,7 +832,7 @@ export default function DanbooruPromptGenerator() {
                 ) : (
                   <>
                     <Download className="w-4 h-4 mr-2" />
-                    Load More
+                    {order === "random" ? "Get New Results" : "Load More"}
                   </>
                 )}
               </Button>
@@ -804,6 +840,8 @@ export default function DanbooruPromptGenerator() {
                 <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto">
                   {order === "popular" 
                     ? "Try switching to 'Most recent', changing the rating filter, or use different search terms"
+                    : order === "random"
+                    ? "Try changing the rating filter or use different search terms to find more content"
                     : "Try changing the rating filter or use different search terms to find more content"
                   }
                 </p>
@@ -812,20 +850,24 @@ export default function DanbooruPromptGenerator() {
           )}
 
           {/* Loading State */}
-          {isLoading && posts.length === 0 && (
+          {((isLoading && posts.length === 0 && !showFavorites) || (showFavorites && favoritesLoading)) && (
             <div className="text-center py-12">
               <div className="space-y-4">
                 <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
                 <div className="space-y-2">
-                  <p className="text-base sm:text-lg font-medium">Loading images...</p>
-                  <p className="text-xs sm:text-sm text-muted-foreground px-4">Fetching the latest content from Danbooru</p>
+                  <p className="text-base sm:text-lg font-medium">
+                    {showFavorites ? "Loading favorites..." : "Loading images..."}
+                  </p>
+                  <p className="text-xs sm:text-sm text-muted-foreground px-4">
+                    {showFavorites ? "Fetching your favorite posts" : "Fetching the latest content from Danbooru"}
+                  </p>
                 </div>
               </div>
             </div>
           )}
 
           {/* Empty State */}
-          {!isLoading && posts.length === 0 && (
+          {!isLoading && !favoritesLoading && posts.length === 0 && (
             <div className="text-center py-12 px-4">
               <div className="space-y-4">
                 <div className="text-4xl sm:text-6xl">{showFavorites ? "❤️" : "🎨"}</div>

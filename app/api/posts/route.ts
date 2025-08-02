@@ -8,6 +8,9 @@ const API_CONFIG = {
     limit: "20",
     only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score",
   },
+  randomParams: {
+    limit: "15", // Reduced limit for random searches to improve performance
+  },
   timeout: 8000,
 }
 
@@ -38,6 +41,12 @@ export async function GET(request: NextRequest) {
     if (order === 'recent') {
       // For recent posts, don't use any order tag
       finalTags = tags || ''
+    } else if (order === 'random') {
+      // For random posts, use random:N which is faster and more reliable than order:random
+      // This generates N random results without the database load issues of order:random
+      const randomCount = API_CONFIG.randomParams.limit
+      const baseRandomTags = tags ? `${tags} random:${randomCount}` : `random:${randomCount}`
+      finalTags = baseRandomTags
     } else {
       // For popular posts, use order:rank
       finalTags = tags ? `${tags} order:rank` : 'order:rank'
@@ -45,6 +54,7 @@ export async function GET(request: NextRequest) {
     
     const params = new URLSearchParams({
       ...API_CONFIG.defaultParams,
+      ...(order === 'random' ? API_CONFIG.randomParams : {}),
       page,
       tags: finalTags,
     })
@@ -72,6 +82,17 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           { error: 'Rate limit exceeded' },
           { status: 429, headers: { 'Retry-After': '60' } }
+        )
+      }
+      
+      if (response.status === 422 && order === 'random') {
+        // Handle search timeout for random searches
+        return NextResponse.json(
+          { 
+            error: 'Search timeout - try a more specific search or different tags',
+            suggestion: 'Random searches work better with specific tags or recent content'
+          },
+          { status: 422 }
         )
       }
       
