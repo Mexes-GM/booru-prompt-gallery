@@ -24,7 +24,7 @@ const fetcher = async (url: string) => {
   })
   
   if (!res.ok) {
-    const error = new Error('Failed to fetch data') as Error & { info?: any; status?: number }
+    const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
     try {
       error.info = await res.json()
     } catch {
@@ -37,31 +37,7 @@ const fetcher = async (url: string) => {
   return res.json()
 }
 
-// Fetcher for favorites API (POST request)
-const favoritesFetcher = async (url: string, ids: number[]) => {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'User-Agent': 'BooruPromptGallery/1.0',
-    },
-    body: JSON.stringify({ ids })
-  })
-  
-  if (!res.ok) {
-    const error = new Error('Failed to fetch favorites') as Error & { info?: any; status?: number }
-    try {
-      error.info = await res.json()
-    } catch {
-      error.info = { message: res.statusText }
-    }
-    error.status = res.status
-    throw error
-  }
-  
-  return res.json()
-}
+
 
 // Function to process user input tags for Danbooru API
 // Danbooru API allows 2 tags total. When using order:rank or order:random, we limit to 1 user tag. When not using order, we allow 2 user tags.
@@ -165,7 +141,9 @@ export function useFavoritePosts(favoriteIds: number[]) {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorData = new Error(`HTTP error! status: ${response.status}`) as Error & { info?: unknown; status?: number }
+        errorData.status = response.status
+        throw errorData
       }
 
       const posts = await response.json()

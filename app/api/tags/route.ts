@@ -8,7 +8,7 @@ interface TagData {
   aliases?: string[]
 }
 
-let tagsCache: any = null
+let tagsCache: TagData[] | null = null
 let cacheTimestamp = 0
 const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours
 
