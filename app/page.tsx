@@ -74,7 +74,7 @@ export default function DanbooruPromptGenerator() {
     size,
     setSize,
     mutate,
-  } = useInfinitePosts(searchTags, ratingFilter, order)
+  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order)
 
   // Fetch favorite posts separately
   const {

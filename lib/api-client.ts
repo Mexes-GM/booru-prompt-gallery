@@ -135,7 +135,11 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
       dedupingInterval: 300000, // 5 minutes for production
-      shouldRetryOnError: true,
+      shouldRetryOnError: (error) => {
+        // Don't retry on 422 errors (invalid tags/search parameters)
+        // Don't retry on 4xx client errors in general
+        return error.status >= 500
+      },
       errorRetryCount: 3,
       errorRetryInterval: 1000,
     }
