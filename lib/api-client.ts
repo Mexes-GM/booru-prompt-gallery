@@ -1,5 +1,5 @@
-import useSWR from 'swr'
 import useSWRInfinite from 'swr/infinite'
+import useSWR from 'swr'
 
 export interface DanbooruPost {
   id: number
@@ -12,12 +12,6 @@ export interface DanbooruPost {
   tag_string_copyright: string
   rating: string
   score: number
-}
-
-export interface TagData {
-  name: string
-  category: number
-  aliases?: string[]
 }
 
 // Production fetcher with error handling and retry logic
@@ -43,8 +37,34 @@ const fetcher = async (url: string) => {
   return res.json()
 }
 
+// Fetcher for favorites API (POST request)
+const favoritesFetcher = async (url: string, ids: number[]) => {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'BooruPromptGallery/1.0',
+    },
+    body: JSON.stringify({ ids })
+  })
+  
+  if (!res.ok) {
+    const error = new Error('Failed to fetch favorites') as Error & { info?: any; status?: number }
+    try {
+      error.info = await res.json()
+    } catch {
+      error.info = { message: res.statusText }
+    }
+    error.status = res.status
+    throw error
+  }
+  
+  return res.json()
+}
+
 // Function to process user input tags for Danbooru API
-// Danbooru API allows 2 tags total. When using order:rank, we limit to 1 user tag. When not using order, we allow 2 user tags.
+// Danbooru API allows 2 tags total. When using order:rank or order:random, we limit to 1 user tag. When not using order, we allow 2 user tags.
 const processTagsForAPI = (tags: string, order: string = 'popular'): string => {
   if (!tags.trim()) return ''
   
@@ -55,7 +75,7 @@ const processTagsForAPI = (tags: string, order: string = 'popular'): string => {
     .filter(tag => tag.length > 0)
     .map(tag => tag.replace(/\s+/g, '_')) // Replace spaces with underscores
   
-  // For recent posts (no order tag), allow 2 user tags. For popular posts (with order:rank), limit to 1 user tag
+  // For recent posts (no order tag), allow 2 user tags. For popular/random posts (with order tag), limit to 1 user tag
   const maxTags = order === 'recent' ? 2 : 1
   return processedTags.slice(0, maxTags).join(' ')
 }
@@ -82,9 +102,12 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
     tags.push(ratingFilter)
   }
   
-  // Add order tag if popular
+  // Add order tag if popular or random
   if (order === 'popular') {
     tags.push('order:rank')
+  } else if (order === 'random') {
+    // For random, we use random:N instead of order:random for better performance
+    tags.push('random:15') // Using the same limit as in API_CONFIG.randomParams
   }
   
   // Add processed user tags
@@ -94,28 +117,6 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
   }
   
   return tags
-}
-
-// Get posts with production caching
-export const usePosts = (page: number, tags: string = '', ratingFilter: string = 'rating:general', order: string = 'popular') => {
-  const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const processedTags = processTagsForAPI(tags, order)
-  const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
-  const encodedQuery = encodeURIComponent(query)
-  
-  return useSWR<DanbooruPost[]>(
-    `/api/posts?page=${page}&tags=${encodedQuery}&order=${order}`,
-    fetcher,
-    {
-      revalidateOnFocus: false,
-      revalidateOnReconnect: true,
-      dedupingInterval: 300000, // 5 minutes for production
-      focusThrottleInterval: 60000, // 1 minute
-      shouldRetryOnError: true,
-      errorRetryCount: 3,
-      errorRetryInterval: 1000,
-    }
-  )
 }
 
 export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular') => {
@@ -141,54 +142,43 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
   )
 }
 
-// Get tags with production caching
-export const useTags = (category?: number) => {
-  const url = category !== undefined ? `/api/tags?category=${category}` : '/api/tags'
-  
-  return useSWR<TagData[]>(
-    url,
-    fetcher,
+// Hook to fetch favorite posts by their IDs
+export function useFavoritePosts(favoriteIds: number[]) {
+  const shouldFetch = favoriteIds.length > 0
+  const cacheKey = shouldFetch ? `favorites-${favoriteIds.sort().join(',')}` : null
+
+  const { data, error, isLoading, mutate } = useSWR(
+    cacheKey,
+    async () => {
+      if (!shouldFetch) return []
+      
+      const response = await fetch('/api/favorites', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: favoriteIds }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const posts = await response.json()
+      return posts
+    },
     {
       revalidateOnFocus: false,
-      revalidateOnReconnect: true,
-      dedupingInterval: 600000, // 10 minutes for production
-      shouldRetryOnError: true,
-      errorRetryCount: 2,
-      errorRetryInterval: 2000,
+      revalidateOnReconnect: false,
+      dedupingInterval: 60000,
     }
   )
-}
 
-export const prefetchNextPage = async (tags: string, currentPage: number, ratingFilter: string = 'rating:general', order: string = 'popular') => {
-  const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const processedTags = processTagsForAPI(tags, order)
-  const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
-  const encodedQuery = encodeURIComponent(query)
-  const url = `/api/posts?page=${currentPage}&tags=${encodedQuery}&order=${order}`
-  
-  try {
-    await fetch(url, { 
-      method: 'HEAD',
-      headers: {
-        'User-Agent': 'BooruPromptGallery/1.0',
-      }
-    })
-  } catch (error) {
-    // Prefetch failed, continue silently
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('Prefetch failed:', error)
-    }
+  return {
+    data: data?.length || 0,
+    posts: data || [],
+    error,
+    isLoading,
+    mutate,
   }
-}
-
-export const batchPrefetch = async (pages: number[], tags: string, ratingFilter: string = 'rating:general', order: string = 'popular') => {
-  if (pages.length > 5) {
-    pages = pages.slice(0, 5) // Limit prefetch to 5 pages in production
-  }
-  
-  const promises = pages.map(page => 
-    prefetchNextPage(tags, page, ratingFilter, order)
-  )
-  
-  await Promise.allSettled(promises)
 }
