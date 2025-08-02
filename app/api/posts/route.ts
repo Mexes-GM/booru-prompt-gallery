@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
     const data = await response.json()
     
     // Filter valid posts (exclude video files and deleted)
-    const validPosts: DanbooruPost[] = data.filter((post: any) => 
+    const validPosts: DanbooruPost[] = data.filter((post: DanbooruPost) => 
       post && 
       post.file_url && 
       !post.file_url.includes("deleted") && 

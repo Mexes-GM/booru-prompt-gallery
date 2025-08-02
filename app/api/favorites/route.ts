@@ -21,6 +21,7 @@ interface DanbooruPost {
   tag_string_copyright: string
   rating: string
   score: number
+  file_ext?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     const rawPosts = await response.json();
 
-    const validPosts = rawPosts.filter((post: any) => 
+    const validPosts = rawPosts.filter((post: DanbooruPost) => 
       post && 
       post.id && 
       post.file_url && 
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     );
 
     const sortedPosts = limitedIds
-      .map(id => validPosts.find((post: any) => post.id === id))
+      .map(id => validPosts.find((post: DanbooruPost) => post.id === id))
       .filter(Boolean);
 
     return NextResponse.json(sortedPosts);

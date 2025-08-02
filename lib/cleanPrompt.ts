@@ -88,13 +88,20 @@ const REDUNDANCY_MAP: Record<string, string> = {
   man: "1boy",
 }
 
+import tagsData from "../tags.json"
+
+interface TagData {
+  name: string;
+  category: number;
+  aliases?: string[];
+}
+
 function loadTagsToRemove(category?: number): Set<string> {
   try {
-    const tagsData = require("../tags.json")
     const tagsToRemove = new Set<string>()
 
     if (Array.isArray(tagsData)) {
-      tagsData.forEach((tag: any) => {
+      tagsData.forEach((tag: TagData) => {
         if (category === undefined || tag.category === category) {
           tagsToRemove.add(tag.name.toLowerCase())
           if (tag.aliases && Array.isArray(tag.aliases)) {
@@ -107,7 +114,7 @@ function loadTagsToRemove(category?: number): Set<string> {
     }
 
     return tagsToRemove
-  } catch (error) {
+  } catch {
     return new Set([
       "signature",
       "twitter username",
@@ -123,7 +130,6 @@ function loadTagsToRemove(category?: number): Set<string> {
   }
 }
 
-const ARTIST_TAGS_SET = loadTagsToRemove(1)
 const META_TAGS_SET = loadTagsToRemove(5)
 
 const commonMetaTags = new Set([
@@ -596,8 +602,6 @@ export function cleanPrompt(
   const artistTagsSet = new Set(artistTags.split(" "))
   const characterTagsArray = characterTags.split(" ").filter((tag) => tag.length > 0)
   const copyrightTagsArray = copyrightTags.split(" ").filter((tag) => tag.length > 0)
-  const characterTagsSet = new Set(characterTagsArray)
-  const copyrightTagsSet = new Set(copyrightTagsArray)
 
   const numberRegex = /^\d+$/
   const urlRegex = /:/
