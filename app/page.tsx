@@ -84,10 +84,7 @@ export default function DanbooruPromptGenerator() {
     mutate: mutateFavorites,
   } = useFavoritePosts(Array.from(favorites))
 
-  // Debug logs for favorites
-  useEffect(() => {
-    setFavorites(favorites)
-  }, [favorites, favoritesLoaded, showFavorites, favoritePosts, favoritesLoading, favoritesError])
+
 
   // Ensure initial load
   useEffect(() => {
@@ -100,10 +97,7 @@ export default function DanbooruPromptGenerator() {
   // Use dedicated favorites API when showing favorites
   const posts = showFavorites ? (favoritePosts || []) : allPosts
   
-  // Debug log for posts rendering
-  useEffect(() => {
-    // Posts rendering logic
-  }, [showFavorites, allPosts.length, favoritePosts?.length, posts.length, favoritesLoading, isLoading])
+
   const isLoadingMore = isValidating && size > 1
   
   const loadMore = () => {
