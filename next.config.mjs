@@ -13,6 +13,7 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
@@ -25,10 +26,6 @@ const nextConfig = {
         pathname: '/**',
       },
     ],
-    formats: ['image/webp'],
-    deviceSizes: [640, 750, 828, 1080, 1200],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256],
-    minimumCacheTTL: 86400,
     dangerouslyAllowSVG: false,
   },
   headers: async () => {
@@ -43,6 +40,15 @@ const nextConfig = {
           {
             key: 'CDN-Cache-Control',
             value: 'public, s-maxage=300',
+          },
+        ],
+      },
+      {
+        source: '/_next/image(.*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=2678400, immutable',
           },
         ],
       },
