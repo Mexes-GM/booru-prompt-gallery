@@ -38,9 +38,13 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - manifest.json (PWA manifest)
+     * - favicon.png (favicon file)
      * - icon.png (app icon)
+     * - manifest.json (PWA manifest)
+     * - robots.txt (robots file)
+     * - sitemap.xml (sitemap file)
+     * - _vercel (Vercel analytics)
      */
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|icon.png).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|icon\\.png|manifest\\.json|robots\\.txt|sitemap\\.xml|_vercel).*)',
   ],
 }
