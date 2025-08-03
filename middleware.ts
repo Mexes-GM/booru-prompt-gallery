@@ -18,7 +18,8 @@ export function middleware(request: NextRequest) {
   // Add SEO-friendly headers
   const url = request.nextUrl
   if (url.pathname === '/') {
-    response.headers.set('Link', '</icon.png>; rel=preload; as=image')
+    // Remove preload to avoid unused preload warnings
+    // response.headers.set('Link', '</icon.png>; rel=preload; as=image')
   }
   
   // Handle API routes with specific headers
