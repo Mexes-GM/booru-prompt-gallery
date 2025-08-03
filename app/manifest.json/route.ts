@@ -19,13 +19,13 @@ export async function GET(): Promise<Response> {
         type: 'image/x-icon'
       },
       {
-        src: '/favicon.png',
+        src: '/icon.png',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any'
       },
       {
-        src: '/favicon.png',
+        src: '/icon.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable'
