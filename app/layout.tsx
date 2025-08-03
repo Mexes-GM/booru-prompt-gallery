@@ -30,17 +30,6 @@ export const metadata: Metadata = {
   publisher: "Mexes",
   category: "Art & Design",
   classification: "AI Art Tools",
-  icons: {
-    icon: [
-      { url: '/favicon.ico', sizes: 'any', type: 'image/x-icon' },
-      { url: '/favicon.png', sizes: '32x32', type: 'image/png' },
-      { url: '/favicon.png', sizes: '16x16', type: 'image/png' }
-    ],
-    shortcut: ['/favicon.ico'],
-    apple: [
-      { url: '/favicon.png', sizes: '180x180', type: 'image/png' }
-    ],
-  },
   manifest: '/manifest.json',
   openGraph: {
     title: "Danbooru Prompt Gallery - By Mexes",
