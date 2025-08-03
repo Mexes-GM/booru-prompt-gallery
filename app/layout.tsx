@@ -32,9 +32,9 @@ export const metadata: Metadata = {
   classification: "AI Art Tools",
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
       { url: '/favicon.png', sizes: '32x32', type: 'image/png' },
-      { url: '/favicon.png', sizes: '16x16', type: 'image/png' }
+      { url: '/favicon.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon.ico', sizes: 'any' }
     ],
     shortcut: '/favicon.ico',
     apple: [
@@ -105,9 +105,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png" />
+        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
         <link rel="preconnect" href="https://danbooru.donmai.us" />
         <link rel="preconnect" href="https://cdn.donmai.us" />
         <link rel="dns-prefetch" href="https://danbooru.donmai.us" />
