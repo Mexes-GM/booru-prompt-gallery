@@ -70,11 +70,13 @@ jspm_packages/
 
 # Gatsby files
 .cache/
-public
+# Comment out public folder ignore to allow favicon files
+# public
 # Allow essential files to be deployed
 !public/favicon.ico
 !public/favicon.png
 !public/browserconfig.xml
+!public/icons/
 
 # Storybook build outputs
 .out
