@@ -18,6 +18,15 @@
           "value": "public, s-maxage=300, stale-while-revalidate=600"
         }
       ]
+    },
+    {
+      "source": "/(favicon\\.(ico|png))",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ],
   "env": {
