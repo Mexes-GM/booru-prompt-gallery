@@ -32,11 +32,11 @@ export const metadata: Metadata = {
   classification: "AI Art Tools",
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon.ico', sizes: 'any', type: 'image/x-icon' },
       { url: '/favicon.png', sizes: '32x32', type: 'image/png' },
       { url: '/favicon.png', sizes: '16x16', type: 'image/png' }
     ],
-    shortcut: '/favicon.ico',
+    shortcut: ['/favicon.ico'],
     apple: [
       { url: '/favicon.png', sizes: '180x180', type: 'image/png' }
     ],
@@ -105,23 +105,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-        <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
-        <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png" />
-        <link rel="preconnect" href="https://danbooru.donmai.us" />
-        <link rel="preconnect" href="https://cdn.donmai.us" />
-        <link rel="dns-prefetch" href="https://danbooru.donmai.us" />
-        <link rel="dns-prefetch" href="https://cdn.donmai.us" />
         <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
         <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Danbooru Gallery" />
-        <link rel="apple-touch-icon" href="/favicon.png" />
-        <link rel="mask-icon" href="/favicon.png" color="#000000" />
         <meta name="msapplication-TileColor" content="#000000" />
         <meta name="msapplication-config" content="/browserconfig.xml" />
+        <link rel="preconnect" href="https://danbooru.donmai.us" />
+        <link rel="preconnect" href="https://cdn.donmai.us" />
+        <link rel="dns-prefetch" href="https://danbooru.donmai.us" />
+        <link rel="dns-prefetch" href="https://cdn.donmai.us" />
       </head>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
