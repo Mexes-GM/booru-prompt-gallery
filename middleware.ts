@@ -18,7 +18,7 @@ export function middleware(request: NextRequest) {
   // Add SEO-friendly headers
   const url = request.nextUrl
   if (url.pathname === '/') {
-    response.headers.set('Link', '</favicon.png>; rel=preload; as=image')
+    response.headers.set('Link', '</icon.png>; rel=preload; as=image')
   }
   
   // Handle API routes with specific headers
@@ -38,7 +38,9 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - manifest.json (PWA manifest)
+     * - icon.png (app icon)
      */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|icon.png).*)',
   ],
 }
