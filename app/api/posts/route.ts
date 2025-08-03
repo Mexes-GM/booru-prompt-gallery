@@ -120,6 +120,12 @@ export async function GET(request: NextRequest) {
         'CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
         'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
         'ETag': `"${cacheKey}"`,
+        'X-Content-Type-Options': 'nosniff',
+        'X-API-Version': '1.0',
+        'X-Total-Count': validPosts.length.toString(),
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Content-Type',
       },
     })
 

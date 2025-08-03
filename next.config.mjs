@@ -12,6 +12,7 @@ const nextConfig = {
   output: 'standalone',
   poweredByHeader: false,
   compress: true,
+  generateEtags: true,
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -27,6 +28,7 @@ const nextConfig = {
       },
     ],
     dangerouslyAllowSVG: false,
+    formats: ['image/webp', 'image/avif'],
   },
   headers: async () => {
     return [
@@ -53,6 +55,24 @@ const nextConfig = {
         ],
       },
       {
+        source: '/sitemap.xml',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, s-maxage=86400, stale-while-revalidate=43200',
+          },
+        ],
+      },
+      {
+        source: '/manifest.json',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, s-maxage=86400, stale-while-revalidate=43200',
+          },
+        ],
+      },
+      {
         source: '/(.*)',
         headers: [
           {
@@ -66,6 +86,14 @@ const nextConfig = {
           {
             key: 'X-XSS-Protection',
             value: '1; mode=block',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
           },
         ],
       },

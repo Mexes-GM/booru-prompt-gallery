@@ -61,7 +61,17 @@ export async function POST(request: NextRequest) {
       .map(id => validPosts.find((post: DanbooruPost) => post.id === id))
       .filter(Boolean);
 
-    return NextResponse.json(sortedPosts);
+    return NextResponse.json(sortedPosts, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        'X-Content-Type-Options': 'nosniff',
+        'X-API-Version': '1.0',
+        'X-Total-Count': sortedPosts.length.toString(),
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    });
   } catch (error) {
     console.error('Favorites API error:', error);
     return NextResponse.json({ error: 'Failed to fetch favorites' }, { status: 500 });
