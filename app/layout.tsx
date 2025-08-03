@@ -137,7 +137,7 @@ export default function RootLayout({
           <StructuredData />
           {children}
           <Toaster />
-          {process.env.NODE_ENV === 'production' && <Analytics />}
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>
