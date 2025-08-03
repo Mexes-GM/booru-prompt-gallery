@@ -372,9 +372,14 @@ export default function DanbooruPromptGenerator() {
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                  Danbooru Prompt Gallery
-                </h1>
+                <div className="flex items-center space-x-3">
+                  <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                    Danbooru Prompt Gallery
+                  </h1>
+                  <Badge variant="secondary" className="text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-2 py-1">
+                    By Mexes
+                  </Badge>
+                </div>
               </div>
 
               <div className="flex items-center space-x-1 sm:space-x-2">
@@ -454,6 +459,71 @@ export default function DanbooruPromptGenerator() {
                 <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
                   Generate prompts from Danbooru image tags. The system of this web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for your AI art generation.
                 </p>
+                
+                {/* Social Links Section */}
+                <div className="pt-4 space-y-3">
+                  <p className="text-muted-foreground text-sm">
+                    More of my work here
+                  </p>
+                  <div className="flex items-center justify-center space-x-4">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <a
+                          href="https://civitai.com/user/Mexes"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                          aria-label="Visit Mexes on CivitAI"
+                        >
+                          <img
+                            src="https://www.google.com/s2/favicons?domain=civitai.com&sz=32"
+                            alt="CivitAI"
+                            className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
+                          />
+                        </a>
+                      </TooltipTrigger>
+                      <TooltipContent>Visit Mexes on CivitAI</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <a
+                          href="https://tensor.art/u/616420638671868313"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                          aria-label="Visit Mexes on Tensor.Art"
+                        >
+                          <img
+                            src="https://www.google.com/s2/favicons?domain=tensor.art&sz=32"
+                            alt="Tensor.Art"
+                            className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
+                          />
+                        </a>
+                      </TooltipTrigger>
+                      <TooltipContent>Visit Mexes on Tensor.Art</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <a
+                          href="https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                          aria-label="Visit Mexes on SeaArt AI"
+                        >
+                          <img
+                            src="https://www.google.com/s2/favicons?domain=seaart.ai&sz=32"
+                            alt="SeaArt AI"
+                            className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
+                          />
+                        </a>
+                      </TooltipTrigger>
+                      <TooltipContent>Visit Mexes on SeaArt AI</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
             </div>
 
             <Card className="glass-effect">
