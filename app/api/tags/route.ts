@@ -56,6 +56,12 @@ export async function GET(request: NextRequest) {
         'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=86400',
         'CDN-Cache-Control': 'public, s-maxage=86400',
         'Vercel-CDN-Cache-Control': 'public, s-maxage=86400',
+        'X-Content-Type-Options': 'nosniff',
+        'X-API-Version': '1.0',
+        'X-Total-Count': filteredTags.length.toString(),
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Content-Type',
       },
     })
 
