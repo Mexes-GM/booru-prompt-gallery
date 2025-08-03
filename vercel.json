@@ -20,7 +20,7 @@
       ]
     },
     {
-      "source": "/(favicon\\.(ico|png))",
+      "source": "/favicon\\.(ico|png)",
       "headers": [
         {
           "key": "Cache-Control",
