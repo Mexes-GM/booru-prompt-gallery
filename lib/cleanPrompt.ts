@@ -496,6 +496,8 @@ const commonMetaTags = new Set([
   "mosaic_censoring",
   "mosaic_censorship",
   "censoring",
+  "dated",
+  "original",
   ])
 
 function processRedundancy(tags: string[]): string[] {
