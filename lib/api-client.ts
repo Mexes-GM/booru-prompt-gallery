@@ -95,14 +95,18 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
   return tags
 }
 
-export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular') => {
+export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number) => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
   const processedTags = processTagsForAPI(tags, order)
   const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
   return useSWRInfinite<DanbooruPost[]>(
-    (pageIndex: number) => `/api/posts?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`,
+    (pageIndex: number) => {
+      const baseUrl = `/api/posts?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`
+      // Add random seed for random searches to force cache invalidation
+      return order === 'random' && randomSeed ? `${baseUrl}&seed=${randomSeed}` : baseUrl
+    },
     fetcher,
     {
       revalidateFirstPage: true,
@@ -110,7 +114,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       persistSize: false,
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
-      dedupingInterval: 300000, // 5 minutes for production
+      dedupingInterval: order === 'random' ? 0 : 300000, // No caching for random searches
       shouldRetryOnError: (error) => {
         // Don't retry on 422 errors (invalid tags/search parameters)
         // Don't retry on 4xx client errors in general
