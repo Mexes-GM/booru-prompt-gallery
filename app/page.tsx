@@ -64,6 +64,7 @@ export default function DanbooruPromptGenerator() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [noMoreResults, setNoMoreResults] = useState(false)
   const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
+  const [randomSeed, setRandomSeed] = useState<number>(Date.now())
   const { toast } = useToast()
 
   const {
@@ -74,7 +75,7 @@ export default function DanbooruPromptGenerator() {
     size,
     setSize,
     mutate,
-  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order)
+  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed)
 
   // Fetch favorite posts separately
   const {
@@ -105,6 +106,8 @@ export default function DanbooruPromptGenerator() {
     setLastLoadAttempt(currentPostCount)
     
     if (order === 'random') {
+      // Generate new random seed to force new results
+      setRandomSeed(Date.now())
       setSize(1)
       mutate(undefined, { revalidate: true })
     } else {
@@ -138,6 +141,10 @@ export default function DanbooruPromptGenerator() {
   useEffect(() => {
     setNoMoreResults(false)
     setLastLoadAttempt(0)
+    // Reset random seed when search parameters change
+    if (order === 'random') {
+      setRandomSeed(Date.now())
+    }
   }, [searchTags, ratingFilter, order])
 
   useEffect(() => {
