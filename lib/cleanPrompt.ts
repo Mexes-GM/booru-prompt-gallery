@@ -673,10 +673,5 @@ export function cleanPrompt(
 
   const finalTags = Array.from(allFinalTags)
 
-  // Always add "masterpiece" tag at the end
-  if (!finalTags.includes("masterpiece")) {
-    finalTags.push("masterpiece")
-  }
-
   return finalTags.join(", ")
 }
