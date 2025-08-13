@@ -530,6 +530,24 @@ export default function DanbooruPromptGenerator() {
                       <TooltipContent>Visit Mexes on SeaArt AI</TooltipContent>
                     </Tooltip>
                   </div>
+                  
+                  {/* Ko-fi Support Button */}
+                  <div className="flex items-center justify-center mt-3">
+                    <a
+                      href="https://ko-fi.com/mexes"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+                      aria-label="Support Mexes on Ko-fi"
+                    >
+                      <img
+                        src="https://www.google.com/s2/favicons?domain=ko-fi.com&sz=32"
+                        alt="Ko-fi"
+                        className="w-4 h-4 mr-2"
+                      />
+                      Support me on Ko-fi
+                    </a>
+                  </div>
                 </div>
             </div>
 
