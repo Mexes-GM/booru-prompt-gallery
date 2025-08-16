@@ -33,6 +33,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { cleanPrompt } from "@/lib/cleanPrompt"
+import {
+  safeTrack,
+  initScrollDepthTracking,
+  trackTimeOnPage,
+  trackExternalLink,
+  trackFavorite,
+  trackCopy,
+  trackSearch,
+  trackLoadMore,
+  trackViewMode,
+  trackScaleChange,
+  trackFilterChange,
+  trackRefresh,
+} from '@/lib/analytics'
 
 interface DanbooruPost {
   id: number
@@ -105,7 +119,7 @@ export default function DanbooruPromptGenerator() {
     const currentPostCount = posts.length
     setLastLoadAttempt(currentPostCount)
     
-    if (order === 'random') {
+  if (order === 'random') {
       // Generate new random seed to force new results
       setRandomSeed(Date.now())
       setSize(1)
@@ -113,10 +127,12 @@ export default function DanbooruPromptGenerator() {
     } else {
       setSize(size + 1)
     }
+  trackLoadMore({ order, nextPage: order === 'random' ? 1 : size + 1, currentCount: currentPostCount })
   }
   
   const refresh = () => {
     mutate(undefined, { revalidate: true })
+    trackRefresh(order)
   }
 
   useEffect(() => {
@@ -149,10 +165,15 @@ export default function DanbooruPromptGenerator() {
 
   useEffect(() => {
     const scale = scaleValue[0]
-    if (scale === 1) setCardScale("small")
-    else if (scale === 2) setCardScale("medium")
-    else setCardScale("large")
-  }, [scaleValue])
+    let val: CardScale = 'medium'
+    if (scale === 1) val = 'small'
+    else if (scale === 2) val = 'medium'
+    else val = 'large'
+    if (val !== cardScale) {
+      setCardScale(val)
+      trackScaleChange(val)
+    }
+  }, [scaleValue, cardScale])
 
   const copyToClipboard = async (prompt: string, postId: number) => {
     try {
@@ -163,6 +184,7 @@ export default function DanbooruPromptGenerator() {
         description: "Prompt copied to clipboard",
       })
       setTimeout(() => setCopiedId(null), 2000)
+      trackCopy(postId)
     } catch (error) {
       toast({
         title: "Error",
@@ -190,17 +212,22 @@ export default function DanbooruPromptGenerator() {
         title: "Removed from favorites",
         description: "Image removed from your favorites",
       })
+      trackFavorite(postId, 'remove')
     } else {
       toast({
         title: "Added to favorites",
         description: "Image added to your favorites",
       })
+      trackFavorite(postId, 'add')
     }
   }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     setSize(1)
+    const query = searchTags.trim()
+    const tagCount = query ? query.split(',').map(t => t.trim()).filter(Boolean).length : 0
+    trackSearch({ query: query || '(empty)', rating: ratingFilter, order, tagCount })
   }
 
   const clearSearch = () => {
@@ -209,7 +236,9 @@ export default function DanbooruPromptGenerator() {
   }
 
   const toggleShowFavorites = () => {
-    setShowFavorites(!showFavorites)
+    const next = !showFavorites
+    setShowFavorites(next)
+    safeTrack('toggle_favorites_view', { show: next, count: favorites.size })
   }
 
   const clearFavorites = () => {
@@ -228,11 +257,13 @@ export default function DanbooruPromptGenerator() {
   }
 
   const decreaseScale = () => {
-    setScaleValue([Math.max(1, scaleValue[0] - 1)])
+    const next = Math.max(1, scaleValue[0] - 1)
+    setScaleValue([next])
   }
 
   const increaseScale = () => {
-    setScaleValue([Math.min(3, scaleValue[0] + 1)])
+    const next = Math.min(3, scaleValue[0] + 1)
+    setScaleValue([next])
   }
 
   // Load favorites from localStorage on mount
@@ -319,6 +350,31 @@ export default function DanbooruPromptGenerator() {
   useEffect(() => {
     setSize(1)
   }, [order, ratingFilter, debouncedSearchTags])
+
+  // Track filter changes
+  useEffect(() => { trackFilterChange('rating', ratingFilter) }, [ratingFilter])
+  useEffect(() => { trackFilterChange('order', order) }, [order])
+
+  // Session & scroll tracking
+  useEffect(() => {
+    const start = Date.now()
+    safeTrack('app_open', {
+      ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'na',
+      w: typeof window !== 'undefined' ? window.innerWidth : 0,
+    })
+    const cleanupScroll = initScrollDepthTracking()
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        trackTimeOnPage(start)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      trackTimeOnPage(start)
+      if (cleanupScroll) cleanupScroll()
+    }
+  }, [])
 
   const getGridClass = () => {
     switch (cardScale) {
@@ -443,7 +499,11 @@ export default function DanbooruPromptGenerator() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+                      onClick={() => {
+                        const next = viewMode === 'grid' ? 'list' : 'grid'
+                        setViewMode(next)
+                        trackViewMode(next)
+                      }}
                       className="focus-ring"
                       aria-label={`Switch to ${viewMode === "grid" ? "list" : "grid"} view`}
                     >
@@ -479,6 +539,7 @@ export default function DanbooruPromptGenerator() {
                           href="https://civitai.com/user/Mexes"
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => trackExternalLink('https://civitai.com/user/Mexes','social')}
                           className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                           aria-label="Visit Mexes on CivitAI"
                         >
@@ -498,6 +559,7 @@ export default function DanbooruPromptGenerator() {
                           href="https://tensor.art/u/616420638671868313"
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => trackExternalLink('https://tensor.art/u/616420638671868313','social')}
                           className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                           aria-label="Visit Mexes on Tensor.Art"
                         >
@@ -517,6 +579,7 @@ export default function DanbooruPromptGenerator() {
                           href="https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T"
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => trackExternalLink('https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T','social')}
                           className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                           aria-label="Visit Mexes on SeaArt AI"
                         >
@@ -537,6 +600,7 @@ export default function DanbooruPromptGenerator() {
                       href="https://ko-fi.com/mexes"
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackExternalLink('https://ko-fi.com/mexes','support')}
                       className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
                       aria-label="Support Mexes on Ko-fi"
                     >
@@ -679,7 +743,7 @@ export default function DanbooruPromptGenerator() {
           {/* Gallery */}
           {viewMode === "grid" ? (
             <div className={`${getGridClass()} mb-8`}>
-              {posts.map((post, index) => {
+              {posts.map((post: DanbooruPost, index: number) => {
                 const cleanedPrompt = cleanPrompt(
                   post.tag_string,
                   post.tag_string_artist,
@@ -784,6 +848,7 @@ export default function DanbooruPromptGenerator() {
                                 href={`https://danbooru.donmai.us/posts/${post.id}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
+                                onClick={() => trackExternalLink(`https://danbooru.donmai.us/posts/${post.id}`,'post')}
                                 aria-label="View original post"
                               >
                                 <ExternalLink className={getIconClass()} />
@@ -801,7 +866,7 @@ export default function DanbooruPromptGenerator() {
           ) : (
             /* List View */
             <div className="space-y-4 mb-8">
-              {posts.map((post, index) => {
+              {posts.map((post: DanbooruPost, index: number) => {
                 const cleanedPrompt = cleanPrompt(
                   post.tag_string,
                   post.tag_string_artist,
@@ -883,6 +948,7 @@ export default function DanbooruPromptGenerator() {
                                 href={`https://danbooru.donmai.us/posts/${post.id}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
+                                onClick={() => trackExternalLink(`https://danbooru.donmai.us/posts/${post.id}`,'post')}
                               >
                                 <ExternalLink className="w-4 h-4 mr-2" />
                                 View Original
