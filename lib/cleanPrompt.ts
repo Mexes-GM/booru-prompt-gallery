@@ -126,6 +126,12 @@ function loadTagsToRemove(category?: number): Set<string> {
       "official art",
       "fan art",
       "commission",
+      "pointless censoring",
+      "web address",
+      "original",
+      "sound effects",
+      "motion lines",
+      "patreon logo",
     ])
   }
 }
