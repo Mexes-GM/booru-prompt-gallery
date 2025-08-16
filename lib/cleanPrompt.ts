@@ -47,46 +47,6 @@ const SUBJECT_TAGS_SET = new Set(["1girl", "1boy", "2girls", "2boys", "multiple 
 
 const COMPOSITION_TAGS_SET = new Set(["portrait", "full body", "upper body", "close-up", "wide shot"])
 
-const REDUNDANCY_MAP: Record<string, string> = {
-  breasts: "medium breasts",
-  chest: "medium breasts",
-  boobs: "medium breasts",
-  hair: "hair",
-  eyes: "eyes",
-  clothing: "",
-  clothes: "",
-  outfit: "",
-  sitting: "sitting",
-  standing: "standing",
-  lying: "lying",
-  pose: "",
-  smile: "smile",
-  smiling: "smile",
-  happy: "smile",
-  sad: "sad",
-  angry: "angry",
-  surprised: "surprised",
-  expression: "",
-  face: "",
-  head: "",
-  body: "",
-  skin: "",
-  person: "",
-  people: "",
-  human: "",
-  good: "",
-  nice: "",
-  cute: "cute",
-  kawaii: "cute",
-  adorable: "cute",
-  pretty: "beautiful",
-  gorgeous: "beautiful",
-  stunning: "beautiful",
-  girl: "1girl",
-  boy: "1boy",
-  woman: "1girl",
-  man: "1boy",
-}
 
 import tagsData from "../tags.json"
 
@@ -506,98 +466,176 @@ const commonMetaTags = new Set([
   "original",
   ])
 
-function processRedundancy(tags: string[]): string[] {
-  const processedTags: string[] = []
-  const seenCategories = new Set<string>()
+// Procesa y optimiza los tags (combina variantes y elimina redundancias)
+function optimizeTags(tags: string[]): string[] {
+  // Copia para preservar orden original salvo eliminaciones / combinaciones
+  let working = [...tags]
 
-  // Sistema robusto de eliminación de redundancia por especificidad
-  function removeRedundantTags(tagList: string[]): string[] {
+  // Detectar múltiples sujetos (desactivar combinación de adjetivos en prendas)
+  const subjectTagsInPrompt = working.filter((t) => SUBJECT_TAGS_SET.has(t))
+  const subjectSet = new Set(subjectTagsInPrompt)
+  const hasPluralSubject = subjectSet.has("2girls") || subjectSet.has("2boys") || subjectSet.has("multiple girls") || subjectSet.has("multiple boys")
+  const multipleDistinctSubjects = subjectSet.size > 1
+  const disableCombination = hasPluralSubject || multipleDistinctSubjects
+
+  // Combina tags que comparten el mismo sustantivo final (white skirt + long skirt -> white long skirt)
+  function combineSharedNounTags(original: string[]): string[] {
+    // Nombres de prendas / rasgos donde tiene sentido combinar adjetivos
+    const MERGE_NOUNS = new Set([
+      "skirt",
+      "dress",
+      "shirt",
+      "jacket",
+      "coat",
+      "cape",
+      "hat",
+      "hood",
+      "boots",
+      "socks",
+      "stockings",
+      "gloves",
+      "pants",
+      "shorts",
+      "leggings",
+      "tights",
+      "apron",
+      "kimono",
+      "yukata",
+      "armor",
+      "bikini",
+      "swimsuit",
+      "underwear",
+      "panties",
+      "bra",
+      // Rasgos físicos selectivos
+      "hair", // (long hair + white hair -> long white hair)
+      // OJO: evitamos "eyes" para no crear combinaciones incoherentes (blue green eyes)
+    ])
+
+    interface GroupInfo {
+      indices: number[]
+      adjectives: string[]
+    }
+
+    const groups: Record<string, GroupInfo> = {}
+
+    original.forEach((tag, idx) => {
+      const parts = tag.split(" ")
+      // Solo considerar tags de exactamente dos palabras (adjetivo + sustantivo) para reducir combinaciones erróneas
+      if (parts.length !== 2) return
+      const [adj, noun] = parts
+      if (!MERGE_NOUNS.has(noun)) return
+
+      if (!groups[noun]) {
+        groups[noun] = { indices: [], adjectives: [] }
+      }
+      groups[noun].indices.push(idx)
+      if (!groups[noun].adjectives.includes(adj)) groups[noun].adjectives.push(adj)
+    })
+
+    // Construir nuevo array respetando orden original
+    const toSkip = new Set<number>()
+    const insertionMap = new Map<number, string>() // index inicial -> combinedTag
+
+    Object.entries(groups).forEach(([noun, info]) => {
+      if (info.indices.length <= 1) return // nada que combinar
+      // Construir tag combinado
+      const combined = `${info.adjectives.join(" ")} ${noun}`.trim()
+      // Evitar crear tag idéntico redundante (si ya existe multi adjetivo con todos)
+      const alreadyExists = original.some((t) => t === combined)
+      if (alreadyExists) {
+        // Simplemente eliminamos las variantes individuales duplicadas menos la más completa existente
+        // Mantener primera ocurrencia del combinado (ya está) y saltar las demás individuales
+        info.indices.forEach((i) => toSkip.add(i))
+        // Encontrar índice del combinado y quitar de skip para conservarlo
+        const combinedIndex = original.indexOf(combined)
+        if (combinedIndex >= 0) toSkip.delete(combinedIndex)
+      } else {
+        // Insertar en posición de la primera ocurrencia
+        insertionMap.set(info.indices[0], combined)
+        // Saltar todas las individuales
+        info.indices.forEach((i) => toSkip.add(i))
+      }
+    })
+
+    if (insertionMap.size === 0) return original // No hubo cambios
+
     const result: string[] = []
-    const tagSet = new Set<string>()
+    original.forEach((tag, idx) => {
+      if (insertionMap.has(idx)) {
+        result.push(insertionMap.get(idx)!)
+      } else if (!toSkip.has(idx)) {
+        result.push(tag)
+      }
+    })
+    return result
+  }
 
-    // Ordenar por longitud (más específicos primero)
-    const sortedTags = [...tagList].sort((a, b) => b.length - a.length)
+  // Eliminación y consolidación específicas manteniendo orden
+  // 1. Breast sizes (mantener la más específica según jerarquía si hay varias)
+  const breastHierarchy = [
+    "gigantic breasts",
+    "huge breasts",
+    "large breasts",
+    "medium breasts",
+    "small breasts",
+    "flat chest",
+  ]
+  const presentBreasts = breastHierarchy.filter((b) => working.includes(b))
+  if (presentBreasts.length > 1) {
+    const bestBreast = presentBreasts[0]
+    working = working.filter((t) => !BREAST_SIZES_SET.has(t) || t === bestBreast)
+  }
 
-    for (const tag of sortedTags) {
-      if (tagSet.has(tag)) continue // Evitar duplicados
+  // 2. Hair length: eliminar duplicados conservando primera aparición
+  const seenHair = new Set<string>()
+  working = working.filter((t) => {
+    if (!HAIR_LENGTHS_SET.has(t)) return true
+    if (seenHair.has(t)) return false
+    seenHair.add(t)
+    return true
+  })
 
-      let isRedundant = false
+  // 3. Eye colors: eliminar duplicados conservando primera aparición
+  const seenEyes = new Set<string>()
+  working = working.filter((t) => {
+    if (!EYE_COLORS_SET.has(t)) return true
+    if (seenEyes.has(t)) return false
+    seenEyes.add(t)
+    return true
+  })
 
-      // Verificar si este tag es redundante con alguno ya agregado
-      for (const existingTag of result) {
-        // Si el tag actual está completamente contenido en uno más específico, es redundante
-        if (existingTag.includes(tag) && existingTag !== tag) {
-          // Verificar que sea una redundancia real usando split una sola vez
-          const tagWords = tag.split(" ")
-          const existingWords = existingTag.split(" ")
+  // 4. Combinar variantes con mismo sustantivo (solo si permitido)
+  let intermediate = working
+  if (!disableCombination) {
+    intermediate = combineSharedNounTags(intermediate)
+  }
 
-          // Solo es redundante si todas las palabras del tag están en el existente
-          const allWordsIncluded = tagWords.every((word) => existingWords.includes(word))
-
-          if (allWordsIncluded) {
-            isRedundant = true
+  // 5. Eliminar redundancias por inclusión manteniendo orden estable
+  intermediate = removeRedundantTags(intermediate)
+  return intermediate
+  
+  // Sistema robusto de eliminación de redundancia por especificidad (estable)
+  function removeRedundantTags(tagList: string[]): string[] {
+    const toRemove = new Set<number>()
+    const wordsCache = tagList.map((t) => t.split(" "))
+    for (let i = 0; i < tagList.length; i++) {
+      if (toRemove.has(i)) continue
+      for (let j = 0; j < tagList.length; j++) {
+        if (i === j) continue
+        if (tagList[j] !== tagList[i] && tagList[j].includes(tagList[i])) {
+          const wordsI = wordsCache[i]
+          const wordsJ = wordsCache[j]
+          const allIn = wordsI.every((w) => wordsJ.includes(w))
+          if (allIn) {
+            toRemove.add(i)
             break
           }
         }
       }
-
-      if (!isRedundant) {
-        result.push(tag)
-        tagSet.add(tag)
-      }
     }
-
-    return result
+    return tagList.filter((_, idx) => !toRemove.has(idx))
   }
-
-  // Procesar tags de pechos usando Set
-  const breastTags = tags.filter((tag) => BREAST_SIZES_SET.has(tag))
-  if (breastTags.length > 0) {
-    const breastHierarchy = [
-      "gigantic breasts",
-      "huge breasts",
-      "large breasts",
-      "medium breasts",
-      "small breasts",
-      "flat chest",
-    ]
-    const bestBreast = breastHierarchy.find((size) => breastTags.includes(size))
-    if (bestBreast) {
-      processedTags.push(bestBreast)
-      seenCategories.add("breasts")
-    }
-  }
-
-  // Procesar tags de pelo usando Set
-  const hairTags = tags.filter((tag) => HAIR_LENGTHS_SET.has(tag))
-  if (hairTags.length > 0) {
-    const uniqueHairTags = [...new Set(hairTags)]
-    processedTags.push(...uniqueHairTags)
-    seenCategories.add("hair_length")
-  }
-
-  // Procesar color de ojos usando Set
-  const eyeTags = tags.filter((tag) => EYE_COLORS_SET.has(tag))
-  if (eyeTags.length > 0) {
-    const uniqueEyeTags = [...new Set(eyeTags)]
-    processedTags.push(...uniqueEyeTags)
-    seenCategories.add("eye_color")
-  }
-
-  // Procesar el resto de tags con filtrado optimizado
-  const remainingTags = tags.filter((tag) => {
-    if (BREAST_SIZES_SET.has(tag) && seenCategories.has("breasts")) return false
-    if (HAIR_LENGTHS_SET.has(tag) && seenCategories.has("hair_length")) return false
-    if (EYE_COLORS_SET.has(tag) && seenCategories.has("eye_color")) return false
-    return true
-  })
-
-  const mappedTags = remainingTags.map((tag) => REDUNDANCY_MAP[tag] ?? tag).filter((tag) => tag.length > 0)
-
-  // Aplicar sistema robusto de eliminación de redundancia
-  const cleanedTags = removeRedundantTags([...processedTags, ...mappedTags])
-
-  return cleanedTags
 }
 
 export function cleanPrompt(
@@ -605,11 +643,32 @@ export function cleanPrompt(
   artistTags: string,
   characterTags: string,
   copyrightTags: string,
+  options?: {
+    includeCharacters?: boolean
+    includeCopyrights?: boolean
+    optimizeTags?: boolean // activa/desactiva TODA la optimización (combinar + limpiar redundancias)
+    exclude?: string[] // lista de tags que el usuario desea eliminar manualmente
+  },
 ): string {
+  const includeCharacters = options?.includeCharacters !== false
+  const includeCopyrights = options?.includeCopyrights !== false
+  const optimizeAll = options?.optimizeTags !== false // por defecto ON
+  const userExcludeSet = new Set(
+    (options?.exclude || [])
+      .map((t) => t.replace(/_/g, " ").toLowerCase().trim())
+      .filter((t) => t.length > 0),
+  )
   const allTags = tagString.split(" ").filter((tag) => tag.length > 0)
   const artistTagsSet = new Set(artistTags.split(" "))
   const characterTagsArray = characterTags.split(" ").filter((tag) => tag.length > 0)
   const copyrightTagsArray = copyrightTags.split(" ").filter((tag) => tag.length > 0)
+  // Normalizados para comparación posterior
+  const normalizedCharacterSet = new Set(
+    characterTagsArray.map((t) => t.replace(/_/g, " ").toLowerCase().trim()).filter((t) => t.length > 0),
+  )
+  const normalizedCopyrightSet = new Set(
+    copyrightTagsArray.map((t) => t.replace(/_/g, " ").toLowerCase().trim()).filter((t) => t.length > 0),
+  )
 
   const numberRegex = /^\d+$/
   const urlRegex = /:/
@@ -637,8 +696,10 @@ export function cleanPrompt(
     return true
   })
 
-  const formattedTags = filteredTags.map((tag) => tag.replace(/_/g, " ").toLowerCase().trim())
-  const processedTags = processRedundancy(formattedTags)
+  const formattedTags = filteredTags
+    .map((tag) => tag.replace(/_/g, " ").toLowerCase().trim())
+    .filter((tag) => !userExcludeSet.has(tag)) // exclusiones tempranas
+  const processedTags = optimizeAll ? optimizeTags(formattedTags) : formattedTags
 
   const qualityTags: string[] = []
   const contentTags: string[] = []
@@ -665,14 +726,26 @@ export function cleanPrompt(
     return b.length - a.length
   })
 
-  const characterAndFranchiseTags = [...characterTagsArray, ...copyrightTagsArray]
+  const characterAndFranchiseTags = [
+    ...(includeCharacters ? characterTagsArray : []),
+    ...(includeCopyrights ? copyrightTagsArray : []),
+  ]
     .map((tag) => tag.replace(/_/g, " ").toLowerCase().trim())
     .filter((tag) => tag.length > 0)
 
   const allFinalTags = new Set<string>()
   characterAndFranchiseTags.forEach((tag) => allFinalTags.add(tag))
 
-  const combinedTags = [...sortedContentTags, ...qualityTags]
+  // Si el usuario desactiva characters/copyrights, debemos removerlos también de las listas procesadas
+  const combinedTagsPre = [...sortedContentTags, ...qualityTags]
+  const combinedTags = combinedTagsPre.filter((tag) => {
+    if (!includeCharacters && normalizedCharacterSet.has(tag)) return false
+    if (!includeCopyrights && normalizedCopyrightSet.has(tag)) return false
+  // Tratar variantes 'official ...' como parte de character para el toggle
+  if (!includeCharacters && tag.startsWith("official ")) return false
+    if (userExcludeSet.has(tag)) return false // exclusión manual posterior a optimización
+    return true
+  })
   combinedTags.forEach((tag) => {
     if (!allFinalTags.has(tag)) {
       allFinalTags.add(tag)
