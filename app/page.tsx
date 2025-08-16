@@ -33,6 +33,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { cleanPrompt } from "@/lib/cleanPrompt"
+import { Switch } from "@/components/ui/switch"
 import {
   safeTrack,
   initScrollDepthTracking,
@@ -79,6 +80,10 @@ export default function DanbooruPromptGenerator() {
   const [noMoreResults, setNoMoreResults] = useState(false)
   const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
   const [randomSeed, setRandomSeed] = useState<number>(Date.now())
+  const [includeCharacters, setIncludeCharacters] = useState(true)
+  const [includeCopyrights, setIncludeCopyrights] = useState(true)
+  const [optimizeTags, setOptimizeTags] = useState(true) // UI toggle para combinación/optimización de tags
+  const [excludeInput, setExcludeInput] = useState("") // entrada de tags a excluir
   const { toast } = useToast()
 
   const {
@@ -351,9 +356,68 @@ export default function DanbooruPromptGenerator() {
     setSize(1)
   }, [order, ratingFilter, debouncedSearchTags])
 
+  // Load persisted exclude tags on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('excludeTags')
+        if (saved !== null) setExcludeInput(saved)
+      } catch {
+        // ignore
+      }
+    }
+  }, [])
+
+  // Load persisted prompt option switches (includeCharacters, includeCopyrights, optimizeTags)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('promptOptions')
+        if (saved) {
+          const parsed = JSON.parse(saved)
+            || {}
+          if (typeof parsed.includeCharacters === 'boolean') setIncludeCharacters(parsed.includeCharacters)
+          if (typeof parsed.includeCopyrights === 'boolean') setIncludeCopyrights(parsed.includeCopyrights)
+          if (typeof parsed.optimizeTags === 'boolean') setOptimizeTags(parsed.optimizeTags)
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+  }, [])
+
+  // Persist prompt option switches whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('promptOptions', JSON.stringify({
+          includeCharacters,
+          includeCopyrights,
+            optimizeTags,
+        }))
+      } catch {
+        // ignore
+      }
+    }
+  }, [includeCharacters, includeCopyrights, optimizeTags])
+
+  // Persist exclude tags whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('excludeTags', excludeInput)
+      } catch {
+        // ignore
+      }
+    }
+  }, [excludeInput])
+
   // Track filter changes
   useEffect(() => { trackFilterChange('rating', ratingFilter) }, [ratingFilter])
   useEffect(() => { trackFilterChange('order', order) }, [order])
+  useEffect(() => { trackFilterChange('include_characters', String(includeCharacters)) }, [includeCharacters])
+  useEffect(() => { trackFilterChange('include_copyrights', String(includeCopyrights)) }, [includeCopyrights])
+  useEffect(() => { trackFilterChange('optimize_tags', String(optimizeTags)) }, [optimizeTags])
 
   // Session & scroll tracking
   useEffect(() => {
@@ -632,26 +696,136 @@ export default function DanbooruPromptGenerator() {
                     </div>
                   )}
 
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                    <Input
-                      type="text"
-                      value={searchTags}
-                      onChange={(e) => setSearchTags(e.target.value)}
-                      placeholder={order === "recent" ? "Search by up to 2 tags (e.g., cat_girl, blue_eyes)" : order === "random" ? "Search by one tag only (e.g., cat_girl)" : "Search by one tag only (e.g., cat_girl)"}
-                      className="pl-10 pr-10 focus-ring text-sm sm:text-base"
-                      aria-label="Search tags"
-                    />
-                    {searchTags && (
-                      <button
-                        type="button"
-                        onClick={clearSearch}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-sm"
-                        aria-label="Clear search"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
+                  {/* Search bar with rating/order/favorites aligned to the right */}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col lg:flex-row gap-3 items-stretch">
+                      {/* Search input */}
+                      <div className="relative flex-1 min-w-[220px]">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                        <Input
+                          type="text"
+                          value={searchTags}
+                          onChange={(e) => setSearchTags(e.target.value)}
+                          placeholder={order === "recent" ? "Search by up to 2 tags (e.g., cat_girl, blue_eyes)" : order === "random" ? "Search by one tag only (e.g., cat_girl)" : "Search by one tag only (e.g., cat_girl)"}
+                          className="pl-10 pr-10 focus-ring text-sm sm:text-base h-10"
+                          aria-label="Search tags"
+                        />
+                        {searchTags && (
+                          <button
+                            type="button"
+                            onClick={clearSearch}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-sm"
+                            aria-label="Clear search"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Controls to the right of search */}
+                      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
+                        <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
+                          <Select value={ratingFilter} onValueChange={setRatingFilter}>
+                            <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
+                              <SelectValue placeholder="Content rating" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="rating:general">General</SelectItem>
+                              <SelectItem value="rating:sensitive">Sensitive</SelectItem>
+                              <SelectItem value="rating:questionable">Questionable</SelectItem>
+                              <SelectItem value="rating:explicit">Explicit</SelectItem>
+                              <SelectItem value="all">No filter (All)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select value={order} onValueChange={(value: "popular" | "recent" | "random") => setOrder(value)}>
+                            <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
+                              <SelectValue placeholder="Sort by" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="popular">Most popular</SelectItem>
+                              <SelectItem value="recent">Most recent</SelectItem>
+                              <SelectItem value="random">Random</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant={showFavorites ? "default" : "outline"}
+                            onClick={toggleShowFavorites}
+                            className="focus-ring w-full sm:w-auto h-10"
+                            aria-label="Toggle favorites"
+                          >
+                            <Heart className={`w-4 h-4 mr-2 ${showFavorites ? "fill-white" : ""}`} />
+                            <span className="whitespace-nowrap">Favs ({favorites.size})</span>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Exclude Tags Input + Prompt Options (label + input wrapped) */}
+                  <div className="space-y-2">
+                    <div className="flex flex-col lg:flex-row gap-4 items-start">
+                      {/* Left column: label + input constrained together */}
+                      <div className="flex-1 min-w-[240px] w-full">
+                        <div className="w-full">
+                          <label htmlFor="exclude-tags" className="block text-xs font-medium text-muted-foreground mb-2">
+                            Tags to remove (comma separated)
+                          </label>
+                          <div className="relative">
+                            <Input
+                              id="exclude-tags"
+                              type="text"
+                              value={excludeInput}
+                              onChange={(e) => setExcludeInput(e.target.value)}
+                              placeholder="1girl, full body"
+                              className="focus-ring text-xs sm:text-sm pr-10 h-10"
+                              aria-label="Tags to exclude"
+                            />
+                            {excludeInput && (
+                              <button
+                                type="button"
+                                onClick={() => setExcludeInput("")}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-sm"
+                                aria-label="Clear exclusions"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {/* Right column: Prompt Options */}
+                      <div className="flex flex-col gap-2 lg:min-w-[340px] w-full lg:w-auto">
+                        <span className="text-xs font-medium text-muted-foreground">Prompt Options</span>
+                        <div className="flex items-center gap-4 flex-wrap px-3 py-2 rounded-md border border-border/50 bg-muted/30">
+                          <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
+                            <Switch
+                              checked={includeCharacters}
+                              onCheckedChange={(v) => setIncludeCharacters(!!v)}
+                              aria-label="Toggle character tags"
+                            />
+                            <span className="select-none">Characters</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
+                            <Switch
+                              checked={includeCopyrights}
+                              onCheckedChange={(v) => setIncludeCopyrights(!!v)}
+                              aria-label="Toggle copyright tags"
+                            />
+                            <span className="select-none">Copyrights</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
+                            <Switch
+                              checked={optimizeTags}
+                              onCheckedChange={(v) => setOptimizeTags(!!v)}
+                              aria-label="Toggle combine tags"
+                            />
+                            <span className="select-none">Combine Tags</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    {excludeInput && null /* Preview badges removed per user request */}
                   </div>
 
                   {/* Filters */}
@@ -673,47 +847,6 @@ export default function DanbooruPromptGenerator() {
                   )}
 
                   <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <Filter className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm font-medium">Filters:</span>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                      <Select value={ratingFilter} onValueChange={setRatingFilter}>
-                        <SelectTrigger className="w-full sm:w-[140px] focus-ring">
-                          <SelectValue placeholder="Content rating" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="rating:general">General</SelectItem>
-                          <SelectItem value="rating:sensitive">Sensitive</SelectItem>
-                          <SelectItem value="rating:questionable">Questionable</SelectItem>
-                          <SelectItem value="rating:explicit">Explicit</SelectItem>
-                          <SelectItem value="all">No filter (All)</SelectItem>
-                        </SelectContent>
-                      </Select>
-
-                      <Select value={order} onValueChange={(value: "popular" | "recent" | "random") => setOrder(value)}>
-                        <SelectTrigger className="w-full sm:w-[140px] focus-ring">
-                          <SelectValue placeholder="Sort by" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="popular">Most popular</SelectItem>
-                          <SelectItem value="recent">Most recent</SelectItem>
-                          <SelectItem value="random">Random</SelectItem>
-                        </SelectContent>
-                      </Select>
-
-                      <Button
-                        type="button"
-                        variant={showFavorites ? "default" : "outline"}
-                        onClick={toggleShowFavorites}
-                        className="focus-ring w-full sm:w-auto"
-                      >
-                        <Heart className={`w-4 h-4 mr-2 ${showFavorites ? "fill-white" : ""}`} />
-                        Favorites ({favorites.size})
-                      </Button>
-                    </div>
-
                     <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
                       <Button type="submit" disabled={isLoading} className="focus-ring flex-1 sm:flex-none">
                         {isLoading ? (
@@ -744,11 +877,13 @@ export default function DanbooruPromptGenerator() {
           {viewMode === "grid" ? (
             <div className={`${getGridClass()} mb-8`}>
               {posts.map((post: DanbooruPost, index: number) => {
+                const excludeList = excludeInput.split(',').map(t => t.trim()).filter(Boolean)
                 const cleanedPrompt = cleanPrompt(
                   post.tag_string,
                   post.tag_string_artist,
                   post.tag_string_character,
                   post.tag_string_copyright,
+                  { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
                 )
 
                 return (
@@ -867,11 +1002,13 @@ export default function DanbooruPromptGenerator() {
             /* List View */
             <div className="space-y-4 mb-8">
               {posts.map((post: DanbooruPost, index: number) => {
+                const excludeList = excludeInput.split(',').map(t => t.trim()).filter(Boolean)
                 const cleanedPrompt = cleanPrompt(
                   post.tag_string,
                   post.tag_string_artist,
                   post.tag_string_character,
                   post.tag_string_copyright,
+                  { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
                 )
 
                 return (
@@ -1076,7 +1213,7 @@ export default function DanbooruPromptGenerator() {
             onClick={scrollToTop}
             className="h-10 w-10 sm:h-12 sm:w-12 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 focus-ring hover:scale-110 active:scale-95"
             size="icon"
-            aria-label="Volver al inicio"
+            aria-label="Back to top"
           >
             <ChevronUp className="h-4 w-4 sm:h-5 sm:w-5 transition-transform duration-200 hover:animate-bounce" />
           </Button>
