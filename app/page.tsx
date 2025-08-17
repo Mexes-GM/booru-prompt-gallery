@@ -885,41 +885,27 @@ export default function DanbooruPromptGenerator() {
                   post.tag_string_copyright,
                   { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
                 )
+                const fileUrl = post.large_file_url || post.file_url
+                const isImage = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
+                if (!isImage) return null // Skip non-image (e.g., video) posts entirely
 
                 return (
                   <Card key={`${post.id}-${index}`} className="overflow-hidden card-hover group">
                     <div className="image-container-2-3">
-                      {(post.large_file_url || post.file_url)?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i) ? (
-                        <Image
-                          src={post.large_file_url || post.file_url}
-                          alt={`Danbooru post ${post.id}`}
-                          fill
-                          className="object-cover transition-transform duration-300 group-hover:scale-105"
-                          sizes={
-                            cardScale === "small"
-                              ? "(max-width: 640px) 50vw, 20vw"
-                              : cardScale === "medium"
-                                ? "(max-width: 640px) 50vw, 25vw"
-                                : "(max-width: 640px) 100vw, 33vw"
-                          }
-                          priority={index < 8}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-muted">
-                          <div className="text-center space-y-2">
-                            <div className={cardScale === "small" ? "text-2xl" : "text-4xl"}>🎬</div>
-                            <p className={`text-muted-foreground ${cardScale === "small" ? "text-xs" : "text-sm"}`}>
-                              Video content
-                            </p>
-                            <Button variant="outline" size={cardScale === "small" ? "sm" : "sm"} asChild>
-                              <a href={post.file_url} target="_blank" rel="noopener noreferrer" className="focus-ring">
-                                <ExternalLink className={`${getIconClass()} mr-1`} />
-                                View
-                              </a>
-                            </Button>
-                          </div>
-                        </div>
-                      )}
+                      <Image
+                        src={fileUrl}
+                        alt={`Danbooru post ${post.id}`}
+                        fill
+                        className="object-cover transition-transform duration-300 group-hover:scale-105"
+                        sizes={
+                          cardScale === "small"
+                            ? "(max-width: 640px) 50vw, 20vw"
+                            : cardScale === "medium"
+                              ? "(max-width: 640px) 50vw, 25vw"
+                              : "(max-width: 640px) 100vw, 33vw"
+                        }
+                        priority={index < 8}
+                      />
 
                       {/* Overlay actions */}
                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1010,25 +996,22 @@ export default function DanbooruPromptGenerator() {
                   post.tag_string_copyright,
                   { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
                 )
+                const fileUrl = post.large_file_url || post.file_url
+                const isImage = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
+                if (!isImage) return null
 
                 return (
                   <Card key={`${post.id}-${index}`} className="overflow-hidden card-hover">
                     <CardContent className="p-4 sm:p-6">
                       <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                         <div className="image-container-list-2-3 mx-auto sm:mx-0">
-                          {(post.large_file_url || post.file_url)?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i) ? (
-                            <Image
-                              src={post.large_file_url || post.file_url}
-                              alt={`Danbooru post ${post.id}`}
-                              fill
-                              className="object-cover"
-                              sizes="128px"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <div className="text-2xl">🎬</div>
-                            </div>
-                          )}
+                          <Image
+                            src={fileUrl}
+                            alt={`Danbooru post ${post.id}`}
+                            fill
+                            className="object-cover"
+                            sizes="128px"
+                          />
                         </div>
 
                         <div className="flex-1 space-y-3">
