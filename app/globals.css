@@ -290,3 +290,47 @@ html {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
+
+/* Browser translation protection - selective approach */
+.notranslate {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+/* Protect only critical UI elements from translation */
+[translate="no"],
+.notranslate,
+.lucide,
+svg,
+button[aria-label],
+input[type="search"],
+input[type="range"],
+select,
+[role="button"],
+[role="tab"],
+[role="menuitem"],
+[role="slider"] {
+  translate: no !important;
+}
+
+/* Prevent DOM manipulation issues on dynamic UI components */
+[data-radix-popper-content-wrapper],
+[data-radix-portal],
+[data-state],
+[data-side],
+[data-align],
+[data-radix-collection-item] {
+  translate: no !important;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+/* Protect navigation and control elements */
+nav,
+.navigation,
+[role="navigation"],
+[data-testid*="control"],
+[data-testid*="button"],
+[data-testid*="toggle"] {
+  translate: no !important;
+}

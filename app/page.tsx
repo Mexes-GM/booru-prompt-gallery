@@ -769,6 +769,7 @@ export default function DanbooruPromptGenerator() {
                           placeholder={order === "recent" ? "Search by up to 2 tags (e.g., cat_girl, blue_eyes)" : order === "random" ? "Search by one tag only (e.g., cat_girl)" : "Search by one tag only (e.g., cat_girl)"}
                           className="pl-10 pr-10 focus-ring text-sm sm:text-base h-10"
                           aria-label="Search tags"
+                          translate="no"
                         />
                         {searchTags && (
                           <button
@@ -787,7 +788,7 @@ export default function DanbooruPromptGenerator() {
                         <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
                           {isClient ? (
                             <Select value={ratingFilter} onValueChange={setRatingFilter}>
-                              <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
+                              <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10" translate="no">
                                 <SelectValue placeholder="Content rating" />
                               </SelectTrigger>
                               <SelectContent>
