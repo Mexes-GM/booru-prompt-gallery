@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { Analytics } from '@vercel/analytics/next'
 import { StructuredData } from './structured-data'
+import ErrorBoundary from '@/components/error-boundary'
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -134,12 +135,14 @@ export default function RootLayout({
         <meta name="msapplication-config" content="/browserconfig.xml" />
       </head>
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <StructuredData />
-          {children}
-          <Toaster />
-          <Analytics />
-        </ThemeProvider>
+        <ErrorBoundary>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            <StructuredData />
+            {children}
+            <Toaster />
+            <Analytics />
+          </ThemeProvider>
+        </ErrorBoundary>
       </body>
     </html>
   )
