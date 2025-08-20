@@ -90,3 +90,23 @@ export function trackFilterChange(key: string, value: string) {
 export function trackRefresh(order: string) {
   safeTrack('refresh', { order })
 }
+
+export function trackProviderChange(provider: string) {
+  safeTrack('provider_change', { provider })
+}
+
+export function trackAibooruOption(option: string, enabled: boolean) {
+  safeTrack('aibooru_option', { option, enabled })
+}
+
+export function trackRatingChange(rating: string) {
+  safeTrack('rating_change', { rating })
+}
+
+export function trackOrderChange(order: string) {
+  safeTrack('order_change', { order })
+}
+
+export function trackDanbooruOption(option: string, enabled: boolean) {
+  safeTrack('danbooru_option', { option, enabled })
+}

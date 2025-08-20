@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useToast } from '@/hooks/use-toast'
 
 export type ApiStatus = 'healthy' | 'slow' | 'error' | 'offline'
@@ -15,14 +15,10 @@ export interface ApiStatusInfo {
 }
 
 interface UseApiStatusOptions {
-  checkInterval?: number // Intervalo de verificación en ms
-  slowThreshold?: number // Umbral de latencia lenta en ms
   maxConsecutiveErrors?: number // Máximo de errores consecutivos antes de marcar como offline
 }
 
 const DEFAULT_OPTIONS: UseApiStatusOptions = {
-  checkInterval: 30000, // 30 segundos
-  slowThreshold: 3000, // 3 segundos
   maxConsecutiveErrors: 3
 }
 
@@ -37,80 +33,10 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
     consecutiveErrors: 0
   })
   
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
-  const lastCheckRef = useRef<Date>(new Date())
   const consecutiveErrorsRef = useRef(0)
   const lastSuccessfulRequestRef = useRef<Date>(new Date())
-  const lastToastRef = useRef<string | null>(null)
 
-  // Función para verificar el estado de la API
-  const checkApiHealth = useCallback(async (): Promise<void> => {
-    const startTime = Date.now()
-    
-    try {
-      // Verificar endpoint de salud
-      const response = await fetch('/api/health', {
-        method: 'GET',
-        headers: {
-          'Cache-Control': 'no-cache'
-        }
-      })
-      
-      const responseTime = Date.now() - startTime
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-      }
-      
-      // Reset contador de errores consecutivos
-      consecutiveErrorsRef.current = 0
-      lastSuccessfulRequestRef.current = new Date()
-      
-      // Determinar estado basado en tiempo de respuesta
-      if (responseTime > optsRef.current.slowThreshold!) {
-        setApiStatus({
-          status: 'slow',
-          message: `API respondiendo lentamente (${responseTime}ms)`,
-          responseTime,
-          consecutiveErrors: 0,
-          lastSuccessfulRequest: lastSuccessfulRequestRef.current
-        })
-      } else {
-        setApiStatus({
-          status: 'healthy',
-          message: 'API funcionando correctamente',
-          responseTime,
-          consecutiveErrors: 0,
-          lastSuccessfulRequest: lastSuccessfulRequestRef.current
-        })
-      }
-      
-    } catch (error) {
-      consecutiveErrorsRef.current += 1
-      const errorObj = error instanceof Error ? error : new Error(String(error))
-      
-      // Determinar si es un error temporal o la API está completamente caída
-      if (consecutiveErrorsRef.current >= optsRef.current.maxConsecutiveErrors!) {
-        setApiStatus({
-          status: 'offline',
-          message: 'API no disponible - Múltiples intentos fallidos',
-          lastError: errorObj,
-          consecutiveErrors: consecutiveErrorsRef.current,
-          lastSuccessfulRequest: lastSuccessfulRequestRef.current
-        })
-      } else {
-        setApiStatus({
-          status: 'error',
-          message: `Error temporal en la API (${errorObj.message})`,
-          lastError: errorObj,
-          consecutiveErrors: consecutiveErrorsRef.current,
-          lastSuccessfulRequest: lastSuccessfulRequestRef.current
-        })
-      }
-    }
-    
-    lastCheckRef.current = new Date()
-  }, [])
+
 
   // Función para reportar errores desde otros componentes
   const reportError = useCallback((error: Error, responseTime?: number) => {
@@ -182,12 +108,8 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
     })
   }, [])
 
-  // Nota: Verificaciones automáticas desactivadas
-  // Solo se monitorea cuando se hacen llamadas reales a la API
-
   return {
     apiStatus,
-    checkApiHealth,
     reportError,
     reportSlowResponse,
     reportSuccess
