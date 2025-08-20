@@ -94,6 +94,11 @@ export const removeQualityTags = (prompt: string): string => {
     '8k',
     'HDR',
     'ultra-detailed',
+    'ultra detailed',
+    'extremely detailed',
+    'highly detailed',
+    'very detailed',
+    'good quality',
     'newest',
     'very awa',
     'quality details',
@@ -107,17 +112,69 @@ export const removeQualityTags = (prompt: string): string => {
     'score_4_up'
   ]
   
-  let result = prompt
+  // Split prompt into individual tags
+  let tags = prompt.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+  
+  // Remove quality tags from each individual tag
+  tags = tags.filter(tag => {
+    const lowerTag = tag.toLowerCase()
+    
+    // Check if the entire tag is a quality tag
+    if (qualityTags.some(qualityTag => lowerTag === qualityTag.toLowerCase())) {
+      return false
+    }
+    
+    // Check for compound tags that contain quality words
+    // Remove tags that are primarily quality-focused
+    const qualityWords = ['detailed', 'ultra', 'extremely', 'highly', 'very', 'best', 'high', 'amazing', 'quality', 'masterpiece']
+    const tagWords = lowerTag.split(' ')
+    
+    // If tag contains "detailed" and other quality words, remove it entirely
+    if (tagWords.includes('detailed')) {
+      const hasOtherQualityWords = tagWords.some(word => 
+        qualityWords.includes(word) && word !== 'detailed'
+      )
+      if (hasOtherQualityWords) {
+        return false
+      }
+      
+      // Special case: if it's just "detailed [body_part]" or similar descriptive tags, keep it
+      // But remove pure quality combinations like "detailed eyes" when it appears with "ultra detailed"
+      const bodyParts = ['eyes', 'face', 'hair', 'hands', 'body', 'skin', 'lips', 'nose']
+      if (tagWords.length === 2 && tagWords[0] === 'detailed' && bodyParts.includes(tagWords[1])) {
+        // Check if there are other detailed tags in the prompt that would make this redundant
+        const hasUltraDetailed = tags.some(otherTag => 
+          otherTag.toLowerCase().includes('ultra detailed') || 
+          otherTag.toLowerCase().includes('extremely detailed') ||
+          otherTag.toLowerCase().includes('highly detailed')
+        )
+        if (hasUltraDetailed) {
+          return false
+        }
+      }
+    }
+    
+    return true
+  })
+  
+  // Remove any remaining quality tag fragments and clean up
+  let result = tags.join(', ')
+  
+  // Additional cleanup for any remaining quality fragments
   qualityTags.forEach(tag => {
-    // Remove exact matches (case insensitive)
     const regex = new RegExp(`\\b${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')
     result = result.replace(regex, '')
   })
   
-  // Clean up extra commas and spaces
-  result = result.replace(/,\s*,/g, ',')
-    .replace(/^,\s*|\s*,$/g, '')
-    .replace(/\s+/g, ' ')
+  // Comprehensive cleanup of commas and spaces
+  result = result
+    .replace(/,\s*,+/g, ',')           // Multiple consecutive commas
+    .replace(/,\s*,/g, ',')            // Double commas with spaces
+    .replace(/\s*,\s*,\s*/g, ', ')     // Multiple commas with various spacing
+    .replace(/^\s*,+\s*|\s*,+\s*$/g, '') // Leading/trailing commas
+    .replace(/\s+/g, ' ')              // Multiple spaces
+    .replace(/,\s*$/g, '')             // Trailing comma
+    .replace(/^\s*,/g, '')             // Leading comma
     .trim()
   
   return result
