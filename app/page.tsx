@@ -28,7 +28,8 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
-import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags } from "@/lib/api-client"
+import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
+import { userPreferences } from "@/lib/storage"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
@@ -49,18 +50,7 @@ import {
   trackRefresh,
 } from '@/lib/analytics'
 
-interface DanbooruPost {
-  id: number
-  file_url: string
-  large_file_url: string
-  preview_file_url: string
-  tag_string: string
-  tag_string_artist: string
-  tag_string_character: string
-  tag_string_copyright: string
-  rating: string
-  score: number
-}
+// Using BooruPost from api-client instead of local interface
 
 type CardScale = "small" | "medium" | "large"
 
@@ -82,9 +72,74 @@ export default function DanbooruPromptGenerator() {
   const [randomSeed, setRandomSeed] = useState<number>(Date.now())
   const [includeCharacters, setIncludeCharacters] = useState(true)
   const [includeCopyrights, setIncludeCopyrights] = useState(true)
-  const [optimizeTags, setOptimizeTags] = useState(true) // UI toggle para combinación/optimización de tags
+  const [optimizeTags, setOptimizeTags] = useState(true) // UI toggle para combinacion/optimizacion de tags
   const [excludeInput, setExcludeInput] = useState("") // entrada de tags a excluir
+  const [booruProvider, setBooruProvider] = useState<BooruProvider>('aibooru')
+  const [hasPromptFilter, setHasPromptFilter] = useState(false)
+  const [removeLoRaTags, setRemoveLoRaTags] = useState(false)
+  const [removeQualityTags, setRemoveQualityTags] = useState(false)
+  const [isClient, setIsClient] = useState(false)
   const { toast } = useToast()
+
+  // Load user preferences from localStorage on client mount
+  useEffect(() => {
+    setIsClient(true)
+    const savedProvider = userPreferences.getBooruProvider()
+    const savedRemoveLoRa = userPreferences.getRemoveLoRaTags()
+    const savedRemoveQuality = userPreferences.getRemoveQualityTags()
+    const savedRatingFilter = userPreferences.getRatingFilter()
+    const savedOrder = userPreferences.getOrder()
+    
+    setBooruProvider(savedProvider)
+    setRemoveLoRaTags(savedRemoveLoRa)
+    setRemoveQualityTags(savedRemoveQuality)
+    setRatingFilter(savedRatingFilter)
+    setOrder(savedOrder)
+  }, [])
+
+  // Save booru provider preference
+  useEffect(() => {
+    if (isClient) {
+      userPreferences.setBooruProvider(booruProvider)
+    }
+  }, [booruProvider, isClient])
+
+  // Save LoRa tags removal preference
+  useEffect(() => {
+    if (isClient) {
+      userPreferences.setRemoveLoRaTags(removeLoRaTags)
+    }
+  }, [removeLoRaTags, isClient])
+
+  // Save quality tags removal preference
+  useEffect(() => {
+    if (isClient) {
+      userPreferences.setRemoveQualityTags(removeQualityTags)
+    }
+  }, [removeQualityTags, isClient])
+
+  // Save rating filter preference
+  useEffect(() => {
+    if (isClient) {
+      userPreferences.setRatingFilter(ratingFilter)
+    }
+  }, [ratingFilter, isClient])
+
+  // Save order preference
+  useEffect(() => {
+    if (isClient) {
+      userPreferences.setOrder(order)
+    }
+  }, [order, isClient])
+
+  // Auto-activate prompt filter when Aibooru is selected
+  useEffect(() => {
+    if (booruProvider === 'aibooru') {
+      setHasPromptFilter(true)
+    } else {
+      setHasPromptFilter(false)
+    }
+  }, [booruProvider])
 
   const {
     data: pages,
@@ -94,7 +149,7 @@ export default function DanbooruPromptGenerator() {
     size,
     setSize,
     mutate,
-  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed)
+  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter)
 
   // Fetch favorite posts separately
   const {
@@ -180,20 +235,20 @@ export default function DanbooruPromptGenerator() {
     }
   }, [scaleValue, cardScale])
 
-  const copyToClipboard = async (prompt: string, postId: number) => {
+  const copyToClipboard = async (content: string, postId: number, isPrompt: boolean = false) => {
     try {
-      await navigator.clipboard.writeText(prompt)
+      await navigator.clipboard.writeText(content)
       setCopiedId(postId)
       toast({
         title: "Copied!",
-        description: "Prompt copied to clipboard",
+        description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
       })
       setTimeout(() => setCopiedId(null), 2000)
       trackCopy(postId)
     } catch (error) {
       toast({
         title: "Error",
-        description: "Could not copy prompt",
+        description: isPrompt ? "Could not copy prompt" : "Could not copy tags",
         variant: "destructive",
       })
     }
@@ -501,7 +556,7 @@ export default function DanbooruPromptGenerator() {
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-3">
                   <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                    Danbooru Prompt Gallery
+                    Booru Prompt Gallery
                   </h1>
                   <Badge variant="secondary" className="text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-2 py-1">
                     By Mexes
@@ -588,7 +643,7 @@ export default function DanbooruPromptGenerator() {
             <div className="text-center space-y-2">
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
                 <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
-                  Generate prompts from Danbooru image tags. The system of this web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for your AI art generation.
+                  Generate prompts from Danbooru and Aibooru image collections. Extract and format tags from posts or access AI-generated prompts directly, creating clean, ready-to-use prompts for your AI art generation.
                 </p>
                 
                 {/* Social Links Section */}
@@ -686,12 +741,17 @@ export default function DanbooruPromptGenerator() {
                   {getFinalQueryTags(searchTags, ratingFilter, order).length > 0 && (
                     <div className="mb-4">
                       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-2">
-                        <span className="font-medium">Sending to Danbooru API:</span>
+                        <span className="font-medium">Sending to {booruProvider === "danbooru" ? "Danbooru" : "Aibooru"} API:</span>
                         {getFinalQueryTags(searchTags, ratingFilter, order).map((tag, index) => (
                           <Badge key={index} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/50 dark:border-blue-800/50 dark:text-blue-300 text-xs">
                             {tag}
                           </Badge>
                         ))}
+                        {booruProvider === "aibooru" && hasPromptFilter && (
+                          <Badge variant="outline" className="bg-green-50 border-green-200 text-green-700 dark:bg-green-950/50 dark:border-green-800/50 dark:text-green-300 text-xs">
+                            has:prompt
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   )}
@@ -725,28 +785,36 @@ export default function DanbooruPromptGenerator() {
                       {/* Controls to the right of search */}
                       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
                         <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
-                          <Select value={ratingFilter} onValueChange={setRatingFilter}>
-                            <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
-                              <SelectValue placeholder="Content rating" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="rating:general">General</SelectItem>
-                              <SelectItem value="rating:sensitive">Sensitive</SelectItem>
-                              <SelectItem value="rating:questionable">Questionable</SelectItem>
-                              <SelectItem value="rating:explicit">Explicit</SelectItem>
-                              <SelectItem value="all">No filter (All)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Select value={order} onValueChange={(value: "popular" | "recent" | "random") => setOrder(value)}>
-                            <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
-                              <SelectValue placeholder="Sort by" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="popular">Most popular</SelectItem>
-                              <SelectItem value="recent">Most recent</SelectItem>
-                              <SelectItem value="random">Random</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          {isClient ? (
+                            <Select value={ratingFilter} onValueChange={setRatingFilter}>
+                              <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
+                                <SelectValue placeholder="Content rating" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="rating:general">General</SelectItem>
+                                <SelectItem value="rating:sensitive">Sensitive</SelectItem>
+                                <SelectItem value="rating:questionable">Questionable</SelectItem>
+                                <SelectItem value="rating:explicit">Explicit</SelectItem>
+                                <SelectItem value="all">No filter (All)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <div className="w-full sm:w-[130px] h-10 bg-muted animate-pulse rounded-md" />
+                          )}
+                          {isClient ? (
+                            <Select value={order} onValueChange={(value: "popular" | "recent" | "random") => setOrder(value)}>
+                              <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
+                                <SelectValue placeholder="Sort by" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="popular">Most popular</SelectItem>
+                                <SelectItem value="recent">Most recent</SelectItem>
+                                <SelectItem value="random">Random</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <div className="w-full sm:w-[130px] h-10 bg-muted animate-pulse rounded-md" />
+                          )}
                           <Button
                             type="button"
                             variant={showFavorites ? "default" : "outline"}
@@ -794,38 +862,92 @@ export default function DanbooruPromptGenerator() {
                           </div>
                         </div>
                       </div>
-                      {/* Right column: Prompt Options */}
+                      {/* Right column: Options */}
                       <div className="flex flex-col gap-2 lg:min-w-[340px] w-full lg:w-auto">
-                        <span className="text-xs font-medium text-muted-foreground">Prompt Options</span>
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {booruProvider === 'aibooru' ? 'Aibooru Options' : 'Prompt Options'}
+                        </span>
                         <div className="flex items-center gap-4 flex-wrap px-3 py-2 rounded-md border border-border/50 bg-muted/30">
-                          <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
-                            <Switch
-                              checked={includeCharacters}
-                              onCheckedChange={(v) => setIncludeCharacters(!!v)}
-                              aria-label="Toggle character tags"
-                            />
-                            <span className="select-none">Characters</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
-                            <Switch
-                              checked={includeCopyrights}
-                              onCheckedChange={(v) => setIncludeCopyrights(!!v)}
-                              aria-label="Toggle copyright tags"
-                            />
-                            <span className="select-none">Copyrights</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
-                            <Switch
-                              checked={optimizeTags}
-                              onCheckedChange={(v) => setOptimizeTags(!!v)}
-                              aria-label="Toggle combine tags"
-                            />
-                            <span className="select-none">Combine Tags</span>
-                          </label>
+                          {booruProvider === 'danbooru' ? (
+                            <>
+                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
+                                <Switch
+                                  checked={includeCharacters}
+                                  onCheckedChange={(v) => setIncludeCharacters(!!v)}
+                                  aria-label="Toggle character tags"
+                                />
+                                <span className="select-none">Characters</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
+                                <Switch
+                                  checked={includeCopyrights}
+                                  onCheckedChange={(v) => setIncludeCopyrights(!!v)}
+                                  aria-label="Toggle copyright tags"
+                                />
+                                <span className="select-none">Copyrights</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
+                                <Switch
+                                  checked={optimizeTags}
+                                  onCheckedChange={(v) => setOptimizeTags(!!v)}
+                                  aria-label="Toggle combine tags"
+                                />
+                                <span className="select-none">Combine Tags</span>
+                              </label>
+                            </>
+                          ) : (
+                            <>
+                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
+                                <Switch
+                                  checked={removeLoRaTags}
+                                  onCheckedChange={(v) => setRemoveLoRaTags(!!v)}
+                                  aria-label="Remove LoRa tags from prompts"
+                                />
+                                <span className="select-none">Remove LoRa Tags</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
+                                <Switch
+                                  checked={removeQualityTags}
+                                  onCheckedChange={(v) => setRemoveQualityTags(!!v)}
+                                  aria-label="Remove quality tags from prompts"
+                                />
+                                <span className="select-none">Remove Quality Tags</span>
+                              </label>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
                     {excludeInput && null /* Preview badges removed per user request */}
+                  </div>
+
+                  {/* API Provider Selection */}
+                  <div className="space-y-2">
+                    <span className="text-xs font-medium text-muted-foreground">API Provider</span>
+                    <div className="flex flex-col sm:flex-row gap-3 items-start">
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant={booruProvider === "danbooru" ? "default" : "outline"}
+                          onClick={() => setBooruProvider("danbooru")}
+                          className="focus-ring text-sm"
+                          size="sm"
+                        >
+                          Danbooru
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={booruProvider === "aibooru" ? "default" : "outline"}
+                          onClick={() => setBooruProvider("aibooru")}
+                          className="focus-ring text-sm"
+                          size="sm"
+                        >
+                          Aibooru
+                        </Button>
+                      </div>
+                      
+
+                    </div>
                   </div>
 
                   {/* Filters */}
@@ -876,15 +998,46 @@ export default function DanbooruPromptGenerator() {
           {/* Gallery */}
           {viewMode === "grid" ? (
             <div className={`${getGridClass()} mb-8`}>
-              {posts.map((post: DanbooruPost, index: number) => {
+              {posts.map((post: BooruPost, index: number) => {
                 const excludeList = excludeInput.split(',').map(t => t.trim()).filter(Boolean)
-                const cleanedPrompt = cleanPrompt(
+                
+                // Check if this is an Aibooru post with prompt
+                const isAiPost = isAibooruPost(post)
+                let aiPrompt = isAiPost ? getPromptFromPost(post) : null
+                
+                // Apply LoRa tag removal if option is enabled
+                if (aiPrompt && removeLoRaTags) {
+                  aiPrompt = removeLoRaTagsUtil(aiPrompt)
+                }
+                
+                // Apply quality tag removal if option is enabled
+                if (aiPrompt && removeQualityTags) {
+                  aiPrompt = removeQualityTagsUtil(aiPrompt)
+                }
+                
+                // Apply quality tag removal if option is enabled
+                if (aiPrompt && removeQualityTags) {
+                  aiPrompt = removeQualityTagsUtil(aiPrompt)
+                }
+                
+                // Use AI prompt if available, otherwise use cleaned tags
+                let displayContent = aiPrompt || cleanPrompt(
                   post.tag_string,
                   post.tag_string_artist,
                   post.tag_string_character,
                   post.tag_string_copyright,
                   { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
                 )
+                
+                // Apply exclude list to AI prompts as well
+                if (aiPrompt && excludeList.length > 0) {
+                  const excludeSet = new Set(excludeList.map(tag => tag.toLowerCase().trim()))
+                  displayContent = aiPrompt.split(',').map(tag => tag.trim()).filter(tag => {
+                    const normalizedTag = tag.toLowerCase().replace(/_/g, ' ').trim()
+                    return !excludeSet.has(normalizedTag) && !excludeSet.has(tag.toLowerCase().trim())
+                  }).join(', ')
+                }
+                
                 const fileUrl = post.large_file_url || post.file_url
                 const isImage = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
                 if (!isImage) return null // Skip non-image (e.g., video) posts entirely
@@ -934,20 +1087,20 @@ export default function DanbooruPromptGenerator() {
 
                     <CardContent className={getCardContentClass()}>
                       <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container">
-                        <p className="text-foreground/80 leading-relaxed">{cleanedPrompt || "No tags available"}</p>
+                        <p className="text-foreground/80 leading-relaxed">{displayContent || "No content available"}</p>
                       </div>
 
                       <div className="flex button-group items-stretch">
                         <Button
-                          onClick={() => copyToClipboard(cleanedPrompt, post.id)}
+                          onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt)}
                           className="flex-1 focus-ring h-auto"
                           variant={copiedId === post.id ? "default" : "outline"}
-                          disabled={!cleanedPrompt}
+                          disabled={!displayContent}
                         >
                           {copiedId === post.id ? (
                             <>
                               <Check className={`${getIconClass()} mr-1`} />
-                              {cardScale === "small" ? "✓" : "Copied!"}
+                              {cardScale === "small" ? "OK" : "Copied!"}
                             </>
                           ) : (
                             <>
@@ -966,10 +1119,10 @@ export default function DanbooruPromptGenerator() {
                               className={`focus-ring bg-transparent h-auto ${cardScale === "small" ? "w-7" : ""}`}
                             >
                               <a
-                                href={`https://danbooru.donmai.us/posts/${post.id}`}
+                                href={isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                onClick={() => trackExternalLink(`https://danbooru.donmai.us/posts/${post.id}`,'post')}
+                                onClick={() => trackExternalLink(isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`,'post')}
                                 aria-label="View original post"
                               >
                                 <ExternalLink className={getIconClass()} />
@@ -987,15 +1140,36 @@ export default function DanbooruPromptGenerator() {
           ) : (
             /* List View */
             <div className="space-y-4 mb-8">
-              {posts.map((post: DanbooruPost, index: number) => {
+              {posts.map((post: BooruPost, index: number) => {
                 const excludeList = excludeInput.split(',').map(t => t.trim()).filter(Boolean)
-                const cleanedPrompt = cleanPrompt(
+                
+                // Check if this is an Aibooru post with prompt
+                const isAiPost = isAibooruPost(post)
+                let aiPrompt = isAiPost ? getPromptFromPost(post) : null
+                
+                // Apply LoRa tag removal if option is enabled
+                if (aiPrompt && removeLoRaTags) {
+                  aiPrompt = removeLoRaTagsUtil(aiPrompt)
+                }
+                
+                // Use AI prompt if available, otherwise use cleaned tags
+                let displayContent = aiPrompt || cleanPrompt(
                   post.tag_string,
                   post.tag_string_artist,
                   post.tag_string_character,
                   post.tag_string_copyright,
                   { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
                 )
+                
+                // Apply exclude list to AI prompts as well
+                if (aiPrompt && excludeList.length > 0) {
+                  const excludeSet = new Set(excludeList.map(tag => tag.toLowerCase().trim()))
+                  displayContent = aiPrompt.split(',').map(tag => tag.trim()).filter(tag => {
+                    const normalizedTag = tag.toLowerCase().replace(/_/g, ' ').trim()
+                    return !excludeSet.has(normalizedTag) && !excludeSet.has(tag.toLowerCase().trim())
+                  }).join(', ')
+                }
+                
                 const fileUrl = post.large_file_url || post.file_url
                 const isImage = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
                 if (!isImage) return null
@@ -1039,15 +1213,15 @@ export default function DanbooruPromptGenerator() {
 
                           <div className="bg-muted/50 p-3 rounded-lg max-h-20 overflow-y-auto">
                             <p className="text-sm text-foreground/80 leading-relaxed">
-                              {cleanedPrompt || "No tags available"}
+                              {displayContent || "No content available"}
                             </p>
                           </div>
 
                           <div className="flex flex-col sm:flex-row gap-2">
                             <Button
-                              onClick={() => copyToClipboard(cleanedPrompt, post.id)}
+                              onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt)}
                               variant={copiedId === post.id ? "default" : "outline"}
-                              disabled={!cleanedPrompt}
+                              disabled={!displayContent}
                               className="focus-ring flex-1 sm:flex-none"
                             >
                               {copiedId === post.id ? (
@@ -1065,10 +1239,10 @@ export default function DanbooruPromptGenerator() {
 
                             <Button variant="outline" asChild className="focus-ring bg-transparent flex-1 sm:flex-none">
                               <a
-                                href={`https://danbooru.donmai.us/posts/${post.id}`}
+                                href={isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                onClick={() => trackExternalLink(`https://danbooru.donmai.us/posts/${post.id}`,'post')}
+                                onClick={() => trackExternalLink(isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`,'post')}
                               >
                                 <ExternalLink className="w-4 h-4 mr-2" />
                                 View Original
@@ -1145,7 +1319,7 @@ export default function DanbooruPromptGenerator() {
           {!isLoading && !favoritesLoading && posts.length === 0 && (
             <div className="text-center py-12 px-4">
               <div className="space-y-4">
-                <div className="text-4xl sm:text-6xl">{showFavorites ? "❤️" : "🎨"}</div>
+                <div className="text-4xl sm:text-6xl">{showFavorites ? "♥" : "*"}</div>
                 <div className="space-y-2">
                   <p className="text-base sm:text-lg font-medium">
                     {showFavorites ? "No favorites yet" : "No images found"}
@@ -1178,9 +1352,10 @@ export default function DanbooruPromptGenerator() {
               <div className="flex items-center justify-center space-x-2">
                 <span className="text-xs sm:text-sm text-muted-foreground">Powered by</span>
                 <Badge variant="outline" className="text-xs">Danbooru API</Badge>
+                <Badge variant="outline" className="text-xs">Aibooru API</Badge>
               </div>
               <p className="text-xs text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                Generate prompts from Danbooru image tags. The system of this web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation. All images are sourced from Danbooru and belong to their respective creators.
+                Generate clean prompts from Danbooru and Aibooru posts. Extract and format tags from images, remove unnecessary metadata, LoRa tags, and quality descriptors to create ready-to-use prompts for AI art generation. All images are sourced from their respective platforms and belong to their creators.
               </p>
             </div>
           </div>
