@@ -16,14 +16,15 @@ const inter = Inter({
 export const metadata: Metadata = {
   metadataBase: new URL('https://danbooru-prompt-gallery.vercel.app'),
   title: {
-    default: "Danbooru Prompt Gallery - By Mexes",
-    template: "%s | Danbooru Prompt Gallery"
+    default: "Booru Prompt Gallery - By Mexes",
+    template: "%s | Booru Prompt Gallery"
   },
-  description: "Generate prompts from Danbooru image tags. The system of this web app extracts and formats tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
+  description: "Generate clean prompts from Danbooru and Aibooru posts. Extract and format tags from images, remove unnecessary metadata, LoRa tags, and quality descriptors to create ready-to-use prompts for AI art generation.",
   keywords: [
-    "AI art", "prompts", "danbooru", "image generation", "stable diffusion",
+    "AI art", "prompts", "danbooru", "aibooru", "image generation", "stable diffusion",
     "midjourney", "dall-e", "prompt engineering", "tag extraction", "anime art",
-    "digital art", "art generator", "prompt gallery", "booru", "tag database"
+    "digital art", "art generator", "prompt gallery", "booru", "tag database",
+    "lora tags", "quality tags", "prompt cleaning", "tag removal"
   ],
   authors: [{ name: "Mexes", url: "https://danbooru-prompt-gallery.vercel.app" }],
   creator: "Mexes",

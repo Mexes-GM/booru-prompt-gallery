@@ -14,6 +14,130 @@ export interface DanbooruPost {
   score: number
 }
 
+export interface AibooruPost extends DanbooruPost {
+  ai_metadata?: {
+    prompt?: string
+    negative_prompt?: string
+    model?: string
+    steps?: number
+    cfg_scale?: number
+    sampler?: string
+    seed?: number
+  }
+}
+
+export type BooruPost = DanbooruPost | AibooruPost
+export type BooruProvider = 'danbooru' | 'aibooru'
+
+// Helper function to check if a post is from Aibooru and has AI metadata
+export const isAibooruPost = (post: BooruPost): post is AibooruPost => {
+  return 'ai_metadata' in post && post.ai_metadata !== undefined
+}
+
+// Helper function to get prompt from a post
+// Function to clean and extract prompt from malformed JSON data
+export const cleanPromptData = (promptData: string): string => {
+  try {
+    // Try to parse as JSON first
+    const parsed = JSON.parse(promptData)
+    
+    // If it's an object with prompt field, extract it
+    if (typeof parsed === 'object' && parsed.prompt) {
+      return parsed.prompt
+    }
+    
+    // If it has v4_prompt structure, extract from there
+    if (parsed.v4_prompt?.caption?.base_caption) {
+      return parsed.v4_prompt.caption.base_caption
+    }
+    
+    // If it's already a string, return as is
+    if (typeof parsed === 'string') {
+      return parsed
+    }
+    
+    return promptData
+  } catch {
+    // If not JSON, return as is
+    return promptData
+  }
+}
+
+// Function to remove duplicate tags from prompt
+export const removeDuplicateTags = (prompt: string): string => {
+  const tags = prompt.split(',').map(tag => tag.trim())
+  const uniqueTags = [...new Set(tags)]
+  return uniqueTags.join(', ')
+}
+
+// Function to remove LoRa tags from prompt
+export const removeLoRaTags = (prompt: string): string => {
+  return prompt.replace(/<lora:[^>]+>/g, '').replace(/,\s*,/g, ',').trim()
+}
+
+// Function to remove quality tags from prompt
+export const removeQualityTags = (prompt: string): string => {
+  const qualityTags = [
+    'masterpiece',
+    'best quality',
+    'high quality',
+    'amazing quality',
+    'very aesthetic',
+    'detailed',
+    'beautiful color',
+    'absurdres',
+    'sensitive',
+    'high_quality',
+    'highres',
+    'high_detail',
+    'beautiful',
+    '8k',
+    'HDR',
+    'ultra-detailed',
+    'newest',
+    'very awa',
+    'quality details',
+    '32k',
+    'high resolution',
+    'score_9',
+    'score_8_up',
+    'score_7_up',
+    'score_6_up',
+    'score_5_up',
+    'score_4_up'
+  ]
+  
+  let result = prompt
+  qualityTags.forEach(tag => {
+    // Remove exact matches (case insensitive)
+    const regex = new RegExp(`\\b${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')
+    result = result.replace(regex, '')
+  })
+  
+  // Clean up extra commas and spaces
+  result = result.replace(/,\s*,/g, ',')
+    .replace(/^,\s*|\s*,$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  
+  return result
+}
+
+export const getPromptFromPost = (post: BooruPost): string | null => {
+  if (isAibooruPost(post) && post.ai_metadata?.prompt) {
+    let prompt = post.ai_metadata.prompt
+    
+    // Clean malformed prompt data
+    prompt = cleanPromptData(prompt)
+    
+    // Remove duplicate tags
+    prompt = removeDuplicateTags(prompt)
+    
+    return prompt
+  }
+  return null
+}
+
 // Production fetcher with error handling and retry logic
 const fetcher = async (url: string) => {
   const res = await fetch(url, {
@@ -95,17 +219,24 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
   return tags
 }
 
-export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number) => {
+export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false) => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
   const processedTags = processTagsForAPI(tags, order)
   const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
   const encodedQuery = encodeURIComponent(query)
   
-  return useSWRInfinite<DanbooruPost[]>(
+  return useSWRInfinite<BooruPost[]>(
     (pageIndex: number) => {
-      const baseUrl = `/api/posts?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`
+      const apiEndpoint = provider === 'aibooru' ? '/api/aibooru' : '/api/posts'
+      const baseUrl = `${apiEndpoint}?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`
+      
+      // Add hasPrompt parameter for Aibooru
+      const promptParam = provider === 'aibooru' && hasPrompt ? '&hasPrompt=true' : ''
+      
       // Add random seed for random searches to force cache invalidation
-      return order === 'random' && randomSeed ? `${baseUrl}&seed=${randomSeed}` : baseUrl
+      const seedParam = order === 'random' && randomSeed ? `&seed=${randomSeed}` : ''
+      
+      return `${baseUrl}${promptParam}${seedParam}`
     },
     fetcher,
     {
