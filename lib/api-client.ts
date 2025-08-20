@@ -81,6 +81,7 @@ export const removeQualityTags = (prompt: string): string => {
     'masterpiece',
     'best quality',
     'high quality',
+    'highest quality',
     'amazing quality',
     'very aesthetic',
     'detailed',
@@ -112,8 +113,22 @@ export const removeQualityTags = (prompt: string): string => {
     'score_4_up'
   ]
   
+  // First, remove quality tags with parentheses and weights like (masterpiece:1) or (highest quality:1.)
+  let result = prompt
+  
+  // Remove quality tags with parentheses and numeric weights
+  qualityTags.forEach(tag => {
+    // Pattern for (tag:number) or (tag:number.)
+    const weightedRegex = new RegExp(`\\(\\s*${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:\\s*[0-9]*\\.?[0-9]*\\s*\\)`, 'gi')
+    result = result.replace(weightedRegex, '')
+    
+    // Pattern for just (tag)
+    const simpleParenRegex = new RegExp(`\\(\\s*${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\)`, 'gi')
+    result = result.replace(simpleParenRegex, '')
+  })
+  
   // Split prompt into individual tags
-  let tags = prompt.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+  let tags = result.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
   
   // Remove quality tags from each individual tag
   tags = tags.filter(tag => {
@@ -126,7 +141,7 @@ export const removeQualityTags = (prompt: string): string => {
     
     // Check for compound tags that contain quality words
     // Remove tags that are primarily quality-focused
-    const qualityWords = ['detailed', 'ultra', 'extremely', 'highly', 'very', 'best', 'high', 'amazing', 'quality', 'masterpiece']
+    const qualityWords = ['detailed', 'ultra', 'extremely', 'highly', 'very', 'best', 'high', 'highest', 'amazing', 'quality', 'masterpiece']
     const tagWords = lowerTag.split(' ')
     
     // If tag contains "detailed" and other quality words, remove it entirely
@@ -157,8 +172,8 @@ export const removeQualityTags = (prompt: string): string => {
     return true
   })
   
-  // Remove any remaining quality tag fragments and clean up
-  let result = tags.join(', ')
+  // Join the filtered tags
+  result = tags.join(', ')
   
   // Additional cleanup for any remaining quality fragments
   qualityTags.forEach(tag => {
