@@ -47,8 +47,12 @@ import {
   trackLoadMore,
   trackViewMode,
   trackScaleChange,
-  trackFilterChange,
   trackRefresh,
+  trackProviderChange,
+  trackAibooruOption,
+  trackRatingChange,
+  trackOrderChange,
+  trackDanbooruOption,
 } from '@/lib/analytics'
 
 // Using BooruPost from api-client instead of local interface
@@ -472,12 +476,7 @@ export default function DanbooruPromptGenerator() {
     }
   }, [excludeInput])
 
-  // Track filter changes
-  useEffect(() => { trackFilterChange('rating', ratingFilter) }, [ratingFilter])
-  useEffect(() => { trackFilterChange('order', order) }, [order])
-  useEffect(() => { trackFilterChange('include_characters', String(includeCharacters)) }, [includeCharacters])
-  useEffect(() => { trackFilterChange('include_copyrights', String(includeCopyrights)) }, [includeCopyrights])
-  useEffect(() => { trackFilterChange('optimize_tags', String(optimizeTags)) }, [optimizeTags])
+  // Note: Filter changes are now tracked directly in the UI event handlers
 
   // Session & scroll tracking
   useEffect(() => {
@@ -792,7 +791,10 @@ export default function DanbooruPromptGenerator() {
                       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
                         <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
                           {isClient ? (
-                            <Select value={ratingFilter} onValueChange={setRatingFilter}>
+                            <Select value={ratingFilter} onValueChange={(value) => {
+                              setRatingFilter(value)
+                              trackRatingChange(value)
+                            }}>
                               <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10" translate="no">
                                 <SelectValue placeholder="Content rating" />
                               </SelectTrigger>
@@ -808,7 +810,10 @@ export default function DanbooruPromptGenerator() {
                             <div className="w-full sm:w-[130px] h-10 bg-muted animate-pulse rounded-md" />
                           )}
                           {isClient ? (
-                            <Select value={order} onValueChange={(value: "popular" | "recent" | "random") => setOrder(value)}>
+                            <Select value={order} onValueChange={(value: "popular" | "recent" | "random") => {
+                              setOrder(value)
+                              trackOrderChange(value)
+                            }}>
                               <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
                                 <SelectValue placeholder="Sort by" />
                               </SelectTrigger>
@@ -879,7 +884,11 @@ export default function DanbooruPromptGenerator() {
                               <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
                                 <Switch
                                   checked={includeCharacters}
-                                  onCheckedChange={(v) => setIncludeCharacters(!!v)}
+                                  onCheckedChange={(v) => {
+                                    const enabled = !!v
+                                    setIncludeCharacters(enabled)
+                                    trackDanbooruOption('include_characters', enabled)
+                                  }}
                                   aria-label="Toggle character tags"
                                 />
                                 <span className="select-none">Characters</span>
@@ -887,7 +896,11 @@ export default function DanbooruPromptGenerator() {
                               <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
                                 <Switch
                                   checked={includeCopyrights}
-                                  onCheckedChange={(v) => setIncludeCopyrights(!!v)}
+                                  onCheckedChange={(v) => {
+                                    const enabled = !!v
+                                    setIncludeCopyrights(enabled)
+                                    trackDanbooruOption('include_copyrights', enabled)
+                                  }}
                                   aria-label="Toggle copyright tags"
                                 />
                                 <span className="select-none">Copyrights</span>
@@ -895,7 +908,11 @@ export default function DanbooruPromptGenerator() {
                               <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
                                 <Switch
                                   checked={optimizeTags}
-                                  onCheckedChange={(v) => setOptimizeTags(!!v)}
+                                  onCheckedChange={(v) => {
+                                    const enabled = !!v
+                                    setOptimizeTags(enabled)
+                                    trackDanbooruOption('optimize_tags', enabled)
+                                  }}
                                   aria-label="Toggle combine tags"
                                 />
                                 <span className="select-none">Combine Tags</span>
@@ -906,7 +923,11 @@ export default function DanbooruPromptGenerator() {
                               <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
                                 <Switch
                                   checked={removeLoRaTags}
-                                  onCheckedChange={(v) => setRemoveLoRaTags(!!v)}
+                                  onCheckedChange={(v) => {
+                                    const enabled = !!v
+                                    setRemoveLoRaTags(enabled)
+                                    trackAibooruOption('remove_lora_tags', enabled)
+                                  }}
                                   aria-label="Remove LoRa tags from prompts"
                                 />
                                 <span className="select-none">Remove LoRa Tags</span>
@@ -914,7 +935,11 @@ export default function DanbooruPromptGenerator() {
                               <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
                                 <Switch
                                   checked={removeQualityTags}
-                                  onCheckedChange={(v) => setRemoveQualityTags(!!v)}
+                                  onCheckedChange={(v) => {
+                                    const enabled = !!v
+                                    setRemoveQualityTags(enabled)
+                                    trackAibooruOption('remove_quality_tags', enabled)
+                                  }}
                                   aria-label="Remove quality tags from prompts"
                                 />
                                 <span className="select-none">Remove Quality Tags</span>
@@ -935,7 +960,10 @@ export default function DanbooruPromptGenerator() {
                         <Button
                           type="button"
                           variant={booruProvider === "danbooru" ? "default" : "outline"}
-                          onClick={() => setBooruProvider("danbooru")}
+                          onClick={() => {
+                            setBooruProvider("danbooru")
+                            trackProviderChange("danbooru")
+                          }}
                           className="focus-ring text-sm"
                           size="sm"
                         >
@@ -944,7 +972,10 @@ export default function DanbooruPromptGenerator() {
                         <Button
                           type="button"
                           variant={booruProvider === "aibooru" ? "default" : "outline"}
-                          onClick={() => setBooruProvider("aibooru")}
+                          onClick={() => {
+                            setBooruProvider("aibooru")
+                            trackProviderChange("aibooru")
+                          }}
                           className="focus-ring text-sm"
                           size="sm"
                         >
