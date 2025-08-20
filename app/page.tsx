@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
 import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
+
 import { userPreferences } from "@/lib/storage"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -80,6 +81,8 @@ export default function DanbooruPromptGenerator() {
   const [removeQualityTags, setRemoveQualityTags] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const { toast } = useToast()
+  
+
 
   // Load user preferences from localStorage on client mount
   useEffect(() => {
@@ -158,6 +161,8 @@ export default function DanbooruPromptGenerator() {
     isLoading: favoritesLoading,
     mutate: mutateFavorites,
   } = useFavoritePosts(Array.from(favorites))
+
+
 
 
 
@@ -1362,6 +1367,8 @@ export default function DanbooruPromptGenerator() {
           </div>
         </footer>
 
+
+
         {/* Back to Top Button */}
         <div className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 transition-all duration-500 ${
           showBackToTop 
@@ -1377,6 +1384,8 @@ export default function DanbooruPromptGenerator() {
             <ChevronUp className="h-4 w-4 sm:h-5 sm:w-5 transition-transform duration-200 hover:animate-bounce" />
           </Button>
         </div>
+        
+
       </div>
     </TooltipProvider>
   )
