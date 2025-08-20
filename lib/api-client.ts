@@ -212,25 +212,54 @@ export const getPromptFromPost = (post: BooruPost): string | null => {
 
 // Production fetcher with error handling and retry logic
 const fetcher = async (url: string) => {
-  const res = await fetch(url, {
-    headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'BooruPromptGallery/1.0',
-    }
-  })
+  const startTime = Date.now()
   
-  if (!res.ok) {
-    const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
-    try {
-      error.info = await res.json()
-    } catch {
-      error.info = { message: res.statusText }
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'BooruPromptGallery/1.0',
+      }
+    })
+    
+    const responseTime = Date.now() - startTime
+    
+    if (!res.ok) {
+      // Importar dinámicamente para evitar dependencias circulares
+      const { useApiStatusSimple } = await import('@/hooks/use-api-status')
+      const { reportError } = useApiStatusSimple()
+      
+      const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
+      try {
+        error.info = await res.json()
+      } catch {
+        error.info = { message: res.statusText }
+      }
+      error.status = res.status
+      
+      // Reportar error a las notificaciones
+      reportError(`Error ${res.status}: ${res.statusText}`)
+      
+      throw error
     }
-    error.status = res.status
-    throw error
+    
+    // Verificar si la respuesta fue lenta (>10 segundos)
+    if (responseTime > 10000) {
+      const { useApiStatusSimple } = await import('@/hooks/use-api-status')
+      const { reportSlowResponse } = useApiStatusSimple()
+      reportSlowResponse(responseTime)
+    }
+    
+    return res.json()
+  } catch (fetchError) {
+    // Si es un error de red o timeout
+    if (fetchError instanceof TypeError || fetchError.name === 'AbortError') {
+      const { useApiStatusSimple } = await import('@/hooks/use-api-status')
+      const { reportError } = useApiStatusSimple()
+      reportError('Error de conexión: No se pudo conectar con la API')
+    }
+    throw fetchError
   }
-  
-  return res.json()
 }
 
 
@@ -339,22 +368,51 @@ export function useFavoritePosts(favoriteIds: number[]) {
     async () => {
       if (!shouldFetch) return []
       
-      const response = await fetch('/api/favorites', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ids: favoriteIds }),
-      })
+      const startTime = Date.now()
+      
+      try {
+        const response = await fetch('/api/favorites', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ids: favoriteIds }),
+        })
+        
+        const responseTime = Date.now() - startTime
 
-      if (!response.ok) {
-        const errorData = new Error(`HTTP error! status: ${response.status}`) as Error & { info?: unknown; status?: number }
-        errorData.status = response.status
-        throw errorData
+        if (!response.ok) {
+          // Importar dinámicamente para evitar dependencias circulares
+          const { useApiStatusSimple } = await import('@/hooks/use-api-status')
+          const { reportError } = useApiStatusSimple()
+          
+          const errorData = new Error(`HTTP error! status: ${response.status}`) as Error & { info?: unknown; status?: number }
+          errorData.status = response.status
+          
+          // Reportar error a las notificaciones
+          reportError(`Error ${response.status}: Error al cargar favoritos`)
+          
+          throw errorData
+        }
+        
+        // Verificar si la respuesta fue lenta (>10 segundos)
+        if (responseTime > 10000) {
+          const { useApiStatusSimple } = await import('@/hooks/use-api-status')
+          const { reportSlowResponse } = useApiStatusSimple()
+          reportSlowResponse(responseTime)
+        }
+
+        const posts = await response.json()
+        return posts
+      } catch (fetchError) {
+        // Si es un error de red o timeout
+        if (fetchError instanceof TypeError || fetchError.name === 'AbortError') {
+          const { useApiStatusSimple } = await import('@/hooks/use-api-status')
+          const { reportError } = useApiStatusSimple()
+          reportError('Error de conexión: No se pudo cargar favoritos')
+        }
+        throw fetchError
       }
-
-      const posts = await response.json()
-      return posts
     },
     {
       revalidateOnFocus: false,
