@@ -92,6 +92,11 @@ function loadTagsToRemove(category?: number): Set<string> {
       "sound effects",
       "motion lines",
       "patreon logo",
+      "copyright notice",
+      "commissioner name",
+      "borrowed character",
+      "borrowed character name",
+
     ])
   }
 }
@@ -111,6 +116,16 @@ const commonMetaTags = new Set([
   "commission",
   "bad_id",
   "bad_pixiv_id",
+  "bad_artstation_id",
+  "bad_facebook_id",
+  "bad_instagram_id",
+  "bad_tiktok_id",
+  "bad_reddit_id",
+  "bad_github_id",
+  "bad_discord_id",
+  "bad_telegram_id",
+  "bad_skype_id",
+  "bad_other_id",
   "bad_twitter_id",
   "photoshop_(medium)",
   "symbol-only_commentary",
