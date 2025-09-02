@@ -72,7 +72,10 @@ export const removeDuplicateTags = (prompt: string): string => {
 
 // Function to remove LoRa tags from prompt
 export const removeLoRaTags = (prompt: string): string => {
-  return prompt.replace(/<lora:[^>]+>/g, '').replace(/,\s*,/g, ',').trim()
+  return prompt
+    .replace(/<lora:[^>]+>/g, '') // Remove LoRa tags like <lora:name:weight>
+    .replace(/<segment:[^>]+>/g, '') // Remove segment tags like <segment:yolo-face.pt, 0.6, 0.6//cid=11>
+    .replace(/,\s*,/g, ',').trim()
 }
 
 // Function to remove quality tags from prompt
@@ -292,6 +295,18 @@ export const hasMultipleTags = (tags: string, order: string = 'popular'): boolea
   
   const maxTags = order === 'recent' ? 2 : 1
   return tagCount > maxTags
+}
+
+// Function to check if user entered more than 2 search terms total
+export const hasMoreThanTwoTerms = (tags: string): boolean => {
+  if (!tags.trim()) return false
+  
+  const tagCount = tags
+    .split(',')
+    .map(tag => tag.trim())
+    .filter(tag => tag.length > 0).length
+  
+  return tagCount > 2
 }
 
 // Function to get the final query tags that will be sent to Danbooru API

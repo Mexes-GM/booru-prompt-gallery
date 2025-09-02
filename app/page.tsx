@@ -28,7 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
-import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
+import { useInfinitePosts, useFavoritePosts, hasMultipleTags, hasMoreThanTwoTerms, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
 
 import { userPreferences } from "@/lib/storage"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -987,6 +987,19 @@ export default function DanbooruPromptGenerator() {
                     </div>
                   </div>
 
+                  {/* Warning for more than 2 search terms */}
+                  {hasMoreThanTwoTerms(searchTags) && (
+                    <Alert 
+                      variant="destructive" 
+                      className="mt-2 bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-950/50 dark:border-orange-800/50 dark:text-orange-200"
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">
+                        The API only allows a maximum of 2 search terms. You have entered {searchTags.split(',').map(t => t.trim()).filter(Boolean).length} terms. Only the first 2 terms will be used for the search.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
                   {/* Filters */}
                   {hasMultipleTags(searchTags, order) && (
                     <Alert 
@@ -1323,14 +1336,31 @@ export default function DanbooruPromptGenerator() {
                 )}
               </Button>
               {noMoreResults && (
-                <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto">
-                  {order === "popular" 
-                    ? "Try switching to 'Most recent', changing the rating filter, or use different search terms"
-                    : order === "random"
-                    ? "Try changing the rating filter or use different search terms to find more content"
-                    : "Try changing the rating filter or use different search terms to find more content"
-                  }
-                </p>
+                <div className="mt-4 space-y-3">
+                  <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                    {order === "popular" 
+                      ? "Try switching to 'Most recent', changing the rating filter, or use different search terms"
+                      : order === "random"
+                      ? "Try changing the rating filter or use different search terms to find more content"
+                      : "Try changing the rating filter or use different search terms to find more content"
+                    }
+                  </p>
+                  {order === "popular" && (
+                    <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                      <Button onClick={() => setOrder("recent")} variant="outline" size="sm" className="focus-ring bg-transparent">
+                        Switch to "Most Recent"
+                      </Button>
+                      <Button onClick={() => setOrder("random")} variant="outline" size="sm" className="focus-ring bg-transparent">
+                        Switch to "Random"
+                      </Button>
+                      {searchTags.trim() && (
+                        <Button onClick={clearSearch} variant="outline" size="sm" className="focus-ring bg-transparent">
+                          Clear Search
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -1364,6 +1394,8 @@ export default function DanbooruPromptGenerator() {
                   <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
                     {showFavorites 
                       ? "Add images to your favorites by clicking the heart icon on any image"
+                      : searchTags.trim() && order === "popular"
+                      ? `No popular content available with the tag "${searchTags.trim()}". Try switching the filter to "Most recent" or "Random" for alternative results, or try different search terms.`
                       : "Try adjusting your search terms or filters to discover more content"
                     }
                   </p>
@@ -1372,11 +1404,25 @@ export default function DanbooruPromptGenerator() {
                   <Button onClick={() => setShowFavorites(false)} variant="outline" className="focus-ring bg-transparent">
                     Browse All Images
                   </Button>
-                ) : (
+                ) : searchTags.trim() && order === "popular" ? (
+                  <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                    <Button onClick={() => setOrder("recent")} variant="outline" className="focus-ring bg-transparent">
+                      Switch to "Most Recent"
+                    </Button>
+                    <Button onClick={() => setOrder("random")} variant="outline" className="focus-ring bg-transparent">
+                      Switch to "Random"
+                    </Button>
+                    {searchTags.trim() && (
+                      <Button onClick={clearSearch} variant="outline" className="focus-ring bg-transparent">
+                        Clear Search
+                      </Button>
+                    )}
+                  </div>
+                ) : searchTags.trim() ? (
                   <Button onClick={clearSearch} variant="outline" className="focus-ring bg-transparent">
                     Clear Search
                   </Button>
-                )}
+                ) : null}
               </div>
             </div>
           )}
