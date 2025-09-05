@@ -192,7 +192,8 @@ export const removeQualityTags = (prompt: string): string => {
     .replace(/^\s*,+\s*|\s*,+\s*$/g, '') // Leading/trailing commas
     .replace(/\s+/g, ' ')              // Multiple spaces
     .replace(/,\s*$/g, '')             // Trailing comma
-    .replace(/^\s*,/g, '')             // Leading comma
+    .replace(/^\s*,\s*/g, '')          // Leading comma with any spaces
+    .replace(/>\s*,\s*/g, '> ')        // Fix case where LoRa tags are followed by comma and space
     .trim()
   
   return result
