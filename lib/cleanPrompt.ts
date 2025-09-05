@@ -112,6 +112,8 @@ const commonMetaTags = new Set([
   "chinese_commentary",
   "translated",
   "translation_request",
+  "sample watermark",
+  "copyright notice",
   "official_art",
   "commission",
   "bad_id",
@@ -756,8 +758,10 @@ export function cleanPrompt(
   const combinedTags = combinedTagsPre.filter((tag) => {
     if (!includeCharacters && normalizedCharacterSet.has(tag)) return false
     if (!includeCopyrights && normalizedCopyrightSet.has(tag)) return false
-  // Tratar variantes 'official ...' como parte de character para el toggle
-  if (!includeCharacters && tag.startsWith("official ")) return false
+    // Tratar variantes 'official ...' como parte de character para el toggle
+    if (!includeCharacters && tag.startsWith("official ")) return false
+    // Tratar variantes 'alternate ...' como parte de character para el toggle
+    if (!includeCharacters && tag.startsWith("alternate ")) return false
     if (userExcludeSet.has(tag)) return false // exclusión manual posterior a optimización
     return true
   })
