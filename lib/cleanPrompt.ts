@@ -103,7 +103,8 @@ function loadTagsToRemove(category?: number): Set<string> {
 
 const META_TAGS_SET = loadTagsToRemove(5)
 
-const commonMetaTags = new Set([
+// --- Construcción deduplicada de meta tags ---
+const BASE_META = [
   "highres",
   "absurdres",
   "commentary",
@@ -139,38 +140,6 @@ const commonMetaTags = new Set([
   "artist_name",
   "twitter_username",
   "request",
-  // Tags de background que simplifican
-  "white background",
-  "red background",
-  "gradient background",
-  "purple background",
-  "simple background",
-  "solid background",
-  "colored background",
-  "black background",
-  "blue background",
-  "green background",
-  "yellow background",
-  "orange background",
-  "pink background",
-  "grey background",
-  "gray background",
-  "brown background",
-  "beige background",
-  "cream background",
-  "abstract background",
-  "plain background",
-  "minimal background",
-  "clean background",
-  "empty background",
-  "neutral background",
-  "pastel background",
-  "dark background",
-  "light background",
-  "vibrant background",
-  "soft background",
-  "blurred background",
-  "bokeh background",
   "gradient",
   "solid color",
   "monochrome",
@@ -178,39 +147,7 @@ const commonMetaTags = new Set([
   "geometric background",
   "pattern background",
   "texture background",
-  // Formato con guiones bajos (formato Danbooru)
-  "white_background",
-  "red_background",
-  "gradient_background",
-  "purple_background",
-  "simple_background",
-  "solid_background",
-  "colored_background",
-  "black_background",
-  "blue_background",
-  "green_background",
-  "yellow_background",
-  "orange_background",
-  "pink_background",
-  "grey_background",
-  "gray_background",
-  "brown_background",
-  "beige_background",
-  "cream_background",
-  "abstract_background",
-  "plain_background",
-  "minimal_background",
-  "clean_background",
-  "empty_background",
-  "neutral_background",
-  "pastel_background",
-  "dark_background",
-  "light_background",
-  "vibrant_background",
-  "soft_background",
-  "blurred_background",
-  "bokeh_background",
-  // Tags de texto y marcas de agua
+  // Texto / marcas
   "english text",
   "japanese text",
   "chinese text",
@@ -231,7 +168,6 @@ const commonMetaTags = new Set([
   "franchise name",
   "copyright name",
   "trademark",
-  "copyright notice",
   "patreon username",
   "pixiv username",
   "deviantart username",
@@ -268,39 +204,7 @@ const commonMetaTags = new Set([
   "timestamp",
   "date",
   "time",
-  // Formato con guiones bajos (formato Danbooru)
-  "english_text",
-  "japanese_text",
-  "chinese_text",
-  "korean_text",
-  "speech_bubble",
-  "character_name",
-  "series_name",
-  "franchise_name",
-  "copyright_name",
-  "artist_logo",
-  "pixiv_request",
-  "patreon_username",
-  "pixiv_username",
-  "deviantart_username",
-  "artstation_username",
-  "instagram_username",
-  "facebook_username",
-  "tumblr_username",
-  "discord_username",
-  "virtual_youtuber",
-  "weibo_watermark",
-  "tiktok_watermark",
-  "instagram_watermark",
-  "facebook_watermark",
-  "social_media_watermark",
-  "website_watermark",
-  "qr_code",
-  "file_info",
-  "image_info",
-  "photo_info",
-  "camera_info",
-  // Tags adicionales y variaciones
+  // Tags adicionales
   "artist_logo",
   "pixiv_request",
   "twitter_request",
@@ -328,7 +232,7 @@ const commonMetaTags = new Set([
   "empty_space",
   "negative_space",
   "simple_color_background",
-  // Tags de censura
+  // Censura y variantes
   "censored",
   "censorship",
   "bar",
@@ -380,108 +284,85 @@ const commonMetaTags = new Set([
   "ass_mosaic",
   "butt_mosaic",
   "breast_mosaic",
-  // Formato con guiones bajos
-  "censored",
-  "censorship",
-  "black_bar",
-  "white_bar",
-  "mosaic_censorship",
-  "pixel_censorship",
-  "light_censorship",
-  "heavy_censorship",
-  "partial_censorship",
-  "full_censorship",
-  "genital_censor",
-  "nipple_censor",
-  "penis_censor",
-  "vagina_censor",
-  "pussy_censor",
-  "ass_censor",
-  "butt_censor",
-  "breast_censor",
-  "nipple_bar",
-  "genital_bar",
-  "penis_bar",
-  "vagina_bar",
-  "pussy_bar",
-  "ass_bar",
-  "butt_bar",
-  "breast_bar",
-  "nipple_blur",
-  "genital_blur",
-  "penis_blur",
-  "vagina_blur",
-  "pussy_blur",
-  "ass_blur",
-  "butt_blur",
-  "breast_blur",
-  "nipple_mosaic",
-  "genital_mosaic",
-  "penis_mosaic",
-  "vagina_mosaic",
-  "pussy_mosaic",
-  "ass_mosaic",
-  "butt_mosaic",
-  "breast_mosaic",
-  // Variaciones adicionales con guiones bajos
-  "censored",
-  "censorship",
-  "black_bar",
-  "white_bar",
-  "mosaic_censorship",
-  "pixel_censorship",
-  "light_censorship",
-  "heavy_censorship",
-  "partial_censorship",
-  "full_censorship",
-  "genital_censor",
-  "nipple_censor",
-  "penis_censor",
-  "vagina_censor",
-  "pussy_censor",
-  "ass_censor",
-  "butt_censor",
-  "breast_censor",
-  "nipple_bar",
-  "genital_bar",
-  "penis_bar",
-  "vagina_bar",
-  "pussy_bar",
-  "ass_bar",
-  "butt_bar",
-  "breast_bar",
-  "nipple_blur",
-  "genital_blur",
-  "penis_blur",
-  "vagina_blur",
-  "pussy_blur",
-  "ass_blur",
-  "butt_blur",
-  "breast_blur",
-  "nipple_mosaic",
-  "genital_mosaic",
-  "penis_mosaic",
-  "vagina_mosaic",
-  "pussy_mosaic",
-  "ass_mosaic",
-  "butt_mosaic",
-  "breast_mosaic",
-  "uncensored",
   "decensored",
-  "decensor",
-  "uncensored_version",
-  "censored_version",
-  "pixelated",
   "bar_censor",
   "mosaic_censor",
   "blur_censor",
   "mosaic censoring",
   "mosaic_censoring",
-  "mosaic_censorship",
   "censoring",
   "dated",
   "original",
-  ])
+]
+
+const BACKGROUND_TAGS = [
+  "white background",
+  "red background",
+  "gradient background",
+  "purple background",
+  "simple background",
+  "solid background",
+  "colored background",
+  "black background",
+  "blue background",
+  "green background",
+  "yellow background",
+  "orange background",
+  "pink background",
+  "grey background",
+  "gray background",
+  "brown background",
+  "beige background",
+  "cream background",
+  "abstract background",
+  "plain background",
+  "minimal background",
+  "clean background",
+  "empty background",
+  "neutral background",
+  "pastel background",
+  "dark background",
+  "light background",
+  "vibrant background",
+  "soft background",
+  "blurred background",
+  "bokeh background",
+]
+
+const withUnderscoreVariants = (arr: string[]) => arr.map((t) => t.replace(/ /g, "_"))
+
+const commonMetaTags = new Set([
+  ...BASE_META,
+  ...BACKGROUND_TAGS,
+  ...withUnderscoreVariants(BACKGROUND_TAGS),
+])
+
+// Tags de respaldo que antes sólo se removían en el catch; ahora siempre se eliminan
+// Añadimos también variantes con underscore para robustez.
+const ALWAYS_REMOVE_TAGS = new Set(
+  [
+    "signature",
+    "twitter username",
+    "artist name",
+    "watermark",
+    "copyright",
+    "artist",
+    "unknown artist",
+    "official art",
+    "fan art",
+    "commission",
+    "pointless censoring",
+    "web address",
+    "original",
+    "sound effects",
+    "motion lines",
+    "patreon logo",
+    "copyright notice",
+    "commissioner name",
+    "borrowed character",
+    "borrowed character name",
+  ].flatMap((t) => [t, t.replace(/ /g, "_")]),
+)
 
 // Procesa y optimiza los tags (combina variantes y elimina redundancias)
 function optimizeTags(tags: string[]): string[] {
@@ -677,6 +558,52 @@ export function cleanPrompt(
   )
   const allTags = tagString.split(" ").filter((tag) => tag.length > 0)
   const artistTagsSet = new Set(artistTags.split(" "))
+  // --- Manejo de tags multi-palabra para eliminación temprana ---
+  // El código original parte el prompt por espacios, lo que rompe coincidencias para entradas como "web address"
+  // porque se transforman en ["web", "address"]. Aquí detectamos secuencias de 2-4 tokens que formen parte de
+  // los sets de metatags a eliminar (incluyendo el fallback) y las eliminamos antes del filtrado estándar.
+  try {
+    const multiWordRemovalBase = new Set<string>([
+      ...Array.from(META_TAGS_SET).filter((t) => t.includes(" ")),
+      ...Array.from(commonMetaTags).filter((t) => t.includes(" ")),
+      ...Array.from(ALWAYS_REMOVE_TAGS).filter((t) => t.includes(" ")),
+    ])
+
+    // Añadimos manualmente variantes frecuentes con y sin underscore
+    ;["web address", "web_address"].forEach((v) => multiWordRemovalBase.add(v))
+
+    if (multiWordRemovalBase.size > 0 && allTags.length > 1) {
+      const loweredTokens = allTags.map((t) => t.toLowerCase())
+      const newTokens: string[] = []
+      let i = 0
+      while (i < loweredTokens.length) {
+        let matched = false
+        // Intentar long-first (4 -> 2 palabras)
+        for (let span = 4; span >= 2; span--) {
+          if (i + span > loweredTokens.length) continue
+            const slice = loweredTokens.slice(i, i + span)
+            const candidateSpace = slice.join(" ")
+            const candidateUnderscore = slice.join("_")
+            if (multiWordRemovalBase.has(candidateSpace) || multiWordRemovalBase.has(candidateUnderscore)) {
+              // Saltar estos tokens (remoción)
+              i += span
+              matched = true
+              break
+            }
+        }
+        if (!matched) {
+          newTokens.push(allTags[i])
+          i++
+        }
+      }
+      if (newTokens.length !== allTags.length) {
+        // Reemplazamos contenido original sólo si hubo cambios
+        ;(allTags as string[]) = newTokens
+      }
+    }
+  } catch {
+    // Silencioso: si algo falla no interrumpimos el flujo principal
+  }
   const characterTagsArray = characterTags.split(" ").filter((tag) => tag.length > 0)
   const copyrightTagsArray = copyrightTags.split(" ").filter((tag) => tag.length > 0)
   // Normalizados para comparación posterior
@@ -695,8 +622,9 @@ export function cleanPrompt(
     const lowerTag = tag.toLowerCase()
 
     if (artistTagsSet.has(lowerTag)) return false
-    if (META_TAGS_SET.has(lowerTag)) return false
-    if (commonMetaTags.has(lowerTag)) return false
+  if (META_TAGS_SET.has(lowerTag)) return false
+  if (commonMetaTags.has(lowerTag)) return false
+    if (ALWAYS_REMOVE_TAGS.has(lowerTag)) return false
 
     if (numberRegex.test(tag)) return false
     if (tag.includes("@") || tag.includes("#") || urlRegex.test(tag)) return false
