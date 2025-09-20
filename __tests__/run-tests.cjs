@@ -1,0 +1,12 @@
+// Minimal CJS runner for TypeScript tests without adding a full test framework
+const tsnode = require('ts-node')
+tsnode.register({
+	transpileOnly: true,
+	compilerOptions: {
+		module: 'commonjs',
+		moduleResolution: 'node',
+		esModuleInterop: true,
+	},
+})
+
+require('./cleanPrompt.spec.ts')

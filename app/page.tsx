@@ -1120,23 +1120,24 @@ export default function DanbooruPromptGenerator() {
                   aiPrompt = removeQualityTagsUtil(aiPrompt)
                 }
                 
-                // Use AI prompt if available, otherwise use cleaned tags
-                let displayContent = aiPrompt || cleanPrompt(
-                  post.tag_string,
-                  post.tag_string_artist,
-                  post.tag_string_character,
-                  post.tag_string_copyright,
-                  { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
-                )
+                // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
+                let displayContent = aiPrompt
+                  ? cleanPrompt(
+                      aiPrompt,
+                      "",
+                      "",
+                      "",
+                      { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
+                    )
+                  : cleanPrompt(
+                      post.tag_string,
+                      post.tag_string_artist,
+                      post.tag_string_character,
+                      post.tag_string_copyright,
+                      { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
+                    )
                 
-                // Apply exclude list to original content
-                if (aiPrompt && excludeList.length > 0) {
-                  const excludeSet = new Set(excludeList.map(tag => tag.toLowerCase().trim()))
-                  displayContent = aiPrompt.split(',').map(tag => tag.trim()).filter(tag => {
-                    const normalizedTag = tag.toLowerCase().replace(/_/g, ' ').trim()
-                    return !excludeSet.has(normalizedTag) && !excludeSet.has(tag.toLowerCase().trim())
-                  }).join(', ')
-                }
+                // Exclusions are already applied via cleanPrompt
                 
                 // Add user-specified tags at the beginning (these are protected from removal options)
                 if (addList.length > 0) {
@@ -1263,23 +1264,24 @@ export default function DanbooruPromptGenerator() {
                   aiPrompt = removeQualityTagsUtil(aiPrompt)
                 }
                 
-                // Use AI prompt if available, otherwise use cleaned tags
-                let displayContent = aiPrompt || cleanPrompt(
-                  post.tag_string,
-                  post.tag_string_artist,
-                  post.tag_string_character,
-                  post.tag_string_copyright,
-                  { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
-                )
+                // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
+                let displayContent = aiPrompt
+                  ? cleanPrompt(
+                      aiPrompt,
+                      "",
+                      "",
+                      "",
+                      { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
+                    )
+                  : cleanPrompt(
+                      post.tag_string,
+                      post.tag_string_artist,
+                      post.tag_string_character,
+                      post.tag_string_copyright,
+                      { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
+                    )
                 
-                // Apply exclude list to original content
-                if (aiPrompt && excludeList.length > 0) {
-                  const excludeSet = new Set(excludeList.map(tag => tag.toLowerCase().trim()))
-                  displayContent = aiPrompt.split(',').map(tag => tag.trim()).filter(tag => {
-                    const normalizedTag = tag.toLowerCase().replace(/_/g, ' ').trim()
-                    return !excludeSet.has(normalizedTag) && !excludeSet.has(tag.toLowerCase().trim())
-                  }).join(', ')
-                }
+                // Exclusions are already applied via cleanPrompt
                 
                 // Add user-specified tags at the beginning (these are protected from removal options)
                 if (addList.length > 0) {
