@@ -29,7 +29,13 @@ export async function GET(): Promise<Response> {
       (item) => `
     <url>
       <loc>${item.url}</loc>
-      <lastmod>${item.lastModified?.toISOString()}</lastmod>
+      <lastmod>${
+        item.lastModified
+          ? typeof item.lastModified === 'string'
+            ? item.lastModified
+            : item.lastModified.toISOString()
+          : ''
+      }</lastmod>
       <changefreq>${item.changeFrequency}</changefreq>
       <priority>${item.priority}</priority>
     </url>`

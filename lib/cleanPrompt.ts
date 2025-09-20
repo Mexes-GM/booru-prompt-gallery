@@ -1,4 +1,50 @@
-// Convertir arrays de categorías a Sets para búsquedas más rápidas
+/**
+ * Refactored, robust prompt cleaner for Booru-style tags.
+ * - Normalizes tags (lowercase, underscores -> spaces)
+ * - Removes artist/meta/urls/numbers/symbol-only/noisy tags
+ * - Optional optimization: combines adjectives for same noun and removes redundancies
+ * - Preserves public API and output format from previous implementation
+ */
+
+import tagsData from "../tags.json"
+
+// --------------- Types ---------------
+interface TagData {
+  name: string
+  category: number
+  aliases?: string[]
+}
+
+export interface CleanPromptOptions {
+  includeCharacters?: boolean
+  includeCopyrights?: boolean
+  optimizeTags?: boolean
+  exclude?: string[]
+}
+
+// --------------- Utilities ---------------
+const toSpace = (s: string) => s.replace(/_/g, " ")
+const toUnderscore = (s: string) => s.replace(/\s+/g, "_")
+const normalize = (s: string) => toSpace(s).toLowerCase().trim().replace(/\s{2,}/g, " ")
+
+function withNormalizedVariants(list: string[]): Set<string> {
+  const set = new Set<string>()
+  for (const raw of list) {
+    const space = normalize(raw)
+    const under = toUnderscore(space)
+    set.add(space)
+    set.add(under)
+  }
+  return set
+}
+
+function parseTagList(input: string): string[] {
+  if (!input) return []
+  const parts = input.includes(",") ? input.split(",") : input.trim().split(/\s+/)
+  return parts.map((t) => t.trim()).filter(Boolean)
+}
+
+// --------------- Domain Sets ---------------
 const BREAST_SIZES_SET = new Set([
   "flat chest",
   "small breasts",
@@ -6,7 +52,7 @@ const BREAST_SIZES_SET = new Set([
   "large breasts",
   "huge breasts",
   "gigantic breasts",
-])
+].map(normalize))
 
 const HAIR_LENGTHS_SET = new Set([
   "bald",
@@ -16,7 +62,7 @@ const HAIR_LENGTHS_SET = new Set([
   "long hair",
   "very long hair",
   "absurdly long hair",
-])
+].map(normalize))
 
 const EYE_COLORS_SET = new Set([
   "blue eyes",
@@ -31,7 +77,7 @@ const EYE_COLORS_SET = new Set([
   "white eyes",
   "gray eyes",
   "grey eyes",
-])
+].map(normalize))
 
 const QUALITY_TAGS_SET = new Set([
   "masterpiece",
@@ -41,106 +87,104 @@ const QUALITY_TAGS_SET = new Set([
   "detailed",
   "extremely detailed",
   "highly detailed",
-])
+].map(normalize))
 
-const SUBJECT_TAGS_SET = new Set(["1girl", "1boy", "2girls", "2boys", "multiple girls", "multiple boys"])
+const SUBJECT_TAGS_SET = new Set(
+  ["1girl", "1boy", "2girls", "2boys", "multiple girls", "multiple boys"].map(normalize),
+)
 
-const COMPOSITION_TAGS_SET = new Set(["portrait", "full body", "upper body", "close-up", "wide shot"])
+const COMPOSITION_TAGS_SET = new Set(
+  ["portrait", "full body", "upper body", "close-up", "wide shot"].map(normalize),
+)
 
-
-import tagsData from "../tags.json"
-
-interface TagData {
-  name: string;
-  category: number;
-  aliases?: string[];
-}
-
+// --------------- Meta tags (from file + curated list) ---------------
 function loadTagsToRemove(category?: number): Set<string> {
   try {
     const tagsToRemove = new Set<string>()
-
     if (Array.isArray(tagsData)) {
-      tagsData.forEach((tag: TagData) => {
+      for (const tag of tagsData as TagData[]) {
         if (category === undefined || tag.category === category) {
-          tagsToRemove.add(tag.name.toLowerCase())
-          if (tag.aliases && Array.isArray(tag.aliases)) {
-            tag.aliases.forEach((alias: string) => {
-              tagsToRemove.add(alias.toLowerCase())
-            })
+          tagsToRemove.add(normalize(tag.name))
+          if (Array.isArray(tag.aliases)) {
+            for (const alias of tag.aliases) tagsToRemove.add(normalize(alias))
           }
         }
-      })
+      }
     }
-
     return tagsToRemove
   } catch {
-    return new Set([
-      "signature",
-      "twitter username",
-      "artist name",
-      "watermark",
-      "copyright",
-      "artist",
-      "unknown artist",
-      "official art",
-      "fan art",
-      "commission",
-      "pointless censoring",
-      "web address",
-      "original",
-      "sound effects",
-      "motion lines",
-      "patreon logo",
-      "copyright notice",
-      "commissioner name",
-      "borrowed character",
-      "borrowed character name",
-
-    ])
+    return new Set(
+      [
+        "signature",
+        "twitter username",
+        "artist name",
+        "watermark",
+        "copyright",
+        "artist",
+        "unknown artist",
+        "official art",
+        "fan art",
+        "commission",
+        "pointless censoring",
+        "web address",
+        "original",
+        "sound effects",
+        "motion lines",
+        "patreon logo",
+        "copyright notice",
+        "commissioner name",
+        "borrowed character",
+        "borrowed character name",
+      ].map(normalize),
+    )
   }
 }
 
-const META_TAGS_SET = loadTagsToRemove(5)
-
-const commonMetaTags = new Set([
+// Representative list; variants (space/underscore) are auto-generated.
+const CURATED_META_LIST = withNormalizedVariants([
+  // resolution/commentary
   "highres",
   "absurdres",
   "commentary",
-  "commentary_request",
-  "english_commentary",
-  "chinese_commentary",
+  "commentary request",
+  "english commentary",
+  "chinese commentary",
   "translated",
-  "translation_request",
-  "sample watermark",
-  "sample_watermark",
+  "translation request",
+  // common meme tag
+  "one-hour drawing challenge",
+  "one hour drawing challenge",
+  // web/url/logo/ids
+  "web address",
+  "+web address+",
+  "patreon logo",
   "copyright notice",
-  "official_art",
+  "official art",
   "commission",
-  "bad_id",
-  "bad_pixiv_id",
-  "bad_artstation_id",
-  "bad_facebook_id",
-  "bad_instagram_id",
-  "bad_tiktok_id",
-  "bad_reddit_id",
-  "bad_github_id",
-  "bad_discord_id",
-  "bad_telegram_id",
-  "bad_skype_id",
-  "bad_other_id",
-  "bad_twitter_id",
-  "photoshop_(medium)",
-  "symbol-only_commentary",
-  "artist_request",
-  "copyright_request",
-  "non-web_source",
+  "bad id",
+  "bad pixiv id",
+  "bad artstation id",
+  "bad facebook id",
+  "bad instagram id",
+  "bad tiktok id",
+  "bad reddit id",
+  "bad github id",
+  "bad discord id",
+  "bad telegram id",
+  "bad skype id",
+  "bad other id",
+  "bad twitter id",
+  "photoshop (medium)",
+  "symbol-only commentary",
+  "artist request",
+  "copyright request",
+  "non-web source",
   "signature",
   "watermark",
-  "artist_name",
-  "twitter_username",
+  "artist name",
+  "twitter username",
   "request",
-  // Tags de background que simplifican
+  // backgrounds
   "white background",
   "red background",
   "gradient background",
@@ -179,39 +223,7 @@ const commonMetaTags = new Set([
   "geometric background",
   "pattern background",
   "texture background",
-  // Formato con guiones bajos (formato Danbooru)
-  "white_background",
-  "red_background",
-  "gradient_background",
-  "purple_background",
-  "simple_background",
-  "solid_background",
-  "colored_background",
-  "black_background",
-  "blue_background",
-  "green_background",
-  "yellow_background",
-  "orange_background",
-  "pink_background",
-  "grey_background",
-  "gray_background",
-  "brown_background",
-  "beige_background",
-  "cream_background",
-  "abstract_background",
-  "plain_background",
-  "minimal_background",
-  "clean_background",
-  "empty_background",
-  "neutral_background",
-  "pastel_background",
-  "dark_background",
-  "light_background",
-  "vibrant_background",
-  "soft_background",
-  "blurred_background",
-  "bokeh_background",
-  // Tags de texto y marcas de agua
+  // text/logos/usernames
   "english text",
   "japanese text",
   "chinese text",
@@ -232,16 +244,13 @@ const commonMetaTags = new Set([
   "franchise name",
   "copyright name",
   "trademark",
-  "copyright notice",
   "patreon username",
-  "patreon_username",
   "pixiv username",
   "deviantart username",
   "artstation username",
   "instagram username",
   "facebook username",
   "bluesky username",
-  "bluesky_username",
   "tumblr username",
   "discord username",
   "username",
@@ -253,7 +262,7 @@ const commonMetaTags = new Set([
   "vtuber",
   "streamer",
   "content creator",
-  "influencer",
+  // social platform watermarks
   "weibo watermark",
   "tiktok watermark",
   "instagram watermark",
@@ -272,67 +281,34 @@ const commonMetaTags = new Set([
   "timestamp",
   "date",
   "time",
-  // Formato con guiones bajos (formato Danbooru)
-  "english_text",
-  "japanese_text",
-  "chinese_text",
-  "korean_text",
-  "speech_bubble",
-  "character_name",
-  "series_name",
-  "franchise_name",
-  "copyright_name",
-  "artist_logo",
-  "pixiv_request",
-  "patreon_username",
-  "pixiv_username",
-  "deviantart_username",
-  "artstation_username",
-  "instagram_username",
-  "facebook_username",
-  "tumblr_username",
-  "discord_username",
-  "virtual_youtuber",
-  "weibo_watermark",
-  "tiktok_watermark",
-  "instagram_watermark",
-  "facebook_watermark",
-  "social_media_watermark",
-  "website_watermark",
-  "qr_code",
-  "file_info",
-  "image_info",
-  "photo_info",
-  "camera_info",
-  // Tags adicionales y variaciones
-  "artist_logo",
-  "pixiv_request",
-  "twitter_request",
-  "artist_name",
-  "copyright_text",
-  "watermark_text",
-  "logo_text",
-  "brand_name",
-  "company_name",
-  "studio_name",
-  "production_name",
-  "fanbox_username",
-  "gumroad_username",
-  "ko_fi_username",
-  "subscribestar_username",
-  "fanbox_watermark",
-  "gumroad_watermark",
-  "ko_fi_watermark",
-  "subscribestar_watermark",
-  "transparent_background",
-  "white_background_only",
-  "solid_color_background",
-  "single_color_background",
-  "minimalist_background",
-  "empty_space",
-  "negative_space",
-  "simple_color_background",
-  // Tags de censura
+  // additional variants
+  "artist logo",
+  "pixiv request",
+  "twitter request",
+  "copyright text",
+  "watermark text",
+  "logo text",
+  "brand name",
+  "company name",
+  "studio name",
+  "production name",
+  "fanbox username",
+  "gumroad username",
+  "ko fi username",
+  "subscribestar username",
+  "fanbox watermark",
+  "gumroad watermark",
+  "ko fi watermark",
+  "subscribestar watermark",
+  "transparent background",
+  "white background only",
+  "solid color background",
+  "single color background",
+  "minimalist background",
+  "empty space",
+  "negative space",
+  "simple color background",
+  // censorship and variants
   "censored",
   "censorship",
   "bar",
@@ -342,167 +318,124 @@ const commonMetaTags = new Set([
   "censor",
   "uncensored",
   "decensor",
-  "uncensored_version",
-  "censored_version",
-  "black_bar",
-  "white_bar",
-  "mosaic_censorship",
-  "pixel_censorship",
-  "light_censorship",
-  "heavy_censorship",
-  "partial_censorship",
-  "full_censorship",
-  "genital_censor",
-  "nipple_censor",
-  "penis_censor",
-  "vagina_censor",
-  "pussy_censor",
-  "ass_censor",
-  "butt_censor",
-  "breast_censor",
-  "nipple_bar",
-  "genital_bar",
-  "penis_bar",
-  "vagina_bar",
-  "pussy_bar",
-  "ass_bar",
-  "butt_bar",
-  "breast_bar",
-  "nipple_blur",
-  "genital_blur",
-  "penis_blur",
-  "vagina_blur",
-  "pussy_blur",
-  "ass_blur",
-  "butt_blur",
-  "breast_blur",
-  "nipple_mosaic",
-  "genital_mosaic",
-  "penis_mosaic",
-  "vagina_mosaic",
-  "pussy_mosaic",
-  "ass_mosaic",
-  "butt_mosaic",
-  "breast_mosaic",
-  // Formato con guiones bajos
-  "censored",
-  "censorship",
-  "black_bar",
-  "white_bar",
-  "mosaic_censorship",
-  "pixel_censorship",
-  "light_censorship",
-  "heavy_censorship",
-  "partial_censorship",
-  "full_censorship",
-  "genital_censor",
-  "nipple_censor",
-  "penis_censor",
-  "vagina_censor",
-  "pussy_censor",
-  "ass_censor",
-  "butt_censor",
-  "breast_censor",
-  "nipple_bar",
-  "genital_bar",
-  "penis_bar",
-  "vagina_bar",
-  "pussy_bar",
-  "ass_bar",
-  "butt_bar",
-  "breast_bar",
-  "nipple_blur",
-  "genital_blur",
-  "penis_blur",
-  "vagina_blur",
-  "pussy_blur",
-  "ass_blur",
-  "butt_blur",
-  "breast_blur",
-  "nipple_mosaic",
-  "genital_mosaic",
-  "penis_mosaic",
-  "vagina_mosaic",
-  "pussy_mosaic",
-  "ass_mosaic",
-  "butt_mosaic",
-  "breast_mosaic",
-  // Variaciones adicionales con guiones bajos
-  "censored",
-  "censorship",
-  "black_bar",
-  "white_bar",
-  "mosaic_censorship",
-  "pixel_censorship",
-  "light_censorship",
-  "heavy_censorship",
-  "partial_censorship",
-  "full_censorship",
-  "genital_censor",
-  "nipple_censor",
-  "penis_censor",
-  "vagina_censor",
-  "pussy_censor",
-  "ass_censor",
-  "butt_censor",
-  "breast_censor",
-  "nipple_bar",
-  "genital_bar",
-  "penis_bar",
-  "vagina_bar",
-  "pussy_bar",
-  "ass_bar",
-  "butt_bar",
-  "breast_bar",
-  "nipple_blur",
-  "genital_blur",
-  "penis_blur",
-  "vagina_blur",
-  "pussy_blur",
-  "ass_blur",
-  "butt_blur",
-  "breast_blur",
-  "nipple_mosaic",
-  "genital_mosaic",
-  "penis_mosaic",
-  "vagina_mosaic",
-  "pussy_mosaic",
-  "ass_mosaic",
-  "butt_mosaic",
-  "breast_mosaic",
-  "uncensored",
-  "decensored",
-  "decensor",
-  "uncensored_version",
-  "censored_version",
-  "pixelated",
-  "bar_censor",
-  "mosaic_censor",
-  "blur_censor",
+  "uncensored version",
+  "censored version",
+  "black bar",
+  "white bar",
+  "mosaic censorship",
+  "pixel censorship",
+  "light censorship",
+  "heavy censorship",
+  "partial censorship",
+  "full censorship",
+  "genital censor",
+  "nipple censor",
+  "penis censor",
+  "vagina censor",
+  "pussy censor",
+  "ass censor",
+  "butt censor",
+  "breast censor",
+  "nipple bar",
+  "genital bar",
+  "penis bar",
+  "vagina bar",
+  "pussy bar",
+  "ass bar",
+  "butt bar",
+  "breast bar",
+  "nipple blur",
+  "genital blur",
+  "penis blur",
+  "vagina blur",
+  "pussy blur",
+  "ass blur",
+  "butt blur",
+  "breast blur",
+  "nipple mosaic",
+  "genital mosaic",
+  "penis mosaic",
+  "vagina mosaic",
+  "pussy mosaic",
+  "ass mosaic",
+  "butt mosaic",
+  "breast mosaic",
+  "bar censor",
+  "mosaic censor",
+  "blur censor",
   "mosaic censoring",
-  "mosaic_censoring",
-  "mosaic_censorship",
   "censoring",
   "dated",
   "original",
-  ])
+])
 
-// Procesa y optimiza los tags (combina variantes y elimina redundancias)
+const META_TAGS_SET = new Set<string>([
+  ...loadTagsToRemove(5),
+  ...CURATED_META_LIST,
+])
+
+// --------------- Optimizations ---------------
 function optimizeTags(tags: string[]): string[] {
-  // Copia para preservar orden original salvo eliminaciones / combinaciones
   let working = [...tags]
 
   // Detectar múltiples sujetos (desactivar combinación de adjetivos en prendas)
   const subjectTagsInPrompt = working.filter((t) => SUBJECT_TAGS_SET.has(t))
   const subjectSet = new Set(subjectTagsInPrompt)
-  const hasPluralSubject = subjectSet.has("2girls") || subjectSet.has("2boys") || subjectSet.has("multiple girls") || subjectSet.has("multiple boys")
+  const hasPluralSubject =
+    subjectSet.has("2girls") ||
+    subjectSet.has("2boys") ||
+    subjectSet.has("multiple girls") ||
+    subjectSet.has("multiple boys")
   const multipleDistinctSubjects = subjectSet.size > 1
   const disableCombination = hasPluralSubject || multipleDistinctSubjects
 
-  // Combina tags que comparten el mismo sustantivo final (white skirt + long skirt -> white long skirt)
-  function combineSharedNounTags(original: string[]): string[] {
-    // Nombres de prendas / rasgos donde tiene sentido combinar adjetivos
-    const MERGE_NOUNS = new Set([
+  // 1) Mantener solo la talla de pechos más específica
+  const breastHierarchy = [
+    "gigantic breasts",
+    "huge breasts",
+    "large breasts",
+    "medium breasts",
+    "small breasts",
+    "flat chest",
+  ].map(normalize)
+  const presentBreasts = breastHierarchy.filter((b) => working.includes(b))
+  if (presentBreasts.length > 1) {
+    const bestBreast = presentBreasts[0]
+    working = working.filter((t) => !BREAST_SIZES_SET.has(t) || t === bestBreast)
+  }
+
+  // 2) Dedupe hair length (keep first)
+  const seenHair = new Set<string>()
+  working = working.filter((t) => {
+    if (!HAIR_LENGTHS_SET.has(t)) return true
+    if (seenHair.has(t)) return false
+    seenHair.add(t)
+    return true
+  })
+
+  // 3) Dedupe eye colors (keep first)
+  const seenEyes = new Set<string>()
+  working = working.filter((t) => {
+    if (!EYE_COLORS_SET.has(t)) return true
+    if (seenEyes.has(t)) return false
+    seenEyes.add(t)
+    return true
+  })
+
+  // 4) Combinar adjetivos para el mismo sustantivo (si aplica)
+  if (!disableCombination) {
+    working = combineSharedNounTags(working)
+  }
+
+  // 5) Eliminar redundancias por inclusión
+  working = removeRedundantByInclusion(working)
+
+  return working
+}
+
+function combineSharedNounTags(original: string[]): string[] {
+  const MERGE_NOUNS = new Set(
+    [
       "skirt",
       "dress",
       "shirt",
@@ -528,266 +461,188 @@ function optimizeTags(tags: string[]): string[] {
       "underwear",
       "panties",
       "bra",
-      // Rasgos físicos selectivos
+      // Rasgo físico selectivo
       "hair", // (long hair + white hair -> long white hair)
-      // OJO: evitamos "eyes" para no crear combinaciones incoherentes (blue green eyes)
-    ])
+    ].map(normalize),
+  )
 
-    interface GroupInfo {
-      indices: number[]
-      adjectives: string[]
-    }
-
-    const groups: Record<string, GroupInfo> = {}
-
-    original.forEach((tag, idx) => {
-      const parts = tag.split(" ")
-      // Solo considerar tags de exactamente dos palabras (adjetivo + sustantivo) para reducir combinaciones erróneas
-      if (parts.length !== 2) return
-      const [adj, noun] = parts
-      if (!MERGE_NOUNS.has(noun)) return
-
-      if (!groups[noun]) {
-        groups[noun] = { indices: [], adjectives: [] }
-      }
-      groups[noun].indices.push(idx)
-      if (!groups[noun].adjectives.includes(adj)) groups[noun].adjectives.push(adj)
-    })
-
-    // Construir nuevo array respetando orden original
-    const toSkip = new Set<number>()
-    const insertionMap = new Map<number, string>() // index inicial -> combinedTag
-
-    Object.entries(groups).forEach(([noun, info]) => {
-      if (info.indices.length <= 1) return // nada que combinar
-      // Construir tag combinado
-      const combined = `${info.adjectives.join(" ")} ${noun}`.trim()
-      // Evitar crear tag idéntico redundante (si ya existe multi adjetivo con todos)
-      const alreadyExists = original.some((t) => t === combined)
-      if (alreadyExists) {
-        // Simplemente eliminamos las variantes individuales duplicadas menos la más completa existente
-        // Mantener primera ocurrencia del combinado (ya está) y saltar las demás individuales
-        info.indices.forEach((i) => toSkip.add(i))
-        // Encontrar índice del combinado y quitar de skip para conservarlo
-        const combinedIndex = original.indexOf(combined)
-        if (combinedIndex >= 0) toSkip.delete(combinedIndex)
-      } else {
-        // Insertar en posición de la primera ocurrencia
-        insertionMap.set(info.indices[0], combined)
-        // Saltar todas las individuales
-        info.indices.forEach((i) => toSkip.add(i))
-      }
-    })
-
-    if (insertionMap.size === 0) return original // No hubo cambios
-
-    const result: string[] = []
-    original.forEach((tag, idx) => {
-      if (insertionMap.has(idx)) {
-        result.push(insertionMap.get(idx)!)
-      } else if (!toSkip.has(idx)) {
-        result.push(tag)
-      }
-    })
-    return result
+  interface GroupInfo {
+    indices: number[]
+    adjectives: string[]
   }
 
-  // Eliminación y consolidación específicas manteniendo orden
-  // 1. Breast sizes (mantener la más específica según jerarquía si hay varias)
-  const breastHierarchy = [
-    "gigantic breasts",
-    "huge breasts",
-    "large breasts",
-    "medium breasts",
-    "small breasts",
-    "flat chest",
-  ]
-  const presentBreasts = breastHierarchy.filter((b) => working.includes(b))
-  if (presentBreasts.length > 1) {
-    const bestBreast = presentBreasts[0]
-    working = working.filter((t) => !BREAST_SIZES_SET.has(t) || t === bestBreast)
-  }
+  const groups: Record<string, GroupInfo> = {}
 
-  // 2. Hair length: eliminar duplicados conservando primera aparición
-  const seenHair = new Set<string>()
-  working = working.filter((t) => {
-    if (!HAIR_LENGTHS_SET.has(t)) return true
-    if (seenHair.has(t)) return false
-    seenHair.add(t)
-    return true
+  original.forEach((tag, idx) => {
+    const parts = tag.split(" ")
+    if (parts.length !== 2) return
+    const [adj, noun] = parts
+    if (!MERGE_NOUNS.has(normalize(noun))) return
+
+    if (!groups[noun]) groups[noun] = { indices: [], adjectives: [] }
+    groups[noun].indices.push(idx)
+    if (!groups[noun].adjectives.includes(adj)) groups[noun].adjectives.push(adj)
   })
 
-  // 3. Eye colors: eliminar duplicados conservando primera aparición
-  const seenEyes = new Set<string>()
-  working = working.filter((t) => {
-    if (!EYE_COLORS_SET.has(t)) return true
-    if (seenEyes.has(t)) return false
-    seenEyes.add(t)
-    return true
+  const toSkip = new Set<number>()
+  const insertionMap = new Map<number, string>()
+
+  Object.entries(groups).forEach(([noun, info]) => {
+    if (info.indices.length <= 1) return
+    const combined = `${info.adjectives.join(" ")} ${noun}`.trim()
+    const alreadyExists = original.some((t) => t === combined)
+    if (alreadyExists) {
+      info.indices.forEach((i) => toSkip.add(i))
+      const combinedIndex = original.indexOf(combined)
+      if (combinedIndex >= 0) toSkip.delete(combinedIndex)
+    } else {
+      insertionMap.set(info.indices[0], combined)
+      info.indices.forEach((i) => toSkip.add(i))
+    }
   })
 
-  // 4. Combinar variantes con mismo sustantivo (solo si permitido)
-  let intermediate = working
-  if (!disableCombination) {
-    intermediate = combineSharedNounTags(intermediate)
-  }
+  if (insertionMap.size === 0) return original
 
-  // 5. Eliminar redundancias por inclusión manteniendo orden estable
-  intermediate = removeRedundantTags(intermediate)
-  return intermediate
-  
-  // Sistema robusto de eliminación de redundancia por especificidad (estable)
-  function removeRedundantTags(tagList: string[]): string[] {
-    const toRemove = new Set<number>()
-    const wordsCache = tagList.map((t) => t.split(" "))
-    for (let i = 0; i < tagList.length; i++) {
-      if (toRemove.has(i)) continue
-      for (let j = 0; j < tagList.length; j++) {
-        if (i === j) continue
-        if (tagList[j] !== tagList[i] && tagList[j].includes(tagList[i])) {
-          const wordsI = wordsCache[i]
-          const wordsJ = wordsCache[j]
-          const allIn = wordsI.every((w) => wordsJ.includes(w))
-          if (allIn) {
-            toRemove.add(i)
-            break
-          }
-        }
-      }
-    }
-    return tagList.filter((_, idx) => !toRemove.has(idx))
-  }
+  const result: string[] = []
+  original.forEach((tag, idx) => {
+    if (insertionMap.has(idx)) result.push(insertionMap.get(idx)!)
+    else if (!toSkip.has(idx)) result.push(tag)
+  })
+  return result
 }
 
+function removeRedundantByInclusion(tagList: string[]): string[] {
+  const toRemove = new Set<number>()
+  const wordsCache = tagList.map((t) => t.split(" "))
+  for (let i = 0; i < tagList.length; i++) {
+    if (toRemove.has(i)) continue
+    for (let j = 0; j < tagList.length; j++) {
+      if (i === j) continue
+      const ai = tagList[i]
+      const aj = tagList[j]
+      if (ai === aj) continue
+      if (!aj.includes(ai)) continue
+      const wi = wordsCache[i]
+      const wj = wordsCache[j]
+      const allIn = wi.every((w) => wj.includes(w))
+      if (allIn) {
+        toRemove.add(i)
+        break
+      }
+    }
+  }
+  return tagList.filter((_, idx) => !toRemove.has(idx))
+}
+
+// --------------- Main API ---------------
 export function cleanPrompt(
   tagString: string,
   artistTags: string,
   characterTags: string,
   copyrightTags: string,
-  options?: {
-    includeCharacters?: boolean
-    includeCopyrights?: boolean
-    optimizeTags?: boolean // activa/desactiva TODA la optimización (combinar + limpiar redundancias)
-    exclude?: string[] // lista de tags que el usuario desea eliminar manualmente
-  },
+  options?: CleanPromptOptions,
 ): string {
   const includeCharacters = options?.includeCharacters !== false
   const includeCopyrights = options?.includeCopyrights !== false
-  const optimizeAll = options?.optimizeTags !== false // por defecto ON
+  const optimizeAll = options?.optimizeTags !== false
+
   const userExcludeSet = new Set(
     (options?.exclude || [])
-      .map((t) => t.replace(/_/g, " ").toLowerCase().trim())
+      .map((t) => normalize(t))
       .filter((t) => t.length > 0),
   )
-  let allTags = tagString.split(",").map((t) => t.trim()).filter((tag) => tag.length > 0)
-  const artistTagsSet = new Set(artistTags.split(" "))
-  // --- Manejo de tags multi-palabra para eliminación temprana ---
-  // El código original parte el prompt por espacios, lo que rompe coincidencias para entradas como "web address"
-  // porque se transforman en ["web", "address"]. Aquí detectamos secuencias de 2-4 tokens que formen parte de
-  // los sets de metatags a eliminar (incluyendo el fallback) y las eliminamos antes del filtrado estándar.
+
+  // Parse inputs
+  let allTags = parseTagList(tagString)
+  const artistTagsSet = new Set(parseTagList(artistTags).map((t) => normalize(t)))
+  const characterTagsArray = parseTagList(characterTags)
+  const copyrightTagsArray = parseTagList(copyrightTags)
+
+  // Sliding-window early removal for multi-word meta sequences when input is space-separated
   try {
     const multiWordRemovalBase = new Set<string>([
       ...Array.from(META_TAGS_SET).filter((t) => t.includes(" ")),
-      ...Array.from(commonMetaTags).filter((t) => t.includes(" ")),
     ])
-
-    // Añadimos manualmente variantes frecuentes con y sin underscore
-    ;["web address", "web_address"].forEach((v) => multiWordRemovalBase.add(v))
+    // explicitly ensure both variants present
+    ;["web address", "web_address"].forEach((v) => multiWordRemovalBase.add(normalize(v)))
 
     if (multiWordRemovalBase.size > 0 && allTags.length > 1) {
-      const loweredTokens = allTags.map((t) => t.toLowerCase())
+      const lowered = allTags.map((t) => normalize(t))
       const newTokens: string[] = []
       let i = 0
-      while (i < loweredTokens.length) {
+      while (i < lowered.length) {
         let matched = false
-        // Intentar long-first (4 -> 2 palabras)
         for (let span = 4; span >= 2; span--) {
-          if (i + span > loweredTokens.length) continue
-            const slice = loweredTokens.slice(i, i + span)
-            const candidateSpace = slice.join(" ")
-            const candidateUnderscore = slice.join("_")
-            if (multiWordRemovalBase.has(candidateSpace) || multiWordRemovalBase.has(candidateUnderscore)) {
-              // Saltar estos tokens (remoción)
-              i += span
-              matched = true
-              break
-            }
+          if (i + span > lowered.length) continue
+          const slice = lowered.slice(i, i + span)
+          const candidateSpace = slice.join(" ")
+          const candidateUnderscore = toUnderscore(candidateSpace)
+          if (multiWordRemovalBase.has(candidateSpace) || multiWordRemovalBase.has(candidateUnderscore)) {
+            i += span
+            matched = true
+            break
+          }
         }
         if (!matched) {
           newTokens.push(allTags[i])
           i++
         }
       }
-      if (newTokens.length !== allTags.length) {
-        // Reemplazamos contenido original sólo si hubo cambios
-        ;(allTags as string[]) = newTokens
-      }
+      if (newTokens.length !== allTags.length) allTags = newTokens
     }
   } catch {
-    // Silencioso: si algo falla no interrumpimos el flujo principal
+    // ignore
   }
-  const characterTagsArray = characterTags.split(" ").filter((tag) => tag.length > 0)
-  const copyrightTagsArray = copyrightTags.split(" ").filter((tag) => tag.length > 0)
-  // Normalizados para comparación posterior
+
   const normalizedCharacterSet = new Set(
-    characterTagsArray.map((t) => t.replace(/_/g, " ").toLowerCase().trim()).filter((t) => t.length > 0),
+    characterTagsArray.map((t) => normalize(t)).filter((t) => t.length > 0),
   )
   const normalizedCopyrightSet = new Set(
-    copyrightTagsArray.map((t) => t.replace(/_/g, " ").toLowerCase().trim()).filter((t) => t.length > 0),
+    copyrightTagsArray.map((t) => normalize(t)).filter((t) => t.length > 0),
   )
 
+  // Filtering rules
   const numberRegex = /^\d+$/
-  const urlRegex = /:/
+  const hasUrlLike = /:/ // simple heuristic for schemes
+  const invalidBracket = /[(){}\[\]]/
 
-  const filteredTags = allTags.filter((tag) => {
-    if (tag.length <= 1) return false
-    const lowerTag = tag.toLowerCase()
+  const filteredTags = allTags.filter((raw) => {
+    if (raw.length <= 1) return false
+    const lower = raw.toLowerCase()
 
-    if (artistTagsSet.has(lowerTag)) return false
-    if (META_TAGS_SET.has(lowerTag)) return false
-    if (commonMetaTags.has(lowerTag)) return false
-
-    if (numberRegex.test(tag)) return false
-    if (tag.includes("@") || tag.includes("#") || urlRegex.test(tag)) return false
-    if (
-      tag.includes("(") ||
-      tag.includes(")") ||
-      tag.includes("{") ||
-      tag.includes("}") ||
-      tag.includes("[") ||
-      tag.includes("]")
-    )
-      return false
+    if (artistTagsSet.has(lower)) return false
+    if (META_TAGS_SET.has(normalize(lower))) return false
+    if (numberRegex.test(raw)) return false
+    if (raw.includes("@") || raw.includes("#") || hasUrlLike.test(raw)) return false
+    if (invalidBracket.test(raw)) return false
 
     return true
   })
 
-  const formattedTags = filteredTags
-    .map((tag) => tag.replace(/_/g, " ").toLowerCase().trim())
-    .filter((tag) => !userExcludeSet.has(tag)) // exclusiones tempranas
-  const processedTags = optimizeAll ? optimizeTags(formattedTags) : formattedTags
+  // Normalize and apply user exclusions
+  const formatted = filteredTags
+    .map((t) => normalize(t))
+    .filter((t) => !userExcludeSet.has(t))
 
+  const processed = optimizeAll ? optimizeTags(formatted) : formatted
+
+  // Partition quality vs content
   const qualityTags: string[] = []
   const contentTags: string[] = []
-
-  for (const tag of processedTags) {
-    if (QUALITY_TAGS_SET.has(tag)) {
-      qualityTags.push(tag)
-    } else {
-      contentTags.push(tag)
-    }
+  for (const t of processed) {
+    if (QUALITY_TAGS_SET.has(t)) qualityTags.push(t)
+    else contentTags.push(t)
   }
 
+  // Sort content with subject/composition priority, then by length desc
   const sortedContentTags = contentTags.sort((a, b) => {
     const aIsSubject = SUBJECT_TAGS_SET.has(a)
     const bIsSubject = SUBJECT_TAGS_SET.has(b)
+    if (aIsSubject !== bIsSubject) return aIsSubject ? -1 : 1
+
     const aIsComposition = COMPOSITION_TAGS_SET.has(a)
     const bIsComposition = COMPOSITION_TAGS_SET.has(b)
-
-    if (aIsSubject && !bIsSubject) return -1
-    if (!aIsSubject && bIsSubject) return 1
-    if (aIsComposition && !bIsComposition) return -1
-    if (!aIsComposition && bIsComposition) return 1
+    if (aIsComposition !== bIsComposition) return aIsComposition ? -1 : 1
 
     return b.length - a.length
   })
@@ -796,31 +651,21 @@ export function cleanPrompt(
     ...(includeCharacters ? characterTagsArray : []),
     ...(includeCopyrights ? copyrightTagsArray : []),
   ]
-    .map((tag) => tag.replace(/_/g, " ").toLowerCase().trim())
-    .filter((tag) => tag.length > 0)
+    .map((t) => normalize(t))
+    .filter(Boolean)
 
-  const allFinalTags = new Set<string>()
-  characterAndFranchiseTags.forEach((tag) => allFinalTags.add(tag))
+  const allFinal = new Set<string>()
+  for (const t of characterAndFranchiseTags) allFinal.add(t)
 
-  // Si el usuario desactiva characters/copyrights, debemos removerlos también de las listas procesadas
-  const combinedTagsPre = [...sortedContentTags, ...qualityTags]
-  const combinedTags = combinedTagsPre.filter((tag) => {
-    if (!includeCharacters && normalizedCharacterSet.has(tag)) return false
-    if (!includeCopyrights && normalizedCopyrightSet.has(tag)) return false
-    // Tratar variantes 'official ...' como parte de character para el toggle
-    if (!includeCharacters && tag.startsWith("official ")) return false
-    // Tratar variantes 'alternate ...' como parte de character para el toggle
-    if (!includeCharacters && tag.startsWith("alternate ")) return false
-    if (userExcludeSet.has(tag)) return false // exclusión manual posterior a optimización
+  const combinedPre = [...sortedContentTags, ...qualityTags]
+  const combined = combinedPre.filter((t) => {
+    if (!includeCharacters && normalizedCharacterSet.has(t)) return false
+    if (!includeCopyrights && normalizedCopyrightSet.has(t)) return false
+    if (!includeCharacters && (t.startsWith("official ") || t.startsWith("alternate "))) return false
+    if (userExcludeSet.has(t)) return false
     return true
   })
-  combinedTags.forEach((tag) => {
-    if (!allFinalTags.has(tag)) {
-      allFinalTags.add(tag)
-    }
-  })
+  for (const t of combined) allFinal.add(t)
 
-  const finalTags = Array.from(allFinalTags)
-
-  return finalTags.join(", ")
+  return Array.from(allFinal).join(", ")
 }

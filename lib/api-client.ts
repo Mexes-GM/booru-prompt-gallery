@@ -230,8 +230,8 @@ const fetcher = async (url: string) => {
     
     if (!res.ok) {
       // Importar dinámicamente para evitar dependencias circulares
-      const { useApiStatusSimple } = await import('@/hooks/use-api-status')
-      const { reportError } = useApiStatusSimple()
+  const { useApiStatus } = await import('@/hooks/use-api-status')
+  const { reportError } = useApiStatus()
       
       const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
       try {
@@ -242,25 +242,25 @@ const fetcher = async (url: string) => {
       error.status = res.status
       
       // Reportar error a las notificaciones
-      reportError(`Error ${res.status}: ${res.statusText}`)
+  reportError(new Error(`Error ${res.status}: ${res.statusText}`))
       
       throw error
     }
     
     // Verificar si la respuesta fue lenta (>10 segundos)
     if (responseTime > 10000) {
-      const { useApiStatusSimple } = await import('@/hooks/use-api-status')
-      const { reportSlowResponse } = useApiStatusSimple()
+  const { useApiStatus } = await import('@/hooks/use-api-status')
+  const { reportSlowResponse } = useApiStatus()
       reportSlowResponse(responseTime)
     }
     
     return res.json()
-  } catch (fetchError) {
+  } catch (fetchError: any) {
     // Si es un error de red o timeout
     if (fetchError instanceof TypeError || fetchError.name === 'AbortError') {
-      const { useApiStatusSimple } = await import('@/hooks/use-api-status')
-      const { reportError } = useApiStatusSimple()
-      reportError('Error de conexión: No se pudo conectar con la API')
+  const { useApiStatus } = await import('@/hooks/use-api-status')
+  const { reportError } = useApiStatus()
+  reportError(new Error('Error de conexión: No se pudo conectar con la API'))
     }
     throw fetchError
   }
@@ -399,33 +399,33 @@ export function useFavoritePosts(favoriteIds: number[]) {
 
         if (!response.ok) {
           // Importar dinámicamente para evitar dependencias circulares
-          const { useApiStatusSimple } = await import('@/hooks/use-api-status')
-          const { reportError } = useApiStatusSimple()
+      const { useApiStatus } = await import('@/hooks/use-api-status')
+      const { reportError } = useApiStatus()
           
           const errorData = new Error(`HTTP error! status: ${response.status}`) as Error & { info?: unknown; status?: number }
           errorData.status = response.status
           
           // Reportar error a las notificaciones
-          reportError(`Error ${response.status}: Error al cargar favoritos`)
+          reportError(new Error(`Error ${response.status}: Error al cargar favoritos`))
           
           throw errorData
         }
         
         // Verificar si la respuesta fue lenta (>10 segundos)
         if (responseTime > 10000) {
-          const { useApiStatusSimple } = await import('@/hooks/use-api-status')
-          const { reportSlowResponse } = useApiStatusSimple()
+      const { useApiStatus } = await import('@/hooks/use-api-status')
+      const { reportSlowResponse } = useApiStatus()
           reportSlowResponse(responseTime)
         }
 
         const posts = await response.json()
         return posts
-      } catch (fetchError) {
+  } catch (fetchError: any) {
         // Si es un error de red o timeout
         if (fetchError instanceof TypeError || fetchError.name === 'AbortError') {
-          const { useApiStatusSimple } = await import('@/hooks/use-api-status')
-          const { reportError } = useApiStatusSimple()
-          reportError('Error de conexión: No se pudo cargar favoritos')
+          const { useApiStatus } = await import('@/hooks/use-api-status')
+          const { reportError } = useApiStatus()
+          reportError(new Error('Error de conexión: No se pudo cargar favoritos'))
         }
         throw fetchError
       }
