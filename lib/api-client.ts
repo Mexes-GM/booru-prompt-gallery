@@ -26,8 +26,12 @@ export interface AibooruPost extends DanbooruPost {
   }
 }
 
-export type BooruPost = DanbooruPost | AibooruPost
-export type BooruProvider = 'danbooru' | 'aibooru'
+export interface Rule34Post extends DanbooruPost {
+  // Rule34 uses the same structure as DanbooruPost
+}
+
+export type BooruPost = DanbooruPost | AibooruPost | Rule34Post
+export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34'
 
 // Helper function to check if a post is from Aibooru and has AI metadata
 export const isAibooruPost = (post: BooruPost): post is AibooruPost => {
@@ -229,10 +233,6 @@ const fetcher = async (url: string) => {
     const responseTime = Date.now() - startTime
     
     if (!res.ok) {
-      // Importar dinámicamente para evitar dependencias circulares
-  const { useApiStatus } = await import('@/hooks/use-api-status')
-  const { reportError } = useApiStatus()
-      
       const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
       try {
         error.info = await res.json()
@@ -241,27 +241,11 @@ const fetcher = async (url: string) => {
       }
       error.status = res.status
       
-      // Reportar error a las notificaciones
-  reportError(new Error(`Error ${res.status}: ${res.statusText}`))
-      
       throw error
-    }
-    
-    // Verificar si la respuesta fue lenta (>10 segundos)
-    if (responseTime > 10000) {
-  const { useApiStatus } = await import('@/hooks/use-api-status')
-  const { reportSlowResponse } = useApiStatus()
-      reportSlowResponse(responseTime)
     }
     
     return res.json()
   } catch (fetchError: any) {
-    // Si es un error de red o timeout
-    if (fetchError instanceof TypeError || fetchError.name === 'AbortError') {
-  const { useApiStatus } = await import('@/hooks/use-api-status')
-  const { reportError } = useApiStatus()
-  reportError(new Error('Error de conexión: No se pudo conectar con la API'))
-    }
     throw fetchError
   }
 }
@@ -344,7 +328,14 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
   
   return useSWRInfinite<BooruPost[]>(
     (pageIndex: number) => {
-      const apiEndpoint = provider === 'aibooru' ? '/api/aibooru' : '/api/posts'
+      // Select the correct API endpoint based on provider
+      let apiEndpoint = '/api/posts' // Default to Danbooru
+      if (provider === 'aibooru') {
+        apiEndpoint = '/api/aibooru'
+      } else if (provider === 'rule34') {
+        apiEndpoint = '/api/rule34'
+      }
+      
       const baseUrl = `${apiEndpoint}?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`
       
       // Add hasPrompt parameter for Aibooru
