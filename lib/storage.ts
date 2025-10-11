@@ -46,10 +46,10 @@ export const STORAGE_KEYS = {
 
 // Type-safe getters and setters for specific preferences
 export const userPreferences = {
-  getBooruProvider: (): 'danbooru' | 'aibooru' => 
-    storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'aibooru'),
+  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' => 
+    storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'danbooru'),
   
-  setBooruProvider: (provider: 'danbooru' | 'aibooru') => 
+  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34') => 
     storage.set(STORAGE_KEYS.BOORU_PROVIDER, provider),
   
   getRemoveLoRaTags: (): boolean => 

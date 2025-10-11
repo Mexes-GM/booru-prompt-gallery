@@ -21,6 +21,11 @@ export async function GET() {
       fetch('https://aibooru.online/posts.json?limit=1', {
         method: 'HEAD', 
         signal: AbortSignal.timeout(API_CONFIG.timeout)
+      }),
+      // Verificar Rule34
+      fetch('https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&limit=1', {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(API_CONFIG.timeout)
       })
     ])
     
@@ -29,9 +34,10 @@ export async function GET() {
     // Analizar resultados de las verificaciones
     const danbooruStatus = healthChecks[0].status === 'fulfilled' && healthChecks[0].value.ok
     const aibooruStatus = healthChecks[1].status === 'fulfilled' && healthChecks[1].value.ok
+    const rule34Status = healthChecks[2].status === 'fulfilled' && healthChecks[2].value.ok
     
-    const allHealthy = danbooruStatus && aibooruStatus
-    const partiallyHealthy = danbooruStatus || aibooruStatus
+    const allHealthy = danbooruStatus && aibooruStatus && rule34Status
+    const partiallyHealthy = danbooruStatus || aibooruStatus || rule34Status
     
     let status: 'healthy' | 'degraded' | 'unhealthy'
     let message: string
@@ -41,9 +47,17 @@ export async function GET() {
       message = 'Todos los servicios funcionando correctamente'
     } else if (partiallyHealthy) {
       status = 'degraded'
-      const workingService = danbooruStatus ? 'Danbooru' : 'Aibooru'
-      const failingService = danbooruStatus ? 'Aibooru' : 'Danbooru'
-      message = `Servicio parcialmente disponible - ${workingService} funcionando, ${failingService} con problemas`
+      const workingServices = [
+        danbooruStatus && 'Danbooru',
+        aibooruStatus && 'Aibooru',
+        rule34Status && 'Rule34'
+      ].filter(Boolean).join(', ')
+      const failingServices = [
+        !danbooruStatus && 'Danbooru',
+        !aibooruStatus && 'Aibooru',
+        !rule34Status && 'Rule34'
+      ].filter(Boolean).join(', ')
+      message = `Servicio parcialmente disponible - ${workingServices} funcionando, ${failingServices} con problemas`
     } else {
       status = 'unhealthy'
       message = 'Servicios externos no disponibles'
@@ -62,6 +76,10 @@ export async function GET() {
         aibooru: {
           status: aibooruStatus ? 'healthy' : 'unhealthy', 
           error: healthChecks[1].status === 'rejected' ? healthChecks[1].reason?.message : null
+        },
+        rule34: {
+          status: rule34Status ? 'healthy' : 'unhealthy',
+          error: healthChecks[2].status === 'rejected' ? healthChecks[2].reason?.message : null
         }
       }
     }

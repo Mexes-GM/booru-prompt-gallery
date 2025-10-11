@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   X,
   ChevronUp,
+  Shield,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -51,8 +52,8 @@ import {
   trackProviderChange,
   trackAibooruOption,
   trackRatingChange,
-  trackOrderChange,
   trackDanbooruOption,
+  trackRule34Option,
 } from '@/lib/analytics'
 
 // Using BooruPost from api-client instead of local interface
@@ -63,7 +64,7 @@ export default function DanbooruPromptGenerator() {
   const [searchTags, setSearchTags] = useState("")
   const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
   const [ratingFilter, setRatingFilter] = useState("rating:general")
-  const [order, setOrder] = useState<"popular" | "recent" | "random">("popular")
+  const order = "recent" // Always use recent order
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [cardScale, setCardScale] = useState<CardScale>("medium")
   const [scaleValue, setScaleValue] = useState([2])
@@ -74,17 +75,18 @@ export default function DanbooruPromptGenerator() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [noMoreResults, setNoMoreResults] = useState(false)
   const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
-  const [randomSeed, setRandomSeed] = useState<number>(Date.now())
+  const [randomSeed, setRandomSeed] = useState<number>(0)
   const [includeCharacters, setIncludeCharacters] = useState(true)
   const [includeCopyrights, setIncludeCopyrights] = useState(true)
   const [optimizeTags, setOptimizeTags] = useState(true) // UI toggle para combinacion/optimizacion de tags
   const [excludeInput, setExcludeInput] = useState("") // entrada de tags a excluir
   const [addInput, setAddInput] = useState("") // entrada de tags a agregar
-  const [booruProvider, setBooruProvider] = useState<BooruProvider>('aibooru')
+  const [booruProvider, setBooruProvider] = useState<BooruProvider>('danbooru')
   const [hasPromptFilter, setHasPromptFilter] = useState(false)
   const [removeLoRaTags, setRemoveLoRaTags] = useState(false)
   const [removeQualityTags, setRemoveQualityTags] = useState(false)
   const [isClient, setIsClient] = useState(false)
+  const [previousRatingFilter, setPreviousRatingFilter] = useState<string>("rating:general") // Store rating before switching to Rule34
   const { toast } = useToast()
   
 
@@ -92,17 +94,16 @@ export default function DanbooruPromptGenerator() {
   // Load user preferences from localStorage on client mount
   useEffect(() => {
     setIsClient(true)
+    setRandomSeed(Date.now()) // Initialize random seed on client
     const savedProvider = userPreferences.getBooruProvider()
     const savedRemoveLoRa = userPreferences.getRemoveLoRaTags()
     const savedRemoveQuality = userPreferences.getRemoveQualityTags()
     const savedRatingFilter = userPreferences.getRatingFilter()
-    const savedOrder = userPreferences.getOrder()
     
     setBooruProvider(savedProvider)
     setRemoveLoRaTags(savedRemoveLoRa)
     setRemoveQualityTags(savedRemoveQuality)
     setRatingFilter(savedRatingFilter)
-    setOrder(savedOrder)
   }, [])
 
   // Save booru provider preference
@@ -132,13 +133,6 @@ export default function DanbooruPromptGenerator() {
       userPreferences.setRatingFilter(ratingFilter)
     }
   }, [ratingFilter, isClient])
-
-  // Save order preference
-  useEffect(() => {
-    if (isClient) {
-      userPreferences.setOrder(order)
-    }
-  }, [order, isClient])
 
   // Auto-activate prompt filter when Aibooru is selected
   useEffect(() => {
@@ -188,16 +182,8 @@ export default function DanbooruPromptGenerator() {
   const loadMore = () => {
     const currentPostCount = posts.length
     setLastLoadAttempt(currentPostCount)
-    
-  if (order === 'random') {
-      // Generate new random seed to force new results
-      setRandomSeed(Date.now())
-      setSize(1)
-      mutate(undefined, { revalidate: true })
-    } else {
-      setSize(size + 1)
-    }
-  trackLoadMore({ order, nextPage: order === 'random' ? 1 : size + 1, currentCount: currentPostCount })
+    setSize(size + 1)
+    trackLoadMore({ order, nextPage: size + 1, currentCount: currentPostCount })
   }
   
   const refresh = () => {
@@ -206,15 +192,11 @@ export default function DanbooruPromptGenerator() {
   }
 
   useEffect(() => {
-    if (order === 'random') return
-    
     if (lastLoadAttempt > 0 && !isLoadingMore && posts.length === lastLoadAttempt) {
       setNoMoreResults(true)
       toast({
         title: "No more results",
-        description: order === "popular" 
-          ? "No more popular posts found for this search. Try different search terms, switch to 'Most recent', or change the rating filter."
-          : "No more recent posts found for this search. Try different search terms or change the rating filter.",
+        description: "No more recent posts found for this search. Try different search terms or change the rating filter.",
         variant: "default",
       })
       setLastLoadAttempt(0)
@@ -222,16 +204,12 @@ export default function DanbooruPromptGenerator() {
       setNoMoreResults(false)
       setLastLoadAttempt(0)
     }
-  }, [posts.length, isLoadingMore, lastLoadAttempt, order, toast])
+  }, [posts.length, isLoadingMore, lastLoadAttempt, toast])
 
   useEffect(() => {
     setNoMoreResults(false)
     setLastLoadAttempt(0)
-    // Reset random seed when search parameters change
-    if (order === 'random') {
-      setRandomSeed(Date.now())
-    }
-  }, [searchTags, ratingFilter, order])
+  }, [searchTags, ratingFilter])
 
   useEffect(() => {
     const scale = scaleValue[0]
@@ -390,22 +368,14 @@ export default function DanbooruPromptGenerator() {
   
   useEffect(() => {
     if (hasMounted.current && error) {
-      if (error.status === 422 && order === "random") {
-        toast({
-          title: "Random search timeout",
-          description: "Random searches can be slow. Try using more specific tags or switch to 'Most recent' for faster results.",
-          variant: "destructive",
-        })
-      } else {
-        toast({
-          title: "Connection error",
-          description: error.message || "Could not load images",
-          variant: "destructive",
-        })
-      }
+      toast({
+        title: "Connection error",
+        description: error.message || "Could not load images",
+        variant: "destructive",
+      })
     }
     hasMounted.current = true
-  }, [error, toast, order])
+  }, [error, toast])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -671,7 +641,7 @@ export default function DanbooruPromptGenerator() {
             <div className="text-center space-y-2">
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
                 <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
-                  Generate prompts from Danbooru and Aibooru image collections. Extract and format tags from posts or access AI-generated prompts directly, creating clean, ready-to-use prompts for your AI art generation.
+                  Generate prompts from Danbooru, Aibooru, and Rule34 image collections. Extract and format tags from posts or access AI-generated prompts directly, creating clean, ready-to-use prompts for your AI art generation.
                 </p>
                 
                 {/* Social Links Section */}
@@ -769,7 +739,7 @@ export default function DanbooruPromptGenerator() {
                   {getFinalQueryTags(searchTags, ratingFilter, order).length > 0 && (
                     <div className="mb-4">
                       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-2">
-                        <span className="font-medium">Sending to {booruProvider === "danbooru" ? "Danbooru" : "Aibooru"} API:</span>
+                        <span className="font-medium">Sending to {booruProvider === "danbooru" ? "Danbooru" : booruProvider === "aibooru" ? "Aibooru" : "Rule34"} API:</span>
                         {getFinalQueryTags(searchTags, ratingFilter, order).map((tag, index) => (
                           <Badge key={index} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/50 dark:border-blue-800/50 dark:text-blue-300 text-xs">
                             {tag}
@@ -815,38 +785,22 @@ export default function DanbooruPromptGenerator() {
                       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
                         <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
                           {isClient ? (
-                            <Select value={ratingFilter} onValueChange={(value) => {
-                              setRatingFilter(value)
-                              trackRatingChange(value)
-                            }}>
-                              <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10" translate="no">
-                                <SelectValue placeholder="Content rating" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="rating:general">General</SelectItem>
-                                <SelectItem value="rating:sensitive">Sensitive</SelectItem>
-                                <SelectItem value="rating:questionable">Questionable</SelectItem>
-                                <SelectItem value="rating:explicit">Explicit</SelectItem>
-                                <SelectItem value="all">No filter (All)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <div className="w-full sm:w-[130px] h-10 bg-muted animate-pulse rounded-md" />
-                          )}
-                          {isClient ? (
-                            <Select value={order} onValueChange={(value: "popular" | "recent" | "random") => {
-                              setOrder(value)
-                              trackOrderChange(value)
-                            }}>
-                              <SelectTrigger className="w-full sm:w-[130px] focus-ring h-10">
-                                <SelectValue placeholder="Sort by" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="popular">Most popular</SelectItem>
-                                <SelectItem value="recent">Most recent</SelectItem>
-                                <SelectItem value="random">Random</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <Button
+                              type="button"
+                              variant={ratingFilter === "rating:general" ? "default" : "outline"}
+                              onClick={() => {
+                                const newRating = ratingFilter === "rating:general" ? "all" : "rating:general"
+                                setRatingFilter(newRating)
+                                trackRatingChange(newRating)
+                              }}
+                              className="focus-ring w-full sm:w-auto h-10"
+                              aria-label="Toggle rating filter"
+                            >
+                              <Shield className={`w-4 h-4 mr-2 ${ratingFilter === "rating:general" ? "" : ""}`} />
+                              <span className="whitespace-nowrap">
+                                {ratingFilter === "rating:general" ? "Safe only" : "All ratings"}
+                              </span>
+                            </Button>
                           ) : (
                             <div className="w-full sm:w-[130px] h-10 bg-muted animate-pulse rounded-md" />
                           )}
@@ -941,6 +895,11 @@ export default function DanbooruPromptGenerator() {
                             type="button"
                             variant={booruProvider === "danbooru" ? "default" : "outline"}
                             onClick={() => {
+                              // Restore previous rating filter when coming back from Rule34
+                              if (booruProvider === "rule34" && ratingFilter === "all") {
+                                setRatingFilter(previousRatingFilter)
+                                trackRatingChange(previousRatingFilter)
+                              }
                               setBooruProvider("danbooru")
                               trackProviderChange("danbooru")
                             }}
@@ -953,6 +912,11 @@ export default function DanbooruPromptGenerator() {
                             type="button"
                             variant={booruProvider === "aibooru" ? "default" : "outline"}
                             onClick={() => {
+                              // Restore previous rating filter when coming back from Rule34
+                              if (booruProvider === "rule34" && ratingFilter === "all") {
+                                setRatingFilter(previousRatingFilter)
+                                trackRatingChange(previousRatingFilter)
+                              }
                               setBooruProvider("aibooru")
                               trackProviderChange("aibooru")
                             }}
@@ -960,6 +924,24 @@ export default function DanbooruPromptGenerator() {
                             size="sm"
                           >
                             Aibooru
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={booruProvider === "rule34" ? "default" : "outline"}
+                            onClick={() => {
+                              // Save current rating filter before switching to Rule34
+                              if (booruProvider !== "rule34") {
+                                setPreviousRatingFilter(ratingFilter)
+                              }
+                              setBooruProvider("rule34")
+                              setRatingFilter("all") // Rule34 is mostly NSFW, so disable rating filter
+                              trackProviderChange("rule34")
+                              trackRatingChange("all")
+                            }}
+                            className="focus-ring text-sm"
+                            size="sm"
+                          >
+                            Rule34
                           </Button>
                         </div>
                       </div>
@@ -969,7 +951,7 @@ export default function DanbooruPromptGenerator() {
                           {booruProvider === 'aibooru' ? 'Aibooru Options' : 'Prompt Options'}
                         </span>
                         <div className="flex items-center gap-4 flex-wrap px-3 py-1 rounded-md border border-border/50 bg-muted/30 min-h-[34px]">
-                          {booruProvider === 'danbooru' ? (
+                          {booruProvider === 'danbooru' || booruProvider === 'rule34' ? (
                             <>
                               <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
                                 <Switch
@@ -977,7 +959,11 @@ export default function DanbooruPromptGenerator() {
                                   onCheckedChange={(v) => {
                                     const enabled = !!v
                                     setIncludeCharacters(enabled)
-                                    trackDanbooruOption('include_characters', enabled)
+                                    if (booruProvider === 'rule34') {
+                                      trackRule34Option('include_characters', enabled)
+                                    } else {
+                                      trackDanbooruOption('include_characters', enabled)
+                                    }
                                   }}
                                   aria-label="Toggle character tags"
                                 />
@@ -989,7 +975,11 @@ export default function DanbooruPromptGenerator() {
                                   onCheckedChange={(v) => {
                                     const enabled = !!v
                                     setIncludeCopyrights(enabled)
-                                    trackDanbooruOption('include_copyrights', enabled)
+                                    if (booruProvider === 'rule34') {
+                                      trackRule34Option('include_copyrights', enabled)
+                                    } else {
+                                      trackDanbooruOption('include_copyrights', enabled)
+                                    }
                                   }}
                                   aria-label="Toggle copyright tags"
                                 />
@@ -1001,7 +991,11 @@ export default function DanbooruPromptGenerator() {
                                   onCheckedChange={(v) => {
                                     const enabled = !!v
                                     setOptimizeTags(enabled)
-                                    trackDanbooruOption('optimize_tags', enabled)
+                                    if (booruProvider === 'rule34') {
+                                      trackRule34Option('optimize_tags', enabled)
+                                    } else {
+                                      trackDanbooruOption('optimize_tags', enabled)
+                                    }
                                   }}
                                   aria-label="Toggle combine tags"
                                 />
@@ -1062,12 +1056,7 @@ export default function DanbooruPromptGenerator() {
                     >
                       <AlertTriangle className="h-4 w-4" />
                       <AlertDescription className="text-sm">
-                        {order === "popular" 
-                          ? `Danbooru API only allows 1 tag when using popularity sort. Only the first tag "${searchTags.split(',')[0].trim()}" will be used.`
-                          : order === "random"
-                          ? `Danbooru API only allows 1 tag when using random sort. Only the first tag "${searchTags.split(',')[0].trim()}" will be used.`
-                          : `Danbooru API only allows 2 tags maximum. Only the first 2 tags will be used for the search.`
-                        }
+                        Danbooru API only allows 2 tags maximum. Only the first 2 tags will be used for the search.
                       </AlertDescription>
                     </Alert>
                   )}
@@ -1389,7 +1378,7 @@ export default function DanbooruPromptGenerator() {
                 {isLoadingMore ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {order === "random" ? "Getting new results..." : "Loading more..."}
+                    Loading more...
                   </>
                 ) : noMoreResults ? (
                   <>
@@ -1399,33 +1388,20 @@ export default function DanbooruPromptGenerator() {
                 ) : (
                   <>
                     <Download className="w-4 h-4 mr-2" />
-                    {order === "random" ? "Get New Results" : "Load More"}
+                    Load More
                   </>
                 )}
               </Button>
               {noMoreResults && (
                 <div className="mt-4 space-y-3">
                   <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                    {order === "popular" 
-                      ? "Try switching to 'Most recent', changing the rating filter, or use different search terms"
-                      : order === "random"
-                      ? "Try changing the rating filter or use different search terms to find more content"
-                      : "Try changing the rating filter or use different search terms to find more content"
-                    }
+                    Try changing the rating filter or use different search terms to find more content
                   </p>
-                  {order === "popular" && (
+                  {searchTags.trim() && (
                     <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                      <Button onClick={() => setOrder("recent")} variant="outline" size="sm" className="focus-ring bg-transparent">
-                        Switch to "Most Recent"
+                      <Button onClick={clearSearch} variant="outline" size="sm" className="focus-ring bg-transparent">
+                        Clear Search
                       </Button>
-                      <Button onClick={() => setOrder("random")} variant="outline" size="sm" className="focus-ring bg-transparent">
-                        Switch to "Random"
-                      </Button>
-                      {searchTags.trim() && (
-                        <Button onClick={clearSearch} variant="outline" size="sm" className="focus-ring bg-transparent">
-                          Clear Search
-                        </Button>
-                      )}
                     </div>
                   )}
                 </div>
@@ -1462,8 +1438,6 @@ export default function DanbooruPromptGenerator() {
                   <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
                     {showFavorites 
                       ? "Add images to your favorites by clicking the heart icon on any image"
-                      : searchTags.trim() && order === "popular"
-                      ? `No popular content available with the tag "${searchTags.trim()}". Try switching the filter to "Most recent" or "Random" for alternative results, or try different search terms.`
                       : "Try adjusting your search terms or filters to discover more content"
                     }
                   </p>
@@ -1472,20 +1446,6 @@ export default function DanbooruPromptGenerator() {
                   <Button onClick={() => setShowFavorites(false)} variant="outline" className="focus-ring bg-transparent">
                     Browse All Images
                   </Button>
-                ) : searchTags.trim() && order === "popular" ? (
-                  <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                    <Button onClick={() => setOrder("recent")} variant="outline" className="focus-ring bg-transparent">
-                      Switch to "Most Recent"
-                    </Button>
-                    <Button onClick={() => setOrder("random")} variant="outline" className="focus-ring bg-transparent">
-                      Switch to "Random"
-                    </Button>
-                    {searchTags.trim() && (
-                      <Button onClick={clearSearch} variant="outline" className="focus-ring bg-transparent">
-                        Clear Search
-                      </Button>
-                    )}
-                  </div>
                 ) : searchTags.trim() ? (
                   <Button onClick={clearSearch} variant="outline" className="focus-ring bg-transparent">
                     Clear Search

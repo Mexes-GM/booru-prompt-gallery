@@ -110,3 +110,7 @@ export function trackOrderChange(order: string) {
 export function trackDanbooruOption(option: string, enabled: boolean) {
   safeTrack('danbooru_option', { option, enabled })
 }
+
+export function trackRule34Option(option: string, enabled: boolean) {
+  safeTrack('rule34_option', { option, enabled })
+}
