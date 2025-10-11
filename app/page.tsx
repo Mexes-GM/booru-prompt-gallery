@@ -794,11 +794,11 @@ export default function DanbooruPromptGenerator() {
                                 trackRatingChange(newRating)
                               }}
                               className="focus-ring w-full sm:w-auto h-10"
-                              aria-label="Toggle rating filter"
+                              aria-label="Toggle NSFW filter"
                             >
                               <Shield className={`w-4 h-4 mr-2 ${ratingFilter === "rating:general" ? "" : ""}`} />
                               <span className="whitespace-nowrap">
-                                {ratingFilter === "rating:general" ? "Safe only" : "All ratings"}
+                                {ratingFilter === "rating:general" ? "NSFW Off" : "NSFW On"}
                               </span>
                             </Button>
                           ) : (
