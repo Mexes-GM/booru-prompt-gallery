@@ -88,6 +88,7 @@ export default function DanbooruPromptGenerator() {
   const [isClient, setIsClient] = useState(false)
   const [previousRatingFilter, setPreviousRatingFilter] = useState<string>("rating:general") // Store rating before switching to Rule34
   const [isLoadingLock, setIsLoadingLock] = useState(false) // Prevent race conditions on "Load More"
+  const [loadMoreError, setLoadMoreError] = useState(false) // Track if last load attempt failed
   const { toast } = useToast()
   
 
@@ -211,11 +212,12 @@ export default function DanbooruPromptGenerator() {
   
   const loadMore = () => {
     // CRITICAL: Prevent race conditions with multiple rapid clicks
-    if (isLoadingLock || isLoadingMore || isReachingEnd) {
+    if (isLoadingLock || isLoadingMore) {
       return
     }
     
     setIsLoadingLock(true) // Lock to prevent double-clicks
+    setLoadMoreError(false) // Reset error state on new attempt
     
     const currentPostCount = posts.length
     setLastLoadAttempt(currentPostCount)
@@ -240,10 +242,22 @@ export default function DanbooruPromptGenerator() {
   }
 
   useEffect(() => {
-    // Check if we attempted to load more but got no new posts
+    // Check if we attempted to load more but got no new posts or if there was an error
     if (lastLoadAttempt > 0 && !isLoadingMore) {
-      if (posts.length === lastLoadAttempt || isReachingEnd) {
+      if (error) {
+        // API returned an error
+        setLoadMoreError(true)
+        setNoMoreResults(false)
+        toast({
+          title: "Error loading more posts",
+          description: "There was an error loading more posts. Click 'Retry' to try again.",
+          variant: "destructive",
+        })
+        setLastLoadAttempt(0)
+      } else if (posts.length === lastLoadAttempt || isReachingEnd) {
+        // No new posts received
         setNoMoreResults(true)
+        setLoadMoreError(false)
         toast({
           title: "No more results",
           description: "No more recent posts found for this search. Try different search terms or change the rating filter.",
@@ -253,13 +267,15 @@ export default function DanbooruPromptGenerator() {
       } else if (posts.length > lastLoadAttempt) {
         // Successfully loaded new posts
         setNoMoreResults(false)
+        setLoadMoreError(false)
         setLastLoadAttempt(0)
       }
     }
-  }, [posts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, toast, size, pages])
+  }, [posts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast, size, pages])
 
   useEffect(() => {
     setNoMoreResults(false)
+    setLoadMoreError(false)
     setLastLoadAttempt(0)
   }, [searchTags, ratingFilter])
 
@@ -450,6 +466,7 @@ export default function DanbooruPromptGenerator() {
     // This ensures we start from page 1 with new search criteria
     setSize(1)
     setNoMoreResults(false)
+    setLoadMoreError(false)
     setLastLoadAttempt(0)
   }, [order, ratingFilter, debouncedSearchTags, setSize])
 
@@ -1432,15 +1449,20 @@ export default function DanbooruPromptGenerator() {
             <div className="text-center">
               <Button 
                 onClick={loadMore} 
-                disabled={isLoadingLock || isLoadingMore || noMoreResults || isReachingEnd} 
+                disabled={isLoadingLock || isLoadingMore || (noMoreResults && !loadMoreError) || (isReachingEnd && !loadMoreError)} 
                 size="lg" 
                 className="px-8 focus-ring"
-                variant={noMoreResults || isReachingEnd ? "outline" : "default"}
+                variant={(noMoreResults && !loadMoreError) || (isReachingEnd && !loadMoreError) ? "outline" : loadMoreError ? "destructive" : "default"}
               >
                 {isLoadingMore ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Loading more...
+                  </>
+                ) : loadMoreError ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Retry
                   </>
                 ) : (noMoreResults || isReachingEnd) ? (
                   <>
@@ -1454,7 +1476,7 @@ export default function DanbooruPromptGenerator() {
                   </>
                 )}
               </Button>
-              {noMoreResults && (
+              {(noMoreResults && !loadMoreError) && (
                 <div className="mt-4 space-y-3">
                   <p className="text-xs text-muted-foreground max-w-md mx-auto">
                     Try changing the rating filter or use different search terms to find more content
@@ -1466,6 +1488,13 @@ export default function DanbooruPromptGenerator() {
                       </Button>
                     </div>
                   )}
+                </div>
+              )}
+              {loadMoreError && (
+                <div className="mt-4 space-y-3">
+                  <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                    There was a problem loading more posts. Click 'Retry' to try again.
+                  </p>
                 </div>
               )}
             </div>
