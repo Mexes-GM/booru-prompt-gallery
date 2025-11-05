@@ -338,6 +338,70 @@ export default function DanbooruPromptGenerator() {
     }
   }
 
+  const downloadImage = async (post: BooruPost) => {
+    try {
+      // Use file_url first (original quality), fallback to large_file_url
+      // This is because:
+      // - Danbooru: large_file_url is high quality, file_url is original (prefer original)
+      // - Rule34: file_url is original, large_file_url is sample/compressed (prefer original)
+      // - Aibooru: same as Danbooru
+      const imageUrl = post.file_url || post.large_file_url
+      
+      if (!imageUrl) {
+        toast({
+          title: "Download failed",
+          description: "No image URL available",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Extract file extension from URL
+      const urlPath = imageUrl.split('?')[0] // Remove query params
+      const extension = urlPath.split('.').pop() || 'jpg'
+      const filename = `booru_${post.id}.${extension}`
+
+      // Check if the image URL is from Rule34 (has CORS restrictions)
+      const needsProxy = imageUrl.includes('rule34.xxx')
+      
+      let fetchUrl = imageUrl
+      if (needsProxy) {
+        // Use our proxy endpoint to bypass CORS
+        fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
+      }
+
+      // Fetch the image
+      const response = await fetch(fetchUrl)
+      if (!response.ok) throw new Error('Failed to fetch image')
+      
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      
+      // Create a temporary link and trigger download
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      // Clean up the URL object
+      window.URL.revokeObjectURL(url)
+      
+      toast({
+        title: "Download started",
+        description: `Downloading ${filename}`,
+      })
+    } catch (error) {
+      console.error('Download error:', error)
+      toast({
+        title: "Download failed",
+        description: "There was an error downloading the image. Try again or visit the original post.",
+        variant: "destructive",
+      })
+    }
+  }
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     setSize(1)
@@ -1254,6 +1318,24 @@ export default function DanbooruPromptGenerator() {
                             {favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
                           </TooltipContent>
                         </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="secondary"
+                              className={`glass-effect ${cardScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
+                              onClick={() => downloadImage(post)}
+                              aria-label="Download image"
+                            >
+                              <Download
+                                className={`${cardScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"}`}
+                              />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Download image (best quality)
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
 
 
@@ -1383,17 +1465,40 @@ export default function DanbooruPromptGenerator() {
                             </div>
 
                             <div className="flex gap-2">
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => toggleFavorite(post.id)}
-                                className="focus-ring h-8 w-8"
-                                aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
-                              >
-                                <Heart
-                                  className={`h-4 w-4 ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
-                                />
-                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => toggleFavorite(post.id)}
+                                    className="focus-ring h-8 w-8"
+                                    aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+                                  >
+                                    <Heart
+                                      className={`h-4 w-4 ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
+                                    />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => downloadImage(post)}
+                                    className="focus-ring h-8 w-8"
+                                    aria-label="Download image"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Download image (best quality)
+                                </TooltipContent>
+                              </Tooltip>
                             </div>
                           </div>
 

@@ -57,3 +57,4 @@ ehthumbs.db
 # Cache directories
 .cache/
 .parcel-cache/
+copilot-instructions.md
