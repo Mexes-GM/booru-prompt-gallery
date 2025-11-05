@@ -220,8 +220,6 @@ export const getPromptFromPost = (post: BooruPost): string | null => {
 
 // Production fetcher with error handling and retry logic
 const fetcher = async (url: string) => {
-  const startTime = Date.now()
-  
   try {
     const res = await fetch(url, {
       headers: {
@@ -229,8 +227,6 @@ const fetcher = async (url: string) => {
         'User-Agent': 'BooruPromptGallery/1.0',
       }
     })
-    
-    const responseTime = Date.now() - startTime
     
     if (!res.ok) {
       const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
@@ -244,7 +240,8 @@ const fetcher = async (url: string) => {
       throw error
     }
     
-    return res.json()
+    const data = await res.json()
+    return data
   } catch (fetchError: any) {
     throw fetchError
   }
@@ -327,7 +324,12 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
   const encodedQuery = encodeURIComponent(query)
   
   return useSWRInfinite<BooruPost[]>(
-    (pageIndex: number) => {
+    (pageIndex: number, previousPageData: BooruPost[] | null) => {
+      // Stop fetching if we received an empty array (no more results)
+      if (previousPageData && previousPageData.length === 0) {
+        return null
+      }
+      
       // Select the correct API endpoint based on provider
       let apiEndpoint = '/api/posts' // Default to Danbooru
       if (provider === 'aibooru') {
@@ -336,6 +338,8 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         apiEndpoint = '/api/rule34'
       }
       
+      // CRITICAL: Page index is 0-based, but API expects 1-based page numbers
+      // pageIndex + 1 ensures correct page progression: 0 -> page 1, 1 -> page 2, etc.
       const baseUrl = `${apiEndpoint}?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`
       
       // Add hasPrompt parameter for Aibooru
@@ -344,16 +348,18 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       // Add random seed for random searches to force cache invalidation
       const seedParam = order === 'random' && randomSeed ? `&seed=${randomSeed}` : ''
       
-      return `${baseUrl}${promptParam}${seedParam}`
+      const finalUrl = `${baseUrl}${promptParam}${seedParam}`
+      
+      return finalUrl
     },
     fetcher,
     {
-      revalidateFirstPage: true,
+      revalidateFirstPage: false, // FIXED: Don't revalidate first page when loading more
       revalidateAll: false,
       persistSize: false,
       revalidateOnFocus: false,
-      revalidateOnReconnect: true,
-      dedupingInterval: order === 'random' ? 0 : 300000, // No caching for random searches
+      revalidateOnReconnect: false, // FIXED: Prevent reconnect from triggering revalidation
+      dedupingInterval: order === 'random' ? 0 : 2000, // Short deduping to prevent request spam
       shouldRetryOnError: (error) => {
         // Don't retry on 422 errors (invalid tags/search parameters)
         // Don't retry on 4xx client errors in general
@@ -361,6 +367,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       },
       errorRetryCount: 3,
       errorRetryInterval: 1000,
+      parallel: false, // CRITICAL: Ensure pages are fetched sequentially, not in parallel
     }
   )
 }

@@ -80,20 +80,48 @@ export async function GET(request: NextRequest) {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'BooruPromptGallery/1.0',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://aibooru.online/',
+        'Origin': 'https://aibooru.online',
         'Connection': 'keep-alive',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
       },
     })
 
     clearTimeout(timeoutId)
 
     if (!response.ok) {
+      // Log detailed error information for debugging
+      const errorText = await response.text().catch(() => 'No error body')
+      console.error(`Aibooru API Error ${response.status}:`, {
+        status: response.status,
+        statusText: response.statusText,
+        url: url.toString(),
+        headers: Object.fromEntries(response.headers.entries()),
+        body: errorText.substring(0, 500), // First 500 chars
+      })
+      
       if (response.status === 429) {
         return NextResponse.json(
           { error: 'Rate limit exceeded' },
           { status: 429, headers: { 'Retry-After': '60' } }
+        )
+      }
+      
+      if (response.status === 403) {
+        return NextResponse.json(
+          { 
+            error: 'Access forbidden by Aibooru',
+            message: 'Aibooru is blocking requests from this server. This is a known issue with their API.',
+            suggestion: 'Try using Danbooru or Rule34 instead, or access Aibooru directly at https://aibooru.online',
+            statusCode: 403
+          },
+          { status: 403 }
         )
       }
       
@@ -108,7 +136,12 @@ export async function GET(request: NextRequest) {
       }
       
       return NextResponse.json(
-        { error: 'Failed to fetch from Aibooru' },
+        { 
+          error: 'Failed to fetch from Aibooru',
+          statusCode: response.status,
+          statusText: response.statusText,
+          details: errorText.substring(0, 200)
+        },
         { status: response.status }
       )
     }
