@@ -1097,26 +1097,6 @@ export default function DanbooruPromptGenerator() {
                     </div>
                   </div>
 
-                  {/* Aibooru Production Warning */}
-                  {booruProvider === 'aibooru' && typeof window !== 'undefined' && window.location.hostname !== 'localhost' && (
-                    <Alert 
-                      className="mt-2 bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-950/30 dark:border-amber-800/50 dark:text-amber-200"
-                    >
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertDescription className="text-sm">
-                        <strong>Note:</strong> Aibooru may block server requests in production. If you experience issues, try using <strong>Danbooru</strong> or <strong>Rule34</strong> instead, or visit{' '}
-                        <a 
-                          href="https://aibooru.online" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="underline hover:text-amber-700 dark:hover:text-amber-300"
-                        >
-                          aibooru.online
-                        </a> directly.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
                   {/* Warning for more than 2 search terms */}
                   {hasMoreThanTwoTerms(searchTags) && (
                     <Alert 
