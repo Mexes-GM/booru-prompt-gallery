@@ -87,6 +87,7 @@ export default function DanbooruPromptGenerator() {
   const [removeQualityTags, setRemoveQualityTags] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const [previousRatingFilter, setPreviousRatingFilter] = useState<string>("rating:general") // Store rating before switching to Rule34
+  const [isLoadingLock, setIsLoadingLock] = useState(false) // Prevent race conditions on "Load More"
   const { toast } = useToast()
   
 
@@ -172,19 +173,66 @@ export default function DanbooruPromptGenerator() {
     }
   }, [size, isLoading, setSize])
 
-  const allPosts = pages ? pages.flat() : []
+  // CRITICAL FIX: Deduplicate posts by ID to prevent duplicate rendering
+  // This handles the case where the API returns overlapping results between pages
+  // LOGIC: Keep FIRST occurrence of each unique ID, remove all subsequent duplicates
+  const allPosts = pages ? (() => {
+    const flatPosts = pages.flat()
+    const seenIds = new Set<number>()
+    const duplicateIds: number[] = []
+    const keptPosts: BooruPost[] = []
+    
+    // Single pass through all posts - O(n) time complexity
+    for (let i = 0; i < flatPosts.length; i++) {
+      const post = flatPosts[i]
+      
+      if (seenIds.has(post.id)) {
+        // This is a duplicate - skip it
+        duplicateIds.push(post.id)
+        continue
+      }
+      
+      // First time seeing this ID - keep it
+      seenIds.add(post.id)
+      keptPosts.push(post)
+    }
+    
+    return keptPosts
+  })() : []
+  
   // Use dedicated favorites API when showing favorites
   const posts = showFavorites ? (favoritePosts || []) : allPosts
   
 
-  const isLoadingMore = isValidating && size > 1
+
+  const isLoadingMore = isValidating && size > 0
+  const isEmpty = !isLoading && pages?.[0]?.length === 0
+  const isReachingEnd = isEmpty || (pages && pages[pages.length - 1]?.length === 0)
   
   const loadMore = () => {
+    // CRITICAL: Prevent race conditions with multiple rapid clicks
+    if (isLoadingLock || isLoadingMore || isReachingEnd) {
+      return
+    }
+    
+    setIsLoadingLock(true) // Lock to prevent double-clicks
+    
     const currentPostCount = posts.length
     setLastLoadAttempt(currentPostCount)
+    
+    // CRITICAL FIX: Increment size to load next page
+    // SWR will use the getKey function with pageIndex = size (0-based)
+    // which will request page = size + 1 (1-based) from the API
     setSize(size + 1)
     trackLoadMore({ order, nextPage: size + 1, currentCount: currentPostCount })
   }
+  
+  // Release loading lock when loading completes
+  useEffect(() => {
+    if (!isLoadingMore && isLoadingLock) {
+      setIsLoadingLock(false)
+    }
+  }, [isLoadingMore, isLoadingLock, posts.length, size])
   
   const refresh = () => {
     mutate(undefined, { revalidate: true })
@@ -192,19 +240,23 @@ export default function DanbooruPromptGenerator() {
   }
 
   useEffect(() => {
-    if (lastLoadAttempt > 0 && !isLoadingMore && posts.length === lastLoadAttempt) {
-      setNoMoreResults(true)
-      toast({
-        title: "No more results",
-        description: "No more recent posts found for this search. Try different search terms or change the rating filter.",
-        variant: "default",
-      })
-      setLastLoadAttempt(0)
-    } else if (lastLoadAttempt > 0 && posts.length > lastLoadAttempt) {
-      setNoMoreResults(false)
-      setLastLoadAttempt(0)
+    // Check if we attempted to load more but got no new posts
+    if (lastLoadAttempt > 0 && !isLoadingMore) {
+      if (posts.length === lastLoadAttempt || isReachingEnd) {
+        setNoMoreResults(true)
+        toast({
+          title: "No more results",
+          description: "No more recent posts found for this search. Try different search terms or change the rating filter.",
+          variant: "default",
+        })
+        setLastLoadAttempt(0)
+      } else if (posts.length > lastLoadAttempt) {
+        // Successfully loaded new posts
+        setNoMoreResults(false)
+        setLastLoadAttempt(0)
+      }
     }
-  }, [posts.length, isLoadingMore, lastLoadAttempt, toast])
+  }, [posts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, toast, size, pages])
 
   useEffect(() => {
     setNoMoreResults(false)
@@ -368,14 +420,20 @@ export default function DanbooruPromptGenerator() {
   
   useEffect(() => {
     if (hasMounted.current && error) {
+      // Check if it's a 403 error from Aibooru
+      const is403 = error.status === 403 || error.statusCode === 403
+      const isAibooruError = booruProvider === 'aibooru' && is403
+      
       toast({
-        title: "Connection error",
-        description: error.message || "Could not load images",
+        title: isAibooruError ? "Aibooru Access Blocked" : "Connection error",
+        description: isAibooruError 
+          ? "Aibooru is blocking server requests. Try Danbooru or Rule34 instead."
+          : (error.message || "Could not load images"),
         variant: "destructive",
       })
     }
     hasMounted.current = true
-  }, [error, toast])
+  }, [error, toast, booruProvider])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -388,8 +446,12 @@ export default function DanbooruPromptGenerator() {
   }, [searchTags])
 
   useEffect(() => {
+    // CRITICAL FIX: Reset pagination when search parameters change
+    // This ensures we start from page 1 with new search criteria
     setSize(1)
-  }, [order, ratingFilter, debouncedSearchTags])
+    setNoMoreResults(false)
+    setLastLoadAttempt(0)
+  }, [order, ratingFilter, debouncedSearchTags, setSize])
 
   // Load persisted exclude tags on mount
   useEffect(() => {
@@ -1035,6 +1097,26 @@ export default function DanbooruPromptGenerator() {
                     </div>
                   </div>
 
+                  {/* Aibooru Production Warning */}
+                  {booruProvider === 'aibooru' && typeof window !== 'undefined' && window.location.hostname !== 'localhost' && (
+                    <Alert 
+                      className="mt-2 bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-950/30 dark:border-amber-800/50 dark:text-amber-200"
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">
+                        <strong>Note:</strong> Aibooru may block server requests in production. If you experience issues, try using <strong>Danbooru</strong> or <strong>Rule34</strong> instead, or visit{' '}
+                        <a 
+                          href="https://aibooru.online" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="underline hover:text-amber-700 dark:hover:text-amber-300"
+                        >
+                          aibooru.online
+                        </a> directly.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
                   {/* Warning for more than 2 search terms */}
                   {hasMoreThanTwoTerms(searchTags) && (
                     <Alert 
@@ -1370,17 +1452,17 @@ export default function DanbooruPromptGenerator() {
             <div className="text-center">
               <Button 
                 onClick={loadMore} 
-                disabled={isLoadingMore || noMoreResults} 
+                disabled={isLoadingLock || isLoadingMore || noMoreResults || isReachingEnd} 
                 size="lg" 
                 className="px-8 focus-ring"
-                variant={noMoreResults ? "outline" : "default"}
+                variant={noMoreResults || isReachingEnd ? "outline" : "default"}
               >
                 {isLoadingMore ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Loading more...
                   </>
-                ) : noMoreResults ? (
+                ) : (noMoreResults || isReachingEnd) ? (
                   <>
                     <AlertTriangle className="w-4 h-4 mr-2" />
                     No more results
