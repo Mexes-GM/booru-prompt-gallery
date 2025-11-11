@@ -208,7 +208,9 @@ export default function DanbooruPromptGenerator() {
 
   const isLoadingMore = isValidating && size > 0
   const isEmpty = !isLoading && pages?.[0]?.length === 0
-  const isReachingEnd = isEmpty || (pages && pages[pages.length - 1]?.length === 0)
+  // Check if the last API response was empty (not the filtered posts count)
+  const lastPageFromAPI = pages && pages.length > 0 ? pages[pages.length - 1] : null
+  const isReachingEnd = isEmpty || (lastPageFromAPI !== null && lastPageFromAPI.length === 0)
   
   const loadMore = () => {
     // CRITICAL: Prevent race conditions with multiple rapid clicks
@@ -219,14 +221,15 @@ export default function DanbooruPromptGenerator() {
     setIsLoadingLock(true) // Lock to prevent double-clicks
     setLoadMoreError(false) // Reset error state on new attempt
     
-    const currentPostCount = posts.length
-    setLastLoadAttempt(currentPostCount)
+    // Store the current raw API data length, not filtered posts length
+    const currentRawPostCount = pages ? pages.flat().length : 0
+    setLastLoadAttempt(currentRawPostCount)
     
     // CRITICAL FIX: Increment size to load next page
     // SWR will use the getKey function with pageIndex = size (0-based)
     // which will request page = size + 1 (1-based) from the API
     setSize(size + 1)
-    trackLoadMore({ order, nextPage: size + 1, currentCount: currentPostCount })
+    trackLoadMore({ order, nextPage: size + 1, currentCount: posts.length })
   }
   
   // Release loading lock when loading completes
@@ -244,6 +247,9 @@ export default function DanbooruPromptGenerator() {
   useEffect(() => {
     // Check if we attempted to load more but got no new posts or if there was an error
     if (lastLoadAttempt > 0 && !isLoadingMore) {
+      // Get current raw API data length
+      const currentRawPostCount = pages ? pages.flat().length : 0
+      
       if (error) {
         // API returned an error
         setLoadMoreError(true)
@@ -254,8 +260,8 @@ export default function DanbooruPromptGenerator() {
           variant: "destructive",
         })
         setLastLoadAttempt(0)
-      } else if (posts.length === lastLoadAttempt || isReachingEnd) {
-        // No new posts received
+      } else if (currentRawPostCount === lastLoadAttempt || isReachingEnd) {
+        // No new posts received from API (before filtering)
         setNoMoreResults(true)
         setLoadMoreError(false)
         toast({
@@ -264,14 +270,14 @@ export default function DanbooruPromptGenerator() {
           variant: "default",
         })
         setLastLoadAttempt(0)
-      } else if (posts.length > lastLoadAttempt) {
-        // Successfully loaded new posts
+      } else if (currentRawPostCount > lastLoadAttempt) {
+        // Successfully loaded new posts from API
         setNoMoreResults(false)
         setLoadMoreError(false)
         setLastLoadAttempt(0)
       }
     }
-  }, [posts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast, size, pages])
+  }, [pages, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast])
 
   useEffect(() => {
     setNoMoreResults(false)
