@@ -1,34 +1,20 @@
+
 import { NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'edge'
-
-/**
- * Download Proxy Endpoint
- * 
- * This endpoint acts as a proxy to download images from Booru sites,
- * bypassing CORS restrictions that prevent direct downloads from the browser.
- */
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const imageUrl = searchParams.get('url')
   
   if (!imageUrl) {
-    return NextResponse.json(
-      { error: 'Missing image URL' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'Missing image URL' }, { status: 400 })
   }
 
-  // Validate that the URL is from a trusted Booru domain
   const allowedDomains = [
-    'danbooru.donmai.us',
-    'cdn.donmai.us',
+    'danbooru.donmai.us', 'cdn.donmai.us',
     'aibooru.online',
-    'rule34.xxx',
-    'api-cdn.rule34.xxx',
-    'us.rule34.xxx',
-    'wimg.rule34.xxx',
+    'rule34.xxx', 'api-cdn.rule34.xxx', 'us.rule34.xxx', 'wimg.rule34.xxx'
   ]
 
   let urlDomain: string
@@ -36,10 +22,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(imageUrl)
     urlDomain = url.hostname
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Invalid URL' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
 
   const isAllowedDomain = allowedDomains.some(domain => 
@@ -47,36 +30,21 @@ export async function GET(request: NextRequest) {
   )
 
   if (!isAllowedDomain) {
-    return NextResponse.json(
-      { error: 'URL domain not allowed' },
-      { status: 403 }
-    )
+    return NextResponse.json({ error: 'URL domain not allowed' }, { status: 403 })
   }
 
   try {
-    // Fetch the image with appropriate headers
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
 
     const response = await fetch(imageUrl, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Referer': urlDomain.includes('rule34') 
-          ? 'https://rule34.xxx/' 
-          : urlDomain.includes('aibooru') 
-            ? 'https://aibooru.online/' 
-            : 'https://danbooru.donmai.us/',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Sec-Fetch-Dest': 'image',
-        'Sec-Fetch-Mode': 'no-cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
+        'Referer': urlDomain.includes('rule34') ? 'https://rule34.xxx/' : 
+                   urlDomain.includes('aibooru') ? 'https://aibooru.online/' : 
+                   'https://danbooru.donmai.us/',
       },
     })
 
@@ -89,39 +57,28 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get the image data
-    const imageData = await response.arrayBuffer()
-    
-    // Get the content type from the response or infer from URL
-    const contentType = response.headers.get('content-type') || 'image/jpeg'
-    
-    // Extract filename from URL
+    if (!response.body) {
+      return NextResponse.json({ error: 'Empty response body' }, { status: 500 })
+    }
+
     const urlPath = imageUrl.split('?')[0]
     const filename = urlPath.split('/').pop() || 'download.jpg'
+    
+    const headers = new Headers()
+    headers.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream')
+    headers.set('Content-Disposition', `attachment; filename="${filename}"`)
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+    
+    const contentLength = response.headers.get('content-length')
+    if (contentLength) {
+      headers.set('Content-Length', contentLength)
+    }
 
-    // Return the image with appropriate headers
-    return new NextResponse(imageData, {
-      headers: {
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Cache-Control': 'public, max-age=31536000, immutable',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
+    return new NextResponse(response.body, {
+      status: 200,
+      headers,
     })
 
   } catch (error) {
     console.error('Download proxy error:', error)
-    
-    let errorMessage = 'Failed to download image'
-    if (error instanceof Error) {
-      errorMessage = error.message
-    }
-    
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    )
-  }
-}
+    const errorMessage = error instanceof Error ? error.message : 'Failed to download i

@@ -1,42 +1,15 @@
+
 import useSWRInfinite from 'swr/infinite'
 import useSWR from 'swr'
+import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
 
-export interface DanbooruPost {
-  id: number
-  file_url: string
-  large_file_url: string
-  preview_file_url: string
-  tag_string: string
-  tag_string_artist: string
-  tag_string_character: string
-  tag_string_copyright: string
-  rating: string
-  score: number
-}
+// Re-export types
+export type { BooruPost }
 
-export interface AibooruPost extends DanbooruPost {
-  ai_metadata?: {
-    prompt?: string
-    negative_prompt?: string
-    model?: string
-    steps?: number
-    cfg_scale?: number
-    sampler?: string
-    seed?: number
-  }
-}
+// Export function
+export const isAibooruPost = checkIsAibooruPost
 
-export interface Rule34Post extends DanbooruPost {
-  // Rule34 uses the same structure as DanbooruPost
-}
-
-export type BooruPost = DanbooruPost | AibooruPost | Rule34Post
 export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34'
-
-// Helper function to check if a post is from Aibooru and has AI metadata
-export const isAibooruPost = (post: BooruPost): post is AibooruPost => {
-  return 'ai_metadata' in post && post.ai_metadata !== undefined
-}
 
 // Helper function to get prompt from a post
 // Function to clean and extract prompt from malformed JSON data

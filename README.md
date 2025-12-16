@@ -1,30 +1,61 @@
-# App for image prompts
 
-*Automatically synced with your [v0.dev](https://v0.dev) deployments*
+# Booru Prompt Gallery
+
+Una galería de imágenes para navegar y obtener prompts de Danbooru, Rule34 y Aibooru. Diseñada para artistas y entusiastas de la generación de imágenes por IA.
 
 [![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/mexecution3-1312s-projects/v0-app-for-image-prompts)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/tYCdvqAaCT1)
 
-## Overview
+## Características
 
-This repository will stay in sync with your deployed chats on [v0.dev](https://v0.dev).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.dev](https://v0.dev).
+*   **Multi-proveedor:** Soporte para Danbooru, Aibooru y Rule34.
+*   **Limpieza de Prompts:** Algoritmos avanzados para extraer y limpiar tags, eliminando metadatos innecesarios y optimizando para Stable Diffusion.
+*   **Búsqueda Avanzada:** Filtrado por tags, clasificación (popular, reciente, aleatorio) y soporte para metadatos de IA.
+*   **Descargas Optimizadas:** Proxy de descarga con streaming para evitar problemas de CORS y reducir el consumo de memoria.
 
-## Deployment
+## Arquitectura y Mejoras Recientes
 
-Your project is live at:
+Este proyecto ha sido optimizado para rendimiento y escalabilidad:
 
-**[https://vercel.com/mexecution3-1312s-projects/v0-app-for-image-prompts](https://vercel.com/mexecution3-1312s-projects/v0-app-for-image-prompts)**
+### 1. Backend Modular
+Se ha implementado una arquitectura basada en el patrón **Factory** y **Strategy**:
+*   `lib/booru/`: Contiene la lógica central.
+    *   `providers/`: Implementaciones específicas para cada servicio (Danbooru, Rule34, Aibooru).
+    *   `factory.ts`: Instancia el proveedor correcto según la petición.
+    *   `base.ts`: Clase abstracta que maneja la lógica común (fetch, normalización).
 
-## Build your app
+### 2. Gestión de Red Robusta (`SmartFetch`)
+El cliente HTTP interno (`lib/network/smart-fetch.ts`) incluye:
+*   **Reintentos Automáticos:** Con "Exponential Backoff" para manejar fallos transitorios.
+*   **Manejo de Rate Limits:** Detecta headers `Retry-After` (429) y espera inteligentemente.
+*   **Timeouts:** Protección contra peticiones colgadas.
 
-Continue building your app on:
+### 3. Descargas Eficientes (Streaming)
+El endpoint `api/download` utiliza **Web Streams** para canalizar los datos desde el origen al cliente sin cargar el archivo completo en la memoria del servidor. Esto permite manejar archivos grandes con un uso de RAM cercano a cero.
 
-**[https://v0.dev/chat/projects/tYCdvqAaCT1](https://v0.dev/chat/projects/tYCdvqAaCT1)**
+## Configuración Local
 
-## How It Works
+1.  Clonar el repositorio.
+2.  Instalar dependencias:
+    ```bash
+    npm install
+    ```
+3.  Configurar variables de entorno (opcional para Rule34):
+    ```env
+    RULE34_API_KEY=tu_api_key
+    RULE34_USER_ID=tu_user_id
+    ```
+4.  Iniciar el servidor de desarrollo:
+    ```bash
+    npm run dev
+    ```
 
-1. Create and modify your project using [v0.dev](https://v0.dev)
-2. Deploy your chats from the v0 interface
-3. Changes are automatically pushed to this repository
-4. Vercel deploys the latest version from this repository
+## Tecnologías
+
+*   **Framework:** Next.js 14 (App Router)
+*   **Runtime:** Edge Runtime
+*   **Styling:** Tailwind CSS + Shadcn/UI
+*   **Data Fetching:** SWR
+
+## Licencia
+
+MIT

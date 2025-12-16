@@ -1,0 +1,20 @@
+
+import { DanbooruProvider } from './providers/danbooru'
+import { Rule34Provider } from './providers/rule34'
+import { AibooruProvider } from './providers/aibooru'
+import { IBooruProvider } from './types'
+
+export class BooruFactory {
+  static getProvider(type: 'danbooru' | 'rule34' | 'aibooru'): IBooruProvider {
+    switch (type) {
+      case 'danbooru':
+        return new DanbooruProvider()
+      case 'rule34':
+        return new Rule34Provider()
+      case 'aibooru':
+        return new AibooruProvider()
+      default:
+        throw new Error(`Unknown provider type: ${type}`)
+    }
+  }
+}
