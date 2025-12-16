@@ -41,8 +41,17 @@ export const STORAGE_KEYS = {
   REMOVE_LORA_TAGS: 'remove-lora-tags',
   REMOVE_QUALITY_TAGS: 'remove-quality-tags',
   RATING_FILTER: 'rating-filter',
-  ORDER: 'order'
+  ORDER: 'order',
+  HISTORY: 'prompt-history'
 } as const
+
+export interface HistoryItem {
+  id: string
+  content: string
+  timestamp: number
+  postId?: number
+  thumbnailUrl?: string
+}
 
 // Type-safe getters and setters for specific preferences
 export const userPreferences = {
@@ -74,5 +83,29 @@ export const userPreferences = {
     storage.get(STORAGE_KEYS.ORDER, 'popular'),
   
   setOrder: (order: 'popular' | 'recent' | 'random') => 
-    storage.set(STORAGE_KEYS.ORDER, order)
+    storage.set(STORAGE_KEYS.ORDER, order),
+
+  getHistory: (): HistoryItem[] => 
+    storage.get(STORAGE_KEYS.HISTORY, []),
+
+  addToHistory: (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
+    const history = storage.get<HistoryItem[]>(STORAGE_KEYS.HISTORY, [])
+    const newItem: HistoryItem = {
+      ...item,
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString() + Math.random().toString(36).substring(2),
+      timestamp: Date.now()
+    }
+    // Add to beginning, limit to last 100 items
+    const newHistory = [newItem, ...history].slice(0, 100)
+    storage.set(STORAGE_KEYS.HISTORY, newHistory)
+  },
+
+  clearHistory: () => 
+    storage.remove(STORAGE_KEYS.HISTORY),
+    
+  removeFromHistory: (id: string) => {
+    const history = storage.get<HistoryItem[]>(STORAGE_KEYS.HISTORY, [])
+    const newHistory = history.filter(item => item.id !== id)
+    storage.set(STORAGE_KEYS.HISTORY, newHistory)
+  }
 }

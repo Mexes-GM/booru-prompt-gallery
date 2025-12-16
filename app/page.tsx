@@ -25,18 +25,28 @@ import {
   X,
   ChevronUp,
   Shield,
+  History,
+  Trash2,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
 import { useInfinitePosts, useFavoritePosts, hasMultipleTags, hasMoreThanTwoTerms, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
 
-import { userPreferences } from "@/lib/storage"
+import { userPreferences, type HistoryItem } from "@/lib/storage"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { Switch } from "@/components/ui/switch"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import {
   safeTrack,
   initScrollDepthTracking,
@@ -89,6 +99,7 @@ export default function DanbooruPromptGenerator() {
   const [previousRatingFilter, setPreviousRatingFilter] = useState<string>("rating:general") // Store rating before switching to Rule34
   const [isLoadingLock, setIsLoadingLock] = useState(false) // Prevent race conditions on "Load More"
   const [loadMoreError, setLoadMoreError] = useState(false) // Track if last load attempt failed
+  const [history, setHistory] = useState<HistoryItem[]>([])
   const { toast } = useToast()
   
 
@@ -101,11 +112,13 @@ export default function DanbooruPromptGenerator() {
     const savedRemoveLoRa = userPreferences.getRemoveLoRaTags()
     const savedRemoveQuality = userPreferences.getRemoveQualityTags()
     const savedRatingFilter = userPreferences.getRatingFilter()
+    const savedHistory = userPreferences.getHistory()
     
     setBooruProvider(savedProvider)
     setRemoveLoRaTags(savedRemoveLoRa)
     setRemoveQualityTags(savedRemoveQuality)
     setRatingFilter(savedRatingFilter)
+    setHistory(savedHistory)
   }, [])
 
   // Save booru provider preference
@@ -297,10 +310,19 @@ export default function DanbooruPromptGenerator() {
     }
   }, [scaleValue, cardScale])
 
-  const copyToClipboard = async (content: string, postId: number, isPrompt: boolean = false) => {
+  const copyToClipboard = async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string) => {
     try {
       await navigator.clipboard.writeText(content)
       setCopiedId(postId)
+      
+      // Add to history
+      userPreferences.addToHistory({
+        content,
+        postId,
+        thumbnailUrl
+      })
+      setHistory(userPreferences.getHistory())
+      
       toast({
         title: "Copied!",
         description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
@@ -963,6 +985,93 @@ export default function DanbooruPromptGenerator() {
                             <Heart className={`w-4 h-4 mr-2 ${showFavorites ? "fill-white" : ""}`} />
                             <span className="whitespace-nowrap">Favs ({favorites.size})</span>
                           </Button>
+                          
+                          <Sheet>
+                            <SheetTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="focus-ring w-full sm:w-auto h-10"
+                                aria-label="View history"
+                              >
+                                <History className="w-4 h-4 mr-2" />
+                                <span className="whitespace-nowrap">History</span>
+                              </Button>
+                            </SheetTrigger>
+                            <SheetContent className="w-[400px] sm:w-[540px]">
+                              <SheetHeader>
+                                <SheetTitle>Prompt History</SheetTitle>
+                                <SheetDescription>
+                                  Your recently copied prompts.
+                                </SheetDescription>
+                              </SheetHeader>
+                              <div className="mt-4 space-y-4 overflow-y-auto max-h-[calc(100vh-120px)] pr-2">
+                                {history.length === 0 ? (
+                                  <p className="text-center text-muted-foreground py-8">No history yet</p>
+                                ) : (
+                                  <>
+                                    {history.map((item) => (
+                                      <div key={item.id} className="border rounded-lg p-3 space-y-2 relative group">
+                                        <div className="flex gap-3">
+                                          {item.thumbnailUrl && (
+                                            <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-muted">
+                                              <Image
+                                                src={item.thumbnailUrl}
+                                                alt="Thumbnail"
+                                                fill
+                                                className="object-cover"
+                                                unoptimized
+                                              />
+                                            </div>
+                                          )}
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-muted-foreground mb-1">
+                                              {new Date(item.timestamp).toLocaleString()}
+                                            </p>
+                                            <p className="text-sm line-clamp-3 break-words font-mono bg-muted/50 p-1 rounded">
+                                              {item.content}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="flex justify-end gap-2 mt-2">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                            onClick={() => {
+                                              userPreferences.removeFromHistory(item.id)
+                                              setHistory(userPreferences.getHistory())
+                                            }}
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            className="h-8"
+                                            onClick={() => copyToClipboard(item.content, item.postId || 0, true, item.thumbnailUrl)}
+                                          >
+                                            <Copy className="h-3 w-3 mr-1" />
+                                            Copy
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    <Button
+                                      variant="outline"
+                                      className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() => {
+                                        userPreferences.clearHistory()
+                                        setHistory([])
+                                      }}
+                                    >
+                                      Clear History
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </SheetContent>
+                          </Sheet>
                         </div>
                       </div>
                     </div>
@@ -1354,7 +1463,7 @@ export default function DanbooruPromptGenerator() {
 
                       <div className="flex button-group items-stretch">
                         <Button
-                          onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt)}
+                          onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt, post.preview_file_url)}
                           className="flex-1 focus-ring h-auto"
                           variant={copiedId === post.id ? "default" : "outline"}
                           disabled={!displayContent}
@@ -1516,7 +1625,7 @@ export default function DanbooruPromptGenerator() {
 
                           <div className="flex flex-col sm:flex-row gap-2">
                             <Button
-                              onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt)}
+                              onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt, post.preview_file_url)}
                               variant={copiedId === post.id ? "default" : "outline"}
                               disabled={!displayContent}
                               className="focus-ring flex-1 sm:flex-none"
