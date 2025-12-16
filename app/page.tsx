@@ -28,6 +28,7 @@ import {
   History,
   Trash2,
 } from "lucide-react"
+import { VersionDisplay } from "@/components/version-display"
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
@@ -730,6 +731,7 @@ export default function DanbooruPromptGenerator() {
                   <Badge variant="secondary" className="text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-2 py-1">
                     By Mexes
                   </Badge>
+                  <VersionDisplay />
                 </div>
               </div>
 
