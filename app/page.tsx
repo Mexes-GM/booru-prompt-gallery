@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -68,6 +68,8 @@ import {
 } from '@/lib/analytics'
 
 // Using BooruPost from api-client instead of local interface
+
+import { MasonryGrid, SCALE_CONFIG } from "@/components/masonry-grid"
 
 type CardScale = "small" | "medium" | "large"
 
@@ -665,19 +667,6 @@ export default function DanbooruPromptGenerator() {
     }
   }, [])
 
-  const getGridClass = () => {
-    switch (cardScale) {
-      case "small":
-        return "grid-small"
-      case "medium":
-        return "grid-medium"
-      case "large":
-        return "grid-large"
-      default:
-        return "grid-medium"
-    }
-  }
-
   const getCardContentClass = () => {
     switch (cardScale) {
       case "small":
@@ -688,19 +677,6 @@ export default function DanbooruPromptGenerator() {
         return "card-content-large"
       default:
         return "card-content-medium"
-    }
-  }
-
-  const getBadgeClass = () => {
-    switch (cardScale) {
-      case "small":
-        return "badge-small"
-      case "medium":
-        return "badge-medium"
-      case "large":
-        return "badge-large"
-      default:
-        return "badge-medium"
     }
   }
 
@@ -716,6 +692,163 @@ export default function DanbooruPromptGenerator() {
         return "icon-medium"
     }
   }
+
+  // Filter non-image posts for Masonry
+  const filteredPosts = useMemo(() => {
+    return posts.filter(post => {
+      const fileUrl = post.large_file_url || post.file_url
+      return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
+    })
+  }, [posts])
+
+  const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number) => {
+    const excludeList = excludeInput.split(',').map(t => t.trim()).filter(Boolean)
+    const addList = addInput.split(',').map(t => t.trim()).filter(Boolean)
+    
+    // Check if this is an Aibooru post with prompt
+    const isAiPost = isAibooruPost(post)
+    let aiPrompt = isAiPost ? getPromptFromPost(post) : null
+    
+    // Apply LoRa tag removal if option is enabled (only to original prompt)
+    if (aiPrompt && removeLoRaTags) {
+      aiPrompt = removeLoRaTagsUtil(aiPrompt)
+    }
+    
+    // Apply quality tag removal if option is enabled (only to original prompt)
+    if (aiPrompt && removeQualityTags) {
+      aiPrompt = removeQualityTagsUtil(aiPrompt)
+    }
+    
+    // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
+    let displayContent = aiPrompt
+      ? cleanPrompt(
+          aiPrompt,
+          "",
+          "",
+          "",
+          { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
+        )
+      : cleanPrompt(
+          post.tag_string,
+          post.tag_string_artist,
+          post.tag_string_character,
+          post.tag_string_copyright,
+          { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
+        )
+    
+    if (addList.length > 0) {
+      displayContent = displayContent ? `${addList.join(', ')}, ${displayContent}` : addList.join(', ')
+    }
+    
+    const fileUrl = post.large_file_url || post.file_url
+    
+    const footerHeight = SCALE_CONFIG[cardScale].footerHeight
+    const imageHeight = height - footerHeight
+
+    return (
+      <Card className="w-full h-full overflow-hidden card-hover group flex flex-col">
+        <div className="relative bg-muted overflow-hidden" style={{ height: imageHeight }}>
+          <Image
+            src={fileUrl}
+            alt={`Danbooru post ${post.id}`}
+            fill
+            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            sizes={`${width}px`}
+            priority={false}
+          />
+
+          {/* Overlay actions */}
+          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className={`glass-effect ${cardScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
+                  onClick={() => toggleFavorite(post.id)}
+                  aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+                >
+                  <Heart
+                    className={`${cardScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className={`glass-effect ${cardScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
+                  onClick={() => downloadImage(post)}
+                  aria-label="Download image"
+                >
+                  <Download
+                    className={`${cardScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"}`}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Download image (best quality)
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+
+        <CardContent className={getCardContentClass()} style={{ height: footerHeight }}>
+          <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container">
+            <p className="text-foreground/80 leading-relaxed">{displayContent || "No content available"}</p>
+          </div>
+
+          <div className="flex button-group items-stretch">
+            <Button
+              onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt, post.preview_file_url)}
+              className="flex-1 focus-ring h-auto"
+              variant={copiedId === post.id ? "default" : "outline"}
+              disabled={!displayContent}
+            >
+              {copiedId === post.id ? (
+                <>
+                  <Check className={`${getIconClass()} mr-1`} />
+                  {cardScale === "small" ? "OK" : "Copied!"}
+                </>
+              ) : (
+                <>
+                  <Copy className={`${getIconClass()} mr-1`} />
+                  {cardScale === "small" ? "Copy" : "Copy"}
+                </>
+              )}
+            </Button>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  asChild
+                  className={`focus-ring bg-transparent h-auto ${cardScale === "small" ? "w-7" : ""}`}
+                >
+                  <a
+                    href={isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => trackExternalLink(isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`,'post')}
+                    aria-label="View original post"
+                  >
+                    <ExternalLink className={getIconClass()} />
+                  </a>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>View original post</TooltipContent>
+            </Tooltip>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }, [cardScale, favorites, copiedId, excludeInput, addInput, includeCharacters, includeCopyrights, optimizeTags, removeLoRaTags, removeQualityTags, copyToClipboard, toggleFavorite])
 
   return (
     <TooltipProvider>
@@ -1350,165 +1483,12 @@ export default function DanbooruPromptGenerator() {
 
           {/* Gallery */}
           {viewMode === "grid" ? (
-            <div className={`${getGridClass()} mb-8`}>
-              {posts.map((post: BooruPost, index: number) => {
-                const excludeList = excludeInput.split(',').map(t => t.trim()).filter(Boolean)
-                const addList = addInput.split(',').map(t => t.trim()).filter(Boolean)
-                
-                // Check if this is an Aibooru post with prompt
-                const isAiPost = isAibooruPost(post)
-                let aiPrompt = isAiPost ? getPromptFromPost(post) : null
-                
-                // Apply LoRa tag removal if option is enabled (only to original prompt)
-                if (aiPrompt && removeLoRaTags) {
-                  aiPrompt = removeLoRaTagsUtil(aiPrompt)
-                }
-                
-                // Apply quality tag removal if option is enabled (only to original prompt)
-                if (aiPrompt && removeQualityTags) {
-                  aiPrompt = removeQualityTagsUtil(aiPrompt)
-                }
-                
-                // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
-                let displayContent = aiPrompt
-                  ? cleanPrompt(
-                      aiPrompt,
-                      "",
-                      "",
-                      "",
-                      { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
-                    )
-                  : cleanPrompt(
-                      post.tag_string,
-                      post.tag_string_artist,
-                      post.tag_string_character,
-                      post.tag_string_copyright,
-                      { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
-                    )
-                
-                // Exclusions are already applied via cleanPrompt
-                
-                // Add user-specified tags at the beginning (these are protected from removal options)
-                if (addList.length > 0) {
-                  displayContent = displayContent ? `${addList.join(', ')}, ${displayContent}` : addList.join(', ')
-                }
-                
-                const fileUrl = post.large_file_url || post.file_url
-                const isImage = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
-                if (!isImage) return null // Skip non-image (e.g., video) posts entirely
-
-                return (
-                  <Card key={`${post.id}-${index}`} className="overflow-hidden card-hover group">
-                    <div className="image-container-2-3">
-                      <Image
-                        src={fileUrl}
-                        alt={`Danbooru post ${post.id}`}
-                        fill
-                        className="object-cover transition-transform duration-300 group-hover:scale-105"
-                        sizes={
-                          cardScale === "small"
-                            ? "(max-width: 640px) 50vw, 20vw"
-                            : cardScale === "medium"
-                              ? "(max-width: 640px) 50vw, 25vw"
-                              : "(max-width: 640px) 100vw, 33vw"
-                        }
-                        priority={index < 8}
-                      />
-
-                      {/* Overlay actions */}
-                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="secondary"
-                              className={`glass-effect ${cardScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
-                              onClick={() => toggleFavorite(post.id)}
-                              aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
-                            >
-                              <Heart
-                                className={`${cardScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
-                              />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
-                          </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="secondary"
-                              className={`glass-effect ${cardScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
-                              onClick={() => downloadImage(post)}
-                              aria-label="Download image"
-                            >
-                              <Download
-                                className={`${cardScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"}`}
-                              />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Download image (best quality)
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-
-
-                    </div>
-
-                    <CardContent className={getCardContentClass()}>
-                      <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container">
-                        <p className="text-foreground/80 leading-relaxed">{displayContent || "No content available"}</p>
-                      </div>
-
-                      <div className="flex button-group items-stretch">
-                        <Button
-                          onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt, post.preview_file_url)}
-                          className="flex-1 focus-ring h-auto"
-                          variant={copiedId === post.id ? "default" : "outline"}
-                          disabled={!displayContent}
-                        >
-                          {copiedId === post.id ? (
-                            <>
-                              <Check className={`${getIconClass()} mr-1`} />
-                              {cardScale === "small" ? "OK" : "Copied!"}
-                            </>
-                          ) : (
-                            <>
-                              <Copy className={`${getIconClass()} mr-1`} />
-                              {cardScale === "small" ? "Copy" : "Copy"}
-                            </>
-                          )}
-                        </Button>
-
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              asChild
-                              className={`focus-ring bg-transparent h-auto ${cardScale === "small" ? "w-7" : ""}`}
-                            >
-                              <a
-                                href={isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={() => trackExternalLink(isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`,'post')}
-                                aria-label="View original post"
-                              >
-                                <ExternalLink className={getIconClass()} />
-                              </a>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>View original post</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
+            <div className="mb-8 min-h-[500px]">
+              <MasonryGrid
+                items={filteredPosts}
+                scale={cardScale}
+                renderItem={renderMasonryItem}
+              />
             </div>
           ) : (
             /* List View */
@@ -1715,7 +1695,7 @@ export default function DanbooruPromptGenerator() {
               {loadMoreError && (
                 <div className="mt-4 space-y-3">
                   <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                    There was a problem loading more posts. Click 'Retry' to try again.
+                    There was a problem loading more posts. Click &apos;Retry&apos; to try again.
                   </p>
                 </div>
               )}

@@ -82,6 +82,8 @@ export class Rule34Provider extends BaseBooruProvider {
       tag_string_copyright: '',
       rating: post.rating,
       score: parseInt(post.score),
+      width: parseInt(post.width),
+      height: parseInt(post.height),
     }))
   }
 }

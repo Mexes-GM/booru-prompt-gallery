@@ -6,7 +6,7 @@ export class DanbooruProvider extends BaseBooruProvider {
   protected baseUrl = "https://danbooru.donmai.us"
   protected defaultParams = {
     limit: "20",
-    only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score",
+    only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,image_width,image_height",
   }
 
   async search(options: SearchOptions): Promise<BooruPost[]> {
@@ -43,6 +43,8 @@ export class DanbooruProvider extends BaseBooruProvider {
       tag_string_copyright: post.tag_string_copyright,
       rating: post.rating,
       score: post.score,
+      width: post.image_width,
+      height: post.image_height,
     }))
   }
 }
