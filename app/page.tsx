@@ -27,6 +27,7 @@ import {
   Shield,
   History,
   Trash2,
+  Settings,
 } from "lucide-react"
 import { VersionDisplay } from "@/components/version-display"
 import { useToast } from "@/hooks/use-toast"
@@ -40,6 +41,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Slider } from "@/components/ui/slider"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { Switch } from "@/components/ui/switch"
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import {
   Sheet,
   SheetContent,
@@ -90,8 +92,8 @@ export default function DanbooruPromptGenerator() {
   const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
   const [randomSeed, setRandomSeed] = useState<number>(0)
   const [includeCharacters, setIncludeCharacters] = useState(true)
-  const [includeCopyrights, setIncludeCopyrights] = useState(true)
   const [optimizeTags, setOptimizeTags] = useState(true) // UI toggle para combinacion/optimizacion de tags
+  const [showSettings, setShowSettings] = useState(true)
   const [excludeInput, setExcludeInput] = useState("") // entrada de tags a excluir
   const [addInput, setAddInput] = useState("") // entrada de tags a agregar
   const [booruProvider, setBooruProvider] = useState<BooruProvider>('danbooru')
@@ -589,7 +591,7 @@ export default function DanbooruPromptGenerator() {
     }
   }, [])
 
-  // Load persisted prompt option switches (includeCharacters, includeCopyrights, optimizeTags)
+  // Load persisted prompt option switches (includeCharacters, optimizeTags)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -598,7 +600,6 @@ export default function DanbooruPromptGenerator() {
           const parsed = JSON.parse(saved)
             || {}
           if (typeof parsed.includeCharacters === 'boolean') setIncludeCharacters(parsed.includeCharacters)
-          if (typeof parsed.includeCopyrights === 'boolean') setIncludeCopyrights(parsed.includeCopyrights)
           if (typeof parsed.optimizeTags === 'boolean') setOptimizeTags(parsed.optimizeTags)
         }
       } catch {
@@ -613,14 +614,13 @@ export default function DanbooruPromptGenerator() {
       try {
         localStorage.setItem('promptOptions', JSON.stringify({
           includeCharacters,
-          includeCopyrights,
             optimizeTags,
         }))
       } catch {
         // ignore
       }
     }
-  }, [includeCharacters, includeCopyrights, optimizeTags])
+  }, [includeCharacters, optimizeTags])
 
   // Persist exclude tags whenever they change
   useEffect(() => {
@@ -726,14 +726,14 @@ export default function DanbooruPromptGenerator() {
           "",
           "",
           "",
-          { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
+          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
         )
       : cleanPrompt(
           post.tag_string,
           post.tag_string_artist,
           post.tag_string_character,
           post.tag_string_copyright,
-          { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
+          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
         )
     
     if (addList.length > 0) {
@@ -848,7 +848,7 @@ export default function DanbooruPromptGenerator() {
         </CardContent>
       </Card>
     )
-  }, [cardScale, favorites, copiedId, excludeInput, addInput, includeCharacters, includeCopyrights, optimizeTags, removeLoRaTags, removeQualityTags, copyToClipboard, toggleFavorite])
+  }, [cardScale, favorites, copiedId, excludeInput, addInput, includeCharacters, optimizeTags, removeLoRaTags, removeQualityTags, copyToClipboard, toggleFavorite])
 
   return (
     <TooltipProvider>
@@ -1040,441 +1040,349 @@ export default function DanbooruPromptGenerator() {
 
             <Card className="glass-effect">
               <CardContent className="p-4 sm:p-6">
-                <form onSubmit={handleSearch} className="space-y-4">
-
-                  {getFinalQueryTags(searchTags, ratingFilter, order).length > 0 && (
-                    <div className="mb-4">
-                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-2">
-                        <span className="font-medium">Sending to {booruProvider === "danbooru" ? "Danbooru" : booruProvider === "aibooru" ? "Aibooru" : "Rule34"} API:</span>
-                        {getFinalQueryTags(searchTags, ratingFilter, order).map((tag, index) => (
-                          <Badge key={index} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/50 dark:border-blue-800/50 dark:text-blue-300 text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                        {booruProvider === "aibooru" && hasPromptFilter && (
-                          <Badge variant="outline" className="bg-green-50 border-green-200 text-green-700 dark:bg-green-950/50 dark:border-green-800/50 dark:text-green-300 text-xs">
-                            has:prompt
-                          </Badge>
-                        )}
+                <form onSubmit={handleSearch} className="space-y-6">
+                  
+                  {/* Top Bar: Provider Selection & Quick Actions */}
+                  <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center">
+                    {/* API Provider Selector */}
+                    <div className="flex flex-col gap-1.5 w-full lg:w-auto">
+                      <span className="text-xs font-medium text-muted-foreground ml-1">API Provider</span>
+                      <div className="bg-muted/50 p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto">
+                        <Button
+                          type="button"
+                          variant={booruProvider === "danbooru" ? "secondary" : "ghost"}
+                          onClick={() => {
+                            if (booruProvider === "rule34" && ratingFilter === "all") {
+                              setRatingFilter(previousRatingFilter)
+                              trackRatingChange(previousRatingFilter)
+                            }
+                            setBooruProvider("danbooru")
+                            trackProviderChange("danbooru")
+                          }}
+                          className={`h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "danbooru" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        >
+                          Danbooru
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={booruProvider === "aibooru" ? "secondary" : "ghost"}
+                          onClick={() => {
+                            if (booruProvider === "rule34" && ratingFilter === "all") {
+                              setRatingFilter(previousRatingFilter)
+                              trackRatingChange(previousRatingFilter)
+                            }
+                            setBooruProvider("aibooru")
+                            trackProviderChange("aibooru")
+                          }}
+                          className={`h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "aibooru" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        >
+                          Aibooru
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={booruProvider === "rule34" ? "secondary" : "ghost"}
+                          onClick={() => {
+                            if (booruProvider !== "rule34") {
+                              setPreviousRatingFilter(ratingFilter)
+                            }
+                            setBooruProvider("rule34")
+                            setRatingFilter("all")
+                            trackProviderChange("rule34")
+                            trackRatingChange("all")
+                          }}
+                          className={`h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "rule34" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        >
+                          Rule34
+                        </Button>
                       </div>
                     </div>
-                  )}
 
-                  {/* Search bar with rating/order/favorites aligned to the right */}
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-col lg:flex-row gap-3 items-stretch">
-                      {/* Search input */}
-                      <div className="relative flex-1 min-w-[220px]">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                        <Input
-                          type="text"
-                          value={searchTags}
-                          onChange={(e) => setSearchTags(e.target.value)}
-                          placeholder={order === "recent" ? "Search by up to 2 tags (e.g., cat_girl, blue_eyes)" : order === "random" ? "Search by one tag only (e.g., cat_girl)" : "Search by one tag only (e.g., cat_girl)"}
-                          className="pl-10 pr-10 focus-ring text-sm sm:text-base h-10"
-                          aria-label="Search tags"
-                          translate="no"
-                        />
-                        {searchTags && (
-                          <button
-                            type="button"
-                            onClick={clearSearch}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-sm"
-                            aria-label="Clear search"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Controls to the right of search */}
-                      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
-                        <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
-                          {isClient ? (
-                            <Button
-                              type="button"
-                              variant={ratingFilter === "rating:general" ? "default" : "outline"}
-                              onClick={() => {
-                                const newRating = ratingFilter === "rating:general" ? "all" : "rating:general"
-                                setRatingFilter(newRating)
-                                trackRatingChange(newRating)
-                              }}
-                              className="focus-ring w-full sm:w-auto h-10"
-                              aria-label="Toggle NSFW filter"
-                            >
-                              <Shield className={`w-4 h-4 mr-2 ${ratingFilter === "rating:general" ? "" : ""}`} />
-                              <span className="whitespace-nowrap">
-                                {ratingFilter === "rating:general" ? "NSFW Off" : "NSFW On"}
-                              </span>
-                            </Button>
-                          ) : (
-                            <div className="w-full sm:w-[130px] h-10 bg-muted animate-pulse rounded-md" />
-                          )}
+                    {/* Quick Actions */}
+                    <div className="flex flex-col gap-1.5 w-full lg:w-auto">
+                      <span className="text-xs font-medium text-muted-foreground ml-1 lg:text-right">Settings</span>
+                      <div className="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+                        {isClient ? (
                           <Button
                             type="button"
-                            variant={showFavorites ? "default" : "outline"}
-                            onClick={toggleShowFavorites}
-                            className="focus-ring w-full sm:w-auto h-10"
-                            aria-label="Toggle favorites"
+                            variant={ratingFilter === "rating:general" ? "secondary" : "outline"}
+                            onClick={() => {
+                              const newRating = ratingFilter === "rating:general" ? "all" : "rating:general"
+                              setRatingFilter(newRating)
+                              trackRatingChange(newRating)
+                            }}
+                            className={`h-9 px-3 ${ratingFilter === "rating:general" ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50" : ""}`}
+                            title="Toggle NSFW content"
                           >
-                            <Heart className={`w-4 h-4 mr-2 ${showFavorites ? "fill-white" : ""}`} />
-                            <span className="whitespace-nowrap">Favs ({favorites.size})</span>
+                            <Shield className="w-4 h-4 mr-2" />
+                            <span className="text-xs font-medium">
+                              {ratingFilter === "rating:general" ? "Safe Mode" : "NSFW Allowed"}
+                            </span>
                           </Button>
-                          
-                          <Sheet>
-                            <SheetTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                className="focus-ring w-full sm:w-auto h-10"
-                                aria-label="View history"
-                              >
-                                <History className="w-4 h-4 mr-2" />
-                                <span className="whitespace-nowrap">History</span>
-                              </Button>
-                            </SheetTrigger>
-                            <SheetContent className="w-[400px] sm:w-[540px]">
-                              <SheetHeader>
-                                <SheetTitle>Prompt History</SheetTitle>
-                                <SheetDescription>
-                                  Your recently copied prompts.
-                                </SheetDescription>
-                              </SheetHeader>
-                              <div className="mt-4 space-y-4 overflow-y-auto max-h-[calc(100vh-120px)] pr-2">
-                                {history.length === 0 ? (
-                                  <p className="text-center text-muted-foreground py-8">No history yet</p>
-                                ) : (
-                                  <>
-                                    {history.map((item) => (
-                                      <div key={item.id} className="border rounded-lg p-3 space-y-2 relative group">
-                                        <div className="flex gap-3">
-                                          {item.thumbnailUrl && (
-                                            <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-muted">
-                                              <Image
-                                                src={item.thumbnailUrl}
-                                                alt="Thumbnail"
-                                                fill
-                                                className="object-cover"
-                                                unoptimized
-                                              />
-                                            </div>
-                                          )}
-                                          <div className="flex-1 min-w-0">
-                                            <p className="text-xs text-muted-foreground mb-1">
-                                              {new Date(item.timestamp).toLocaleString()}
-                                            </p>
-                                            <p className="text-sm line-clamp-3 break-words font-mono bg-muted/50 p-1 rounded">
-                                              {item.content}
-                                            </p>
+                        ) : (
+                          <div className="w-[120px] h-9 bg-muted animate-pulse rounded-md" />
+                        )}
+                        
+                        <Button
+                          type="button"
+                          variant={showFavorites ? "secondary" : "outline"}
+                          onClick={toggleShowFavorites}
+                          className={`h-9 px-3 ${showFavorites ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50" : ""}`}
+                        >
+                          <Heart className={`w-4 h-4 mr-2 ${showFavorites ? "fill-current" : ""}`} />
+                          <span className="text-xs font-medium">Favs ({favorites.size})</span>
+                        </Button>
+
+                        <Sheet>
+                          <SheetTrigger asChild>
+                            <Button type="button" variant="outline" size="icon" className="h-9 w-9">
+                              <History className="w-4 h-4" />
+                            </Button>
+                          </SheetTrigger>
+                          <SheetContent className="w-[400px] sm:w-[540px]">
+                            <SheetHeader>
+                              <SheetTitle>Prompt History</SheetTitle>
+                              <SheetDescription>Your recently copied prompts.</SheetDescription>
+                            </SheetHeader>
+                            <div className="mt-4 space-y-4 overflow-y-auto max-h-[calc(100vh-120px)] pr-2">
+                              {history.length === 0 ? (
+                                <p className="text-center text-muted-foreground py-8">No history yet</p>
+                              ) : (
+                                <>
+                                  {history.map((item) => (
+                                    <div key={item.id} className="border rounded-lg p-3 space-y-2 relative group">
+                                      <div className="flex gap-3">
+                                        {item.thumbnailUrl && (
+                                          <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-muted">
+                                            <Image src={item.thumbnailUrl} alt="Thumbnail" fill className="object-cover" unoptimized />
                                           </div>
-                                        </div>
-                                        <div className="flex justify-end gap-2 mt-2">
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                            onClick={() => {
-                                              userPreferences.removeFromHistory(item.id)
-                                              setHistory(userPreferences.getHistory())
-                                            }}
-                                          >
-                                            <Trash2 className="h-4 w-4" />
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="secondary"
-                                            className="h-8"
-                                            onClick={() => copyToClipboard(item.content, item.postId || 0, true, item.thumbnailUrl)}
-                                          >
-                                            <Copy className="h-3 w-3 mr-1" />
-                                            Copy
-                                          </Button>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs text-muted-foreground mb-1">{new Date(item.timestamp).toLocaleString()}</p>
+                                          <p className="text-sm line-clamp-3 break-words font-mono bg-muted/50 p-1 rounded">{item.content}</p>
                                         </div>
                                       </div>
-                                    ))}
-                                    <Button
-                                      variant="outline"
-                                      className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
-                                      onClick={() => {
-                                        userPreferences.clearHistory()
-                                        setHistory([])
-                                      }}
-                                    >
-                                      Clear History
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
-                            </SheetContent>
-                          </Sheet>
-                        </div>
+                                      <div className="flex justify-end gap-2 mt-2">
+                                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { userPreferences.removeFromHistory(item.id); setHistory(userPreferences.getHistory()) }}>
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                        <Button size="sm" variant="secondary" className="h-8" onClick={() => copyToClipboard(item.content, item.postId || 0, true, item.thumbnailUrl)}>
+                                          <Copy className="h-3 w-3 mr-1" /> Copy
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  <Button variant="outline" className="w-full text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { userPreferences.clearHistory(); setHistory([]) }}>
+                                    Clear History
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </SheetContent>
+                        </Sheet>
                       </div>
                     </div>
                   </div>
 
-                  {/* Add Tags and Remove Tags Inputs */}
-                  <div className="space-y-2">
-                    <div className="flex flex-col lg:flex-row gap-4 items-start">
-                      {/* Tags to add input */}
-                      <div className="flex-1 min-w-[240px] w-full">
-                        <div className="w-full">
-                          <label htmlFor="add-tags" className="block text-xs font-medium text-muted-foreground mb-2">
-                            Tags to add (comma separated)
-                          </label>
-                          <div className="relative">
-                            <Input
-                              id="add-tags"
-                              type="text"
-                              value={addInput}
-                              onChange={(e) => setAddInput(e.target.value)}
-                              placeholder="masterpiece, high quality, lora trigger words"
-                              className="focus-ring text-xs sm:text-sm pr-10 h-10"
-                              aria-label="Tags to add"
-                            />
-                            {addInput && (
-                              <button
-                                type="button"
-                                onClick={() => setAddInput("")}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-sm"
-                                aria-label="Clear additions"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                  {/* Search Bar Section */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground pointer-events-none">
+                        <Search className="h-5 w-5" />
                       </div>
-                      {/* Tags to remove input */}
-                      <div className="flex-1 min-w-[240px] w-full">
-                        <div className="w-full">
-                          <label htmlFor="exclude-tags" className="block text-xs font-medium text-muted-foreground mb-2">
-                            Tags to remove (comma separated)
-                          </label>
-                          <div className="relative">
-                            <Input
-                              id="exclude-tags"
-                              type="text"
-                              value={excludeInput}
-                              onChange={(e) => setExcludeInput(e.target.value)}
-                              placeholder="1girl, full body"
-                              className="focus-ring text-xs sm:text-sm pr-10 h-10"
-                              aria-label="Tags to exclude"
-                            />
-                            {excludeInput && (
-                              <button
-                                type="button"
-                                onClick={() => setExcludeInput("")}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-sm"
-                                aria-label="Clear exclusions"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                      <Input
+                        type="text"
+                        value={searchTags}
+                        onChange={(e) => setSearchTags(e.target.value)}
+                        placeholder={order === "recent" ? "Search tags (e.g., cat_girl, blue_eyes)..." : "Search tag..."}
+                        className="pl-10 pr-10 h-11 text-base shadow-sm focus-visible:ring-offset-0"
+                        aria-label="Search tags"
+                        translate="no"
+                      />
+                      {searchTags && (
+                        <button
+                          type="button"
+                          onClick={clearSearch}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                          aria-label="Clear search"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
-                    {(excludeInput || addInput) && null /* Preview badges removed per user request */}
-                  </div>
-
-                  {/* API Provider Selection and Prompt Options */}
-                  <div className="space-y-2">
-                    <div className="flex flex-col sm:flex-row gap-3 items-start">
-                      {/* API Provider container */}
-                      <div className="flex flex-col gap-2">
-                        <span className="text-xs font-medium text-muted-foreground">API Provider</span>
-                        <div className="flex gap-2 px-3 py-1 rounded-md h-[34px] items-center">
-                          <Button
-                            type="button"
-                            variant={booruProvider === "danbooru" ? "default" : "outline"}
-                            onClick={() => {
-                              // Restore previous rating filter when coming back from Rule34
-                              if (booruProvider === "rule34" && ratingFilter === "all") {
-                                setRatingFilter(previousRatingFilter)
-                                trackRatingChange(previousRatingFilter)
-                              }
-                              setBooruProvider("danbooru")
-                              trackProviderChange("danbooru")
-                            }}
-                            className="focus-ring text-sm"
-                            size="sm"
-                          >
-                            Danbooru
-                          </Button>
-                          <Button
-                            type="button"
-                            variant={booruProvider === "aibooru" ? "default" : "outline"}
-                            onClick={() => {
-                              // Restore previous rating filter when coming back from Rule34
-                              if (booruProvider === "rule34" && ratingFilter === "all") {
-                                setRatingFilter(previousRatingFilter)
-                                trackRatingChange(previousRatingFilter)
-                              }
-                              setBooruProvider("aibooru")
-                              trackProviderChange("aibooru")
-                            }}
-                            className="focus-ring text-sm"
-                            size="sm"
-                          >
-                            Aibooru
-                          </Button>
-                          <Button
-                            type="button"
-                            variant={booruProvider === "rule34" ? "default" : "outline"}
-                            onClick={() => {
-                              // Save current rating filter before switching to Rule34
-                              if (booruProvider !== "rule34") {
-                                setPreviousRatingFilter(ratingFilter)
-                              }
-                              setBooruProvider("rule34")
-                              setRatingFilter("all") // Rule34 is mostly NSFW, so disable rating filter
-                              trackProviderChange("rule34")
-                              trackRatingChange("all")
-                            }}
-                            className="focus-ring text-sm"
-                            size="sm"
-                          >
-                            Rule34
-                          </Button>
-                        </div>
-                      </div>
-                      {/* Prompt Options container */}
-                      <div className="flex flex-col gap-2 lg:min-w-[340px] w-full lg:w-auto">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {booruProvider === 'aibooru' ? 'Aibooru Options' : 'Prompt Options'}
-                        </span>
-                        <div className="flex items-center gap-4 flex-wrap px-3 py-1 rounded-md border border-border/50 bg-muted/30 min-h-[34px]">
-                          {booruProvider === 'danbooru' || booruProvider === 'rule34' ? (
-                            <>
-                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
-                                <Switch
-                                  checked={includeCharacters}
-                                  onCheckedChange={(v) => {
-                                    const enabled = !!v
-                                    setIncludeCharacters(enabled)
-                                    if (booruProvider === 'rule34') {
-                                      trackRule34Option('include_characters', enabled)
-                                    } else {
-                                      trackDanbooruOption('include_characters', enabled)
-                                    }
-                                  }}
-                                  aria-label="Toggle character tags"
-                                />
-                                <span className="select-none">Characters</span>
-                              </label>
-                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
-                                <Switch
-                                  checked={includeCopyrights}
-                                  onCheckedChange={(v) => {
-                                    const enabled = !!v
-                                    setIncludeCopyrights(enabled)
-                                    if (booruProvider === 'rule34') {
-                                      trackRule34Option('include_copyrights', enabled)
-                                    } else {
-                                      trackDanbooruOption('include_copyrights', enabled)
-                                    }
-                                  }}
-                                  aria-label="Toggle copyright tags"
-                                />
-                                <span className="select-none">Copyrights</span>
-                              </label>
-                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
-                                <Switch
-                                  checked={optimizeTags}
-                                  onCheckedChange={(v) => {
-                                    const enabled = !!v
-                                    setOptimizeTags(enabled)
-                                    if (booruProvider === 'rule34') {
-                                      trackRule34Option('optimize_tags', enabled)
-                                    } else {
-                                      trackDanbooruOption('optimize_tags', enabled)
-                                    }
-                                  }}
-                                  aria-label="Toggle combine tags"
-                                />
-                                <span className="select-none">Combine Tags</span>
-                              </label>
-                            </>
-                          ) : (
-                            <>
-                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
-                                <Switch
-                                  checked={removeLoRaTags}
-                                  onCheckedChange={(v) => {
-                                    const enabled = !!v
-                                    setRemoveLoRaTags(enabled)
-                                    trackAibooruOption('remove_lora_tags', enabled)
-                                  }}
-                                  aria-label="Remove LoRa tags from prompts"
-                                />
-                                <span className="select-none">Remove LoRa Tags</span>
-                              </label>
-                              <label className="flex items-center gap-2 cursor-pointer text-[11px] sm:text-xs">
-                                <Switch
-                                  checked={removeQualityTags}
-                                  onCheckedChange={(v) => {
-                                    const enabled = !!v
-                                    setRemoveQualityTags(enabled)
-                                    trackAibooruOption('remove_quality_tags', enabled)
-                                  }}
-                                  aria-label="Remove quality tags from prompts"
-                                />
-                                <span className="select-none">Remove Quality Tags</span>
-                              </label>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Warning for more than 2 search terms */}
-                  {hasMoreThanTwoTerms(searchTags) && (
-                    <Alert 
-                      variant="destructive" 
-                      className="mt-2 bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-950/50 dark:border-orange-800/50 dark:text-orange-200"
-                    >
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertDescription className="text-sm">
-                        The API only allows a maximum of 2 search terms. You have entered {searchTags.split(',').map(t => t.trim()).filter(Boolean).length} terms. Only the first 2 terms will be used for the search.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {/* Filters */}
-                  {hasMultipleTags(searchTags, order) && (
-                    <Alert 
-                      variant="destructive" 
-                      className="mt-2 bg-red-50 border-red-200 text-red-800 dark:bg-red-950/50 dark:border-red-800/50 dark:text-red-200"
-                    >
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertDescription className="text-sm">
-                        Danbooru API only allows 2 tags maximum. Only the first 2 tags will be used for the search.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-4">
-                    <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
-                      <Button type="submit" disabled={isLoading} className="focus-ring flex-1 sm:flex-none">
-                        {isLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <Search className="w-4 h-4 mr-2" />
-                        )}
-                        Search
+                    <div className="flex gap-2">
+                      <Button type="submit" disabled={isLoading} size="lg" className="h-11 px-6 shadow-sm min-w-[100px]">
+                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
                       </Button>
-
                       <Button
                         type="button"
                         variant="outline"
                         onClick={refresh}
                         disabled={isValidating}
-                        className="focus-ring bg-transparent"
+                        className="h-11 w-11 p-0 shadow-sm"
+                        title="Refresh results"
                       >
                         <RefreshCw className={`w-4 h-4 ${isValidating ? "animate-spin" : ""}`} />
                       </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowSettings(!showSettings)}
+                        className={`h-11 w-11 p-0 shadow-sm ${showSettings ? "bg-muted" : ""}`}
+                        title="Toggle settings"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </Button>
                     </div>
+                  </div>
+
+                  {/* Advanced Filters & Options */}
+                  <Collapsible open={showSettings} onOpenChange={setShowSettings}>
+                    <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+                      <div className="bg-muted/30 border rounded-xl p-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-8">
+                          {/* Tags Management */}
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <label htmlFor="add-tags" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                Tags to Add
+                              </label>
+                              <div className="relative">
+                                <Input
+                                  id="add-tags"
+                                  value={addInput}
+                                  onChange={(e) => setAddInput(e.target.value)}
+                                  placeholder="masterpiece, best quality..."
+                                  className="h-9 text-sm bg-background/50"
+                                />
+                                {addInput && (
+                                  <button type="button" onClick={() => setAddInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1">
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <label htmlFor="exclude-tags" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                Tags to Exclude
+                              </label>
+                              <div className="relative">
+                                <Input
+                                  id="exclude-tags"
+                                  value={excludeInput}
+                                  onChange={(e) => setExcludeInput(e.target.value)}
+                                  placeholder="bad quality, watermark..."
+                                  className="h-9 text-sm bg-background/50"
+                                />
+                                {excludeInput && (
+                                  <button type="button" onClick={() => setExcludeInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1">
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Options & Switches */}
+                          <div className="space-y-4">
+                            <span className="text-xs font-medium text-muted-foreground block">
+                              {booruProvider === 'aibooru' ? 'Aibooru Options' : 'Prompt Generation Options'}
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {booruProvider === 'danbooru' || booruProvider === 'rule34' ? (
+                                <>
+                                  <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+                                    <span className="text-sm select-none">Include Characters</span>
+                                    <Switch
+                                      checked={includeCharacters}
+                                      onCheckedChange={(v) => {
+                                        setIncludeCharacters(v)
+                                        booruProvider === 'rule34' ? trackRule34Option('include_characters', v) : trackDanbooruOption('include_characters', v)
+                                      }}
+                                      className="scale-90"
+                                    />
+                                  </label>
+                                  <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+                                    <span className="text-sm select-none">Smart Tag Combination</span>
+                                    <Switch
+                                      checked={optimizeTags}
+                                      onCheckedChange={(v) => {
+                                        setOptimizeTags(v)
+                                        booruProvider === 'rule34' ? trackRule34Option('optimize_tags', v) : trackDanbooruOption('optimize_tags', v)
+                                      }}
+                                      className="scale-90"
+                                    />
+                                  </label>
+                                </>
+                              ) : (
+                                <>
+                                  <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+                                    <span className="text-sm select-none">Remove LoRa Tags</span>
+                                    <Switch
+                                      checked={removeLoRaTags}
+                                      onCheckedChange={(v) => {
+                                        setRemoveLoRaTags(v)
+                                        trackAibooruOption('remove_lora_tags', v)
+                                      }}
+                                      className="scale-90"
+                                    />
+                                  </label>
+                                  <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+                                    <span className="text-sm select-none">Remove Quality Tags</span>
+                                    <Switch
+                                      checked={removeQualityTags}
+                                      onCheckedChange={(v) => {
+                                        setRemoveQualityTags(v)
+                                        trackAibooruOption('remove_quality_tags', v)
+                                      }}
+                                      className="scale-90"
+                                    />
+                                  </label>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  {/* Status & Alerts */}
+                  <div className="space-y-2">
+                    {getFinalQueryTags(searchTags, ratingFilter, order).length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground bg-muted/20 p-2 rounded-md border border-border/30">
+                        <span className="font-medium">Active Query:</span>
+                        {getFinalQueryTags(searchTags, ratingFilter, order).map((tag, index) => (
+                          <Badge key={index} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 font-mono">
+                            {tag}
+                          </Badge>
+                        ))}
+                        {booruProvider === "aibooru" && hasPromptFilter && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 text-green-600 border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400">
+                            has:prompt
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+
+                    {hasMoreThanTwoTerms(searchTags) && (
+                      <Alert variant="destructive" className="py-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription className="text-xs">
+                          Maximum 2 search terms allowed. Only the first 2 will be used.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {hasMultipleTags(searchTags, order) && (
+                      <Alert variant="destructive" className="py-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription className="text-xs">
+                          Danbooru API limit: Only first 2 tags will be used.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                   </div>
                 </form>
               </CardContent>
@@ -1512,21 +1420,21 @@ export default function DanbooruPromptGenerator() {
                 }
                 
                 // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
-                let displayContent = aiPrompt
-                  ? cleanPrompt(
-                      aiPrompt,
-                      "",
-                      "",
-                      "",
-                      { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
-                    )
-                  : cleanPrompt(
-                      post.tag_string,
-                      post.tag_string_artist,
-                      post.tag_string_character,
-                      post.tag_string_copyright,
-                      { includeCharacters, includeCopyrights, optimizeTags, exclude: excludeList },
-                    )
+    let displayContent = aiPrompt
+      ? cleanPrompt(
+          aiPrompt,
+          "",
+          "",
+          "",
+          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
+        )
+      : cleanPrompt(
+          post.tag_string,
+          post.tag_string_artist,
+          post.tag_string_character,
+          post.tag_string_copyright,
+          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
+        )
                 
                 // Exclusions are already applied via cleanPrompt
                 
