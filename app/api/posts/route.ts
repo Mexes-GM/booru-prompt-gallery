@@ -45,4 +45,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       { error: error.message || 'Internal server error', timestamp: new Date().toISOString() },
-      { status: status, headers:
+      { status: status, headers: { 'Cache-Control': 'no-cache' } }
+    )
+  }
+}
