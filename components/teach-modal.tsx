@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { createPortal } from 'react-dom'
 import { 
   DndContext, 
@@ -90,7 +90,7 @@ const COLUMN_HEADER_STYLES: Record<string, string> = {
 
 // --- Sortable Item Component ---
 
-function SortableItem({ id, category, suggestedCategory }: { id: string, category: ColumnId, suggestedCategory?: string }) {
+const SortableItem = memo(function SortableItem({ id, category, suggestedCategory }: { id: string, category: ColumnId, suggestedCategory?: string }) {
   const {
     attributes,
     listeners,
@@ -147,11 +147,11 @@ function SortableItem({ id, category, suggestedCategory }: { id: string, categor
       </div>
     </div>
   )
-}
+})
 
 // --- Column Component ---
 
-function Column({ id, title, description, items, suggestions }: { id: ColumnId, title: string, description: string, items: string[], suggestions: Record<string, string> }) {
+const Column = memo(function Column({ id, title, description, items, suggestions }: { id: ColumnId, title: string, description: string, items: string[], suggestions: Record<string, string> }) {
   const { setNodeRef } = useSortable({ id })
   
   const headerStyle = COLUMN_HEADER_STYLES[id] || COLUMN_HEADER_STYLES.other
@@ -204,7 +204,7 @@ function Column({ id, title, description, items, suggestions }: { id: ColumnId, 
       </div>
     </div>
   )
-}
+})
 
 // --- Main Modal Component ---
 
@@ -214,12 +214,19 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [existingSuggestions, setExistingSuggestions] = useState<Record<string, string>>({})
   const [showExitAlert, setShowExitAlert] = useState(false)
+  const [isReady, setIsReady] = useState(false)
   const { toast } = useToast()
 
   // Reset items when modal opens or props change
   useEffect(() => {
     if (open) {
       setItems(initialClassifiedTags)
+      setIsReady(false)
+      
+      // Delay rendering of heavy content to allow modal animation to start
+      const timer = setTimeout(() => {
+        setIsReady(true)
+      }, 50)
       
       // Fetch existing suggestions
       const allTags = Object.values(initialClassifiedTags).flat()
@@ -228,11 +235,17 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
           setExistingSuggestions(suggestions)
         })
       }
+      
+      return () => clearTimeout(timer)
     }
   }, [open, initialClassifiedTags])
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -469,44 +482,50 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
           </DialogHeader>
 
           <div className="flex-1 overflow-hidden bg-background/50">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCorners}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDragEnd={handleDragEnd}
-            >
-              <div className="h-[65vh] w-full p-6">
-                <div className="flex h-full gap-4 w-full">
-                  {COLUMNS.map((col) => (
-                    <Column 
-                      key={col.id} 
-                      id={col.id} 
-                      title={col.title}
-                      description={col.description}
-                      items={items[col.id]} 
-                      suggestions={existingSuggestions}
-                    />
-                  ))}
-                </div>
+            {!isReady ? (
+              <div className="h-[65vh] w-full flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="h-[65vh] w-full p-6">
+                  <div className="flex h-full gap-4 w-full">
+                    {COLUMNS.map((col) => (
+                      <Column 
+                        key={col.id} 
+                        id={col.id} 
+                        title={col.title}
+                        description={col.description}
+                        items={items[col.id]} 
+                        suggestions={existingSuggestions}
+                      />
+                    ))}
+                  </div>
+                </div>
 
-              {mounted && createPortal(
-                <DragOverlay dropAnimation={dropAnimation} zIndex={10000}>
-                  {activeId ? (
-                     <div className="group relative flex items-center gap-2 p-3 rounded-lg border bg-card text-card-foreground shadow-xl ring-2 ring-primary opacity-90 scale-105 w-[280px]">
-                       <div className="p-1 -ml-1 text-muted-foreground">
-                         <GripVertical className="h-4 w-4" />
+                {mounted && createPortal(
+                  <DragOverlay dropAnimation={dropAnimation} zIndex={10000}>
+                    {activeId ? (
+                       <div className="group relative flex items-center gap-2 p-3 rounded-lg border bg-card text-card-foreground shadow-xl ring-2 ring-primary opacity-90 scale-105 w-[280px]">
+                         <div className="p-1 -ml-1 text-muted-foreground">
+                           <GripVertical className="h-4 w-4" />
+                         </div>
+                         <span className="text-sm font-medium leading-tight break-all">
+                           {activeId}
+                         </span>
                        </div>
-                       <span className="text-sm font-medium leading-tight break-all">
-                         {activeId}
-                       </span>
-                     </div>
-                  ) : null}
-                </DragOverlay>,
-                document.body
-              )}
-            </DndContext>
+                    ) : null}
+                  </DragOverlay>,
+                  document.body
+                )}
+              </DndContext>
+            )}
           </div>
 
           <DialogFooter className="p-4 shrink-0 border-t bg-muted/20 gap-2 sm:gap-0">
