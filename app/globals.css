@@ -203,6 +203,10 @@
     @apply gap-2;
   }
 
+  .card-content-large .button-group button {
+    @apply text-base px-4 py-2 h-10;
+  }
+
   /* Badge scaling */
   .badge-small {
     @apply text-xs px-1.5 py-0.5;

@@ -798,7 +798,7 @@ export default function DanbooruPromptGenerator() {
           </div>
         </div>
 
-        <CardContent className={getCardContentClass()} style={{ height: footerHeight }}>
+        <div className={getCardContentClass()} style={{ height: footerHeight }}>
           <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container">
             <p className="text-foreground/80 leading-relaxed">{displayContent || "No content available"}</p>
           </div>
@@ -845,7 +845,7 @@ export default function DanbooruPromptGenerator() {
               <TooltipContent>View original post</TooltipContent>
             </Tooltip>
           </div>
-        </CardContent>
+        </div>
       </Card>
     )
   }, [cardScale, favorites, copiedId, excludeInput, addInput, includeCharacters, optimizeTags, removeLoRaTags, removeQualityTags, copyToClipboard, toggleFavorite])

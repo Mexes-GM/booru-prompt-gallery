@@ -13,8 +13,8 @@ interface MasonryGridProps {
 
 // Constants for layout
 export const SCALE_CONFIG = {
-  small: { minColumnWidth: 160, footerHeight: 140 },
-  medium: { minColumnWidth: 220, footerHeight: 160 },
+  small: { minColumnWidth: 160, footerHeight: 116 },
+  medium: { minColumnWidth: 220, footerHeight: 144 },
   large: { minColumnWidth: 280, footerHeight: 180 },
 }
 
