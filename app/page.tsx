@@ -841,7 +841,7 @@ export default function DanbooruPromptGenerator() {
             src={fileUrl}
             alt={`Danbooru post ${post.id}`}
             fill
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
             sizes={`${width}px`}
             priority={false}
           />

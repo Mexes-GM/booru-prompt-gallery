@@ -122,7 +122,14 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
       // Default aspect ratio 2:3 if dimensions missing
       const imgWidth = item.width || 200
       const imgHeight = item.height || 300
-      const aspectRatio = imgHeight / imgWidth
+      let aspectRatio = imgHeight / imgWidth
+
+      // Limit max aspect ratio to prevent extremely long cards
+      // This handles cases like long comic strips breaking the layout
+      const MAX_ASPECT_RATIO = 2.5
+      if (aspectRatio > MAX_ASPECT_RATIO) {
+        aspectRatio = MAX_ASPECT_RATIO
+      }
       
       const imageDisplayHeight = columnWidth * aspectRatio
       const itemHeight = imageDisplayHeight + config.footerHeight
