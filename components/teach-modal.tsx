@@ -465,7 +465,10 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
   return (
     <>
       <Dialog open={open} onOpenChange={(val) => !val ? handleCancel() : onOpenChange(val)}>
-        <DialogContent className="max-w-[95vw] w-full lg:max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl">
+        <DialogContent 
+          overlayClassName="backdrop-blur-none bg-background/60"
+          className="max-w-[95vw] w-full lg:max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl"
+        >
           <DialogHeader className="p-6 pb-4 shrink-0 border-b bg-muted/20">
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-1.5">
