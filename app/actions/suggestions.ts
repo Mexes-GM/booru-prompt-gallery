@@ -22,26 +22,26 @@ export type SubmitSuggestionResult = {
 export type TagReclassification = z.infer<typeof TagReclassificationSchema>
 
 async function checkRateLimit(ip: string): Promise<boolean> {
-  // Simple Rate Limit: 20 requests per hour per IP
+  // Simple Rate Limit: 50 requests per 30 minutes per IP
   // Clean up old records first (lazy cleanup)
   // In production, use a scheduled job or Redis
   
   // 1. Count recent requests
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const timeWindow = new Date(Date.now() - 30 * 60 * 1000).toISOString()
   
   const { count, error } = await supabaseAdmin
     .from('rate_limits')
     .select('*', { count: 'exact', head: true })
     .eq('ip', ip)
     .eq('action', 'submit_suggestion')
-    .gte('created_at', oneHourAgo)
+    .gte('created_at', timeWindow)
     
   if (error) {
     console.error('Rate limit check error:', error)
     return false // Fail open or closed? Closed for security.
   }
 
-  if (count !== null && count >= 20) {
+  if (count !== null && count >= 50) {
     return false
   }
 
