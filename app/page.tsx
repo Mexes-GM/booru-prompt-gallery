@@ -28,7 +28,15 @@ import {
   History,
   Trash2,
   Settings,
+  ChevronDown,
+  Shirt,
+  User,
+  Mountain,
+  Smile,
+  GraduationCap,
 } from "lucide-react"
+import { TeachModal } from "@/components/teach-modal"
+import { getAllTagOverrides } from "@/app/actions/tags"
 import { VersionDisplay } from "@/components/version-display"
 import { useToast } from "@/hooks/use-toast"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -40,8 +48,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { cleanPrompt } from "@/lib/cleanPrompt"
+import { classifyTags, type TagCategory } from "@/lib/tag-classifier"
 import { Switch } from "@/components/ui/switch"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Sheet,
   SheetContent,
@@ -105,6 +122,16 @@ export default function DanbooruPromptGenerator() {
   const [isLoadingLock, setIsLoadingLock] = useState(false) // Prevent race conditions on "Load More"
   const [loadMoreError, setLoadMoreError] = useState(false) // Track if last load attempt failed
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
+  const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
+
+  // Fetch tag overrides on mount
+  useEffect(() => {
+    getAllTagOverrides().then(overrides => {
+      setTagOverrides(overrides)
+    })
+  }, [])
+
   const { toast } = useToast()
   
 
@@ -739,6 +766,39 @@ export default function DanbooruPromptGenerator() {
     if (addList.length > 0) {
       displayContent = displayContent ? `${addList.join(', ')}, ${displayContent}` : addList.join(', ')
     }
+
+    // Pre-classify tags for the dropdown counts
+    const tagsForClassification = displayContent ? displayContent.split(',').map(t => t.trim()) : []
+    
+    // Filter out character tags from classification (Teach modal)
+    // We normalize both sets to lowercase spaces for comparison
+    const characterTagsSet = new Set(
+        (post.tag_string_character ? post.tag_string_character.split(' ') : [])
+        .map(t => t.replace(/_/g, ' ').toLowerCase())
+    )
+
+    const filteredTagsForClassification = tagsForClassification.filter(t => {
+        // Unescape parentheses from displayContent (e.g. "name \(source\)") to match raw tag "name (source)"
+        const normalized = t.replace(/\\\(/g, "(").replace(/\\\)/g, ")").toLowerCase()
+        return !characterTagsSet.has(normalized)
+    })
+
+    const classifiedTags = classifyTags(filteredTagsForClassification, tagOverrides)
+
+    const copyCategory = async (category: TagCategory) => {
+      if (!displayContent) return
+      const subset = classifiedTags[category]
+      
+      if (subset.length > 0) {
+        await copyToClipboard(subset.join(', '), post.id, false, post.preview_file_url)
+      } else {
+        toast({
+           description: `No ${category} tags found`,
+           variant: "destructive",
+           duration: 2000
+        })
+      }
+    }
     
     const fileUrl = post.large_file_url || post.file_url
     
@@ -803,10 +863,10 @@ export default function DanbooruPromptGenerator() {
             <p className="text-foreground/80 leading-relaxed">{displayContent || "No content available"}</p>
           </div>
 
-          <div className="flex button-group items-stretch">
+          <div className="flex button-group items-stretch isolate">
             <Button
               onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt, post.preview_file_url)}
-              className="flex-1 focus-ring h-auto"
+              className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
               variant={copiedId === post.id ? "default" : "outline"}
               disabled={!displayContent}
             >
@@ -822,6 +882,60 @@ export default function DanbooruPromptGenerator() {
                 </>
               )}
             </Button>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={copiedId === post.id ? "default" : "outline"}
+                  className="px-2 focus-ring h-auto rounded-l-none"
+                  disabled={!displayContent}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Copy Options</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => copyCategory('scenery')}>
+                  <Mountain className="mr-2 h-4 w-4" /> 
+                  <span className="flex-1">Scenery</span>
+                  <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                    {classifiedTags.scenery.length}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => copyCategory('pose')}>
+                  <User className="mr-2 h-4 w-4" /> 
+                  <span className="flex-1">Pose</span>
+                  <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                    {classifiedTags.pose.length}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => copyCategory('clothing')}>
+                  <Shirt className="mr-2 h-4 w-4" /> 
+                  <span className="flex-1">Clothing</span>
+                  <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                    {classifiedTags.clothing.length}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => copyCategory('appearance')}>
+                  <Smile className="mr-2 h-4 w-4" /> 
+                  <span className="flex-1">Appearance</span>
+                  <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                    {classifiedTags.appearance.length}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    setTeachModalData({ open: true, tags: classifiedTags })
+                  }}
+                >
+                  <GraduationCap className="mr-2 h-4 w-4" />
+                  Teach
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Tooltip>
               <TooltipTrigger asChild>
@@ -848,11 +962,12 @@ export default function DanbooruPromptGenerator() {
         </div>
       </Card>
     )
-  }, [cardScale, favorites, copiedId, excludeInput, addInput, includeCharacters, optimizeTags, removeLoRaTags, removeQualityTags, copyToClipboard, toggleFavorite])
+  }, [cardScale, favorites, copiedId, excludeInput, addInput, includeCharacters, optimizeTags, removeLoRaTags, removeQualityTags, copyToClipboard, toggleFavorite, tagOverrides])
 
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-background">
+        {/* ... existing header ... */}
         <header className="sticky top-0 z-50 w-full border-b glass-effect">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
@@ -1693,6 +1808,16 @@ export default function DanbooruPromptGenerator() {
         
 
       </div>
+      {/* Global Teach Modal */}
+      {teachModalData.tags && (
+        <TeachModal 
+          open={teachModalData.open} 
+          onOpenChange={(open) => setTeachModalData(prev => ({ ...prev, open }))}
+          initialClassifiedTags={teachModalData.tags}
+        />
+      )}
     </TooltipProvider>
   )
 }
+
+// ... existing code ...
