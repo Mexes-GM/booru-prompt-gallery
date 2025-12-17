@@ -1,22 +1,38 @@
 'use server'
 
 import { cookies } from 'next/headers'
+import crypto from 'crypto'
+import { encrypt, decrypt } from '@/lib/session'
 
 // In a real app, use a proper session library or Supabase Auth.
-// For this "simple" requirement, we'll use a secure HTTP-only cookie
-// containing a hash of the secret.
+// We use a signed JWT stored in a HTTP-only cookie.
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin' // Default fallback for dev, MUST CHANGE in prod
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin' 
 const COOKIE_NAME = 'admin_session'
 
 export async function loginAdmin(password: string) {
-  if (password === ADMIN_PASSWORD) {
+  // Use timingSafeEqual to prevent timing attacks
+  // We hash both to ensure they are the same length for the comparison
+  const inputHash = crypto.createHash('sha256').update(password).digest()
+  const correctHash = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest()
+  
+  // Basic length check first (though hashes are same length)
+  if (inputHash.length !== correctHash.length) {
+    return { success: false, message: 'Invalid password' }
+  }
+
+  if (crypto.timingSafeEqual(inputHash, correctHash)) {
     const cookieStore = await cookies()
+    
+    // Create session
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const session = await encrypt({ role: 'admin', expires })
+
     // Set cookie for 1 day
-    cookieStore.set(COOKIE_NAME, 'authenticated', {
+    cookieStore.set(COOKIE_NAME, session, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24,
+      expires,
       path: '/',
       sameSite: 'strict'
     })
@@ -33,6 +49,9 @@ export async function logoutAdmin() {
 
 export async function checkAdminAuth() {
   const cookieStore = await cookies()
-  const session = cookieStore.get(COOKIE_NAME)
-  return session?.value === 'authenticated'
+  const session = cookieStore.get(COOKIE_NAME)?.value
+  if (!session) return false
+  
+  const payload = await decrypt(session)
+  return payload?.role === 'admin'
 }

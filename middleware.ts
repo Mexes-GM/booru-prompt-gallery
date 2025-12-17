@@ -1,10 +1,31 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { decrypt } from '@/lib/session'
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const response = NextResponse.next()
+  const url = request.nextUrl
 
-  // Add security headers
+  // 1. Admin Authentication Protection
+  // Protect all routes under /admin except /admin/login
+  if (url.pathname.startsWith('/admin')) {
+    const adminSession = request.cookies.get('admin_session')?.value
+    const payload = adminSession ? await decrypt(adminSession) : null
+    const isAuthenticated = payload?.role === 'admin'
+
+    if (url.pathname === '/admin/login') {
+      if (isAuthenticated) {
+        return NextResponse.redirect(new URL('/admin', request.url))
+      }
+    } else {
+      if (!isAuthenticated) {
+        const loginUrl = new URL('/admin/login', request.url)
+        return NextResponse.redirect(loginUrl)
+      }
+    }
+  }
+
+  // 2. Add security headers
   response.headers.set('X-DNS-Prefetch-Control', 'on')
   response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
   response.headers.set('X-Content-Type-Options', 'nosniff')
@@ -16,7 +37,6 @@ export function middleware(request: NextRequest) {
   response.headers.set('X-Powered-By', 'Next.js')
   
   // Add SEO-friendly headers
-  const url = request.nextUrl
   if (url.pathname === '/') {
     // Remove preload to avoid unused preload warnings
     // response.headers.set('Link', '</icon.png>; rel=preload; as=image')

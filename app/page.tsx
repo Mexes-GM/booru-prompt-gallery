@@ -36,6 +36,7 @@ import {
   GraduationCap,
 } from "lucide-react"
 import { TeachModal } from "@/components/teach-modal"
+import { TeachWelcomeModal } from "@/components/teach-welcome-modal"
 import { getAllTagOverrides } from "@/app/actions/tags"
 import { VersionDisplay } from "@/components/version-display"
 import { useToast } from "@/hooks/use-toast"
@@ -124,6 +125,7 @@ export default function DanbooruPromptGenerator() {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
   const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false)
 
   // Fetch tag overrides on mount
   useEffect(() => {
@@ -763,12 +765,33 @@ export default function DanbooruPromptGenerator() {
           { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
         )
     
+    // Create a raw (unoptimized) version for Teach modal classification
+    // This ensures we classify atomic tags (e.g. "shirt", "white shirt") instead of combined ones
+    const teachContent = aiPrompt
+      ? cleanPrompt(
+          aiPrompt,
+          "",
+          "",
+          "",
+          { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList },
+        )
+      : cleanPrompt(
+          post.tag_string,
+          post.tag_string_artist,
+          post.tag_string_character,
+          post.tag_string_copyright,
+          { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList },
+        )
+
     if (addList.length > 0) {
       displayContent = displayContent ? `${addList.join(', ')}, ${displayContent}` : addList.join(', ')
     }
 
-    // Pre-classify tags for the dropdown counts
+    // Pre-classify tags for the dropdown counts (using displayContent - respects user preference)
     const tagsForClassification = displayContent ? displayContent.split(',').map(t => t.trim()) : []
+    
+    // Prepare tags for Teach Modal (using teachContent - always raw/unoptimized)
+    const teachTagsForClassification = teachContent ? teachContent.split(',').map(t => t.trim()) : []
     
     // Filter out character tags from classification (Teach modal)
     // We normalize both sets to lowercase spaces for comparison
@@ -782,8 +805,14 @@ export default function DanbooruPromptGenerator() {
         const normalized = t.replace(/\\\(/g, "(").replace(/\\\)/g, ")").toLowerCase()
         return !characterTagsSet.has(normalized)
     })
+    
+    const filteredTeachTags = teachTagsForClassification.filter(t => {
+        const normalized = t.replace(/\\\(/g, "(").replace(/\\\)/g, ")").toLowerCase()
+        return !characterTagsSet.has(normalized)
+    })
 
     const classifiedTags = classifyTags(filteredTagsForClassification, tagOverrides)
+    const classifiedTeachTags = classifyTags(filteredTeachTags, tagOverrides)
 
     const copyCategory = async (category: TagCategory) => {
       if (!displayContent) return
@@ -928,7 +957,7 @@ export default function DanbooruPromptGenerator() {
                 <DropdownMenuItem 
                   onSelect={(e) => {
                     e.preventDefault()
-                    setTeachModalData({ open: true, tags: classifiedTags })
+                    setTeachModalData({ open: true, tags: classifiedTeachTags })
                   }}
                 >
                   <GraduationCap className="mr-2 h-4 w-4" />
@@ -979,7 +1008,13 @@ export default function DanbooruPromptGenerator() {
                   <Badge variant="secondary" className="text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-2 py-1">
                     By Mexes
                   </Badge>
-                  <VersionDisplay />
+                  <button 
+                    onClick={() => setShowWelcomeModal(true)}
+                    className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full"
+                    title="Show Teach System Info"
+                  >
+                    <VersionDisplay />
+                  </button>
                 </div>
               </div>
 
@@ -1553,10 +1588,52 @@ export default function DanbooruPromptGenerator() {
                 
                 // Exclusions are already applied via cleanPrompt
                 
+                // Create a raw (unoptimized) version for Teach modal classification
+                const teachContent = aiPrompt
+                  ? cleanPrompt(
+                      aiPrompt,
+                      "",
+                      "",
+                      "",
+                      { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList },
+                    )
+                  : cleanPrompt(
+                      post.tag_string,
+                      post.tag_string_artist,
+                      post.tag_string_character,
+                      post.tag_string_copyright,
+                      { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList },
+                    )
+
                 // Add user-specified tags at the beginning (these are protected from removal options)
                 if (addList.length > 0) {
                   displayContent = displayContent ? `${addList.join(', ')}, ${displayContent}` : addList.join(', ')
                 }
+                
+                // Pre-classify tags for the dropdown counts
+                const tagsForClassification = displayContent ? displayContent.split(',').map(t => t.trim()) : []
+                const teachTagsForClassification = teachContent ? teachContent.split(',').map(t => t.trim()) : []
+
+                // Filter out character tags from classification (Teach modal)
+                // We normalize both sets to lowercase spaces for comparison
+                const characterTagsSet = new Set(
+                    (post.tag_string_character ? post.tag_string_character.split(' ') : [])
+                    .map(t => t.replace(/_/g, ' ').toLowerCase())
+                )
+
+                const filteredTagsForClassification = tagsForClassification.filter(t => {
+                    // Unescape parentheses from displayContent (e.g. "name \(source\)") to match raw tag "name (source)"
+                    const normalized = t.replace(/\\\(/g, "(").replace(/\\\)/g, ")").toLowerCase()
+                    return !characterTagsSet.has(normalized)
+                })
+
+                const filteredTeachTags = teachTagsForClassification.filter(t => {
+                    const normalized = t.replace(/\\\(/g, "(").replace(/\\\)/g, ")").toLowerCase()
+                    return !characterTagsSet.has(normalized)
+                })
+
+                const classifiedTags = classifyTags(filteredTagsForClassification, tagOverrides)
+                const classifiedTeachTags = classifyTags(filteredTeachTags, tagOverrides)
                 
                 const fileUrl = post.large_file_url || post.file_url
                 const isImage = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
@@ -1647,6 +1724,92 @@ export default function DanbooruPromptGenerator() {
                                 </>
                               )}
                             </Button>
+                            
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className="px-3 focus-ring"
+                                  disabled={!displayContent}
+                                >
+                                  <ChevronDown className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Copy Options</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={async () => {
+                                  if (!displayContent) return
+                                  const subset = classifiedTags.scenery
+                                  if (subset.length > 0) {
+                                    await copyToClipboard(subset.join(', '), post.id, false, post.preview_file_url)
+                                  } else {
+                                    toast({ description: "No scenery tags found", variant: "destructive" })
+                                  }
+                                }}>
+                                  <Mountain className="mr-2 h-4 w-4" /> 
+                                  <span className="flex-1">Scenery</span>
+                                  <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                    {classifiedTags.scenery.length}
+                                  </span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={async () => {
+                                  if (!displayContent) return
+                                  const subset = classifiedTags.pose
+                                  if (subset.length > 0) {
+                                    await copyToClipboard(subset.join(', '), post.id, false, post.preview_file_url)
+                                  } else {
+                                    toast({ description: "No pose tags found", variant: "destructive" })
+                                  }
+                                }}>
+                                  <User className="mr-2 h-4 w-4" /> 
+                                  <span className="flex-1">Pose</span>
+                                  <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                    {classifiedTags.pose.length}
+                                  </span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={async () => {
+                                  if (!displayContent) return
+                                  const subset = classifiedTags.clothing
+                                  if (subset.length > 0) {
+                                    await copyToClipboard(subset.join(', '), post.id, false, post.preview_file_url)
+                                  } else {
+                                    toast({ description: "No clothing tags found", variant: "destructive" })
+                                  }
+                                }}>
+                                  <Shirt className="mr-2 h-4 w-4" /> 
+                                  <span className="flex-1">Clothing</span>
+                                  <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                    {classifiedTags.clothing.length}
+                                  </span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={async () => {
+                                  if (!displayContent) return
+                                  const subset = classifiedTags.appearance
+                                  if (subset.length > 0) {
+                                    await copyToClipboard(subset.join(', '), post.id, false, post.preview_file_url)
+                                  } else {
+                                    toast({ description: "No appearance tags found", variant: "destructive" })
+                                  }
+                                }}>
+                                  <Smile className="mr-2 h-4 w-4" /> 
+                                  <span className="flex-1">Appearance</span>
+                                  <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                    {classifiedTags.appearance.length}
+                                  </span>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  onSelect={(e) => {
+                                    e.preventDefault()
+                                    setTeachModalData({ open: true, tags: classifiedTeachTags })
+                                  }}
+                                >
+                                  <GraduationCap className="mr-2 h-4 w-4" />
+                                  Teach
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
 
                             <Button variant="outline" asChild className="focus-ring bg-transparent flex-1 sm:flex-none">
                               <a
@@ -1816,6 +1979,7 @@ export default function DanbooruPromptGenerator() {
           initialClassifiedTags={teachModalData.tags}
         />
       )}
+      <TeachWelcomeModal triggerOpen={showWelcomeModal} />
     </TooltipProvider>
   )
 }

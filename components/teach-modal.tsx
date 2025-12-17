@@ -35,9 +35,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2 } from "lucide-react"
-import { submitTagSuggestions } from '@/app/actions/suggestions'
+import { Loader2, GripVertical, Info } from "lucide-react"
+import { submitTagSuggestions, getExistingSuggestions } from '@/app/actions/suggestions'
 import { TagCategory } from '@/lib/tag-classifier'
+import { cn } from "@/lib/utils"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 // --- Types ---
 
@@ -50,17 +64,33 @@ interface TeachModalProps {
   initialClassifiedTags: Record<ColumnId, string[]>
 }
 
-const COLUMNS: { id: ColumnId; title: string }[] = [
-  { id: 'appearance', title: 'Appearance' },
-  { id: 'clothing', title: 'Clothing' },
-  { id: 'pose', title: 'Pose' },
-  { id: 'scenery', title: 'Scenery' },
-  { id: 'other', title: 'Unclassified' },
+const COLUMNS: { id: ColumnId; title: string; description: string }[] = [
+  { id: 'appearance', title: 'Appearance', description: 'Physical traits like eye color, hair style, skin tone' },
+  { id: 'clothing', title: 'Clothing', description: 'Attire, accessories, and footwear' },
+  { id: 'pose', title: 'Pose', description: 'Body position, gestures, and angles' },
+  { id: 'scenery', title: 'Scenery', description: 'Background, location, and environmental elements' },
+  { id: 'other', title: 'Unclassified', description: 'Tags that need categorization' },
 ]
+
+const CATEGORY_STYLES: Record<string, string> = {
+  appearance: "border-blue-500/50 bg-blue-500/5 hover:border-blue-500 hover:bg-blue-500/10",
+  clothing: "border-green-500/50 bg-green-500/5 hover:border-green-500 hover:bg-green-500/10",
+  pose: "border-purple-500/50 bg-purple-500/5 hover:border-purple-500 hover:bg-purple-500/10",
+  scenery: "border-orange-500/50 bg-orange-500/5 hover:border-orange-500 hover:bg-orange-500/10",
+  other: "border-muted-foreground/30 bg-muted/30"
+}
+
+const COLUMN_HEADER_STYLES: Record<string, string> = {
+  appearance: "border-blue-500/20 bg-blue-500/5 text-blue-700 dark:text-blue-300",
+  clothing: "border-green-500/20 bg-green-500/5 text-green-700 dark:text-green-300",
+  pose: "border-purple-500/20 bg-purple-500/5 text-purple-700 dark:text-purple-300",
+  scenery: "border-orange-500/20 bg-orange-500/5 text-orange-700 dark:text-orange-300",
+  other: "border-muted-foreground/20 bg-muted/40"
+}
 
 // --- Sortable Item Component ---
 
-function SortableItem({ id, category }: { id: string, category: ColumnId }) {
+function SortableItem({ id, category, suggestedCategory }: { id: string, category: ColumnId, suggestedCategory?: string }) {
   const {
     attributes,
     listeners,
@@ -75,45 +105,102 @@ function SortableItem({ id, category }: { id: string, category: ColumnId }) {
     transition,
   }
 
-  return (
+  // Determine styles
+   let itemStyles = "border bg-card text-card-foreground shadow-sm hover:border-primary/50 hover:shadow-md"
+   let showSuggestion = false
+   let suggestionLabel = ""
+   
+   if (category === 'other' && suggestedCategory && suggestedCategory !== 'other') {
+     showSuggestion = true
+     itemStyles = CATEGORY_STYLES[suggestedCategory] || itemStyles
+     // Simple capitalize for label since we removed the map
+     suggestionLabel = suggestedCategory.charAt(0).toUpperCase() + suggestedCategory.slice(1)
+   }
+
+   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className={`
-        p-2 mb-2 rounded border bg-card shadow-sm cursor-grab active:cursor-grabbing text-sm break-words
-        ${isDragging ? 'opacity-50 ring-2 ring-primary' : 'hover:border-primary/50'}
-      `}
+      className={cn(
+        "group relative flex items-center gap-2 p-3 mb-2 rounded-lg border transition-all touch-none cursor-grab active:cursor-grabbing",
+        isDragging 
+          ? "opacity-50 ring-2 ring-primary z-50 shadow-xl scale-105 bg-card" 
+          : itemStyles
+      )}
     >
-      {id}
+      <div 
+        className="p-1 -ml-1 rounded text-muted-foreground/50 group-hover:text-foreground transition-colors"
+      >
+        <GripVertical className="h-4 w-4" />
+      </div>
+      <div className="flex flex-col min-w-0 flex-1">
+        <span className="text-sm font-medium leading-tight break-all select-none">
+          {id}
+        </span>
+        {showSuggestion && !isDragging && (
+           <span className="text-[10px] text-muted-foreground font-normal mt-0.5 flex items-center gap-1">
+              Suggested: {suggestionLabel}
+           </span>
+         )}
+      </div>
     </div>
   )
 }
 
 // --- Column Component ---
 
-function Column({ id, title, items }: { id: ColumnId, title: string, items: string[] }) {
+function Column({ id, title, description, items, suggestions }: { id: ColumnId, title: string, description: string, items: string[], suggestions: Record<string, string> }) {
   const { setNodeRef } = useSortable({ id })
+  
+  const headerStyle = COLUMN_HEADER_STYLES[id] || COLUMN_HEADER_STYLES.other
 
   return (
-    <div className="flex flex-col h-full min-w-[160px] w-48 bg-muted/30 rounded-lg p-2 mx-1 shrink-0">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-sm truncate pr-2" title={title}>{title}</h3>
-        <Badge variant="secondary" className="text-xs px-1.5 h-5 min-w-[1.25rem] justify-center">{items.length}</Badge>
-      </div>
-      <div className="flex-1 overflow-y-auto pr-2 -mr-2 scrollbar-thin scrollbar-thumb-rounded-md scrollbar-thumb-muted-foreground/20">
-        <div ref={setNodeRef} className="min-h-[100px]">
-          <SortableContext 
-            id={id}
-            items={items} 
-            strategy={verticalListSortingStrategy}
-          >
-            {items.map((item) => (
-              <SortableItem key={item} id={item} category={id} />
-            ))}
-          </SortableContext>
+    <div className={cn("flex flex-col h-full flex-1 min-w-0 rounded-xl border p-1 transition-colors", headerStyle)}>
+      <div className="flex items-center justify-between p-3 shrink-0 gap-2">
+        <div className="flex items-center gap-2 overflow-hidden min-w-0">
+          <h3 className="font-semibold text-sm truncate">{title}</h3>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3 w-3 opacity-50 hover:opacity-100 transition-opacity cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">{description}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
+        <Badge variant="secondary" className="text-xs font-mono bg-background/50 hover:bg-background/80">
+          {items.length}
+        </Badge>
+      </div>
+      
+      <div className="flex-1 overflow-hidden px-2 pb-2">
+        <ScrollArea className="h-full pr-3">
+          <div ref={setNodeRef} className="min-h-[150px] flex flex-col gap-1 pb-4">
+            <SortableContext 
+              id={id}
+              items={items} 
+              strategy={verticalListSortingStrategy}
+            >
+              {items.map((item) => (
+                <SortableItem 
+                  key={item} 
+                  id={item} 
+                  category={id} 
+                  suggestedCategory={suggestions[item]}
+                />
+              ))}
+              {items.length === 0 && (
+                <div className="h-24 rounded-lg border-2 border-dashed border-muted-foreground/20 flex items-center justify-center text-xs text-muted-foreground/50">
+                  Drop items here
+                </div>
+              )}
+            </SortableContext>
+          </div>
+        </ScrollArea>
       </div>
     </div>
   )
@@ -125,12 +212,22 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
   const [items, setItems] = useState<Items>(initialClassifiedTags)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [existingSuggestions, setExistingSuggestions] = useState<Record<string, string>>({})
+  const [showExitAlert, setShowExitAlert] = useState(false)
   const { toast } = useToast()
 
   // Reset items when modal opens or props change
   useEffect(() => {
     if (open) {
       setItems(initialClassifiedTags)
+      
+      // Fetch existing suggestions
+      const allTags = Object.values(initialClassifiedTags).flat()
+      if (allTags.length > 0) {
+        getExistingSuggestions(allTags).then(suggestions => {
+          setExistingSuggestions(suggestions)
+        })
+      }
     }
   }, [open, initialClassifiedTags])
 
@@ -324,12 +421,15 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
 
   const handleCancel = () => {
     if (hasChanges()) {
-      if (window.confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-        onOpenChange(false)
-      }
+      setShowExitAlert(true)
     } else {
       onOpenChange(false)
     }
+  }
+
+  const handleConfirmExit = () => {
+    setShowExitAlert(false)
+    onOpenChange(false)
   }
 
   const dropAnimation: DropAnimation = {
@@ -350,60 +450,99 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
   }, [])
 
   return (
-    <Dialog open={open} onOpenChange={(val) => !val ? handleCancel() : onOpenChange(val)}>
-      {/* 
-         Using !important modifiers to force centering and override any conflicting styles 
-         from the base component or animations.
-      */}
-      <DialogContent className="!fixed !left-[50%] !top-[50%] !-translate-x-[50%] !-translate-y-[50%] z-[100] max-w-[95vw] w-fit max-h-[90vh] flex flex-col p-0 gap-0 border bg-background shadow-lg sm:rounded-lg overflow-hidden">
-        <DialogHeader className="p-6 pb-2 shrink-0">
-          <DialogTitle>Suggest Tag Categories</DialogTitle>
-          <DialogDescription>
-            Drag and drop tags to their correct categories. Your suggestions will be reviewed by the community.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-x-auto overflow-y-hidden p-6 pt-2 h-[70vh] min-h-[400px]">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCorners}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-          >
-            <div className="flex h-full pb-4">
-              {COLUMNS.map((col) => (
-                <Column 
-                  key={col.id} 
-                  id={col.id} 
-                  title={col.title} 
-                  items={items[col.id]} 
-                />
-              ))}
+    <>
+      <Dialog open={open} onOpenChange={(val) => !val ? handleCancel() : onOpenChange(val)}>
+        <DialogContent className="max-w-[95vw] w-full lg:max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl">
+          <DialogHeader className="p-6 pb-4 shrink-0 border-b bg-muted/20">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <DialogTitle className="text-xl">Suggest Tag Categories</DialogTitle>
+                <DialogDescription className="text-base">
+                  Drag and drop tags to their correct categories to help improve our classification system.
+                </DialogDescription>
+              </div>
+              <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground bg-background/50 p-2 rounded-md border shrink-0">
+                <Info className="h-4 w-4 text-blue-500" />
+                <p className="max-w-[200px] leading-tight">Colored tags in <span className="font-medium">Unclassified</span> are pending suggestions.</p>
+              </div>
             </div>
-            {mounted && createPortal(
-              <DragOverlay dropAnimation={dropAnimation} zIndex={10000}>
-                {activeId ? (
-                  <div className="p-2 rounded border bg-card shadow-lg cursor-grabbing opacity-90 w-[200px] ring-2 ring-primary">
-                    {activeId}
-                  </div>
-                ) : null}
-              </DragOverlay>,
-              document.body
-            )}
-          </DndContext>
-        </div>
+          </DialogHeader>
 
-        <DialogFooter className="p-6 pt-2 shrink-0 border-t bg-background">
-          <Button variant="outline" onClick={handleCancel} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={!hasChanges() || isSubmitting}>
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Submit Suggestions
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <div className="flex-1 overflow-hidden bg-background/50">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCorners}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="h-[65vh] w-full p-6">
+                <div className="flex h-full gap-4 w-full">
+                  {COLUMNS.map((col) => (
+                    <Column 
+                      key={col.id} 
+                      id={col.id} 
+                      title={col.title}
+                      description={col.description}
+                      items={items[col.id]} 
+                      suggestions={existingSuggestions}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {mounted && createPortal(
+                <DragOverlay dropAnimation={dropAnimation} zIndex={10000}>
+                  {activeId ? (
+                     <div className="group relative flex items-center gap-2 p-3 rounded-lg border bg-card text-card-foreground shadow-xl ring-2 ring-primary opacity-90 scale-105 w-[280px]">
+                       <div className="p-1 -ml-1 text-muted-foreground">
+                         <GripVertical className="h-4 w-4" />
+                       </div>
+                       <span className="text-sm font-medium leading-tight break-all">
+                         {activeId}
+                       </span>
+                     </div>
+                  ) : null}
+                </DragOverlay>,
+                document.body
+              )}
+            </DndContext>
+          </div>
+
+          <DialogFooter className="p-4 shrink-0 border-t bg-muted/20 gap-2 sm:gap-0">
+            <div className="flex items-center gap-2 mr-auto text-xs text-muted-foreground hidden sm:flex">
+               <Info className="h-3 w-3" />
+               <span>Changes are auto-saved locally until submission</span>
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto justify-end">
+              <Button variant="outline" onClick={handleCancel} disabled={isSubmitting}>
+                Cancel
+              </Button>
+              <Button onClick={handleSubmit} disabled={!hasChanges() || isSubmitting}>
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Submit Suggestions
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showExitAlert} onOpenChange={setShowExitAlert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to leave?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. If you leave now, your tag classification suggestions will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Continue Editing</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmExit} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

@@ -22,7 +22,7 @@ export default function AdminLoginPage() {
     try {
       const result = await loginAdmin(password)
       if (result.success) {
-        router.refresh()
+        router.push('/admin')
       } else {
         setError(result.message || 'Login failed')
       }

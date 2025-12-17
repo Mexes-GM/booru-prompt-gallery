@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 // Schema Validation
 const TagReclassificationSchema = z.object({
-  tagName: z.string().min(1).max(100),
+  tagName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_\-\s:()]+$/, "Invalid tag format"),
   currentCategory: z.enum(['clothing', 'pose', 'scenery', 'appearance', 'other']),
   suggestedCategory: z.enum(['clothing', 'pose', 'scenery', 'appearance', 'other'])
 })
@@ -187,4 +187,50 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
     success: true, 
     message: `Successfully submitted suggestions.`
   }
+}
+
+export async function getExistingSuggestions(tagNames: string[]): Promise<Record<string, string>> {
+  if (!tagNames.length) return {}
+
+  // 1. Get Tag IDs
+  const { data: tags, error: tagError } = await supabaseAdmin
+    .from('tags')
+    .select('id, name')
+    .in('name', tagNames)
+
+  if (tagError || !tags) {
+    console.error("Error fetching tags:", tagError)
+    return {}
+  }
+
+  const tagIdMap = new Map(tags.map(t => [t.id, t.name]))
+  const tagIds = tags.map(t => t.id)
+
+  if (!tagIds.length) return {}
+
+  // 2. Get Pending Suggestions
+  // We prioritize the most recent suggestion if there are multiple
+  const { data: suggestions, error: suggestionError } = await supabaseAdmin
+    .from('tag_suggestions')
+    .select('tag_id, suggested_category')
+    .in('tag_id', tagIds)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+
+  if (suggestionError || !suggestions) {
+    console.error("Error fetching suggestions:", suggestionError)
+    return {}
+  }
+
+  // 3. Map back to tag names
+  const result: Record<string, string> = {}
+  
+  suggestions.forEach(s => {
+    const tagName = tagIdMap.get(s.tag_id)
+    if (tagName && !result[tagName]) {
+      result[tagName] = s.suggested_category
+    }
+  })
+
+  return result
 }

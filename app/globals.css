@@ -320,7 +320,6 @@ select,
 /* Prevent DOM manipulation issues on dynamic UI components */
 [data-radix-popper-content-wrapper],
 [data-radix-portal],
-[data-state],
 [data-side],
 [data-align],
 [data-radix-collection-item] {
