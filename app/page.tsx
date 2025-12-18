@@ -118,6 +118,7 @@ export default function DanbooruPromptGenerator() {
   const [hasPromptFilter, setHasPromptFilter] = useState(false)
   const [removeLoRaTags, setRemoveLoRaTags] = useState(false)
   const [removeQualityTags, setRemoveQualityTags] = useState(false)
+  const [tagCountFilter, setTagCountFilter] = useState("5") // Default to >5 tags
   const [isClient, setIsClient] = useState(false)
   const [previousRatingFilter, setPreviousRatingFilter] = useState<string>("rating:general") // Store rating before switching to Rule34
   const [isLoadingLock, setIsLoadingLock] = useState(false) // Prevent race conditions on "Load More"
@@ -126,6 +127,9 @@ export default function DanbooruPromptGenerator() {
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
   const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  
+  const isTagCountValid = !tagCountFilter || /^\d+$/.test(tagCountFilter)
+  const isTagCountSupported = booruProvider === 'danbooru'
 
   // Fetch tag overrides on mount
   useEffect(() => {
@@ -148,7 +152,12 @@ export default function DanbooruPromptGenerator() {
     const savedRatingFilter = userPreferences.getRatingFilter()
     const savedHistory = userPreferences.getHistory()
     
-    setBooruProvider(savedProvider)
+    // Force switch from Aibooru if it was saved (TEMPORARILY DISABLED)
+    if (savedProvider === 'aibooru') {
+      setBooruProvider('danbooru')
+    } else {
+      setBooruProvider(savedProvider)
+    }
     setRemoveLoRaTags(savedRemoveLoRa)
     setRemoveQualityTags(savedRemoveQuality)
     setRatingFilter(savedRatingFilter)
@@ -200,7 +209,7 @@ export default function DanbooruPromptGenerator() {
     size,
     setSize,
     mutate,
-  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter)
+  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter, tagCountFilter)
 
   // Fetch favorite posts separately
   const {
@@ -594,7 +603,7 @@ export default function DanbooruPromptGenerator() {
     setNoMoreResults(false)
     setLoadMoreError(false)
     setLastLoadAttempt(0)
-  }, [order, ratingFilter, debouncedSearchTags, setSize])
+  }, [order, ratingFilter, debouncedSearchTags, tagCountFilter, setSize])
 
   // Load persisted exclude tags on mount
   useEffect(() => {
@@ -614,6 +623,28 @@ export default function DanbooruPromptGenerator() {
       try {
         const saved = localStorage.getItem('addTags')
         if (saved !== null) setAddInput(saved)
+      } catch {
+        // ignore
+      }
+    }
+  }, [])
+
+  // Load persisted tag count filter on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('tagCountFilter')
+        if (saved !== null) {
+          // Strip any non-digit characters to handle migration from old format
+          const cleanSaved = saved.replace(/\D/g, '')
+          // Ensure minimum is 5
+          const val = parseInt(cleanSaved)
+          if (!isNaN(val) && val >= 5) {
+            setTagCountFilter(cleanSaved)
+          } else {
+            setTagCountFilter("5")
+          }
+        }
       } catch {
         // ignore
       }
@@ -672,6 +703,17 @@ export default function DanbooruPromptGenerator() {
       }
     }
   }, [addInput])
+
+  // Persist tag count filter whenever it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('tagCountFilter', tagCountFilter)
+      } catch {
+        // ignore
+      }
+    }
+  }, [tagCountFilter])
 
   // Note: Filter changes are now tracked directly in the UI event handlers
 
@@ -1213,21 +1255,34 @@ export default function DanbooruPromptGenerator() {
                         >
                           Danbooru
                         </Button>
-                        <Button
-                          type="button"
-                          variant={booruProvider === "aibooru" ? "secondary" : "ghost"}
-                          onClick={() => {
-                            if (booruProvider === "rule34" && ratingFilter === "all") {
-                              setRatingFilter(previousRatingFilter)
-                              trackRatingChange(previousRatingFilter)
-                            }
-                            setBooruProvider("aibooru")
-                            trackProviderChange("aibooru")
-                          }}
-                          className={`h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "aibooru" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                        >
-                          Aibooru
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span tabIndex={0}> {/* Wrap in span to allow tooltip on disabled button */}
+                              <Button
+                                type="button"
+                                variant={booruProvider === "aibooru" ? "secondary" : "ghost"}
+                                disabled={true}
+                                onClick={() => {
+                                  // Disabled
+                                  /*
+                                  if (booruProvider === "rule34" && ratingFilter === "all") {
+                                    setRatingFilter(previousRatingFilter)
+                                    trackRatingChange(previousRatingFilter)
+                                  }
+                                  setBooruProvider("aibooru")
+                                  trackProviderChange("aibooru")
+                                  */
+                                }}
+                                className={`h-8 text-sm px-4 flex-1 sm:flex-none opacity-50 cursor-not-allowed ${booruProvider === "aibooru" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                              >
+                                Aibooru
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Temporarily disabled due to provider issues</p>
+                          </TooltipContent>
+                        </Tooltip>
                         <Button
                           type="button"
                           variant={booruProvider === "rule34" ? "secondary" : "ghost"}
@@ -1432,6 +1487,48 @@ export default function DanbooruPromptGenerator() {
                                 )}
                               </div>
                             </div>
+                            <div className="space-y-2">
+                              <label htmlFor="tag-count" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                <span className={`w-1.5 h-1.5 rounded-full ${isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}`}></span>
+                                Minimum Tag Count ({`>`} X)
+                              </label>
+                              <div className="relative">
+                                <Input
+                                  id="tag-count"
+                                  type="number"
+                                  min={5}
+                                  value={tagCountFilter}
+                                  onChange={(e) => setTagCountFilter(e.target.value)}
+                                  onBlur={() => {
+                                    const val = parseInt(tagCountFilter)
+                                    if (!tagCountFilter || isNaN(val) || val < 5) {
+                                      setTagCountFilter("5")
+                                    }
+                                  }}
+                                  placeholder="e.g. 5"
+                                  disabled={!isTagCountSupported}
+                                  className={`h-9 text-sm bg-background/50 ${!isTagCountValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
+                                />
+                                {tagCountFilter && tagCountFilter !== "5" && isTagCountSupported && (
+                                  <button type="button" onClick={() => setTagCountFilter("5")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1">
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                              {!isTagCountSupported ? (
+                                <p className="text-[10px] text-muted-foreground italic">
+                                  Only supported on Danbooru
+                                </p>
+                              ) : !isTagCountValid ? (
+                                <p className="text-[10px] text-red-500">
+                                  Invalid format. Use numbers only (minimum 5).
+                                </p>
+                              ) : (
+                                <p className="text-[10px] text-muted-foreground">
+                                  Shows posts with more than X tags (min 5).
+                                </p>
+                              )}
+                            </div>
                           </div>
 
                           {/* Options & Switches */}
@@ -1500,10 +1597,10 @@ export default function DanbooruPromptGenerator() {
 
                   {/* Status & Alerts */}
                   <div className="space-y-2">
-                    {getFinalQueryTags(searchTags, ratingFilter, order).length > 0 && (
+                    {getFinalQueryTags(searchTags, ratingFilter, order, tagCountFilter, booruProvider).length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground bg-muted/20 p-2 rounded-md border border-border/30">
                         <span className="font-medium">Active Query:</span>
-                        {getFinalQueryTags(searchTags, ratingFilter, order).map((tag, index) => (
+                        {getFinalQueryTags(searchTags, ratingFilter, order, tagCountFilter, booruProvider).map((tag, index) => (
                           <Badge key={index} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 font-mono">
                             {tag}
                           </Badge>
@@ -1525,11 +1622,11 @@ export default function DanbooruPromptGenerator() {
                       </Alert>
                     )}
                     
-                    {hasMultipleTags(searchTags, order) && (
+                    {hasMultipleTags(searchTags, order, (tagCountFilter && isTagCountSupported) ? 1 : 0) && (
                       <Alert variant="destructive" className="py-2">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertDescription className="text-xs">
-                          Danbooru API limit: Only first 2 tags will be used.
+                          Danbooru API limit: Only first {order === 'recent' ? 2 - ((tagCountFilter && isTagCountSupported) ? 1 : 0) : 1 - ((tagCountFilter && isTagCountSupported) ? 1 : 0)} user tags will be used (Tag Count filter uses 1 slot).
                         </AlertDescription>
                       </Alert>
                     )}

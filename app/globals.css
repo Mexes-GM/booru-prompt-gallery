@@ -295,6 +295,17 @@ html {
   transition-duration: 150ms;
 }
 
+/* Hide number input spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 /* Browser translation protection - selective approach */
 .notranslate {
   -webkit-transform: translateZ(0);

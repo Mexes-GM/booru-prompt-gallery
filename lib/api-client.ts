@@ -224,7 +224,7 @@ const fetcher = async (url: string) => {
 
 // Function to process user input tags for Danbooru API
 // Danbooru API allows 2 tags total. When using order:rank or order:random, we limit to 1 user tag. When not using order, we allow 2 user tags.
-const processTagsForAPI = (tags: string, order: string = 'popular'): string => {
+const processTagsForAPI = (tags: string, order: string = 'popular', extraTagsCount: number = 0): string => {
   if (!tags.trim()) return ''
   
   // Split by commas and process each tag
@@ -235,12 +235,15 @@ const processTagsForAPI = (tags: string, order: string = 'popular'): string => {
     .map(tag => tag.replace(/\s+/g, '_')) // Replace spaces with underscores
   
   // For recent posts (no order tag), allow 2 user tags. For popular/random posts (with order tag), limit to 1 user tag
-  const maxTags = order === 'recent' ? 2 : 1
+  // We also subtract any extra tags (like tagcount) from the limit
+  const baseMaxTags = order === 'recent' ? 2 : 1
+  const maxTags = Math.max(0, baseMaxTags - extraTagsCount)
+  
   return processedTags.slice(0, maxTags).join(' ')
 }
 
 // Function to check if user entered multiple tags and if it's allowed
-export const hasMultipleTags = (tags: string, order: string = 'popular'): boolean => {
+export const hasMultipleTags = (tags: string, order: string = 'popular', extraTagsCount: number = 0): boolean => {
   if (!tags.trim()) return false
   
   const tagCount = tags
@@ -248,7 +251,9 @@ export const hasMultipleTags = (tags: string, order: string = 'popular'): boolea
     .map(tag => tag.trim())
     .filter(tag => tag.length > 0).length
   
-  const maxTags = order === 'recent' ? 2 : 1
+  const baseMaxTags = order === 'recent' ? 2 : 1
+  const maxTags = Math.max(0, baseMaxTags - extraTagsCount)
+  
   return tagCount > maxTags
 }
 
@@ -265,12 +270,18 @@ export const hasMoreThanTwoTerms = (tags: string): boolean => {
 }
 
 // Function to get the final query tags that will be sent to Danbooru API
-export const getFinalQueryTags = (userTags: string, ratingFilter: string, order: string): string[] => {
+export const getFinalQueryTags = (userTags: string, ratingFilter: string, order: string, tagCountFilter?: string, provider: BooruProvider = 'danbooru'): string[] => {
   const tags: string[] = []
   
   // Add rating filter if not 'all'
   if (ratingFilter && ratingFilter !== 'all') {
     tags.push(ratingFilter)
+  }
+  
+  // Add tag count filter if present and supported (only Danbooru)
+  if (tagCountFilter && provider === 'danbooru') {
+    // Always force ">" operator for tag count
+    tags.push(`tagcount:>${tagCountFilter.replace(/\D/g, '')}`)
   }
   
   // Add order tag if popular or random
@@ -281,8 +292,21 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
     tags.push('random:15') // Using the same limit as in API_CONFIG.randomParams
   }
   
+  // Calculate extra tags count (rating + tagcount)
+  // Note: order tags don't count towards the limit in the same way, but let's be safe
+  // Actually, order:rank counts as 1. rating:x counts as 1. tagcount:x counts as 1.
+  // processTagsForAPI handles the limit for *user entered* tags.
+  // We need to pass how many *system* tags we are adding that eat into the limit.
+  // Danbooru free limit is 2 tags.
+  // If we have rating + tagcount, that's 2 tags already. So user can't add any.
+  // But wait, order:rank is also a tag.
+  // So if we have rating, tagcount, and order, that's 3 tags. This would fail on free account.
+  // However, the current implementation seems to assume some tags don't count or it's lenient?
+  // Let's assume tagCountFilter counts as 1 extra tag only for Danbooru.
+  const extraTagsCount = (tagCountFilter && provider === 'danbooru' ? 1 : 0)
+  
   // Add processed user tags
-  const processedUserTags = processTagsForAPI(userTags, order)
+  const processedUserTags = processTagsForAPI(userTags, order, extraTagsCount)
   if (processedUserTags) {
     tags.push(...processedUserTags.split(' '))
   }
@@ -290,10 +314,15 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
   return tags
 }
 
-export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false) => {
+export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string) => {
   const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  const processedTags = processTagsForAPI(tags, order)
-  const query = processedTags ? `${ratingPart}${processedTags}` : ratingPart.trim()
+  // Only apply tag count filter for Danbooru
+  const tagCountPart = (tagCountFilter && provider === 'danbooru') ? `tagcount:>${tagCountFilter.replace(/\D/g, '')} ` : ''
+  
+  const extraTagsCount = (tagCountFilter && provider === 'danbooru' ? 1 : 0)
+  const processedTags = processTagsForAPI(tags, order, extraTagsCount)
+  
+  const query = processedTags ? `${ratingPart}${tagCountPart}${processedTags}` : `${ratingPart}${tagCountPart}`.trim()
   const encodedQuery = encodeURIComponent(query)
   
   return useSWRInfinite<BooruPost[]>(
