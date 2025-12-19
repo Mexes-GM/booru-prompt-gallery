@@ -62,7 +62,7 @@ export function TeachWelcomeModal({ triggerOpen }: { triggerOpen?: boolean }) {
             <div className="space-y-2">
               <h4 className="text-base font-semibold">Copy by Category</h4>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Need only the outfit or the pose? You can now copy specific parts of a prompt! Click the arrow next to the "Copy" button to select exactly what you need: 
+                Need only the outfit or the pose? You can now copy specific parts of a prompt! Click the arrow next to the &quot;Copy&quot; button to select exactly what you need: 
               </p>
               <div className="flex flex-wrap gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-muted/50 border rounded-md text-xs font-medium text-foreground">

@@ -7,6 +7,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { checkAdminAuth } from "@/app/actions/auth"
 import AdminLoginPage from "./login/page"
 import { LogoutButton } from "@/components/admin-logout-button"
+import Link from "next/link"
 
 export default async function AdminLayout({
   children,
@@ -26,8 +27,8 @@ export default async function AdminLayout({
           <h1 className="font-semibold text-lg">Booru Gallery Admin</h1>
           <Separator orientation="vertical" className="mr-2 h-4" />
           <nav className="flex items-center gap-4 text-sm font-medium">
-              <a href="/admin/suggestions" className="transition-colors hover:text-foreground/80 text-foreground">Suggestions</a>
-              <a href="/" className="transition-colors hover:text-foreground/80 text-foreground/60">Back to App</a>
+              <Link href="/admin/suggestions" className="transition-colors hover:text-foreground/80 text-foreground">Suggestions</Link>
+              <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60">Back to App</Link>
           </nav>
         </div>
         <LogoutButton />

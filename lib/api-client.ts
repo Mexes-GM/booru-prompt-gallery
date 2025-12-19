@@ -1,6 +1,7 @@
 
 import useSWRInfinite from 'swr/infinite'
 import useSWR from 'swr'
+import { useApiStatus } from '@/hooks/use-api-status'
 import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
 
 // Re-export types
@@ -378,6 +379,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
 export function useFavoritePosts(favoriteIds: number[]) {
   const shouldFetch = favoriteIds.length > 0
   const cacheKey = shouldFetch ? `favorites-${favoriteIds.sort().join(',')}` : null
+  const { reportError, reportSlowResponse } = useApiStatus()
 
   const { data, error, isLoading, mutate } = useSWR(
     cacheKey,
@@ -398,10 +400,6 @@ export function useFavoritePosts(favoriteIds: number[]) {
         const responseTime = Date.now() - startTime
 
         if (!response.ok) {
-          // Importar dinámicamente para evitar dependencias circulares
-      const { useApiStatus } = await import('@/hooks/use-api-status')
-      const { reportError } = useApiStatus()
-          
           const errorData = new Error(`HTTP error! status: ${response.status}`) as Error & { info?: unknown; status?: number }
           errorData.status = response.status
           
@@ -413,18 +411,14 @@ export function useFavoritePosts(favoriteIds: number[]) {
         
         // Verificar si la respuesta fue lenta (>10 segundos)
         if (responseTime > 10000) {
-      const { useApiStatus } = await import('@/hooks/use-api-status')
-      const { reportSlowResponse } = useApiStatus()
           reportSlowResponse(responseTime)
         }
 
         const posts = await response.json()
         return posts
-  } catch (fetchError: any) {
+      } catch (fetchError: any) {
         // Si es un error de red o timeout
         if (fetchError instanceof TypeError || fetchError.name === 'AbortError') {
-          const { useApiStatus } = await import('@/hooks/use-api-status')
-          const { reportError } = useApiStatus()
           reportError(new Error('Error de conexión: No se pudo cargar favoritos'))
         }
         throw fetchError

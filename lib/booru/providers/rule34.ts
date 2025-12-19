@@ -61,9 +61,9 @@ export class Rule34Provider extends BaseBooruProvider {
     }
 
     let postsList = rawPosts
-    // @ts-ignore
+    // @ts-expect-error
     if (rawPosts && !Array.isArray(rawPosts) && rawPosts.post) {
-        // @ts-ignore
+        // @ts-expect-error
         postsList = Array.isArray(rawPosts.post) ? rawPosts.post : [rawPosts.post]
     } else if (!Array.isArray(rawPosts)) {
         postsList = []
