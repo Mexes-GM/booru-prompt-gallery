@@ -6,6 +6,7 @@ import {
   DndContext, 
   DragOverlay, 
   closestCorners, 
+  pointerWithin,
   KeyboardSensor, 
   PointerSensor, 
   useSensor, 
@@ -20,7 +21,7 @@ import {
   arrayMove, 
   SortableContext, 
   sortableKeyboardCoordinates, 
-  verticalListSortingStrategy,
+  rectSortingStrategy,
   useSortable
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -124,7 +125,7 @@ const SortableItem = memo(function SortableItem({ id, category, suggestedCategor
       {...attributes}
       {...listeners}
       className={cn(
-        "group relative flex items-center gap-2 p-3 mb-2 rounded-lg border transition-all touch-none cursor-grab active:cursor-grabbing",
+        "group relative inline-flex items-center gap-2 p-2 rounded-lg border transition-all touch-none cursor-grab active:cursor-grabbing",
         isDragging 
           ? "opacity-50 ring-2 ring-primary z-50 shadow-xl scale-105 bg-card" 
           : itemStyles
@@ -133,15 +134,15 @@ const SortableItem = memo(function SortableItem({ id, category, suggestedCategor
       <div 
         className="p-1 -ml-1 rounded text-muted-foreground/50 group-hover:text-foreground transition-colors"
       >
-        <GripVertical className="h-4 w-4" />
+        <GripVertical className="h-5 w-5 md:h-4 md:w-4" />
       </div>
-      <div className="flex flex-col min-w-0 flex-1">
-        <span className="text-sm font-medium leading-tight break-all select-none">
+      <div className="flex flex-col min-w-0">
+        <span className="text-base md:text-sm font-medium leading-tight select-none">
           {id}
         </span>
         {showSuggestion && !isDragging && (
            <span className="text-[10px] text-muted-foreground font-normal mt-0.5 flex items-center gap-1">
-              Suggested: {suggestionLabel}
+              {suggestionLabel}
            </span>
          )}
       </div>
@@ -157,14 +158,14 @@ const Column = memo(function Column({ id, title, description, items, suggestions
   const headerStyle = COLUMN_HEADER_STYLES[id] || COLUMN_HEADER_STYLES.other
 
   return (
-    <div className={cn("flex flex-col h-full flex-1 min-w-0 rounded-xl border p-1 transition-colors", headerStyle)}>
+    <div className={cn("flex flex-col h-auto md:h-full w-full md:w-auto flex-none md:flex-1 min-w-0 rounded-xl border p-1 transition-colors", headerStyle)}>
       <div className="flex items-center justify-between p-3 shrink-0 gap-2">
         <div className="flex items-center gap-2 overflow-hidden min-w-0">
-          <h3 className="font-semibold text-sm truncate">{title}</h3>
+          <h3 className="font-semibold text-base md:text-sm truncate">{title}</h3>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Info className="h-3 w-3 opacity-50 hover:opacity-100 transition-opacity cursor-help" />
+                <Info className="h-4 w-4 md:h-3 md:w-3 opacity-50 hover:opacity-100 transition-opacity cursor-help" />
               </TooltipTrigger>
               <TooltipContent>
                 <p className="text-xs">{description}</p>
@@ -177,13 +178,13 @@ const Column = memo(function Column({ id, title, description, items, suggestions
         </Badge>
       </div>
       
-      <div className="flex-1 overflow-hidden px-2 pb-2">
-        <ScrollArea className="h-full pr-3">
-          <div ref={setNodeRef} className="min-h-[150px] flex flex-col gap-1 pb-4">
+      <div className="flex-1 px-2 pb-2 min-h-0 flex flex-col">
+        <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
+          <div ref={setNodeRef} className="min-h-full flex flex-wrap gap-2 content-start pb-4">
             <SortableContext 
               id={id}
               items={items} 
-              strategy={verticalListSortingStrategy}
+              strategy={rectSortingStrategy}
             >
               {items.map((item) => (
                 <SortableItem 
@@ -194,13 +195,13 @@ const Column = memo(function Column({ id, title, description, items, suggestions
                 />
               ))}
               {items.length === 0 && (
-                <div className="h-24 rounded-lg border-2 border-dashed border-muted-foreground/20 flex items-center justify-center text-xs text-muted-foreground/50">
+                <div className="w-full h-24 rounded-lg border-2 border-dashed border-muted-foreground/20 flex items-center justify-center text-xs text-muted-foreground/50">
                   Drop items here
                 </div>
               )}
             </SortableContext>
           </div>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   )
@@ -220,23 +221,32 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
   // Reset items when modal opens or props change
   useEffect(() => {
     if (open) {
-      setItems(initialClassifiedTags)
-      setIsReady(false)
+      // Only update if the tags actually changed
+      const currentTagsJson = JSON.stringify(items)
+      const newTagsJson = JSON.stringify(initialClassifiedTags)
       
-      // Delay rendering of heavy content to allow modal animation to start
-      const timer = setTimeout(() => {
-        setIsReady(true)
-      }, 50)
-      
-      // Fetch existing suggestions
-      const allTags = Object.values(initialClassifiedTags).flat()
-      if (allTags.length > 0) {
-        getExistingSuggestions(allTags).then(suggestions => {
-          setExistingSuggestions(suggestions)
-        })
+      if (currentTagsJson !== newTagsJson) {
+        setItems(initialClassifiedTags)
+        setIsReady(false)
+        
+        // Delay rendering of heavy content to allow modal animation to start
+        const timer = setTimeout(() => {
+          setIsReady(true)
+        }, 50)
+        
+        // Fetch existing suggestions
+        const allTags = Object.values(initialClassifiedTags).flat()
+        if (allTags.length > 0) {
+          getExistingSuggestions(allTags).then(suggestions => {
+            setExistingSuggestions(suggestions)
+          })
+        }
+        
+        return () => clearTimeout(timer)
+      } else if (!isReady) {
+         // Ensure isReady is true if we didn't reset
+         setIsReady(true)
       }
-      
-      return () => clearTimeout(timer)
     }
   }, [open, initialClassifiedTags])
 
@@ -284,7 +294,14 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
     setItems((prev) => {
       const activeItems = prev[activeContainer]
       const overItems = prev[overContainer]
+      
+      // Safety check: Ensure item is actually in the source container in the current state
+      // This prevents infinite loops caused by stale closure state in handleDragOver
       const activeIndex = activeItems.indexOf(active.id as string)
+      if (activeIndex === -1) {
+         return prev
+      }
+      
       const overIndex = overItems.indexOf(overId as string)
 
       let newIndex
@@ -308,7 +325,7 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
         ],
         [overContainer]: [
           ...prev[overContainer].slice(0, newIndex),
-          items[activeContainer][activeIndex],
+          activeItems[activeIndex],
           ...prev[overContainer].slice(newIndex, prev[overContainer].length),
         ],
       }
@@ -469,11 +486,11 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
           overlayClassName="backdrop-blur-none bg-background/60"
           className="max-w-[95vw] w-full lg:max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl"
         >
-          <DialogHeader className="p-6 pb-4 shrink-0 border-b bg-muted/20">
+          <DialogHeader className="p-4 md:p-6 pb-3 md:pb-4 shrink-0 border-b bg-muted/20">
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-1.5">
-                <DialogTitle className="text-xl">Suggest Tag Categories</DialogTitle>
-                <DialogDescription className="text-base">
+                <DialogTitle className="text-lg md:text-xl">Suggest Tag Categories</DialogTitle>
+                <DialogDescription className="text-sm md:text-base">
                   Drag and drop tags to their correct categories to help improve our classification system.
                 </DialogDescription>
               </div>
@@ -492,13 +509,13 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
             ) : (
               <DndContext
                 sensors={sensors}
-                collisionDetection={closestCorners}
+                collisionDetection={pointerWithin}
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
               >
-                <div className="h-[65vh] w-full p-6">
-                  <div className="flex h-full gap-4 w-full">
+                <div className="h-[65vh] w-full overflow-y-auto md:overflow-hidden">
+                  <div className="flex flex-col md:flex-row h-auto md:h-full gap-3 md:gap-4 w-full p-2 md:p-6">
                     {COLUMNS.map((col) => (
                       <Column 
                         key={col.id} 
@@ -515,7 +532,7 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
                 {mounted && createPortal(
                   <DragOverlay dropAnimation={dropAnimation} zIndex={10000}>
                     {activeId ? (
-                       <div className="group relative flex items-center gap-2 p-3 rounded-lg border bg-card text-card-foreground shadow-xl ring-2 ring-primary opacity-90 scale-105 w-[280px]">
+                       <div className="group relative flex items-center gap-2 p-3 rounded-lg border bg-card text-card-foreground shadow-xl ring-2 ring-primary opacity-90 scale-105 w-[260px] md:w-[280px]">
                          <div className="p-1 -ml-1 text-muted-foreground">
                            <GripVertical className="h-4 w-4" />
                          </div>
@@ -531,16 +548,16 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
             )}
           </div>
 
-          <DialogFooter className="p-4 shrink-0 border-t bg-muted/20 gap-2 sm:gap-0">
+          <DialogFooter className="p-3 md:p-4 shrink-0 border-t bg-muted/20 gap-2 sm:gap-0">
             <div className="flex items-center gap-2 mr-auto text-xs text-muted-foreground hidden sm:flex">
                <Info className="h-3 w-3" />
                <span>Changes are auto-saved locally until submission</span>
             </div>
             <div className="flex gap-2 w-full sm:w-auto justify-end">
-              <Button variant="outline" onClick={handleCancel} disabled={isSubmitting}>
+              <Button variant="outline" onClick={handleCancel} disabled={isSubmitting} className="flex-1 sm:flex-none">
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} disabled={!hasChanges() || isSubmitting}>
+              <Button onClick={handleSubmit} disabled={!hasChanges() || isSubmitting} className="flex-1 sm:flex-none">
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Submit Suggestions
               </Button>

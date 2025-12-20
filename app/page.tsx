@@ -40,6 +40,7 @@ import { TeachWelcomeModal } from "@/components/teach-welcome-modal"
 import { getAllTagOverrides } from "@/app/actions/tags"
 import { VersionDisplay } from "@/components/version-display"
 import { useToast } from "@/hooks/use-toast"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
 import { useInfinitePosts, useFavoritePosts, hasMultipleTags, hasMoreThanTwoTerms, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
@@ -127,6 +128,15 @@ export default function DanbooruPromptGenerator() {
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
   const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  const isMobile = useIsMobile()
+  
+  const effectiveScale = useMemo(() => {
+    if (isMobile) {
+      if (cardScale === 'small') return 'large'
+      if (cardScale === 'large') return 'small'
+    }
+    return cardScale
+  }, [cardScale, isMobile])
   
   const isTagCountValid = !tagCountFilter || /^\d+$/.test(tagCountFilter)
   const isTagCountSupported = booruProvider === 'danbooru'
@@ -739,7 +749,7 @@ export default function DanbooruPromptGenerator() {
   }, [])
 
   const getCardContentClass = () => {
-    switch (cardScale) {
+    switch (effectiveScale) {
       case "small":
         return "card-content-small"
       case "medium":
@@ -752,7 +762,7 @@ export default function DanbooruPromptGenerator() {
   }
 
   const getIconClass = () => {
-    switch (cardScale) {
+    switch (effectiveScale) {
       case "small":
         return "icon-small"
       case "medium":
@@ -873,7 +883,7 @@ export default function DanbooruPromptGenerator() {
     
     const fileUrl = post.large_file_url || post.file_url
     
-    const footerHeight = SCALE_CONFIG[cardScale].footerHeight
+    const footerHeight = SCALE_CONFIG[effectiveScale].footerHeight
     const imageHeight = height - footerHeight
 
     return (
@@ -895,12 +905,12 @@ export default function DanbooruPromptGenerator() {
                 <Button
                   size="icon"
                   variant="secondary"
-                  className={`glass-effect ${cardScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
+                  className={`glass-effect ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
                   onClick={() => toggleFavorite(post.id)}
                   aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
                 >
                   <Heart
-                    className={`${cardScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
+                    className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
                   />
                 </Button>
               </TooltipTrigger>
@@ -913,12 +923,12 @@ export default function DanbooruPromptGenerator() {
                 <Button
                   size="icon"
                   variant="secondary"
-                  className={`glass-effect ${cardScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
+                  className={`glass-effect ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
                   onClick={() => downloadImage(post)}
                   aria-label="Download image"
                 >
                   <Download
-                    className={`${cardScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"}`}
+                    className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"}`}
                   />
                 </Button>
               </TooltipTrigger>
@@ -944,12 +954,12 @@ export default function DanbooruPromptGenerator() {
               {copiedId === post.id ? (
                 <>
                   <Check className={`${getIconClass()} mr-1`} />
-                  {cardScale === "small" ? "OK" : "Copied!"}
+                  {effectiveScale === "small" ? "OK" : "Copied!"}
                 </>
               ) : (
                 <>
                   <Copy className={`${getIconClass()} mr-1`} />
-                  {cardScale === "small" ? "Copy" : "Copy"}
+                  {effectiveScale === "small" ? "Copy" : "Copy"}
                 </>
               )}
             </Button>
@@ -1014,7 +1024,7 @@ export default function DanbooruPromptGenerator() {
                   variant="outline"
                   size="icon"
                   asChild
-                  className={`focus-ring bg-transparent h-auto ${cardScale === "small" ? "w-7" : ""}`}
+                  className={`focus-ring bg-transparent h-auto ${effectiveScale === "small" ? "w-7" : ""}`}
                 >
                   <a
                     href={isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`}
@@ -1033,7 +1043,7 @@ export default function DanbooruPromptGenerator() {
         </div>
       </Card>
     )
-  }, [cardScale, favorites, copiedId, excludeInput, addInput, includeCharacters, optimizeTags, removeLoRaTags, removeQualityTags, copyToClipboard, toggleFavorite, tagOverrides])
+  }, [effectiveScale, favorites, copiedId, excludeInput, addInput, includeCharacters, optimizeTags, removeLoRaTags, removeQualityTags, copyToClipboard, toggleFavorite, tagOverrides])
 
   return (
     <TooltipProvider>
@@ -1042,27 +1052,29 @@ export default function DanbooruPromptGenerator() {
         <header className="sticky top-0 z-50 w-full border-b glass-effect">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-3">
-                  <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                    Booru Prompt Gallery
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent leading-tight sm:leading-normal">
+                    Booru<span className="hidden sm:inline"> </span><br className="sm:hidden" />Prompt Gallery
                   </h1>
-                  <Badge variant="secondary" className="text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-2 py-1">
-                    By Mexes
-                  </Badge>
-                  <button 
-                    onClick={() => setShowWelcomeModal(true)}
-                    className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full"
-                    title="Show Teach System Info"
-                  >
-                    <VersionDisplay />
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-0.5 sm:gap-3">
+                    <Badge variant="secondary" className="text-[10px] sm:text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-1.5 py-0 sm:px-2 sm:py-1 h-fit">
+                      By Mexes
+                    </Badge>
+                    <button 
+                      onClick={() => setShowWelcomeModal(true)}
+                      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
+                      title="Show Teach System Info"
+                    >
+                      <VersionDisplay />
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <div className="flex items-center space-x-1 sm:space-x-2">
                 {viewMode === "grid" && (
-                  <div className="hidden sm:flex items-center space-x-2 border-r pr-2 mr-2">
+                  <div className="flex items-center space-x-2 border-r pr-2 mr-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -1641,7 +1653,7 @@ export default function DanbooruPromptGenerator() {
             <div className="mb-8 min-h-[500px]">
               <MasonryGrid
                 items={filteredPosts}
-                scale={cardScale}
+                scale={effectiveScale}
                 renderItem={renderMasonryItem}
               />
             </div>

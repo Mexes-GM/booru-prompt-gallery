@@ -101,9 +101,16 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
     const config = SCALE_CONFIG[scale]
     
     // Calculate number of columns
-    // Ensure at least 2 columns on mobile if possible, or 1 if very narrow
     let columnCount = Math.floor((debouncedContainerWidth + gap) / (config.minColumnWidth + gap))
-    columnCount = Math.max(isMobile ? 2 : 1, columnCount) // Enforce minimum columns
+
+    if (isMobile) {
+      // Mobile specific column counts
+      if (scale === 'small') columnCount = 3
+      else if (scale === 'medium') columnCount = 2
+      else if (scale === 'large') columnCount = 1
+    } else {
+      columnCount = Math.max(1, columnCount)
+    }
 
     // Calculate actual column width
     // (containerWidth - (columnCount - 1) * gap) / columnCount
