@@ -43,7 +43,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
-import { useInfinitePosts, useFavoritePosts, hasMultipleTags, hasMoreThanTwoTerms, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
+import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
 
 import { userPreferences, type HistoryItem } from "@/lib/storage"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -1624,21 +1624,12 @@ export default function DanbooruPromptGenerator() {
                         )}
                       </div>
                     )}
-
-                    {hasMoreThanTwoTerms(searchTags) && (
-                      <Alert variant="destructive" className="py-2">
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertDescription className="text-xs">
-                          Maximum 2 search terms allowed. Only the first 2 will be used.
-                        </AlertDescription>
-                      </Alert>
-                    )}
                     
-                    {hasMultipleTags(searchTags, order, (tagCountFilter && isTagCountSupported) ? 1 : 0) && (
+                    {hasMultipleTags(searchTags, order, 0) && (
                       <Alert variant="destructive" className="py-2">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertDescription className="text-xs">
-                          Danbooru API limit: Only first {order === 'recent' ? 2 - ((tagCountFilter && isTagCountSupported) ? 1 : 0) : 1 - ((tagCountFilter && isTagCountSupported) ? 1 : 0)} user tags will be used (Tag Count filter uses 1 slot).
+                          Danbooru API limit: Only first {order === 'recent' ? 2 : 1} user tags will be used.
                         </AlertDescription>
                       </Alert>
                     )}

@@ -229,28 +229,92 @@ const processTagsForAPI = (tags: string, order: string = 'popular', extraTagsCou
   if (!tags.trim()) return ''
   
   // Split by commas and process each tag
-  const processedTags = tags
+  const rawTags = tags
     .split(',')
     .map(tag => tag.trim())
     .filter(tag => tag.length > 0)
-    .map(tag => tag.replace(/\s+/g, '_')) // Replace spaces with underscores
+
+  const metaTagPatterns = [
+    /^tagcount:/i,
+    /^rating:/i,
+    /^order:/i,
+    /^sort:/i,
+    /^limit:/i,
+    /^status:/i,
+    /^user:/i,
+    /^approver:/i,
+    /^id:/i,
+    /^width:/i,
+    /^height:/i,
+    /^mpixels:/i,
+    /^score:/i,
+    /^favcount:/i,
+    /^date:/i,
+    /^source:/i,
+    /^pool:/i,
+    /^parent:/i,
+    /^md5:/i,
+    /^filetype:/i,
+    /^random:/i,
+  ]
+
+  const normalTags: string[] = []
+  const metaTags: string[] = []
+
+  rawTags.forEach(tag => {
+     // Check if it matches any meta tag pattern
+     if (metaTagPatterns.some(pattern => pattern.test(tag))) {
+       metaTags.push(tag.replace(/\s+/g, '_'))
+     } else {
+       normalTags.push(tag.replace(/\s+/g, '_'))
+     }
+  })
   
   // For recent posts (no order tag), allow 2 user tags. For popular/random posts (with order tag), limit to 1 user tag
   // We also subtract any extra tags (like tagcount) from the limit
   const baseMaxTags = order === 'recent' ? 2 : 1
   const maxTags = Math.max(0, baseMaxTags - extraTagsCount)
   
-  return processedTags.slice(0, maxTags).join(' ')
+  const allowedNormalTags = normalTags.slice(0, maxTags)
+  
+  return [...allowedNormalTags, ...metaTags].join(' ')
 }
 
 // Function to check if user entered multiple tags and if it's allowed
 export const hasMultipleTags = (tags: string, order: string = 'popular', extraTagsCount: number = 0): boolean => {
   if (!tags.trim()) return false
   
-  const tagCount = tags
+  const rawTags = tags
     .split(',')
     .map(tag => tag.trim())
-    .filter(tag => tag.length > 0).length
+    .filter(tag => tag.length > 0)
+    
+  const metaTagPatterns = [
+    /^tagcount:/i,
+    /^rating:/i,
+    /^order:/i,
+    /^sort:/i,
+    /^limit:/i,
+    /^status:/i,
+    /^user:/i,
+    /^approver:/i,
+    /^id:/i,
+    /^width:/i,
+    /^height:/i,
+    /^mpixels:/i,
+    /^score:/i,
+    /^favcount:/i,
+    /^date:/i,
+    /^source:/i,
+    /^pool:/i,
+    /^parent:/i,
+    /^md5:/i,
+    /^filetype:/i,
+    /^random:/i,
+  ]
+
+  const normalTags = rawTags.filter(tag => !metaTagPatterns.some(pattern => pattern.test(tag)))
+  const tagCount = normalTags.length
   
   const baseMaxTags = order === 'recent' ? 2 : 1
   const maxTags = Math.max(0, baseMaxTags - extraTagsCount)
@@ -299,12 +363,8 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
   // processTagsForAPI handles the limit for *user entered* tags.
   // We need to pass how many *system* tags we are adding that eat into the limit.
   // Danbooru free limit is 2 tags.
-  // If we have rating + tagcount, that's 2 tags already. So user can't add any.
-  // But wait, order:rank is also a tag.
-  // So if we have rating, tagcount, and order, that's 3 tags. This would fail on free account.
-  // However, the current implementation seems to assume some tags don't count or it's lenient?
-  // Let's assume tagCountFilter counts as 1 extra tag only for Danbooru.
-  const extraTagsCount = (tagCountFilter && provider === 'danbooru' ? 1 : 0)
+  // Metatags like tagcount and rating do not count towards the 2-tag limit.
+  const extraTagsCount = 0
   
   // Add processed user tags
   const processedUserTags = processTagsForAPI(userTags, order, extraTagsCount)
@@ -320,7 +380,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
   // Only apply tag count filter for Danbooru
   const tagCountPart = (tagCountFilter && provider === 'danbooru') ? `tagcount:>${tagCountFilter.replace(/\D/g, '')} ` : ''
   
-  const extraTagsCount = (tagCountFilter && provider === 'danbooru' ? 1 : 0)
+  const extraTagsCount = 0
   const processedTags = processTagsForAPI(tags, order, extraTagsCount)
   
   const query = processedTags ? `${ratingPart}${tagCountPart}${processedTags}` : `${ratingPart}${tagCountPart}`.trim()
