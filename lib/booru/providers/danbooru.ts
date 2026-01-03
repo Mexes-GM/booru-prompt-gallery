@@ -13,18 +13,27 @@ export class DanbooruProvider extends BaseBooruProvider {
     const { tags, page, order } = options
     
     let finalTags: string
-    if (order === 'recent') {
+    let effectiveOrder = order
+
+    // Check if tags contain order:random and switch mode if needed
+    if (tags && (tags.includes('order:random') || tags.includes('random:'))) {
+      effectiveOrder = 'random'
+    }
+
+    if (effectiveOrder === 'recent') {
       finalTags = tags || ''
-    } else if (order === 'random') {
-      const randomCount = "15"
-      finalTags = tags ? `${tags} random:${randomCount}` : `random:${randomCount}`
+    } else if (effectiveOrder === 'random') {
+      const randomCount = "20"
+      // Remove existing random/order tags to avoid conflicts
+      const cleanTags = tags ? tags.replace(/order:random|random:\d+/gi, '').trim() : ''
+      finalTags = cleanTags ? `${cleanTags} random:${randomCount}` : `random:${randomCount}`
     } else {
       finalTags = tags ? `${tags} order:rank` : 'order:rank'
     }
 
     const params = new URLSearchParams({
       ...this.defaultParams,
-      ...(order === 'random' ? { limit: "15" } : {}),
+      ...(effectiveOrder === 'random' ? { limit: "20" } : {}),
       page,
       tags: finalTags,
     })

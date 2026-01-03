@@ -291,6 +291,11 @@ export default function DanbooruPromptGenerator() {
     const currentRawPostCount = pages ? pages.flat().length : 0
     setLastLoadAttempt(currentRawPostCount)
     
+    // If using random order, update seed to force new results
+    if (order === 'random' || /order:random|random:\d+/i.test(searchTags)) {
+      setRandomSeed(Date.now())
+    }
+    
     // CRITICAL FIX: Increment size to load next page
     // SWR will use the getKey function with pageIndex = size (0-based)
     // which will request page = size + 1 (1-based) from the API
@@ -306,6 +311,10 @@ export default function DanbooruPromptGenerator() {
   }, [isLoadingMore, isLoadingLock, posts.length, size])
   
   const refresh = () => {
+    // If using random order, update seed to force new results
+    if (order === 'random' || /order:random|random:\d+/i.test(searchTags)) {
+      setRandomSeed(Date.now())
+    }
     mutate(undefined, { revalidate: true })
     trackRefresh(order)
   }
@@ -1629,7 +1638,17 @@ export default function DanbooruPromptGenerator() {
                       <Alert variant="destructive" className="py-2">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertDescription className="text-xs">
-                          Danbooru API limit: Only first {order === 'recent' ? 2 : 1} user tags will be used.
+                          Danbooru API limit: Only first {(order === 'recent' && !/order:|random:/i.test(searchTags)) ? 2 : 1} user tags will be used.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {/* Warning for order:random timeouts */}
+                    {/order:random|random:\d+/i.test(searchTags) && (
+                      <Alert className="py-2 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                        <RefreshCw className="h-4 w-4 text-blue-500" />
+                        <AlertDescription className="text-xs text-blue-700 dark:text-blue-300">
+                          Random mode active: Fetching 20 random posts. Refresh to get new ones.
                         </AlertDescription>
                       </Alert>
                     )}

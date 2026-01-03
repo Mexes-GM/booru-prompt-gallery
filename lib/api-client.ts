@@ -270,9 +270,12 @@ const processTagsForAPI = (tags: string, order: string = 'popular', extraTagsCou
      }
   })
   
+  // Check if any meta tag is an order tag
+  const hasOrderTag = metaTags.some(tag => /^order:/i.test(tag) || /^random:/i.test(tag))
+
   // For recent posts (no order tag), allow 2 user tags. For popular/random posts (with order tag), limit to 1 user tag
   // We also subtract any extra tags (like tagcount) from the limit
-  const baseMaxTags = order === 'recent' ? 2 : 1
+  const baseMaxTags = (order === 'recent' && !hasOrderTag) ? 2 : 1
   const maxTags = Math.max(0, baseMaxTags - extraTagsCount)
   
   const allowedNormalTags = normalTags.slice(0, maxTags)
@@ -314,9 +317,10 @@ export const hasMultipleTags = (tags: string, order: string = 'popular', extraTa
   ]
 
   const normalTags = rawTags.filter(tag => !metaTagPatterns.some(pattern => pattern.test(tag)))
+  const hasOrderTag = rawTags.some(tag => /^order:/i.test(tag) || /^random:/i.test(tag))
   const tagCount = normalTags.length
   
-  const baseMaxTags = order === 'recent' ? 2 : 1
+  const baseMaxTags = (order === 'recent' && !hasOrderTag) ? 2 : 1
   const maxTags = Math.max(0, baseMaxTags - extraTagsCount)
   
   return tagCount > maxTags
@@ -354,7 +358,7 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
     tags.push('order:rank')
   } else if (order === 'random') {
     // For random, we use random:N instead of order:random for better performance
-    tags.push('random:15') // Using the same limit as in API_CONFIG.randomParams
+    tags.push('random:20') // Using the same limit as in API_CONFIG.randomParams
   }
   
   // Calculate extra tags count (rating + tagcount)
@@ -409,7 +413,9 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       const promptParam = provider === 'aibooru' && hasPrompt ? '&hasPrompt=true' : ''
       
       // Add random seed for random searches to force cache invalidation
-      const seedParam = order === 'random' && randomSeed ? `&seed=${randomSeed}` : ''
+      // Also add seed if tags contain order:random to ensure we get new results
+      const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
+      const seedParam = isRandomOrder && randomSeed ? `&seed=${randomSeed}` : ''
       
       const finalUrl = `${baseUrl}${promptParam}${seedParam}`
       
@@ -422,7 +428,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       persistSize: false,
       revalidateOnFocus: false,
       revalidateOnReconnect: false, // FIXED: Prevent reconnect from triggering revalidation
-      dedupingInterval: order === 'random' ? 0 : 2000, // Short deduping to prevent request spam
+      dedupingInterval: 0, // Always 0 to allow refreshing random posts
       shouldRetryOnError: (error) => {
         // Don't retry on 422 errors (invalid tags/search parameters)
         // Don't retry on 4xx client errors in general

@@ -30,6 +30,8 @@ export class Rule34Provider extends BaseBooruProvider {
     if (order === 'popular') {
       finalTags = tags ? `${tags} sort:score` : 'sort:score'
     } else if (order === 'random') {
+      // Rule34 uses sort:random, but we should also ensure limit is respected if needed
+      // Rule34 default limit is 20 (set in defaultParams)
       finalTags = tags ? `${tags} sort:random` : 'sort:random'
     }
 

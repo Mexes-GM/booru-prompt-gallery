@@ -18,7 +18,7 @@ export class AibooruProvider extends BaseBooruProvider {
     if (order === 'recent') {
       finalTags = [tags, promptFilter].filter(Boolean).join(' ').trim()
     } else if (order === 'random') {
-      const randomCount = "15"
+      const randomCount = "20"
       finalTags = [tags, promptFilter, `random:${randomCount}`].filter(Boolean).join(' ')
     } else {
       finalTags = [tags, promptFilter, 'order:rank'].filter(Boolean).join(' ')
@@ -26,7 +26,7 @@ export class AibooruProvider extends BaseBooruProvider {
 
     const params = new URLSearchParams({
       ...this.defaultParams,
-      ...(order === 'random' ? { limit: "15" } : {}),
+      ...(order === 'random' ? { limit: "20" } : {}),
       page,
       tags: finalTags,
     })
