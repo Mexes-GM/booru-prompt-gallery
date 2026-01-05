@@ -3,24 +3,39 @@
 import { supabase } from '@/lib/supabase'
 
 export async function getAllTagOverrides() {
-  // Fetch all tags that have a specific category assigned (not just generic import if we had that)
-  // In our schema, 'category' holds the classification like 'clothing', 'pose', etc.
-  // We want to fetch all of them to cache on the client.
+  // Fetch all tags that have a specific category assigned
+  // We need to paginate because Supabase limits rows per request (default 1000)
   
-  const { data, error } = await supabase
-    .from('tags')
-    .select('name, category')
-  
-  if (error) {
-    console.error('Error fetching tag overrides:', error)
-    return {}
-  }
-
-  // Convert to a Record<string, string> for fast lookup
   const overrides: Record<string, string> = {}
-  data.forEach(tag => {
-    overrides[tag.name] = tag.category
-  })
+  let page = 0
+  const pageSize = 1000
+  let hasMore = true
+  
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('tags')
+      .select('name, category')
+      .range(page * pageSize, (page + 1) * pageSize - 1)
+    
+    if (error) {
+      console.error('Error fetching tag overrides:', error)
+      break
+    }
+
+    if (data && data.length > 0) {
+      data.forEach(tag => {
+        overrides[tag.name] = tag.category
+      })
+      
+      if (data.length < pageSize) {
+        hasMore = false
+      } else {
+        page++
+      }
+    } else {
+      hasMore = false
+    }
+  }
 
   return overrides
 }
