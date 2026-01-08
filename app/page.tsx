@@ -810,7 +810,7 @@ export default function DanbooruPromptGenerator() {
     }
     
     // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
-    let displayContent = aiPrompt
+    const displayContent = aiPrompt
       ? cleanPrompt(
           aiPrompt,
           "",
@@ -1686,7 +1686,7 @@ export default function DanbooruPromptGenerator() {
                 }
                 
                 // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
-    let displayContent = aiPrompt
+    const displayContent = aiPrompt
       ? cleanPrompt(
           aiPrompt,
           "",
