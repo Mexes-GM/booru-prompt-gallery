@@ -612,6 +612,7 @@ export function cleanPrompt(
     const lower = raw.toLowerCase()
 
     if (artistTagsSet.has(lower)) return false
+    if (artistTagsSet.has(normalize(lower))) return false
     if (META_TAGS_SET.has(normalize(lower))) return false
     if (numberRegex.test(raw)) return false
     if (raw.includes("@") || raw.includes("#") || hasUrlLike.test(raw)) return false

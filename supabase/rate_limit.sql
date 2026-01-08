@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Enable RLS (Row Level Security)
+ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
+
 CREATE INDEX IF NOT EXISTS idx_rate_limits_ip_action ON rate_limits(ip, action);
 CREATE INDEX IF NOT EXISTS idx_rate_limits_created_at ON rate_limits(created_at);
 
