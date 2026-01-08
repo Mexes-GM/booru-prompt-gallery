@@ -7,6 +7,7 @@
  */
 
 import tagsData from "../tags.json"
+import { classifyTags } from "./tag-classifier"
 
 // --------------- Types ---------------
 interface TagData {
@@ -20,6 +21,8 @@ export interface CleanPromptOptions {
   includeCopyrights?: boolean
   optimizeTags?: boolean
   exclude?: string[]
+  addedTags?: string[]
+  tagOverrides?: Record<string, string>
 }
 
 // --------------- Utilities ---------------
@@ -636,18 +639,16 @@ export function cleanPrompt(
     else contentTags.push(t)
   }
 
-  // Sort content with subject/composition priority, then by length desc
-  const sortedContentTags = contentTags.sort((a, b) => {
-    const aIsSubject = SUBJECT_TAGS_SET.has(a)
-    const bIsSubject = SUBJECT_TAGS_SET.has(b)
-    if (aIsSubject !== bIsSubject) return aIsSubject ? -1 : 1
-
-    const aIsComposition = COMPOSITION_TAGS_SET.has(a)
-    const bIsComposition = COMPOSITION_TAGS_SET.has(b)
-    if (aIsComposition !== bIsComposition) return aIsComposition ? -1 : 1
-
-    return b.length - a.length
-  })
+  // Classify content tags to respect requested order:
+  // Appearance -> Clothing -> Pose -> Scenery -> Other
+  const classified = classifyTags(contentTags, options?.tagOverrides)
+  const sortedContentTags = [
+    ...classified.appearance,
+    ...classified.clothing,
+    ...classified.pose,
+    ...classified.scenery,
+    ...classified.other,
+  ]
 
   const characterAndFranchiseTags = [
     ...(includeCharacters ? characterTagsArray : []),
@@ -657,17 +658,30 @@ export function cleanPrompt(
     .filter(Boolean)
 
   const allFinal = new Set<string>()
-  for (const t of characterAndFranchiseTags) allFinal.add(t)
 
+  // 1. User Added Tags
+  const addedTagsProcessed = (options?.addedTags || [])
+    .flatMap((t) => parseTagList(t))
+    .map((t) => normalize(t))
+    .filter((t) => !userExcludeSet.has(t))
+
+  for (const t of addedTagsProcessed) allFinal.add(t)
+
+  // 2. Character / Copyright
+  for (const t of characterAndFranchiseTags) {
+     if (!userExcludeSet.has(t)) allFinal.add(t)
+  }
+
+  // 3. Content Tags (Ordered) + Quality Tags (at end)
   const combinedPre = [...sortedContentTags, ...qualityTags]
-  const combined = combinedPre.filter((t) => {
-    if (!includeCharacters && normalizedCharacterSet.has(t)) return false
-    if (!includeCopyrights && normalizedCopyrightSet.has(t)) return false
-    if (!includeCharacters && (t.startsWith("official ") || t.startsWith("alternate "))) return false
-    if (userExcludeSet.has(t)) return false
-    return true
-  })
-  for (const t of combined) allFinal.add(t)
+  
+  for (const t of combinedPre) {
+    if (!includeCharacters && normalizedCharacterSet.has(t)) continue
+    if (!includeCopyrights && normalizedCopyrightSet.has(t)) continue
+    if (!includeCharacters && (t.startsWith("official ") || t.startsWith("alternate "))) continue
+    if (userExcludeSet.has(t)) continue
+    allFinal.add(t)
+  }
 
   return Array.from(allFinal).map(escapeParentheses).join(", ")
 }

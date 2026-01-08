@@ -1,5 +1,5 @@
 
-import { cleanPrompt } from "./cleanPrompt";
+// cleanPrompt import removed to avoid circular dependency
 
 export type TagCategory = 'clothing' | 'pose' | 'scenery' | 'appearance' | 'other';
 

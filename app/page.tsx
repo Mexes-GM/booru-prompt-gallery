@@ -816,14 +816,14 @@ export default function DanbooruPromptGenerator() {
           "",
           "",
           "",
-          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
+          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
         )
       : cleanPrompt(
           post.tag_string,
           post.tag_string_artist,
           post.tag_string_character,
           post.tag_string_copyright,
-          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
+          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
         )
     
     // Create a raw (unoptimized) version for Teach modal classification
@@ -834,19 +834,16 @@ export default function DanbooruPromptGenerator() {
           "",
           "",
           "",
-          { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList },
+          { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides },
         )
       : cleanPrompt(
           post.tag_string,
           post.tag_string_artist,
           post.tag_string_character,
           post.tag_string_copyright,
-          { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList },
+          { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides },
         )
 
-    if (addList.length > 0) {
-      displayContent = displayContent ? `${addList.join(', ')}, ${displayContent}` : addList.join(', ')
-    }
 
     // Pre-classify tags for the dropdown counts (using displayContent - respects user preference)
     const tagsForClassification = displayContent ? displayContent.split(',').map(t => t.trim()) : []
@@ -1695,14 +1692,14 @@ export default function DanbooruPromptGenerator() {
           "",
           "",
           "",
-          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
+          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
         )
       : cleanPrompt(
           post.tag_string,
           post.tag_string_artist,
           post.tag_string_character,
           post.tag_string_copyright,
-          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList },
+          { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
         )
                 
                 // Exclusions are already applied via cleanPrompt
@@ -1714,20 +1711,16 @@ export default function DanbooruPromptGenerator() {
                       "",
                       "",
                       "",
-                      { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList },
+                      { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides },
                     )
                   : cleanPrompt(
                       post.tag_string,
                       post.tag_string_artist,
                       post.tag_string_character,
                       post.tag_string_copyright,
-                      { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList },
+                      { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides },
                     )
 
-                // Add user-specified tags at the beginning (these are protected from removal options)
-                if (addList.length > 0) {
-                  displayContent = displayContent ? `${addList.join(', ')}, ${displayContent}` : addList.join(', ')
-                }
                 
                 // Pre-classify tags for the dropdown counts
                 const tagsForClassification = displayContent ? displayContent.split(',').map(t => t.trim()) : []
