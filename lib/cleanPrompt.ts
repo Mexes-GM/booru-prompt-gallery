@@ -661,7 +661,7 @@ export function cleanPrompt(
 
   // 1. User Added Tags
   const addedTagsProcessed = (options?.addedTags || [])
-    .flatMap((t) => parseTagList(t))
+    // .flatMap((t) => parseTagList(t)) // Don't split spaces in added tags (fixes "red eyes" -> "red, eyes")
     .map((t) => normalize(t))
     .filter((t) => !userExcludeSet.has(t))
 
