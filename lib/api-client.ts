@@ -10,7 +10,7 @@ export type { BooruPost }
 // Export function
 export const isAibooruPost = checkIsAibooruPost
 
-export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34'
+export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621'
 
 // Helper function to get prompt from a post
 // Function to clean and extract prompt from malformed JSON data
@@ -380,9 +380,15 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
 }
 
 export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string) => {
-  const ratingPart = ratingFilter && ratingFilter !== 'all' ? `${ratingFilter} ` : ''
-  // Only apply tag count filter for Danbooru
-  const tagCountPart = (tagCountFilter && provider === 'danbooru') ? `tagcount:>${tagCountFilter.replace(/\D/g, '')} ` : ''
+  // E621 uses rating:safe instead of rating:general
+  const effectiveRating = (provider === 'e621' && ratingFilter === 'rating:general') 
+    ? 'rating:safe' 
+    : ratingFilter
+
+  const ratingPart = effectiveRating && effectiveRating !== 'all' ? `${effectiveRating} ` : ''
+  // Apply tag count filter for Danbooru and E621
+  // Danbooru uses tagcount:>X, E621 supports range but tagcount:>X is standard range syntax for them
+  const tagCountPart = (tagCountFilter && (provider === 'danbooru' || provider === 'e621')) ? `tagcount:>${tagCountFilter.replace(/\D/g, '')} ` : ''
   
   const extraTagsCount = 0
   const processedTags = processTagsForAPI(tags, order, extraTagsCount)
@@ -403,6 +409,8 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         apiEndpoint = '/api/aibooru'
       } else if (provider === 'rule34') {
         apiEndpoint = '/api/rule34'
+      } else if (provider === 'e621') {
+        apiEndpoint = '/api/e621'
       }
       
       // CRITICAL: Page index is 0-based, but API expects 1-based page numbers
@@ -447,7 +455,7 @@ export function useFavoritePosts(favoriteIds: number[]) {
   const cacheKey = shouldFetch ? `favorites-${favoriteIds.sort().join(',')}` : null
   const { reportError, reportSlowResponse } = useApiStatus()
 
-  const { data, error, isLoading, mutate } = useSWR(
+  const { data, error, isLoading, mutate } = useSWR<BooruPost[]>(
     cacheKey,
     async () => {
       if (!shouldFetch) return []
@@ -481,7 +489,7 @@ export function useFavoritePosts(favoriteIds: number[]) {
         }
 
         const posts = await response.json()
-        return posts
+        return posts as BooruPost[]
       } catch (fetchError: any) {
         // Si es un error de red o timeout
         if (fetchError instanceof TypeError || fetchError.name === 'AbortError') {

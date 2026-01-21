@@ -114,3 +114,7 @@ export function trackDanbooruOption(option: string, enabled: boolean) {
 export function trackRule34Option(option: string, enabled: boolean) {
   safeTrack('rule34_option', { option, enabled })
 }
+
+export function trackE621Option(option: string, enabled: boolean) {
+  safeTrack('e621_option', { option, enabled })
+}

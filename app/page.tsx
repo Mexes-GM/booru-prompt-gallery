@@ -50,7 +50,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { cleanPrompt } from "@/lib/cleanPrompt"
-import { classifyTags, type TagCategory } from "@/lib/tag-classifier"
+import { classifyTags, type TagCategory, type ClassifiedTags } from "@/lib/tag-classifier"
 import { Switch } from "@/components/ui/switch"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import {
@@ -86,6 +86,7 @@ import {
   trackRatingChange,
   trackDanbooruOption,
   trackRule34Option,
+  trackE621Option,
 } from '@/lib/analytics'
 
 // Using BooruPost from api-client instead of local interface
@@ -139,7 +140,7 @@ export default function DanbooruPromptGenerator() {
   }, [cardScale, isMobile])
   
   const isTagCountValid = !tagCountFilter || /^\d+$/.test(tagCountFilter)
-  const isTagCountSupported = booruProvider === 'danbooru'
+  const isTagCountSupported = booruProvider === 'danbooru' || booruProvider === 'e621'
 
   // Fetch tag overrides on mount
   useEffect(() => {
@@ -1317,6 +1318,21 @@ export default function DanbooruPromptGenerator() {
                         >
                           Rule34
                         </Button>
+                        <Button
+                          type="button"
+                          variant={booruProvider === "e621" ? "secondary" : "ghost"}
+                          onClick={() => {
+                            if (booruProvider === "rule34" && ratingFilter === "all") {
+                              setRatingFilter(previousRatingFilter)
+                              trackRatingChange(previousRatingFilter)
+                            }
+                            setBooruProvider("e621")
+                            trackProviderChange("e621")
+                          }}
+                          className={`h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "e621" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        >
+                          e621
+                        </Button>
                       </div>
                     </div>
 
@@ -1555,7 +1571,7 @@ export default function DanbooruPromptGenerator() {
                               {booruProvider === 'aibooru' ? 'Aibooru Options' : 'Prompt Generation Options'}
                             </span>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {booruProvider === 'danbooru' || booruProvider === 'rule34' ? (
+                              {booruProvider === 'danbooru' || booruProvider === 'rule34' || booruProvider === 'e621' ? (
                                 <>
                                   <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
                                     <span className="text-sm select-none">Include Characters</span>
@@ -1563,7 +1579,9 @@ export default function DanbooruPromptGenerator() {
                                       checked={includeCharacters}
                                       onCheckedChange={(v) => {
                                         setIncludeCharacters(v)
-                                        booruProvider === 'rule34' ? trackRule34Option('include_characters', v) : trackDanbooruOption('include_characters', v)
+                                        if (booruProvider === 'rule34') trackRule34Option('include_characters', v)
+                                        else if (booruProvider === 'e621') trackE621Option('include_characters', v)
+                                        else trackDanbooruOption('include_characters', v)
                                       }}
                                       className="scale-90"
                                     />
@@ -1574,7 +1592,9 @@ export default function DanbooruPromptGenerator() {
                                       checked={optimizeTags}
                                       onCheckedChange={(v) => {
                                         setOptimizeTags(v)
-                                        booruProvider === 'rule34' ? trackRule34Option('optimize_tags', v) : trackDanbooruOption('optimize_tags', v)
+                                        if (booruProvider === 'rule34') trackRule34Option('optimize_tags', v)
+                                        else if (booruProvider === 'e621') trackE621Option('optimize_tags', v)
+                                        else trackDanbooruOption('optimize_tags', v)
                                       }}
                                       className="scale-90"
                                     />

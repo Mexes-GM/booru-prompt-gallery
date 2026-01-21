@@ -55,10 +55,10 @@ export interface HistoryItem {
 
 // Type-safe getters and setters for specific preferences
 export const userPreferences = {
-  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' => 
+  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' => 
     storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'danbooru'),
   
-  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34') => 
+  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621') => 
     storage.set(STORAGE_KEYS.BOORU_PROVIDER, provider),
   
   getRemoveLoRaTags: (): boolean => 
