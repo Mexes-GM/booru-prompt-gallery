@@ -216,12 +216,7 @@ export default function DanbooruPromptGenerator() {
     const savedRatingFilter = userPreferences.getRatingFilter()
     const savedHistory = userPreferences.getHistory()
     
-    // Force switch from Aibooru if it was saved (TEMPORARILY DISABLED)
-    if (savedProvider === 'aibooru') {
-      setBooruProvider('danbooru')
-    } else {
-      setBooruProvider(savedProvider)
-    }
+    setBooruProvider(savedProvider)
     setRemoveLoRaTags(savedRemoveLoRa)
     setRemoveQualityTags(savedRemoveQuality)
     setRatingFilter(savedRatingFilter)
@@ -1396,41 +1391,29 @@ export default function DanbooruPromptGenerator() {
                           )}
                           <span className="relative z-10">Danbooru</span>
                         </Button>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span tabIndex={0}> {/* Wrap in span to allow tooltip on disabled button */}
-                              <Button
-                                type="button"
-                                variant={!showFavorites && booruProvider === "aibooru" ? "secondary" : "ghost"}
-                                disabled={true}
-                                onClick={() => {
-                                  // Disabled
-                                  /*
-                                  if (booruProvider === "rule34" && ratingFilter === "all") {
-                                    setRatingFilter(previousRatingFilter)
-                                    trackRatingChange(previousRatingFilter)
-                                  }
-                                  setBooruProvider("aibooru")
-                                  setShowFavorites(false)
-                                  trackProviderChange("aibooru")
-                                  */
-                                }}
-                                className={`relative h-8 text-sm px-4 flex-1 sm:flex-none opacity-50 cursor-not-allowed ${!showFavorites && booruProvider === "aibooru" ? "text-foreground" : "text-muted-foreground"}`}
-                              >
-                                {!showFavorites && booruProvider === "aibooru" && (
-                                   <motion.div
-                                     layoutId="activeProvider"
-                                     className="absolute inset-0 bg-background shadow-sm rounded-md"
-                                   />
-                                )}
-                                <span className="relative z-10">Aibooru</span>
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Temporarily disabled due to provider issues</p>
-                          </TooltipContent>
-                        </Tooltip>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => {
+                            if (booruProvider === "rule34" && ratingFilter === "all") {
+                              setRatingFilter(previousRatingFilter)
+                              trackRatingChange(previousRatingFilter)
+                            }
+                            setBooruProvider("aibooru")
+                            setShowFavorites(false)
+                            trackProviderChange("aibooru")
+                          }}
+                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${!showFavorites && booruProvider === "aibooru" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
+                        >
+                          {!showFavorites && booruProvider === "aibooru" && (
+                            <motion.div
+                              layoutId="activeProvider"
+                              className="absolute inset-0 bg-background shadow-sm rounded-md"
+                              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                          )}
+                          <span className="relative z-10">Aibooru</span>
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
