@@ -449,10 +449,25 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
   )
 }
 
-// Hook to fetch favorite posts by their IDs
-export function useFavoritePosts(favoriteIds: number[]) {
-  const shouldFetch = favoriteIds.length > 0
-  const cacheKey = shouldFetch ? `favorites-${favoriteIds.sort().join(',')}` : null
+// Hook to fetch favorite posts by their IDs (supports mixed providers)
+export interface FavoriteItem {
+  id: number;
+  provider: BooruProvider;
+}
+
+export function useFavoritePosts(favorites: FavoriteItem[]) {
+  const shouldFetch = favorites.length > 0
+  // Sort by provider then ID for consistent cache key
+  const sortedKey = favorites
+    .slice()
+    .sort((a, b) => {
+      const pDiff = a.provider.localeCompare(b.provider);
+      return pDiff !== 0 ? pDiff : a.id - b.id;
+    })
+    .map(f => `${f.provider}:${f.id}`)
+    .join(',');
+
+  const cacheKey = shouldFetch ? `favorites-mixed-${sortedKey}` : null
   const { reportError, reportSlowResponse } = useApiStatus()
 
   const { data, error, isLoading, mutate } = useSWR<BooruPost[]>(
@@ -468,7 +483,7 @@ export function useFavoritePosts(favoriteIds: number[]) {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ ids: favoriteIds }),
+          body: JSON.stringify({ favorites }),
         })
         
         const responseTime = Date.now() - startTime

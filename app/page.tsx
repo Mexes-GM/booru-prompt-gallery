@@ -43,7 +43,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
-import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil } from "@/lib/api-client"
+import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil, type FavoriteItem } from "@/lib/api-client"
 
 import { userPreferences, type HistoryItem } from "@/lib/storage"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -104,7 +104,8 @@ export default function DanbooruPromptGenerator() {
   const [cardScale, setCardScale] = useState<CardScale>("medium")
   const [scaleValue, setScaleValue] = useState([2])
   const [copiedId, setCopiedId] = useState<number | null>(null)
-  const [favorites, setFavorites] = useState<Set<number>>(new Set())
+  // Store favorites as a Set of strings "provider:id"
+  const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [favoritesLoaded, setFavoritesLoaded] = useState(false)
   const [showFavorites, setShowFavorites] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
@@ -222,13 +223,25 @@ export default function DanbooruPromptGenerator() {
     mutate,
   } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter, tagCountFilter)
 
+  // Prepare favorites list for hook
+  const favoriteItems: FavoriteItem[] = useMemo(() => {
+    return Array.from(favorites).map(key => {
+      const [p, idStr] = key.split(':')
+      // Handle legacy format (id only -> assume danbooru) or malformed keys
+      if (!idStr) {
+        return { provider: 'danbooru', id: parseInt(key, 10) }
+      }
+      return { provider: p as BooruProvider, id: parseInt(idStr, 10) }
+    }).filter(item => !isNaN(item.id))
+  }, [favorites])
+
   // Fetch favorite posts separately
   const {
     posts: favoritePosts,
     error: favoritesError,
     isLoading: favoritesLoading,
     mutate: mutateFavorites,
-  } = useFavoritePosts(Array.from(favorites))
+  } = useFavoritePosts(favoriteItems)
 
 
 
@@ -401,32 +414,33 @@ export default function DanbooruPromptGenerator() {
     }
   }
 
-  const toggleFavorite = (postId: number) => {
-    const isCurrentlyFavorited = favorites.has(postId)
+  const toggleFavorite = (postId: number, providerOverride?: string) => {
+    // Construct unique key, using override if provided (for favorites view logic), else current provider
+    const targetProvider = providerOverride || booruProvider
+    const uniqueKey = `${targetProvider}:${postId}`
     
-    setFavorites((prev) => {
-      const newFavorites = new Set(prev)
-      if (newFavorites.has(postId)) {
-        newFavorites.delete(postId)
-      } else {
-        newFavorites.add(postId)
-      }
-      return newFavorites
-    })
+    // Determine new state based on current state (not using functional update to ensure sync with save)
+    const isCurrentlyFavorited = favorites.has(uniqueKey)
+    const newFavorites = new Set(favorites)
     
     if (isCurrentlyFavorited) {
+      newFavorites.delete(uniqueKey)
       toast({
         title: "Removed from favorites",
         description: "Image removed from your favorites",
       })
       trackFavorite(postId, 'remove')
     } else {
+      newFavorites.add(uniqueKey)
       toast({
         title: "Added to favorites",
         description: "Image added to your favorites",
       })
       trackFavorite(postId, 'add')
     }
+    
+    setFavorites(newFavorites)
+    saveFavoritesToStorage(newFavorites)
   }
 
   const downloadImage = async (post: BooruPost) => {
@@ -450,10 +464,17 @@ export default function DanbooruPromptGenerator() {
       // Extract file extension from URL
       const urlPath = imageUrl.split('?')[0] // Remove query params
       const extension = urlPath.split('.').pop() || 'jpg'
-      const filename = `booru_${post.id}.${extension}`
+      
+      // Determine provider to prefix filename
+      // This ensures unique filenames when downloading from different sources
+      const itemProvider = post._provider || booruProvider
+      const filename = `${itemProvider}_${post.id}.${extension}`
 
-      // Check if the image URL is from Rule34 (has CORS restrictions)
-      const needsProxy = imageUrl.includes('rule34.xxx')
+      // Check if the image URL requires a proxy (CORS or hotlink protection)
+      // Rule34 strictly blocks direct cross-origin fetches
+      // Aibooru often returns 403s without proper Referer
+      // e621 also requires CORS handling
+      const needsProxy = imageUrl.includes('rule34.xxx') || imageUrl.includes('aibooru.online') || imageUrl.includes('e621.net')
       
       let fetchUrl = imageUrl
       if (needsProxy) {
@@ -514,13 +535,8 @@ export default function DanbooruPromptGenerator() {
 
   const clearFavorites = () => {
     setFavorites(new Set())
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('booruFavorites')
-      } catch (error) {
-        console.warn('Error clearing favorites from localStorage:', error)
-      }
-    }
+    saveFavoritesToStorage(new Set())
+    
     toast({
       title: "Favorites cleared",
       description: "All favorites have been removed",
@@ -537,38 +553,73 @@ export default function DanbooruPromptGenerator() {
     setScaleValue([next])
   }
 
-  // Load favorites from localStorage on mount
+  // Load favorites from localStorage on mount (Unified Storage)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedFavorites = localStorage.getItem('booruFavorites')
+      const savedFavorites = localStorage.getItem('globalBooruFavorites')
+      let migrated = false
       
+      const newSet = new Set<string>()
+
+      // 1. Load Unified Format if exists
       if (savedFavorites) {
         try {
-          const favoritesArray = JSON.parse(savedFavorites)
-          
-          if (Array.isArray(favoritesArray)) {
-            const favoritesSet = new Set(favoritesArray)
-            setFavorites(favoritesSet)
+          const arr = JSON.parse(savedFavorites)
+          if (Array.isArray(arr)) {
+            arr.forEach(k => newSet.add(k))
           }
-        } catch (error) {
-          setFavorites(new Set())
+        } catch (e) { console.error(e) }
+      }
+
+      // 2. Migrate Legacy Danbooru (booruFavorites)
+      const legacyDanbooru = localStorage.getItem('booruFavorites')
+      if (legacyDanbooru) {
+        try {
+          const arr = JSON.parse(legacyDanbooru)
+          if (Array.isArray(arr) && arr.length > 0) {
+            arr.forEach(id => newSet.add(`danbooru:${id}`))
+            localStorage.removeItem('booruFavorites')
+            migrated = true
+          }
+        } catch (e) {}
+      }
+
+      // 3. Migrate Segregated Providers (e.g. booruFavorites-e621)
+      const providers = ['e621', 'rule34', 'aibooru']
+      providers.forEach(p => {
+        const key = `booruFavorites-${p}`
+        const raw = localStorage.getItem(key)
+        if (raw) {
+          try {
+            const arr = JSON.parse(raw)
+            if (Array.isArray(arr) && arr.length > 0) {
+               arr.forEach(id => newSet.add(`${p}:${id}`))
+               localStorage.removeItem(key)
+               migrated = true
+            }
+          } catch(e) {}
         }
+      })
+
+      setFavorites(newSet)
+      if (migrated) {
+        saveFavoritesToStorage(newSet)
       }
       setFavoritesLoaded(true)
     }
-  }, [])
+  }, []) // Run only once on mount
 
-  // Save favorites to localStorage whenever they change (only after initial load)
-  useEffect(() => {
-    if (typeof window !== 'undefined' && favoritesLoaded) {
+  // Helper to save favorites
+  const saveFavoritesToStorage = (newFavorites: Set<string>) => {
+    if (typeof window !== 'undefined') {
       try {
-        const favoritesArray = Array.from(favorites)
-        localStorage.setItem('booruFavorites', JSON.stringify(favoritesArray))
+        const favoritesArray = Array.from(newFavorites)
+        localStorage.setItem('globalBooruFavorites', JSON.stringify(favoritesArray))
       } catch (error) {
         console.warn('Error saving favorites to localStorage:', error)
       }
     }
-  }, [favorites, favoritesLoaded])
+  }
 
   // Handle scroll for back to top button
   useEffect(() => {
@@ -893,6 +944,18 @@ export default function DanbooruPromptGenerator() {
     const footerHeight = SCALE_CONFIG[effectiveScale].footerHeight
     const imageHeight = height - footerHeight
 
+    // Determine correct URL based on provider
+    const itemProvider = post._provider || booruProvider
+    let postUrl = `https://danbooru.donmai.us/posts/${post.id}`
+    
+    if (isAiPost || itemProvider === 'aibooru') {
+       postUrl = `https://aibooru.online/posts/${post.id}`
+    } else if (itemProvider === 'rule34') {
+       postUrl = `https://rule34.xxx/index.php?page=post&s=view&id=${post.id}`
+    } else if (itemProvider === 'e621') {
+       postUrl = `https://e621.net/posts/${post.id}`
+    }
+
     return (
       <Card className="w-full h-full overflow-hidden card-hover group flex flex-col">
         <div className="relative bg-muted overflow-hidden" style={{ height: imageHeight }}>
@@ -913,16 +976,16 @@ export default function DanbooruPromptGenerator() {
                   size="icon"
                   variant="secondary"
                   className={`glass-effect ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
-                  onClick={() => toggleFavorite(post.id)}
-                  aria-label={favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+                  onClick={() => toggleFavorite(post.id, post._provider)}
+                  aria-label={favorites.has(`${post._provider || booruProvider}:${post.id}`) ? "Remove from favorites" : "Add to favorites"}
                 >
                   <Heart
-                    className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} ${favorites.has(post.id) ? "fill-red-500 text-red-500" : ""}`}
+                    className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} ${favorites.has(`${post._provider || booruProvider}:${post.id}`) ? "fill-red-500 text-red-500" : ""}`}
                   />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {favorites.has(post.id) ? "Remove from favorites" : "Add to favorites"}
+                {favorites.has(`${(post as any)._provider || booruProvider}:${post.id}`) ? "Remove from favorites" : "Add to favorites"}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -1034,10 +1097,10 @@ export default function DanbooruPromptGenerator() {
                   className={`focus-ring bg-transparent h-auto ${effectiveScale === "small" ? "w-7" : ""}`}
                 >
                   <a
-                    href={isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`}
+                    href={postUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => trackExternalLink(isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`,'post')}
+                    onClick={() => trackExternalLink(postUrl,'post')}
                     aria-label="View original post"
                   >
                     <ExternalLink className={getIconClass()} />
@@ -1771,11 +1834,43 @@ export default function DanbooruPromptGenerator() {
                 const isImage = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
                 if (!isImage) return null
 
+                // If viewing favorites, allow any provider's favorite to be toggled
+                // If browsing search results, assume current provider
+                // However, our favorite toggle logic now uses provider prefix: "provider:id"
+                const itemProvider = showFavorites && post._provider ? post._provider : booruProvider 
+                const isFavorited = favorites.has(`${itemProvider}:${post.id}`)
+
+                // Determine correct URL based on provider
+                let postUrl = `https://danbooru.donmai.us/posts/${post.id}`
+                if (isAiPost || itemProvider === 'aibooru') {
+                   postUrl = `https://aibooru.online/posts/${post.id}`
+                } else if (itemProvider === 'rule34') {
+                   postUrl = `https://rule34.xxx/index.php?page=post&s=view&id=${post.id}`
+                } else if (itemProvider === 'e621') {
+                   postUrl = `https://e621.net/posts/${post.id}`
+                }
+
                 return (
                   <Card key={`${post.id}-${index}`} className="overflow-hidden card-hover">
                     <CardContent className="p-4 sm:p-6">
                       <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
-                        <div className="image-container-list-2-3 mx-auto sm:mx-0">
+                        <div 
+                           className="image-container-list-2-3 mx-auto sm:mx-0 relative group cursor-pointer"
+                           onDoubleClick={() => toggleFavorite(post.id, itemProvider)}
+                        >
+                          <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <Button
+                              size="icon"
+                              variant="secondary"
+                              className={`h-6 w-6 rounded-full shadow-sm ${isFavorited ? 'text-red-500 bg-white' : 'text-muted-foreground bg-white/80'}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleFavorite(post.id, itemProvider)
+                              }}
+                            >
+                              <Heart className={`h-3 w-3 ${isFavorited ? "fill-current" : ""}`} />
+                            </Button>
+                          </div>
                           <Image
                             src={fileUrl}
                             alt={`Danbooru post ${post.id}`}
@@ -1945,10 +2040,10 @@ export default function DanbooruPromptGenerator() {
 
                             <Button variant="outline" asChild className="focus-ring bg-transparent flex-1 sm:flex-none">
                               <a
-                                href={isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`}
+                                href={postUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                onClick={() => trackExternalLink(isAiPost ? `https://aibooru.online/posts/${post.id}` : `https://danbooru.donmai.us/posts/${post.id}`,'post')}
+                                onClick={() => trackExternalLink(postUrl,'post')}
                               >
                                 <ExternalLink className="w-4 h-4 mr-2" />
                                 View Original

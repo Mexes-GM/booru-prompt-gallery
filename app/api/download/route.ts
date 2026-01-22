@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
   const allowedDomains = [
     'danbooru.donmai.us', 'cdn.donmai.us',
     'aibooru.online',
-    'rule34.xxx', 'api-cdn.rule34.xxx', 'us.rule34.xxx', 'wimg.rule34.xxx'
+    'rule34.xxx', 'api-cdn.rule34.xxx', 'us.rule34.xxx', 'wimg.rule34.xxx',
+    'e621.net', 'static1.e621.net'
   ]
 
   let urlDomain: string
@@ -36,15 +37,19 @@ export async function GET(request: NextRequest) {
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 60000)
+    
+    // Determine appropriate Referer based on domain
+    let referer = 'https://danbooru.donmai.us/'
+    if (urlDomain.includes('rule34')) referer = 'https://rule34.xxx/'
+    else if (urlDomain.includes('aibooru')) referer = 'https://aibooru.online/'
+    else if (urlDomain.includes('e621')) referer = 'https://e621.net/'
 
     const response = await fetch(imageUrl, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'Referer': urlDomain.includes('rule34') ? 'https://rule34.xxx/' : 
-                   urlDomain.includes('aibooru') ? 'https://aibooru.online/' : 
-                   'https://danbooru.donmai.us/',
+        'Referer': referer,
       },
     })
 

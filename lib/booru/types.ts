@@ -13,6 +13,7 @@ export interface BooruPost {
   source?: string
   width?: number
   height?: number
+  _provider?: string // Added for internal use in Favorites UI
   ai_metadata?: {
     prompt?: string
     negative_prompt?: string

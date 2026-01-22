@@ -1,72 +1,107 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { BooruFactory } from '@/lib/booru/factory'
+import { BooruPost } from '@/lib/booru/types'
 
 export const runtime = 'edge'
 
-const API_CONFIG = {
-  baseUrl: "https://danbooru.donmai.us",
-  defaultParams: {
-    only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score",
-  },
-  timeout: 8000,
-}
-
-interface DanbooruPost {
-  id: number
-  file_url: string
-  large_file_url: string
-  preview_file_url: string
-  tag_string: string
-  tag_string_artist: string
-  tag_string_character: string
-  tag_string_copyright: string
-  rating: string
-  score: number
-  file_ext?: string
+interface FavoriteRequestItem {
+  id: number;
+  provider: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { ids } = await request.json();
-    
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return NextResponse.json({ error: 'Invalid or empty IDs array' }, { status: 400 });
+    const body = await request.json();
+    let favoritesToFetch: FavoriteRequestItem[] = [];
+
+    // Handle legacy format (ids: [], provider: string)
+    if (body.ids && Array.isArray(body.ids)) {
+      const provider = body.provider || 'danbooru';
+      favoritesToFetch = body.ids.map((id: number) => ({ id, provider }));
+    } 
+    // Handle new format (favorites: [{id, provider}, ...])
+    else if (body.favorites && Array.isArray(body.favorites)) {
+      favoritesToFetch = body.favorites;
     }
 
-    const limitedIds = ids.slice(0, 100);
-
-    const query = limitedIds.length === 1 
-      ? `id:${limitedIds[0]}`
-      : limitedIds.map(id => `id:${id}`).join(' or ');
-
-    const danbooruUrl = `https://danbooru.donmai.us/posts.json?tags=${encodeURIComponent(query)}&limit=100`;
-
-    const response = await fetch(danbooruUrl);
-    
-    if (!response.ok) {
-      console.error('Danbooru API error:', response.status, response.statusText);
-      throw new Error(`Danbooru API error: ${response.status}`);
+    if (favoritesToFetch.length === 0) {
+      return NextResponse.json([]);
     }
 
-    const rawPosts = await response.json();
+    // Deduplicate and limit total request size to prevent abuse
+    // Use a composite key to deduplicate
+    const uniqueMap = new Map<string, FavoriteRequestItem>();
+    favoritesToFetch.forEach(item => {
+      uniqueMap.set(`${item.provider}:${item.id}`, item);
+    });
+    
+    // Convert back to array and limit to 100 items
+    const limitedFavorites = Array.from(uniqueMap.values()).slice(0, 100);
 
-    const validPosts = rawPosts.filter((post: DanbooruPost) => 
-      post && 
-      post.id && 
-      post.file_url && 
-      post.file_ext !== 'mp4' && 
-      post.file_ext !== 'webm'
+    // Group by provider
+    const groups: Record<string, number[]> = {};
+    limitedFavorites.forEach(item => {
+      // Validate provider exists to avoid injection or crashes
+      try {
+        // Just checking if factory throws
+        BooruFactory.getProvider(item.provider as any);
+        
+        if (!groups[item.provider]) {
+          groups[item.provider] = [];
+        }
+        groups[item.provider].push(item.id);
+      } catch (e) {
+        // Invalid provider, ignore
+      }
+    });
+
+    // Execute requests in parallel
+    const promiseResults = await Promise.allSettled(
+      Object.entries(groups).map(async ([providerName, ids]) => {
+        try {
+          const provider = BooruFactory.getProvider(providerName as any);
+          
+          // Construct ID query
+          // Most boorus support id:1,2,3
+          // Limit batch size if necessary, but we capped total at 100 so split per provider is safe-ish
+          const query = `id:${ids.join(',')}`;
+
+          const posts = await provider.search({
+             tags: query,
+             page: '1',
+             limit: '100',
+             order: 'recent' // 'popular' might add redundant sorting
+          });
+
+          // Inject provider info into the posts so UI knows origin
+          return posts.map(post => ({
+            ...post,
+            _provider: providerName // Add a client-hint property
+          }));
+        } catch (err) {
+          console.error(`Error fetching favorites for ${providerName}:`, err);
+          return [];
+        }
+      })
     );
 
-    const sortedPosts = limitedIds
-      .map(id => validPosts.find((post: DanbooruPost) => post.id === id))
-      .filter(Boolean);
+    // Flatten results
+    const allPosts: (BooruPost & { _provider?: string })[] = [];
+    promiseResults.forEach(result => {
+      if (result.status === 'fulfilled') {
+        allPosts.push(...result.value);
+      }
+    });
 
-    return NextResponse.json(sortedPosts, {
+    // Sort result to match input order? 
+    // It's tricky with mixed providers. We'll just return the list.
+    // The UI usually displays them in added order or grid, we return the metadata found.
+
+    return NextResponse.json(allPosts, {
       headers: {
         'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
         'X-Content-Type-Options': 'nosniff',
-        'X-API-Version': '1.0',
-        'X-Total-Count': sortedPosts.length.toString(),
+        'X-API-Version': '2.0',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST',
         'Access-Control-Allow-Headers': 'Content-Type',
