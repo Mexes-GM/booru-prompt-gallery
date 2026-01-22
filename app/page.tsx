@@ -1177,7 +1177,7 @@ export default function DanbooruPromptGenerator() {
     <TooltipProvider>
       <div className="min-h-screen bg-background">
         {/* ... existing header ... */}
-        <header className="sticky top-0 z-50 w-full border-b glass-effect">
+        <header className="w-full border-b glass-effect">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2 sm:space-x-4">
