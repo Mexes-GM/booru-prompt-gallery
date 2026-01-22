@@ -211,6 +211,7 @@ const transformAibooruPost = (post: any): BooruPost => ({
 
 // Production fetcher with error handling and retry logic
 const fetcher = async (url: string) => {
+  console.log('[ApiClient] Fetching URL:', url)
   try {
     // Check if we are fetching directly from Aibooru (client-side bypass)
     const isDirectAibooru = url.startsWith('https://aibooru.online')
@@ -224,6 +225,8 @@ const fetcher = async (url: string) => {
 
     const res = await fetch(url, { headers })
     
+    console.log(`[ApiClient] Response status for ${url}:`, res.status)
+
     if (!res.ok) {
       const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
       try {
@@ -232,14 +235,16 @@ const fetcher = async (url: string) => {
         error.info = { message: res.statusText }
       }
       error.status = res.status
+      console.error('[ApiClient] Fetch Error:', error)
       throw error
     }
     
     const data = await res.json()
+    console.log(`[ApiClient] Data received for ${url}:`, Array.isArray(data) ? `Array(${data.length})` : typeof data)
     
     // Transform data if it's from Aibooru direct fetch
     if (isDirectAibooru && Array.isArray(data)) {
-      return data
+      const transformed = data
         .filter(post => 
           post && 
           post.file_url && 
@@ -249,10 +254,13 @@ const fetcher = async (url: string) => {
           !post.file_url.match(/\.(mp4|webm|avi|mov|mkv)$/i)
         )
         .map(transformAibooruPost)
+      console.log('[ApiClient] Transformed Aibooru posts:', transformed.length)
+      return transformed
     }
     
     return data
   } catch (fetchError: any) {
+    console.error('[ApiClient] Critical Fetch Error:', fetchError)
     throw fetchError
   }
 }
@@ -444,14 +452,14 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         const promptFilter = hasPrompt ? 'has:prompt' : ''
         let finalTags: string
         
-        // Replicate logic from lib/booru/providers/aibooru.ts
+        // Use raw 'query' instead of 'encodedQuery' to avoid double encoding by URLSearchParams
         if (order === 'recent') {
-          finalTags = [encodedQuery, promptFilter].filter(Boolean).join(' ').trim()
+          finalTags = [query, promptFilter].filter(Boolean).join(' ').trim()
         } else if (order === 'random') {
           const randomCount = "20"
-          finalTags = [encodedQuery, promptFilter, `random:${randomCount}`].filter(Boolean).join(' ')
+          finalTags = [query, promptFilter, `random:${randomCount}`].filter(Boolean).join(' ')
         } else {
-          finalTags = [encodedQuery, promptFilter, 'order:rank'].filter(Boolean).join(' ')
+          finalTags = [query, promptFilter, 'order:rank'].filter(Boolean).join(' ')
         }
 
         const params = new URLSearchParams({
@@ -461,7 +469,9 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
           tags: finalTags
         })
 
-        return `https://aibooru.online/posts.json?${params.toString()}`
+        const directUrl = `https://aibooru.online/posts.json?${params.toString()}`
+        console.log('[ApiClient] Generated Aibooru Direct URL:', directUrl)
+        return directUrl
       }
       
       // Select the correct API endpoint based on provider
