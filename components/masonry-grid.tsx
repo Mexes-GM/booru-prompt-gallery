@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { BooruPost } from "@/lib/api-client"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { motion, AnimatePresence } from "framer-motion"
 
 interface MasonryGridProps {
   items: BooruPost[]
@@ -34,6 +35,44 @@ function useDebounce<T>(value: T, delay: number): T {
 
   return debouncedValue
 }
+
+const MasonryItem = React.memo(({ 
+  pos, 
+  renderItem 
+}: { 
+  pos: { x: number, y: number, width: number, height: number, item: BooruPost, index: number }, 
+  renderItem: (item: BooruPost, w: number, h: number) => React.ReactNode 
+}) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8, x: pos.x, y: pos.y + 40 }}
+      animate={{ 
+        opacity: 1, 
+        scale: 1, 
+        x: pos.x,
+        y: pos.y 
+      }}
+      exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.1 } }}
+      transition={{
+        type: "spring",
+        stiffness: 350,
+        damping: 30,
+        delay: (pos.index % 12) * 0.05, // Stagger effect using stable index
+      }}
+      className="absolute"
+      style={{
+        width: pos.width,
+        height: pos.height,
+        left: 0,
+        top: 0,
+        willChange: "transform, opacity"
+      }}
+    >
+      {renderItem(pos.item, pos.width, pos.height)}
+    </motion.div>
+  )
+})
+MasonryItem.displayName = "MasonryItem"
 
 export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: MasonryGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -118,9 +157,9 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
 
     // Initialize column heights
     const columnHeights = new Array(columnCount).fill(0)
-    const positions: { x: number; y: number; width: number; height: number; item: BooruPost }[] = []
+    const positions: { x: number; y: number; width: number; height: number; item: BooruPost; index: number }[] = []
 
-    items.forEach((item) => {
+    items.forEach((item, index) => {
       // Find shortest column
       const minHeight = Math.min(...columnHeights)
       const columnIndex = columnHeights.indexOf(minHeight)
@@ -148,6 +187,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
         width: columnWidth,
         height: itemHeight,
         item,
+        index,
       })
 
       // Update column height
@@ -179,19 +219,15 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
       className="relative w-full" 
       style={{ height: layout.totalHeight }}
     >
-      {visibleItems.map((pos) => (
-        <div
-          key={pos.item.id}
-          className="absolute transition-all duration-300"
-          style={{
-            transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
-            width: pos.width,
-            height: pos.height,
-          }}
-        >
-          {renderItem(pos.item, pos.width, pos.height)}
-        </div>
-      ))}
+      <AnimatePresence mode="popLayout">
+        {visibleItems.map((pos) => (
+          <MasonryItem 
+            key={pos.item.id} 
+            pos={pos} 
+            renderItem={renderItem} 
+          />
+        ))}
+      </AnimatePresence>
     </div>
   )
 }

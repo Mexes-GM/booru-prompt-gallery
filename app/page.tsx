@@ -43,6 +43,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
+import { motion } from "framer-motion"
 import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil, type FavoriteItem } from "@/lib/api-client"
 
 import { userPreferences, type HistoryItem } from "@/lib/storage"
@@ -257,10 +258,11 @@ export default function DanbooruPromptGenerator() {
   // CRITICAL FIX: Deduplicate posts by ID to prevent duplicate rendering
   // This handles the case where the API returns overlapping results between pages
   // LOGIC: Keep FIRST occurrence of each unique ID, remove all subsequent duplicates
-  const allPosts = pages ? (() => {
+  const allPosts = useMemo(() => {
+    if (!pages) return []
+
     const flatPosts = pages.flat()
     const seenIds = new Set<number>()
-    const duplicateIds: number[] = []
     const keptPosts: BooruPost[] = []
     
     // Single pass through all posts - O(n) time complexity
@@ -268,8 +270,6 @@ export default function DanbooruPromptGenerator() {
       const post = flatPosts[i]
       
       if (seenIds.has(post.id)) {
-        // This is a duplicate - skip it
-        duplicateIds.push(post.id)
         continue
       }
       
@@ -279,7 +279,7 @@ export default function DanbooruPromptGenerator() {
     }
     
     return keptPosts
-  })() : []
+  }, [pages])
   
   // Use dedicated favorites API when showing favorites
   const posts = showFavorites ? (favoritePosts || []) : allPosts
@@ -1324,7 +1324,7 @@ export default function DanbooruPromptGenerator() {
                       <div className="bg-muted/50 p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto">
                         <Button
                           type="button"
-                          variant={booruProvider === "danbooru" ? "secondary" : "ghost"}
+                          variant="ghost"
                           onClick={() => {
                             if (booruProvider === "rule34" && ratingFilter === "all") {
                               setRatingFilter(previousRatingFilter)
@@ -1333,9 +1333,16 @@ export default function DanbooruPromptGenerator() {
                             setBooruProvider("danbooru")
                             trackProviderChange("danbooru")
                           }}
-                          className={`h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "danbooru" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "danbooru" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
                         >
-                          Danbooru
+                          {booruProvider === "danbooru" && (
+                            <motion.div
+                              layoutId="activeProvider"
+                              className="absolute inset-0 bg-background shadow-sm rounded-md"
+                              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                          )}
+                          <span className="relative z-10">Danbooru</span>
                         </Button>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -1355,9 +1362,15 @@ export default function DanbooruPromptGenerator() {
                                   trackProviderChange("aibooru")
                                   */
                                 }}
-                                className={`h-8 text-sm px-4 flex-1 sm:flex-none opacity-50 cursor-not-allowed ${booruProvider === "aibooru" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                                className={`relative h-8 text-sm px-4 flex-1 sm:flex-none opacity-50 cursor-not-allowed ${booruProvider === "aibooru" ? "text-foreground" : "text-muted-foreground"}`}
                               >
-                                Aibooru
+                                {booruProvider === "aibooru" && (
+                                   <motion.div
+                                     layoutId="activeProvider"
+                                     className="absolute inset-0 bg-background shadow-sm rounded-md"
+                                   />
+                                )}
+                                <span className="relative z-10">Aibooru</span>
                               </Button>
                             </span>
                           </TooltipTrigger>
@@ -1367,7 +1380,7 @@ export default function DanbooruPromptGenerator() {
                         </Tooltip>
                         <Button
                           type="button"
-                          variant={booruProvider === "rule34" ? "secondary" : "ghost"}
+                          variant="ghost"
                           onClick={() => {
                             if (booruProvider !== "rule34") {
                               setPreviousRatingFilter(ratingFilter)
@@ -1377,13 +1390,20 @@ export default function DanbooruPromptGenerator() {
                             trackProviderChange("rule34")
                             trackRatingChange("all")
                           }}
-                          className={`h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "rule34" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "rule34" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
                         >
-                          Rule34
+                          {booruProvider === "rule34" && (
+                            <motion.div
+                              layoutId="activeProvider"
+                              className="absolute inset-0 bg-background shadow-sm rounded-md"
+                              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                          )}
+                          <span className="relative z-10">Rule34</span>
                         </Button>
                         <Button
                           type="button"
-                          variant={booruProvider === "e621" ? "secondary" : "ghost"}
+                          variant="ghost"
                           onClick={() => {
                             if (booruProvider === "rule34" && ratingFilter === "all") {
                               setRatingFilter(previousRatingFilter)
@@ -1392,9 +1412,16 @@ export default function DanbooruPromptGenerator() {
                             setBooruProvider("e621")
                             trackProviderChange("e621")
                           }}
-                          className={`h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "e621" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "e621" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
                         >
-                          e621
+                          {booruProvider === "e621" && (
+                            <motion.div
+                              layoutId="activeProvider"
+                              className="absolute inset-0 bg-background shadow-sm rounded-md"
+                              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                          )}
+                          <span className="relative z-10">e621</span>
                         </Button>
                       </div>
                     </div>
