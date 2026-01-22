@@ -472,12 +472,21 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
           finalTags = [query, promptFilter, 'order:rank'].filter(Boolean).join(' ')
         }
 
+        // For random order, we must stick to page 1 because random:20 limits the result set to 20 items.
+        // We ensure uniqueness for SWR keys by adding a seed parameter.
+        const isRandom = order === 'random'
+        const effectivePage = isRandom ? "1" : (pageIndex + 1).toString()
+
         const params = new URLSearchParams({
           limit: "20",
           only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
-          page: (pageIndex + 1).toString(),
+          page: effectivePage,
           tags: finalTags
         })
+
+        if (isRandom) {
+          params.append("seed", `${randomSeed}_${pageIndex}`)
+        }
 
         const directUrl = `https://aibooru.online/posts.json?${params.toString()}`
         return directUrl
