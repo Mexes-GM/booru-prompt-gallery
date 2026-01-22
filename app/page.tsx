@@ -1019,7 +1019,7 @@ export default function DanbooruPromptGenerator() {
         <div className="relative bg-muted overflow-hidden" style={{ height: imageHeight }}>
           <Image
             src={fileUrl}
-            alt={`Danbooru post ${post.id}`}
+            alt={`${itemProvider} post ${post.id}`}
             fill
             className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
             sizes={`${width}px`}
@@ -2057,7 +2057,7 @@ export default function DanbooruPromptGenerator() {
                           </div>
                           <Image
                             src={fileUrl}
-                            alt={`Danbooru post ${post.id}`}
+                            alt={`${itemProvider} post ${post.id}`}
                             fill
                             className="object-cover"
                             sizes="128px"
