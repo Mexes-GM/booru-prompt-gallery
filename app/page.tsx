@@ -34,6 +34,7 @@ import {
   Mountain,
   Smile,
   GraduationCap,
+  Save,
 } from "lucide-react"
 import { TeachModal } from "@/components/teach-modal"
 import { TeachWelcomeModal } from "@/components/teach-welcome-modal"
@@ -46,7 +47,7 @@ import Image from "next/image"
 import { motion } from "framer-motion"
 import { useInfinitePosts, useFavoritePosts, hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, getPromptFromPost, removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil, type FavoriteItem } from "@/lib/api-client"
 
-import { userPreferences, type HistoryItem } from "@/lib/storage"
+import { userPreferences, type HistoryItem, type TagPreset } from "@/lib/storage"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
@@ -70,6 +71,16 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import {
   safeTrack,
   initScrollDepthTracking,
@@ -131,6 +142,9 @@ export default function DanbooruPromptGenerator() {
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
   const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  const [presets, setPresets] = useState<TagPreset[]>([])
+  const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false)
+  const [presetName, setPresetName] = useState("")
   const isMobile = useIsMobile()
   
   const effectiveScale = useMemo(() => {
@@ -153,7 +167,44 @@ export default function DanbooruPromptGenerator() {
 
   const { toast } = useToast()
   
+  // Load presets on mount
+  useEffect(() => {
+    setPresets(userPreferences.getAddTagsPresets())
+  }, [])
 
+  const savePreset = () => {
+    if (!presetName.trim() || !addInput.trim()) return
+    
+    const newPresets = userPreferences.addAddTagsPreset({
+      name: presetName,
+      content: addInput,
+    })
+    setPresets(newPresets)
+    setPresetName("")
+    setIsPresetDialogOpen(false)
+    toast({
+      title: "Preset saved",
+      description: "Your tags preset has been saved successfully.",
+    })
+  }
+  
+  const loadPreset = (preset: TagPreset) => {
+    setAddInput(preset.content)
+    toast({
+      title: "Preset loaded",
+      description: `Loaded preset: ${preset.name}`,
+    })
+  }
+  
+  const deletePreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const newPresets = userPreferences.removeAddTagsPreset(id)
+    setPresets(newPresets)
+    toast({
+      title: "Preset deleted",
+      description: "Preset removed successfully.",
+    })
+  }
 
   // Load user preferences from localStorage on client mount
   useEffect(() => {
@@ -1580,19 +1631,98 @@ export default function DanbooruPromptGenerator() {
                                 <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
                                 Tags to Add
                               </label>
-                              <div className="relative">
-                                <Input
+                              <div className="flex h-9 w-full items-center rounded-md border border-input bg-background/50 pl-3 pr-1 text-sm shadow-sm transition-colors focus-within:outline-none focus-within:ring-1 focus-within:ring-ring">
+                                <input
                                   id="add-tags"
                                   value={addInput}
                                   onChange={(e) => setAddInput(e.target.value)}
                                   placeholder="masterpiece, best quality..."
-                                  className="h-9 text-sm bg-background/50"
+                                  className="flex-1 bg-transparent border-none p-0 placeholder:text-muted-foreground focus:outline-none h-full min-w-0"
                                 />
-                                {addInput && (
-                                  <button type="button" onClick={() => setAddInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1">
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                )}
+                                <div className="flex items-center gap-0.5 ml-1.5 shrink-0">
+                                  {addInput && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setAddInput("")}
+                                      className="h-6 w-6 text-muted-foreground hover:text-foreground rounded-full"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                  
+                                  <div className="h-4 w-px bg-border mx-1" />
+                                  
+                                  <div className="flex items-center">
+                                    <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
+                                      <DialogTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-r-none" title="Save Preset">
+                                          <Save className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </DialogTrigger>
+                                      <DialogContent>
+                                        <DialogHeader>
+                                          <DialogTitle>Save Preset</DialogTitle>
+                                          <DialogDescription>
+                                            Enter a name for your tags preset.
+                                          </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="space-y-4 py-4">
+                                          <div className="space-y-2">
+                                            <Label>Preset Name</Label>
+                                            <Input 
+                                              value={presetName}
+                                              onChange={(e) => setPresetName(e.target.value)}
+                                              placeholder="My awesome preset" 
+                                            />
+                                          </div>
+                                          <div className="space-y-2">
+                                            <Label>Tags</Label>
+                                            <div className="p-2 bg-muted rounded-md text-sm font-mono break-all max-h-32 overflow-y-auto">
+                                              {addInput || <span className="text-muted-foreground italic">No tags entered</span>}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <DialogFooter>
+                                          <Button variant="outline" onClick={() => setIsPresetDialogOpen(false)}>Cancel</Button>
+                                          <Button onClick={savePreset} disabled={!presetName.trim() || !addInput.trim()}>Save</Button>
+                                        </DialogFooter>
+                                      </DialogContent>
+                                    </Dialog>
+
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-7 w-5 min-w-[1.25rem] text-muted-foreground hover:text-foreground rounded-l-none" title="Select Preset">
+                                          <ChevronDown className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="w-[240px]">
+                                        <DropdownMenuLabel>Saved Presets</DropdownMenuLabel>
+                                        <DropdownMenuSeparator />
+                                        {presets.length === 0 ? (
+                                          <div className="p-2 text-sm text-center text-muted-foreground">
+                                            No presets saved
+                                          </div>
+                                        ) : (
+                                          presets.map(preset => (
+                                            <DropdownMenuItem key={preset.id} className="justify-between group cursor-pointer" onClick={() => loadPreset(preset)}>
+                                              <span className="truncate mr-2">{preset.name}</span>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                onClick={(e) => deletePreset(preset.id, e)}
+                                              >
+                                                <Trash2 className="h-3 w-3" />
+                                              </Button>
+                                            </DropdownMenuItem>
+                                          ))
+                                        )}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                             <div className="space-y-2">

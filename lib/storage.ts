@@ -42,7 +42,8 @@ export const STORAGE_KEYS = {
   REMOVE_QUALITY_TAGS: 'remove-quality-tags',
   RATING_FILTER: 'rating-filter',
   ORDER: 'order',
-  HISTORY: 'prompt-history'
+  HISTORY: 'prompt-history',
+  ADD_TAGS_PRESETS: 'add-tags-presets'
 } as const
 
 export interface HistoryItem {
@@ -51,6 +52,13 @@ export interface HistoryItem {
   timestamp: number
   postId?: number
   thumbnailUrl?: string
+}
+
+export interface TagPreset {
+  id: string
+  name: string
+  content: string
+  timestamp: number
 }
 
 // Type-safe getters and setters for specific preferences
@@ -87,6 +95,28 @@ export const userPreferences = {
 
   getHistory: (): HistoryItem[] => 
     storage.get(STORAGE_KEYS.HISTORY, []),
+
+  getAddTagsPresets: (): TagPreset[] => 
+    storage.get(STORAGE_KEYS.ADD_TAGS_PRESETS, []),
+
+  addAddTagsPreset: (preset: Omit<TagPreset, 'id' | 'timestamp'>) => {
+    const presets = storage.get<TagPreset[]>(STORAGE_KEYS.ADD_TAGS_PRESETS, [])
+    const newPreset: TagPreset = {
+      ...preset,
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString() + Math.random().toString(36).substring(2),
+      timestamp: Date.now()
+    }
+    const newPresets = [newPreset, ...presets]
+    storage.set(STORAGE_KEYS.ADD_TAGS_PRESETS, newPresets)
+    return newPresets
+  },
+
+  removeAddTagsPreset: (id: string) => {
+    const presets = storage.get<TagPreset[]>(STORAGE_KEYS.ADD_TAGS_PRESETS, [])
+    const newPresets = presets.filter(p => p.id !== id)
+    storage.set(STORAGE_KEYS.ADD_TAGS_PRESETS, newPresets)
+    return newPresets
+  },
 
   addToHistory: (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
     const history = storage.get<HistoryItem[]>(STORAGE_KEYS.HISTORY, [])
