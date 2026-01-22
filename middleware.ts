@@ -33,6 +33,19 @@ export async function middleware(request: NextRequest) {
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   
+  // CSP for Aibooru and other providers
+  const csp = `
+    default-src 'self';
+    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live;
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' blob: data: https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://api.rule34.xxx https://rule34.xxx https://*.donmai.us https://*.google.com https://*.ko-fi.com;
+    font-src 'self';
+    connect-src 'self' https://aibooru.online https://danbooru.donmai.us https://api.rule34.xxx https://e621.net https://vercel.live https://vitals.vercel-insights.com;
+    frame-src 'self' https://vercel.live;
+  `.replace(/\s+/g, ' ').trim()
+  
+  response.headers.set('Content-Security-Policy', csp)
+
   // Add performance headers
   response.headers.set('X-Powered-By', 'Next.js')
   

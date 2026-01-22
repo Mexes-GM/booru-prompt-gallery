@@ -24,6 +24,11 @@ const nextConfig = {
         hostname: 'cdn.donmai.us',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'aibooru.online',
+        pathname: '/**',
+      },
     ],
     dangerouslyAllowSVG: false,
     formats: ['image/webp', 'image/avif'],
