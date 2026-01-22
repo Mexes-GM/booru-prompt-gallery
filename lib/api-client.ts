@@ -192,15 +192,37 @@ export const getPromptFromPost = (post: BooruPost): string | null => {
   return null
 }
 
+// Helper to transform raw Aibooru posts to BooruPost
+const transformAibooruPost = (post: any): BooruPost => ({
+  id: post.id,
+  file_url: post.file_url,
+  large_file_url: post.large_file_url || post.file_url,
+  preview_file_url: post.preview_file_url || post.file_url,
+  tag_string: post.tag_string,
+  tag_string_artist: post.tag_string_artist,
+  tag_string_character: post.tag_string_character,
+  tag_string_copyright: post.tag_string_copyright,
+  rating: post.rating,
+  score: post.score,
+  ai_metadata: post.ai_metadata,
+  width: post.image_width,
+  height: post.image_height,
+})
+
 // Production fetcher with error handling and retry logic
 const fetcher = async (url: string) => {
   try {
-    const res = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'BooruPromptGallery/1.0',
-      }
-    })
+    // Check if we are fetching directly from Aibooru (client-side bypass)
+    const isDirectAibooru = url.startsWith('https://aibooru.online')
+    
+    const headers: HeadersInit = isDirectAibooru 
+      ? {} // Browsers automatically set Origin, no special headers for CORS requests
+      : {
+          'Accept': 'application/json',
+          'User-Agent': 'BooruPromptGallery/1.0',
+        }
+
+    const res = await fetch(url, { headers })
     
     if (!res.ok) {
       const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
@@ -210,11 +232,25 @@ const fetcher = async (url: string) => {
         error.info = { message: res.statusText }
       }
       error.status = res.status
-      
       throw error
     }
     
     const data = await res.json()
+    
+    // Transform data if it's from Aibooru direct fetch
+    if (isDirectAibooru && Array.isArray(data)) {
+      return data
+        .filter(post => 
+          post && 
+          post.file_url && 
+          !post.file_url.includes("deleted") && 
+          post.id && 
+          (post.tag_string || post.tags) &&
+          !post.file_url.match(/\.(mp4|webm|avi|mov|mkv)$/i)
+        )
+        .map(transformAibooruPost)
+    }
+    
     return data
   } catch (fetchError: any) {
     throw fetchError
@@ -402,12 +438,35 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       if (previousPageData && previousPageData.length === 0) {
         return null
       }
+
+      // Special handling for Aibooru: Direct client-side fetch to bypass Vercel IP blocks
+      if (provider === 'aibooru') {
+        const promptFilter = hasPrompt ? 'has:prompt' : ''
+        let finalTags: string
+        
+        // Replicate logic from lib/booru/providers/aibooru.ts
+        if (order === 'recent') {
+          finalTags = [encodedQuery, promptFilter].filter(Boolean).join(' ').trim()
+        } else if (order === 'random') {
+          const randomCount = "20"
+          finalTags = [encodedQuery, promptFilter, `random:${randomCount}`].filter(Boolean).join(' ')
+        } else {
+          finalTags = [encodedQuery, promptFilter, 'order:rank'].filter(Boolean).join(' ')
+        }
+
+        const params = new URLSearchParams({
+          limit: "20",
+          only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
+          page: (pageIndex + 1).toString(),
+          tags: finalTags
+        })
+
+        return `https://aibooru.online/posts.json?${params.toString()}`
+      }
       
       // Select the correct API endpoint based on provider
       let apiEndpoint = '/api/posts' // Default to Danbooru
-      if (provider === 'aibooru') {
-        apiEndpoint = '/api/aibooru'
-      } else if (provider === 'rule34') {
+      if (provider === 'rule34') {
         apiEndpoint = '/api/rule34'
       } else if (provider === 'e621') {
         apiEndpoint = '/api/e621'
@@ -417,15 +476,12 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       // pageIndex + 1 ensures correct page progression: 0 -> page 1, 1 -> page 2, etc.
       const baseUrl = `${apiEndpoint}?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`
       
-      // Add hasPrompt parameter for Aibooru
-      const promptParam = provider === 'aibooru' && hasPrompt ? '&hasPrompt=true' : ''
-      
       // Add random seed for random searches to force cache invalidation
       // Also add seed if tags contain order:random to ensure we get new results
       const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
       const seedParam = isRandomOrder && randomSeed ? `&seed=${randomSeed}` : ''
       
-      const finalUrl = `${baseUrl}${promptParam}${seedParam}`
+      const finalUrl = `${baseUrl}${seedParam}`
       
       return finalUrl
     },
