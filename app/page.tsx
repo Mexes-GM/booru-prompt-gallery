@@ -35,6 +35,7 @@ import {
   Smile,
   GraduationCap,
   Save,
+  Shuffle,
 } from "lucide-react"
 import { TeachModal } from "@/components/teach-modal"
 import { TeachWelcomeModal } from "@/components/teach-welcome-modal"
@@ -111,7 +112,8 @@ export default function DanbooruPromptGenerator() {
   const [searchTags, setSearchTags] = useState("")
   const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
   const [ratingFilter, setRatingFilter] = useState("rating:general")
-  const order = "recent" // Always use recent order
+  const [isShuffle, setIsShuffle] = useState(false)
+  const order = isShuffle ? "random" : "recent"
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [cardScale, setCardScale] = useState<CardScale>("medium")
   const [scaleValue, setScaleValue] = useState([2])
@@ -134,6 +136,7 @@ export default function DanbooruPromptGenerator() {
   const [removeLoRaTags, setRemoveLoRaTags] = useState(false)
   const [removeQualityTags, setRemoveQualityTags] = useState(false)
   const [tagCountFilter, setTagCountFilter] = useState("5") // Default to >5 tags
+  const [appliedTagCountFilter, setAppliedTagCountFilter] = useState("5")
   const [isClient, setIsClient] = useState(false)
   const [previousRatingFilter, setPreviousRatingFilter] = useState<string>("rating:general") // Store rating before switching to Rule34
   const [isLoadingLock, setIsLoadingLock] = useState(false) // Prevent race conditions on "Load More"
@@ -268,7 +271,7 @@ export default function DanbooruPromptGenerator() {
     size,
     setSize,
     mutate,
-  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter, tagCountFilter)
+  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter, appliedTagCountFilter)
 
   // Prepare favorites list for hook
   const favoriteItems: FavoriteItem[] = useMemo(() => {
@@ -377,6 +380,15 @@ export default function DanbooruPromptGenerator() {
     }
     mutate(undefined, { revalidate: true })
     trackRefresh(order)
+  }
+
+  const toggleShuffle = () => {
+    const newShuffle = !isShuffle
+    setIsShuffle(newShuffle)
+    setSize(1)
+    if (newShuffle) {
+      setRandomSeed(Date.now())
+    }
   }
 
   useEffect(() => {
@@ -720,7 +732,7 @@ export default function DanbooruPromptGenerator() {
     setNoMoreResults(false)
     setLoadMoreError(false)
     setLastLoadAttempt(0)
-  }, [order, ratingFilter, debouncedSearchTags, tagCountFilter, setSize])
+  }, [order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, setSize])
 
   // Load persisted exclude tags on mount
   useEffect(() => {
@@ -1267,7 +1279,7 @@ export default function DanbooruPromptGenerator() {
             <div className="text-center space-y-2">
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
                 <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
-                  Generate prompts from Danbooru, Aibooru, and Rule34 image collections. Extract and format tags from posts or access AI-generated prompts directly, creating clean, ready-to-use prompts for your AI art generation.
+                  Generate prompts from Danbooru, Aibooru, Rule34 and e621 image collections. Extract and format tags from posts or access AI-generated prompts directly, creating clean, ready-to-use prompts for your AI art generation.
                 </p>
                 
                 {/* Social Links Section */}
@@ -1560,7 +1572,7 @@ export default function DanbooruPromptGenerator() {
                         type="text"
                         value={searchTags}
                         onChange={(e) => setSearchTags(e.target.value)}
-                        placeholder={order === "recent" ? "Search tags (e.g., cat_girl, blue_eyes)..." : "Search tag..."}
+                        placeholder={isShuffle ? "Search tag (e.g., cat_girl)..." : "Search tags (e.g., cat_girl, blue_eyes)..."}
                         className="pl-10 pr-10 h-11 text-base shadow-sm focus-visible:ring-offset-0"
                         aria-label="Search tags"
                         translate="no"
@@ -1579,6 +1591,15 @@ export default function DanbooruPromptGenerator() {
                     <div className="flex gap-2">
                       <Button type="submit" disabled={isLoading} size="lg" className="h-11 px-6 shadow-sm min-w-[100px]">
                         {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={isShuffle ? "default" : "outline"}
+                        onClick={toggleShuffle}
+                        className="h-11 w-11 p-0 shadow-sm"
+                        title={isShuffle ? "Disable shuffle" : "Enable shuffle"}
+                      >
+                        <Shuffle className="w-4 h-4" />
                       </Button>
                       <Button
                         type="button"
@@ -1731,34 +1752,53 @@ export default function DanbooruPromptGenerator() {
                             <div className="space-y-2">
                               <label htmlFor="tag-count" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                                 <span className={`w-1.5 h-1.5 rounded-full ${isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}`}></span>
-                                Minimum Tag Count ({`>`} X)
+                                Minimum Tag Count ({`>`} {tagCountFilter})
                               </label>
-                              <div className="relative">
+                              <div className="flex items-center gap-3">
+                                <Slider
+                                  min={5}
+                                  max={100}
+                                  step={1}
+                                  value={[parseInt(tagCountFilter) || 5]}
+                                  onValueChange={(val) => setTagCountFilter(val[0].toString())}
+                                  onValueCommit={(val) => setAppliedTagCountFilter(val[0].toString())}
+                                  disabled={!isTagCountSupported}
+                                  className={`flex-1 ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
+                                />
                                 <Input
                                   id="tag-count"
                                   type="number"
                                   min={5}
+                                  max={1000}
                                   value={tagCountFilter}
                                   onChange={(e) => setTagCountFilter(e.target.value)}
                                   onBlur={() => {
                                     const val = parseInt(tagCountFilter)
                                     if (!tagCountFilter || isNaN(val) || val < 5) {
                                       setTagCountFilter("5")
+                                      setAppliedTagCountFilter("5")
+                                    } else {
+                                      setAppliedTagCountFilter(tagCountFilter)
                                     }
                                   }}
-                                  placeholder="e.g. 5"
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      const val = parseInt(tagCountFilter)
+                                      if (!tagCountFilter || isNaN(val) || val < 5) {
+                                        setTagCountFilter("5")
+                                        setAppliedTagCountFilter("5")
+                                      } else {
+                                        setAppliedTagCountFilter(tagCountFilter)
+                                      }
+                                    }
+                                  }}
                                   disabled={!isTagCountSupported}
-                                  className={`h-9 text-sm bg-background/50 ${!isTagCountValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
+                                  className={`h-8 w-16 text-xs text-center bg-background/50 ${!isTagCountValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
                                 />
-                                {tagCountFilter && tagCountFilter !== "5" && isTagCountSupported && (
-                                  <button type="button" onClick={() => setTagCountFilter("5")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1">
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                )}
                               </div>
                               {!isTagCountSupported ? (
                                 <p className="text-[10px] text-muted-foreground italic">
-                                  Only supported on Danbooru
+                                  Only supported on Danbooru and e621
                                 </p>
                               ) : !isTagCountValid ? (
                                 <p className="text-[10px] text-red-500">
@@ -1766,7 +1806,7 @@ export default function DanbooruPromptGenerator() {
                                 </p>
                               ) : (
                                 <p className="text-[10px] text-muted-foreground">
-                                  Shows posts with more than X tags (min 5).
+                                  Shows posts with more than {tagCountFilter} tags.
                                 </p>
                               )}
                             </div>
@@ -1842,10 +1882,10 @@ export default function DanbooruPromptGenerator() {
 
                   {/* Status & Alerts */}
                   <div className="space-y-2">
-                    {getFinalQueryTags(searchTags, ratingFilter, order, tagCountFilter, booruProvider).length > 0 && (
+                    {getFinalQueryTags(searchTags, ratingFilter, order, appliedTagCountFilter, booruProvider).length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground bg-muted/20 p-2 rounded-md border border-border/30">
                         <span className="font-medium">Active Query:</span>
-                        {getFinalQueryTags(searchTags, ratingFilter, order, tagCountFilter, booruProvider).map((tag, index) => (
+                        {getFinalQueryTags(searchTags, ratingFilter, order, appliedTagCountFilter, booruProvider).map((tag, index) => (
                           <Badge key={index} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 font-mono">
                             {tag}
                           </Badge>
@@ -2266,10 +2306,10 @@ export default function DanbooruPromptGenerator() {
                 <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
                 <div className="space-y-2">
                   <p className="text-base sm:text-lg font-medium">
-                    {showFavorites ? "Loading favorites..." : "Loading images..."}
+                    {showFavorites ? "Loading favorites..." : `Loading ${booruProvider === 'e621' ? 'e621' : booruProvider.charAt(0).toUpperCase() + booruProvider.slice(1)} images...`}
                   </p>
                   <p className="text-xs sm:text-sm text-muted-foreground px-4">
-                    {showFavorites ? "Fetching your favorite posts" : "Fetching the latest content from Danbooru"}
+                    {showFavorites ? "Fetching your favorite posts" : `Fetching the latest content from ${booruProvider === 'e621' ? 'e621' : booruProvider.charAt(0).toUpperCase() + booruProvider.slice(1)}`}
                   </p>
                 </div>
               </div>
@@ -2310,13 +2350,15 @@ export default function DanbooruPromptGenerator() {
         <footer className="border-t bg-muted/30 mt-16">
           <div className="container mx-auto px-4 py-6 sm:py-8">
             <div className="text-center space-y-4">
-              <div className="flex items-center justify-center space-x-2">
+              <div className="flex items-center justify-center space-x-2 flex-wrap gap-y-2">
                 <span className="text-xs sm:text-sm text-muted-foreground">Powered by</span>
                 <Badge variant="outline" className="text-xs">Danbooru API</Badge>
                 <Badge variant="outline" className="text-xs">Aibooru API</Badge>
+                <Badge variant="outline" className="text-xs">Rule34 API</Badge>
+                <Badge variant="outline" className="text-xs">e621 API</Badge>
               </div>
               <p className="text-xs text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                Generate clean prompts from Danbooru and Aibooru posts. Extract and format tags from images, remove unnecessary metadata, LoRa tags, and quality descriptors to create ready-to-use prompts for AI art generation. All images are sourced from their respective platforms and belong to their creators.
+                Generate clean prompts from Danbooru, Aibooru, Rule34 and e621 posts. Extract and format tags from images, remove unnecessary metadata, LoRa tags, and quality descriptors to create ready-to-use prompts for AI art generation. All images are sourced from their respective platforms and belong to their creators.
               </p>
             </div>
           </div>

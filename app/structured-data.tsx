@@ -14,7 +14,7 @@ interface StructuredDataProps {
 export function StructuredData({
   type = 'WebApplication',
   name = 'Danbooru Prompt Gallery',
-  description = 'Generate prompts from Danbooru image tags. Extract and format tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.',
+  description = 'Generate prompts from Danbooru, Aibooru, Rule34 and e621 image tags. Extract and format tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.',
   url = 'https://danbooru-prompt-gallery.vercel.app',
   applicationCategory = 'DesignApplication',
   operatingSystem = 'Any'
