@@ -3,7 +3,7 @@
   "version": "6.1.1",
   "private": true,
   "scripts": {
-    "build": "node scripts/update-version.js && next build",
+    "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
