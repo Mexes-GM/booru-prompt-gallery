@@ -528,21 +528,44 @@ export default function DanbooruPromptGenerator() {
       const itemProvider = post._provider || booruProvider
       const filename = `${itemProvider}_${post.id}.${extension}`
 
-      // Check if the image URL requires a proxy (CORS or hotlink protection)
-      // Rule34 strictly blocks direct cross-origin fetches
-      // Aibooru often returns 403s without proper Referer
-      // e621 also requires CORS handling
-      const needsProxy = imageUrl.includes('rule34.xxx') || imageUrl.includes('aibooru.online') || imageUrl.includes('e621.net')
+      // Determine if we need to force proxy
+      const alwaysProxy = imageUrl.includes('rule34.xxx') || imageUrl.includes('e621.net')
       
       let fetchUrl = imageUrl
-      if (needsProxy) {
-        // Use our proxy endpoint to bypass CORS
+      if (alwaysProxy) {
         fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
       }
 
       // Fetch the image
-      const response = await fetch(fetchUrl)
-      if (!response.ok) throw new Error('Failed to fetch image')
+      let response: Response
+      try {
+        response = await fetch(fetchUrl)
+        if (!response.ok) {
+           throw new Error(`Status ${response.status}`)
+        }
+      } catch (directError) {
+        // If direct fetch fails and we haven't tried proxy yet, try proxy
+        if (!alwaysProxy) {
+          console.log(`Direct download failed (${directError}), trying proxy...`)
+          fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
+          response = await fetch(fetchUrl)
+        } else {
+          throw directError
+        }
+      }
+
+      if (!response.ok) {
+        let errorMessage = `Failed to fetch image: ${response.status} ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          if (errorData.error) {
+            errorMessage = errorData.error
+          }
+        } catch (e) {
+          // Response was not JSON
+        }
+        throw new Error(errorMessage)
+      }
       
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
@@ -566,7 +589,7 @@ export default function DanbooruPromptGenerator() {
       console.error('Download error:', error)
       toast({
         title: "Download failed",
-        description: "There was an error downloading the image. Try again or visit the original post.",
+        description: error instanceof Error ? error.message : "There was an error downloading the image. Try again or visit the original post.",
         variant: "destructive",
       })
     }
@@ -1027,7 +1050,7 @@ export default function DanbooruPromptGenerator() {
           />
 
           {/* Overlay actions */}
-          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1098,6 +1121,7 @@ export default function DanbooruPromptGenerator() {
                   variant={copiedId === post.id ? "default" : "outline"}
                   className="px-2 focus-ring h-auto rounded-l-none"
                   disabled={!displayContent}
+                  aria-label="Copy options"
                 >
                   <ChevronDown className="h-4 w-4" />
                 </Button>
@@ -1513,7 +1537,7 @@ export default function DanbooruPromptGenerator() {
 
                         <Sheet>
                           <SheetTrigger asChild>
-                            <Button type="button" variant="outline" size="icon" className="h-9 w-9">
+                            <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="View history">
                               <History className="w-4 h-4" />
                             </Button>
                           </SheetTrigger>
@@ -1541,7 +1565,7 @@ export default function DanbooruPromptGenerator() {
                                         </div>
                                       </div>
                                       <div className="flex justify-end gap-2 mt-2">
-                                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { userPreferences.removeFromHistory(item.id); setHistory(userPreferences.getHistory()) }}>
+                                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { userPreferences.removeFromHistory(item.id); setHistory(userPreferences.getHistory()) }} aria-label="Delete history item">
                                           <Trash2 className="h-4 w-4" />
                                         </Button>
                                         <Button size="sm" variant="secondary" className="h-8" onClick={() => copyToClipboard(item.content, item.postId || 0, true, item.thumbnailUrl)}>
@@ -1598,6 +1622,7 @@ export default function DanbooruPromptGenerator() {
                         onClick={toggleShuffle}
                         className="h-11 w-11 p-0 shadow-sm"
                         title={isShuffle ? "Disable shuffle" : "Enable shuffle"}
+                        aria-label={isShuffle ? "Disable shuffle" : "Enable shuffle"}
                       >
                         <Shuffle className="w-4 h-4" />
                       </Button>
@@ -1651,6 +1676,7 @@ export default function DanbooruPromptGenerator() {
                                       size="icon"
                                       onClick={() => setAddInput("")}
                                       className="h-6 w-6 text-muted-foreground hover:text-foreground rounded-full"
+                                      aria-label="Clear added tags"
                                     >
                                       <X className="h-3 w-3" />
                                     </Button>
@@ -1743,7 +1769,7 @@ export default function DanbooruPromptGenerator() {
                                   className="h-9 text-sm bg-background/50"
                                 />
                                 {excludeInput && (
-                                  <button type="button" onClick={() => setExcludeInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1">
+                                  <button type="button" onClick={() => setExcludeInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-6 w-6 rounded-full hover:bg-muted" aria-label="Clear excluded tags">
                                     <X className="h-3 w-3" />
                                   </button>
                                 )}

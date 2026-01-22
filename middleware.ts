@@ -33,6 +33,9 @@ export async function middleware(request: NextRequest) {
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   
+  // CSP was causing issues with downloads (blocking connections to CDNs).
+  // Removed to match behavior of working commit 1cde6ee.
+  /*
   // CSP for Aibooru and other providers
   const csp = `
     default-src 'self';
@@ -40,11 +43,12 @@ export async function middleware(request: NextRequest) {
     style-src 'self' 'unsafe-inline';
     img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://*.donmai.us https://*.ko-fi.com;
     font-src 'self';
-    connect-src 'self' https://aibooru.online https://*.aibooru.online https://danbooru.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://vercel.live https://vitals.vercel-insights.com;
+    connect-src 'self' https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://vercel.live https://vitals.vercel-insights.com;
     frame-src 'self' https://vercel.live;
   `.replace(/\s+/g, ' ').trim()
   
   response.headers.set('Content-Security-Policy', csp)
+  */
 
   // Add performance headers
   response.headers.set('X-Powered-By', 'Next.js')
