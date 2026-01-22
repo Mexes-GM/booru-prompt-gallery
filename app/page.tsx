@@ -1331,11 +1331,12 @@ export default function DanbooruPromptGenerator() {
                               trackRatingChange(previousRatingFilter)
                             }
                             setBooruProvider("danbooru")
+                            setShowFavorites(false)
                             trackProviderChange("danbooru")
                           }}
-                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "danbooru" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
+                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${!showFavorites && booruProvider === "danbooru" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
                         >
-                          {booruProvider === "danbooru" && (
+                          {!showFavorites && booruProvider === "danbooru" && (
                             <motion.div
                               layoutId="activeProvider"
                               className="absolute inset-0 bg-background shadow-sm rounded-md"
@@ -1349,7 +1350,7 @@ export default function DanbooruPromptGenerator() {
                             <span tabIndex={0}> {/* Wrap in span to allow tooltip on disabled button */}
                               <Button
                                 type="button"
-                                variant={booruProvider === "aibooru" ? "secondary" : "ghost"}
+                                variant={!showFavorites && booruProvider === "aibooru" ? "secondary" : "ghost"}
                                 disabled={true}
                                 onClick={() => {
                                   // Disabled
@@ -1359,12 +1360,13 @@ export default function DanbooruPromptGenerator() {
                                     trackRatingChange(previousRatingFilter)
                                   }
                                   setBooruProvider("aibooru")
+                                  setShowFavorites(false)
                                   trackProviderChange("aibooru")
                                   */
                                 }}
-                                className={`relative h-8 text-sm px-4 flex-1 sm:flex-none opacity-50 cursor-not-allowed ${booruProvider === "aibooru" ? "text-foreground" : "text-muted-foreground"}`}
+                                className={`relative h-8 text-sm px-4 flex-1 sm:flex-none opacity-50 cursor-not-allowed ${!showFavorites && booruProvider === "aibooru" ? "text-foreground" : "text-muted-foreground"}`}
                               >
-                                {booruProvider === "aibooru" && (
+                                {!showFavorites && booruProvider === "aibooru" && (
                                    <motion.div
                                      layoutId="activeProvider"
                                      className="absolute inset-0 bg-background shadow-sm rounded-md"
@@ -1387,12 +1389,13 @@ export default function DanbooruPromptGenerator() {
                             }
                             setBooruProvider("rule34")
                             setRatingFilter("all")
+                            setShowFavorites(false)
                             trackProviderChange("rule34")
                             trackRatingChange("all")
                           }}
-                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "rule34" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
+                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${!showFavorites && booruProvider === "rule34" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
                         >
-                          {booruProvider === "rule34" && (
+                          {!showFavorites && booruProvider === "rule34" && (
                             <motion.div
                               layoutId="activeProvider"
                               className="absolute inset-0 bg-background shadow-sm rounded-md"
@@ -1410,11 +1413,12 @@ export default function DanbooruPromptGenerator() {
                               trackRatingChange(previousRatingFilter)
                             }
                             setBooruProvider("e621")
+                            setShowFavorites(false)
                             trackProviderChange("e621")
                           }}
-                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${booruProvider === "e621" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
+                          className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${!showFavorites && booruProvider === "e621" ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
                         >
-                          {booruProvider === "e621" && (
+                          {!showFavorites && booruProvider === "e621" && (
                             <motion.div
                               layoutId="activeProvider"
                               className="absolute inset-0 bg-background shadow-sm rounded-md"
