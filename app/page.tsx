@@ -688,7 +688,6 @@ export default function DanbooruPromptGenerator() {
   
   useEffect(() => {
     if (hasMounted.current && error) {
-      console.error('[Page] API Error:', error)
       // Check if it's a 403 error from Aibooru
       const is403 = error.status === 403 || error.statusCode === 403
       const isAibooruError = booruProvider === 'aibooru' && is403

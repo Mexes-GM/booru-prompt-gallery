@@ -193,25 +193,32 @@ export const getPromptFromPost = (post: BooruPost): string | null => {
 }
 
 // Helper to transform raw Aibooru posts to BooruPost
-const transformAibooruPost = (post: any): BooruPost => ({
-  id: post.id,
-  file_url: post.file_url,
-  large_file_url: post.large_file_url || post.file_url,
-  preview_file_url: post.preview_file_url || post.file_url,
-  tag_string: post.tag_string,
-  tag_string_artist: post.tag_string_artist,
-  tag_string_character: post.tag_string_character,
-  tag_string_copyright: post.tag_string_copyright,
-  rating: post.rating,
-  score: post.score,
-  ai_metadata: post.ai_metadata,
-  width: post.image_width,
-  height: post.image_height,
-})
+const transformAibooruPost = (post: any): BooruPost => {
+  // Ensure we have minimal required fields
+  if (!post || typeof post !== 'object') {
+     throw new Error('Invalid post data from Aibooru')
+  }
+
+  return {
+    id: post.id || 0,
+    file_url: post.file_url || '',
+    large_file_url: post.large_file_url || post.file_url || '',
+    preview_file_url: post.preview_file_url || post.file_url || '',
+    tag_string: post.tag_string || '',
+    tag_string_artist: post.tag_string_artist || '',
+    tag_string_character: post.tag_string_character || '',
+    tag_string_copyright: post.tag_string_copyright || '',
+    rating: post.rating || 'q',
+    score: post.score || 0,
+    ai_metadata: post.ai_metadata || undefined,
+    width: post.image_width || 0,
+    height: post.image_height || 0,
+    _provider: 'aibooru', // Explicitly mark as Aibooru
+  }
+}
 
 // Production fetcher with error handling and retry logic
 const fetcher = async (url: string) => {
-  console.log('[ApiClient] Fetching URL:', url)
   try {
     // Check if we are fetching directly from Aibooru (client-side bypass)
     const isDirectAibooru = url.startsWith('https://aibooru.online')
@@ -223,10 +230,9 @@ const fetcher = async (url: string) => {
           'User-Agent': 'BooruPromptGallery/1.0',
         }
 
+    // Add signal support if needed, but for now simple fetch
     const res = await fetch(url, { headers })
     
-    console.log(`[ApiClient] Response status for ${url}:`, res.status)
-
     if (!res.ok) {
       const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
       try {
@@ -235,32 +241,36 @@ const fetcher = async (url: string) => {
         error.info = { message: res.statusText }
       }
       error.status = res.status
-      console.error('[ApiClient] Fetch Error:', error)
       throw error
     }
     
     const data = await res.json()
-    console.log(`[ApiClient] Data received for ${url}:`, Array.isArray(data) ? `Array(${data.length})` : typeof data)
     
     // Transform data if it's from Aibooru direct fetch
-    if (isDirectAibooru && Array.isArray(data)) {
-      const transformed = data
-        .filter(post => 
-          post && 
-          post.file_url && 
-          !post.file_url.includes("deleted") && 
-          post.id && 
-          (post.tag_string || post.tags) &&
-          !post.file_url.match(/\.(mp4|webm|avi|mov|mkv)$/i)
-        )
-        .map(transformAibooruPost)
-      console.log('[ApiClient] Transformed Aibooru posts:', transformed.length)
-      return transformed
+    if (isDirectAibooru) {
+      if (Array.isArray(data)) {
+        return data
+          .filter(post => 
+            post && 
+            post.id && 
+            (post.file_url || post.large_file_url) && 
+            !post.file_url?.includes("deleted") && 
+            (post.tag_string || post.tags) &&
+            !post.file_url?.match(/\.(mp4|webm|avi|mov|mkv)$/i)
+          )
+          .map(transformAibooruPost)
+      } else {
+         // Handle empty response or unexpected format gracefully
+         return []
+      }
     }
     
     return data
   } catch (fetchError: any) {
-    console.error('[ApiClient] Critical Fetch Error:', fetchError)
+    // Log only critical errors, not 404s for end of pagination
+    if (fetchError.status !== 404) {
+       console.error('[ApiClient] Fetch Error:', fetchError)
+    }
     throw fetchError
   }
 }
@@ -470,7 +480,6 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         })
 
         const directUrl = `https://aibooru.online/posts.json?${params.toString()}`
-        console.log('[ApiClient] Generated Aibooru Direct URL:', directUrl)
         return directUrl
       }
       
