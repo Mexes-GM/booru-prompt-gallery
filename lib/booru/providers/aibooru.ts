@@ -31,7 +31,10 @@ export class AibooruProvider extends BaseBooruProvider {
       tags: finalTags,
     })
 
-    const data = await this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, params)
+    const data = await this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, params, {
+      'Referer': 'https://aibooru.online/',
+      // Aibooru often blocks requests without a valid Referer or specific headers
+    })
     const validPosts = this.filterValidPosts(data)
 
     return validPosts.map(post => ({
