@@ -29,6 +29,46 @@ const nextConfig = {
         hostname: 'aibooru.online',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: '*.aibooru.online',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cdn.aibooru.download',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.aibooru.download',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'rule34.xxx',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.rule34.xxx',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'e621.net',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.e621.net',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'static1.e621.net',
+        pathname: '/**',
+      },
     ],
     dangerouslyAllowSVG: false,
     formats: ['image/webp', 'image/avif'],
