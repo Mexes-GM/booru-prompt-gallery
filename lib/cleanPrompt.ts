@@ -188,7 +188,8 @@ const CURATED_META_LIST = withNormalizedVariants([
   "artist name",
   "twitter username",
   "request",
-  // backgrounds
+  // backgrounds - disabled
+  /*
   "white background",
   "red background",
   "gradient background",
@@ -227,6 +228,7 @@ const CURATED_META_LIST = withNormalizedVariants([
   "geometric background",
   "pattern background",
   "texture background",
+  */
   // text/logos/usernames
   "english text",
   "japanese text",
