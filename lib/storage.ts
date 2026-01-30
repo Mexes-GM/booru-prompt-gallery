@@ -43,7 +43,8 @@ export const STORAGE_KEYS = {
   RATING_FILTER: 'rating-filter',
   ORDER: 'order',
   HISTORY: 'prompt-history',
-  ADD_TAGS_PRESETS: 'add-tags-presets'
+  ADD_TAGS_PRESETS: 'add-tags-presets',
+  MINIMUM_TAG_COUNT: 'minimum-tag-count'
 } as const
 
 export interface HistoryItem {
@@ -86,6 +87,12 @@ export const userPreferences = {
   
   setRatingFilter: (rating: string) => 
     storage.set(STORAGE_KEYS.RATING_FILTER, rating),
+
+  getMinimumTagCount: (): string => 
+    storage.get(STORAGE_KEYS.MINIMUM_TAG_COUNT, "5"),
+  
+  setMinimumTagCount: (count: string) => 
+    storage.set(STORAGE_KEYS.MINIMUM_TAG_COUNT, count),
 
   getOrder: (): 'popular' | 'recent' | 'random' => 
     storage.get(STORAGE_KEYS.ORDER, 'popular'),

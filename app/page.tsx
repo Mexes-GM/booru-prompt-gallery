@@ -218,12 +218,15 @@ export default function DanbooruPromptGenerator() {
     const savedRemoveQuality = userPreferences.getRemoveQualityTags()
     const savedRatingFilter = userPreferences.getRatingFilter()
     const savedHistory = userPreferences.getHistory()
+    const savedTagCount = userPreferences.getMinimumTagCount()
     
     setBooruProvider(savedProvider)
     setRemoveLoRaTags(savedRemoveLoRa)
     setRemoveQualityTags(savedRemoveQuality)
     setRatingFilter(savedRatingFilter)
     setHistory(savedHistory)
+    setTagCountFilter(savedTagCount)
+    setAppliedTagCountFilter(savedTagCount)
   }, [])
 
   // Save booru provider preference
@@ -253,6 +256,13 @@ export default function DanbooruPromptGenerator() {
       userPreferences.setRatingFilter(ratingFilter)
     }
   }, [ratingFilter, isClient])
+
+  // Save tag count filter preference
+  useEffect(() => {
+    if (isClient) {
+      userPreferences.setMinimumTagCount(tagCountFilter)
+    }
+  }, [tagCountFilter, isClient])
 
   // Auto-activate prompt filter when Aibooru is selected
   useEffect(() => {
@@ -775,28 +785,6 @@ export default function DanbooruPromptGenerator() {
       try {
         const saved = localStorage.getItem('addTags')
         if (saved !== null) setAddInput(saved)
-      } catch {
-        // ignore
-      }
-    }
-  }, [])
-
-  // Load persisted tag count filter on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('tagCountFilter')
-        if (saved !== null) {
-          // Strip any non-digit characters to handle migration from old format
-          const cleanSaved = saved.replace(/\D/g, '')
-          // Ensure minimum is 5
-          const val = parseInt(cleanSaved)
-          if (!isNaN(val) && val >= 5) {
-            setTagCountFilter(cleanSaved)
-          } else {
-            setTagCountFilter("5")
-          }
-        }
       } catch {
         // ignore
       }

@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 // Schema Validation
 const TagReclassificationSchema = z.object({
-  tagName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_\-\s:()]+$/, "Invalid tag format"),
+  tagName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_\-\s:();.!?'"~<>&’/\[\]*+@#%=,]+$/, "Invalid tag format"),
   currentCategory: z.enum(['clothing', 'pose', 'scenery', 'appearance', 'other']),
   suggestedCategory: z.enum(['clothing', 'pose', 'scenery', 'appearance', 'other'])
 })
