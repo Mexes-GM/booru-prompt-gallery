@@ -151,8 +151,7 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
             category: suggestion?.currentCategory || 'other'
         }
     })
-,
-        user_ip: ip
+
     // Upsert to be safe (though we checked map, race conditions exist)
     const { data: insertedTags, error: insertError } = await supabaseAdmin
         .from('tags')
@@ -177,7 +176,8 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
         tag_id: tagId,
         current_category: suggestion.currentCategory,
         suggested_category: suggestion.suggestedCategory,
-        status: 'pending'
+        status: 'pending',
+        user_ip: ip
       })
     }
   }
