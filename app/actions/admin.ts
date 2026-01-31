@@ -37,6 +37,7 @@ export async function getSuggestions(
       )
     `, { count: 'exact' })
     .order('created_at', { ascending: false })
+    .order('id', { ascending: true })
     .range(from, to)
 
   if (filters?.status) {
@@ -142,4 +143,29 @@ export async function rejectSuggestion(id: string) {
 
   revalidatePath('/admin/suggestions')
   return { success: true }
+}
+
+export async function getAILogs(page: number = 1, pageSize: number = 50) {
+  const isAdmin = await checkAdminAuth()
+  if (!isAdmin) throw new Error("Unauthorized")
+
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  const { data, count, error } = await supabaseAdmin
+    .from('ai_audit_logs')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to)
+
+  if (error) {
+     if (error.code === '42P01') return { data: [], count: 0, totalPages: 0 };
+     throw new Error(error.message)
+  }
+
+  return {
+    data: data || [],
+    count: count || 0,
+    totalPages: count ? Math.ceil(count / pageSize) : 0
+  }
 }

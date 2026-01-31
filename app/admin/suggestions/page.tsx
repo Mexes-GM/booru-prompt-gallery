@@ -3,6 +3,7 @@ import { Suspense } from "react"
 import { getSuggestions } from "@/app/actions/admin"
 import { SuggestionsTable } from "./suggestions-table"
 import { Loader2 } from "lucide-react"
+import { AutoSuggestButton } from "@/components/admin/auto-suggest-button"
 
 export const metadata = {
   title: "Tag Suggestions | Admin",
@@ -30,11 +31,14 @@ export default async function AdminSuggestionsPage(props: {
 
   return (
     <div className="container mx-auto py-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">Crowdsourced Suggestions</h1>
-        <p className="text-muted-foreground">
-          Manage tag category classifications submitted by the community.
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+            <h1 className="text-3xl font-bold tracking-tight">Crowdsourced Suggestions</h1>
+            <p className="text-muted-foreground">
+            Manage tag category classifications submitted by the community.
+            </p>
+        </div>
+        <AutoSuggestButton />
       </div>
       
       <Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>}>

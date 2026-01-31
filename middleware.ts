@@ -33,10 +33,8 @@ export async function middleware(request: NextRequest) {
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   
-  // CSP was causing issues with downloads (blocking connections to CDNs).
-  // Removed to match behavior of working commit 1cde6ee.
-  /*
   // CSP for Aibooru and other providers
+  // We use a permissive CSP to allow the various image CDNs and APIs required for the booru gallery
   const csp = `
     default-src 'self';
     script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live;
@@ -48,7 +46,7 @@ export async function middleware(request: NextRequest) {
   `.replace(/\s+/g, ' ').trim()
   
   response.headers.set('Content-Security-Policy', csp)
-  */
+
 
   // Add performance headers
   response.headers.set('X-Powered-By', 'Next.js')

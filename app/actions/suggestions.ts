@@ -3,10 +3,21 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { headers } from 'next/headers'
 import { z } from 'zod'
+import { processTagSuggestionWithAI } from '@/lib/ai-service'
+import { TagCategory } from '@/lib/tag-classifier'
 
 // Schema Validation
 const TagReclassificationSchema = z.object({
-  tagName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_\-\s:();.!?'"~<>&’/\[\]*+@#%=,]+$/, "Invalid tag format"),
+  tagName: z.string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-zA-Z0-9_\-\s:();.!?'"~<>&’/\[\]*+@#%=,]+$/, "Invalid tag format")
+    .refine((val) => {
+        // Prevent XSS: Check for HTML tags
+        // Allows "<3", ">_<" but blocks "<script", "<div>", etc.
+        // Regex matches "<" followed optionally by "/" and then an alphanumeric char (start of a tag name)
+        return !/<\s*\/?[a-zA-Z]/i.test(val);
+    }, "Tag cannot contain HTML elements"),
   currentCategory: z.enum(['clothing', 'pose', 'scenery', 'appearance', 'other']),
   suggestedCategory: z.enum(['clothing', 'pose', 'scenery', 'appearance', 'other'])
 })
@@ -21,7 +32,7 @@ export type SubmitSuggestionResult = {
 
 export type TagReclassification = z.infer<typeof TagReclassificationSchema>
 
-async function checkRateLimit(ip: string): Promise<boolean> {
+async function checkRateLimit(ip: string): Promise<{ allowed: boolean, error?: boolean }> {
   // Simple Rate Limit: 50 requests per 30 minutes per IP
   // Clean up old records first (lazy cleanup)
   // In production, use a scheduled job or Redis
@@ -38,20 +49,27 @@ async function checkRateLimit(ip: string): Promise<boolean> {
     
   if (error) {
     console.error('Rate limit check error:', error)
-    return false // Fail open or closed? Closed for security.
+    // Fail closed for security, but indicate it's a system error
+    return { allowed: false, error: true } 
   }
 
   if (count !== null && count >= 50) {
-    return false
+    return { allowed: false }
   }
 
   // 2. Log this request
-  await supabaseAdmin.from('rate_limits').insert({
+  const { error: insertError } = await supabaseAdmin.from('rate_limits').insert({
     ip,
     action: 'submit_suggestion'
   })
 
-  return true
+  // If we can't write to the rate limit table, we should probably fail closed or open.
+  // Here we fail open because we already checked the count.
+  if (insertError) {
+      console.warn('Rate limit insert error (allowing request):', insertError)
+  }
+
+  return { allowed: true }
 }
 
 export async function submitTagSuggestions(suggestions: TagReclassification[]): Promise<SubmitSuggestionResult> {
@@ -68,7 +86,10 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
   const ip = headersList.get('x-forwarded-for') || 'unknown'
   
   if (ip !== 'unknown') {
-    const allowed = await checkRateLimit(ip)
+    const { allowed, error: sysError } = await checkRateLimit(ip)
+    if (sysError) {
+        return { success: false, message: "System is busy. Please try again later." }
+    }
     if (!allowed) {
       return { success: false, message: "Too many requests. Please try again later." }
     }
@@ -166,9 +187,10 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
   }
 
   // Use standard insert since we filtered manually
-  const { error: insertError } = await supabaseAdmin
+  const { data: insertedSuggestions, error: insertError } = await supabaseAdmin
     .from('tag_suggestions')
     .insert(finalSuggestionsToInsert)
+    .select('id, suggested_category, tags (name)')
 
   if (insertError) {
     // If we still hit a race condition, log it but don't crash hard if possible
@@ -181,6 +203,37 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
           }
     }
     return { success: false, message: "Failed to submit suggestions" }
+  }
+
+  // Auto-Classification Step
+  if (insertedSuggestions && insertedSuggestions.length > 0) {
+    // Process sequentially to respect OpenRouter Free Tier Rate Limits (approx 8-10 RPM)
+    // We do NOT await the entire batch to finish before returning to the user,
+    // but inside the background execution, we space them out.
+    
+    (async () => {
+        for (const suggestion of insertedSuggestions) {
+            // Safe check for tag name presence
+            const tagName = Array.isArray(suggestion.tags) ? suggestion.tags[0]?.name : suggestion.tags?.name;
+            if (!tagName) continue;
+
+            // Optimized processing via AI Service
+            try {
+                // Delay for Rate Limits (OpenRouter Free)
+                // Increased to 2000ms (2s) to prevent "Too Many Requests" during batch processing
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                await processTagSuggestionWithAI({
+                    suggestionId: suggestion.id,
+                    tagName: tagName,
+                    suggestedCategory: suggestion.suggested_category as TagCategory
+                });
+
+            } catch (e) {
+               console.error(`[Action] Background AI processing failed for ${tagName}:`, e);
+            }
+        }
+    })();
   }
 
   return { 

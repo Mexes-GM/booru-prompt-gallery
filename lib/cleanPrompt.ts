@@ -26,9 +26,9 @@ export interface CleanPromptOptions {
 }
 
 // --------------- Utilities ---------------
-const toSpace = (s: string) => s.replace(/_/g, " ")
-const toUnderscore = (s: string) => s.replace(/\s+/g, "_")
-const normalize = (s: string) => toSpace(s).toLowerCase().trim().replace(/\s{2,}/g, " ")
+export const toSpace = (s: string) => s.replace(/_/g, " ")
+export const toUnderscore = (s: string) => s.replace(/\s+/g, "_")
+export const normalize = (s: string) => toSpace(s).toLowerCase().trim().replace(/\s{2,}/g, " ")
 const escapeParentheses = (s: string) => s.replace(/\(/g, "\\(").replace(/\)/g, "\\)")
 
 function withNormalizedVariants(list: string[]): Set<string> {

@@ -28,6 +28,7 @@ export default async function AdminLayout({
           <Separator orientation="vertical" className="mr-2 h-4" />
           <nav className="flex items-center gap-4 text-sm font-medium">
               <Link href="/admin/suggestions" className="transition-colors hover:text-foreground/80 text-foreground">Suggestions</Link>
+              <Link href="/admin/logs" className="transition-colors hover:text-foreground/80 text-foreground">AI Logs</Link>
               <Link href="/" className="transition-colors hover:text-foreground/80 text-foreground/60">Back to App</Link>
           </nav>
         </div>
