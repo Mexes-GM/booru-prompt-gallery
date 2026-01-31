@@ -122,7 +122,7 @@ export async function generateAutoSuggestions() {
             // OPTIMIZATION: If static match is found, insert directly into TAGS table and skip SUGGESTION queue
             // This prevents cluttering the admin UI with obvious things like "1girl" or "blue dress"
             if (aiResultCategory && aiModel === "static_classifier") {
-                 let currentCategory = existingMap.get(tagName) || 'other';
+                 const currentCategory = existingMap.get(tagName) || 'other';
 
                  if (currentCategory === 'other' && aiResultCategory !== 'other') {
                     // Update or Insert directly
@@ -140,7 +140,7 @@ export async function generateAutoSuggestions() {
             }
 
             // A. Ensure Tag Exists in DB (as 'other' if new)
-            let currentCategory = existingMap.get(tagName) || 'other';
+            const currentCategory = existingMap.get(tagName) || 'other';
             let tagId: string;
 
             if (!existingMap.has(tagName)) {
