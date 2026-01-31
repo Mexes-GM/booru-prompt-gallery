@@ -33,12 +33,37 @@ export type SubmitSuggestionResult = {
 export type TagReclassification = z.infer<typeof TagReclassificationSchema>
 
 async function checkRateLimit(ip: string): Promise<{ allowed: boolean, error?: boolean }> {
-  // Simple Rate Limit: 50 requests per 30 minutes per IP
-  // Clean up old records first (lazy cleanup)
-  // In production, use a scheduled job or Redis
+  // 1. Profile User Reputation
+  // Retrieve approved/rejected counts for this IP
+  const { data: reputation, error: repError } = await supabaseAdmin.rpc('get_ip_reputation', { check_ip: ip })
   
-  // 1. Count recent requests
-  const timeWindow = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+  // Default Limits (Neutral)
+  let maxRequests = 50
+  let timeWindowMinutes = 30
+  
+  if (!repError && reputation && reputation.length > 0) {
+      const stats = reputation[0]
+      const approved = Number(stats.approved_count) || 0
+      const rejected = Number(stats.rejected_count) || 0
+      
+      // Calculate Score: Approvals are +2, Rejections are -5 (heavier penalty)
+      const score = (approved * 2) - (rejected * 5)
+      
+      if (score > 20) {
+          // Trusted User: High limit
+          maxRequests = 200
+          timeWindowMinutes = 30
+      } else if (score < -10) {
+          // Suspicious/Bad User: Strict limit
+          maxRequests = 5
+          timeWindowMinutes = 60
+      }
+      
+      // console.log(`[RateLimit] IP: ${ip}, Score: ${score}, Max: ${maxRequests}`)
+  }
+
+  // 2. Count recent requests
+  const timeWindow = new Date(Date.now() - timeWindowMinutes * 60 * 1000).toISOString()
   
   const { count, error } = await supabaseAdmin
     .from('rate_limits')
@@ -53,11 +78,11 @@ async function checkRateLimit(ip: string): Promise<{ allowed: boolean, error?: b
     return { allowed: false, error: true } 
   }
 
-  if (count !== null && count >= 50) {
+  if (count !== null && count >= maxRequests) {
     return { allowed: false }
   }
 
-  // 2. Log this request
+  // 3. Log this request
   const { error: insertError } = await supabaseAdmin.from('rate_limits').insert({
     ip,
     action: 'submit_suggestion'
@@ -126,7 +151,8 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
             category: suggestion?.currentCategory || 'other'
         }
     })
-
+,
+        user_ip: ip
     // Upsert to be safe (though we checked map, race conditions exist)
     const { data: insertedTags, error: insertError } = await supabaseAdmin
         .from('tags')
