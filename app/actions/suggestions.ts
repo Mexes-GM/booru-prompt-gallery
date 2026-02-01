@@ -3,6 +3,7 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { headers } from 'next/headers'
 import { z } from 'zod'
+import { waitUntil } from '@vercel/functions'
 import { processTagSuggestionWithAI } from '@/lib/ai-service'
 import { TagCategory } from '@/lib/tag-classifier'
 
@@ -235,9 +236,9 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
   if (insertedSuggestions && insertedSuggestions.length > 0) {
     // Process sequentially to respect OpenRouter Free Tier Rate Limits (approx 8-10 RPM)
     // We do NOT await the entire batch to finish before returning to the user,
-    // but inside the background execution, we space them out.
+    // but we use waitUntil to ensure the serverless function stays alive.
     
-    (async () => {
+    waitUntil((async () => {
         for (const suggestion of insertedSuggestions) {
             // Safe check for tag name presence
             const tagName = Array.isArray(suggestion.tags) ? suggestion.tags[0]?.name : suggestion.tags?.name;
@@ -259,7 +260,7 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
                console.error(`[Action] Background AI processing failed for ${tagName}:`, e);
             }
         }
-    })();
+    })());
   }
 
   return { 
