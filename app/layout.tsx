@@ -5,7 +5,6 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { Analytics } from '@vercel/analytics/next'
-import { StructuredData } from './structured-data'
 import ErrorBoundary from '@/components/error-boundary'
 
 const inter = Inter({ 
@@ -15,7 +14,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://danbooru-prompt-gallery.vercel.app'),
+  metadataBase: new URL('https://booru-prompt-gallery.vercel.app'),
   title: {
     default: "Booru Prompt Gallery - By Mexes",
     template: "%s | Booru Prompt Gallery"
@@ -27,7 +26,7 @@ export const metadata: Metadata = {
     "digital art", "art generator", "prompt gallery", "booru", "tag database",
     "lora tags", "quality tags", "prompt cleaning", "tag removal"
   ],
-  authors: [{ name: "Mexes", url: "https://danbooru-prompt-gallery.vercel.app" }],
+  authors: [{ name: "Mexes", url: "https://booru-prompt-gallery.vercel.app" }],
   creator: "Mexes",
   publisher: "Mexes",
   category: "Art & Design",
@@ -57,8 +56,8 @@ export const metadata: Metadata = {
     title: "Danbooru Prompt Gallery - By Mexes",
     description: "Generate prompts from Danbooru image tags. Extract and format tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
     type: "website",
-    url: "https://danbooru-prompt-gallery.vercel.app",
-    siteName: "Danbooru Prompt Gallery",
+    url: "https://booru-prompt-gallery.vercel.app",
+    siteName: "Booru Prompt Gallery",
     locale: "en_US",
     images: [
       {
@@ -72,16 +71,16 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Danbooru Prompt Gallery - By Mexes",
+    title: "Booru Prompt Gallery - By Mexes",
     description: "Generate prompts from Danbooru image tags for AI art generation",
     images: ["/placeholder-logo.png"],
-    creator: "@your_twitter_handle"
+    creator: "@mexes_art"
   },
   alternates: {
-    canonical: "https://danbooru-prompt-gallery.vercel.app"
+    canonical: "https://booru-prompt-gallery.vercel.app"
   },
   generator: 'Next.js',
-  applicationName: 'Danbooru Prompt Gallery',
+  applicationName: 'Booru Prompt Gallery',
   referrer: 'origin-when-cross-origin',
   formatDetection: {
     email: false,
@@ -113,9 +112,32 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: 'Booru Prompt Gallery',
+    description: 'Generate clean prompts from Danbooru, Aibooru, Rule34 and e621 posts.',
+    url: 'https://booru-prompt-gallery.vercel.app',
+    applicationCategory: 'DesignApplication',
+    operatingSystem: 'Any',
+    author: {
+      '@type': 'Person',
+      name: 'Mexes'
+    },
+    offers: {
+      '@type': 'Offer',
+      price: '0',
+      priceCurrency: 'USD'
+    }
+  }
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
@@ -137,7 +159,6 @@ export default function RootLayout({
       <body className={inter.className} suppressHydrationWarning>
         <ErrorBoundary>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            <StructuredData />
             {children}
             <Toaster />
             <Analytics />

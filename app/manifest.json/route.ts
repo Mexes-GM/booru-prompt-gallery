@@ -2,9 +2,9 @@ import { MetadataRoute } from 'next'
 
 export async function GET(): Promise<Response> {
   const manifest: MetadataRoute.Manifest = {
-    name: 'Danbooru Prompt Gallery - AI Art Prompt Generator',
-    short_name: 'Danbooru Gallery',
-    description: 'Generate prompts from Danbooru image tags. Extract and format tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.',
+    name: 'Booru Prompt Gallery - AI Art Prompt Generator',
+    short_name: 'Booru Prompt Gallery',
+    description: 'Generate prompts from Booru image tags. Extract and format tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',
