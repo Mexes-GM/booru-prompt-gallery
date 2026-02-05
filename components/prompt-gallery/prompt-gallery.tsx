@@ -682,7 +682,13 @@ export function PromptGallery() {
                                       <div className="flex gap-3">
                                         {item.thumbnailUrl && (
                                           <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-muted">
-                                            <Image src={item.thumbnailUrl} alt="Thumbnail" fill className="object-cover" unoptimized />
+                                            <Image 
+                                              src={item.thumbnailUrl} 
+                                              alt={`History item: ${item.content.slice(0, 50)}...`} 
+                                              fill 
+                                              className="object-cover" 
+                                              unoptimized 
+                                            />
                                           </div>
                                         )}
                                         <div className="flex-1 min-w-0">

@@ -214,7 +214,7 @@ export function MasonryItem({
             <div className="relative bg-muted overflow-hidden" style={{ height: imageHeight }}>
                 <Image
                 src={fileUrl!}
-                alt={`${itemProvider} post ${post.id}`}
+                alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
                 fill
                 className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
                 sizes={`${width}px`}
