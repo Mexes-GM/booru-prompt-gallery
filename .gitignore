@@ -58,3 +58,9 @@ ehthumbs.db
 .cache/
 .parcel-cache/
 copilot-instructions.md
+
+# Agents & Tools
+.agents/
+.kiro/
+.trae/
+skills/
