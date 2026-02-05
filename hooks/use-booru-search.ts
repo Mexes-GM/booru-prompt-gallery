@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
+import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
 import { userPreferences } from "@/lib/storage"
 import { 
@@ -15,6 +16,10 @@ import {
 import { useToast } from "@/hooks/use-toast"
 
 export function useBooruSearch() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
   const [searchTags, setSearchTags] = useState("")
   const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
   const [ratingFilter, setRatingFilter] = useState("rating:general")
@@ -43,13 +48,82 @@ export function useBooruSearch() {
   useEffect(() => {
     setIsClient(true)
     setRandomSeed(Date.now())
-    setBooruProvider(userPreferences.getBooruProvider())
-    setRemoveLoRaTags(userPreferences.getRemoveLoRaTags())
-    setRemoveQualityTags(userPreferences.getRemoveQualityTags())
-    setRatingFilter(userPreferences.getRatingFilter())
-    setTagCountFilter(userPreferences.getMinimumTagCount())
-    setAppliedTagCountFilter(userPreferences.getMinimumTagCount())
-  }, [])
+    
+    // 1. URL State (Priority)
+    const urlQ = searchParams.get('q')
+    const urlProvider = searchParams.get('provider')
+    const urlRating = searchParams.get('rating')
+    const urlCount = searchParams.get('count')
+    const urlLora = searchParams.get('lora')
+    const urlQuality = searchParams.get('quality')
+
+    // 2. Initialize from URL or Fallback to LocalStorage
+    if (urlQ !== null) setSearchTags(urlQ)
+    
+    if (urlProvider && ['danbooru', 'aibooru', 'rule34', 'e621'].includes(urlProvider)) {
+        setBooruProvider(urlProvider as BooruProvider)
+    } else {
+        setBooruProvider(userPreferences.getBooruProvider())
+    }
+
+    if (urlRating) setRatingFilter(urlRating)
+    else setRatingFilter(userPreferences.getRatingFilter())
+
+    if (urlCount) {
+        setTagCountFilter(urlCount)
+        setAppliedTagCountFilter(urlCount)
+    } else {
+        const storedCount = userPreferences.getMinimumTagCount()
+        setTagCountFilter(storedCount)
+        setAppliedTagCountFilter(storedCount)
+    }
+
+    if (urlLora !== null) setRemoveLoRaTags(urlLora === 'true')
+    else setRemoveLoRaTags(userPreferences.getRemoveLoRaTags())
+
+    if (urlQuality !== null) setRemoveQualityTags(urlQuality === 'true')
+    else setRemoveQualityTags(userPreferences.getRemoveQualityTags())
+
+  }, []) // Run once on mount to hydrate state
+
+  // Sync State -> URL
+  useEffect(() => {
+    if (!isClient) return
+
+    const params = new URLSearchParams(searchParams.toString())
+    
+    // Helper to only set if different to avoid noise
+    const setParam = (key: string, value: string | null) => {
+        if (value) params.set(key, value)
+        else params.delete(key)
+    }
+
+    setParam('q', searchTags || null)
+    setParam('provider', booruProvider)
+    setParam('rating', ratingFilter)
+    setParam('count', tagCountFilter)
+    // Only set boolean flags if true to keep URL clean
+    setParam('lora', removeLoRaTags ? 'true' : null) 
+    setParam('quality', removeQualityTags ? 'true' : null)
+
+    const newSearch = params.toString()
+    const currentSearch = searchParams.toString()
+
+    if (newSearch !== currentSearch) {
+        router.replace(`${pathname}?${newSearch}`, { scroll: false })
+    }
+  }, [
+    isClient, 
+    searchTags, 
+    booruProvider, 
+    ratingFilter, 
+    tagCountFilter, 
+    removeLoRaTags, 
+    removeQualityTags,
+    pathname,
+    router,
+    searchParams
+  ])
 
   useEffect(() => { if (isClient) userPreferences.setBooruProvider(booruProvider) }, [booruProvider, isClient])
   useEffect(() => { if (isClient) userPreferences.setRemoveLoRaTags(removeLoRaTags) }, [removeLoRaTags, isClient])
