@@ -40,6 +40,9 @@ export function useBooruSearch() {
   const [noMoreResults, setNoMoreResults] = useState(false)
   const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
   const [randomSeed, setRandomSeed] = useState<number>(0)
+  
+  // Store the rating before we forced it to 'all' for Rule34
+  const forcedRule34RatingRef = useRef<string | null>(null)
 
   const { toast } = useToast()
 
@@ -132,8 +135,23 @@ export function useBooruSearch() {
   useEffect(() => { if (isClient) userPreferences.setMinimumTagCount(tagCountFilter) }, [tagCountFilter, isClient])
 
   // Auto-activate prompt filter when Aibooru is selected
+  // Auto-disable NSFW filter when Rule34 is selected (default to allowed)
+  // Restore previous rating when leaving Rule34 if it was forced
   useEffect(() => {
     setHasPromptFilter(booruProvider === 'aibooru')
+    
+    if (booruProvider === 'rule34') {
+      if (ratingFilter === 'rating:general') {
+        forcedRule34RatingRef.current = 'rating:general'
+        setRatingFilter('all')
+      }
+    } else {
+      // Leaving Rule34 (or effectively redundant checks for other providers)
+      if (forcedRule34RatingRef.current) {
+        setRatingFilter(forcedRule34RatingRef.current)
+        forcedRule34RatingRef.current = null
+      }
+    }
   }, [booruProvider])
 
   const {

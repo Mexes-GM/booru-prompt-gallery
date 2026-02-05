@@ -626,13 +626,20 @@ export function PromptGallery() {
                         {search.isClient ? (
                           <Button
                             type="button"
+                            disabled={search.booruProvider === 'rule34'}
                             variant={search.ratingFilter === "rating:general" ? "secondary" : "outline"}
                             onClick={() => {
                               const newRating = search.ratingFilter === "rating:general" ? "all" : "rating:general"
                               search.setRatingFilter(newRating)
                             }}
-                            className={`h-9 px-3 ${search.ratingFilter === "rating:general" ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50" : ""}`}
-                            title="Toggle NSFW content"
+                            className={`h-9 px-3 ${
+                              search.booruProvider === 'rule34' 
+                                ? "opacity-50 cursor-not-allowed" 
+                                : search.ratingFilter === "rating:general" 
+                                  ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50" 
+                                  : ""
+                            }`}
+                            title={search.booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
                           >
                             <Shield className="w-4 h-4 mr-2" />
                             <span className="text-xs font-medium">
