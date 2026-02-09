@@ -7,7 +7,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Analytics } from '@vercel/analytics/next'
 import ErrorBoundary from '@/components/error-boundary'
 
-const inter = Inter({ 
+const inter = Inter({
   subsets: ["latin"],
   display: 'swap',
   preload: true,
@@ -19,9 +19,9 @@ export const metadata: Metadata = {
     default: "Booru Prompt Gallery - By Mexes",
     template: "%s | Booru Prompt Gallery"
   },
-  description: "Generate clean prompts from Danbooru, Aibooru, Rule34 and e621 posts. Extract and format tags from images, remove unnecessary metadata, LoRa tags, and quality descriptors to create ready-to-use prompts for AI art generation.",
+  description: "Generate clean prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 posts. Extract and format tags from images, remove unnecessary metadata, LoRa tags, and quality descriptors to create ready-to-use prompts for AI art generation.",
   keywords: [
-    "AI art", "prompts", "danbooru", "aibooru", "rule34", "e621", "image generation", "stable diffusion",
+    "AI art", "prompts", "danbooru", "aibooru", "rule34", "gelbooru", "e621", "image generation", "stable diffusion",
     "midjourney", "dall-e", "prompt engineering", "tag extraction", "anime art",
     "digital art", "art generator", "prompt gallery", "booru", "tag database",
     "lora tags", "quality tags", "prompt cleaning", "tag removal"
@@ -116,7 +116,7 @@ export default function RootLayout({
     '@context': 'https://schema.org',
     '@type': 'WebApplication',
     name: 'Booru Prompt Gallery',
-    description: 'Generate clean prompts from Danbooru, Aibooru, Rule34 and e621 posts.',
+    description: 'Generate clean prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 posts.',
     url: 'https://booru-prompt-gallery.vercel.app',
     applicationCategory: 'DesignApplication',
     operatingSystem: 'Any',

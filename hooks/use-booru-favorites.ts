@@ -38,7 +38,7 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
     if (typeof window !== 'undefined') {
       const savedFavorites = localStorage.getItem('globalBooruFavorites')
       let migrated = false
-      
+
       const newSet = new Set<string>()
 
       // 1. Load Unified Format if exists
@@ -61,11 +61,11 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
             localStorage.removeItem('booruFavorites')
             migrated = true
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // 3. Migrate Segregated Providers (e.g. booruFavorites-e621)
-      const providers = ['e621', 'rule34', 'aibooru']
+      const providers = ['e621', 'rule34', 'aibooru', 'gelbooru']
       providers.forEach(p => {
         const key = `booruFavorites-${p}`
         const raw = localStorage.getItem(key)
@@ -73,11 +73,11 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
           try {
             const arr = JSON.parse(raw)
             if (Array.isArray(arr) && arr.length > 0) {
-               arr.forEach(id => newSet.add(`${p}:${id}`))
-               localStorage.removeItem(key)
-               migrated = true
+              arr.forEach(id => newSet.add(`${p}:${id}`))
+              localStorage.removeItem(key)
+              migrated = true
             }
-          } catch(e) {}
+          } catch (e) { }
         }
       })
 
@@ -93,25 +93,25 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
     // Construct unique key, using override if provided (for favorites view logic), else current provider
     const targetProvider = providerOverride || booruProvider
     const uniqueKey = `${targetProvider}:${postId}`
-    
+
     // Use current state directly to determine action, avoiding side effects in state setter
     const isCurrentlyFavorited = favorites.has(uniqueKey)
     const newFavorites = new Set(favorites)
 
     if (isCurrentlyFavorited) {
-        newFavorites.delete(uniqueKey)
-        toast({
-            title: "Removed from favorites",
-            description: "Image removed from your favorites",
-        })
-        trackFavorite(postId, 'remove')
+      newFavorites.delete(uniqueKey)
+      toast({
+        title: "Removed from favorites",
+        description: "Image removed from your favorites",
+      })
+      trackFavorite(postId, 'remove')
     } else {
-        newFavorites.add(uniqueKey)
-        toast({
-            title: "Added to favorites",
-            description: "Image added to your favorites",
-        })
-        trackFavorite(postId, 'add')
+      newFavorites.add(uniqueKey)
+      toast({
+        title: "Added to favorites",
+        description: "Image added to your favorites",
+      })
+      trackFavorite(postId, 'add')
     }
 
     setFavorites(newFavorites)
@@ -120,16 +120,16 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
 
   const toggleShowFavorites = useCallback(() => {
     setShowFavorites(prev => {
-        const next = !prev
-        safeTrack('toggle_favorites_view', { show: next, count: favorites.size })
-        return next
+      const next = !prev
+      safeTrack('toggle_favorites_view', { show: next, count: favorites.size })
+      return next
     })
   }, [favorites.size])
 
   const clearFavorites = useCallback(() => {
     setFavorites(new Set())
     saveFavoritesToStorage(new Set())
-    
+
     toast({
       title: "Favorites cleared",
       description: "All favorites have been removed",
@@ -137,7 +137,7 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
   }, [saveFavoritesToStorage])
 
   const isFavorite = useCallback((provider: string, id: number) => {
-      return favorites.has(`${provider}:${id}`)
+    return favorites.has(`${provider}:${id}`)
   }, [favorites])
 
   // Prepare favorites list for hook
@@ -146,14 +146,14 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
       const [p, idStr] = key.split(':')
       // Handle legacy format (id only -> assume danbooru) or malformed keys
       if (!idStr) {
-        return { provider: 'danbooru', id: parseInt(key, 10) }
+        return { provider: 'danbooru' as BooruProvider, id: parseInt(key, 10) }
       }
       return { provider: p as BooruProvider, id: parseInt(idStr, 10) }
     }).filter(item => !isNaN(item.id))
   }, [favorites])
 
-   // Fetch favorite posts separately
-   const {
+  // Fetch favorite posts separately
+  const {
     posts: favoritePosts,
     error: favoritesError,
     isLoading: favoritesLoading,

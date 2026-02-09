@@ -69,6 +69,16 @@ const nextConfig = {
         hostname: 'static1.e621.net',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'gelbooru.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.gelbooru.com',
+        pathname: '/**',
+      },
     ],
     dangerouslyAllowSVG: false,
     formats: ['image/webp', 'image/avif'],

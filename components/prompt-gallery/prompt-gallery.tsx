@@ -43,7 +43,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Image from "next/image"
 import { motion } from "framer-motion"
 import {
-    hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost,
+  hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost,
 } from "@/lib/api-client"
 
 import { userPreferences, type HistoryItem, type TagPreset } from "@/lib/storage"
@@ -99,293 +99,293 @@ import { TrendSheet } from "@/components/trends/trend-sheet"
 type CardScale = "small" | "medium" | "large"
 
 export function PromptGallery() {
-    // 1. Core Logic Hooks
-    const search = useBooruSearch()
-    const favs = useBooruFavorites(search.booruProvider)
-    const { toast } = useToast()
-    const isMobile = useIsMobile()
-    
-    // 2. Local UI State
-    const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-    const [cardScale, setCardScale] = useState<CardScale>("medium")
-    const [scaleValue, setScaleValue] = useState([2])
-    
-    // User Prefs UI state
-    const [includeCharacters, setIncludeCharacters] = useState(true)
-    const [optimizeTags, setOptimizeTags] = useState(true)
-    const [excludeInput, setExcludeInput] = useState("")
-    const [addInput, setAddInput] = useState("")
-    
-    const [showSettings, setShowSettings] = useState(true)
-    const [copiedId, setCopiedId] = useState<number | null>(null)
-    const [showBackToTop, setShowBackToTop] = useState(false)
-    
-    // Modals
-    const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
-    const [showWelcomeModal, setShowWelcomeModal] = useState(false)
-    const [presets, setPresets] = useState<TagPreset[]>([])
-    const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false)
-    const [presetName, setPresetName] = useState("")
-    const [history, setHistory] = useState<HistoryItem[]>([])
-    const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
+  // 1. Core Logic Hooks
+  const search = useBooruSearch()
+  const favs = useBooruFavorites(search.booruProvider)
+  const { toast } = useToast()
+  const isMobile = useIsMobile()
 
-    const effectiveScale = useMemo(() => {
-        if (isMobile) {
-            if (cardScale === 'small') return 'large'
-            if (cardScale === 'large') return 'small'
+  // 2. Local UI State
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [cardScale, setCardScale] = useState<CardScale>("medium")
+  const [scaleValue, setScaleValue] = useState([2])
+
+  // User Prefs UI state
+  const [includeCharacters, setIncludeCharacters] = useState(true)
+  const [optimizeTags, setOptimizeTags] = useState(true)
+  const [excludeInput, setExcludeInput] = useState("")
+  const [addInput, setAddInput] = useState("")
+
+  const [showSettings, setShowSettings] = useState(true)
+  const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [showBackToTop, setShowBackToTop] = useState(false)
+
+  // Modals
+  const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  const [presets, setPresets] = useState<TagPreset[]>([])
+  const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false)
+  const [presetName, setPresetName] = useState("")
+  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
+
+  const effectiveScale = useMemo(() => {
+    if (isMobile) {
+      if (cardScale === 'small') return 'large'
+      if (cardScale === 'large') return 'small'
+    }
+    return cardScale
+  }, [cardScale, isMobile])
+
+  const isTagCountValid = !search.tagCountFilter || /^\d+$/.test(search.tagCountFilter)
+  const isTagCountSupported = search.booruProvider === 'danbooru' || search.booruProvider === 'e621'
+
+  // --- Side Effects ---
+
+  useEffect(() => {
+    getAllTagOverrides().then(overrides => {
+      setTagOverrides(overrides)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (search.isClient) {
+      setPresets(userPreferences.getAddTagsPresets())
+    }
+  }, [search.isClient])
+
+  useEffect(() => {
+    if (search.isClient) {
+      setHistory(userPreferences.getHistory())
+      const saved = localStorage.getItem('excludeTags')
+      if (saved !== null) setExcludeInput(saved)
+      const savedAdd = localStorage.getItem('addTags')
+      if (savedAdd !== null) setAddInput(savedAdd)
+
+      try {
+        const savedOpts = localStorage.getItem('promptOptions')
+        if (savedOpts) {
+          const parsed = JSON.parse(savedOpts) || {}
+          if (typeof parsed.includeCharacters === 'boolean') setIncludeCharacters(parsed.includeCharacters)
+          if (typeof parsed.optimizeTags === 'boolean') setOptimizeTags(parsed.optimizeTags)
         }
-        return cardScale
-    }, [cardScale, isMobile])
-    
-    const isTagCountValid = !search.tagCountFilter || /^\d+$/.test(search.tagCountFilter)
-    const isTagCountSupported = search.booruProvider === 'danbooru' || search.booruProvider === 'e621'
+      } catch { }
+    }
+  }, [search.isClient])
 
-    // --- Side Effects ---
-    
-    useEffect(() => {
-        getAllTagOverrides().then(overrides => {
-          setTagOverrides(overrides)
-        })
-    }, [])
-    
-    useEffect(() => {
-        if (search.isClient) {
-            setPresets(userPreferences.getAddTagsPresets())
+  // Persist UI preferences
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('promptOptions', JSON.stringify({ includeCharacters, optimizeTags }))
+      localStorage.setItem('excludeTags', excludeInput)
+      localStorage.setItem('addTags', addInput)
+    }
+  }, [includeCharacters, optimizeTags, excludeInput, addInput])
+
+  // Scale effect
+  useEffect(() => {
+    const scale = scaleValue[0]
+    let val: CardScale = 'medium'
+    if (scale === 1) val = 'small'
+    else if (scale === 2) val = 'medium'
+    else val = 'large'
+    if (val !== cardScale) {
+      setCardScale(val)
+      trackScaleChange(val)
+    }
+  }, [scaleValue, cardScale])
+
+  // Scroll tracking
+  useEffect(() => {
+    const handleScroll = () => setShowBackToTop(window.scrollY > 400)
+    window.addEventListener('scroll', handleScroll)
+
+    const start = Date.now()
+    safeTrack('app_open', {
+      ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'na',
+      w: typeof window !== 'undefined' ? window.innerWidth : 0,
+    })
+    const cleanupScroll = initScrollDepthTracking()
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') trackTimeOnPage(start)
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      document.removeEventListener('visibilitychange', onVisibility)
+      trackTimeOnPage(start)
+      if (cleanupScroll) cleanupScroll()
+    }
+  }, [])
+
+  const hasMounted = useRef(false)
+  useEffect(() => {
+    if (hasMounted.current && search.error) {
+      // Error handling toast
+      const is403 = search.error.status === 403 || search.error.statusCode === 403
+      const isAibooruError = search.booruProvider === 'aibooru' && is403
+
+      toast({
+        title: isAibooruError ? "Aibooru Access Blocked" : "Connection error",
+        description: isAibooruError
+          ? "Aibooru is blocking server requests. Try Danbooru or Rule34 instead."
+          : (search.error.message || "Could not load images"),
+        variant: "destructive",
+      })
+    }
+    hasMounted.current = true
+  }, [search.error, search.booruProvider, toast])
+
+  // --- Helpers ---
+
+  const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopiedId(postId)
+
+      userPreferences.addToHistory({ content, postId, thumbnailUrl })
+      setHistory(userPreferences.getHistory())
+
+      toast({
+        title: "Copied!",
+        description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
+      })
+      setTimeout(() => setCopiedId(null), 2000)
+      trackCopy(postId)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: isPrompt ? "Could not copy prompt" : "Could not copy tags",
+        variant: "destructive",
+      })
+    }
+  }, [toast])
+
+  const downloadImage = useCallback(async (post: BooruPost) => {
+    try {
+      const imageUrl = post.file_url || post.large_file_url
+
+      if (!imageUrl) {
+        toast({ title: "Download failed", description: "No image URL available", variant: "destructive" })
+        return
+      }
+
+      const urlPath = imageUrl.split('?')[0] // Remove query params
+      const extension = urlPath.split('.').pop() || 'jpg'
+      const itemProvider = post._provider || search.booruProvider
+      const filename = `${itemProvider}_${post.id}.${extension}`
+      const alwaysProxy = imageUrl.includes('rule34.xxx') || imageUrl.includes('e621.net')
+      let fetchUrl = alwaysProxy ? `/api/download?url=${encodeURIComponent(imageUrl)}` : imageUrl
+
+      let response: Response
+      try {
+        response = await fetch(fetchUrl)
+        if (!response.ok) throw new Error(`Status ${response.status}`)
+      } catch (directError) {
+        if (!alwaysProxy) {
+          fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
+          response = await fetch(fetchUrl)
+        } else {
+          throw directError
         }
-    }, [search.isClient])
+      }
 
-    useEffect(() => {
-       if (search.isClient) {
-           setHistory(userPreferences.getHistory())
-            const saved = localStorage.getItem('excludeTags')
-            if (saved !== null) setExcludeInput(saved)
-            const savedAdd = localStorage.getItem('addTags')
-            if (savedAdd !== null) setAddInput(savedAdd)
-            
-             try {
-                const savedOpts = localStorage.getItem('promptOptions')
-                if (savedOpts) {
-                  const parsed = JSON.parse(savedOpts) || {}
-                  if (typeof parsed.includeCharacters === 'boolean') setIncludeCharacters(parsed.includeCharacters)
-                  if (typeof parsed.optimizeTags === 'boolean') setOptimizeTags(parsed.optimizeTags)
-                }
-              } catch {}
-       }
-    }, [search.isClient])
-    
-    // Persist UI preferences
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('promptOptions', JSON.stringify({ includeCharacters, optimizeTags }))
-          localStorage.setItem('excludeTags', excludeInput)
-          localStorage.setItem('addTags', addInput)
-        }
-    }, [includeCharacters, optimizeTags, excludeInput, addInput])
-
-    // Scale effect
-    useEffect(() => {
-        const scale = scaleValue[0]
-        let val: CardScale = 'medium'
-        if (scale === 1) val = 'small'
-        else if (scale === 2) val = 'medium'
-        else val = 'large'
-        if (val !== cardScale) {
-          setCardScale(val)
-          trackScaleChange(val)
-        }
-      }, [scaleValue, cardScale])
-
-    // Scroll tracking
-    useEffect(() => {
-        const handleScroll = () => setShowBackToTop(window.scrollY > 400)
-        window.addEventListener('scroll', handleScroll)
-        
-        const start = Date.now()
-        safeTrack('app_open', {
-          ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'na',
-          w: typeof window !== 'undefined' ? window.innerWidth : 0,
-        })
-        const cleanupScroll = initScrollDepthTracking()
-        const onVisibility = () => {
-          if (document.visibilityState === 'hidden') trackTimeOnPage(start)
-        }
-        document.addEventListener('visibilitychange', onVisibility)
-
-        return () => {
-          window.removeEventListener('scroll', handleScroll)
-          document.removeEventListener('visibilitychange', onVisibility)
-          trackTimeOnPage(start)
-          if (cleanupScroll) cleanupScroll()
-        }
-    }, [])
-
-    const hasMounted = useRef(false)
-    useEffect(() => {
-        if (hasMounted.current && search.error) {
-            // Error handling toast
-            const is403 = search.error.status === 403 || search.error.statusCode === 403
-            const isAibooruError = search.booruProvider === 'aibooru' && is403
-            
-            toast({
-                title: isAibooruError ? "Aibooru Access Blocked" : "Connection error",
-                description: isAibooruError 
-                ? "Aibooru is blocking server requests. Try Danbooru or Rule34 instead."
-                : (search.error.message || "Could not load images"),
-                variant: "destructive",
-            })
-        }
-        hasMounted.current = true
-    }, [search.error, search.booruProvider, toast])
-
-    // --- Helpers ---
-
-    const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string) => {
+      if (!response.ok) {
+        let errorMessage = `Failed to fetch image: ${response.status} ${response.statusText}`
         try {
-          await navigator.clipboard.writeText(content)
-          setCopiedId(postId)
-          
-          userPreferences.addToHistory({ content, postId, thumbnailUrl })
-          setHistory(userPreferences.getHistory())
-          
-          toast({
-            title: "Copied!",
-            description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
-          })
-          setTimeout(() => setCopiedId(null), 2000)
-          trackCopy(postId)
-        } catch (error) {
-          toast({
-            title: "Error",
-            description: isPrompt ? "Could not copy prompt" : "Could not copy tags",
-            variant: "destructive",
-          })
-        }
-    }, [toast])
+          // @ts-ignore
+          const errorData = await response.json()
+          if (errorData.error) errorMessage = errorData.error
+        } catch (e) { }
+        throw new Error(errorMessage)
+      }
 
-    const downloadImage = useCallback(async (post: BooruPost) => {
-        try {
-          const imageUrl = post.file_url || post.large_file_url
-          
-          if (!imageUrl) {
-            toast({ title: "Download failed", description: "No image URL available", variant: "destructive" })
-            return
-          }
-    
-          const urlPath = imageUrl.split('?')[0] // Remove query params
-          const extension = urlPath.split('.').pop() || 'jpg'
-          const itemProvider = post._provider || search.booruProvider
-          const filename = `${itemProvider}_${post.id}.${extension}`
-          const alwaysProxy = imageUrl.includes('rule34.xxx') || imageUrl.includes('e621.net')
-          let fetchUrl = alwaysProxy ? `/api/download?url=${encodeURIComponent(imageUrl)}` : imageUrl
-    
-          let response: Response
-          try {
-            response = await fetch(fetchUrl)
-            if (!response.ok) throw new Error(`Status ${response.status}`)
-          } catch (directError) {
-            if (!alwaysProxy) {
-              fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
-              response = await fetch(fetchUrl)
-            } else {
-              throw directError
-            }
-          }
-    
-          if (!response.ok) {
-            let errorMessage = `Failed to fetch image: ${response.status} ${response.statusText}`
-            try {
-                // @ts-ignore
-              const errorData = await response.json()
-              if (errorData.error) errorMessage = errorData.error
-            } catch (e) {}
-            throw new Error(errorMessage)
-          }
-          
-          const blob = await response.blob()
-          const url = window.URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = url
-          link.download = filename
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          window.URL.revokeObjectURL(url)
-          
-          toast({ title: "Download started", description: `Downloading ${filename}` })
-        } catch (error) {
-          console.error('Download error:', error)
-          toast({
-            title: "Download failed",
-            description: error instanceof Error ? error.message : "Error downloading image",
-            variant: "destructive",
-          })
-        }
-    }, [search.booruProvider, toast])
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
 
-    // --- Preset Handlers ---
-    const savePreset = () => {
-        if (!presetName.trim() || !addInput.trim()) return
-        const newPresets = userPreferences.addAddTagsPreset({ name: presetName, content: addInput })
-        setPresets(newPresets)
-        setPresetName("")
-        setIsPresetDialogOpen(false)
-        toast({ title: "Preset saved", description: "Your tags preset has been saved successfully." })
+      toast({ title: "Download started", description: `Downloading ${filename}` })
+    } catch (error) {
+      console.error('Download error:', error)
+      toast({
+        title: "Download failed",
+        description: error instanceof Error ? error.message : "Error downloading image",
+        variant: "destructive",
+      })
     }
-      
-    const loadPreset = (preset: TagPreset) => {
-        setAddInput(preset.content)
-        toast({ title: "Preset loaded", description: `Loaded preset: ${preset.name}` })
-    }
-      
-    const deletePreset = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation()
-        const newPresets = userPreferences.removeAddTagsPreset(id)
-        setPresets(newPresets)
-        toast({ title: "Preset deleted", description: "Preset removed successfully." })
-    }
+  }, [search.booruProvider, toast])
 
-    // --- Rendering Helpers ---
+  // --- Preset Handlers ---
+  const savePreset = () => {
+    if (!presetName.trim() || !addInput.trim()) return
+    const newPresets = userPreferences.addAddTagsPreset({ name: presetName, content: addInput })
+    setPresets(newPresets)
+    setPresetName("")
+    setIsPresetDialogOpen(false)
+    toast({ title: "Preset saved", description: "Your tags preset has been saved successfully." })
+  }
 
-    const filteredPosts = useMemo(() => {
-        const source = favs.showFavorites ? (favs.favoritePosts || []) : search.allPosts
-        return source.filter(post => {
-          const fileUrl = post.large_file_url || post.file_url
-          return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
-        })
-    }, [favs.showFavorites, favs.favoritePosts, search.allPosts])
+  const loadPreset = (preset: TagPreset) => {
+    setAddInput(preset.content)
+    toast({ title: "Preset loaded", description: `Loaded preset: ${preset.name}` })
+  }
 
-    const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number) => {
-        return <MasonryItem
-            post={post}
-            width={width}
-            height={height}
-            viewMode={viewMode}
-            effectiveScale={effectiveScale}
-            booruProvider={search.booruProvider}
-            favorites={favs.favorites}
-            toggleFavorite={favs.toggleFavorite}
-            downloadImage={downloadImage}
-            copyToClipboard={copyToClipboard}
-            excludeInput={excludeInput}
-            addInput={addInput}
-            includeCharacters={includeCharacters}
-            optimizeTags={optimizeTags}
-            removeLoRaTags={search.removeLoRaTags}
-            removeQualityTags={search.removeQualityTags}
-            tagOverrides={tagOverrides}
-            copiedId={copiedId}
-            setTeachModalData={setTeachModalData}
-        />
-    }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, excludeInput, addInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId])
+  const deletePreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const newPresets = userPreferences.removeAddTagsPreset(id)
+    setPresets(newPresets)
+    toast({ title: "Preset deleted", description: "Preset removed successfully." })
+  }
 
-    const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
-    const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
-    const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
+  // --- Rendering Helpers ---
 
-    const finalPosts = filteredPosts
+  const filteredPosts = useMemo(() => {
+    const source = favs.showFavorites ? (favs.favoritePosts || []) : search.allPosts
+    return source.filter(post => {
+      const fileUrl = post.large_file_url || post.file_url
+      return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
+    })
+  }, [favs.showFavorites, favs.favoritePosts, search.allPosts])
 
-    return (
-        <TooltipProvider>
+  const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number) => {
+    return <MasonryItem
+      post={post}
+      width={width}
+      height={height}
+      viewMode={viewMode}
+      effectiveScale={effectiveScale}
+      booruProvider={search.booruProvider}
+      favorites={favs.favorites}
+      toggleFavorite={favs.toggleFavorite}
+      downloadImage={downloadImage}
+      copyToClipboard={copyToClipboard}
+      excludeInput={excludeInput}
+      addInput={addInput}
+      includeCharacters={includeCharacters}
+      optimizeTags={optimizeTags}
+      removeLoRaTags={search.removeLoRaTags}
+      removeQualityTags={search.removeQualityTags}
+      tagOverrides={tagOverrides}
+      copiedId={copiedId}
+      setTeachModalData={setTeachModalData}
+    />
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, excludeInput, addInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId])
+
+  const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
+  const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
+
+  const finalPosts = filteredPosts
+
+  return (
+    <TooltipProvider>
       <div className="min-h-screen bg-background">
         {/* Header */}
         <header className="w-full border-b glass-effect">
@@ -400,7 +400,7 @@ export function PromptGallery() {
                     <Badge variant="secondary" className="text-[10px] sm:text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-1.5 py-0 sm:px-2 sm:py-1 h-fit">
                       By Mexes
                     </Badge>
-                    <button 
+                    <button
                       onClick={() => setShowWelcomeModal(true)}
                       className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
                       title="Show Teach System Info"
@@ -486,137 +486,137 @@ export function PromptGallery() {
         </header>
 
         <main className="container mx-auto px-4 py-8">
-            {/* Hero */}
+          {/* Hero */}
           <div className="max-w-4xl mx-auto mb-8 space-y-6">
             <div className="text-center space-y-2">
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
-                <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
-                  Generate prompts from Danbooru, Aibooru, Rule34 and e621 image collections.
-                  Extract and format tags from posts or access AI-generated prompts directly,
-                  creating clean, ready-to-use prompts for your AI art generation.
+              <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
+                Generate prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 image collections.
+                Extract and format tags from posts or access AI-generated prompts directly,
+                creating clean, ready-to-use prompts for your AI art generation.
+              </p>
+
+              {/* Social Links Section */}
+              <div className="pt-4 space-y-3">
+                <p className="text-muted-foreground text-sm">
+                  More of my work here
                 </p>
-                
-                 {/* Social Links Section */}
-                 <div className="pt-4 space-y-3">
-                   <p className="text-muted-foreground text-sm">
-                     More of my work here
-                   </p>
-                   <div className="flex items-center justify-center space-x-4">
-                     <Tooltip>
-                       <TooltipTrigger asChild>
-                         <a
-                           href="https://civitai.com/user/Mexes"
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           onClick={() => trackExternalLink('https://civitai.com/user/Mexes','social')}
-                           className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-                           aria-label="Visit Mexes on CivitAI"
-                         >
-                           <img
-                             src="https://www.google.com/s2/favicons?domain=civitai.com&sz=32"
-                             alt="CivitAI"
-                             className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
-                           />
-                         </a>
-                       </TooltipTrigger>
-                       <TooltipContent>Visit Mexes on CivitAI</TooltipContent>
-                     </Tooltip>
+                <div className="flex items-center justify-center space-x-4">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <a
+                        href="https://civitai.com/user/Mexes"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => trackExternalLink('https://civitai.com/user/Mexes', 'social')}
+                        className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                        aria-label="Visit Mexes on CivitAI"
+                      >
+                        <img
+                          src="https://www.google.com/s2/favicons?domain=civitai.com&sz=32"
+                          alt="CivitAI"
+                          className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
+                        />
+                      </a>
+                    </TooltipTrigger>
+                    <TooltipContent>Visit Mexes on CivitAI</TooltipContent>
+                  </Tooltip>
 
-                     <Tooltip>
-                       <TooltipTrigger asChild>
-                         <a
-                           href="https://tensor.art/u/616420638671868313"
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           onClick={() => trackExternalLink('https://tensor.art/u/616420638671868313','social')}
-                           className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-                           aria-label="Visit Mexes on Tensor.Art"
-                         >
-                           <img
-                             src="https://www.google.com/s2/favicons?domain=tensor.art&sz=32"
-                             alt="Tensor.Art"
-                             className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
-                           />
-                         </a>
-                       </TooltipTrigger>
-                       <TooltipContent>Visit Mexes on Tensor.Art</TooltipContent>
-                     </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <a
+                        href="https://tensor.art/u/616420638671868313"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => trackExternalLink('https://tensor.art/u/616420638671868313', 'social')}
+                        className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                        aria-label="Visit Mexes on Tensor.Art"
+                      >
+                        <img
+                          src="https://www.google.com/s2/favicons?domain=tensor.art&sz=32"
+                          alt="Tensor.Art"
+                          className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
+                        />
+                      </a>
+                    </TooltipTrigger>
+                    <TooltipContent>Visit Mexes on Tensor.Art</TooltipContent>
+                  </Tooltip>
 
-                     <Tooltip>
-                       <TooltipTrigger asChild>
-                         <a
-                           href="https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T"
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           onClick={() => trackExternalLink('https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T','social')}
-                           className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-                           aria-label="Visit Mexes on SeaArt AI"
-                         >
-                           <img
-                             src="https://www.google.com/s2/favicons?domain=seaart.ai&sz=32"
-                             alt="SeaArt AI"
-                             className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
-                           />
-                         </a>
-                       </TooltipTrigger>
-                       <TooltipContent>Visit Mexes on SeaArt AI</TooltipContent>
-                     </Tooltip>
-                   </div>
-                   
-                   {/* Ko-fi Support Button */}
-                   <div className="flex items-center justify-center mt-3">
-                     <a
-                       href="https://ko-fi.com/mexes"
-                       target="_blank"
-                       rel="noopener noreferrer"
-                       onClick={() => trackExternalLink('https://ko-fi.com/mexes','support')}
-                       className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
-                       aria-label="Support Mexes on Ko-fi"
-                     >
-                       <img
-                         src="https://www.google.com/s2/favicons?domain=ko-fi.com&sz=32"
-                         alt="Ko-fi"
-                         className="w-4 h-4 mr-2"
-                       />
-                       Support me on Ko-fi
-                     </a>
-                   </div>
-                 </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <a
+                        href="https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => trackExternalLink('https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T', 'social')}
+                        className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                        aria-label="Visit Mexes on SeaArt AI"
+                      >
+                        <img
+                          src="https://www.google.com/s2/favicons?domain=seaart.ai&sz=32"
+                          alt="SeaArt AI"
+                          className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
+                        />
+                      </a>
+                    </TooltipTrigger>
+                    <TooltipContent>Visit Mexes on SeaArt AI</TooltipContent>
+                  </Tooltip>
+                </div>
+
+                {/* Ko-fi Support Button */}
+                <div className="flex items-center justify-center mt-3">
+                  <a
+                    href="https://ko-fi.com/mexes"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => trackExternalLink('https://ko-fi.com/mexes', 'support')}
+                    className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+                    aria-label="Support Mexes on Ko-fi"
+                  >
+                    <img
+                      src="https://www.google.com/s2/favicons?domain=ko-fi.com&sz=32"
+                      alt="Ko-fi"
+                      className="w-4 h-4 mr-2"
+                    />
+                    Support me on Ko-fi
+                  </a>
+                </div>
+              </div>
             </div>
 
             <Card className="glass-effect">
               <CardContent className="p-4 sm:p-6">
                 <form onSubmit={search.handleSearch} className="space-y-6">
-                  
+
                   {/* Top Bar: Provider Selection & Quick Actions */}
                   <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center">
                     {/* API Provider Selector */}
                     <div className="flex flex-col gap-1.5 w-full lg:w-auto">
                       <span className="text-xs font-medium text-muted-foreground ml-1">API Provider</span>
                       <div className="bg-muted/50 p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto">
-                        {(['danbooru', 'aibooru', 'rule34', 'e621'] as const).map(p => (
-                            <Button
+                        {(['danbooru', 'aibooru', 'rule34', 'e621', 'gelbooru'] as const).map(p => (
+                          <Button
                             key={p}
                             type="button"
                             variant="ghost"
                             onClick={() => {
-                                search.setBooruProvider(p)
-                                if (favs.showFavorites) {
-                                    favs.toggleShowFavorites()
-                                }
-                                trackProviderChange(p)
+                              search.setBooruProvider(p)
+                              if (favs.showFavorites) {
+                                favs.toggleShowFavorites()
+                              }
+                              trackProviderChange(p)
                             }}
                             className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${!favs.showFavorites && search.booruProvider === p ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
-                            >
+                          >
                             {!favs.showFavorites && search.booruProvider === p && (
-                                <motion.div
+                              <motion.div
                                 layoutId="activeProvider"
                                 className="absolute inset-0 bg-background shadow-sm rounded-md"
                                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                />
+                              />
                             )}
-                            <span className="relative z-10 capitalize">{p === 'aibooru' ? 'Aibooru' : p === 'danbooru' ? 'Danbooru' : p === 'rule34' ? 'Rule34' : 'e621'}</span>
-                            </Button>
+                            <span className="relative z-10 capitalize">{p === 'aibooru' ? 'Aibooru' : p === 'danbooru' ? 'Danbooru' : p === 'rule34' ? 'Rule34' : p === 'gelbooru' ? 'Gelbooru' : 'e621'}</span>
+                          </Button>
                         ))}
                       </div>
                     </div>
@@ -634,13 +634,12 @@ export function PromptGallery() {
                               const newRating = search.ratingFilter === "rating:general" ? "all" : "rating:general"
                               search.setRatingFilter(newRating)
                             }}
-                            className={`h-9 px-3 ${
-                              search.booruProvider === 'rule34' 
-                                ? "opacity-50 cursor-not-allowed" 
-                                : search.ratingFilter === "rating:general" 
-                                  ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50" 
+                            className={`h-9 px-3 ${search.booruProvider === 'rule34'
+                                ? "opacity-50 cursor-not-allowed"
+                                : search.ratingFilter === "rating:general"
+                                  ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50"
                                   : ""
-                            }`}
+                              }`}
                             title={search.booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
                           >
                             <Shield className="w-4 h-4 mr-2" />
@@ -651,7 +650,7 @@ export function PromptGallery() {
                         ) : (
                           <div className="w-[120px] h-9 bg-muted animate-pulse rounded-md" />
                         )}
-                        
+
                         <Button
                           type="button"
                           variant={favs.showFavorites ? "secondary" : "outline"}
@@ -661,10 +660,10 @@ export function PromptGallery() {
                           <Heart className={`w-4 h-4 mr-2 ${favs.showFavorites ? "fill-current" : ""}`} />
                           <span className="text-xs font-medium">Favs ({favs.favorites.size})</span>
                         </Button>
-                        
+
                         {/* Trending Sheet */}
                         <TrendSheet />
-                        
+
                         {/* History Sheet */}
                         <Sheet>
                           <SheetTrigger asChild>
@@ -687,12 +686,12 @@ export function PromptGallery() {
                                       <div className="flex gap-3">
                                         {item.thumbnailUrl && (
                                           <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-muted">
-                                            <Image 
-                                              src={item.thumbnailUrl} 
-                                              alt={`History item: ${item.content.slice(0, 50)}...`} 
-                                              fill 
-                                              className="object-cover" 
-                                              unoptimized 
+                                            <Image
+                                              src={item.thumbnailUrl}
+                                              alt={`History item: ${item.content.slice(0, 50)}...`}
+                                              fill
+                                              className="object-cover"
+                                              unoptimized
                                             />
                                           </div>
                                         )}
@@ -818,7 +817,7 @@ export function PromptGallery() {
                                       <X className="h-3 w-3" />
                                     </Button>
                                   )}
-                                  
+
                                   <div className="h-4 w-px bg-border mx-1" />
                                   <div className="flex items-center">
                                     <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
@@ -837,10 +836,10 @@ export function PromptGallery() {
                                         <div className="space-y-4 py-4">
                                           <div className="space-y-2">
                                             <Label>Preset Name</Label>
-                                            <Input 
+                                            <Input
                                               value={presetName}
                                               onChange={(e) => setPresetName(e.target.value)}
-                                              placeholder="My awesome preset" 
+                                              placeholder="My awesome preset"
                                             />
                                           </div>
                                           <div className="space-y-2">
@@ -1013,7 +1012,7 @@ export function PromptGallery() {
                         )}
                       </div>
                     )}
-                    
+
                     {/* Simplified status display logic */}
                     {hasMultipleTags(search.searchTags, search.order, 0) && (
                       <Alert variant="destructive" className="py-2">
@@ -1040,82 +1039,81 @@ export function PromptGallery() {
             </div>
           ) : (
             <div className="space-y-4 mb-8">
-               {finalPosts.map((post) => (
-                   <div key={`${post.id}`}>
-                       <MasonryItem
-                        post={post}
-                        width={800} // Dummy width for list view
-                        height={600} // Dummy height
-                        viewMode="list"
-                        effectiveScale="medium" // Fixed for list
-                        booruProvider={search.booruProvider}
-                        favorites={favs.favorites}
-                        toggleFavorite={favs.toggleFavorite}
-                        downloadImage={downloadImage}
-                        copyToClipboard={copyToClipboard}
-                        excludeInput={excludeInput}
-                        addInput={addInput}
-                        includeCharacters={includeCharacters}
-                        optimizeTags={optimizeTags}
-                        removeLoRaTags={search.removeLoRaTags}
-                        removeQualityTags={search.removeQualityTags}
-                        tagOverrides={tagOverrides}
-                        copiedId={copiedId}
-                        setTeachModalData={setTeachModalData}
-                    />
-                   </div>
-               ))}
+              {finalPosts.map((post) => (
+                <div key={`${post.id}`}>
+                  <MasonryItem
+                    post={post}
+                    width={800} // Dummy width for list view
+                    height={600} // Dummy height
+                    viewMode="list"
+                    effectiveScale="medium" // Fixed for list
+                    booruProvider={search.booruProvider}
+                    favorites={favs.favorites}
+                    toggleFavorite={favs.toggleFavorite}
+                    downloadImage={downloadImage}
+                    copyToClipboard={copyToClipboard}
+                    excludeInput={excludeInput}
+                    addInput={addInput}
+                    includeCharacters={includeCharacters}
+                    optimizeTags={optimizeTags}
+                    removeLoRaTags={search.removeLoRaTags}
+                    removeQualityTags={search.removeQualityTags}
+                    tagOverrides={tagOverrides}
+                    copiedId={copiedId}
+                    setTeachModalData={setTeachModalData}
+                  />
+                </div>
+              ))}
             </div>
           )}
 
           {/* Load More / States */}
           {filteredPosts.length > 0 && !favs.showFavorites && (
             <div className="text-center">
-              <Button 
-                onClick={search.loadMore} 
+              <Button
+                onClick={search.loadMore}
                 disabled={search.isLoadingLock || search.isLoadingMore || (search.noMoreResults && !search.loadMoreError)}
-                size="lg" 
+                size="lg"
                 className="px-8 focus-ring"
               >
-                  {search.isLoadingMore ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-                  {search.isLoadingMore ? "Loading..." : "Load More"}
+                {search.isLoadingMore ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+                {search.isLoadingMore ? "Loading..." : "Load More"}
               </Button>
             </div>
           )}
-          
-          {/* Loading / Empty States */}
-            {((search.isLoading && filteredPosts.length === 0 && !favs.showFavorites) || (favs.showFavorites && favs.isLoading)) && (
-            <div className="text-center py-12">
-               <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
-               <p className="mt-4">Loading...</p>
-            </div>
-            )}
 
-            {!search.isLoading && !favs.isLoading && filteredPosts.length === 0 && (
-                <div className="text-center py-12 px-4">
-                    <p className="text-lg font-medium">{favs.showFavorites ? "No favorites yet" : "No images found"}</p>
-                </div>
-            )}
+          {/* Loading / Empty States */}
+          {((search.isLoading && filteredPosts.length === 0 && !favs.showFavorites) || (favs.showFavorites && favs.isLoading)) && (
+            <div className="text-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+              <p className="mt-4">Loading...</p>
+            </div>
+          )}
+
+          {!search.isLoading && !favs.isLoading && filteredPosts.length === 0 && (
+            <div className="text-center py-12 px-4">
+              <p className="text-lg font-medium">{favs.showFavorites ? "No favorites yet" : "No images found"}</p>
+            </div>
+          )}
         </main>
 
-        <div className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 transition-all duration-500 ${
-          showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
-        }`}>
+        <div className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 transition-all duration-500 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
+          }`}>
           <Button onClick={scrollToTop} className="rounded-full shadow-lg" size="icon">
             <ChevronUp className="h-5 w-5" />
           </Button>
         </div>
-        
+
       </div>
-      
+
       {teachModalData.tags && (
-        <TeachModal 
-          open={teachModalData.open} 
+        <TeachModal
+          open={teachModalData.open}
           onOpenChange={(open) => setTeachModalData(prev => ({ ...prev, open }))}
           initialClassifiedTags={teachModalData.tags}
         />
       )}
       <TeachWelcomeModal triggerOpen={showWelcomeModal} />
-      </TooltipProvider>
-    )
+    </TooltipProvider>
+  )
 }

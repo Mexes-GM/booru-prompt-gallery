@@ -4,7 +4,7 @@
 export const storage = {
   get: <T>(key: string, defaultValue: T): T => {
     if (typeof window === 'undefined') return defaultValue
-    
+
     try {
       const item = localStorage.getItem(key)
       return item ? JSON.parse(item) : defaultValue
@@ -16,7 +16,7 @@ export const storage = {
 
   set: <T>(key: string, value: T): void => {
     if (typeof window === 'undefined') return
-    
+
     try {
       localStorage.setItem(key, JSON.stringify(value))
     } catch (error) {
@@ -26,7 +26,7 @@ export const storage = {
 
   remove: (key: string): void => {
     if (typeof window === 'undefined') return
-    
+
     try {
       localStorage.removeItem(key)
     } catch (error) {
@@ -64,46 +64,46 @@ export interface TagPreset {
 
 // Type-safe getters and setters for specific preferences
 export const userPreferences = {
-  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' => 
+  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru' =>
     storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'danbooru'),
-  
-  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621') => 
+
+  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru') =>
     storage.set(STORAGE_KEYS.BOORU_PROVIDER, provider),
-  
-  getRemoveLoRaTags: (): boolean => 
+
+  getRemoveLoRaTags: (): boolean =>
     storage.get(STORAGE_KEYS.REMOVE_LORA_TAGS, false),
-  
-  setRemoveLoRaTags: (enabled: boolean) => 
+
+  setRemoveLoRaTags: (enabled: boolean) =>
     storage.set(STORAGE_KEYS.REMOVE_LORA_TAGS, enabled),
-  
-  getRemoveQualityTags: (): boolean => 
+
+  getRemoveQualityTags: (): boolean =>
     storage.get(STORAGE_KEYS.REMOVE_QUALITY_TAGS, false),
-  
-  setRemoveQualityTags: (enabled: boolean) => 
+
+  setRemoveQualityTags: (enabled: boolean) =>
     storage.set(STORAGE_KEYS.REMOVE_QUALITY_TAGS, enabled),
 
-  getRatingFilter: (): string => 
+  getRatingFilter: (): string =>
     storage.get(STORAGE_KEYS.RATING_FILTER, 'rating:general'),
-  
-  setRatingFilter: (rating: string) => 
+
+  setRatingFilter: (rating: string) =>
     storage.set(STORAGE_KEYS.RATING_FILTER, rating),
 
-  getMinimumTagCount: (): string => 
+  getMinimumTagCount: (): string =>
     storage.get(STORAGE_KEYS.MINIMUM_TAG_COUNT, "5"),
-  
-  setMinimumTagCount: (count: string) => 
+
+  setMinimumTagCount: (count: string) =>
     storage.set(STORAGE_KEYS.MINIMUM_TAG_COUNT, count),
 
-  getOrder: (): 'popular' | 'recent' | 'random' => 
+  getOrder: (): 'popular' | 'recent' | 'random' =>
     storage.get(STORAGE_KEYS.ORDER, 'popular'),
-  
-  setOrder: (order: 'popular' | 'recent' | 'random') => 
+
+  setOrder: (order: 'popular' | 'recent' | 'random') =>
     storage.set(STORAGE_KEYS.ORDER, order),
 
-  getHistory: (): HistoryItem[] => 
+  getHistory: (): HistoryItem[] =>
     storage.get(STORAGE_KEYS.HISTORY, []),
 
-  getAddTagsPresets: (): TagPreset[] => 
+  getAddTagsPresets: (): TagPreset[] =>
     storage.get(STORAGE_KEYS.ADD_TAGS_PRESETS, []),
 
   addAddTagsPreset: (preset: Omit<TagPreset, 'id' | 'timestamp'>) => {
@@ -137,9 +137,9 @@ export const userPreferences = {
     storage.set(STORAGE_KEYS.HISTORY, newHistory)
   },
 
-  clearHistory: () => 
+  clearHistory: () =>
     storage.remove(STORAGE_KEYS.HISTORY),
-    
+
   removeFromHistory: (id: string) => {
     const history = storage.get<HistoryItem[]>(STORAGE_KEYS.HISTORY, [])
     const newHistory = history.filter(item => item.id !== id)

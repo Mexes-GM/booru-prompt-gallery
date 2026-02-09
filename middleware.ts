@@ -32,31 +32,31 @@ export async function middleware(request: NextRequest) {
   response.headers.set('X-Frame-Options', 'DENY')
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  
+
   // CSP for Aibooru and other providers
   // We use a permissive CSP to allow the various image CDNs and APIs required for the booru gallery
   const csp = `
     default-src 'self';
     script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live;
     style-src 'self' 'unsafe-inline';
-    img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://*.donmai.us https://*.ko-fi.com;
+    img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://*.donmai.us https://*.ko-fi.com https://gelbooru.com https://*.gelbooru.com;
     font-src 'self';
-    connect-src 'self' https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://vercel.live https://vitals.vercel-insights.com;
+    connect-src 'self' https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://vitals.vercel-insights.com;
     frame-src 'self' https://vercel.live;
   `.replace(/\s+/g, ' ').trim()
-  
+
   response.headers.set('Content-Security-Policy', csp)
 
 
   // Add performance headers
   response.headers.set('X-Powered-By', 'Next.js')
-  
+
   // Add SEO-friendly headers
   if (url.pathname === '/') {
     // Remove preload to avoid unused preload warnings
     // response.headers.set('Link', '</icon.png>; rel=preload; as=image')
   }
-  
+
   // Handle API routes with specific headers
   if (url.pathname.startsWith('/api/')) {
     response.headers.set('Access-Control-Allow-Origin', '*')
