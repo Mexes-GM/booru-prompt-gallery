@@ -25,6 +25,14 @@ export interface BooruPost {
   }
 }
 
+export interface TrendItem {
+  name: string
+  type: 'character' | 'copyright'
+  count: number
+  imageUrl: string
+  postUrl: string
+}
+
 export interface SearchOptions {
   tags: string
   page: string
@@ -35,6 +43,7 @@ export interface SearchOptions {
 
 export interface IBooruProvider {
   search(options: SearchOptions): Promise<BooruPost[]>
+  getTrending?(): Promise<TrendItem[]>
 }
 
 export const isAibooruPost = (post: BooruPost): boolean => {

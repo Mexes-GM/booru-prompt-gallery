@@ -94,6 +94,8 @@ import { useBooruSearch } from "@/hooks/use-booru-search"
 import { useBooruFavorites } from "@/hooks/use-booru-favorites"
 import { MasonryItem } from "./masonry-item"
 
+import { TrendSheet } from "@/components/trends/trend-sheet"
+
 type CardScale = "small" | "medium" | "large"
 
 export function PromptGallery() {
@@ -659,6 +661,9 @@ export function PromptGallery() {
                           <Heart className={`w-4 h-4 mr-2 ${favs.showFavorites ? "fill-current" : ""}`} />
                           <span className="text-xs font-medium">Favs ({favs.favorites.size})</span>
                         </Button>
+                        
+                        {/* Trending Sheet */}
+                        <TrendSheet />
                         
                         {/* History Sheet */}
                         <Sheet>

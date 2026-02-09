@@ -46,6 +46,8 @@ export function useBooruSearch() {
 
   const { toast } = useToast()
 
+  const sanitizeTagCount = (val: string) => val.replace(/\D/g, '') || '5'
+
   // --- Initialization & Persistance ---
 
   useEffect(() => {
@@ -73,10 +75,11 @@ export function useBooruSearch() {
     else setRatingFilter(userPreferences.getRatingFilter())
 
     if (urlCount) {
-        setTagCountFilter(urlCount)
-        setAppliedTagCountFilter(urlCount)
+        const cleanCount = sanitizeTagCount(urlCount)
+        setTagCountFilter(cleanCount)
+        setAppliedTagCountFilter(cleanCount)
     } else {
-        const storedCount = userPreferences.getMinimumTagCount()
+        const storedCount = sanitizeTagCount(userPreferences.getMinimumTagCount())
         setTagCountFilter(storedCount)
         setAppliedTagCountFilter(storedCount)
     }
@@ -88,6 +91,24 @@ export function useBooruSearch() {
     else setRemoveQualityTags(userPreferences.getRemoveQualityTags())
 
   }, []) // Run once on mount to hydrate state
+
+  // React to URL changes (External Navigation / Trends)
+  useEffect(() => {
+      const urlQ = searchParams.get('q')
+      if (urlQ !== null && urlQ !== searchTags) {
+          setSearchTags(urlQ)
+      }
+      
+      const urlRating = searchParams.get('rating')
+      if (urlRating !== null && urlRating !== ratingFilter) {
+          setRatingFilter(urlRating)
+      }
+
+      const urlProvider = searchParams.get('provider')
+      if (urlProvider !== null && urlProvider !== booruProvider && ['danbooru', 'aibooru', 'rule34', 'e621'].includes(urlProvider)) {
+          setBooruProvider(urlProvider as BooruProvider)
+      }
+  }, [searchParams])
 
   // Sync State -> URL
   useEffect(() => {
@@ -104,7 +125,7 @@ export function useBooruSearch() {
     setParam('q', searchTags || null)
     setParam('provider', booruProvider)
     setParam('rating', ratingFilter)
-    setParam('count', tagCountFilter)
+    setParam('count', sanitizeTagCount(tagCountFilter))
     // Only set boolean flags if true to keep URL clean
     setParam('lora', removeLoRaTags ? 'true' : null) 
     setParam('quality', removeQualityTags ? 'true' : null)
