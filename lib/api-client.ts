@@ -504,12 +504,16 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
 
       // CRITICAL: Page index is 0-based, but API expects 1-based page numbers
       // pageIndex + 1 ensures correct page progression: 0 -> page 1, 1 -> page 2, etc.
-      const baseUrl = `${apiEndpoint}?page=${pageIndex + 1}&tags=${encodedQuery}&order=${order}`
+      // For random order, we must stick to page 1 because random:20 limits the result set to 20 items.
+      const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
+      const effectivePage = isRandomOrder ? 1 : pageIndex + 1
+
+      const baseUrl = `${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}`
 
       // Add random seed for random searches to force cache invalidation
       // Also add seed if tags contain order:random to ensure we get new results
-      const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
-      const seedParam = isRandomOrder && randomSeed ? `&seed=${randomSeed}` : ''
+      // We append pageIndex to seed to ensure we get *different* random posts for each page
+      const seedParam = isRandomOrder && randomSeed ? `&seed=${randomSeed}_${pageIndex}` : ''
 
       const finalUrl = `${baseUrl}${seedParam}`
 

@@ -93,7 +93,7 @@ export function useBooruSearch() {
   // React to URL changes (External Navigation / Trends)
   useEffect(() => {
     // q param listener removed to prevent loop/flash
-    
+
     const urlRating = searchParams.get('rating')
     if (urlRating !== null && urlRating !== ratingFilter) {
       setRatingFilter(urlRating)
@@ -199,9 +199,7 @@ export function useBooruSearch() {
     const currentRawPostCount = pages ? pages.flat().length : 0
     setLastLoadAttempt(currentRawPostCount)
 
-    if (order === 'random' || /order:random|random:\d+/i.test(searchTags)) {
-      setRandomSeed(Date.now())
-    }
+
 
     setSize(size + 1)
     trackLoadMore({ order, nextPage: size + 1, currentCount: allPosts.length })
@@ -225,10 +223,12 @@ export function useBooruSearch() {
   const toggleShuffle = useCallback(() => {
     setIsShuffle(prev => {
       const next = !prev
-      setSize(1)
-      if (next) setRandomSeed(Date.now())
+      if (next) {
+        setRandomSeed(Date.now())
+      }
       return next
     })
+    setSize(1)
   }, [setSize])
 
   const handleSearch = useCallback((e: React.FormEvent) => {

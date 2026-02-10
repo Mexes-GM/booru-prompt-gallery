@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, memo } from 'react'
+import { useRef, useEffect, useState, memo, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { X, Copy, Trash2, Check } from "lucide-react"
@@ -28,23 +28,70 @@ interface MergeStickyFooterProps {
     onClearAll: () => void
     onExit: () => void
     onCopy: (text: string) => void
+    onRemoveTag: (tag: string) => void
 }
 
+const ExplodingTag = memo(({
+    text,
+    category,
+    onRemove,
+    getCategoryClass
+}: {
+    text: string
+    category: TagCategory
+    onRemove: (tag: string) => void
+    getCategoryClass: (c: TagCategory) => string
+}) => {
+    return (
+        <motion.div
+            layout
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{
+                opacity: 0,
+                scale: 2,
+                filter: "blur(4px)",
+                transition: { duration: 0.3 }
+            }}
+            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            className="relative z-0 hover:z-10"
+        >
+            <motion.button
+                onClick={() => onRemove(text)}
+                className={`transform-gpu hover:scale-110 active:scale-95 transition-all duration-200 px-2.5 py-0.5 rounded border text-xs font-medium font-mono cursor-pointer select-none relative overflow-hidden group ${getCategoryClass(category)}`}
+            >
+                <span className="block relative z-10 transition-transform duration-300 group-hover:-translate-x-1.5 truncate max-w-[150px]">
+                    {text}
+                </span>
+
+                <span className="absolute inset-0 bg-red-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+
+                <span className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+                    <X className="w-3 h-3" />
+                </span>
+            </motion.button>
+        </motion.div>
+    )
+})
+
+const PARTICLES_MAP = {
+    green: "bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.8)]",
+    red: "bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]"
+}
+const PARTICLES = Array.from({ length: 12 })
+
 const Particles = memo(({ color = "green" }: { color?: "green" | "red" }) => {
-    const particles = Array.from({ length: 12 })
-    const colorClass = color === "green"
-        ? "bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.8)]"
-        : "bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]"
+    const colorClass = PARTICLES_MAP[color]
 
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
-            {particles.map((_, i) => (
+            {PARTICLES.map((_, i) => (
                 <motion.div
                     key={i}
                     initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
                     animate={{
-                        x: Math.cos(i * (360 / particles.length) * (Math.PI / 180)) * 40,
-                        y: Math.sin(i * (360 / particles.length) * (Math.PI / 180)) * 40,
+                        x: Math.cos(i * (360 / PARTICLES.length) * (Math.PI / 180)) * 40,
+                        y: Math.sin(i * (360 / PARTICLES.length) * (Math.PI / 180)) * 40,
                         scale: [0, 1, 0],
                         opacity: [1, 0]
                     }}
@@ -64,7 +111,8 @@ const MergeStickyFooterComponent = ({
     onRemovePost,
     onClearAll,
     onExit,
-    onCopy
+    onCopy,
+    onRemoveTag
 }: MergeStickyFooterProps) => {
 
     const [isCopied, setIsCopied] = useState(false)
@@ -84,7 +132,7 @@ const MergeStickyFooterComponent = ({
     }
 
     // Helper for category colors
-    const getCategoryClass = (category: TagCategory) => {
+    const getCategoryClass = useCallback((category: TagCategory) => {
         switch (category) {
             case 'appearance': return 'text-blue-500 bg-blue-500/10 border-blue-500/20'
             case 'pose': return 'text-purple-500 bg-purple-500/10 border-purple-500/20'
@@ -92,7 +140,7 @@ const MergeStickyFooterComponent = ({
             case 'scenery': return 'text-orange-500 bg-orange-500/10 border-orange-500/20'
             default: return 'text-muted-foreground bg-muted border-transparent'
         }
-    }
+    }, [])
 
     return (
         <AnimatePresence>
@@ -228,22 +276,18 @@ const MergeStickyFooterComponent = ({
 
                         {/* Prompt Output */}
                         <div className="relative">
-                            <div className="min-h-[80px] max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-2 text-sm shadow-sm overflow-y-auto">
+                            <div className="min-h-[80px] max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-2 text-sm shadow-sm overflow-y-auto overflow-x-hidden">
                                 {mergedPromptSegments.length > 0 ? (
                                     <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start">
                                         <AnimatePresence mode="popLayout">
-                                            {mergedPromptSegments.map((segment, index) => (
-                                                <motion.span
-                                                    layout
-                                                    initial={{ opacity: 0, scale: 0.8 }}
-                                                    animate={{ opacity: 1, scale: 1 }}
-                                                    exit={{ opacity: 0, scale: 0.8 }}
-                                                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                                                    key={`${segment.text}-${index}`}
-                                                    className={`px-1.5 py-0.5 rounded border text-xs font-medium font-mono cursor-default select-all ${getCategoryClass(segment.category)}`}
-                                                >
-                                                    {segment.text}
-                                                </motion.span>
+                                            {mergedPromptSegments.map((segment) => (
+                                                <ExplodingTag
+                                                    key={segment.text}
+                                                    text={segment.text}
+                                                    category={segment.category}
+                                                    onRemove={onRemoveTag}
+                                                    getCategoryClass={getCategoryClass}
+                                                />
                                             ))}
                                         </AnimatePresence>
                                         {mergedPromptSegments.length === 0 && (

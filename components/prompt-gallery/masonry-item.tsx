@@ -40,23 +40,28 @@ import { trackExternalLink } from "@/lib/analytics"
 import { toast } from "@/hooks/use-toast"
 import { SCALE_CONFIG } from "@/components/masonry-grid"
 
-const SuccessOverlay = () => {
-    const particles = Array.from({ length: 12 })
+const PARTICLES = Array.from({ length: 12 })
+
+const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
     return (
         <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] rounded-xl"
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] rounded-xl cursor-pointer"
+            onClick={(e) => {
+                e.stopPropagation()
+                onSkip?.()
+            }}
         >
             <div className="relative flex flex-col items-center justify-center pointer-events-none">
-                {particles.map((_, i) => (
+                {PARTICLES.map((_, i) => (
                     <motion.div
                         key={i}
                         initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
                         animate={{
-                            x: Math.cos(i * (360 / particles.length) * (Math.PI / 180)) * 60,
-                            y: Math.sin(i * (360 / particles.length) * (Math.PI / 180)) * 60,
+                            x: Math.cos(i * (360 / PARTICLES.length) * (Math.PI / 180)) * 60,
+                            y: Math.sin(i * (360 / PARTICLES.length) * (Math.PI / 180)) * 60,
                             scale: [0, 1.5, 0],
                             opacity: [1, 1, 0]
                         }}
@@ -85,7 +90,7 @@ const SuccessOverlay = () => {
             </div>
         </motion.div>
     )
-}
+})
 
 interface MasonryItemProps {
     post: BooruPost
@@ -112,6 +117,7 @@ interface MasonryItemProps {
     tagOverrides: Record<string, string>
     copiedId: number | null
     setTeachModalData: (data: { open: boolean, tags: any }) => void
+    onSkipAnimation?: () => void
 }
 
 // Memoized MasonryItem to prevent unnecessary re-renders
@@ -139,7 +145,8 @@ export const MasonryItem = memo(function MasonryItem({
     removeQualityTags,
     tagOverrides,
     copiedId,
-    setTeachModalData
+    setTeachModalData,
+    onSkipAnimation
 }: MasonryItemProps) {
     const excludeList = excludeInput.split(',').map(t => t.trim()).filter(Boolean)
     const addList = addInput.split(',').map(t => t.trim()).filter(Boolean)
@@ -183,14 +190,14 @@ export const MasonryItem = memo(function MasonryItem({
             "",
             "",
             "",
-            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides },
+            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, escapeOutput: false },
         )
         : cleanPrompt(
             post.tag_string,
             post.tag_string_artist,
             post.tag_string_character,
             post.tag_string_copyright,
-            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides },
+            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, escapeOutput: false },
         ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, excludeInput, tagOverrides])
 
     // Pre-classify tags for the dropdown counts
@@ -208,8 +215,11 @@ export const MasonryItem = memo(function MasonryItem({
     }, [characterTagsArray, tagsForClassification, tagOverrides])
 
     const classifiedTeachTags = useMemo(() => {
-        const allTeachTagsForClassification = Array.from(new Set([...characterTagsArray, ...teachTagsForClassification]))
-        return classifyTags(allTeachTagsForClassification, tagOverrides, characterTagsArray)
+        // Filter out character tags for the Teach modal
+        const charTagsSet = new Set(characterTagsArray)
+        const filteredTags = teachTagsForClassification.filter(t => !charTagsSet.has(t))
+
+        return classifyTags(filteredTags, tagOverrides, [])
     }, [characterTagsArray, teachTagsForClassification, tagOverrides])
 
     const copyCategory = async (category: TagCategory) => {
@@ -523,7 +533,7 @@ export const MasonryItem = memo(function MasonryItem({
                     </div>
                 </div>
                 <AnimatePresence>
-                    {copiedId === post.id && <SuccessOverlay />}
+                    {copiedId === post.id && <SuccessOverlay onSkip={onSkipAnimation} />}
                 </AnimatePresence>
             </Card>
         )
@@ -702,7 +712,7 @@ export const MasonryItem = memo(function MasonryItem({
                 </div>
             </CardContent>
             <AnimatePresence>
-                {copiedId === post.id && <SuccessOverlay />}
+                {copiedId === post.id && <SuccessOverlay onSkip={onSkipAnimation} />}
             </AnimatePresence>
         </Card>
     )

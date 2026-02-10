@@ -27,17 +27,17 @@ interface TrendSheetProps {
 export function TrendSheet({ onSelectTag }: TrendSheetProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("character")
-  
+
   // Only fetch when open
   const { data: trends, error, isLoading } = useSWR<TrendItem[]>(
-    isOpen ? '/api/trends' : null, 
+    isOpen ? '/api/trends' : null,
     async (url) => {
       const res = await fetch(url)
       if (!res.ok) {
         throw new Error('Failed to fetch')
       }
       return res.json()
-    }, 
+    },
     {
       revalidateOnFocus: false,
       dedupingInterval: 3600000, // 1 hour
@@ -50,7 +50,7 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
   }
 
   const renderGrid = (items: TrendItem[]) => (
-    <motion.div 
+    <motion.div
       className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 pb-2"
       initial="hidden"
       animate="visible"
@@ -62,12 +62,12 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
     >
       <AnimatePresence mode="popLayout">
         {items.map((item, index) => (
-          <TrendCard 
-            key={item.name} 
-            item={item} 
-            rank={index + 1} 
+          <TrendCard
+            key={item.name}
+            item={item}
+            rank={index + 1}
             index={index}
-            onClick={handleTagClick} 
+            onClick={handleTagClick}
           />
         ))}
       </AnimatePresence>
@@ -77,13 +77,17 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="icon" className="h-9 w-9 relative text-muted-foreground hover:text-orange-500 hover:border-orange-200 dark:hover:border-orange-800 transition-colors">
-          <Flame className="h-4 w-4" />
-          <span className="sr-only">Trending Tags</span>
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-9 px-3 bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
+        >
+          <Flame className="h-4 w-4 mr-2" />
+          <span className="text-xs font-medium">Trending</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl h-[90vh] sm:h-[80vh] flex flex-col p-0 gap-0 bg-background/95 backdrop-blur-md overflow-hidden duration-500 ease-[0.25,0.1,0.25,1]">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.1 }}
@@ -107,9 +111,9 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
 
           <div className="flex-1 overflow-hidden relative w-full">
             {isLoading ? (
-              <motion.div 
-                initial={{ opacity: 0 }} 
-                animate={{ opacity: 1 }} 
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground"
               >

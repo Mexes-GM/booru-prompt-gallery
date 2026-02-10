@@ -2,14 +2,14 @@
 
 import { useState, useEffect, memo } from 'react'
 import { createPortal } from 'react-dom'
-import { 
-  DndContext, 
-  DragOverlay, 
-  closestCorners, 
+import {
+  DndContext,
+  DragOverlay,
+  closestCorners,
   pointerWithin,
-  KeyboardSensor, 
-  PointerSensor, 
-  useSensor, 
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
   useSensors,
   DragStartEvent,
   DragOverEvent,
@@ -17,10 +17,10 @@ import {
   defaultDropAnimationSideEffects,
   DropAnimation
 } from '@dnd-kit/core'
-import { 
-  arrayMove, 
-  SortableContext, 
-  sortableKeyboardCoordinates, 
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
   rectSortingStrategy,
   useSortable
 } from '@dnd-kit/sortable'
@@ -36,12 +36,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, GripVertical, Info } from "lucide-react"
+import { Loader2, GripVertical, Info, Check } from "lucide-react"
 import { submitTagSuggestions, getExistingSuggestions } from '@/app/actions/suggestions'
 import { TagCategory } from '@/lib/tag-classifier'
 import { cn } from "@/lib/utils"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { motion, AnimatePresence } from "framer-motion"
 
 import {
   AlertDialog,
@@ -107,18 +108,18 @@ const SortableItem = memo(function SortableItem({ id, category, suggestedCategor
   }
 
   // Determine styles
-   let itemStyles = "border bg-card text-card-foreground shadow-sm hover:border-primary/50 hover:shadow-md"
-   let showSuggestion = false
-   let suggestionLabel = ""
-   
-   if (category === 'other' && suggestedCategory && suggestedCategory !== 'other') {
-     showSuggestion = true
-     itemStyles = CATEGORY_STYLES[suggestedCategory] || itemStyles
-     // Simple capitalize for label since we removed the map
-     suggestionLabel = suggestedCategory.charAt(0).toUpperCase() + suggestedCategory.slice(1)
-   }
+  let itemStyles = "border bg-card text-card-foreground shadow-sm hover:border-primary/50 hover:shadow-md"
+  let showSuggestion = false
+  let suggestionLabel = ""
 
-   return (
+  if (category === 'other' && suggestedCategory && suggestedCategory !== 'other') {
+    showSuggestion = true
+    itemStyles = CATEGORY_STYLES[suggestedCategory] || itemStyles
+    // Simple capitalize for label since we removed the map
+    suggestionLabel = suggestedCategory.charAt(0).toUpperCase() + suggestedCategory.slice(1)
+  }
+
+  return (
     <div
       ref={setNodeRef}
       style={style}
@@ -126,12 +127,12 @@ const SortableItem = memo(function SortableItem({ id, category, suggestedCategor
       {...listeners}
       className={cn(
         "group relative inline-flex items-center gap-2 p-2 rounded-lg border transition-all touch-none cursor-grab active:cursor-grabbing",
-        isDragging 
-          ? "opacity-50 ring-2 ring-primary z-50 shadow-xl scale-105 bg-card" 
+        isDragging
+          ? "opacity-50 ring-2 ring-primary z-50 shadow-xl scale-105 bg-card"
           : itemStyles
       )}
     >
-      <div 
+      <div
         className="p-1 -ml-1 rounded text-muted-foreground/50 group-hover:text-foreground transition-colors"
       >
         <GripVertical className="h-5 w-5 md:h-4 md:w-4" />
@@ -141,10 +142,10 @@ const SortableItem = memo(function SortableItem({ id, category, suggestedCategor
           {id}
         </span>
         {showSuggestion && !isDragging && (
-           <span className="text-[10px] text-muted-foreground font-normal mt-0.5 flex items-center gap-1">
-              {suggestionLabel}
-           </span>
-         )}
+          <span className="text-[10px] text-muted-foreground font-normal mt-0.5 flex items-center gap-1">
+            {suggestionLabel}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -154,7 +155,7 @@ const SortableItem = memo(function SortableItem({ id, category, suggestedCategor
 
 const Column = memo(function Column({ id, title, description, items, suggestions }: { id: ColumnId, title: string, description: string, items: string[], suggestions: Record<string, string> }) {
   const { setNodeRef } = useSortable({ id })
-  
+
   const headerStyle = COLUMN_HEADER_STYLES[id] || COLUMN_HEADER_STYLES.other
 
   return (
@@ -177,20 +178,20 @@ const Column = memo(function Column({ id, title, description, items, suggestions
           {items.length}
         </Badge>
       </div>
-      
+
       <div className="flex-1 px-2 pb-2 min-h-0 flex flex-col">
         <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
           <div ref={setNodeRef} className="min-h-full flex flex-wrap gap-2 content-start pb-4">
-            <SortableContext 
+            <SortableContext
               id={id}
-              items={items} 
+              items={items}
               strategy={rectSortingStrategy}
             >
               {items.map((item) => (
-                <SortableItem 
-                  key={item} 
-                  id={item} 
-                  category={id} 
+                <SortableItem
+                  key={item}
+                  id={item}
+                  category={id}
                   suggestedCategory={suggestions[item]}
                 />
               ))}
@@ -207,12 +208,95 @@ const Column = memo(function Column({ id, title, description, items, suggestions
   )
 })
 
+// --- Success Animation Component ---
+
+const SuccessAnimation = memo(function SuccessAnimation() {
+  const particles = Array.from({ length: 20 })
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-md"
+    >
+      <div className="relative flex flex-col items-center justify-center">
+        {/* Particles */}
+        {particles.map((_, i) => (
+          <motion.div
+            key={i}
+            initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
+            animate={{
+              x: (Math.random() - 0.5) * 300,
+              y: (Math.random() - 0.5) * 300,
+              scale: [0, Math.random() + 0.5, 0],
+              opacity: [1, 1, 0],
+              rotate: Math.random() * 360
+            }}
+            transition={{
+              duration: 1.5 + Math.random(),
+              ease: "easeOut",
+              delay: Math.random() * 0.2
+            }}
+            className={cn(
+              "absolute w-2 h-2 rounded-full",
+              i % 3 === 0 ? "bg-blue-500" : i % 3 === 1 ? "bg-purple-500" : "bg-primary"
+            )}
+          />
+        ))}
+
+        {/* Main Icon Circle */}
+        <motion.div
+          initial={{ scale: 0, rotate: -180 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{
+            type: "spring",
+            stiffness: 260,
+            damping: 20,
+            delay: 0.1
+          }}
+          className="w-24 h-24 bg-gradient-to-br from-primary to-primary/60 rounded-full flex items-center justify-center shadow-lg shadow-primary/25 z-10"
+        >
+          <motion.div
+            initial={{ pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+          >
+            <Check className="w-12 h-12 text-primary-foreground stroke-[3px]" />
+          </motion.div>
+        </motion.div>
+
+        {/* Text */}
+        <div className="text-center mt-6 space-y-2 z-10">
+          <motion.h3
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="text-2xl font-bold tracking-tight"
+          >
+            Thank You!
+          </motion.h3>
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7 }}
+            className="text-muted-foreground font-medium"
+          >
+            Your suggestions help improve the gallery.
+          </motion.p>
+        </div>
+      </div>
+    </motion.div>
+  )
+})
+
 // --- Main Modal Component ---
 
 export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachModalProps) {
   const [items, setItems] = useState<Items>(initialClassifiedTags)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSuccess, setIsSuccess] = useState(false)
   const [existingSuggestions, setExistingSuggestions] = useState<Record<string, string>>({})
   const [showExitAlert, setShowExitAlert] = useState(false)
   const [isReady, setIsReady] = useState(false)
@@ -221,19 +305,21 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
   // Reset items when modal opens or props change
   useEffect(() => {
     if (open) {
+      if (isSuccess) setIsSuccess(false) // Reset success state on re-open
+
       // Only update if the tags actually changed
       const currentTagsJson = JSON.stringify(items)
       const newTagsJson = JSON.stringify(initialClassifiedTags)
-      
+
       if (currentTagsJson !== newTagsJson) {
         setItems(initialClassifiedTags)
         setIsReady(false)
-        
+
         // Delay rendering of heavy content to allow modal animation to start
         const timer = setTimeout(() => {
           setIsReady(true)
         }, 50)
-        
+
         // Fetch existing suggestions
         const allTags = Object.values(initialClassifiedTags).flat()
         if (allTags.length > 0) {
@@ -241,14 +327,26 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
             setExistingSuggestions(suggestions)
           })
         }
-        
+
         return () => clearTimeout(timer)
       } else if (!isReady) {
-         // Ensure isReady is true if we didn't reset
-         setIsReady(true)
+        // Ensure isReady is true if we didn't reset
+        setIsReady(true)
       }
     }
   }, [open, initialClassifiedTags])
+
+  // Timer for closing modal after success animation
+  useEffect(() => {
+    if (isSuccess) {
+      const timer = setTimeout(() => {
+        onOpenChange(false)
+        // Small delay to reset success state after modal close animation starts
+        setTimeout(() => setIsSuccess(false), 300)
+      }, 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [isSuccess, onOpenChange])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -294,14 +392,14 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
     setItems((prev) => {
       const activeItems = prev[activeContainer]
       const overItems = prev[overContainer]
-      
+
       // Safety check: Ensure item is actually in the source container in the current state
       // This prevents infinite loops caused by stale closure state in handleDragOver
       const activeIndex = activeItems.indexOf(active.id as string)
       if (activeIndex === -1) {
-         return prev
+        return prev
       }
-      
+
       const overIndex = overItems.indexOf(overId as string)
 
       let newIndex
@@ -312,7 +410,7 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
           over &&
           active.rect.current.translated &&
           active.rect.current.translated.top >
-            over.rect.top + over.rect.height
+          over.rect.top + over.rect.height
 
         const modifier = isBelowOverItem ? 1 : 0
         newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1
@@ -356,7 +454,7 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
             over &&
             active.rect.current.translated &&
             active.rect.current.translated.top >
-              over.rect.top + over.rect.height
+            over.rect.top + over.rect.height
 
           const modifier = isBelowOverItem ? 1 : 0
           newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1
@@ -383,10 +481,10 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
     for (const key of Object.keys(initialClassifiedTags) as ColumnId[]) {
       const initialSet = new Set(initialClassifiedTags[key])
       const currentSet = new Set(items[key])
-      
+
       // Simple length check first
       if (initialSet.size !== currentSet.size) return true
-      
+
       // Check content
       for (const item of currentSet) {
         if (!initialSet.has(item)) return true
@@ -402,20 +500,20 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
 
     // Calculate diffs
     const suggestions = []
-    
+
     // For each item in the current state, check if its category changed from initial
     for (const [category, tags] of Object.entries(items)) {
       for (const tag of tags) {
         // Find where it was originally
-        const originalCategory = Object.keys(initialClassifiedTags).find(key => 
+        const originalCategory = Object.keys(initialClassifiedTags).find(key =>
           initialClassifiedTags[key as ColumnId].includes(tag)
         )
-        
+
         if (originalCategory && originalCategory !== category) {
           suggestions.push({
             tagName: tag,
-            currentCategory: originalCategory,
-            suggestedCategory: category
+            currentCategory: originalCategory as TagCategory,
+            suggestedCategory: category as TagCategory
           })
         }
       }
@@ -423,13 +521,14 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
 
     try {
       const result = await submitTagSuggestions(suggestions)
-      
+
       if (result.success) {
-        toast({
-          title: "Suggestions Submitted",
-          description: "Thank you for helping improve the tag classification!",
-        })
-        onOpenChange(false)
+        setIsSuccess(true)
+        // toast({
+        //   title: "Suggestions Submitted",
+        //   description: "Thank you for helping improve the tag classification!",
+        // })
+        // onOpenChange(false) // Removed default close, handled by effect
       } else {
         toast({
           title: "Submission Failed",
@@ -482,10 +581,14 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
   return (
     <>
       <Dialog open={open} onOpenChange={(val) => !val ? handleCancel() : onOpenChange(val)}>
-        <DialogContent 
+        <DialogContent
           overlayClassName="backdrop-blur-none bg-background/60"
           className="max-w-[95vw] w-full lg:max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl"
         >
+          <AnimatePresence>
+            {isSuccess && <SuccessAnimation />}
+          </AnimatePresence>
+
           <DialogHeader className="p-4 md:p-6 pb-3 md:pb-4 shrink-0 border-b bg-muted/20">
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-1.5">
@@ -501,7 +604,7 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
             </div>
           </DialogHeader>
 
-          <div className="flex-1 overflow-hidden bg-background/50">
+          <div className="flex-1 overflow-hidden bg-background/50 relative">
             {!isReady ? (
               <div className="h-[65vh] w-full flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -517,12 +620,12 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
                 <div className="h-[65vh] w-full overflow-y-auto md:overflow-hidden">
                   <div className="flex flex-col md:flex-row h-auto md:h-full gap-3 md:gap-4 w-full p-2 md:p-6">
                     {COLUMNS.map((col) => (
-                      <Column 
-                        key={col.id} 
-                        id={col.id} 
+                      <Column
+                        key={col.id}
+                        id={col.id}
                         title={col.title}
                         description={col.description}
-                        items={items[col.id]} 
+                        items={items[col.id]}
                         suggestions={existingSuggestions}
                       />
                     ))}
@@ -532,14 +635,14 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
                 {mounted && createPortal(
                   <DragOverlay dropAnimation={dropAnimation} zIndex={10000}>
                     {activeId ? (
-                       <div className="group relative flex items-center gap-2 p-3 rounded-lg border bg-card text-card-foreground shadow-xl ring-2 ring-primary opacity-90 scale-105 w-[260px] md:w-[280px]">
-                         <div className="p-1 -ml-1 text-muted-foreground">
-                           <GripVertical className="h-4 w-4" />
-                         </div>
-                         <span className="text-sm font-medium leading-tight break-all">
-                           {activeId}
-                         </span>
-                       </div>
+                      <div className="group relative flex items-center gap-2 p-3 rounded-lg border bg-card text-card-foreground shadow-xl ring-2 ring-primary opacity-90 scale-105 w-[260px] md:w-[280px]">
+                        <div className="p-1 -ml-1 text-muted-foreground">
+                          <GripVertical className="h-4 w-4" />
+                        </div>
+                        <span className="text-sm font-medium leading-tight break-all">
+                          {activeId}
+                        </span>
+                      </div>
                     ) : null}
                   </DragOverlay>,
                   document.body
@@ -550,8 +653,8 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
 
           <DialogFooter className="p-3 md:p-4 shrink-0 border-t bg-muted/20 gap-2 sm:gap-0">
             <div className="flex items-center gap-2 mr-auto text-xs text-muted-foreground hidden sm:flex">
-               <Info className="h-3 w-3" />
-               <span>Changes are auto-saved locally until submission</span>
+              <Info className="h-3 w-3" />
+              <span>Changes are auto-saved locally until submission</span>
             </div>
             <div className="flex gap-2 w-full sm:w-auto justify-end">
               <Button variant="outline" onClick={handleCancel} disabled={isSubmitting} className="flex-1 sm:flex-none">

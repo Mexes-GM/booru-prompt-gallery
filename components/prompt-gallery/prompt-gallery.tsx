@@ -388,6 +388,7 @@ export function PromptGallery() {
       selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
       onTogglePart={mergeMode.togglePostPart}
       onMergeSelect={() => { }} // No longer used for card click, but keeping prop if needed or refactoring MasonryItem signature next
+      onSkipAnimation={() => setCopiedId(null)}
     />
   }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, excludeInput, addInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode])
 
@@ -639,32 +640,8 @@ export function PromptGallery() {
                     {/* Quick Actions */}
                     <div className="flex flex-col gap-1.5 w-full lg:w-auto">
                       <span className="text-xs font-medium text-muted-foreground ml-1 lg:text-right">Settings</span>
-                      <div className="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
-                        {search.isClient ? (
-                          <Button
-                            type="button"
-                            disabled={search.booruProvider === 'rule34'}
-                            variant={search.ratingFilter === "rating:general" ? "secondary" : "outline"}
-                            onClick={() => {
-                              const newRating = search.ratingFilter === "rating:general" ? "all" : "rating:general"
-                              search.setRatingFilter(newRating)
-                            }}
-                            className={`h-9 px-3 ${search.booruProvider === 'rule34'
-                              ? "opacity-50 cursor-not-allowed"
-                              : search.ratingFilter === "rating:general"
-                                ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50"
-                                : ""
-                              }`}
-                            title={search.booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
-                          >
-                            <Shield className="w-4 h-4 mr-2" />
-                            <span className="text-xs font-medium">
-                              {search.ratingFilter === "rating:general" ? "Safe Mode" : "NSFW Allowed"}
-                            </span>
-                          </Button>
-                        ) : (
-                          <div className="w-[120px] h-9 bg-muted animate-pulse rounded-md" />
-                        )}
+                      <div className="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end flex-wrap">
+
 
                         <Button
                           type="button"
@@ -680,93 +657,85 @@ export function PromptGallery() {
                         <TrendSheet onSelectTag={search.setSearchTags} />
 
                         {/* History Sheet */}
-                        <Sheet>
-                          <SheetTrigger asChild>
-                            <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="View history">
-                              <History className="w-4 h-4" />
+                        {/* Prompt Merge Button - moved from Search Bar */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              onClick={mergeMode.toggleMergeMode}
+                              variant="secondary"
+                              className={`h-9 px-3 transition-colors duration-200 ${mergeMode.isMergeMode
+                                ? "bg-blue-200 text-blue-800 hover:bg-blue-300 dark:bg-blue-800 dark:text-blue-100 dark:hover:bg-blue-700"
+                                : "bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
+                                }`}
+                            >
+                              <FileCheck2 className="w-4 h-4 mr-2 fill-current" />
+                              <span className="text-xs font-medium">Merge</span>
                             </Button>
-                          </SheetTrigger>
-                          <SheetContent className="w-[400px] sm:w-[540px]">
-                            <SheetHeader>
-                              <SheetTitle>Prompt History</SheetTitle>
-                              <SheetDescription>Your recently copied prompts.</SheetDescription>
-                            </SheetHeader>
-                            <div className="mt-4 space-y-4 overflow-y-auto max-h-[calc(100vh-120px)] pr-2">
-                              {history.length === 0 ? (
-                                <p className="text-center text-muted-foreground py-8">No history yet</p>
-                              ) : (
-                                <>
-                                  {history.map((item) => (
-                                    <div key={item.id} className="border rounded-lg p-3 space-y-2 relative group">
-                                      <div className="flex gap-3">
-                                        {item.thumbnailUrl && (
-                                          <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-muted">
-                                            <Image
-                                              src={item.thumbnailUrl}
-                                              alt={`History item: ${item.content.slice(0, 50)}...`}
-                                              fill
-                                              className="object-cover"
-                                              unoptimized
-                                            />
-                                          </div>
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-xs text-muted-foreground mb-1">{new Date(item.timestamp).toLocaleString()}</p>
-                                          <p className="text-sm line-clamp-3 break-words font-mono bg-muted/50 p-1 rounded">{item.content}</p>
-                                        </div>
-                                      </div>
-                                      <div className="flex justify-end gap-2 mt-2">
-                                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { userPreferences.removeFromHistory(item.id); setHistory(userPreferences.getHistory()) }} aria-label="Delete history item">
-                                          <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                        <Button size="sm" variant="secondary" className="h-8" onClick={() => copyToClipboard(item.content, item.postId || 0, true, item.thumbnailUrl)}>
-                                          <Copy className="h-3 w-3 mr-1" /> Copy
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                  <Button variant="outline" className="w-full text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { userPreferences.clearHistory(); setHistory([]) }}>
-                                    Clear History
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                          </SheetContent>
-                        </Sheet>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            {mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Prompt Mode"}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </div>
                   </div>
 
                   {/* Search Bar Section */}
                   <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="relative flex-1">
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground pointer-events-none">
-                        <Search className="h-5 w-5" />
+                    <div className="flex flex-1 group gap-0">
+                      <div className="relative flex-1">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground pointer-events-none">
+                          <Search className="h-5 w-5" />
+                        </div>
+                        <Input
+                          type="text"
+                          value={search.searchTags}
+                          onChange={(e) => search.setSearchTags(e.target.value)}
+                          placeholder={search.isShuffle ? "Search tag (e.g., cat_girl)..." : "Search tags (e.g., cat_girl, blue_eyes)..."}
+                          className="pl-10 pr-10 h-11 text-base shadow-sm focus-visible:ring-offset-0 rounded-r-none border-r-0 z-10 relative"
+                          aria-label="Search tags"
+                          translate="no"
+                        />
+                        {search.searchTags && (
+                          <button
+                            type="button"
+                            onClick={search.clearSearch}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 z-20"
+                            aria-label="Clear search"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
-                      <Input
-                        type="text"
-                        value={search.searchTags}
-                        onChange={(e) => search.setSearchTags(e.target.value)}
-                        placeholder={search.isShuffle ? "Search tag (e.g., cat_girl)..." : "Search tags (e.g., cat_girl, blue_eyes)..."}
-                        className="pl-10 pr-10 h-11 text-base shadow-sm focus-visible:ring-offset-0"
-                        aria-label="Search tags"
-                        translate="no"
-                      />
-                      {search.searchTags && (
-                        <button
+
+                      {/* NSFW Toggle - Attached to Input */}
+                      {search.isClient && (
+                        <Button
                           type="button"
-                          onClick={search.clearSearch}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-                          aria-label="Clear search"
+                          disabled={search.booruProvider === 'rule34'}
+                          variant="outline"
+                          onClick={() => {
+                            const newRating = search.ratingFilter === "rating:general" ? "all" : "rating:general"
+                            search.setRatingFilter(newRating)
+                          }}
+                          className={`h-11 px-4 rounded-l-none border-l-0 shadow-sm transition-all z-0 ${search.booruProvider === 'rule34'
+                            ? "opacity-50 cursor-not-allowed bg-muted"
+                            : search.ratingFilter === "rating:general"
+                              ? "bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 border-green-200/50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 dark:border-green-800/50"
+                              : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            }`}
+                          title={search.booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
                         >
-                          <X className="h-4 w-4" />
-                        </button>
+                          <Shield className="w-4 h-4 mr-2" />
+                          <span className="text-xs font-semibold">
+                            {search.ratingFilter === "rating:general" ? "Safe" : "NSFW"}
+                          </span>
+                        </Button>
                       )}
                     </div>
                     <div className="flex gap-2">
-                      <Button type="submit" disabled={search.isLoading} size="lg" className="h-11 px-6 shadow-sm min-w-[100px]">
-                        {search.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
-                      </Button>
+
                       <Button
                         type="button"
                         variant={search.isShuffle ? "default" : "outline"}
@@ -787,6 +756,59 @@ export function PromptGallery() {
                       >
                         <RefreshCw className={`w-4 h-4 ${search.isValidating ? "animate-spin" : ""}`} />
                       </Button>
+                      <Sheet>
+                        <SheetTrigger asChild>
+                          <Button type="button" variant="outline" size="icon" className="h-11 w-11 shadow-sm" aria-label="View history">
+                            <History className="w-4 h-4" />
+                          </Button>
+                        </SheetTrigger>
+                        <SheetContent className="w-[400px] sm:w-[540px]">
+                          <SheetHeader>
+                            <SheetTitle>Prompt History</SheetTitle>
+                            <SheetDescription>Your recently copied prompts.</SheetDescription>
+                          </SheetHeader>
+                          <div className="mt-4 overflow-y-auto max-h-[calc(100vh-120px)] pr-2 space-y-4">
+                            {history.length === 0 ? (
+                              <p className="text-center text-muted-foreground py-8">No history yet</p>
+                            ) : (
+                              <>
+                                {history.map((item) => (
+                                  <div key={item.id} className="border rounded-lg p-3 space-y-2 relative group">
+                                    <div className="flex gap-3">
+                                      {item.thumbnailUrl && (
+                                        <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-muted">
+                                          <Image
+                                            src={item.thumbnailUrl}
+                                            alt={`History item: ${item.content.slice(0, 50)}...`}
+                                            fill
+                                            className="object-cover"
+                                            unoptimized
+                                          />
+                                        </div>
+                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-xs text-muted-foreground mb-1">{new Date(item.timestamp).toLocaleString()}</p>
+                                        <p className="text-sm line-clamp-3 break-words font-mono bg-muted/50 p-1 rounded">{item.content}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex justify-end gap-2 mt-2">
+                                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { userPreferences.removeFromHistory(item.id); setHistory(userPreferences.getHistory()) }} aria-label="Delete history item">
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                      <Button size="sm" variant="secondary" className="h-8" onClick={() => copyToClipboard(item.content, item.postId || 0, true, item.thumbnailUrl)}>
+                                        <Copy className="h-3 w-3 mr-1" /> Copy
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                                <Button variant="outline" className="w-full text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { userPreferences.clearHistory(); setHistory([]) }}>
+                                  Clear History
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </SheetContent>
+                      </Sheet>
                       <Button
                         type="button"
                         variant="outline"
@@ -796,22 +818,6 @@ export function PromptGallery() {
                       >
                         <Settings className="w-4 h-4" />
                       </Button>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant={mergeMode.isMergeMode ? "default" : "outline"}
-                            onClick={mergeMode.toggleMergeMode}
-                            className={`h-11 w-11 p-0 shadow-sm ${mergeMode.isMergeMode ? "bg-primary text-primary-foreground" : ""}`}
-                            aria-label={mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Mode"}
-                          >
-                            <FileCheck2 className="w-4 h-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          {mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Prompt Mode"}
-                        </TooltipContent>
-                      </Tooltip>
                     </div>
                   </div>
 
@@ -1191,6 +1197,7 @@ export function PromptGallery() {
         onClearAll={mergeMode.clearAll}
         onExit={mergeMode.toggleMergeMode}
         onCopy={(text) => copyToClipboard(text, 0, true)}
+        onRemoveTag={mergeMode.excludeTag}
       />
 
     </TooltipProvider>

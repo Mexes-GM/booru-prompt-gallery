@@ -23,6 +23,7 @@ export interface CleanPromptOptions {
   exclude?: string[]
   addedTags?: string[]
   tagOverrides?: Record<string, string>
+  escapeOutput?: boolean
 }
 
 // --------------- Utilities ---------------
@@ -569,8 +570,8 @@ export function cleanPrompt(
     const multiWordRemovalBase = new Set<string>([
       ...Array.from(META_TAGS_SET).filter((t) => t.includes(" ")),
     ])
-    // explicitly ensure both variants present
-    ;["web address", "web_address"].forEach((v) => multiWordRemovalBase.add(normalize(v)))
+      // explicitly ensure both variants present
+      ;["web address", "web_address"].forEach((v) => multiWordRemovalBase.add(normalize(v)))
 
     if (multiWordRemovalBase.size > 0 && allTags.length > 1) {
       const lowered = allTags.map((t) => normalize(t))
@@ -671,12 +672,12 @@ export function cleanPrompt(
 
   // 2. Character / Copyright
   for (const t of characterAndFranchiseTags) {
-     if (!userExcludeSet.has(t)) allFinal.add(t)
+    if (!userExcludeSet.has(t)) allFinal.add(t)
   }
 
   // 3. Content Tags (Ordered) + Quality Tags (at end)
   const combinedPre = [...sortedContentTags, ...qualityTags]
-  
+
   for (const t of combinedPre) {
     if (!includeCharacters && normalizedCharacterSet.has(t)) continue
     if (!includeCopyrights && normalizedCopyrightSet.has(t)) continue
@@ -685,5 +686,9 @@ export function cleanPrompt(
     allFinal.add(t)
   }
 
-  return Array.from(allFinal).map(escapeParentheses).join(", ")
+  const shouldEscape = options?.escapeOutput !== false
+
+  return Array.from(allFinal)
+    .map((t) => (shouldEscape ? escapeParentheses(t) : t))
+    .join(", ")
 }

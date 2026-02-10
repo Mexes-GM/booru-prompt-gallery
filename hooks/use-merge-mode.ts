@@ -68,8 +68,14 @@ export function useMergeMode() {
         })
     }, [])
 
-    const clearAll = useCallback(() => {
-        setSelectedPosts(new Map())
+    const [excludedTags, setExcludedTags] = useState<Set<string>>(new Set())
+
+    const excludeTag = useCallback((tag: string) => {
+        setExcludedTags(prev => {
+            const next = new Set(prev)
+            next.add(tag.toLowerCase())
+            return next
+        })
     }, [])
 
     const mergedPromptSegments = useMemo(() => {
@@ -84,7 +90,7 @@ export function useMergeMode() {
                     const tags = data.previewTags[cat] || []
                     tags.forEach(t => {
                         const normalized = t.toLowerCase().replace(/_/g, ' ')
-                        if (!seenTags.has(normalized)) {
+                        if (!seenTags.has(normalized) && !excludedTags.has(normalized)) {
                             seenTags.add(normalized)
                             segments.push({ text: normalized, category: cat })
                         }
@@ -94,11 +100,17 @@ export function useMergeMode() {
         })
 
         return segments
-    }, [selectedPosts])
+    }, [selectedPosts, excludedTags])
 
     const mergedPrompt = useMemo(() => {
         return mergedPromptSegments.map(s => s.text).join(', ')
     }, [mergedPromptSegments])
+
+    // Reset excluded tags when clearing all
+    const clearAll = useCallback(() => {
+        setSelectedPosts(new Map())
+        setExcludedTags(new Set())
+    }, [])
 
     return {
         isMergeMode,
@@ -108,6 +120,7 @@ export function useMergeMode() {
         removePost,
         clearAll,
         mergedPrompt,
-        mergedPromptSegments
+        mergedPromptSegments,
+        excludeTag
     }
 }
