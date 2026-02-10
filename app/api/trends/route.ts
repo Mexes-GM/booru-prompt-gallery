@@ -1,26 +1,45 @@
 
 import { NextResponse } from 'next/server'
 import { BooruFactory } from '@/lib/booru/factory'
+import { getCachedTrends, setCachedTrends } from '@/lib/trend-cache'
+
+// Cache-Control: serve cached for 24h, allow stale for 1h while revalidating
+const CACHE_HEADERS = {
+  'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=3600',
+}
 
 export async function GET() {
   try {
-    // Specifically request Danbooru for trends as it has the best ranking data
+    // 1. Try to serve from Supabase cache first
+    const cached = await getCachedTrends()
+
+    if (cached && cached.length > 0) {
+      return NextResponse.json(cached, { headers: CACHE_HEADERS })
+    }
+
+    // 2. Cache miss or expired — fetch fresh data from Danbooru
     const provider = BooruFactory.getProvider('danbooru')
-    
+
     if (!provider.getTrending) {
-      return NextResponse.json({ error: 'Provider does not support trending' }, { status: 501 })
+      return NextResponse.json(
+        { error: 'Provider does not support trending' },
+        { status: 501 }
+      )
     }
 
     const trends = await provider.getTrending()
-    
-    // Add cache headers - cache for 1 hour as trends don't change by the second
-    return NextResponse.json(trends, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=600',
-      },
-    })
+
+    // 3. Store in Supabase cache (fire-and-forget, don't block response)
+    setCachedTrends(trends).catch((err) =>
+      console.error('[trends] Failed to persist cache:', err)
+    )
+
+    return NextResponse.json(trends, { headers: CACHE_HEADERS })
   } catch (error) {
     console.error('Trend API Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch trends' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to fetch trends' },
+      { status: 500 }
+    )
   }
 }
