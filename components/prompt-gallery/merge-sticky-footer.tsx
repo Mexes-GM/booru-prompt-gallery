@@ -58,7 +58,7 @@ const ExplodingTag = memo(({
         >
             <motion.button
                 onClick={() => onRemove(text)}
-                className={`transform-gpu hover:scale-110 active:scale-95 transition-all duration-200 px-2.5 py-0.5 rounded border text-xs font-medium font-mono cursor-pointer select-none relative overflow-hidden group ${getCategoryClass(category)}`}
+                className={`transform-gpu hover:scale-110 active:scale-95 transition-all duration-200 px-2.5 py-1.5 sm:py-0.5 rounded border text-xs font-medium font-mono cursor-pointer select-none relative overflow-hidden group ${getCategoryClass(category)}`}
             >
                 <span className="block relative z-10 transition-transform duration-300 group-hover:-translate-x-1.5 truncate max-w-[150px]">
                     {text}
@@ -73,6 +73,7 @@ const ExplodingTag = memo(({
         </motion.div>
     )
 })
+ExplodingTag.displayName = "ExplodingTag"
 
 const PARTICLES_MAP = {
     green: "bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.8)]",
@@ -102,6 +103,7 @@ const Particles = memo(({ color = "green" }: { color?: "green" | "red" }) => {
         </div>
     )
 })
+Particles.displayName = "Particles"
 
 const MergeStickyFooterComponent = ({
     isOpen,
@@ -157,6 +159,7 @@ const MergeStickyFooterComponent = ({
                         mass: 0.8
                     }}
                     className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85 border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10"
+                    style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
                     {/* Border Glow Effect */}
                     <div className="absolute inset-0 z-[-1] overflow-hidden rounded-2xl pointer-events-none">

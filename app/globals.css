@@ -368,3 +368,16 @@ nav,
 [data-testid*="toggle"] {
   translate: no !important;
 }
+
+/* Touch feedback for mobile (no-hover devices) */
+@media (hover: none) {
+  .card-hover:active {
+    transform: scale(0.98);
+    transition: transform 0.1s ease;
+  }
+}
+
+/* Safe area padding for fixed elements on notched devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

@@ -91,6 +91,7 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
         </motion.div>
     )
 })
+SuccessOverlay.displayName = "SuccessOverlay"
 
 interface MasonryItemProps {
     post: BooruPost
@@ -389,7 +390,7 @@ export const MasonryItem = memo(function MasonryItem({
                     />
 
                     {/* Overlay actions */}
-                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button

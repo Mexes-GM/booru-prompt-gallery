@@ -427,7 +427,7 @@ export function PromptGallery() {
 
               <div className="flex items-center space-x-1 sm:space-x-2">
                 {viewMode === "grid" && (
-                  <div className="flex items-center space-x-2 border-r pr-2 mr-2">
+                  <div className="hidden sm:flex items-center space-x-2 border-r pr-2 mr-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -609,7 +609,9 @@ export function PromptGallery() {
                     {/* API Provider Selector */}
                     <div className="flex flex-col gap-1.5 w-full lg:w-auto">
                       <span className="text-xs font-medium text-muted-foreground ml-1">API Provider</span>
-                      <div className="bg-muted/50 p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto">
+                      <div className="bg-muted/50 p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto"
+                        style={{ WebkitOverflowScrolling: 'touch' }}
+                      >
                         {(['danbooru', 'aibooru', 'rule34', 'e621', 'gelbooru'] as const).map(p => (
                           <Button
                             key={p}
@@ -622,7 +624,7 @@ export function PromptGallery() {
                               }
                               trackProviderChange(p)
                             }}
-                            className={`relative h-8 text-sm px-4 flex-1 sm:flex-none ${!favs.showFavorites && search.booruProvider === p ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
+                            className={`relative h-8 text-sm px-3 sm:px-4 min-w-fit flex-1 sm:flex-none whitespace-nowrap ${!favs.showFavorites && search.booruProvider === p ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
                           >
                             {!favs.showFavorites && search.booruProvider === p && (
                               <motion.div
@@ -727,14 +729,14 @@ export function PromptGallery() {
                             }`}
                           title={search.booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
                         >
-                          <Shield className="w-4 h-4 mr-2" />
-                          <span className="text-xs font-semibold">
+                          <Shield className="w-4 h-4 sm:mr-2" />
+                          <span className="text-xs font-semibold hidden sm:inline">
                             {search.ratingFilter === "rating:general" ? "Safe" : "NSFW"}
                           </span>
                         </Button>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
 
                       <Button
                         type="button"
@@ -762,7 +764,7 @@ export function PromptGallery() {
                             <History className="w-4 h-4" />
                           </Button>
                         </SheetTrigger>
-                        <SheetContent className="w-[400px] sm:w-[540px]">
+                        <SheetContent className="w-full sm:w-[400px] md:w-[540px]">
                           <SheetHeader>
                             <SheetTitle>Prompt History</SheetTitle>
                             <SheetDescription>Your recently copied prompts.</SheetDescription>
@@ -1156,7 +1158,7 @@ export function PromptGallery() {
           )}
         </main>
 
-        <div className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
+        <div className={`fixed ${mergeMode.isMergeMode ? 'bottom-[280px] sm:bottom-[200px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
           }`}>
           <Tooltip>
             <TooltipTrigger asChild>
