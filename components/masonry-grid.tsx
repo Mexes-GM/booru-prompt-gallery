@@ -36,28 +36,27 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue
 }
 
-const MasonryItem = React.memo(({ 
-  pos, 
-  renderItem 
-}: { 
-  pos: { x: number, y: number, width: number, height: number, item: BooruPost, index: number }, 
-  renderItem: (item: BooruPost, w: number, h: number) => React.ReactNode 
+const MasonryItem = React.memo(({
+  pos,
+  renderItem
+}: {
+  pos: { x: number, y: number, width: number, height: number, item: BooruPost, index: number },
+  renderItem: (item: BooruPost, w: number, h: number) => React.ReactNode
 }) => {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.8, x: pos.x, y: pos.y + 40 }}
-      animate={{ 
-        opacity: 1, 
-        scale: 1, 
+      animate={{
+        opacity: 1,
+        scale: 1,
         x: pos.x,
-        y: pos.y 
+        y: pos.y
       }}
       exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.1 } }}
       transition={{
-        type: "spring",
-        stiffness: 350,
-        damping: 30,
-        delay: (pos.index % 12) * 0.05, // Stagger effect using stable index
+        duration: 0.2,
+        ease: "easeOut",
+        delay: (pos.index % 8) * 0.03, // Reduced stagger delay and count
       }}
       className="absolute"
       style={{
@@ -138,7 +137,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
     if (debouncedContainerWidth === 0) return { positions: [], totalHeight: 0 }
 
     const config = SCALE_CONFIG[scale]
-    
+
     // Calculate number of columns
     let columnCount = Math.floor((debouncedContainerWidth + gap) / (config.minColumnWidth + gap))
 
@@ -176,7 +175,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
       if (aspectRatio > MAX_ASPECT_RATIO) {
         aspectRatio = MAX_ASPECT_RATIO
       }
-      
+
       const imageDisplayHeight = columnWidth * aspectRatio
       const itemHeight = imageDisplayHeight + config.footerHeight
 
@@ -214,17 +213,17 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
   }, [layout.positions, scrollTop, windowHeight])
 
   return (
-    <div 
-      ref={containerRef} 
-      className="relative w-full" 
+    <div
+      ref={containerRef}
+      className="relative w-full"
       style={{ height: layout.totalHeight }}
     >
       <AnimatePresence mode="popLayout">
         {visibleItems.map((pos) => (
-          <MasonryItem 
-            key={pos.item.id} 
-            pos={pos} 
-            renderItem={renderItem} 
+          <MasonryItem
+            key={pos.item.id}
+            pos={pos}
+            renderItem={renderItem}
           />
         ))}
       </AnimatePresence>

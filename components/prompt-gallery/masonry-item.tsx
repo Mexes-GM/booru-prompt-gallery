@@ -1,4 +1,5 @@
-import { useCallback } from "react"
+import { useCallback, useMemo, memo } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -39,6 +40,53 @@ import { trackExternalLink } from "@/lib/analytics"
 import { toast } from "@/hooks/use-toast"
 import { SCALE_CONFIG } from "@/components/masonry-grid"
 
+const SuccessOverlay = () => {
+    const particles = Array.from({ length: 12 })
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] rounded-xl"
+        >
+            <div className="relative flex flex-col items-center justify-center pointer-events-none">
+                {particles.map((_, i) => (
+                    <motion.div
+                        key={i}
+                        initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
+                        animate={{
+                            x: Math.cos(i * (360 / particles.length) * (Math.PI / 180)) * 60,
+                            y: Math.sin(i * (360 / particles.length) * (Math.PI / 180)) * 60,
+                            scale: [0, 1.5, 0],
+                            opacity: [1, 1, 0]
+                        }}
+                        transition={{ duration: 0.6, ease: "easeOut" }}
+                        className="absolute w-1.5 h-1.5 bg-green-400 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.8)]"
+                    />
+                ))}
+
+                <motion.div
+                    initial={{ scale: 0, rotate: -45 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                    className="bg-gradient-to-br from-green-400 to-green-600 rounded-full p-4 shadow-[0_0_20px_rgba(74,222,128,0.4)] relative z-10"
+                >
+                    <Check className="h-8 w-8 text-white stroke-[3px]" />
+                </motion.div>
+
+                <motion.span
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="mt-3 text-white font-bold tracking-widest text-sm uppercase drop-shadow-lg"
+                >
+                    Copied
+                </motion.span>
+            </div>
+        </motion.div>
+    )
+}
+
 interface MasonryItemProps {
     post: BooruPost
     width: number
@@ -48,6 +96,11 @@ interface MasonryItemProps {
     booruProvider: BooruProvider
     favorites: Set<string>
     toggleFavorite: (id: number, provider?: string) => void
+    isMergeMode: boolean
+    isSelected: boolean
+    selectedParts?: Set<TagCategory>
+    onTogglePart?: (post: BooruPost, part: TagCategory) => void
+    onMergeSelect: (post: BooruPost) => void
     downloadImage: (post: BooruPost) => void
     copyToClipboard: (text: string, id: number, isPrompt: boolean, thumb?: string) => Promise<void>
     excludeInput: string
@@ -61,7 +114,8 @@ interface MasonryItemProps {
     setTeachModalData: (data: { open: boolean, tags: any }) => void
 }
 
-export function MasonryItem({
+// Memoized MasonryItem to prevent unnecessary re-renders
+export const MasonryItem = memo(function MasonryItem({
     post,
     width,
     height,
@@ -70,6 +124,11 @@ export function MasonryItem({
     booruProvider,
     favorites,
     toggleFavorite,
+    isMergeMode,
+    isSelected,
+    selectedParts,
+    onTogglePart,
+    onMergeSelect,
     downloadImage,
     copyToClipboard,
     excludeInput,
@@ -100,7 +159,7 @@ export function MasonryItem({
     }
 
     // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
-    const displayContent = aiPrompt
+    const displayContent = useMemo(() => aiPrompt
         ? cleanPrompt(
             aiPrompt,
             "",
@@ -114,10 +173,11 @@ export function MasonryItem({
             post.tag_string_character,
             post.tag_string_copyright,
             { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
-        )
+        ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, optimizeTags, excludeInput, addInput, tagOverrides])
+
 
     // Create a raw (unoptimized) version for Teach modal classification
-    const teachContent = aiPrompt
+    const teachContent = useMemo(() => aiPrompt
         ? cleanPrompt(
             aiPrompt,
             "",
@@ -131,30 +191,26 @@ export function MasonryItem({
             post.tag_string_character,
             post.tag_string_copyright,
             { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides },
-        )
+        ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, excludeInput, tagOverrides])
 
     // Pre-classify tags for the dropdown counts
-    const tagsForClassification = displayContent ? displayContent.split(',').map(t => t.trim()) : []
-    const teachTagsForClassification = teachContent ? teachContent.split(',').map(t => t.trim()) : []
+    const tagsForClassification = useMemo(() => displayContent ? displayContent.split(',').map(t => t.trim()) : [], [displayContent])
+    const teachTagsForClassification = useMemo(() => teachContent ? teachContent.split(',').map(t => t.trim()) : [], [teachContent])
 
-    // Filter out character tags from classification (Teach modal)
-    const characterTagsSet = new Set(
-        (post.tag_string_character ? post.tag_string_character.split(' ') : [])
-            .map(t => t.replace(/_/g, ' ').toLowerCase())
-    )
+    // Prepare character tags
+    const characterTagsArray = useMemo(() => (post.tag_string_character ? post.tag_string_character.split(' ') : [])
+        .map(t => t.replace(/_/g, ' ').toLowerCase()), [post.tag_string_character])
 
-    const filteredTagsForClassification = tagsForClassification.filter(t => {
-        const normalized = t.replace(/\\\(/g, "(").replace(/\\\)/g, ")").toLowerCase()
-        return !characterTagsSet.has(normalized)
-    })
+    const classifiedTags = useMemo(() => {
+        // Ensure character tags are included in the classification source
+        const allTagsForClassification = Array.from(new Set([...characterTagsArray, ...tagsForClassification]))
+        return classifyTags(allTagsForClassification, tagOverrides, characterTagsArray)
+    }, [characterTagsArray, tagsForClassification, tagOverrides])
 
-    const filteredTeachTags = teachTagsForClassification.filter(t => {
-        const normalized = t.replace(/\\\(/g, "(").replace(/\\\)/g, ")").toLowerCase()
-        return !characterTagsSet.has(normalized)
-    })
-
-    const classifiedTags = classifyTags(filteredTagsForClassification, tagOverrides)
-    const classifiedTeachTags = classifyTags(filteredTeachTags, tagOverrides)
+    const classifiedTeachTags = useMemo(() => {
+        const allTeachTagsForClassification = Array.from(new Set([...characterTagsArray, ...teachTagsForClassification]))
+        return classifyTags(allTeachTagsForClassification, tagOverrides, characterTagsArray)
+    }, [characterTagsArray, teachTagsForClassification, tagOverrides])
 
     const copyCategory = async (category: TagCategory) => {
         if (!displayContent) return
@@ -216,8 +272,103 @@ export function MasonryItem({
         const imageHeight = height - footerHeight
 
         return (
-            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col">
-                <div className="relative bg-muted overflow-hidden" style={{ height: imageHeight }}>
+            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative">
+                <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
+                    <AnimatePresence>
+                        {isMergeMode && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 15, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                transition={{
+                                    type: "spring",
+                                    stiffness: 400,
+                                    damping: 30
+                                }}
+                                className={`absolute inset-0 z-20 flex flex-col justify-end p-2 transition-colors ${isSelected ? 'bg-black/20 backdrop-blur-[1px]' : 'bg-transparent'}`}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {/* Inline Selection Bar */}
+                                <motion.div
+                                    className="flex items-center justify-between w-full max-w-[220px] mx-auto bg-background/85 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl p-1.5 gap-1.5 ring-1 ring-black/5"
+                                    initial={{ scale: 0.9, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                                >
+                                    {(['appearance', 'pose', 'clothing', 'scenery'] as const).map(part => {
+                                        const isChecked = selectedParts?.has(part)
+                                        const hasTags = classifiedTags[part] && classifiedTags[part].length > 0
+
+                                        // Icons mapping
+                                        const Icon = part === 'appearance' ? Smile :
+                                            part === 'pose' ? User :
+                                                part === 'clothing' ? Shirt :
+                                                    Mountain
+
+                                        // Colors mapping
+                                        const activeColorClass = part === 'appearance' ? 'bg-blue-500 shadow-blue-500/50' :
+                                            part === 'pose' ? 'bg-purple-500 shadow-purple-500/50' :
+                                                part === 'clothing' ? 'bg-green-500 shadow-green-500/50' :
+                                                    'bg-orange-500 shadow-orange-500/50'
+
+                                        const inactiveColorClass = part === 'appearance' ? 'hover:text-blue-500 hover:bg-blue-500/10' :
+                                            part === 'pose' ? 'hover:text-purple-500 hover:bg-purple-500/10' :
+                                                part === 'clothing' ? 'hover:text-green-500 hover:bg-green-500/10' :
+                                                    'hover:text-orange-500 hover:bg-orange-500/10'
+
+                                        return (
+                                            <Tooltip key={part}>
+                                                <TooltipTrigger asChild>
+                                                    <span tabIndex={!hasTags ? 0 : -1} className="flex-1 flex max-w-[50px]">
+                                                        <motion.button
+                                                            disabled={!hasTags}
+                                                            whileHover={hasTags ? { scale: 1.1, y: -2 } : {}}
+                                                            whileTap={hasTags ? { scale: 0.9 } : {}}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                if (hasTags) onTogglePart?.(post, part)
+                                                            }}
+                                                            className={`
+                                                              relative flex-1 h-9 flex items-center justify-center rounded-xl transition-all duration-300
+                                                              ${!hasTags
+                                                                    ? `opacity-40 cursor-not-allowed bg-muted/50 text-muted-foreground`
+                                                                    : isChecked
+                                                                        ? `${activeColorClass} text-white shadow-lg shadow-${part === 'appearance' ? 'blue' : part === 'pose' ? 'purple' : part === 'clothing' ? 'green' : 'orange'}-500/20`
+                                                                        : `text-muted-foreground hover:bg-white/10 hover:text-foreground`
+                                                                }
+                                                            `}
+                                                        >
+                                                            {isChecked && (
+                                                                <motion.div
+                                                                    layoutId={`active-bg-${part}-${post.id}`}
+                                                                    className="absolute inset-0 rounded-xl bg-gradient-to-b from-white/20 to-transparent"
+                                                                    initial={{ opacity: 0 }}
+                                                                    animate={{ opacity: 1 }}
+                                                                    exit={{ opacity: 0 }}
+                                                                />
+                                                            )}
+                                                            <Icon className={`w-4 h-4 relative z-10 ${isChecked ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+                                                            {isChecked && (
+                                                                <motion.div
+                                                                    layoutId={`glow-${part}-${post.id}`}
+                                                                    className="absolute inset-0 -z-10 bg-inherit blur-md opacity-40"
+                                                                    initial={{ opacity: 0 }}
+                                                                    animate={{ opacity: 1 }}
+                                                                />
+                                                            )}
+                                                        </motion.button>
+                                                    </span>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top" className="text-[10px] capitalize font-medium">
+                                                    {hasTags ? part : `No ${part} tags`}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        )
+                                    })}
+                                </motion.div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                     <Image
                         src={fileUrl!}
                         alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
@@ -371,13 +522,16 @@ export function MasonryItem({
                         </Tooltip>
                     </div>
                 </div>
+                <AnimatePresence>
+                    {copiedId === post.id && <SuccessOverlay />}
+                </AnimatePresence>
             </Card>
         )
     }
 
     // List View
     return (
-        <Card className="overflow-hidden card-hover">
+        <Card className="overflow-hidden card-hover relative">
             <CardContent className="p-4 sm:p-6">
                 <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                     <div
@@ -547,6 +701,9 @@ export function MasonryItem({
                     </div>
                 </div>
             </CardContent>
+            <AnimatePresence>
+                {copiedId === post.id && <SuccessOverlay />}
+            </AnimatePresence>
         </Card>
     )
-}
+})

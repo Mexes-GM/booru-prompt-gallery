@@ -95,6 +95,10 @@ import { useBooruFavorites } from "@/hooks/use-booru-favorites"
 import { MasonryItem } from "./masonry-item"
 
 import { TrendSheet } from "@/components/trends/trend-sheet"
+import { useMergeMode } from "@/hooks/use-merge-mode"
+import { MergeStickyFooter } from "./merge-sticky-footer"
+import { FileCheck2 } from "lucide-react"
+import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 
 type CardScale = "small" | "medium" | "large"
 
@@ -127,7 +131,11 @@ export function PromptGallery() {
   const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false)
   const [presetName, setPresetName] = useState("")
   const [history, setHistory] = useState<HistoryItem[]>([])
+
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
+
+  // Merge Mode Hook
+  const mergeMode = useMergeMode()
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -375,8 +383,13 @@ export function PromptGallery() {
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       setTeachModalData={setTeachModalData}
+      isMergeMode={mergeMode.isMergeMode}
+      isSelected={mergeMode.selectedPosts.has(post.id)}
+      selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
+      onTogglePart={mergeMode.togglePostPart}
+      onMergeSelect={() => { }} // No longer used for card click, but keeping prop if needed or refactoring MasonryItem signature next
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, excludeInput, addInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, excludeInput, addInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -478,6 +491,8 @@ export function PromptGallery() {
                   </TooltipTrigger>
                   <TooltipContent>Switch to {viewMode === "grid" ? "list" : "grid"} view</TooltipContent>
                 </Tooltip>
+
+
 
                 <ThemeToggle />
               </div>
@@ -635,10 +650,10 @@ export function PromptGallery() {
                               search.setRatingFilter(newRating)
                             }}
                             className={`h-9 px-3 ${search.booruProvider === 'rule34'
-                                ? "opacity-50 cursor-not-allowed"
-                                : search.ratingFilter === "rating:general"
-                                  ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50"
-                                  : ""
+                              ? "opacity-50 cursor-not-allowed"
+                              : search.ratingFilter === "rating:general"
+                                ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50"
+                                : ""
                               }`}
                             title={search.booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
                           >
@@ -662,7 +677,7 @@ export function PromptGallery() {
                         </Button>
 
                         {/* Trending Sheet */}
-                        <TrendSheet />
+                        <TrendSheet onSelectTag={search.setSearchTags} />
 
                         {/* History Sheet */}
                         <Sheet>
@@ -781,6 +796,22 @@ export function PromptGallery() {
                       >
                         <Settings className="w-4 h-4" />
                       </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant={mergeMode.isMergeMode ? "default" : "outline"}
+                            onClick={mergeMode.toggleMergeMode}
+                            className={`h-11 w-11 p-0 shadow-sm ${mergeMode.isMergeMode ? "bg-primary text-primary-foreground" : ""}`}
+                            aria-label={mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Mode"}
+                          >
+                            <FileCheck2 className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          {mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Prompt Mode"}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   </div>
 
@@ -1014,7 +1045,7 @@ export function PromptGallery() {
                     )}
 
                     {/* Simplified status display logic */}
-                    {hasMultipleTags(search.searchTags, search.order, 0) && (
+                    {search.booruProvider === 'danbooru' && hasMultipleTags(search.searchTags, search.order, 0) && (
                       <Alert variant="destructive" className="py-2">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertDescription className="text-xs">
@@ -1061,6 +1092,11 @@ export function PromptGallery() {
                     tagOverrides={tagOverrides}
                     copiedId={copiedId}
                     setTeachModalData={setTeachModalData}
+                    isMergeMode={mergeMode.isMergeMode}
+                    isSelected={mergeMode.selectedPosts.has(post.id)}
+                    selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
+                    onTogglePart={mergeMode.togglePostPart}
+                    onMergeSelect={() => { }}
                   />
                 </div>
               ))}
@@ -1069,16 +1105,33 @@ export function PromptGallery() {
 
           {/* Load More / States */}
           {filteredPosts.length > 0 && !favs.showFavorites && (
-            <div className="text-center">
-              <Button
-                onClick={search.loadMore}
-                disabled={search.isLoadingLock || search.isLoadingMore || (search.noMoreResults && !search.loadMoreError)}
-                size="lg"
-                className="px-8 focus-ring"
-              >
-                {search.isLoadingMore ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-                {search.isLoadingMore ? "Loading..." : "Load More"}
-              </Button>
+            <div className="text-center pb-8">
+              {!search.loadMoreError ? (
+                <InfiniteScrollTrigger
+                  onIntersect={search.loadMore}
+                  hasNextPage={!search.noMoreResults}
+                  isLoading={search.isLoadingMore || search.isLoadingLock}
+                  error={search.loadMoreError}
+                />
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-destructive">Failed to load more posts.</p>
+                  <Button
+                    onClick={search.loadMore}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Retry
+                  </Button>
+                </div>
+              )}
+
+              {search.noMoreResults && !search.loadMoreError && (
+                <p className="text-muted-foreground text-sm py-4">
+                  --- End of results ---
+                </p>
+              )}
             </div>
           )}
 
@@ -1097,9 +1150,24 @@ export function PromptGallery() {
           )}
         </main>
 
-        <div className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 transition-all duration-500 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
+        <div className={`fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
           }`}>
-          <Button onClick={scrollToTop} className="rounded-full shadow-lg" size="icon">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={mergeMode.toggleMergeMode}
+                variant={mergeMode.isMergeMode ? "default" : "secondary"}
+                className={`rounded-full shadow-lg h-10 w-10 p-0 ${mergeMode.isMergeMode ? "" : "bg-background/80 backdrop-blur border"}`}
+              >
+                <FileCheck2 className="h-5 w-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Mode"}
+            </TooltipContent>
+          </Tooltip>
+
+          <Button onClick={scrollToTop} className="rounded-full shadow-lg h-10 w-10 p-0" variant="secondary">
             <ChevronUp className="h-5 w-5" />
           </Button>
         </div>
@@ -1114,6 +1182,17 @@ export function PromptGallery() {
         />
       )}
       <TeachWelcomeModal triggerOpen={showWelcomeModal} />
+      <MergeStickyFooter
+        isOpen={mergeMode.isMergeMode}
+        selectedPosts={mergeMode.selectedPosts}
+        mergedPrompt={mergeMode.mergedPrompt}
+        mergedPromptSegments={mergeMode.mergedPromptSegments}
+        onRemovePost={mergeMode.removePost}
+        onClearAll={mergeMode.clearAll}
+        onExit={mergeMode.toggleMergeMode}
+        onCopy={(text) => copyToClipboard(text, 0, true)}
+      />
+
     </TooltipProvider>
   )
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { useSearchParams, useRouter, usePathname } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
 import { userPreferences } from "@/lib/storage"
 import {
@@ -17,8 +17,6 @@ import { useToast } from "@/hooks/use-toast"
 
 export function useBooruSearch() {
   const searchParams = useSearchParams()
-  const router = useRouter()
-  const pathname = usePathname()
 
   const [searchTags, setSearchTags] = useState("")
   const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
@@ -94,11 +92,8 @@ export function useBooruSearch() {
 
   // React to URL changes (External Navigation / Trends)
   useEffect(() => {
-    const urlQ = searchParams.get('q')
-    if (urlQ !== null && urlQ !== searchTags) {
-      setSearchTags(urlQ)
-    }
-
+    // q param listener removed to prevent loop/flash
+    
     const urlRating = searchParams.get('rating')
     if (urlRating !== null && urlRating !== ratingFilter) {
       setRatingFilter(urlRating)
@@ -110,44 +105,7 @@ export function useBooruSearch() {
     }
   }, [searchParams])
 
-  // Sync State -> URL
-  useEffect(() => {
-    if (!isClient) return
 
-    const params = new URLSearchParams(searchParams.toString())
-
-    // Helper to only set if different to avoid noise
-    const setParam = (key: string, value: string | null) => {
-      if (value) params.set(key, value)
-      else params.delete(key)
-    }
-
-    setParam('q', searchTags || null)
-    setParam('provider', booruProvider)
-    setParam('rating', ratingFilter)
-    setParam('count', sanitizeTagCount(tagCountFilter))
-    // Only set boolean flags if true to keep URL clean
-    setParam('lora', removeLoRaTags ? 'true' : null)
-    setParam('quality', removeQualityTags ? 'true' : null)
-
-    const newSearch = params.toString()
-    const currentSearch = searchParams.toString()
-
-    if (newSearch !== currentSearch) {
-      router.replace(`${pathname}?${newSearch}`, { scroll: false })
-    }
-  }, [
-    isClient,
-    searchTags,
-    booruProvider,
-    ratingFilter,
-    tagCountFilter,
-    removeLoRaTags,
-    removeQualityTags,
-    pathname,
-    router,
-    searchParams
-  ])
 
   useEffect(() => { if (isClient) userPreferences.setBooruProvider(booruProvider) }, [booruProvider, isClient])
   useEffect(() => { if (isClient) userPreferences.setRemoveLoRaTags(removeLoRaTags) }, [removeLoRaTags, isClient])
@@ -340,6 +298,7 @@ export function useBooruSearch() {
     isEmpty,
     noMoreResults,
     loadMoreError,
+    isLoadingLock,
 
     loadMore,
     refresh,

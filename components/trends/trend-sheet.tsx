@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import useSWR from "swr"
-import { useRouter, useSearchParams } from "next/navigation"
 import { Flame, Loader2, AlertCircle } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
@@ -21,11 +20,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { TrendCard } from "./trend-card"
 import { TrendItem } from "@/lib/booru/types"
 
-export function TrendSheet() {
+interface TrendSheetProps {
+  onSelectTag: (tag: string) => void
+}
+
+export function TrendSheet({ onSelectTag }: TrendSheetProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("character")
-  const router = useRouter()
-  const searchParams = useSearchParams()
   
   // Only fetch when open
   const { data: trends, error, isLoading } = useSWR<TrendItem[]>(
@@ -45,9 +46,7 @@ export function TrendSheet() {
 
   const handleTagClick = (tag: string) => {
     setIsOpen(false)
-    const newParams = new URLSearchParams(searchParams.toString())
-    newParams.set('q', tag)
-    router.push(`/?${newParams.toString()}`)
+    onSelectTag(tag)
   }
 
   const renderGrid = (items: TrendItem[]) => (
@@ -78,7 +77,7 @@ export function TrendSheet() {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" className="h-9 w-9 relative text-muted-foreground hover:text-orange-500 hover:border-orange-200 dark:hover:border-orange-800 transition-colors">
+        <Button type="button" variant="outline" size="icon" className="h-9 w-9 relative text-muted-foreground hover:text-orange-500 hover:border-orange-200 dark:hover:border-orange-800 transition-colors">
           <Flame className="h-4 w-4" />
           <span className="sr-only">Trending Tags</span>
         </Button>
