@@ -106,6 +106,11 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
     handleResize()
     handleScroll()
 
+    // Fallback for environments where resize might not fire immediately or width reads 0 (e.g. Remotion)
+    if (containerRef.current && containerRef.current.clientWidth === 0) {
+       setContainerWidth(1200)
+    }
+
     window.addEventListener("scroll", handleScroll, { passive: true })
     window.addEventListener("resize", handleResize, { passive: true })
 

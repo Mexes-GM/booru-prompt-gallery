@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
@@ -687,17 +688,22 @@ export function PromptGallery() {
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex flex-1 group gap-0">
                       <div className="relative flex-1">
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground pointer-events-none">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground pointer-events-none z-20">
                           <Search className="h-5 w-5" />
                         </div>
-                        <Input
-                          type="text"
+                        <SearchWithAutocomplete
+                          placeholders={search.isShuffle ? ["Search tag (e.g., cat_girl)..."] : [
+                            "Search tags (e.g., cat girl, blue eyes)...",
+                            "Try 'frieren, solo'",
+                            "eyeshadows, makeup",
+                            "disgust, standing",
+                            "crossed arms, from below",
+                            "large breasts, swimsuit",
+                          ]}
                           value={search.searchTags}
-                          onChange={(e) => search.setSearchTags(e.target.value)}
-                          placeholder={search.isShuffle ? "Search tag (e.g., cat_girl)..." : "Search tags (e.g., cat_girl, blue_eyes)..."}
-                          className="pl-10 pr-10 h-11 text-base shadow-sm focus-visible:ring-offset-0 rounded-r-none border-r-0 z-10 relative"
-                          aria-label="Search tags"
-                          translate="no"
+                          setValue={search.setSearchTags}
+                          onSearch={() => search.handleSearch({ preventDefault: () => {} } as React.FormEvent)}
+                          className="pl-10 pr-10 h-11 text-base shadow-sm rounded-r-none border-r-0 z-10 relative bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
                         />
                         {search.searchTags && (
                           <button
