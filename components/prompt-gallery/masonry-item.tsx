@@ -1,4 +1,4 @@
-import { useCallback, useMemo, memo } from "react"
+import { useCallback, useMemo, memo, useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -27,6 +27,7 @@ import {
 } from "@/lib/api-client"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { classifyTags, TagCategory } from "@/lib/tag-classifier"
+import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -149,8 +150,11 @@ export const MasonryItem = memo(function MasonryItem({
     setTeachModalData,
     onSkipAnimation
 }: MasonryItemProps) {
-    const excludeList = excludeInput.split(',').map(t => t.trim()).filter(Boolean)
-    const addList = addInput.split(',').map(t => t.trim()).filter(Boolean)
+    const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
+    const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
+    
+    // State to hold modified prompt from user interaction
+    const [modifiedContent, setModifiedContent] = useState<string | null>(null)
 
     // Check if this is an Aibooru post with prompt
     const isAiPost = isAibooruPost(post)
@@ -167,22 +171,29 @@ export const MasonryItem = memo(function MasonryItem({
     }
 
     // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
-    const displayContent = useMemo(() => aiPrompt
-        ? cleanPrompt(
-            aiPrompt,
-            "",
-            "",
-            "",
-            { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
-        )
-        : cleanPrompt(
-            post.tag_string,
-            post.tag_string_artist,
-            post.tag_string_character,
-            post.tag_string_copyright,
-            { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
-        ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, optimizeTags, excludeInput, addInput, tagOverrides])
+    const displayContent = useMemo(() => {
+        const content = aiPrompt
+            ? cleanPrompt(
+                aiPrompt,
+                "",
+                "",
+                "",
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
+            )
+            : cleanPrompt(
+                post.tag_string,
+                post.tag_string_artist,
+                post.tag_string_character,
+                post.tag_string_copyright,
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
+            )
+        return content
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, optimizeTags, excludeList, addList, tagOverrides])
 
+    // Reset modified content when display content changes substantially (e.g. new post or new filters)
+    useEffect(() => {
+        setModifiedContent(null)
+    }, [displayContent])
 
     // Create a raw (unoptimized) version for Teach modal classification
     const teachContent = useMemo(() => aiPrompt
@@ -199,7 +210,7 @@ export const MasonryItem = memo(function MasonryItem({
             post.tag_string_character,
             post.tag_string_copyright,
             { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, escapeOutput: false },
-        ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, excludeInput, tagOverrides])
+        ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, excludeList, tagOverrides])
 
     // Pre-classify tags for the dropdown counts
     const tagsForClassification = useMemo(() => displayContent ? displayContent.split(',').map(t => t.trim()) : [], [displayContent])
@@ -432,12 +443,15 @@ export const MasonryItem = memo(function MasonryItem({
 
                 <div className={getCardContentClass()} style={{ height: footerHeight }}>
                     <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container">
-                        <p className="text-foreground/80 leading-relaxed">{displayContent || "No content available"}</p>
+                        <InteractivePrompt 
+                            initialPrompt={displayContent} 
+                            onUpdate={setModifiedContent} 
+                        />
                     </div>
 
                     <div className="flex button-group items-stretch isolate">
                         <Button
-                            onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt, post.preview_file_url)}
+                            onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
                             className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
                             variant={copiedId === post.id ? "default" : "outline"}
                             disabled={!displayContent}
@@ -618,14 +632,15 @@ export const MasonryItem = memo(function MasonryItem({
                         </div>
 
                         <div className="bg-muted/50 p-3 rounded-lg max-h-20 overflow-y-auto">
-                            <p className="text-sm text-foreground/80 leading-relaxed">
-                                {displayContent || "No content available"}
-                            </p>
+                            <InteractivePrompt 
+                                initialPrompt={displayContent} 
+                                onUpdate={setModifiedContent} 
+                            />
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-2">
                             <Button
-                                onClick={() => copyToClipboard(displayContent, post.id, !!aiPrompt, post.preview_file_url)}
+                                onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
                                 variant={copiedId === post.id ? "default" : "outline"}
                                 disabled={!displayContent}
                                 className="focus-ring flex-1 sm:flex-none"
@@ -718,3 +733,4 @@ export const MasonryItem = memo(function MasonryItem({
         </Card>
     )
 })
+
