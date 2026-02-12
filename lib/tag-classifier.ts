@@ -96,11 +96,12 @@ export function classifyTags(tags: string[], overrides?: Record<string, string>,
     other: []
   };
 
-  const charTagsSet = new Set(knownCharacterTags.map(t => t.toLowerCase()));
+  const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim();
+  const charTagsSet = new Set(knownCharacterTags.map(normalizeForMatch));
 
   tags.forEach(tag => {
     // 0. Check if it's a known character tag
-    if (charTagsSet.has(tag.toLowerCase())) {
+    if (charTagsSet.has(normalizeForMatch(tag))) {
       result.appearance.push(tag);
       return;
     }

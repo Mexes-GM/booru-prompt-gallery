@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Plus, Minus, RotateCcw, Globe } from "lucide-react"
+import { Plus, Minus, RotateCcw, Globe, Search } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -20,6 +20,7 @@ interface InteractivePromptProps {
   onWeightChange?: (tag: string, weight: number) => void
   onPromoteToGlobal?: (tag: string, weight: number) => void
   globalWeights?: Record<string, number>
+  onSearch?: (tag: string) => void
 }
 
 const buildPrompt = (tags: TagData[]): string => {
@@ -35,7 +36,8 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
   isEditable = true,
   onWeightChange,
   onPromoteToGlobal,
-  globalWeights = {}
+  globalWeights = {},
+  onSearch
 }: InteractivePromptProps) {
   const [tags, setTags] = useState<TagData[]>([])
 
@@ -45,7 +47,7 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
       return
     }
     const splitTags = initialPrompt.split(',').filter(t => t.trim())
-    
+
     // Use shared parser
     const parsed = splitTags.map((t, i) => {
       const { text, weight } = parseTagString(t)
@@ -105,6 +107,7 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
               isGlobal={isGlobal}
               onPromote={(w) => onPromoteToGlobal?.(tag.text, w)}
               canPromote={!!onPromoteToGlobal}
+              onSearch={onSearch ? () => onSearch(tag.text) : undefined}
             />
             {i < tags.length - 1 && <span>, </span>}
           </React.Fragment>
@@ -122,9 +125,10 @@ interface PromptTagProps {
   isGlobal?: boolean
   onPromote?: (weight: number) => void
   canPromote?: boolean
+  onSearch?: () => void
 }
 
-const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, canPromote }: PromptTagProps) => {
+const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, canPromote, onSearch }: PromptTagProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const [draftWeight, setDraftWeight] = useState(tag.weight)
 
@@ -149,18 +153,18 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
       return parseFloat(next.toFixed(1))
     })
   }
-  
+
   const handlePromote = () => {
-      if (onPromote) {
-          // If we promote, we want to use the current draft weight
-          // But onPromote uses tag.weight (committed). 
-          // We should commit first? Or pass draftWeight to onPromote?
-          // The prop passed to PromptTag wraps onPromoteToGlobal(tag.text, tag.weight)
-          // We need to pass the *new* weight if it hasn't been committed yet.
-          // BUT, to simplify: let's commit first then promote?
-          // Or change the onPromote signature in PromptTag.
-          // Let's change onPromote signature to accept weight.
-      }
+    if (onPromote) {
+      // If we promote, we want to use the current draft weight
+      // But onPromote uses tag.weight (committed). 
+      // We should commit first? Or pass draftWeight to onPromote?
+      // The prop passed to PromptTag wraps onPromoteToGlobal(tag.text, tag.weight)
+      // We need to pass the *new* weight if it hasn't been committed yet.
+      // BUT, to simplify: let's commit first then promote?
+      // Or change the onPromote signature in PromptTag.
+      // Let's change onPromote signature to accept weight.
+    }
   }
 
   // Determine what text to show: live draft if open, stable prop if closed
@@ -209,7 +213,7 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
         >
           {currentText}
           {isGlobal && (
-             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full shadow-sm" />
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full shadow-sm" />
           )}
         </span>
       </PopoverTrigger>
@@ -228,7 +232,7 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
                 <span className="font-medium">Global Weight</span>
               </div>
             )}
-            
+
             <div className="flex items-center gap-0.5">
               <Button
                 variant="ghost"
@@ -238,7 +242,7 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
               >
                 <Minus className="h-3.5 w-3.5" />
               </Button>
-              
+
               <span className="w-8 text-center font-mono text-sm font-medium">
                 {draftWeight.toFixed(1)}
               </span>
@@ -269,38 +273,56 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
               </Button>
 
               {canPromote && (
-                  <>
-                    <div className="h-4 w-[1px] bg-border mx-1" />
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "h-7 w-7 transition-colors",
-                          isGlobal 
-                            ? "text-destructive hover:text-destructive hover:bg-destructive/10" 
-                            : "text-purple-600 hover:text-purple-700 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-900/30"
-                        )}
-                        onClick={() => {
-                            // If currently global, toggle OFF by setting weight to 1.0 (which removes it in the handler)
-                            // If NOT global, toggle ON by setting weight to current draftWeight
-                            let targetWeight = isGlobal ? 1.0 : draftWeight
-                            
-                            // UX Enhancement: If user promotes a tag that is currently 1.0, 
-                            // assume they want to increase it to 1.1 to make it visible/active as a global weight
-                            if (!isGlobal && targetWeight === 1.0) {
-                                targetWeight = 1.1
-                            }
-                            
-                            onPromote?.(targetWeight)
-                            setIsOpen(false)
-                        }}
-                        title={isGlobal ? "Remove Global Weight" : "Set as Global Weight"}
-                    >
-                        <Globe className="h-3.5 w-3.5" />
-                    </Button>
-                  </>
+                <>
+                  <div className="h-4 w-[1px] bg-border mx-1" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "h-7 w-7 transition-colors",
+                      isGlobal
+                        ? "text-destructive hover:text-destructive hover:bg-destructive/10"
+                        : "text-purple-600 hover:text-purple-700 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-900/30"
+                    )}
+                    onClick={() => {
+                      // If currently global, toggle OFF by setting weight to 1.0 (which removes it in the handler)
+                      // If NOT global, toggle ON by setting weight to current draftWeight
+                      let targetWeight = isGlobal ? 1.0 : draftWeight
+
+                      // UX Enhancement: If user promotes a tag that is currently 1.0, 
+                      // assume they want to increase it to 1.1 to make it visible/active as a global weight
+                      if (!isGlobal && targetWeight === 1.0) {
+                        targetWeight = 1.1
+                      }
+
+                      onPromote?.(targetWeight)
+                      setIsOpen(false)
+                    }}
+                    title={isGlobal ? "Remove Global Weight" : "Set as Global Weight"}
+                  >
+                    <Globe className="h-3.5 w-3.5" />
+                  </Button>
+                </>
               )}
             </div>
+
+            {onSearch && (
+              <div className="flex items-center justify-center border-t pt-1 mt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-full text-xs font-normal text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    onSearch()
+                    setIsOpen(false)
+                  }}
+                >
+                  <Search className="h-3 w-3 mr-1.5" />
+                  Search Tag
+                </Button>
+              </div>
+            )}
+
           </div>
         </PopoverContent>
       )}

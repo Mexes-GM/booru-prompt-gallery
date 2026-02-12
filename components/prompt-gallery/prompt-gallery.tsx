@@ -152,7 +152,7 @@ export function PromptGallery() {
   const [weightsLoaded, setWeightsLoaded] = useState(false)
 
   // Merge Mode Hook
-  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled)
+  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, addInput)
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -314,6 +314,15 @@ export function PromptGallery() {
       userPreferences.setGlobalWeightsEnabled(isGlobalWeightsEnabled)
     }
   }, [isGlobalWeightsEnabled, search.isClient, weightsLoaded])
+
+  // Tag Search Handler (from MasonryItem)
+  const handleTagSearch = useCallback((tag: string) => {
+    // Unescape parentheses for search (kashima \(kancolle\) -> kashima (kancolle))
+    const cleanTag = tag.replace(/\\([()])/g, '$1')
+    search.setSearchTags(cleanTag)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    // The debounce in useBooruSearch will trigger the search after 500ms
+  }, [search])
 
   // --- Helpers ---
 
@@ -479,6 +488,7 @@ export function PromptGallery() {
       globalWeights={globalWeights}
       isGlobalWeightsEnabled={isGlobalWeightsEnabled}
       onGlobalWeightChange={handleGlobalWeightChange}
+      onSearch={handleTagSearch}
     />
   }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, excludeInput, addInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode])
 
@@ -593,7 +603,7 @@ export function PromptGallery() {
 
         <main className="container mx-auto px-4 py-8">
           {/* Hero */}
-          <div className="max-w-4xl mx-auto mb-8 space-y-6">
+          <div className="w-fit max-w-5xl mx-auto mb-8 space-y-6">
             <div className="text-center space-y-2">
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
               <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
@@ -695,14 +705,14 @@ export function PromptGallery() {
                 <form onSubmit={search.handleSearch} className="space-y-6">
 
                   {/* Top Bar: Provider Selection & Quick Actions */}
-                  <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center">
+                  <div className="flex flex-col lg:flex-row gap-8 justify-start items-start lg:items-center">
                     {/* API Provider Selector */}
                     <div className="flex flex-col gap-1.5 w-full lg:w-auto">
                       <span className="text-xs font-medium text-muted-foreground ml-1">API Provider</span>
                       <div className="bg-muted/50 p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto"
                         style={{ WebkitOverflowScrolling: 'touch' }}
                       >
-                        {(['danbooru', 'aibooru', 'rule34', 'e621', 'gelbooru'] as const).map(p => (
+                        {(['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621'] as const).map(p => (
                           <Button
                             key={p}
                             type="button"
@@ -731,17 +741,20 @@ export function PromptGallery() {
 
                     {/* Quick Actions */}
                     <div className="flex flex-col gap-1.5 w-full lg:w-auto">
-                      <span className="text-xs font-medium text-muted-foreground ml-1 lg:text-right">Settings</span>
-                      <div className="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end flex-wrap">
+                      <span className="text-xs font-medium text-muted-foreground ml-1">Options</span>
+                      <div className="flex items-center gap-2 w-full lg:w-auto justify-start flex-wrap">
 
 
                         <Button
                           type="button"
-                          variant={favs.showFavorites ? "secondary" : "outline"}
+                          variant="secondary"
                           onClick={favs.toggleShowFavorites}
-                          className={`h-9 px-3 ${favs.showFavorites ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50" : ""}`}
+                          className={`h-9 px-3 gap-1 transition-colors duration-200 ${favs.showFavorites
+                            ? "bg-red-200 text-red-800 hover:bg-red-300 dark:bg-red-800 dark:text-red-100 dark:hover:bg-red-700"
+                            : "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
+                            }`}
                         >
-                          <Heart className={`w-4 h-4 mr-2 ${favs.showFavorites ? "fill-current" : ""}`} />
+                          <Heart className={`w-4 h-4 ${favs.showFavorites ? "fill-current" : ""}`} />
                           <span className="text-xs font-medium">Favs ({favs.favorites.size})</span>
                         </Button>
 
@@ -756,12 +769,12 @@ export function PromptGallery() {
                               type="button"
                               onClick={mergeMode.toggleMergeMode}
                               variant="secondary"
-                              className={`h-9 px-3 transition-colors duration-200 ${mergeMode.isMergeMode
+                              className={`h-9 px-3 gap-1 transition-colors duration-200 ${mergeMode.isMergeMode
                                 ? "bg-blue-200 text-blue-800 hover:bg-blue-300 dark:bg-blue-800 dark:text-blue-100 dark:hover:bg-blue-700"
                                 : "bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
                                 }`}
                             >
-                              <FileCheck2 className="w-4 h-4 mr-2 fill-current" />
+                              <FileCheck2 className="w-4 h-4 fill-current" />
                               <span className="text-xs font-medium">Merge</span>
                             </Button>
                           </TooltipTrigger>

@@ -9,7 +9,13 @@ export interface SelectedPostParts {
     previewTags: Record<TagCategory, string[]>
 }
 
-export function useMergeMode(globalWeights: Record<string, number> = {}, isGlobalWeightsEnabled: boolean = false) {
+const escapeParentheses = (s: string) => s.replace(/\(/g, "\\(").replace(/\)/g, "\\)")
+
+export function useMergeMode(
+    globalWeights: Record<string, number> = {},
+    isGlobalWeightsEnabled: boolean = false,
+    addedTagsInput: string = ""
+) {
     const [isMergeMode, setIsMergeMode] = useState(false)
     const [selectedPosts, setSelectedPosts] = useState<Map<number, SelectedPostParts>>(new Map())
 
@@ -78,12 +84,44 @@ export function useMergeMode(globalWeights: Record<string, number> = {}, isGloba
         })
     }, [])
 
+    // Helper for escaping parentheses in tags removed (moved to outer scope)
+
     const mergedPromptSegments = useMemo(() => {
         const segments: { text: string, display: string, category: TagCategory }[] = []
         const seenTags = new Set<string>()
 
+        // Pre-classify added tags
+        const rawAddedTags = addedTagsInput.split(',').map(t => t.trim()).filter(Boolean)
+        const classifiedAddedTags = classifyTags(rawAddedTags)
+
         const categories: TagCategory[] = ['appearance', 'clothing', 'pose', 'scenery', 'other']
 
+        // 1. Process ALL Added Tags First (across all categories) to ensure they are at the top
+        categories.forEach(cat => {
+            const addedForCat = classifiedAddedTags[cat] || []
+            addedForCat.forEach(t => {
+                const normalized = t.toLowerCase().replace(/_/g, ' ')
+                if (!seenTags.has(normalized) && !excludedTags.has(normalized)) {
+                    seenTags.add(normalized)
+
+                    let displayText = escapeParentheses(normalized)
+                    if (isGlobalWeightsEnabled) {
+                        const w = globalWeights[normalized]
+                        if (w !== undefined && w !== 1.0) {
+                            displayText = `(${displayText}:${w})`
+                        }
+                    }
+
+                    segments.push({
+                        text: normalized,
+                        display: displayText,
+                        category: cat
+                    })
+                }
+            })
+        })
+
+        // 2. Process ALL Selected Post Tags Second
         categories.forEach(cat => {
             selectedPosts.forEach((data) => {
                 if (data.parts.has(cat)) {
@@ -92,20 +130,20 @@ export function useMergeMode(globalWeights: Record<string, number> = {}, isGloba
                         const normalized = t.toLowerCase().replace(/_/g, ' ')
                         if (!seenTags.has(normalized) && !excludedTags.has(normalized)) {
                             seenTags.add(normalized)
-                            
-                            let displayText = normalized
+
+                            let displayText = escapeParentheses(normalized)
                             if (isGlobalWeightsEnabled) {
                                 // Simple efficient check instead of full applyWeights overhead in loop
                                 const w = globalWeights[normalized]
                                 if (w !== undefined && w !== 1.0) {
-                                    displayText = `(${normalized}:${w})`
+                                    displayText = `(${displayText}:${w})`
                                 }
                             }
 
-                            segments.push({ 
-                                text: normalized, 
+                            segments.push({
+                                text: normalized,
                                 display: displayText,
-                                category: cat 
+                                category: cat
                             })
                         }
                     })
@@ -114,7 +152,7 @@ export function useMergeMode(globalWeights: Record<string, number> = {}, isGloba
         })
 
         return segments
-    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled])
+    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput])
 
     const mergedPrompt = useMemo(() => {
         return mergedPromptSegments.map(s => s.display).join(', ')

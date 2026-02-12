@@ -16,13 +16,13 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { 
-    Bug, 
-    Lightbulb, 
-    MessageSquare, 
-    Loader2, 
-    Check, 
-    Sparkles, 
+import {
+    Bug,
+    Lightbulb,
+    MessageSquare,
+    Loader2,
+    Check,
+    Sparkles,
     Send,
     MessageSquarePlus
 } from "lucide-react"
@@ -47,8 +47,8 @@ const containerVariants = {
 
 const itemVariants = {
     hidden: { opacity: 0, y: 10 },
-    visible: { 
-        opacity: 1, 
+    visible: {
+        opacity: 1,
         y: 0,
         transition: { type: "spring", stiffness: 400, damping: 20 }
     },
@@ -79,17 +79,17 @@ const SuccessAnimation = memo(function SuccessAnimation() {
                         <Check className="w-8 h-8 text-primary-foreground stroke-[3]" />
                     </motion.div>
                 </motion.div>
-                
+
                 {/* Decorative particles */}
                 {[...Array(6)].map((_, i) => (
                     <motion.div
                         key={i}
                         initial={{ opacity: 1, scale: 0, x: 0, y: 0 }}
-                        animate={{ 
-                            opacity: 0, 
-                            scale: 1, 
-                            x: Math.cos(i * 60 * (Math.PI / 180)) * 60, 
-                            y: Math.sin(i * 60 * (Math.PI / 180)) * 60 
+                        animate={{
+                            opacity: 0,
+                            scale: 1,
+                            x: Math.cos(i * 60 * (Math.PI / 180)) * 60,
+                            y: Math.sin(i * 60 * (Math.PI / 180)) * 60
                         }}
                         transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
                         className="absolute top-1/2 left-1/2 w-2 h-2 bg-primary rounded-full -translate-x-1/2 -translate-y-1/2"
@@ -186,8 +186,12 @@ export function FeedbackDialog() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2 h-9 px-4 transition-all hover:bg-secondary/80">
-                    <MessageSquarePlus className="h-4 w-4 text-primary" />
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1 h-9 px-4 transition-all bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+                >
+                    <MessageSquarePlus className="h-4 w-4" />
                     <span className="hidden sm:inline font-medium">Feedback</span>
                 </Button>
             </DialogTrigger>
@@ -199,7 +203,7 @@ export function FeedbackDialog() {
                         <div key="form" className="relative flex flex-col bg-background">
                             {/* Decorative Header Background */}
                             <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
-                            
+
                             <DialogHeader className="p-6 pb-2 z-10">
                                 <div className="flex items-center gap-2 mb-2">
                                     <div className="p-2 bg-primary/10 rounded-lg">
@@ -212,12 +216,12 @@ export function FeedbackDialog() {
                                 </DialogDescription>
                             </DialogHeader>
 
-                            <motion.form 
+                            <motion.form
                                 variants={containerVariants}
                                 initial="hidden"
                                 animate="visible"
                                 exit="exit"
-                                onSubmit={handleSubmit} 
+                                onSubmit={handleSubmit}
                                 className="p-6 pt-2 space-y-6 z-10"
                             >
                                 {/* Type Selection */}
@@ -227,8 +231,8 @@ export function FeedbackDialog() {
                                     </Label>
                                     <div className="grid grid-cols-3 gap-3">
                                         {feedbackTypes.map((item) => (
-                                            <label 
-                                                key={item.id} 
+                                            <label
+                                                key={item.id}
                                                 className="relative cursor-pointer group"
                                             >
                                                 <input
@@ -271,8 +275,8 @@ export function FeedbackDialog() {
                                         id="content"
                                         placeholder={
                                             type === 'bug' ? "What happened? How can we reproduce it?" :
-                                            type === 'feature' ? "What would you like to see added?" :
-                                            "Tell us what you think..."
+                                                type === 'feature' ? "What would you like to see added?" :
+                                                    "Tell us what you think..."
                                         }
                                         value={content}
                                         onChange={(e) => setContent(e.target.value)}
@@ -291,7 +295,7 @@ export function FeedbackDialog() {
                                     </div>
                                     <Input
                                         id="contact"
-                                        placeholder="Discord or Email (for follow-up)"
+                                        placeholder="Discord Username (for follow-up)"
                                         value={contact}
                                         onChange={(e) => setContact(e.target.value)}
                                         className="h-10 bg-secondary/20 focus:bg-background transition-colors border-transparent focus:border-input focus:ring-1 focus:ring-primary/20"
@@ -300,9 +304,9 @@ export function FeedbackDialog() {
 
                                 {/* Footer */}
                                 <motion.div variants={itemVariants} className="pt-2">
-                                    <Button 
-                                        type="submit" 
-                                        disabled={loading} 
+                                    <Button
+                                        type="submit"
+                                        disabled={loading}
                                         className="w-full h-11 text-base shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5"
                                     >
                                         {loading ? (

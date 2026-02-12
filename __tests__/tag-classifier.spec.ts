@@ -67,4 +67,19 @@ console.log("Starting Tag Classifier Tests...");
   expectEqual(result.scenery.includes("indoors"), true, "Result includes indoors in scenery");
 }
 
+// Character Tag Tests
+{
+  const characterTags = ["hatsune_miku", "rem_(re:zero)"];
+  const tags = ["hatsune miku", "rem (re:zero)", "blue dress"];
+  
+  const result = classifyTags(tags, {}, characterTags);
+  
+  expectEqual(result.appearance.includes("hatsune miku"), true, "Classify hatsune miku as appearance from known list");
+  expectEqual(result.appearance.includes("rem (re:zero)"), true, "Classify rem (re:zero) as appearance from known list (un-escaped)");
+  
+  const tagsEscaped = ["hatsune miku", "rem \\(re:zero\\)"];
+  const resultEscaped = classifyTags(tagsEscaped, {}, characterTags);
+  expectEqual(resultEscaped.appearance.includes("rem \\(re:zero\\)"), true, "Classify rem \\(re:zero\\) as appearance from known list (escaped)");
+}
+
 console.log("Tag Classifier Tests Complete");

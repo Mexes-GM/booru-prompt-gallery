@@ -124,6 +124,7 @@ interface MasonryItemProps {
     globalWeights?: Record<string, number>
     isGlobalWeightsEnabled?: boolean
     onGlobalWeightChange?: (tag: string, weight: number) => void
+    onSearch?: (tag: string) => void
 }
 
 // Memoized MasonryItem to prevent unnecessary re-renders
@@ -155,7 +156,8 @@ export const MasonryItem = memo(function MasonryItem({
     onSkipAnimation,
     globalWeights = {},
     isGlobalWeightsEnabled = false,
-    onGlobalWeightChange
+    onGlobalWeightChange,
+    onSearch
 }: MasonryItemProps) {
     const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
     const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
@@ -196,12 +198,38 @@ export const MasonryItem = memo(function MasonryItem({
             )
     }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, optimizeTags, excludeList, addList, tagOverrides])
 
+    // Generate pure content WITHOUT added tags for category copying/classification
+    const pureContent = useMemo(() => {
+        return aiPrompt
+            ? cleanPrompt(
+                aiPrompt,
+                "",
+                "",
+                "",
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides },
+            )
+            : cleanPrompt(
+                post.tag_string,
+                post.tag_string_artist,
+                post.tag_string_character,
+                post.tag_string_copyright,
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides },
+            )
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, optimizeTags, excludeList, tagOverrides])
+
     const displayContent = useMemo(() => {
         if (isGlobalWeightsEnabled && baseContent) {
             return applyWeights(baseContent, globalWeights)
         }
         return baseContent
     }, [baseContent, isGlobalWeightsEnabled, globalWeights])
+
+    const pureDisplayContent = useMemo(() => {
+        if (isGlobalWeightsEnabled && pureContent) {
+            return applyWeights(pureContent, globalWeights)
+        }
+        return pureContent
+    }, [pureContent, isGlobalWeightsEnabled, globalWeights])
 
     // Reset modified content when BASE content changes substantially (e.g. new post or new filters)
     // NOT when global weights change/toggle, to preserve local edits
@@ -226,13 +254,19 @@ export const MasonryItem = memo(function MasonryItem({
             { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, escapeOutput: false },
         ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, excludeList, tagOverrides])
 
-    // Pre-classify tags for the dropdown counts
-    const tagsForClassification = useMemo(() => displayContent ? displayContent.split(',').map(t => t.trim()) : [], [displayContent])
+    // Pre-classify tags for the dropdown counts (USING PUR DISPLAY CONTENT)
+    // This ensures that "added tags" don't inflate the category counts or get copied when selecting a category
+    const tagsForClassification = useMemo(() => pureDisplayContent ? pureDisplayContent.split(',').map(t => t.trim()) : [], [pureDisplayContent])
+
+    // For the main inline selection bar, we might want to know if parts exist in the MAIN display content? 
+    // Actually, usually "tags to add" are generic and shouldn't affect the "Pose/Clothing" indicators of the image itself.
+    // So using pureDisplayContent is likely correct for the indicators too.
+
     const teachTagsForClassification = useMemo(() => teachContent ? teachContent.split(',').map(t => t.trim()) : [], [teachContent])
 
     // Prepare character tags
     const characterTagsArray = useMemo(() => (post.tag_string_character ? post.tag_string_character.split(' ') : [])
-        .map(t => t.replace(/_/g, ' ').toLowerCase()), [post.tag_string_character])
+        .map(t => t.replace(/_/g, ' ').toLowerCase().replace(/\(/g, "\\(").replace(/\)/g, "\\)")), [post.tag_string_character])
 
     const classifiedTags = useMemo(() => {
         // Ensure character tags are included in the classification source
@@ -242,14 +276,15 @@ export const MasonryItem = memo(function MasonryItem({
 
     const classifiedTeachTags = useMemo(() => {
         // Filter out character tags for the Teach modal
-        const charTagsSet = new Set(characterTagsArray)
-        const filteredTags = teachTagsForClassification.filter(t => !charTagsSet.has(t))
+        const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim();
+        const charTagsSet = new Set(characterTagsArray.map(normalizeForMatch))
+        const filteredTags = teachTagsForClassification.filter(t => !charTagsSet.has(normalizeForMatch(t)))
 
         return classifyTags(filteredTags, tagOverrides, [])
     }, [characterTagsArray, teachTagsForClassification, tagOverrides])
 
     const copyCategory = async (category: TagCategory) => {
-        if (!displayContent) return
+        if (!pureDisplayContent) return
         const subset = classifiedTags[category]
 
         if (subset.length > 0) {
@@ -462,6 +497,7 @@ export const MasonryItem = memo(function MasonryItem({
                             onUpdate={setModifiedContent}
                             onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
                             globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
+                            onSearch={onSearch}
                         />
                     </div>
 
@@ -653,6 +689,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 onUpdate={setModifiedContent}
                                 onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
                                 globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
+                                onSearch={onSearch}
                             />
                         </div>
 
