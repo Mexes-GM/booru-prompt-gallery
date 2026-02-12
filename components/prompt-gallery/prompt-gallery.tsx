@@ -62,6 +62,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -94,18 +99,23 @@ import { MasonryGrid } from "@/components/masonry-grid"
 import { useBooruSearch } from "@/hooks/use-booru-search"
 import { useBooruFavorites } from "@/hooks/use-booru-favorites"
 import { MasonryItem } from "./masonry-item"
+import { useBlacklist } from "@/hooks/use-blacklist"
+import { BlacklistManager } from "@/components/prompt-gallery/blacklist-manager"
 
 import { TrendSheet } from "@/components/trends/trend-sheet"
 import { useMergeMode } from "@/hooks/use-merge-mode"
 import { MergeStickyFooter } from "./merge-sticky-footer"
 import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
+import { FeedbackDialog } from "@/components/feedback-dialog"
+import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-modal"
 
 type CardScale = "small" | "medium" | "large"
 
 export function PromptGallery() {
   // 1. Core Logic Hooks
   const search = useBooruSearch()
+  const { blacklist, addTag, removeTag, resetBlacklist } = useBlacklist()
   const favs = useBooruFavorites(search.booruProvider)
   const { toast } = useToast()
   const isMobile = useIsMobile()
@@ -135,8 +145,14 @@ export function PromptGallery() {
 
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
 
+  // Global Weights State
+  const [globalWeights, setGlobalWeights] = useState<Record<string, number>>({})
+  const [isGlobalWeightsEnabled, setIsGlobalWeightsEnabled] = useState(false)
+  const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
+  const [weightsLoaded, setWeightsLoaded] = useState(false)
+
   // Merge Mode Hook
-  const mergeMode = useMergeMode()
+  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled)
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -160,6 +176,15 @@ export function PromptGallery() {
   useEffect(() => {
     if (search.isClient) {
       setPresets(userPreferences.getAddTagsPresets())
+    }
+  }, [search.isClient])
+
+  // Load global weights separately
+  useEffect(() => {
+    if (search.isClient) {
+      setGlobalWeights(userPreferences.getGlobalWeights())
+      setIsGlobalWeightsEnabled(userPreferences.getGlobalWeightsEnabled())
+      setWeightsLoaded(true)
     }
   }, [search.isClient])
 
@@ -245,6 +270,50 @@ export function PromptGallery() {
     }
     hasMounted.current = true
   }, [search.error, search.booruProvider, toast])
+
+  // Global weight handlers
+  const handleGlobalWeightChange = useCallback((tag: string, weight: number) => {
+    setGlobalWeights(prev => {
+      const next = { ...prev }
+      // We store lowercase keys for consistency
+      const key = tag.toLowerCase()
+      // We no longer auto-delete at 1.0, so the user can manage the tag in the list
+      // Explicit removal is handled by handleRemoveGlobalWeight
+      next[key] = weight
+      return next
+    })
+  }, [])
+
+  const handleClearGlobalWeights = useCallback(() => {
+    setGlobalWeights({})
+    setIsGlobalWeightsModalOpen(false)
+    toast({ title: "Weights cleared", description: "All global tag weights have been reset." })
+  }, [toast])
+
+  const handleRemoveGlobalWeight = useCallback((tag: string) => {
+    setGlobalWeights(prev => {
+      const next = { ...prev }
+      delete next[tag] // tag from modal is already key
+      return next
+    })
+  }, [])
+
+  const toggleGlobalWeights = (enabled: boolean) => {
+    setIsGlobalWeightsEnabled(enabled)
+  }
+
+  // Persist Global Weights state changes
+  useEffect(() => {
+    if (search.isClient && weightsLoaded) {
+      userPreferences.setGlobalWeights(globalWeights)
+    }
+  }, [globalWeights, search.isClient, weightsLoaded])
+
+  useEffect(() => {
+    if (search.isClient && weightsLoaded) {
+      userPreferences.setGlobalWeightsEnabled(isGlobalWeightsEnabled)
+    }
+  }, [isGlobalWeightsEnabled, search.isClient, weightsLoaded])
 
   // --- Helpers ---
 
@@ -355,13 +424,30 @@ export function PromptGallery() {
 
   // --- Rendering Helpers ---
 
+  const placeholders = useMemo(() => search.isShuffle ? ["Search tag (e.g., cat_girl)..."] : [
+    "Search tags (e.g., cat girl, blue eyes)...",
+    "Try 'frieren, solo'",
+    "eyeshadows, makeup",
+    "disgust, standing",
+    "crossed arms, from below",
+    "large breasts, swimsuit",
+  ], [search.isShuffle])
+
   const filteredPosts = useMemo(() => {
     const source = favs.showFavorites ? (favs.favoritePosts || []) : search.allPosts
     return source.filter(post => {
+      // Blacklist filter
+      if (post.tag_string) {
+        const postTags = post.tag_string.split(' ')
+        if (postTags.some(tag => blacklist.includes(tag))) {
+          return false
+        }
+      }
+
       const fileUrl = post.large_file_url || post.file_url
       return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
     })
-  }, [favs.showFavorites, favs.favoritePosts, search.allPosts])
+  }, [favs.showFavorites, favs.favoritePosts, search.allPosts, blacklist])
 
   const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number) => {
     return <MasonryItem
@@ -390,6 +476,9 @@ export function PromptGallery() {
       onTogglePart={mergeMode.togglePostPart}
       onMergeSelect={() => { }} // No longer used for card click, but keeping prop if needed or refactoring MasonryItem signature next
       onSkipAnimation={() => setCopiedId(null)}
+      globalWeights={globalWeights}
+      isGlobalWeightsEnabled={isGlobalWeightsEnabled}
+      onGlobalWeightChange={handleGlobalWeightChange}
     />
   }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, excludeInput, addInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode])
 
@@ -680,6 +769,8 @@ export function PromptGallery() {
                             {mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Prompt Mode"}
                           </TooltipContent>
                         </Tooltip>
+
+                        <FeedbackDialog />
                       </div>
                     </div>
                   </div>
@@ -692,17 +783,10 @@ export function PromptGallery() {
                           <Search className="h-5 w-5" />
                         </div>
                         <SearchWithAutocomplete
-                          placeholders={search.isShuffle ? ["Search tag (e.g., cat_girl)..."] : [
-                            "Search tags (e.g., cat girl, blue eyes)...",
-                            "Try 'frieren, solo'",
-                            "eyeshadows, makeup",
-                            "disgust, standing",
-                            "crossed arms, from below",
-                            "large breasts, swimsuit",
-                          ]}
+                          placeholders={placeholders}
                           value={search.searchTags}
                           setValue={search.setSearchTags}
-                          onSearch={() => search.handleSearch({ preventDefault: () => {} } as React.FormEvent)}
+                          onSearch={() => search.handleSearch({ preventDefault: () => { } } as React.FormEvent)}
                           className="pl-10 pr-10 h-11 text-base shadow-sm rounded-r-none border-r-0 z-10 relative bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
                         />
                         {search.searchTags && (
@@ -716,6 +800,16 @@ export function PromptGallery() {
                           </button>
                         )}
                       </div>
+
+                      {/* Blacklist Manager */}
+                      {search.isClient && (
+                        <BlacklistManager
+                          blacklist={blacklist}
+                          onAdd={addTag}
+                          onRemove={removeTag}
+                          onReset={resetBlacklist}
+                        />
+                      )}
 
                       {/* NSFW Toggle - Attached to Input */}
                       {search.isClient && (
@@ -1032,6 +1126,31 @@ export function PromptGallery() {
                                   </label>
                                 </>
                               )}
+
+                              <div className="sm:col-span-2 flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-sm select-none">Global Tag Weights</span>
+                                  <span className="text-[10px] text-muted-foreground">Propagate changes to all cards</span>
+                                </div>
+                                <div className="flex items-center gap-2 ml-auto sm:ml-0">
+                                  <Switch
+                                    checked={isGlobalWeightsEnabled}
+                                    onCheckedChange={toggleGlobalWeights}
+                                    className="scale-90"
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 px-3 text-xs"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      setIsGlobalWeightsModalOpen(true)
+                                    }}
+                                  >
+                                    Manage
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1208,6 +1327,14 @@ export function PromptGallery() {
         onRemoveTag={mergeMode.excludeTag}
       />
 
+      <GlobalWeightsModal
+        open={isGlobalWeightsModalOpen}
+        onOpenChange={setIsGlobalWeightsModalOpen}
+        weights={globalWeights}
+        onRemoveWeight={handleRemoveGlobalWeight}
+        onClearWeights={handleClearGlobalWeights}
+        onSaveWeight={handleGlobalWeightChange}
+      />
     </TooltipProvider>
   )
 }

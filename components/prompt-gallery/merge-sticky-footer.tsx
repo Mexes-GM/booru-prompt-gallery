@@ -23,12 +23,15 @@ interface MergeStickyFooterProps {
     isOpen: boolean
     selectedPosts: Map<number, SelectedPostParts>
     mergedPrompt: string
-    mergedPromptSegments: { text: string, category: TagCategory }[]
+    mergedPromptSegments: { text: string, display: string, category: TagCategory }[]
     onRemovePost: (id: number) => void
     onClearAll: () => void
     onExit: () => void
     onCopy: (text: string) => void
     onRemoveTag: (tag: string) => void
+    globalWeights?: Record<string, number>
+    onGlobalWeightChange?: (tag: string, weight: number) => void
+    isGlobalWeightsEnabled?: boolean
 }
 
 const ExplodingTag = memo(({
@@ -39,7 +42,7 @@ const ExplodingTag = memo(({
 }: {
     text: string
     category: TagCategory
-    onRemove: (tag: string) => void
+    onRemove: () => void
     getCategoryClass: (c: TagCategory) => string
 }) => {
     return (
@@ -57,7 +60,7 @@ const ExplodingTag = memo(({
             className="relative z-0 hover:z-10"
         >
             <motion.button
-                onClick={() => onRemove(text)}
+                onClick={onRemove}
                 className={`transform-gpu hover:scale-110 active:scale-95 transition-all duration-200 px-2.5 py-1.5 sm:py-0.5 rounded border text-xs font-medium font-mono cursor-pointer select-none relative overflow-hidden group ${getCategoryClass(category)}`}
             >
                 <span className="block relative z-10 transition-transform duration-300 group-hover:-translate-x-1.5 truncate max-w-[150px]">
@@ -114,7 +117,10 @@ const MergeStickyFooterComponent = ({
     onClearAll,
     onExit,
     onCopy,
-    onRemoveTag
+    onRemoveTag,
+    globalWeights,
+    onGlobalWeightChange,
+    isGlobalWeightsEnabled
 }: MergeStickyFooterProps) => {
 
     const [isCopied, setIsCopied] = useState(false)
@@ -286,9 +292,9 @@ const MergeStickyFooterComponent = ({
                                             {mergedPromptSegments.map((segment) => (
                                                 <ExplodingTag
                                                     key={segment.text}
-                                                    text={segment.text}
+                                                    text={segment.display}
                                                     category={segment.category}
-                                                    onRemove={onRemoveTag}
+                                                    onRemove={() => onRemoveTag(segment.text)}
                                                     getCategoryClass={getCategoryClass}
                                                 />
                                             ))}

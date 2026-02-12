@@ -1,4 +1,4 @@
-import { useCallback, useMemo, memo, useState, useEffect } from "react"
+import { useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,7 @@ import {
     BooruProvider
 } from "@/lib/api-client"
 import { cleanPrompt } from "@/lib/cleanPrompt"
+import { applyWeights, extractWeights } from "@/lib/weight-utils"
 import { classifyTags, TagCategory } from "@/lib/tag-classifier"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import {
@@ -120,6 +121,9 @@ interface MasonryItemProps {
     copiedId: number | null
     setTeachModalData: (data: { open: boolean, tags: any }) => void
     onSkipAnimation?: () => void
+    globalWeights?: Record<string, number>
+    isGlobalWeightsEnabled?: boolean
+    onGlobalWeightChange?: (tag: string, weight: number) => void
 }
 
 // Memoized MasonryItem to prevent unnecessary re-renders
@@ -148,11 +152,14 @@ export const MasonryItem = memo(function MasonryItem({
     tagOverrides,
     copiedId,
     setTeachModalData,
-    onSkipAnimation
+    onSkipAnimation,
+    globalWeights = {},
+    isGlobalWeightsEnabled = false,
+    onGlobalWeightChange
 }: MasonryItemProps) {
     const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
     const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
-    
+
     // State to hold modified prompt from user interaction
     const [modifiedContent, setModifiedContent] = useState<string | null>(null)
 
@@ -171,8 +178,8 @@ export const MasonryItem = memo(function MasonryItem({
     }
 
     // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
-    const displayContent = useMemo(() => {
-        const content = aiPrompt
+    const baseContent = useMemo(() => {
+        return aiPrompt
             ? cleanPrompt(
                 aiPrompt,
                 "",
@@ -187,13 +194,20 @@ export const MasonryItem = memo(function MasonryItem({
                 post.tag_string_copyright,
                 { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides },
             )
-        return content
     }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, includeCharacters, optimizeTags, excludeList, addList, tagOverrides])
 
-    // Reset modified content when display content changes substantially (e.g. new post or new filters)
+    const displayContent = useMemo(() => {
+        if (isGlobalWeightsEnabled && baseContent) {
+            return applyWeights(baseContent, globalWeights)
+        }
+        return baseContent
+    }, [baseContent, isGlobalWeightsEnabled, globalWeights])
+
+    // Reset modified content when BASE content changes substantially (e.g. new post or new filters)
+    // NOT when global weights change/toggle, to preserve local edits
     useEffect(() => {
         setModifiedContent(null)
-    }, [displayContent])
+    }, [baseContent])
 
     // Create a raw (unoptimized) version for Teach modal classification
     const teachContent = useMemo(() => aiPrompt
@@ -443,9 +457,11 @@ export const MasonryItem = memo(function MasonryItem({
 
                 <div className={getCardContentClass()} style={{ height: footerHeight }}>
                     <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container">
-                        <InteractivePrompt 
-                            initialPrompt={displayContent} 
-                            onUpdate={setModifiedContent} 
+                        <InteractivePrompt
+                            initialPrompt={displayContent}
+                            onUpdate={setModifiedContent}
+                            onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
+                            globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                         />
                     </div>
 
@@ -632,9 +648,11 @@ export const MasonryItem = memo(function MasonryItem({
                         </div>
 
                         <div className="bg-muted/50 p-3 rounded-lg max-h-20 overflow-y-auto">
-                            <InteractivePrompt 
-                                initialPrompt={displayContent} 
-                                onUpdate={setModifiedContent} 
+                            <InteractivePrompt
+                                initialPrompt={displayContent}
+                                onUpdate={setModifiedContent}
+                                onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
+                                globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                             />
                         </div>
 

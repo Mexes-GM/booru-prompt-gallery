@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory, classifyTags } from '@/lib/tag-classifier'
-import { cleanPrompt } from '@/lib/cleanPrompt'
+import { applyWeights } from '@/lib/weight-utils'
 
 export interface SelectedPostParts {
     post: BooruPost
@@ -9,7 +9,7 @@ export interface SelectedPostParts {
     previewTags: Record<TagCategory, string[]>
 }
 
-export function useMergeMode() {
+export function useMergeMode(globalWeights: Record<string, number> = {}, isGlobalWeightsEnabled: boolean = false) {
     const [isMergeMode, setIsMergeMode] = useState(false)
     const [selectedPosts, setSelectedPosts] = useState<Map<number, SelectedPostParts>>(new Map())
 
@@ -79,7 +79,7 @@ export function useMergeMode() {
     }, [])
 
     const mergedPromptSegments = useMemo(() => {
-        const segments: { text: string, category: TagCategory }[] = []
+        const segments: { text: string, display: string, category: TagCategory }[] = []
         const seenTags = new Set<string>()
 
         const categories: TagCategory[] = ['appearance', 'clothing', 'pose', 'scenery', 'other']
@@ -92,7 +92,21 @@ export function useMergeMode() {
                         const normalized = t.toLowerCase().replace(/_/g, ' ')
                         if (!seenTags.has(normalized) && !excludedTags.has(normalized)) {
                             seenTags.add(normalized)
-                            segments.push({ text: normalized, category: cat })
+                            
+                            let displayText = normalized
+                            if (isGlobalWeightsEnabled) {
+                                // Simple efficient check instead of full applyWeights overhead in loop
+                                const w = globalWeights[normalized]
+                                if (w !== undefined && w !== 1.0) {
+                                    displayText = `(${normalized}:${w})`
+                                }
+                            }
+
+                            segments.push({ 
+                                text: normalized, 
+                                display: displayText,
+                                category: cat 
+                            })
                         }
                     })
                 }
@@ -100,10 +114,10 @@ export function useMergeMode() {
         })
 
         return segments
-    }, [selectedPosts, excludedTags])
+    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled])
 
     const mergedPrompt = useMemo(() => {
-        return mergedPromptSegments.map(s => s.text).join(', ')
+        return mergedPromptSegments.map(s => s.display).join(', ')
     }, [mergedPromptSegments])
 
     // Reset excluded tags when clearing all

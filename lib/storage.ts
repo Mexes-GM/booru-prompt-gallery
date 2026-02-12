@@ -44,7 +44,10 @@ export const STORAGE_KEYS = {
   ORDER: 'order',
   HISTORY: 'prompt-history',
   ADD_TAGS_PRESETS: 'add-tags-presets',
-  MINIMUM_TAG_COUNT: 'minimum-tag-count'
+  MINIMUM_TAG_COUNT: 'minimum-tag-count',
+  BLACKLIST: 'blacklist',
+  GLOBAL_WEIGHTS: 'global-weights',
+  GLOBAL_WEIGHTS_ENABLED: 'global-weights-enabled'
 } as const
 
 export interface HistoryItem {
@@ -69,6 +72,29 @@ export const userPreferences = {
 
   setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru') =>
     storage.set(STORAGE_KEYS.BOORU_PROVIDER, provider),
+
+  getBlacklist: (): string[] =>
+    storage.get(STORAGE_KEYS.BLACKLIST, ['guro', 'scat']),
+
+  setBlacklist: (tags: string[]) =>
+    storage.set(STORAGE_KEYS.BLACKLIST, tags),
+
+  addBlacklistTag: (tag: string) => {
+    const current = storage.get<string[]>(STORAGE_KEYS.BLACKLIST, ['guro', 'scat'])
+    if (!current.includes(tag)) {
+      const updated = [...current, tag]
+      storage.set(STORAGE_KEYS.BLACKLIST, updated)
+      return updated
+    }
+    return current
+  },
+
+  removeBlacklistTag: (tag: string) => {
+    const current = storage.get<string[]>(STORAGE_KEYS.BLACKLIST, ['guro', 'scat'])
+    const updated = current.filter(t => t !== tag)
+    storage.set(STORAGE_KEYS.BLACKLIST, updated)
+    return updated
+  },
 
   getRemoveLoRaTags: (): boolean =>
     storage.get(STORAGE_KEYS.REMOVE_LORA_TAGS, false),
@@ -144,5 +170,17 @@ export const userPreferences = {
     const history = storage.get<HistoryItem[]>(STORAGE_KEYS.HISTORY, [])
     const newHistory = history.filter(item => item.id !== id)
     storage.set(STORAGE_KEYS.HISTORY, newHistory)
-  }
+  },
+
+  getGlobalWeights: (): Record<string, number> =>
+    storage.get(STORAGE_KEYS.GLOBAL_WEIGHTS, {}),
+
+  setGlobalWeights: (weights: Record<string, number>) =>
+    storage.set(STORAGE_KEYS.GLOBAL_WEIGHTS, weights),
+
+  getGlobalWeightsEnabled: (): boolean =>
+    storage.get(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, false),
+
+  setGlobalWeightsEnabled: (enabled: boolean) =>
+    storage.set(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, enabled)
 }
