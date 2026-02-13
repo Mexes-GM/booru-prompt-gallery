@@ -399,6 +399,7 @@ export const MasonryItem = memo(function MasonryItem({
                                                                 e.stopPropagation()
                                                                 if (hasTags) onTogglePart?.(post, part)
                                                             }}
+                                                            aria-label={isChecked ? `Deselect ${part} tags` : `Select ${part} tags`}
                                                             className={`
                                                               relative flex-1 h-9 flex items-center justify-center rounded-xl transition-all duration-300
                                                               ${!hasTags
@@ -507,6 +508,7 @@ export const MasonryItem = memo(function MasonryItem({
                             className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
                             variant={copiedId === post.id ? "default" : "outline"}
                             disabled={!displayContent}
+                            aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
                         >
                             {copiedId === post.id ? (
                                 <>
@@ -624,6 +626,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     e.stopPropagation()
                                     toggleFavorite(post.id, itemProvider)
                                 }}
+                                aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
                             >
                                 <Heart className={`h-3 w-3 ${isFavorited ? "fill-current" : ""}`} />
                             </Button>
@@ -699,6 +702,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 variant={copiedId === post.id ? "default" : "outline"}
                                 disabled={!displayContent}
                                 className="focus-ring flex-1 sm:flex-none"
+                                aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
                             >
                                 {copiedId === post.id ? (
                                     <>
@@ -719,6 +723,7 @@ export const MasonryItem = memo(function MasonryItem({
                                         variant="outline"
                                         className="px-3 focus-ring"
                                         disabled={!displayContent}
+                                        aria-label="Copy options"
                                     >
                                         <ChevronDown className="h-4 w-4" />
                                     </Button>
@@ -773,6 +778,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     onClick={() => trackExternalLink(postUrl, 'post')}
+                                    aria-label="View original post on source site"
                                 >
                                     <ExternalLink className="w-4 h-4 mr-2" />
                                     View Original

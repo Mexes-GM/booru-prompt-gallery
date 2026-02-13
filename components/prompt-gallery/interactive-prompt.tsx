@@ -199,9 +199,10 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
   return (
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <span
+        <button
+          type="button"
           className={cn(
-            "cursor-pointer px-0.5 -mx-0.5 rounded transition-colors duration-200 decoration-clone select-text outline-none inline relative",
+            "cursor-pointer px-0.5 -mx-0.5 rounded transition-colors duration-200 decoration-clone select-text outline-none inline relative border-none bg-transparent font-inherit",
             textClass,
             bgClass
           )}
@@ -210,12 +211,13 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
             // Trigger handles open, but stopping prop is good
           }}
           title={isGlobal ? "Global weight applied" : undefined}
+          aria-label={isGlobal ? `Edit weight for ${tag.text} (Global)` : `Edit weight for ${tag.text}`}
         >
           {currentText}
           {isGlobal && (
             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full shadow-sm" />
           )}
-        </span>
+        </button>
       </PopoverTrigger>
 
       {isEditable && (
@@ -239,11 +241,12 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
                 size="icon"
                 className="h-7 w-7 hover:bg-muted"
                 onClick={() => handleWeightChange(-0.1)}
+                aria-label="Decrease weight"
               >
                 <Minus className="h-3.5 w-3.5" />
               </Button>
 
-              <span className="w-8 text-center font-mono text-sm font-medium">
+              <span className="w-8 text-center font-mono text-sm font-medium" aria-hidden="true">
                 {draftWeight.toFixed(1)}
               </span>
 
@@ -252,6 +255,7 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
                 size="icon"
                 className="h-7 w-7 hover:bg-muted"
                 onClick={() => handleWeightChange(0.1)}
+                aria-label="Increase weight"
               >
                 <Plus className="h-3.5 w-3.5" />
               </Button>
@@ -267,6 +271,7 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
                   // Keep open
                 }}
                 disabled={draftWeight === 1.0}
+                aria-label="Reset weight"
                 title="Reset weight"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -298,6 +303,7 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
                       onPromote?.(targetWeight)
                       setIsOpen(false)
                     }}
+                    aria-label={isGlobal ? "Remove global weight" : "Set as global weight"}
                     title={isGlobal ? "Remove Global Weight" : "Set as Global Weight"}
                   >
                     <Globe className="h-3.5 w-3.5" />

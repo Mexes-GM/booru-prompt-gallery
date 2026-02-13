@@ -13,20 +13,22 @@ const inter = Inter({
   preload: true,
 })
 
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
 export const metadata: Metadata = {
-  metadataBase: new URL('https://booru-prompt-gallery.vercel.app'),
+  metadataBase: new URL(baseUrl),
   title: {
     default: "Booru Prompt Gallery - By Mexes",
     template: "%s | Booru Prompt Gallery"
   },
-  description: "Generate clean prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 posts. Extract and format tags from images, remove unnecessary metadata, LoRa tags, and quality descriptors to create ready-to-use prompts for AI art generation.",
+  description: "Generate clean prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 posts. Extract and format tags for AI art generation.",
   keywords: [
     "AI art", "prompts", "danbooru", "aibooru", "rule34", "gelbooru", "e621", "image generation", "stable diffusion",
     "midjourney", "dall-e", "prompt engineering", "tag extraction", "anime art",
     "digital art", "art generator", "prompt gallery", "booru", "tag database",
     "lora tags", "quality tags", "prompt cleaning", "tag removal"
   ],
-  authors: [{ name: "Mexes", url: "https://booru-prompt-gallery.vercel.app" }],
+  authors: [{ name: "Mexes", url: baseUrl }],
   creator: "Mexes",
   publisher: "Mexes",
   category: "Art & Design",
@@ -53,10 +55,10 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.json',
   openGraph: {
-    title: "Danbooru Prompt Gallery - By Mexes",
-    description: "Generate prompts from Danbooru image tags. Extract and format tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
+    title: "Booru Prompt Gallery - By Mexes",
+    description: "Generate prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 posts. Extract and format tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.",
     type: "website",
-    url: "https://booru-prompt-gallery.vercel.app",
+    url: baseUrl,
     siteName: "Booru Prompt Gallery",
     locale: "en_US",
     images: [
@@ -64,7 +66,7 @@ export const metadata: Metadata = {
         url: "/placeholder-logo.png",
         width: 1200,
         height: 630,
-        alt: "Danbooru Prompt Gallery - By Mexes",
+        alt: "Booru Prompt Gallery - By Mexes",
         type: "image/png"
       }
     ]
@@ -77,7 +79,7 @@ export const metadata: Metadata = {
     creator: "@mexes_art"
   },
   alternates: {
-    canonical: "https://booru-prompt-gallery.vercel.app"
+    canonical: baseUrl
   },
   generator: 'Next.js',
   applicationName: 'Booru Prompt Gallery',
@@ -100,10 +102,14 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
-  verification: {
-    google: 'your-google-verification-code',
-    yandex: 'your-yandex-verification-code',
-    yahoo: 'your-yahoo-verification-code',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Booru Gallery',
+  },
+  other: {
+    'msapplication-TileColor': '#000000',
+    'msapplication-config': '/browserconfig.xml',
   },
 }
 
@@ -111,6 +117,10 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+  ],
 }
 
 export default function RootLayout({
@@ -123,7 +133,7 @@ export default function RootLayout({
     '@type': 'WebApplication',
     name: 'Booru Prompt Gallery',
     description: 'Generate clean prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 posts.',
-    url: 'https://booru-prompt-gallery.vercel.app',
+    url: baseUrl,
     applicationCategory: 'DesignApplication',
     operatingSystem: 'Any',
     author: {
@@ -139,30 +149,14 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
+      <body className={inter.className} suppressHydrationWarning>
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 z-50 bg-background px-4 py-2 border rounded shadow-md">
+          Skip to content
+        </a>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-        <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png" />
-        <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icon.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icon.png" />
-        <link rel="preconnect" href="https://danbooru.donmai.us" />
-        <link rel="preconnect" href="https://cdn.donmai.us" />
-        <link rel="dns-prefetch" href="https://danbooru.donmai.us" />
-        <link rel="dns-prefetch" href="https://cdn.donmai.us" />
-        <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
-        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Danbooru Gallery" />
-        <meta name="msapplication-TileColor" content="#000000" />
-        <meta name="msapplication-config" content="/browserconfig.xml" />
-      </head>
-      <body className={inter.className} suppressHydrationWarning>
         <ErrorBoundary>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
             {children}

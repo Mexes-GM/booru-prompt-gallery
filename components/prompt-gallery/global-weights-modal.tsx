@@ -117,6 +117,7 @@ export function GlobalWeightsModal({
                                 value={newTag}
                                 onChange={(e) => setNewTag(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                                aria-label="Enter tag for global weight"
                                 className="pl-9 h-11 border-none shadow-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60"
                             />
                         </div>
@@ -131,6 +132,7 @@ export function GlobalWeightsModal({
                                 size="icon" 
                                 className="h-11 w-11 shrink-0 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
                                 disabled={!newTag.trim()}
+                                aria-label="Add global weight"
                             >
                                 <Plus className="h-5 w-5" />
                             </Button>
@@ -187,6 +189,7 @@ export function GlobalWeightsModal({
                                             value={weight} 
                                             onChange={(val) => onSaveWeight(tag, val)}
                                             size="sm"
+                                            tagName={tag}
                                         />
                                         
                                         <Button
@@ -233,11 +236,13 @@ export function GlobalWeightsModal({
 function WeightStepper({ 
     value, 
     onChange, 
-    size = "default" 
+    size = "default",
+    tagName
 }: { 
     value: number
     onChange: (v: number) => void
     size?: "default" | "sm"
+    tagName?: string
 }) {
     const update = (delta: number) => {
         const next = parseFloat((value + delta).toFixed(1))
@@ -245,6 +250,8 @@ function WeightStepper({
     }
 
     const isSmall = size === "sm"
+    const decreaseLabel = tagName ? `Decrease weight for ${tagName}` : "Decrease weight"
+    const increaseLabel = tagName ? `Increase weight for ${tagName}` : "Increase weight"
 
     return (
         <div className={cn(
@@ -258,6 +265,7 @@ function WeightStepper({
                     isSmall ? "w-6" : "w-8"
                 )}
                 tabIndex={-1}
+                aria-label={decreaseLabel}
             >
                 <Minus className={cn("shrink-0", isSmall ? "h-3 w-3" : "h-3.5 w-3.5")} />
             </button>
@@ -272,7 +280,7 @@ function WeightStepper({
                     value > 1 ? "text-blue-600 dark:text-blue-400" : 
                     value < 1 ? "text-red-600 dark:text-red-400" : 
                     "text-foreground"
-                )}>
+                )} aria-hidden="true">
                     {value.toFixed(1)}
                 </span>
             </div>
@@ -284,6 +292,7 @@ function WeightStepper({
                     isSmall ? "w-6" : "w-8"
                 )}
                 tabIndex={-1}
+                aria-label={increaseLabel}
             >
                 <Plus className={cn("shrink-0", isSmall ? "h-3 w-3" : "h-3.5 w-3.5")} />
             </button>

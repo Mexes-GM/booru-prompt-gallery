@@ -12,6 +12,7 @@ export function PlaceholdersAndVanishInput({
   setValue: setPropValue,
   className,
   disableVanish = false,
+  "aria-label": ariaLabel,
 }: {
   placeholders: string[];
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -20,28 +21,30 @@ export function PlaceholdersAndVanishInput({
   setValue?: (val: string) => void;
   className?: string;
   disableVanish?: boolean;
+  "aria-label"?: string;
 }) {
   const [currentPlaceholder, setCurrentPlaceholder] = useState(0);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const startAnimation = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    intervalRef.current = setInterval(() => {
-      setCurrentPlaceholder((prev) => (prev + 1) % placeholders.length);
-    }, 3000);
-  };
-  const handleVisibilityChange = () => {
-    if (document.visibilityState !== "visible" && intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    } else if (document.visibilityState === "visible") {
-      startAnimation();
-    }
-  };
-
   useEffect(() => {
+    const startAnimation = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      intervalRef.current = setInterval(() => {
+        setCurrentPlaceholder((prev) => (prev + 1) % placeholders.length);
+      }, 3000);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible" && intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      } else if (document.visibilityState === "visible") {
+        startAnimation();
+      }
+    };
+
     startAnimation();
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -227,6 +230,7 @@ export function PlaceholdersAndVanishInput({
         ref={inputRef}
         value={value}
         type="text"
+        aria-label={ariaLabel || "Search"}
         className={cn(
           "w-full relative text-sm sm:text-base z-50 border-none dark:text-white bg-transparent text-black h-full focus:outline-none focus:ring-0 pl-0 pr-0",
           animating && "text-transparent dark:text-transparent"
@@ -237,6 +241,7 @@ export function PlaceholdersAndVanishInput({
         <button
           disabled={!value}
           type="button"
+          aria-label="Submit search"
           onClick={handleSubmit}
           className="absolute right-2 top-1/2 z-50 -translate-y-1/2 h-8 w-8 rounded-full disabled:bg-gray-100 bg-black dark:bg-zinc-900 dark:disabled:bg-zinc-800 transition duration-200 flex items-center justify-center"
         >

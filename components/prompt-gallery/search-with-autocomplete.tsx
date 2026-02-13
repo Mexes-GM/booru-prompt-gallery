@@ -14,6 +14,7 @@ interface SearchWithAutocompleteProps {
   placeholders: string[]
   disabled?: boolean
   className?: string
+  "aria-label"?: string
 }
 
 export function SearchWithAutocomplete({
@@ -22,7 +23,8 @@ export function SearchWithAutocomplete({
   onSearch,
   placeholders,
   disabled,
-  className
+  className,
+  "aria-label": ariaLabel
 }: SearchWithAutocompleteProps) {
   const [suggestions, setSuggestions] = useState<TagResult[]>([])
   const [isOpen, setIsOpen] = useState(false)
@@ -168,6 +170,7 @@ export function SearchWithAutocomplete({
         value={value}
         setValue={setValue}
         onChange={handleInputChange}
+        aria-label={ariaLabel || "Search tags"}
         onSubmit={(e) => {
             e.preventDefault()
             onSearch()

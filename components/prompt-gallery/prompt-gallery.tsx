@@ -548,14 +548,14 @@ export function PromptGallery() {
                     <Badge variant="secondary" className="text-[10px] sm:text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-1.5 py-0 sm:px-2 sm:py-1 h-fit">
                       By Mexes
                     </Badge>
-                    <button
-                      onClick={() => setShowWelcomeModal(true)}
-                      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
-                      title="Show Teach System Info"
-                    >
-                      <VersionDisplay />
-                    </button>
-                  </div>
+                                                <button
+                                          onClick={() => setShowWelcomeModal(true)}
+                                          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
+                                          title="Show Teach System Info"
+                                          aria-label="Show system information and version"
+                                        >
+                                          <VersionDisplay />
+                                        </button>                  </div>
                 </div>
               </div>
 
@@ -635,7 +635,7 @@ export function PromptGallery() {
           </div>
         </header>
 
-        <main className="container mx-auto px-4 py-8">
+        <main id="main-content" className="container mx-auto px-4 py-8">
           {/* Hero */}
           <div className="w-fit max-w-5xl mx-auto mb-8 space-y-6">
             <div className="text-center space-y-2">
@@ -655,6 +655,7 @@ export function PromptGallery() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <a
+                        id="social-civitai"
                         href="https://civitai.com/user/Mexes"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -662,9 +663,11 @@ export function PromptGallery() {
                         className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                         aria-label="Visit Mexes on CivitAI"
                       >
-                        <img
+                        <Image
                           src="https://www.google.com/s2/favicons?domain=civitai.com&sz=32"
                           alt="CivitAI"
+                          width={24}
+                          height={24}
                           className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
                         />
                       </a>
@@ -675,6 +678,7 @@ export function PromptGallery() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <a
+                        id="social-tensor"
                         href="https://tensor.art/u/616420638671868313"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -682,9 +686,11 @@ export function PromptGallery() {
                         className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                         aria-label="Visit Mexes on Tensor.Art"
                       >
-                        <img
+                        <Image
                           src="https://www.google.com/s2/favicons?domain=tensor.art&sz=32"
                           alt="Tensor.Art"
+                          width={24}
+                          height={24}
                           className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
                         />
                       </a>
@@ -695,6 +701,7 @@ export function PromptGallery() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <a
+                        id="social-seaart"
                         href="https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -702,9 +709,11 @@ export function PromptGallery() {
                         className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                         aria-label="Visit Mexes on SeaArt AI"
                       >
-                        <img
+                        <Image
                           src="https://www.google.com/s2/favicons?domain=seaart.ai&sz=32"
                           alt="SeaArt AI"
+                          width={24}
+                          height={24}
                           className="w-6 h-6 filter grayscale hover:grayscale-0 transition-all duration-200"
                         />
                       </a>
@@ -716,6 +725,7 @@ export function PromptGallery() {
                 {/* Ko-fi Support Button */}
                 <div className="flex items-center justify-center mt-3">
                   <a
+                    id="support-kofi"
                     href="https://ko-fi.com/mexes"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -723,9 +733,11 @@ export function PromptGallery() {
                     className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
                     aria-label="Support Mexes on Ko-fi"
                   >
-                    <img
+                    <Image
                       src="https://www.google.com/s2/favicons?domain=ko-fi.com&sz=32"
                       alt="Ko-fi"
+                      width={16}
+                      height={16}
                       className="w-4 h-4 mr-2"
                     />
                     Support me on Ko-fi
@@ -835,6 +847,7 @@ export function PromptGallery() {
                           setValue={search.setSearchTags}
                           onSearch={() => search.handleSearch({ preventDefault: () => { } } as React.FormEvent)}
                           className="pl-10 pr-10 h-11 text-base shadow-sm rounded-r-none border-r-0 z-10 relative bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+                          aria-label="Search tags input"
                         />
                         {search.searchTags && (
                           <button
@@ -875,6 +888,7 @@ export function PromptGallery() {
                               : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                             }`}
                           title={search.booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
+                          aria-label={search.ratingFilter === "rating:general" ? "Current filter: Safe content. Click to show all." : "Current filter: All content. Click to show safe only."}
                         >
                           <Shield className="w-4 h-4 sm:mr-2" />
                           <span className="text-xs font-semibold hidden sm:inline">
@@ -902,6 +916,7 @@ export function PromptGallery() {
                         disabled={search.isValidating}
                         className="h-11 w-11 p-0 shadow-sm"
                         title="Refresh results"
+                        aria-label="Refresh results"
                       >
                         <RefreshCw className={`w-4 h-4 ${search.isValidating ? "animate-spin" : ""}`} />
                       </Button>
@@ -988,6 +1003,7 @@ export function PromptGallery() {
                                   value={addInput}
                                   onChange={(e) => setAddInput(e.target.value)}
                                   placeholder="masterpiece, best quality..."
+                                  aria-label="Tags to include input"
                                   className="flex-1 bg-transparent border-none p-0 placeholder:text-muted-foreground focus:outline-none h-full min-w-0"
                                 />
                                 <div className="flex items-center gap-0.5 ml-1.5 shrink-0">
@@ -1088,6 +1104,7 @@ export function PromptGallery() {
                                   onChange={(e) => setExcludeInput(e.target.value)}
                                   placeholder="bad quality, watermark..."
                                   className="h-9 text-sm bg-background/50"
+                                  aria-label="Tags to exclude input"
                                 />
                                 {excludeInput && (
                                   <button type="button" onClick={() => setExcludeInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-6 w-6 rounded-full hover:bg-muted" aria-label="Clear excluded tags">
@@ -1123,6 +1140,7 @@ export function PromptGallery() {
                                   onBlur={() => search.setAppliedTagCountFilter(search.tagCountFilter)}
                                   disabled={!isTagCountSupported}
                                   className={`h-8 w-16 text-xs text-center bg-background/50 ${!isTagCountValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
+                                  aria-label="Minimum tag count input"
                                 />
                               </div>
                             </div>
@@ -1136,51 +1154,56 @@ export function PromptGallery() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               {search.booruProvider !== 'aibooru' ? (
                                 <>
-                                  <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-                                    <span className="text-sm select-none">Include Characters</span>
+                                  <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+                                    <Label htmlFor="include-characters" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Include Characters</Label>
                                     <Switch
+                                      id="include-characters"
                                       checked={includeCharacters}
                                       onCheckedChange={setIncludeCharacters}
                                       className="scale-90"
                                     />
-                                  </label>
-                                  <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-                                    <span className="text-sm select-none">Smart Tag Combination</span>
+                                  </div>
+                                  <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+                                    <Label htmlFor="smart-tag" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Smart Tag Combination</Label>
                                     <Switch
+                                      id="smart-tag"
                                       checked={optimizeTags}
                                       onCheckedChange={setOptimizeTags}
                                       className="scale-90"
                                     />
-                                  </label>
+                                  </div>
                                 </>
                               ) : (
                                 <>
-                                  <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-                                    <span className="text-sm select-none">Remove LoRa Tags</span>
+                                  <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+                                    <Label htmlFor="remove-lora" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Remove LoRa Tags</Label>
                                     <Switch
+                                      id="remove-lora"
                                       checked={search.removeLoRaTags}
                                       onCheckedChange={search.setRemoveLoRaTags}
                                       className="scale-90"
                                     />
-                                  </label>
-                                  <label className="flex items-center justify-between sm:justify-start gap-3 cursor-pointer p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-                                    <span className="text-sm select-none">Remove Quality Tags</span>
+                                  </div>
+                                  <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+                                    <Label htmlFor="remove-quality" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Remove Quality Tags</Label>
                                     <Switch
+                                      id="remove-quality"
                                       checked={search.removeQualityTags}
                                       onCheckedChange={search.setRemoveQualityTags}
                                       className="scale-90"
                                     />
-                                  </label>
+                                  </div>
                                 </>
                               )}
 
                               <div className="sm:col-span-2 flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50">
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="text-sm select-none">Global Tag Weights</span>
+                                <div className="flex flex-col gap-0.5 flex-1 sm:flex-none">
+                                  <Label htmlFor="global-weights-toggle" className="text-sm select-none cursor-pointer">Global Tag Weights</Label>
                                   <span className="text-[10px] text-muted-foreground">Propagate changes to all cards</span>
                                 </div>
                                 <div className="flex items-center gap-2 ml-auto sm:ml-0">
                                   <Switch
+                                    id="global-weights-toggle"
                                     checked={isGlobalWeightsEnabled}
                                     onCheckedChange={toggleGlobalWeights}
                                     className="scale-90"

@@ -142,6 +142,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset }: Blackl
                   size="icon"
                   disabled={!inputValue.trim()}
                   className="absolute right-1 top-1 h-9 w-9 rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-30"
+                  aria-label="Add tag"
                 >
                   <Plus className="w-5 h-5" />
                 </Button>

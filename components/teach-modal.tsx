@@ -334,7 +334,8 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
         setIsReady(true)
       }
     }
-  }, [open, initialClassifiedTags])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialClassifiedTags, isReady, isSuccess])
 
   // Timer for closing modal after success animation
   useEffect(() => {

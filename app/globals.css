@@ -16,7 +16,7 @@
   --secondary: 220 14% 92%; /* Gris suave */
   --secondary-foreground: 222 47% 17%;
   --muted: 220 15% 90%;
-  --muted-foreground: 220 9% 38%; /* Contraste > 4.5 sobre fondo muted */
+  --muted-foreground: 220 9% 40%; /* Contraste > 4.5 sobre fondo muted */
   --accent: 173 70% 38%; /* Verde azulado – contrastado */
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 50%; /* Rojo accesible */
@@ -46,7 +46,7 @@
   --secondary: 222 22% 28%;
   --secondary-foreground: 210 25% 92%;
   --muted: 222 20% 30%;
-  --muted-foreground: 214 18% 74%;
+  --muted-foreground: 214 18% 80%;
   --accent: 173 65% 40%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 65% 50%;
