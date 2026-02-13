@@ -242,6 +242,7 @@ export function FeedbackDialog() {
                                                     checked={type === item.id}
                                                     onChange={(e) => setType(e.target.value)}
                                                     className="peer sr-only"
+                                                    aria-label={item.label}
                                                 />
                                                 <div className={cn(
                                                     "relative z-10 flex flex-col items-center justify-center p-3 rounded-xl border-2 border-transparent bg-secondary/30 transition-all duration-200",

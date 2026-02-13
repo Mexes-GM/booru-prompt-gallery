@@ -51,9 +51,18 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] rounded-xl cursor-pointer"
+            role="button"
+            aria-label="Close success overlay"
+            tabIndex={0}
             onClick={(e) => {
                 e.stopPropagation()
                 onSkip?.()
+            }}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    onSkip?.()
+                }
             }}
         >
             <div className="relative flex flex-col items-center justify-center pointer-events-none">
@@ -390,7 +399,7 @@ export const MasonryItem = memo(function MasonryItem({
                                         return (
                                             <Tooltip key={part}>
                                                 <TooltipTrigger asChild>
-                                                    <span tabIndex={!hasTags ? 0 : -1} className="flex-1 flex max-w-[50px]">
+                                                    <span tabIndex={!hasTags ? -1 : 0} className="flex-1 flex max-w-[50px]">
                                                         <motion.button
                                                             disabled={!hasTags}
                                                             whileHover={hasTags ? { scale: 1.1, y: -2 } : {}}

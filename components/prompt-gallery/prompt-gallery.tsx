@@ -31,6 +31,8 @@ import {
   ChevronDown,
   Save,
   Shuffle,
+  Sparkles,
+  BrainCircuit,
 } from "lucide-react"
 
 import { TeachModal } from "@/components/teach-modal"
@@ -630,6 +632,35 @@ export function PromptGallery() {
 
 
                 <ThemeToggle />
+
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="focus-ring" aria-label="Help and information">
+                          <AlertTriangle className="h-4 w-4 rotate-180" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Help & Info</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="end" className="glass-effect">
+                    <DropdownMenuLabel>Information</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <a href="/about" className="cursor-pointer w-full flex items-center">
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        <span>About Project</span>
+                      </a>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <a href="/privacy" className="cursor-pointer w-full flex items-center">
+                        <Shield className="mr-2 h-4 w-4" />
+                        <span>Privacy Policy</span>
+                      </a>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </div>
@@ -731,7 +762,7 @@ export function PromptGallery() {
                     rel="noopener noreferrer"
                     onClick={() => trackExternalLink('https://ko-fi.com/mexes', 'support')}
                     className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
-                    aria-label="Support Mexes on Ko-fi"
+                    aria-label="Support me on Ko-fi"
                   >
                     <Image
                       src="https://www.google.com/s2/favicons?domain=ko-fi.com&sz=32"
@@ -979,6 +1010,7 @@ export function PromptGallery() {
                         onClick={() => setShowSettings(!showSettings)}
                         className={`h-11 w-11 p-0 shadow-sm ${showSettings ? "bg-muted" : ""}`}
                         title="Toggle settings"
+                        aria-label={showSettings ? "Hide settings" : "Show settings"}
                       >
                         <Settings className="w-4 h-4" />
                       </Button>
@@ -1024,7 +1056,7 @@ export function PromptGallery() {
                                   <div className="flex items-center">
                                     <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
                                       <DialogTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-r-none" title="Save Preset">
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-r-none" title="Save Preset" aria-label="Save current tags as preset">
                                           <Save className="h-3.5 w-3.5" />
                                         </Button>
                                       </DialogTrigger>
@@ -1060,7 +1092,7 @@ export function PromptGallery() {
 
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-7 w-5 min-w-[1.25rem] text-muted-foreground hover:text-foreground rounded-l-none" title="Select Preset">
+                                        <Button variant="ghost" size="icon" className="h-7 w-5 min-w-[1.25rem] text-muted-foreground hover:text-foreground rounded-l-none" title="Select Preset" aria-label="Select a saved tags preset">
                                           <ChevronDown className="h-3.5 w-3.5" />
                                         </Button>
                                       </DropdownMenuTrigger>
@@ -1080,6 +1112,7 @@ export function PromptGallery() {
                                                 size="icon"
                                                 className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive hover:bg-destructive/10"
                                                 onClick={(e) => deletePreset(preset.id, e)}
+                                                aria-label={`Delete preset ${preset.name}`}
                                               >
                                                 <Trash2 className="h-3 w-3" />
                                               </Button>
@@ -1161,6 +1194,7 @@ export function PromptGallery() {
                                       checked={includeCharacters}
                                       onCheckedChange={setIncludeCharacters}
                                       className="scale-90"
+                                      aria-label="Include characters in prompts"
                                     />
                                   </div>
                                   <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
@@ -1170,6 +1204,7 @@ export function PromptGallery() {
                                       checked={optimizeTags}
                                       onCheckedChange={setOptimizeTags}
                                       className="scale-90"
+                                      aria-label="Enable smart tag combination"
                                     />
                                   </div>
                                 </>
@@ -1182,6 +1217,7 @@ export function PromptGallery() {
                                       checked={search.removeLoRaTags}
                                       onCheckedChange={search.setRemoveLoRaTags}
                                       className="scale-90"
+                                      aria-label="Remove LoRa tags from Aibooru prompts"
                                     />
                                   </div>
                                   <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
@@ -1191,6 +1227,7 @@ export function PromptGallery() {
                                       checked={search.removeQualityTags}
                                       onCheckedChange={search.setRemoveQualityTags}
                                       className="scale-90"
+                                      aria-label="Remove quality tags from Aibooru prompts"
                                     />
                                   </div>
                                 </>
@@ -1207,6 +1244,7 @@ export function PromptGallery() {
                                     checked={isGlobalWeightsEnabled}
                                     onCheckedChange={toggleGlobalWeights}
                                     className="scale-90"
+                                    aria-label="Toggle global tag weights"
                                   />
                                   <Button
                                     variant="outline"
@@ -1351,9 +1389,18 @@ export function PromptGallery() {
               <p className="text-lg font-medium">{favs.showFavorites ? "No favorites yet" : "No images found"}</p>
             </div>
           )}
+
+          {/* Footer Links for E-E-A-T and Legal */}
+          <footer className="mt-12 py-8 border-t border-border/40">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 text-sm text-muted-foreground">
+              <a href="/about" className="hover:text-primary transition-colors">About</a>
+              <a href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</a>
+              <span>&copy; {new Date().getFullYear()} Booru Prompt Gallery</span>
+            </div>
+          </footer>
         </main>
 
-        <div className={`fixed ${mergeMode.isMergeMode ? 'bottom-[280px] sm:bottom-[200px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none'
+        <div className={`fixed ${mergeMode.isMergeMode ? 'bottom-[280px] sm:bottom-[200px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none hidden'
           }`}>
           <Tooltip>
             <TooltipTrigger asChild>
