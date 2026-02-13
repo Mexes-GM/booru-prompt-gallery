@@ -21,7 +21,7 @@ export default function PrivacyPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              <strong>Local Storage:</strong> Booru Prompt Gallery primarily uses your browser's Local Storage to save 
+              <strong>Local Storage:</strong> Booru Prompt Gallery primarily uses your browser&apos;s Local Storage to save 
               your favorites, history, and application preferences. This data stays on your device and is not 
               automatically sent to our servers.
             </p>

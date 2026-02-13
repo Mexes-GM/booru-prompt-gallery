@@ -52,7 +52,7 @@ export default function AboutPage() {
           <CardContent className="flex items-center gap-4">
             <div>
               <p className="mb-2">
-                Created by <strong>Mexes</strong>. I'm a developer and AI art enthusiast dedicated to creating 
+                Created by <strong>Mexes</strong>. I&apos;m a developer and AI art enthusiast dedicated to creating 
                 tools that make the creative process easier for everyone.
               </p>
               <div className="flex gap-2">
