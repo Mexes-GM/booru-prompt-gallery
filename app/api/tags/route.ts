@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
 
-export const runtime = 'nodejs'
+export const runtime = 'edge'
 
 interface TagData {
   name: string
@@ -20,12 +21,27 @@ export async function GET(request: NextRequest) {
     const now = Date.now()
     if (!tagsCache || now - cacheTimestamp > CACHE_DURATION) {
       try {
-        // Try to load from local tags.json
-        const tagsModule = await import('../../../tags.json')
-        tagsCache = tagsModule.default || tagsModule
+        // Try to load from Supabase instead of local JSON
+        const { data, error } = await supabase
+          .from('tags')
+          .select('name, category')
+          .limit(5000) // Safety limit
+
+        if (error) throw error
+
+        if (data && data.length > 0) {
+          tagsCache = data.map(t => ({
+            name: t.name,
+            category: parseInt(t.category) || 0
+          }))
+        } else {
+          throw new Error('No tags in database')
+        }
+        
         cacheTimestamp = now
       } catch (error) {
-        // Fallback to basic tags if file doesn't exist
+        console.error('Error fetching tags from Supabase, using fallback:', error)
+        // Fallback to basic tags
         tagsCache = [
           { name: "signature", category: 5 },
           { name: "twitter username", category: 5 },
@@ -57,7 +73,7 @@ export async function GET(request: NextRequest) {
         'CDN-Cache-Control': 'public, s-maxage=86400',
         'Vercel-CDN-Cache-Control': 'public, s-maxage=86400',
         'X-Content-Type-Options': 'nosniff',
-        'X-API-Version': '1.0',
+        'X-API-Version': '1.1',
         'X-Total-Count': filteredTags.length.toString(),
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET',
