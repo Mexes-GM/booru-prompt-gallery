@@ -6,7 +6,6 @@
  * - Preserves public API and output format from previous implementation
  */
 
-import tagsData from "../tags.json"
 import { classifyTags } from "./tag-classifier"
 
 // --------------- Types ---------------
@@ -15,6 +14,16 @@ interface TagData {
   category: number
   aliases?: string[]
 }
+
+// Curated list of common meta/utility tags to remove during cleaning
+const FALLBACK_META_TAGS = [
+  "signature", "twitter username", "artist name", "watermark", "copyright", 
+  "artist", "unknown artist", "official art", "fan art", "commission", 
+  "pointless censoring", "web address", "original", "sound effects", 
+  "motion lines", "patreon logo", "copyright notice", "commissioner name", 
+  "borrowed character", "borrowed character name", "bad id", "bad pixiv id",
+  "request", "commentary", "translated", "highres", "absurdres", "translated"
+];
 
 export interface CleanPromptOptions {
   includeCharacters?: boolean
@@ -102,47 +111,17 @@ const COMPOSITION_TAGS_SET = new Set(
   ["portrait", "full body", "upper body", "close-up", "wide shot"].map(normalize),
 )
 
-// --------------- Meta tags (from file + curated list) ---------------
+// --------------- Meta tags (curated list) ---------------
 function loadTagsToRemove(category?: number): Set<string> {
-  try {
-    const tagsToRemove = new Set<string>()
-    if (Array.isArray(tagsData)) {
-      for (const tag of tagsData as TagData[]) {
-        if (category === undefined || tag.category === category) {
-          tagsToRemove.add(normalize(tag.name))
-          if (Array.isArray(tag.aliases)) {
-            for (const alias of tag.aliases) tagsToRemove.add(normalize(alias))
-          }
-        }
-      }
-    }
-    return tagsToRemove
-  } catch {
-    return new Set(
-      [
-        "signature",
-        "twitter username",
-        "artist name",
-        "watermark",
-        "copyright",
-        "artist",
-        "unknown artist",
-        "official art",
-        "fan art",
-        "commission",
-        "pointless censoring",
-        "web address",
-        "original",
-        "sound effects",
-        "motion lines",
-        "patreon logo",
-        "copyright notice",
-        "commissioner name",
-        "borrowed character",
-        "borrowed character name",
-      ].map(normalize),
-    )
+  // Category 5 is usually "Meta" in booru systems
+  const tagsToRemove = new Set<string>()
+  
+  // We use a curated list instead of the 21MB JSON to keep the build light and stable
+  for (const tag of FALLBACK_META_TAGS) {
+    tagsToRemove.add(normalize(tag))
   }
+  
+  return tagsToRemove
 }
 
 // Representative list; variants (space/underscore) are auto-generated.
