@@ -109,6 +109,9 @@ import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { FeedbackDialog } from "@/components/feedback-dialog"
 import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-modal"
+import { useDebounce } from "@/hooks/use-debounce"
+
+import { usePersistentState } from "@/hooks/use-persistent-state"
 
 type CardScale = "small" | "medium" | "large"
 
@@ -120,16 +123,61 @@ export function PromptGallery() {
   const { toast } = useToast()
   const isMobile = useIsMobile()
 
-  // 2. Local UI State
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-  const [cardScale, setCardScale] = useState<CardScale>("medium")
+  // 2. Local UI State & Persistence
+  const [viewMode, setViewMode] = usePersistentState<"grid" | "list">(
+    "grid",
+    userPreferences.getViewMode,
+    userPreferences.setViewMode,
+    "viewMode"
+  )
+
+  const [cardScale, setCardScale] = usePersistentState<CardScale>(
+    "medium",
+    userPreferences.getCardScale,
+    userPreferences.setCardScale,
+    "cardScale"
+  )
+  
+  // Slider state needs to stay in sync with persisted cardScale
   const [scaleValue, setScaleValue] = useState([2])
 
+  // Sync slider when cardScale changes (e.g. loaded from storage)
+  useEffect(() => {
+    if (cardScale === 'small') setScaleValue([1])
+    else if (cardScale === 'medium') setScaleValue([2])
+    else if (cardScale === 'large') setScaleValue([3])
+  }, [cardScale])
+
   // User Prefs UI state
-  const [includeCharacters, setIncludeCharacters] = useState(true)
-  const [optimizeTags, setOptimizeTags] = useState(true)
-  const [excludeInput, setExcludeInput] = useState("")
-  const [addInput, setAddInput] = useState("")
+  const [promptOptions, setPromptOptions] = usePersistentState(
+    { includeCharacters: true, optimizeTags: true },
+    userPreferences.getPromptOptions,
+    userPreferences.setPromptOptions,
+    "promptOptions"
+  )
+  
+  // Destructure for easier usage, create setters that update the object
+  const { includeCharacters, optimizeTags } = promptOptions
+  
+  const setIncludeCharacters = (val: boolean) => 
+    setPromptOptions(prev => ({ ...prev, includeCharacters: val }))
+    
+  const setOptimizeTags = (val: boolean) => 
+    setPromptOptions(prev => ({ ...prev, optimizeTags: val }))
+
+  const [excludeInput, setExcludeInput] = usePersistentState(
+    "",
+    userPreferences.getExcludeTagsInput,
+    userPreferences.setExcludeTagsInput,
+    "excludeTags"
+  )
+
+  const [addInput, setAddInput] = usePersistentState(
+    "",
+    userPreferences.getAddTagsInput,
+    userPreferences.setAddTagsInput,
+    "addTags"
+  )
 
   const [showSettings, setShowSettings] = useState(true)
   const [copiedId, setCopiedId] = useState<number | null>(null)
@@ -145,14 +193,25 @@ export function PromptGallery() {
 
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
 
+  // Debounce expensive inputs
+  const debouncedAddInput = useDebounce(addInput, 500)
+  const debouncedExcludeInput = useDebounce(excludeInput, 500)
+
   // Global Weights State
   const [globalWeights, setGlobalWeights] = useState<Record<string, number>>({})
-  const [isGlobalWeightsEnabled, setIsGlobalWeightsEnabled] = useState(false)
+  
+  const [isGlobalWeightsEnabled, setIsGlobalWeightsEnabled] = usePersistentState(
+    false,
+    userPreferences.getGlobalWeightsEnabled,
+    userPreferences.setGlobalWeightsEnabled,
+    "globalWeightsEnabled"
+  )
+  
   const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
   const [weightsLoaded, setWeightsLoaded] = useState(false)
 
   // Merge Mode Hook
-  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, addInput)
+  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides)
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -183,7 +242,7 @@ export function PromptGallery() {
   useEffect(() => {
     if (search.isClient) {
       setGlobalWeights(userPreferences.getGlobalWeights())
-      setIsGlobalWeightsEnabled(userPreferences.getGlobalWeightsEnabled())
+      // isGlobalWeightsEnabled loaded via hook
       setWeightsLoaded(true)
     }
   }, [search.isClient])
@@ -191,43 +250,24 @@ export function PromptGallery() {
   useEffect(() => {
     if (search.isClient) {
       setHistory(userPreferences.getHistory())
-      const saved = localStorage.getItem('excludeTags')
-      if (saved !== null) setExcludeInput(saved)
-      const savedAdd = localStorage.getItem('addTags')
-      if (savedAdd !== null) setAddInput(savedAdd)
-
-      try {
-        const savedOpts = localStorage.getItem('promptOptions')
-        if (savedOpts) {
-          const parsed = JSON.parse(savedOpts) || {}
-          if (typeof parsed.includeCharacters === 'boolean') setIncludeCharacters(parsed.includeCharacters)
-          if (typeof parsed.optimizeTags === 'boolean') setOptimizeTags(parsed.optimizeTags)
-        }
-      } catch { }
+      // Logic for old storage keys or manual loading removed - now handled by usePersistentState
     }
   }, [search.isClient])
 
-  // Persist UI preferences
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('promptOptions', JSON.stringify({ includeCharacters, optimizeTags }))
-      localStorage.setItem('excludeTags', excludeInput)
-      localStorage.setItem('addTags', addInput)
-    }
-  }, [includeCharacters, optimizeTags, excludeInput, addInput])
-
-  // Scale effect
+  // Scale effect - Slider drives persistence
   useEffect(() => {
     const scale = scaleValue[0]
     let val: CardScale = 'medium'
     if (scale === 1) val = 'small'
     else if (scale === 2) val = 'medium'
     else val = 'large'
+    
+    // Only update if different to avoid loops (though usePersistentState setter might trigger re-render)
     if (val !== cardScale) {
       setCardScale(val)
       trackScaleChange(val)
     }
-  }, [scaleValue, cardScale])
+  }, [scaleValue, cardScale, setCardScale])
 
   // Scroll tracking
   useEffect(() => {
@@ -308,12 +348,6 @@ export function PromptGallery() {
       userPreferences.setGlobalWeights(globalWeights)
     }
   }, [globalWeights, search.isClient, weightsLoaded])
-
-  useEffect(() => {
-    if (search.isClient && weightsLoaded) {
-      userPreferences.setGlobalWeightsEnabled(isGlobalWeightsEnabled)
-    }
-  }, [isGlobalWeightsEnabled, search.isClient, weightsLoaded])
 
   // Tag Search Handler (from MasonryItem)
   const handleTagSearch = useCallback((tag: string) => {
@@ -470,8 +504,8 @@ export function PromptGallery() {
       toggleFavorite={favs.toggleFavorite}
       downloadImage={downloadImage}
       copyToClipboard={copyToClipboard}
-      excludeInput={excludeInput}
-      addInput={addInput}
+      excludeInput={debouncedExcludeInput}
+      addInput={debouncedAddInput}
       includeCharacters={includeCharacters}
       optimizeTags={optimizeTags}
       removeLoRaTags={search.removeLoRaTags}
@@ -490,7 +524,7 @@ export function PromptGallery() {
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, excludeInput, addInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1229,8 +1263,8 @@ export function PromptGallery() {
                     toggleFavorite={favs.toggleFavorite}
                     downloadImage={downloadImage}
                     copyToClipboard={copyToClipboard}
-                    excludeInput={excludeInput}
-                    addInput={addInput}
+                    excludeInput={debouncedExcludeInput}
+                    addInput={debouncedAddInput}
                     includeCharacters={includeCharacters}
                     optimizeTags={optimizeTags}
                     removeLoRaTags={search.removeLoRaTags}

@@ -14,7 +14,8 @@ const escapeParentheses = (s: string) => s.replace(/\(/g, "\\(").replace(/\)/g, 
 export function useMergeMode(
     globalWeights: Record<string, number> = {},
     isGlobalWeightsEnabled: boolean = false,
-    addedTagsInput: string = ""
+    addedTagsInput: string = "",
+    tagOverrides: Record<string, string> = {}
 ) {
     const [isMergeMode, setIsMergeMode] = useState(false)
     const [selectedPosts, setSelectedPosts] = useState<Map<number, SelectedPostParts>>(new Map())
@@ -54,7 +55,7 @@ export function useMergeMode(
                 // Prioritize character tags
                 const tags = Array.from(new Set([...charTags, ...rawTags]))
 
-                const classified = classifyTags(tags, undefined, charTags) // Pass character tags to be forced into appearance
+                const classified = classifyTags(tags, tagOverrides, charTags) // Pass character tags to be forced into appearance
 
                 next.set(post.id, {
                     post,
@@ -64,7 +65,7 @@ export function useMergeMode(
             }
             return next
         })
-    }, [])
+    }, [tagOverrides])
 
     const removePost = useCallback((postId: number) => {
         setSelectedPosts(prev => {
@@ -92,7 +93,7 @@ export function useMergeMode(
 
         // Pre-classify added tags
         const rawAddedTags = addedTagsInput.split(',').map(t => t.trim()).filter(Boolean)
-        const classifiedAddedTags = classifyTags(rawAddedTags)
+        const classifiedAddedTags = classifyTags(rawAddedTags, tagOverrides)
 
         const categories: TagCategory[] = ['appearance', 'clothing', 'pose', 'scenery', 'other']
 
@@ -152,7 +153,7 @@ export function useMergeMode(
         })
 
         return segments
-    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput])
+    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput, tagOverrides])
 
     const mergedPrompt = useMemo(() => {
         return mergedPromptSegments.map(s => s.display).join(', ')

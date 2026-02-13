@@ -9,13 +9,16 @@ export async function GET(request: NextRequest) {
   const page = searchParams.get('page') || '1'
   const tags = searchParams.get('tags') || ''
   const order = (searchParams.get('order') || 'popular') as 'popular' | 'recent' | 'random'
+  const providerType = (searchParams.get('provider') || 'danbooru') as 'danbooru' | 'rule34' | 'aibooru' | 'e621' | 'gelbooru'
   
-  const cacheKey = `danbooru-${tags}-${page}-${order}`
+  const cacheKey = `${providerType}-${tags}-${page}-${order}`
   const cacheDuration = 600
   
   try {
-    const provider = BooruFactory.getProvider('danbooru')
+    console.log(`[API] Requesting ${providerType}: tags='${tags}' page=${page} order=${order}`)
+    const provider = BooruFactory.getProvider(providerType)
     const posts = await provider.search({ tags, page, order })
+    console.log(`[API] Success ${providerType}: ${posts.length} posts found`)
 
     return NextResponse.json(posts, {
       headers: {

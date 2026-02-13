@@ -8,17 +8,6 @@ import { TagCategory } from '@/lib/tag-classifier'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
 
-// Helper for category colors
-const getCategoryClass = (category: TagCategory) => {
-    switch (category) {
-        case 'appearance': return 'text-blue-500 bg-blue-500/10 border-blue-500/20'
-        case 'pose': return 'text-purple-500 bg-purple-500/10 border-purple-500/20'
-        case 'clothing': return 'text-green-500 bg-green-500/10 border-green-500/20'
-        case 'scenery': return 'text-orange-500 bg-orange-500/10 border-orange-500/20'
-        default: return 'text-muted-foreground bg-muted border-transparent'
-    }
-}
-
 interface MergeStickyFooterProps {
     isOpen: boolean
     selectedPosts: Map<number, SelectedPostParts>

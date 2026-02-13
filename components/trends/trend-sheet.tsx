@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import useSWR from "swr"
 import { Flame, Loader2, AlertCircle } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
@@ -43,6 +43,11 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
       dedupingInterval: 3600000, // 1 hour
     }
   )
+
+  const filteredTrends = useMemo(() => {
+    if (!trends) return []
+    return trends.filter(t => t.type === activeTab)
+  }, [trends, activeTab])
 
   const handleTagClick = (tag: string) => {
     setIsOpen(false)
@@ -164,7 +169,7 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
                         exit={{ opacity: 0, x: -10 }}
                         transition={{ duration: 0.3, ease: "easeOut" }}
                       >
-                        {trends && renderGrid(trends.filter(t => t.type === activeTab))}
+                        {filteredTrends.length > 0 && renderGrid(filteredTrends)}
                       </motion.div>
                     </AnimatePresence>
                   </div>

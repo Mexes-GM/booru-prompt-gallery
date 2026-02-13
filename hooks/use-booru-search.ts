@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { useSearchParams } from "next/navigation"
 import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
 import { userPreferences } from "@/lib/storage"
+import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
   trackSearch,
   trackLoadMore,
@@ -16,19 +16,51 @@ import {
 import { useToast } from "@/hooks/use-toast"
 
 export function useBooruSearch() {
-  const searchParams = useSearchParams()
-
   const [searchTags, setSearchTags] = useState("")
   const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
-  const [ratingFilter, setRatingFilter] = useState("rating:general")
+
+  // --- Persistent State ---
+
+  const [ratingFilter, setRatingFilter] = usePersistentState(
+    "rating:general",
+    userPreferences.getRatingFilter,
+    userPreferences.setRatingFilter,
+    "ratingFilter"
+  )
+
   const [isShuffle, setIsShuffle] = useState(false)
   const order = isShuffle ? "random" : "recent"
 
-  const [booruProvider, setBooruProvider] = useState<BooruProvider>('danbooru')
+  const [booruProvider, setBooruProvider] = usePersistentState<BooruProvider>(
+    "danbooru",
+    userPreferences.getBooruProvider,
+    userPreferences.setBooruProvider,
+    "booruProvider"
+  )
+
   const [hasPromptFilter, setHasPromptFilter] = useState(false)
-  const [removeLoRaTags, setRemoveLoRaTags] = useState(false)
-  const [removeQualityTags, setRemoveQualityTags] = useState(false)
-  const [tagCountFilter, setTagCountFilter] = useState("5") // Default to >5 tags
+
+  const [removeLoRaTags, setRemoveLoRaTags] = usePersistentState(
+    false,
+    userPreferences.getRemoveLoRaTags,
+    userPreferences.setRemoveLoRaTags,
+    "removeLoRaTags"
+  )
+
+  const [removeQualityTags, setRemoveQualityTags] = usePersistentState(
+    false,
+    userPreferences.getRemoveQualityTags,
+    userPreferences.setRemoveQualityTags,
+    "removeQualityTags"
+  )
+
+  const [tagCountFilter, setTagCountFilter] = usePersistentState(
+    "5",
+    userPreferences.getMinimumTagCount,
+    userPreferences.setMinimumTagCount,
+    "minTagCount"
+  )
+
   const [appliedTagCountFilter, setAppliedTagCountFilter] = useState("5")
   const [isClient, setIsClient] = useState(false)
 
@@ -46,72 +78,17 @@ export function useBooruSearch() {
 
   const sanitizeTagCount = (val: string) => val.replace(/\D/g, '') || '5'
 
-  // --- Initialization & Persistance ---
+  // --- Initialization ---
 
   useEffect(() => {
     setIsClient(true)
     setRandomSeed(Date.now())
+    setAppliedTagCountFilter(tagCountFilter) // Init applied from persistent
+  }, []) // Run once on mount
 
-    // 1. URL State (Priority)
-    const urlQ = searchParams.get('q')
-    const urlProvider = searchParams.get('provider')
-    const urlRating = searchParams.get('rating')
-    const urlCount = searchParams.get('count')
-    const urlLora = searchParams.get('lora')
-    const urlQuality = searchParams.get('quality')
-
-    // 2. Initialize from URL or Fallback to LocalStorage
-    if (urlQ !== null) setSearchTags(urlQ)
-
-    if (urlProvider && ['danbooru', 'aibooru', 'rule34', 'e621', 'gelbooru'].includes(urlProvider)) {
-      setBooruProvider(urlProvider as BooruProvider)
-    } else {
-      setBooruProvider(userPreferences.getBooruProvider())
-    }
-
-    if (urlRating) setRatingFilter(urlRating)
-    else setRatingFilter(userPreferences.getRatingFilter())
-
-    if (urlCount) {
-      const cleanCount = sanitizeTagCount(urlCount)
-      setTagCountFilter(cleanCount)
-      setAppliedTagCountFilter(cleanCount)
-    } else {
-      const storedCount = sanitizeTagCount(userPreferences.getMinimumTagCount())
-      setTagCountFilter(storedCount)
-      setAppliedTagCountFilter(storedCount)
-    }
-
-    if (urlLora !== null) setRemoveLoRaTags(urlLora === 'true')
-    else setRemoveLoRaTags(userPreferences.getRemoveLoRaTags())
-
-    if (urlQuality !== null) setRemoveQualityTags(urlQuality === 'true')
-    else setRemoveQualityTags(userPreferences.getRemoveQualityTags())
-
-  }, []) // Run once on mount to hydrate state
-
-  // React to URL changes (External Navigation / Trends)
-  useEffect(() => {
-    // q param listener removed to prevent loop/flash
-
-    const urlRating = searchParams.get('rating')
-    if (urlRating !== null && urlRating !== ratingFilter) {
-      setRatingFilter(urlRating)
-    }
-
-    const urlProvider = searchParams.get('provider')
-    if (urlProvider !== null && urlProvider !== booruProvider && ['danbooru', 'aibooru', 'rule34', 'e621', 'gelbooru'].includes(urlProvider)) {
-      setBooruProvider(urlProvider as BooruProvider)
-    }
-  }, [searchParams])
-
-
-
-  useEffect(() => { if (isClient) userPreferences.setBooruProvider(booruProvider) }, [booruProvider, isClient])
-  useEffect(() => { if (isClient) userPreferences.setRemoveLoRaTags(removeLoRaTags) }, [removeLoRaTags, isClient])
-  useEffect(() => { if (isClient) userPreferences.setRemoveQualityTags(removeQualityTags) }, [removeQualityTags, isClient])
-  useEffect(() => { if (isClient) userPreferences.setRatingFilter(ratingFilter) }, [ratingFilter, isClient])
-  useEffect(() => { if (isClient) userPreferences.setMinimumTagCount(tagCountFilter) }, [tagCountFilter, isClient])
+  // Sync applied filter when persistent changes (e.g. from UI)
+  // But wait for debounce/blur logic usually? In this component, setAppliedTagCountFilter is usually manual.
+  // However, on init, we want it synced. The init effect handles the initial sync.
 
   // Auto-activate prompt filter when Aibooru is selected
   // Auto-disable NSFW filter when Rule34 is selected (default to allowed)

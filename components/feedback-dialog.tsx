@@ -212,7 +212,7 @@ export function FeedbackDialog() {
                                     <DialogTitle className="text-xl">Feedback & Suggestions</DialogTitle>
                                 </div>
                                 <DialogDescription className="text-base">
-                                    Help us build a better gallery. What's on your mind?
+                                    Help us build a better gallery. What&apos;s on your mind?
                                 </DialogDescription>
                             </DialogHeader>
 

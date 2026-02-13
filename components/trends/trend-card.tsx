@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react"
+import { useState, memo } from "react"
 import { TrendItem } from "@/lib/booru/types"
 import { Card } from "@/components/ui/card"
 import { User, Copyright, Check, Copy } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 import { useToast } from "@/hooks/use-toast"
+import Image from "next/image"
 
 interface TrendCardProps {
   item: TrendItem
@@ -15,12 +16,9 @@ interface TrendCardProps {
 
 const PARTICLES = Array.from({ length: 12 })
 
-export function TrendCard({ item, onClick, rank, index }: TrendCardProps) {
+function TrendCardComponent({ item, onClick, rank, index }: TrendCardProps) {
   const [isCopied, setIsCopied] = useState(false)
   const { toast } = useToast()
-
-
-
 
   const handleRightClick = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -54,10 +52,17 @@ export function TrendCard({ item, onClick, rank, index }: TrendCardProps) {
       >
         <div className="aspect-[3/4] relative overflow-hidden">
           {/* Image with subtle zoom on hover */}
-          <div
-            className="absolute inset-0 bg-cover bg-center transition-transform duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)] group-hover:scale-110"
-            style={{ backgroundImage: `url(${item.imageUrl})` }}
-          />
+          <div className="absolute inset-0 transition-transform duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)] group-hover:scale-110">
+            <Image
+              src={item.imageUrl}
+              alt={item.name}
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+              loading="lazy"
+              unoptimized={true} // External URLs usually need this unless configured in next.config
+            />
+          </div>
 
           {/* Clean darkening overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
@@ -159,3 +164,5 @@ export function TrendCard({ item, onClick, rank, index }: TrendCardProps) {
     </motion.div >
   )
 }
+
+export const TrendCard = memo(TrendCardComponent)

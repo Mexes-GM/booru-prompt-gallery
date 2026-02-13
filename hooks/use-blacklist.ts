@@ -1,17 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { usePersistentState } from "@/hooks/use-persistent-state"
 import { userPreferences } from "@/lib/storage"
 import { useToast } from "@/hooks/use-toast"
 
 export function useBlacklist() {
-  const [blacklist, setBlacklist] = useState<string[]>([])
+  const [blacklist, setBlacklist] = usePersistentState<string[]>(
+    ['guro', 'scat'],
+    userPreferences.getBlacklist,
+    userPreferences.setBlacklist,
+    "blacklist"
+  )
   const { toast } = useToast()
-
-  // Load from storage on mount
-  useEffect(() => {
-    setBlacklist(userPreferences.getBlacklist())
-  }, [])
 
   const addTag = (tag: string) => {
     const cleanTag = tag.trim().toLowerCase()
@@ -25,8 +25,7 @@ export function useBlacklist() {
       return
     }
 
-    const updated = userPreferences.addBlacklistTag(cleanTag)
-    setBlacklist(updated)
+    setBlacklist(prev => [...prev, cleanTag])
     toast({
       title: "Tag added to blacklist",
       description: `Filtering content with "${cleanTag}"`,
@@ -34,8 +33,7 @@ export function useBlacklist() {
   }
 
   const removeTag = (tag: string) => {
-    const updated = userPreferences.removeBlacklistTag(tag)
-    setBlacklist(updated)
+    setBlacklist(prev => prev.filter(t => t !== tag))
     toast({
       title: "Tag removed from blacklist",
       description: `No longer filtering "${tag}"`,
@@ -44,7 +42,6 @@ export function useBlacklist() {
 
   const resetBlacklist = () => {
     const defaults = ['guro', 'scat']
-    userPreferences.setBlacklist(defaults)
     setBlacklist(defaults)
     toast({
       title: "Blacklist reset",

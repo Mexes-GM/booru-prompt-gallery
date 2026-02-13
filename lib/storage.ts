@@ -47,7 +47,13 @@ export const STORAGE_KEYS = {
   MINIMUM_TAG_COUNT: 'minimum-tag-count',
   BLACKLIST: 'blacklist',
   GLOBAL_WEIGHTS: 'global-weights',
-  GLOBAL_WEIGHTS_ENABLED: 'global-weights-enabled'
+  GLOBAL_WEIGHTS_ENABLED: 'global-weights-enabled',
+  // New keys for audit fix
+  ADD_TAGS: 'add-tags-input',
+  EXCLUDE_TAGS: 'exclude-tags-input',
+  PROMPT_OPTIONS: 'prompt-options',
+  VIEW_MODE: 'view-mode',
+  CARD_SCALE: 'card-scale'
 } as const
 
 export interface HistoryItem {
@@ -63,6 +69,11 @@ export interface TagPreset {
   name: string
   content: string
   timestamp: number
+}
+
+export interface PromptOptions {
+  includeCharacters: boolean
+  optimizeTags: boolean
 }
 
 // Type-safe getters and setters for specific preferences
@@ -182,5 +193,39 @@ export const userPreferences = {
     storage.get(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, false),
 
   setGlobalWeightsEnabled: (enabled: boolean) =>
-    storage.set(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, enabled)
+    storage.set(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, enabled),
+
+  // Audit Fix: Persistent Inputs
+  getAddTagsInput: (): string => {
+    // Migration check: check old key if new one is empty?
+    // For now, let's just support the new key.
+    return storage.get(STORAGE_KEYS.ADD_TAGS, "")
+  },
+
+  setAddTagsInput: (value: string) =>
+    storage.set(STORAGE_KEYS.ADD_TAGS, value),
+
+  getExcludeTagsInput: (): string =>
+    storage.get(STORAGE_KEYS.EXCLUDE_TAGS, ""),
+
+  setExcludeTagsInput: (value: string) =>
+    storage.set(STORAGE_KEYS.EXCLUDE_TAGS, value),
+
+  getPromptOptions: (): PromptOptions =>
+    storage.get(STORAGE_KEYS.PROMPT_OPTIONS, { includeCharacters: true, optimizeTags: true }),
+
+  setPromptOptions: (options: PromptOptions) =>
+    storage.set(STORAGE_KEYS.PROMPT_OPTIONS, options),
+
+  getViewMode: (): 'grid' | 'list' =>
+    storage.get(STORAGE_KEYS.VIEW_MODE, 'grid'),
+
+  setViewMode: (mode: 'grid' | 'list') =>
+    storage.set(STORAGE_KEYS.VIEW_MODE, mode),
+
+  getCardScale: (): 'small' | 'medium' | 'large' =>
+    storage.get(STORAGE_KEYS.CARD_SCALE, 'medium'),
+
+  setCardScale: (scale: 'small' | 'medium' | 'large') =>
+    storage.set(STORAGE_KEYS.CARD_SCALE, scale)
 }
