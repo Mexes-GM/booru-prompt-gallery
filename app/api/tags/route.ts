@@ -23,9 +23,9 @@ export async function GET(request: NextRequest) {
       try {
         // Try to load from Supabase instead of local JSON
         const { data, error } = await supabase
-          .from('tags')
+          .from('auto_suggest_tags')
           .select('name, category')
-          .limit(5000) // Safety limit
+          .limit(10000) // Increased limit for better auto-suggest range
 
         if (error) throw error
 
