@@ -64,6 +64,7 @@ interface TeachModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialClassifiedTags: Record<ColumnId, string[]>
+  onSuccess?: () => void
 }
 
 const COLUMNS: { id: ColumnId; title: string; description: string }[] = [
@@ -292,7 +293,7 @@ const SuccessAnimation = memo(function SuccessAnimation() {
 
 // --- Main Modal Component ---
 
-export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachModalProps) {
+export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSuccess }: TeachModalProps) {
   const [items, setItems] = useState<Items>(initialClassifiedTags)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -302,12 +303,25 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
   const [isReady, setIsReady] = useState(false)
   const { toast } = useToast()
 
+  // Reset states when modal is closed
+  useEffect(() => {
+    if (!open) {
+      // Small delay to allow exit animation to finish
+      const timer = setTimeout(() => {
+        setIsSuccess(false)
+        setIsSubmitting(false)
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [open])
+
   // Reset items when modal opens or props change
   useEffect(() => {
     if (open) {
-      if (isSuccess) setIsSuccess(false) // Reset success state on re-open
+      // Only update if the tags actually changed and we are not in success state
+      // This prevents UI jumping while the success animation is playing
+      if (isSuccess) return
 
-      // Only update if the tags actually changed
       const currentTagsJson = JSON.stringify(items)
       const newTagsJson = JSON.stringify(initialClassifiedTags)
 
@@ -342,12 +356,14 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
     if (isSuccess) {
       const timer = setTimeout(() => {
         onOpenChange(false)
+        // Refresh parent overrides when closing after success
+        if (onSuccess) onSuccess()
         // Small delay to reset success state after modal close animation starts
         setTimeout(() => setIsSuccess(false), 300)
       }, 2500)
       return () => clearTimeout(timer)
     }
-  }, [isSuccess, onOpenChange])
+  }, [isSuccess, onOpenChange, onSuccess])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -525,10 +541,17 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags }: TeachM
 
       if (result.success) {
         setIsSuccess(true)
-        // toast({
-        //   title: "Suggestions Submitted",
-        //   description: "Thank you for helping improve the tag classification!",
-        // })
+        
+        // Update local suggestions state immediately so UI shows badges/styles
+        setExistingSuggestions(prev => {
+          const next = { ...prev }
+          suggestions.forEach(s => {
+            next[s.tagName] = s.suggestedCategory
+          })
+          return next
+        })
+
+        // Removed immediate onSuccess() to avoid parent re-render cutting the animation
         // onOpenChange(false) // Removed default close, handled by effect
       } else {
         toast({

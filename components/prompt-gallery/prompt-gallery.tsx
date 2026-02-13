@@ -228,11 +228,18 @@ export function PromptGallery() {
 
   // --- Side Effects ---
 
-  useEffect(() => {
-    getAllTagOverrides().then(overrides => {
+  const refreshOverrides = useCallback(async () => {
+    try {
+      const overrides = await getAllTagOverrides()
       setTagOverrides(overrides)
-    })
+    } catch (error) {
+      console.error("Failed to refresh tag overrides:", error)
+    }
   }, [])
+
+  useEffect(() => {
+    refreshOverrides()
+  }, [refreshOverrides])
 
   useEffect(() => {
     if (search.isClient) {
@@ -1429,6 +1436,7 @@ export function PromptGallery() {
           open={teachModalData.open}
           onOpenChange={(open) => setTeachModalData(prev => ({ ...prev, open }))}
           initialClassifiedTags={teachModalData.tags}
+          onSuccess={refreshOverrides}
         />
       )}
       <TeachWelcomeModal triggerOpen={showWelcomeModal} />
