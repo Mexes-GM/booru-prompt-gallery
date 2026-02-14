@@ -6,7 +6,7 @@ export class AibooruProvider extends BaseBooruProvider {
   protected baseUrl = "https://aibooru.online"
   protected defaultParams = {
     limit: "20",
-    only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
+    only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,score,ai_metadata,image_width,image_height",
   }
 
   async search(options: SearchOptions): Promise<BooruPost[]> {
@@ -46,6 +46,7 @@ export class AibooruProvider extends BaseBooruProvider {
       tag_string_artist: post.tag_string_artist,
       tag_string_character: post.tag_string_character,
       tag_string_copyright: post.tag_string_copyright,
+      tag_string_meta: post.tag_string_meta,
       rating: post.rating,
       score: post.score,
       ai_metadata: post.ai_metadata,

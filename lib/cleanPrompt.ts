@@ -33,6 +33,7 @@ export interface CleanPromptOptions {
   addedTags?: string[]
   tagOverrides?: Record<string, string>
   escapeOutput?: boolean
+  metaTags?: string
 }
 
 // --------------- Utilities ---------------
@@ -543,6 +544,10 @@ export function cleanPrompt(
   const artistTagsSet = new Set(parseTagList(artistTags).map((t) => normalize(t)))
   const characterTagsArray = parseTagList(characterTags)
   const copyrightTagsArray = parseTagList(copyrightTags)
+  
+  // Use meta tags from API if provided (via options), otherwise fallback to curated list
+  const apiMetaTags = options?.metaTags ? parseTagList(options.metaTags) : []
+  const apiMetaTagsSet = new Set(apiMetaTags.map(t => normalize(t)))
 
   // Sliding-window early removal for multi-word meta sequences when input is space-separated
   try {
@@ -599,6 +604,7 @@ export function cleanPrompt(
     if (artistTagsSet.has(lower)) return false
     if (artistTagsSet.has(normalize(lower))) return false
     if (META_TAGS_SET.has(normalize(lower))) return false
+    if (apiMetaTagsSet.has(normalize(lower))) return false
     if (numberRegex.test(raw)) return false
     if (raw.includes("@") || raw.includes("#") || hasUrlLike.test(raw)) return false
     if (invalidBracket.test(raw)) return false

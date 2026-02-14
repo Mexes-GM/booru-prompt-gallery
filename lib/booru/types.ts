@@ -8,6 +8,7 @@ export interface BooruPost {
   tag_string_artist: string
   tag_string_character: string
   tag_string_copyright: string
+  tag_string_meta?: string
   rating: string
   score: number
   source?: string
