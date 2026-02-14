@@ -52,7 +52,7 @@ function TrendCardComponent({ item, onClick, rank, index }: TrendCardProps) {
       >
         <div className="aspect-[3/4] relative overflow-hidden">
           {/* Image with subtle zoom on hover */}
-          <div className="absolute inset-0 transition-transform duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)] group-hover:scale-110">
+          <div className="absolute inset-0 transition-transform duration-700 ease-in-out group-hover:scale-110">
             <Image
               src={item.imageUrl}
               alt={item.name}

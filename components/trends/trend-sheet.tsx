@@ -91,7 +91,7 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
           <span className="text-xs font-medium">Trending</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl h-[90vh] sm:h-[80vh] flex flex-col p-0 gap-0 bg-background/95 backdrop-blur-md overflow-hidden duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1)]">
+      <DialogContent className="max-w-4xl h-[90vh] sm:h-[80vh] flex flex-col p-0 gap-0 bg-background/95 backdrop-blur-md overflow-hidden duration-500 ease-in-out">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}

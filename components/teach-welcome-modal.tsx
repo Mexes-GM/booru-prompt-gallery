@@ -166,13 +166,13 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
               <div className="p-2 bg-primary/10 rounded-lg">
                 <Sparkles className="w-5 h-5 text-primary" />
               </div>
-              <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">What's New</span>
+              <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">What&apos;s New</span>
             </div>
             <DialogTitle className="text-2xl sm:text-3xl font-bold tracking-tight">
               Booru Gallery V8
             </DialogTitle>
             <DialogDescription className="text-base">
-              We've added powerful new tools to help you create better prompts.
+              We&apos;ve added powerful new tools to help you create better prompts.
             </DialogDescription>
           </DialogHeader>
         </div>

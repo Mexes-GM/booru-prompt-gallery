@@ -573,7 +573,7 @@ export function PromptGallery() {
                                                                           className="hidden sm:flex text-xs h-7 px-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
                                                                         >
                                                                           <Sparkles className="h-3 w-3 text-amber-500" />
-                                                                          What's New
+                                                                          What&apos;s New
                                                                         </Button>                  </div>
                 </div>
               </div>
