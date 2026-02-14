@@ -42,11 +42,15 @@ export class GelbooruProvider extends BaseBooruProvider {
 
         try {
             const urlParams = new URLSearchParams(params)
+            const requestUrl = `${this.baseUrl}/index.php?${urlParams.toString()}`
+            console.log(`[Gelbooru] Fetching: ${requestUrl}`)
+            
             rawResponse = await this.fetchJson<any>(`${this.baseUrl}/index.php`, urlParams, {
                 'Referer': 'https://gelbooru.com/',
             })
-        } catch (e) {
-            console.error("Gelbooru JSON fetch failed", e)
+        } catch (e: any) {
+            console.error("[Gelbooru] JSON fetch failed for tags:", tags, "Error:", e.message)
+            if (e.cause) console.error("[Gelbooru] Cause:", e.cause)
             return []
         }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BooruFactory } from '@/lib/booru/factory'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
