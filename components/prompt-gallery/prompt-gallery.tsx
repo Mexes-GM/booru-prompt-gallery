@@ -557,14 +557,24 @@ export function PromptGallery() {
                     <Badge variant="secondary" className="text-[10px] sm:text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-1.5 py-0 sm:px-2 sm:py-1 h-fit">
                       By Mexes
                     </Badge>
-                                                <button
-                                          onClick={() => setShowWelcomeModal(true)}
-                                          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
-                                          title="Show Teach System Info"
-                                          aria-label="Show system information and version"
-                                        >
-                                          <VersionDisplay />
-                                        </button>                  </div>
+                                                                        <button
+                                                                          onClick={() => setShowWelcomeModal(true)}
+                                                                          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
+                                                                          title="Show Teach System Info"
+                                                                          aria-label="Show system information and version"
+                                                                        >
+                                                                          <VersionDisplay />
+                                                                        </button>
+                                                
+                                                                        <Button
+                                                                          variant="ghost"
+                                                                          size="sm"
+                                                                          onClick={() => setShowWelcomeModal(true)}
+                                                                          className="hidden sm:flex text-xs h-7 px-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                                                                        >
+                                                                          <Sparkles className="h-3 w-3 text-amber-500" />
+                                                                          What's New
+                                                                        </Button>                  </div>
                 </div>
               </div>
 
@@ -1439,7 +1449,7 @@ export function PromptGallery() {
           onSuccess={refreshOverrides}
         />
       )}
-      <TeachWelcomeModal triggerOpen={showWelcomeModal} />
+      <TeachWelcomeModal triggerOpen={showWelcomeModal} onOpenChange={setShowWelcomeModal} />
       <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}
