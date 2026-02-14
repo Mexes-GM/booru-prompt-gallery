@@ -19,4 +19,4 @@ CREATE POLICY "Public auto_suggest_tags are viewable by everyone" ON auto_sugges
 
 -- Allow admins to manage tags
 CREATE POLICY "Admins can manage auto_suggest_tags" ON auto_suggest_tags
-    ALL USING (auth.role() = 'authenticated');
+    FOR ALL USING (auth.role() = 'authenticated');

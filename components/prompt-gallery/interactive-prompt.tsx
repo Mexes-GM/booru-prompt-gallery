@@ -13,6 +13,12 @@ interface TagData {
   weight: number
 }
 
+interface TagData {
+  id: string
+  text: string
+  weight: number
+}
+
 interface InteractivePromptProps {
   initialPrompt: string
   onUpdate: (newPrompt: string) => void
@@ -89,7 +95,7 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
   if (!tags.length) return <p className="text-foreground/80 leading-relaxed italic">No prompt content</p>
 
   return (
-    <div className="text-sm text-foreground/80 leading-relaxed break-words">
+    <div className="text-sm text-foreground/80 leading-relaxed break-all text-left">
       {tags.map((tag, i) => {
         // Check if this tag is globally weighted
         // Only consider it "Global" (purple) if the weight is NOT 1.0
@@ -199,16 +205,31 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
   return (
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
+        <span
+          role="button"
+          tabIndex={0}
           className={cn(
-            "cursor-pointer px-0.5 -mx-0.5 rounded transition-colors duration-200 decoration-clone select-text outline-none inline relative border-none bg-transparent font-inherit",
+            "cursor-pointer px-0.5 -mx-0.5 rounded transition-colors duration-200 decoration-clone select-text outline-none inline relative border-none bg-transparent font-inherit whitespace-normal text-left break-words",
             textClass,
             bgClass
           )}
           onClick={(e) => {
             e.stopPropagation()
             // Trigger handles open, but stopping prop is good
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              // Let PopoverTrigger handle the click simulation or manual open?
+              // PopoverTrigger usually handles click. We might need to simulate click.
+              // Actually, Radix UI PopoverTrigger works on click.
+              // For non-button elements, we usually need to trigger onClick manually or let Radix handle it if it detects it?
+              // Radix Primitives usually handle generic elements if asChild is true?
+              // Let's verify. Radix PopoverTrigger adds onClick.
+              // But for keyboard, buttons get native Enter/Space support. Spans don't.
+              // We need to trigger the click handler that Radix attached.
+              e.currentTarget.click()
+            }
           }}
           title={isGlobal ? "Global weight applied" : undefined}
           aria-label={isGlobal ? `Edit weight for ${tag.text} (Global)` : `Edit weight for ${tag.text}`}
@@ -217,7 +238,7 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
           {isGlobal && (
             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full shadow-sm" />
           )}
-        </button>
+        </span>
       </PopoverTrigger>
 
       {isEditable && (
