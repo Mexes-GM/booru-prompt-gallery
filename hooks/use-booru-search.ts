@@ -54,15 +54,29 @@ export function useBooruSearch() {
     "removeQualityTags"
   )
 
-  const [tagCountFilter, setTagCountFilter] = usePersistentState(
+  const [tagCountFilter, _setTagCountFilter] = usePersistentState(
     "5",
     userPreferences.getMinimumTagCount,
     userPreferences.setMinimumTagCount,
     "minTagCount"
   )
+  
+  const userInteractionRef = useRef(false)
+
+  const setTagCountFilter = useCallback((value: string | ((prev: string) => string)) => {
+    userInteractionRef.current = true
+    _setTagCountFilter(value)
+  }, [_setTagCountFilter])
 
   const [appliedTagCountFilter, setAppliedTagCountFilter] = useState("5")
   const [isClient, setIsClient] = useState(false)
+
+  // Sync applied filter with persistent state on load (when no user interaction has occurred)
+  useEffect(() => {
+    if (!userInteractionRef.current) {
+      setAppliedTagCountFilter(tagCountFilter)
+    }
+  }, [tagCountFilter])
 
   // Loading states
   const [isLoadingLock, setIsLoadingLock] = useState(false)
@@ -83,7 +97,6 @@ export function useBooruSearch() {
   useEffect(() => {
     setIsClient(true)
     setRandomSeed(Date.now())
-    setAppliedTagCountFilter(tagCountFilter) // Init applied from persistent
   }, []) // Run once on mount
 
   // Sync applied filter when persistent changes (e.g. from UI)

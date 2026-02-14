@@ -14,7 +14,7 @@ export async function searchTags(query: string): Promise<TagResult[]> {
     return []
   }
 
-  const normalizedQuery = query.trim().toLowerCase()
+  const normalizedQuery = query.trim().toLowerCase().replace(/ /g, '_')
 
   try {
     // Search tags in Supabase using ILIKE for case-insensitive search
