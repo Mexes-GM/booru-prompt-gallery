@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Privacy Policy - Booru Prompt Gallery Data Handling",
+  title: "Privacy Policy",
   description: "Read our privacy policy to understand how Booru Prompt Gallery handles your local data, favorites, and history while using our AI art prompt tools.",
 }
 

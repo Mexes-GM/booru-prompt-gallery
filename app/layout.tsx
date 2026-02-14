@@ -13,7 +13,7 @@ const inter = Inter({
   preload: true,
 })
 
-const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://booru-prompt-gallery.vercel.app'
 
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl),

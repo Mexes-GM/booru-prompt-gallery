@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "About Booru Prompt Gallery - Project Mission and Features",
+  title: "About",
   description: "Learn more about Booru Prompt Gallery, our mission to simplify AI art prompts, and the features that make tag extraction and cleaning easier for everyone.",
 }
 

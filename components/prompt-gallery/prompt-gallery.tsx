@@ -554,7 +554,7 @@ export function PromptGallery() {
                     Booru<span className="hidden sm:inline"> </span><br className="sm:hidden" />Prompt Gallery
                   </h1>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-0.5 sm:gap-3">
-                    <Badge variant="secondary" className="text-[10px] sm:text-xs font-medium bg-muted/50 text-muted-foreground border-0 px-1.5 py-0 sm:px-2 sm:py-1 h-fit">
+                    <Badge variant="secondary" className="text-[10px] sm:text-xs font-medium bg-muted text-muted-foreground border-0 px-1.5 py-0 sm:px-2 sm:py-1 h-fit">
                       By Mexes
                     </Badge>
                                                                         <button
@@ -1178,6 +1178,7 @@ export function PromptGallery() {
                                   onValueCommit={(val) => search.setAppliedTagCountFilter(val[0].toString())}
                                   disabled={!isTagCountSupported}
                                   className={`flex-1 ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
+                                  aria-label="Minimum tag count"
                                 />
                                 <Input
                                   id="tag-count"
@@ -1287,7 +1288,7 @@ export function PromptGallery() {
                   <div className="space-y-2">
                     {/* Active Query Display */}
                     {getFinalQueryTags(search.searchTags, search.ratingFilter, search.order, search.appliedTagCountFilter, search.booruProvider).length > 0 && (
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground bg-muted/20 p-2 rounded-md border border-border/30">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/80 bg-muted/30 p-2 rounded-md border border-border/30">
                         <span className="font-medium">Active Query:</span>
                         {getFinalQueryTags(search.searchTags, search.ratingFilter, search.order, search.appliedTagCountFilter, search.booruProvider).map((tag, index) => (
                           <Badge key={index} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 font-mono">
@@ -1425,6 +1426,7 @@ export function PromptGallery() {
                 onClick={mergeMode.toggleMergeMode}
                 variant={mergeMode.isMergeMode ? "default" : "secondary"}
                 className={`rounded-full shadow-lg h-10 w-10 p-0 ${mergeMode.isMergeMode ? "" : "bg-background/80 backdrop-blur border"}`}
+                aria-label={mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Mode"}
               >
                 <FileCheck2 className="h-5 w-5" />
               </Button>
@@ -1434,7 +1436,7 @@ export function PromptGallery() {
             </TooltipContent>
           </Tooltip>
 
-          <Button onClick={scrollToTop} className="rounded-full shadow-lg h-10 w-10 p-0" variant="secondary">
+          <Button onClick={scrollToTop} className="rounded-full shadow-lg h-10 w-10 p-0" variant="secondary" aria-label="Scroll to top">
             <ChevronUp className="h-5 w-5" />
           </Button>
         </div>
