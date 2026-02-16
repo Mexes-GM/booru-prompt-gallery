@@ -307,13 +307,18 @@ export const MasonryItem = memo(function MasonryItem({
         }
     }
 
-    const rawFileUrl = post.large_file_url || post.file_url
+    const itemProvider = post._provider || booruProvider
+    
+    // Optimization: Use preview image for small cards to save bandwidth/CPU
+    const usePreview = effectiveScale === 'small' && post.preview_file_url
+    const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
+    
     // Gelbooru has hotlink protection — proxy images through our server
-    const fileUrl = (post._provider === 'gelbooru' || booruProvider === 'gelbooru')
+    const isGelbooru = itemProvider === 'gelbooru'
+    const fileUrl = isGelbooru
         ? `/api/image-proxy?url=${encodeURIComponent(rawFileUrl!)}`
         : rawFileUrl
 
-    const itemProvider = post._provider || booruProvider
     let postUrl = `https://danbooru.donmai.us/posts/${post.id}`
 
     if (isAiPost || itemProvider === 'aibooru') {
@@ -457,6 +462,7 @@ export const MasonryItem = memo(function MasonryItem({
                         className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
                         sizes={`${width}px`}
                         priority={false}
+                        unoptimized={isGelbooru}
                     />
 
                     {/* Overlay actions */}
