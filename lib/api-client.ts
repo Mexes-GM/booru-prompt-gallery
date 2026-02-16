@@ -526,7 +526,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       persistSize: false,
       revalidateOnFocus: false,
       revalidateOnReconnect: false, // FIXED: Prevent reconnect from triggering revalidation
-      dedupingInterval: 0, // Always 0 to allow refreshing random posts
+      dedupingInterval: 5000, // 5s dedup window; random uses unique seed keys so it's unaffected
       shouldRetryOnError: (error) => {
         // Don't retry on 422 errors (invalid tags/search parameters)
         // Don't retry on 4xx client errors in general
@@ -596,10 +596,12 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         const posts = await response.json()
         return posts as BooruPost[]
       } catch (fetchError: any) {
-        // Si es un error de red o timeout
-        if (fetchError instanceof TypeError || fetchError.name === 'AbortError') {
-          reportError(new Error('Error de conexión: No se pudo cargar favoritos'))
+        // Silently handle connection errors which are common during navigation/logout
+        if (fetchError instanceof TypeError || fetchError.name === 'AbortError' || fetchError.message === 'Failed to fetch') {
+          console.warn('[ApiClient] Favorites fetch interrupted (likely navigation/logout)')
+          return []
         }
+
         throw fetchError
       }
     },

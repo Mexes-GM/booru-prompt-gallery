@@ -7,7 +7,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  output: 'standalone',
+  // output: 'standalone', // Removed: not needed for Vercel and forces SSR, increasing origin transfer
   poweredByHeader: false,
   compress: true,
   generateEtags: true,
