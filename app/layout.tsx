@@ -111,6 +111,9 @@ export const metadata: Metadata = {
     'msapplication-TileColor': '#000000',
     'msapplication-config': '/browserconfig.xml',
   },
+  verification: {
+    google: 'oV_N0Kfu6vS1TFmbLjhRvmawBmVCnRk9VrlKawuEosE',
+  },
 }
 
 export const viewport: Viewport = {
