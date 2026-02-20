@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useRouter } from "next/navigation"
 import { useUser } from "@/hooks/use-user"
 import { LoginDialog } from "./login-dialog"
-import { LogOut, Settings, User as UserIcon, Heart, LayoutDashboard } from "lucide-react"
+import { LogOut, User as UserIcon } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { motion } from "framer-motion"
 
@@ -52,8 +52,8 @@ export function UserNav() {
     }
   }
 
-  const initials = user.email 
-    ? user.email.slice(0, 2).toUpperCase() 
+  const initials = user.email
+    ? user.email.slice(0, 2).toUpperCase()
     : "U"
 
   return (
@@ -76,23 +76,8 @@ export function UserNav() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        
-        <DropdownMenuItem className="cursor-pointer p-2 focus:bg-primary/5">
-          <LayoutDashboard className="mr-2 h-4 w-4 text-muted-foreground" />
-          <span>Dashboard</span>
-        </DropdownMenuItem>
-        
-        <DropdownMenuItem className="cursor-pointer p-2 focus:bg-primary/5">
-          <Heart className="mr-2 h-4 w-4 text-muted-foreground" />
-          <span>Favorites</span>
-        </DropdownMenuItem>
-        
-        <DropdownMenuItem className="cursor-pointer p-2 focus:bg-primary/5">
-          <Settings className="mr-2 h-4 w-4 text-muted-foreground" />
-          <span>Settings</span>
-        </DropdownMenuItem>
-        
-        <DropdownMenuSeparator />
+
+
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer p-2 text-destructive focus:bg-destructive/5 focus:text-destructive">
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
