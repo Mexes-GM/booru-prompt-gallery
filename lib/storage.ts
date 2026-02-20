@@ -1,6 +1,8 @@
 // Utility functions for localStorage persistence
 
 // Safe localStorage wrapper that handles SSR and errors
+export const STORAGE_EVENT_NAME = 'booru-storage-update'
+
 export const storage = {
   get: <T>(key: string, defaultValue: T): T => {
     if (typeof window === 'undefined') return defaultValue
@@ -19,6 +21,9 @@ export const storage = {
 
     try {
       localStorage.setItem(key, JSON.stringify(value))
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(STORAGE_EVENT_NAME, { detail: { key, value } }))
+      }
     } catch (error) {
       console.warn(`Error writing to localStorage key "${key}":`, error)
     }
@@ -29,6 +34,9 @@ export const storage = {
 
     try {
       localStorage.removeItem(key)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(STORAGE_EVENT_NAME, { detail: { key, value: null } }))
+      }
     } catch (error) {
       console.warn(`Error removing localStorage key "${key}":`, error)
     }

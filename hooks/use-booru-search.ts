@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
-import { userPreferences } from "@/lib/storage"
+import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
   trackSearch,
@@ -25,7 +25,8 @@ export function useBooruSearch() {
     "rating:general",
     userPreferences.getRatingFilter,
     userPreferences.setRatingFilter,
-    "ratingFilter"
+    "ratingFilter",
+    STORAGE_KEYS.RATING_FILTER
   )
 
   const [isShuffle, setIsShuffle] = useState(false)
@@ -35,7 +36,8 @@ export function useBooruSearch() {
     "danbooru",
     userPreferences.getBooruProvider,
     userPreferences.setBooruProvider,
-    "booruProvider"
+    "booruProvider",
+    STORAGE_KEYS.BOORU_PROVIDER
   )
 
   const [hasPromptFilter, setHasPromptFilter] = useState(false)
@@ -44,23 +46,26 @@ export function useBooruSearch() {
     false,
     userPreferences.getRemoveLoRaTags,
     userPreferences.setRemoveLoRaTags,
-    "removeLoRaTags"
+    "removeLoRaTags",
+    STORAGE_KEYS.REMOVE_LORA_TAGS
   )
 
   const [removeQualityTags, setRemoveQualityTags] = usePersistentState(
     false,
     userPreferences.getRemoveQualityTags,
     userPreferences.setRemoveQualityTags,
-    "removeQualityTags"
+    "removeQualityTags",
+    STORAGE_KEYS.REMOVE_QUALITY_TAGS
   )
 
   const [tagCountFilter, _setTagCountFilter] = usePersistentState(
     "5",
     userPreferences.getMinimumTagCount,
     userPreferences.setMinimumTagCount,
-    "minTagCount"
+    "minTagCount",
+    STORAGE_KEYS.MINIMUM_TAG_COUNT
   )
-  
+
   const userInteractionRef = useRef(false)
 
   const setTagCountFilter = useCallback((value: string | ((prev: string) => string)) => {
@@ -90,7 +95,7 @@ export function useBooruSearch() {
 
   const { toast } = useToast()
 
-  const sanitizeTagCount = (val: string) => val.replace(/\D/g, '') || '5'
+
 
   // --- Initialization ---
 
@@ -188,8 +193,6 @@ export function useBooruSearch() {
 
     const currentRawPostCount = pages ? pages.flat().length : 0
     setLastLoadAttempt(currentRawPostCount)
-
-
 
     setSize(size + 1)
     trackLoadMore({ order, nextPage: size + 1, currentCount: allPosts.length })

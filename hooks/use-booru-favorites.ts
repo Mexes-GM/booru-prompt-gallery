@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import { BooruProvider, FavoriteItem, useFavoritePosts, BooruPost } from "@/lib/api-client"
 import { toast } from "@/hooks/use-toast"
 import { trackFavorite, safeTrack } from "@/lib/analytics"
+import { useUser } from "@/hooks/use-user"
+import { createClient } from "@/lib/supabase/client"
 
 export interface UseBooruFavoritesReturn {
   favorites: Set<string>
@@ -20,8 +22,10 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [favoritesLoaded, setFavoritesLoaded] = useState(false)
   const [showFavorites, setShowFavorites] = useState(false)
+  const { user, loading: userLoading } = useUser()
+  const supabase = createClient()
 
-  // Helper to save favorites
+  // Helper to save favorites to localStorage (Legacy/Anonymous)
   const saveFavoritesToStorage = useCallback((newFavorites: Set<string>) => {
     if (typeof window !== 'undefined') {
       try {
@@ -33,90 +37,129 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
     }
   }, [])
 
-  // Load favorites from localStorage on mount (Unified Storage)
+  // Load favorites
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedFavorites = localStorage.getItem('globalBooruFavorites')
-      let migrated = false
+    async function loadFavorites() {
+      if (userLoading) return
 
-      const newSet = new Set<string>()
+      if (user) {
+        // Load from Supabase
+        const { data, error } = await supabase
+          .from('favorites')
+          .select('provider, post_id')
 
-      // 1. Load Unified Format if exists
-      if (savedFavorites) {
-        try {
-          const arr = JSON.parse(savedFavorites)
-          if (Array.isArray(arr)) {
-            arr.forEach(k => newSet.add(k))
-          }
-        } catch (e) { console.error(e) }
-      }
-
-      // 2. Migrate Legacy Danbooru (booruFavorites)
-      const legacyDanbooru = localStorage.getItem('booruFavorites')
-      if (legacyDanbooru) {
-        try {
-          const arr = JSON.parse(legacyDanbooru)
-          if (Array.isArray(arr) && arr.length > 0) {
-            arr.forEach(id => newSet.add(`danbooru:${id}`))
-            localStorage.removeItem('booruFavorites')
-            migrated = true
-          }
-        } catch (e) { }
-      }
-
-      // 3. Migrate Segregated Providers (e.g. booruFavorites-e621)
-      const providers = ['e621', 'rule34', 'aibooru', 'gelbooru']
-      providers.forEach(p => {
-        const key = `booruFavorites-${p}`
-        const raw = localStorage.getItem(key)
-        if (raw) {
-          try {
-            const arr = JSON.parse(raw)
-            if (Array.isArray(arr) && arr.length > 0) {
-              arr.forEach(id => newSet.add(`${p}:${id}`))
-              localStorage.removeItem(key)
-              migrated = true
-            }
-          } catch (e) { }
+        const newSet = new Set<string>()
+        if (data) {
+          data.forEach((item: any) => {
+            newSet.add(`${item.provider}:${item.post_id}`)
+          })
         }
-      })
 
-      setFavorites(newSet)
-      if (migrated) {
-        saveFavoritesToStorage(newSet)
+        // Migrate local favorites to account
+        if (typeof window !== 'undefined') {
+          const savedFavorites = localStorage.getItem('globalBooruFavorites')
+          if (savedFavorites) {
+            try {
+              const arr = JSON.parse(savedFavorites)
+              if (Array.isArray(arr) && arr.length > 0) {
+                let migrated = false
+                const upserts = []
+                for (const key of arr) {
+                  if (!newSet.has(key)) {
+                    newSet.add(key)
+                    migrated = true
+                    const [p, idStr] = key.split(':')
+                    const post_id = parseInt(idStr, 10)
+                    if (!isNaN(post_id)) {
+                      upserts.push({ user_id: user.id, provider: p, post_id })
+                    }
+                  }
+                }
+                if (upserts.length > 0) {
+                  await supabase.from('favorites').upsert(upserts)
+                }
+                if (migrated) {
+                  localStorage.removeItem('globalBooruFavorites')
+                }
+              }
+            } catch (e) {
+              console.error('Migration error:', e)
+            }
+          }
+        }
+
+        setFavorites(newSet)
+        setFavoritesLoaded(true)
+      } else {
+        // Load from LocalStorage
+        if (typeof window !== 'undefined') {
+          const savedFavorites = localStorage.getItem('globalBooruFavorites')
+          let migrated = false
+          const newSet = new Set<string>()
+
+          // 1. Load Unified Format if exists
+          if (savedFavorites) {
+            try {
+              const arr = JSON.parse(savedFavorites)
+              if (Array.isArray(arr)) {
+                arr.forEach(k => newSet.add(k))
+              }
+            } catch (e) { console.error(e) }
+          }
+
+          // 2. Migrate Legacy keys (only if no unified data or to merge)
+          // ... (Legacy migration logic kept for anonymous users) ...
+          const legacyDanbooru = localStorage.getItem('booruFavorites')
+          if (legacyDanbooru) {
+            try {
+              const arr = JSON.parse(legacyDanbooru)
+              if (Array.isArray(arr) && arr.length > 0) {
+                arr.forEach(id => newSet.add(`danbooru:${id}`))
+                localStorage.removeItem('booruFavorites')
+                migrated = true
+              }
+            } catch (e) { }
+          }
+
+          setFavorites(newSet)
+          if (migrated) saveFavoritesToStorage(newSet)
+          setFavoritesLoaded(true)
+        }
       }
-      setFavoritesLoaded(true)
     }
-  }, [saveFavoritesToStorage])
 
-  const toggleFavorite = useCallback((postId: number, providerOverride?: string) => {
-    // Construct unique key, using override if provided (for favorites view logic), else current provider
+    loadFavorites()
+  }, [user, userLoading, saveFavoritesToStorage, supabase])
+
+  const toggleFavorite = useCallback(async (postId: number, providerOverride?: string) => {
     const targetProvider = providerOverride || booruProvider
     const uniqueKey = `${targetProvider}:${postId}`
-
-    // Use current state directly to determine action, avoiding side effects in state setter
     const isCurrentlyFavorited = favorites.has(uniqueKey)
     const newFavorites = new Set(favorites)
 
+    // Optimistic Update
     if (isCurrentlyFavorited) {
       newFavorites.delete(uniqueKey)
-      toast({
-        title: "Removed from favorites",
-        description: "Image removed from your favorites",
-      })
+      toast({ title: "Removed from favorites", description: "Image removed from your favorites" })
       trackFavorite(postId, 'remove')
     } else {
       newFavorites.add(uniqueKey)
-      toast({
-        title: "Added to favorites",
-        description: "Image added to your favorites",
-      })
+      toast({ title: "Added to favorites", description: "Image added to your favorites" })
       trackFavorite(postId, 'add')
     }
-
     setFavorites(newFavorites)
-    saveFavoritesToStorage(newFavorites)
-  }, [favorites, booruProvider, saveFavoritesToStorage])
+
+    // Persist
+    if (user) {
+      if (isCurrentlyFavorited) {
+        await supabase.from('favorites').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId })
+      } else {
+        await supabase.from('favorites').upsert({ user_id: user.id, provider: targetProvider, post_id: postId })
+      }
+    } else {
+      saveFavoritesToStorage(newFavorites)
+    }
+  }, [favorites, booruProvider, saveFavoritesToStorage, user, supabase])
 
   const toggleShowFavorites = useCallback(() => {
     setShowFavorites(prev => {
@@ -126,15 +169,15 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
     })
   }, [favorites.size])
 
-  const clearFavorites = useCallback(() => {
+  const clearFavorites = useCallback(async () => {
     setFavorites(new Set())
-    saveFavoritesToStorage(new Set())
-
-    toast({
-      title: "Favorites cleared",
-      description: "All favorites have been removed",
-    })
-  }, [saveFavoritesToStorage])
+    if (user) {
+      await supabase.from('favorites').delete().eq('user_id', user.id)
+    } else {
+      saveFavoritesToStorage(new Set())
+    }
+    toast({ title: "Favorites cleared", description: "All favorites have been removed" })
+  }, [saveFavoritesToStorage, user, supabase])
 
   const isFavorite = useCallback((provider: string, id: number) => {
     return favorites.has(`${provider}:${id}`)
@@ -144,15 +187,11 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
   const favoriteItems: FavoriteItem[] = useMemo(() => {
     return Array.from(favorites).map(key => {
       const [p, idStr] = key.split(':')
-      // Handle legacy format (id only -> assume danbooru) or malformed keys
-      if (!idStr) {
-        return { provider: 'danbooru' as BooruProvider, id: parseInt(key, 10) }
-      }
+      if (!idStr) return { provider: 'danbooru' as BooruProvider, id: parseInt(key, 10) }
       return { provider: p as BooruProvider, id: parseInt(idStr, 10) }
     }).filter(item => !isNaN(item.id))
   }, [favorites])
 
-  // Fetch favorite posts separately
   const {
     posts: favoritePosts,
     error: favoritesError,

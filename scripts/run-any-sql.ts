@@ -18,9 +18,14 @@ async function runSql() {
       process.exit(1)
   }
 
+  // Force Node to accept self-signed certs (DANGEROUS in prod, okay for local script)
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+
   const client = new Client({
     connectionString,
-    ssl: { rejectUnauthorized: false }
+    ssl: {
+      rejectUnauthorized: false,
+    },
   })
 
   try {

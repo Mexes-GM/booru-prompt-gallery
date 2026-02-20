@@ -1,8 +1,24 @@
 'use server'
 
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { checkAdminAuth } from './auth'
 import { revalidatePath } from 'next/cache'
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+async function checkAdmin() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return false
+
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  return profile?.role === 'admin'
+}
 
 export type TagSuggestion = {
   id: string
@@ -25,6 +41,12 @@ export async function getSuggestions(
     suggestedCategory?: string
   }
 ) {
+  // Security Check
+  const isAdmin = await checkAdmin()
+  if (!isAdmin) {
+     throw new Error("Unauthorized")
+  }
+
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 
@@ -52,17 +74,6 @@ export async function getSuggestions(
     query = query.eq('suggested_category', filters.suggestedCategory)
   }
 
-  // Security Check
-  const isAdmin = await checkAdminAuth()
-  if (!isAdmin) {
-    // Return empty or throw error?
-    // For read operations, maybe we want to allow public viewing?
-    // User requirement implies "admin interface", so likely restricted.
-    // However, the prompt didn't explicitly ask to lock down the VIEW, just "modifications".
-    // But let's be safe.
-    throw new Error("Unauthorized")
-  }
-
   const { data, error, count } = await query
 
   if (error) {
@@ -79,7 +90,7 @@ export async function getSuggestions(
 }
 
 export async function approveSuggestion(id: string) {
-  const isAdmin = await checkAdminAuth()
+  const isAdmin = await checkAdmin()
   if (!isAdmin) {
     throw new Error("Unauthorized")
   }
@@ -127,7 +138,7 @@ export async function approveSuggestion(id: string) {
 }
 
 export async function rejectSuggestion(id: string) {
-  const isAdmin = await checkAdminAuth()
+  const isAdmin = await checkAdmin()
   if (!isAdmin) {
     throw new Error("Unauthorized")
   }
@@ -146,7 +157,7 @@ export async function rejectSuggestion(id: string) {
 }
 
 export async function getAILogs(page: number = 1, pageSize: number = 50) {
-  const isAdmin = await checkAdminAuth()
+  const isAdmin = await checkAdmin()
   if (!isAdmin) throw new Error("Unauthorized")
 
   const from = (page - 1) * pageSize

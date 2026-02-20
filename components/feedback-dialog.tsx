@@ -30,7 +30,7 @@ import { useToast } from "@/hooks/use-toast"
 import { usePathname } from "next/navigation"
 
 // --- Animation Variants ---
-const containerVariants = {
+const containerVariants: any = {
     hidden: { opacity: 0 },
     visible: {
         opacity: 1,
@@ -45,7 +45,7 @@ const containerVariants = {
     }
 }
 
-const itemVariants = {
+const itemVariants: any = {
     hidden: { opacity: 0, y: 10 },
     visible: {
         opacity: 1,

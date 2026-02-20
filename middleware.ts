@@ -1,15 +1,33 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { updateSession } from '@/lib/supabase/middleware'
+import { getRateLimit } from '@/lib/rate-limit'
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl
+  const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
 
-  // --- API Routes: Lightweight path (NO auth overhead) ---
-  // Skipping auth/session checks on API routes drastically reduces
-  // Fast Origin Transfer on Vercel.
+  // --- API Routes: Lightweight path (NO Supabase auth) ---
+  // API routes don't need session updates. Skipping updateSession() saves
+  // a Supabase round-trip on every API call, reducing Fast Origin Transfer.
   if (url.pathname.startsWith('/api/')) {
     const response = NextResponse.next()
 
+    // Rate limiting only for feedback submissions
+    if (url.pathname === '/api/feedback') {
+      const rateLimit = getRateLimit()
+      if (rateLimit) {
+        const { success, remaining } = await rateLimit.limit(ip)
+        if (!success) {
+          return NextResponse.json(
+            { error: 'Too many requests' },
+            { status: 429, headers: { 'X-RateLimit-Remaining': remaining.toString() } }
+          )
+        }
+      }
+    }
+
+    // Minimal security + CORS headers for API routes
     response.headers.set('X-Content-Type-Options', 'nosniff')
     response.headers.set('Access-Control-Allow-Origin', '*')
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -18,10 +36,24 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // --- Non-API Routes ---
-  const response = NextResponse.next()
+  // --- Non-API Routes: Full Supabase auth path ---
+  const { response, user } = await updateSession(request)
 
-  // Security headers
+  // Admin route protection
+  if (url.pathname.startsWith('/admin')) {
+    if (url.pathname === '/admin/login') {
+      if (user) {
+        return NextResponse.redirect(new URL('/admin', request.url))
+      }
+    } else {
+      if (!user) {
+        const loginUrl = new URL('/admin/login', request.url)
+        return NextResponse.redirect(loginUrl)
+      }
+    }
+  }
+
+  // Security headers for non-API routes
   response.headers.set('X-DNS-Prefetch-Control', 'on')
   response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
   response.headers.set('X-Content-Type-Options', 'nosniff')

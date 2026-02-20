@@ -43,13 +43,14 @@ import { VersionDisplay } from "@/components/version-display"
 import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { UserNav } from "@/components/auth/user-nav"
 import Image from "next/image"
 import { motion } from "framer-motion"
 import {
   hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost,
 } from "@/lib/api-client"
 
-import { userPreferences, type HistoryItem, type TagPreset } from "@/lib/storage"
+import { userPreferences, STORAGE_KEYS, type HistoryItem, type TagPreset } from "@/lib/storage"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
@@ -114,6 +115,7 @@ import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-m
 import { useDebounce } from "@/hooks/use-debounce"
 
 import { usePersistentState } from "@/hooks/use-persistent-state"
+import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 
 type CardScale = "small" | "medium" | "large"
 
@@ -125,21 +127,26 @@ export function PromptGallery() {
   const { toast } = useToast()
   const isMobile = useIsMobile()
 
+  // Sync preferences with cloud
+  usePreferencesSync()
+
   // 2. Local UI State & Persistence
   const [viewMode, setViewMode] = usePersistentState<"grid" | "list">(
     "grid",
     userPreferences.getViewMode,
     userPreferences.setViewMode,
-    "viewMode"
+    "viewMode",
+    STORAGE_KEYS.VIEW_MODE
   )
 
   const [cardScale, setCardScale] = usePersistentState<CardScale>(
     "medium",
     userPreferences.getCardScale,
     userPreferences.setCardScale,
-    "cardScale"
+    "cardScale",
+    STORAGE_KEYS.CARD_SCALE
   )
-  
+
   // Slider state needs to stay in sync with persisted cardScale
   const [scaleValue, setScaleValue] = useState([2])
 
@@ -155,30 +162,33 @@ export function PromptGallery() {
     { includeCharacters: true, optimizeTags: true },
     userPreferences.getPromptOptions,
     userPreferences.setPromptOptions,
-    "promptOptions"
+    "promptOptions",
+    STORAGE_KEYS.PROMPT_OPTIONS
   )
-  
+
   // Destructure for easier usage, create setters that update the object
   const { includeCharacters, optimizeTags } = promptOptions
-  
-  const setIncludeCharacters = (val: boolean) => 
+
+  const setIncludeCharacters = (val: boolean) =>
     setPromptOptions(prev => ({ ...prev, includeCharacters: val }))
-    
-  const setOptimizeTags = (val: boolean) => 
+
+  const setOptimizeTags = (val: boolean) =>
     setPromptOptions(prev => ({ ...prev, optimizeTags: val }))
 
   const [excludeInput, setExcludeInput] = usePersistentState(
     "",
     userPreferences.getExcludeTagsInput,
     userPreferences.setExcludeTagsInput,
-    "excludeTags"
+    "excludeTags",
+    STORAGE_KEYS.EXCLUDE_TAGS
   )
 
   const [addInput, setAddInput] = usePersistentState(
     "",
     userPreferences.getAddTagsInput,
     userPreferences.setAddTagsInput,
-    "addTags"
+    "addTags",
+    STORAGE_KEYS.ADD_TAGS
   )
 
   const [showSettings, setShowSettings] = useState(true)
@@ -201,14 +211,15 @@ export function PromptGallery() {
 
   // Global Weights State
   const [globalWeights, setGlobalWeights] = useState<Record<string, number>>({})
-  
+
   const [isGlobalWeightsEnabled, setIsGlobalWeightsEnabled] = usePersistentState(
     false,
     userPreferences.getGlobalWeightsEnabled,
     userPreferences.setGlobalWeightsEnabled,
-    "globalWeightsEnabled"
+    "globalWeightsEnabled",
+    STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED
   )
-  
+
   const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
   const [weightsLoaded, setWeightsLoaded] = useState(false)
 
@@ -270,7 +281,7 @@ export function PromptGallery() {
     if (scale === 1) val = 'small'
     else if (scale === 2) val = 'medium'
     else val = 'large'
-    
+
     // Only update if different to avoid loops (though usePersistentState setter might trigger re-render)
     if (val !== cardScale) {
       setCardScale(val)
@@ -557,24 +568,24 @@ export function PromptGallery() {
                     <Badge variant="secondary" className="text-[10px] sm:text-xs font-medium bg-muted text-muted-foreground border-0 px-1.5 py-0 sm:px-2 sm:py-1 h-fit">
                       By Mexes
                     </Badge>
-                                                                        <button
-                                                                          onClick={() => setShowWelcomeModal(true)}
-                                                                          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
-                                                                          title="Show Teach System Info"
-                                                                          aria-label="Show system information and version"
-                                                                        >
-                                                                          <VersionDisplay />
-                                                                        </button>
-                                                
-                                                                        <Button
-                                                                          variant="ghost"
-                                                                          size="sm"
-                                                                          onClick={() => setShowWelcomeModal(true)}
-                                                                          className="hidden sm:flex text-xs h-7 px-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                                                                        >
-                                                                          <Sparkles className="h-3 w-3 text-amber-500" />
-                                                                          What&apos;s New
-                                                                        </Button>                  </div>
+                    <button
+                      onClick={() => setShowWelcomeModal(true)}
+                      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
+                      title="Show Teach System Info"
+                      aria-label="Show system information and version"
+                    >
+                      <VersionDisplay />
+                    </button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowWelcomeModal(true)}
+                      className="hidden sm:flex text-xs h-7 px-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Sparkles className="h-3 w-3 text-amber-500" />
+                      What&apos;s New
+                    </Button>                  </div>
                 </div>
               </div>
 
@@ -649,6 +660,8 @@ export function PromptGallery() {
 
 
                 <ThemeToggle />
+
+                <UserNav />
 
                 <DropdownMenu>
                   <Tooltip>
@@ -1451,7 +1464,7 @@ export function PromptGallery() {
           onSuccess={refreshOverrides}
         />
       )}
-      <TeachWelcomeModal triggerOpen={showWelcomeModal} onOpenChange={setShowWelcomeModal} />
+      < TeachWelcomeModal triggerOpen={showWelcomeModal} onOpenChange={setShowWelcomeModal} />
       <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}

@@ -26,7 +26,7 @@ interface GlobalWeightsModalProps {
 }
 
 // Animation Variants
-const containerVariants = {
+const containerVariants: any = {
     hidden: { opacity: 0 },
     visible: {
         opacity: 1,
@@ -37,18 +37,18 @@ const containerVariants = {
     },
 }
 
-const itemVariants = {
+const itemVariants: any = {
     hidden: { opacity: 0, y: 10, scale: 0.95 },
-    visible: { 
-        opacity: 1, 
-        y: 0, 
+    visible: {
+        opacity: 1,
+        y: 0,
         scale: 1,
         transition: { type: "spring", stiffness: 350, damping: 25 }
     },
-    exit: { 
-        opacity: 0, 
-        scale: 0.9, 
-        transition: { duration: 0.2 } 
+    exit: {
+        opacity: 0,
+        scale: 0.9,
+        transition: { duration: 0.2 }
     }
 }
 
@@ -85,7 +85,7 @@ export function GlobalWeightsModal({
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[520px] p-0 gap-0 overflow-hidden border-0 shadow-2xl bg-background">
-                
+
                 {/* Unified Background Gradient */}
                 <div className="absolute top-0 left-0 right-0 h-64 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent pointer-events-none z-0" />
 
@@ -121,15 +121,15 @@ export function GlobalWeightsModal({
                                 className="pl-9 h-11 border-none shadow-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60"
                             />
                         </div>
-                        
+
                         <div className="flex items-center gap-2">
-                             <WeightStepper 
-                                value={parseFloat(newWeight)} 
+                            <WeightStepper
+                                value={parseFloat(newWeight)}
                                 onChange={(v) => setNewWeight(v.toString())}
                             />
-                            <Button 
-                                onClick={handleAdd} 
-                                size="icon" 
+                            <Button
+                                onClick={handleAdd}
+                                size="icon"
                                 className="h-11 w-11 shrink-0 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
                                 disabled={!newTag.trim()}
                                 aria-label="Add global weight"
@@ -145,7 +145,7 @@ export function GlobalWeightsModal({
                     <div className="p-6 pt-2 flex flex-col gap-2.5">
                         <AnimatePresence mode="popLayout" initial={false}>
                             {!hasWeights && (
-                                <motion.div 
+                                <motion.div
                                     key="empty"
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
@@ -165,8 +165,8 @@ export function GlobalWeightsModal({
                             )}
 
                             {sortedWeights.map(([tag, weight]) => (
-                                <motion.div 
-                                    key={tag} 
+                                <motion.div
+                                    key={tag}
                                     layout
                                     initial="hidden"
                                     animate="visible"
@@ -185,13 +185,13 @@ export function GlobalWeightsModal({
                                     </div>
 
                                     <div className="flex items-center gap-2">
-                                        <WeightStepper 
-                                            value={weight} 
+                                        <WeightStepper
+                                            value={weight}
                                             onChange={(val) => onSaveWeight(tag, val)}
                                             size="sm"
                                             tagName={tag}
                                         />
-                                        
+
                                         <Button
                                             variant="ghost"
                                             size="icon"
@@ -219,9 +219,9 @@ export function GlobalWeightsModal({
                         <Trash2 className="w-3.5 h-3.5 mr-2" />
                         Clear All
                     </Button>
-                    <Button 
-                        size="sm" 
-                        onClick={() => onOpenChange(false)} 
+                    <Button
+                        size="sm"
+                        onClick={() => onOpenChange(false)}
                         className="px-6 h-9 font-medium shadow-sm"
                     >
                         Done
@@ -233,12 +233,12 @@ export function GlobalWeightsModal({
 }
 
 // Compact Stepper Component
-function WeightStepper({ 
-    value, 
-    onChange, 
+function WeightStepper({
+    value,
+    onChange,
     size = "default",
     tagName
-}: { 
+}: {
     value: number
     onChange: (v: number) => void
     size?: "default" | "sm"
@@ -269,7 +269,7 @@ function WeightStepper({
             >
                 <Minus className={cn("shrink-0", isSmall ? "h-3 w-3" : "h-3.5 w-3.5")} />
             </button>
-            
+
             <div className={cn(
                 "h-full flex items-center justify-center border-x border-border/30 bg-secondary/10",
                 isSmall ? "w-10" : "w-12"
@@ -277,9 +277,9 @@ function WeightStepper({
                 <span className={cn(
                     "font-mono font-semibold",
                     isSmall ? "text-xs" : "text-sm",
-                    value > 1 ? "text-blue-600 dark:text-blue-400" : 
-                    value < 1 ? "text-red-600 dark:text-red-400" : 
-                    "text-foreground"
+                    value > 1 ? "text-blue-600 dark:text-blue-400" :
+                        value < 1 ? "text-red-600 dark:text-red-400" :
+                            "text-foreground"
                 )} aria-hidden="true">
                     {value.toFixed(1)}
                 </span>

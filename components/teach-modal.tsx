@@ -461,17 +461,17 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
         const activeItems = prev[activeContainer]
         const overItems = prev[overContainer]
         const activeIndex = activeItems.indexOf(active.id as string)
-        const overIndex = overItems.indexOf(over.id as string)
+        const overIndex = overItems.indexOf(over!.id as string)
 
         let newIndex
-        if (over.id in prev) {
+        if (over!.id in prev) {
           newIndex = overItems.length + 1
         } else {
           const isBelowOverItem =
-            over &&
+            over! &&
             active.rect.current.translated &&
             active.rect.current.translated.top >
-            over.rect.top + over.rect.height
+            over!.rect.top + over!.rect.height
 
           const modifier = isBelowOverItem ? 1 : 0
           newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1
@@ -516,7 +516,7 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
     setIsSubmitting(true)
 
     // Calculate diffs
-    const suggestions = []
+    const suggestions: Array<{ tagName: string; currentCategory: TagCategory; suggestedCategory: TagCategory }> = []
 
     // For each item in the current state, check if its category changed from initial
     for (const [category, tags] of Object.entries(items)) {
@@ -541,7 +541,7 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
 
       if (result.success) {
         setIsSuccess(true)
-        
+
         // Update local suggestions state immediately so UI shows badges/styles
         setExistingSuggestions(prev => {
           const next = { ...prev }

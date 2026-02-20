@@ -15,7 +15,7 @@ export class DanbooruProvider extends BaseBooruProvider {
       // Parallel fetch for multiple pages
       const pagesToFetch = 2
       const limitPerPage = "200"
-      
+
       const fetchPromises = Array.from({ length: pagesToFetch }, (_, i) => {
         const params = new URLSearchParams({
           limit: limitPerPage,
@@ -36,12 +36,12 @@ export class DanbooruProvider extends BaseBooruProvider {
 
       validPosts.forEach(post => {
         if (post.tag_string_character) {
-          post.tag_string_character.split(/\s+/).forEach(tag => {
+          post.tag_string_character.split(/\s+/).forEach((tag: string) => {
             if (tag) charStats.set(tag, (charStats.get(tag) || 0) + 1)
           })
         }
         if (post.tag_string_copyright) {
-          post.tag_string_copyright.split(/\s+/).forEach(tag => {
+          post.tag_string_copyright.split(/\s+/).forEach((tag: string) => {
             if (tag && tag !== 'original') copyStats.set(tag, (copyStats.get(tag) || 0) + 1)
           })
         }
@@ -53,7 +53,7 @@ export class DanbooruProvider extends BaseBooruProvider {
       // Get Top Candidates (20 of each to have buffer for image failures)
       const topChars = dedupChars.slice(0, 20).map(item => ({ name: item.tag, count: item.totalCount, type: 'character' as const }))
       const topCopies = dedupCopies.slice(0, 20).map(item => ({ name: item.tag, count: item.totalCount, type: 'copyright' as const }))
-      
+
       const combinedTrends = [...topChars, ...topCopies]
 
       if (combinedTrends.length === 0) return []
@@ -63,10 +63,10 @@ export class DanbooruProvider extends BaseBooruProvider {
         try {
           // Specific search criteria based on type
           // For characters: try 'solo' first for cleaner images
-          const searchTags = item.type === 'character' 
+          const searchTags = item.type === 'character'
             ? `${item.name} rating:g solo status:active`
             : `${item.name} rating:g status:active`
-          
+
           const imageParams = new URLSearchParams({
             limit: "1",
             tags: searchTags,
@@ -74,11 +74,11 @@ export class DanbooruProvider extends BaseBooruProvider {
           })
 
           let imageData = await this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, imageParams)
-          
+
           // Fallback for character if 'solo' returns nothing
           if ((!imageData || imageData.length === 0) && item.type === 'character') {
-             imageParams.set('tags', `${item.name} rating:g status:active`)
-             imageData = await this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, imageParams)
+            imageParams.set('tags', `${item.name} rating:g status:active`)
+            imageData = await this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, imageParams)
           }
 
           if (imageData && imageData.length > 0) {
@@ -99,7 +99,7 @@ export class DanbooruProvider extends BaseBooruProvider {
 
       // Filter nulls and ensure we have Top 10 of each category
       const validTrends = trendsWithImages.filter((t): t is TrendItem => t !== null)
-      
+
       const finalChars = validTrends
         .filter(t => t.type === 'character')
         .sort((a, b) => b.count - a.count)
@@ -120,7 +120,7 @@ export class DanbooruProvider extends BaseBooruProvider {
 
   private _deduplicateTags(stats: Map<string, number>, type: 'character' | 'copyright') {
     const groups = new Map<string, { tag: string, maxCount: number, totalCount: number }>()
-    
+
     // Pass 1: Basic normalization
     stats.forEach((count, tag) => {
       // Normalization strategy
@@ -148,10 +148,10 @@ export class DanbooruProvider extends BaseBooruProvider {
     // Pass 2: Merge sub-franchises for copyrights (e.g., 'hololive_english' -> 'hololive')
     if (type === 'copyright') {
       const keys = Array.from(groups.keys()).sort((a, b) => a.length - b.length)
-      
+
       for (const parentKey of keys) {
         if (!groups.has(parentKey)) continue // Already merged into someone else
-        
+
         // Look for children to merge into this parent
         for (const childKey of keys) {
           if (parentKey === childKey) continue
@@ -161,7 +161,7 @@ export class DanbooruProvider extends BaseBooruProvider {
           if (childKey.startsWith(parentKey + '_')) {
             const parent = groups.get(parentKey)!
             const child = groups.get(childKey)!
-            
+
             // Merge counts
             // Note: We don't simply add them because the same post might have both tags.
             // Since we don't have per-post granularity here easily without re-scanning,
@@ -182,7 +182,7 @@ export class DanbooruProvider extends BaseBooruProvider {
             // So 'hololive' count usually INCLUDES 'hololive_english' count.
             // So we should NOT add them. We should just swallow the child group.
             // The parent group ('hololive') already counted these posts.
-            
+
             // So we just remove the child entry so it doesn't show up as a duplicate row.
             groups.delete(childKey)
           }
@@ -196,7 +196,7 @@ export class DanbooruProvider extends BaseBooruProvider {
 
   async search(options: SearchOptions): Promise<BooruPost[]> {
     const { tags, page, order } = options
-    
+
     let finalTags: string
     let effectiveOrder = order
 

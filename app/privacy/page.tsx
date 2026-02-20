@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 }
 
 export default function PrivacyPage() {
-  const lastUpdated = "February 13, 2026"
+  const lastUpdated = "February 15, 2026"
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-4xl">
@@ -22,8 +22,7 @@ export default function PrivacyPage() {
           <CardContent className="space-y-4">
             <p>
               <strong>Local Storage:</strong> Booru Prompt Gallery primarily uses your browser&apos;s Local Storage to save 
-              your favorites, history, and application preferences. This data stays on your device and is not 
-              automatically sent to our servers.
+              your favorites, history, and application preferences. This data stays on your device.
             </p>
             <p>
               <strong>Analytics:</strong> We use Vercel Analytics to collect anonymous usage data to help us 
@@ -35,7 +34,38 @@ export default function PrivacyPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>2. Third-Party Services</CardTitle>
+            <CardTitle>2. Authentication & Account Data</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>
+              When you choose to sign in to Booru Prompt Gallery, we use <strong>Magic Link</strong> (passwordless email) as our authentication provider.
+              We are committed to data minimization and only request your email address.
+            </p>
+            {/* Google OAuth Temporarily Hidden
+            <p>
+              When you choose to sign in to Booru Prompt Gallery, we use <strong>Google OAuth</strong> as our authentication provider.
+              We are committed to data minimization and only request the following limited permissions (scopes):
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
+              <li>
+                <strong>openid</strong>: Used to associate you with your personal info on Google for authentication purposes.
+              </li>
+              <li>
+                <strong>userinfo.email</strong>: Used to see your primary Google Account email address.
+              </li>
+            </ul>
+            */}
+            <p className="pt-2">
+              <strong>How we use this data:</strong> Your email address is used solely as a unique identifier to link your account
+              to your saved preferences, favorites, and history across devices. We do <strong>not</strong> share your email 
+              with third parties or use it for marketing purposes.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>3. Third-Party Services</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
@@ -51,19 +81,19 @@ export default function PrivacyPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>3. Cookies</CardTitle>
+            <CardTitle>4. Cookies</CardTitle>
           </CardHeader>
           <CardContent>
             <p>
               We do not use tracking cookies for marketing purposes. We use functional cookies required for 
-              server-side features like admin authentication if applicable.
+              authentication and server-side features to maintain your session securely.
             </p>
           </CardContent>
         </Card>
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>4. Contact</CardTitle>
+            <CardTitle>5. Contact</CardTitle>
           </CardHeader>
           <CardContent>
             <p>

@@ -1,7 +1,7 @@
 "use client"
 
 import { usePersistentState } from "@/hooks/use-persistent-state"
-import { userPreferences } from "@/lib/storage"
+import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import { useToast } from "@/hooks/use-toast"
 
 export function useBlacklist() {
@@ -9,7 +9,8 @@ export function useBlacklist() {
     ['guro', 'scat'],
     userPreferences.getBlacklist,
     userPreferences.setBlacklist,
-    "blacklist"
+    "blacklist",
+    STORAGE_KEYS.BLACKLIST
   )
   const { toast } = useToast()
 

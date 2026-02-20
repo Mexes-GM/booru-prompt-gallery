@@ -4,8 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { classifyTagWithLLM } from '@/lib/llm-classifier'
 import { classifyTag, TagCategory } from '@/lib/tag-classifier'
 import { cookies } from 'next/headers'
-import { decrypt } from '@/lib/session'
 import { normalize } from '@/lib/cleanPrompt'
+import { createClient } from '@/lib/supabase/server'
 
 // Rate Limit Configuration
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -22,12 +22,18 @@ interface DanbooruPost {
 export async function generateAutoSuggestions() {
     try {
         // 1. Security & Auth Check
-        const cookieStore = await cookies();
-        const session = cookieStore.get('admin_session')?.value;
-        if (!session) throw new Error("Unauthorized: No session found");
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
         
-        const payload = await decrypt(session);
-        if (!payload || payload.role !== 'admin') throw new Error("Unauthorized: Invalid session");
+        if (!user) throw new Error("Unauthorized: No session found");
+        
+        const { data: profile } = await supabaseAdmin
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+            
+        if (!profile || profile.role !== 'admin') throw new Error("Unauthorized: Invalid session");
 
         // 2. Simple Rate Limiting (Database based)
         // Check how many 'mining_proposal_created' logs were created in the last minute by 'auto_mining'

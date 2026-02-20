@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
+    <title>Log in to Booru Prompt Gallery</title>
+    <style>
+        /* Reset styles */
+        body, html { margin: 0; padding: 0; width: 100% !important; height: 100% !important; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        * { box-sizing: border-box; }
+        
+        /* Client-specific resets */
+        table { border-collapse: collapse !important; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+        a img { border: none; }
+        
+        /* Typography */
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'; font-size: 16px; line-height: 1.5; color: #333333; background-color: #f6f9fb; }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            body { background-color: #1a1a1a !important; color: #ffffff !important; }
+            .container { background-color: #2d2d2d !important; color: #ffffff !important; }
+            .footer-text { color: #aaaaaa !important; }
+            h1, h2, h3, p { color: #ffffff !important; }
+            .button-text { color: #ffffff !important; }
+        }
+
+        /* Mobile styles */
+        @media screen and (max-width: 600px) {
+            .container { width: 100% !important; padding: 20px !important; }
+            .button { width: 100% !important; display: block !important; }
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f6f9fb;">
+    <!-- Subject Line Suggestion: Log in to Booru Prompt Gallery -->
+    <!-- Preheader Text: Click the button below to sign in to your account. -->
+    
+    <div style="display: none; font-size: 1px; color: #fefefe; line-height: 1px; font-family: sans-serif; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+        Click the button below to sign in to your account.
+    </div>
+
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f6f9fb;">
+        <tr>
+            <td align="center" style="padding: 40px 0;">
+                <!-- Main Container -->
+                <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow: hidden; max-width: 600px; width: 100%;">
+                    
+                    <!-- Header / Logo Area -->
+                    <tr>
+                        <td align="center" style="padding: 40px 40px 20px 40px; background-color: #ffffff;">
+                            <!-- Placeholder for Logo - Replace with actual logo URL if available -->
+                            <div style="font-family: sans-serif; font-weight: bold; font-size: 24px; color: #8D49DB;">
+                                Booru Prompt Gallery
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Content Area -->
+                    <tr>
+                        <td style="padding: 20px 40px 40px 40px; text-align: left;">
+                            <h1 style="margin: 0 0 20px 0; font-size: 24px; font-weight: bold; color: #333333; text-align: center;">Your Magic Link</h1>
+                            
+                            <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 24px; color: #555555; text-align: center;">
+                                Click the button below to log in. This link will expire in 24 hours.
+                            </p>
+
+                            <!-- CTA Button -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 24px;">
+                                <tr>
+                                    <td align="center">
+                                        <!-- Bulletproof Button -->
+                                        <div>
+                                            <!--[if mso]>
+                                            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ .ConfirmationURL }}" style="height:50px;v-text-anchor:middle;width:200px;" arcsize="10%" stroke="f" fillcolor="#8D49DB">
+                                            <w:anchorlock/>
+                                            <center>
+                                            <![endif]-->
+                                            <a href="{{ .ConfirmationURL }}" class="button" style="background-color: #8D49DB; border-radius: 6px; color: #ffffff; display: inline-block; font-family: sans-serif; font-size: 16px; font-weight: bold; line-height: 50px; text-align: center; text-decoration: none; width: 200px; -webkit-text-size-adjust: none;">
+                                                <span class="button-text">Log In</span>
+                                            </a>
+                                            <!--[if mso]>
+                                            </center>
+                                            </v:roundrect>
+                                            <![endif]-->
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 10px 0; font-size: 14px; color: #777777; text-align: center;">
+                                Or copy and paste this URL into your browser:
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #8D49DB; text-align: center; word-break: break-all;">
+                                <a href="{{ .ConfirmationURL }}" style="color: #8D49DB; text-decoration: none;">{{ .ConfirmationURL }}</a>
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer Area -->
+                    <tr>
+                        <td style="padding: 30px 40px; background-color: #f9fafb; border-top: 1px solid #eeeeee;">
+                            <p class="footer-text" style="margin: 0; font-size: 12px; line-height: 18px; color: #888888; text-align: center;">
+                                If you didn't request this email, you can safely ignore it.
+                                <br><br>
+                                &copy; 2026 Booru Prompt Gallery. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
