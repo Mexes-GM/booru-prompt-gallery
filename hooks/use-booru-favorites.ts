@@ -5,37 +5,71 @@ import { trackFavorite, safeTrack } from "@/lib/analytics"
 import { useUser } from "@/hooks/use-user"
 import { createClient } from "@/lib/supabase/client"
 
+export interface FavoriteFolder {
+  id: string
+  name: string
+  icon?: string | null
+}
+
 export interface UseBooruFavoritesReturn {
   favorites: Set<string>
+  folders: FavoriteFolder[]
+  favoriteFolderMap: Record<string, string[]> // Changed to array
   favoritesLoaded: boolean
   showFavorites: boolean
   favoritePosts: BooruPost[] | undefined
-  toggleFavorite: (postId: number, providerOverride?: string) => void
+
+  toggleFavorite: (postId: number, providerOverride?: string, folderId?: string | null) => Promise<void>
+  createFolder: (name: string) => Promise<FavoriteFolder | null>
+  deleteFolder: (folderId: string) => Promise<void>
   toggleShowFavorites: () => void
-  clearFavorites: () => void
+  clearFavorites: () => Promise<void>
   isFavorite: (provider: string, id: number) => boolean
   favoriteItems: FavoriteItem[]
   isLoading: boolean
 }
 
-export function useBooruFavorites(booruProvider: BooruProvider) {
+interface LocalStorageV2 {
+  folders: FavoriteFolder[]
+  favorites: Record<string, string | null>
+}
+
+interface LocalStorageV3 {
+  folders: FavoriteFolder[]
+  favorites: Record<string, string[]>
+}
+
+export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavoritesReturn {
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
+  const [folders, setFolders] = useState<FavoriteFolder[]>([])
+  const [favoriteFolderMap, setFavoriteFolderMap] = useState<Record<string, string[]>>({})
   const [favoritesLoaded, setFavoritesLoaded] = useState(false)
   const [showFavorites, setShowFavorites] = useState(false)
+
   const { user, loading: userLoading } = useUser()
   const supabase = createClient()
 
-  // Helper to save favorites to localStorage (Legacy/Anonymous)
-  const saveFavoritesToStorage = useCallback((newFavorites: Set<string>) => {
-    if (typeof window !== 'undefined') {
-      try {
-        const favoritesArray = Array.from(newFavorites)
-        localStorage.setItem('globalBooruFavorites', JSON.stringify(favoritesArray))
-      } catch (error) {
-        console.warn('Error saving favorites to localStorage:', error)
-      }
+  // Auto-save favorites to localStorage (Legacy/Anonymous) when state changes
+  useEffect(() => {
+    if (!user && favoritesLoaded && typeof window !== 'undefined') {
+      const timeoutId = setTimeout(() => {
+        try {
+          const state: LocalStorageV3 = {
+            folders: folders,
+            favorites: favoriteFolderMap
+          }
+          localStorage.setItem('booruFavoritesV3', JSON.stringify(state))
+        } catch (error) {
+          console.warn('Error saving favorites to localStorage:', error)
+        }
+      }, 1000)
+      return () => clearTimeout(timeoutId)
     }
-  }, [])
+  }, [user, favoritesLoaded, folders, favoriteFolderMap])
+
+
+  // Generate simple unique ID for local storage folders if needed
+  const generateLocalId = () => Math.random().toString(36).substring(2, 9)
 
   // Load favorites
   useEffect(() => {
@@ -44,122 +78,378 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
 
       if (user) {
         // Load from Supabase
-        const { data, error } = await supabase
+        const { data: dbFolders } = await supabase
+          .from('favorite_folders')
+          .select('id, name, icon')
+          .order('created_at', { ascending: true })
+
+        const { data: dbFavorites } = await supabase
           .from('favorites')
           .select('provider, post_id')
 
+        const { data: dbFolderItems } = await supabase
+          .from('favorite_folder_items')
+          .select('provider, post_id, folder_id')
+
+        const loadedFolders: FavoriteFolder[] = dbFolders || []
         const newSet = new Set<string>()
-        if (data) {
-          data.forEach((item: any) => {
-            newSet.add(`${item.provider}:${item.post_id}`)
+        const newMap: Record<string, string[]> = {}
+
+        if (dbFavorites) {
+          dbFavorites.forEach((item: any) => {
+            const key = `${item.provider}:${item.post_id}`
+            newSet.add(key)
+            newMap[key] = []
           })
         }
 
-        // Migrate local favorites to account
+        if (dbFolderItems) {
+          dbFolderItems.forEach((item: any) => {
+            const key = `${item.provider}:${item.post_id}`
+            if (newMap[key] !== undefined) {
+              newMap[key].push(item.folder_id)
+            }
+          })
+        }
+
+        // Migrate local favorites V2 and V3 to account
         if (typeof window !== 'undefined') {
-          const savedFavorites = localStorage.getItem('globalBooruFavorites')
-          if (savedFavorites) {
-            try {
-              const arr = JSON.parse(savedFavorites)
-              if (Array.isArray(arr) && arr.length > 0) {
-                let migrated = false
-                const upserts = []
-                for (const key of arr) {
-                  if (!newSet.has(key)) {
-                    newSet.add(key)
-                    migrated = true
-                    const [p, idStr] = key.split(':')
-                    const post_id = parseInt(idStr, 10)
-                    if (!isNaN(post_id)) {
-                      upserts.push({ user_id: user.id, provider: p, post_id })
+          const savedV3 = localStorage.getItem('booruFavoritesV3')
+          const savedV2 = localStorage.getItem('booruFavoritesV2')
+          const savedLegacy = localStorage.getItem('globalBooruFavorites')
+
+          if (savedV3 || savedV2 || savedLegacy) {
+            let migrated = false
+            const upsertFavorites: any[] = []
+
+            const localFolderIdMap: Record<string, string> = {} // maps local folder ID to Supabase UUID
+
+            // Process local folders first (from V2 or V3)
+            const processFolders = async (foldersToProcess: FavoriteFolder[]) => {
+              if (foldersToProcess && foldersToProcess.length > 0) {
+                for (const lf of foldersToProcess) {
+                  const existing = loadedFolders.find(df => df.name === lf.name)
+                  if (existing) {
+                    localFolderIdMap[lf.id] = existing.id
+                  } else {
+                    const { data: newFolderData } = await supabase
+                      .from('favorite_folders')
+                      .insert({ user_id: user.id, name: lf.name, icon: lf.icon || null })
+                      .select()
+                      .single()
+
+                    if (newFolderData) {
+                      loadedFolders.push({ id: newFolderData.id, name: newFolderData.name, icon: newFolderData.icon })
+                      localFolderIdMap[lf.id] = newFolderData.id
                     }
                   }
                 }
-                if (upserts.length > 0) {
-                  await supabase.from('favorites').upsert(upserts)
-                }
-                if (migrated) {
-                  localStorage.removeItem('globalBooruFavorites')
-                }
               }
-            } catch (e) {
-              console.error('Migration error:', e)
+            }
+
+            if (savedV2) {
+              try {
+                const parsed: LocalStorageV2 = JSON.parse(savedV2)
+                await processFolders(parsed.folders)
+
+              } catch (e) {
+                console.error('V2 Migration error:', e)
+              }
+            }
+
+            // Migrate V3 folders and favorites
+            if (savedV3) {
+              try {
+                const parsedV3: LocalStorageV3 = JSON.parse(savedV3)
+                await processFolders(parsedV3.folders)
+                if (parsedV3.favorites) {
+                  for (const [key, localFolderIds] of Object.entries(parsedV3.favorites)) {
+                    if (!newSet.has(key)) {
+                      newSet.add(key)
+                      migrated = true
+
+                      const [p, idStr] = key.split(':')
+                      const post_id = parseInt(idStr, 10)
+
+                      let targetFolderIds: string[] = []
+                      if (Array.isArray(localFolderIds)) {
+                        for (const lId of localFolderIds) {
+                          if (localFolderIdMap[lId]) {
+                            targetFolderIds.push(localFolderIdMap[lId])
+                          }
+                        }
+                      }
+
+                      newMap[key] = targetFolderIds
+
+                      if (!isNaN(post_id)) {
+                        upsertFavorites.push({
+                          user_id: user.id,
+                          provider: p,
+                          post_id
+                        })
+                        if (targetFolderIds.length > 0) {
+                          // we would upsert to folder_items but since this is an array let's just do it
+                          // actually, we will handle junction table insertions below
+                          for (const tfId of targetFolderIds) {
+                            upsertFavorites.push({ type: 'item', user_id: user.id, provider: p, post_id, folder_id: tfId })
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+
+              } catch (e) {
+                console.error('V3 Migration error:', e)
+              }
+            }
+
+            // Migrate V1 Legacy
+            if (savedLegacy) {
+              try {
+                const arr = JSON.parse(savedLegacy)
+                if (Array.isArray(arr) && arr.length > 0) {
+                  for (const key of arr) {
+                    if (!newSet.has(key)) {
+                      newSet.add(key)
+                      migrated = true
+                      newMap[key] = []
+
+                      const [p, idStr] = key.split(':')
+                      const post_id = parseInt(idStr, 10)
+                      if (!isNaN(post_id)) {
+                        upsertFavorites.push({ user_id: user.id, provider: p, post_id })
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('Legacy migration error:', e)
+              }
+            }
+
+            if (upsertFavorites.length > 0) {
+              const baseFavs = upsertFavorites.filter(u => !u.type)
+              const folderFavs = upsertFavorites.filter(u => u.type === 'item').map(({ type, ...rest }) => rest)
+              if (baseFavs.length > 0) await supabase.from('favorites').upsert(baseFavs)
+              if (folderFavs.length > 0) await supabase.from('favorite_folder_items').upsert(folderFavs)
+            }
+            if (migrated) {
+              localStorage.removeItem('booruFavoritesV3')
+              localStorage.removeItem('booruFavoritesV2')
             }
           }
-        }
 
-        setFavorites(newSet)
-        setFavoritesLoaded(true)
-      } else {
-        // Load from LocalStorage
-        if (typeof window !== 'undefined') {
-          const savedFavorites = localStorage.getItem('globalBooruFavorites')
-          let migrated = false
-          const newSet = new Set<string>()
-
-          // 1. Load Unified Format if exists
-          if (savedFavorites) {
-            try {
-              const arr = JSON.parse(savedFavorites)
-              if (Array.isArray(arr)) {
-                arr.forEach(k => newSet.add(k))
-              }
-            } catch (e) { console.error(e) }
-          }
-
-          // 2. Migrate Legacy keys (only if no unified data or to merge)
-          // ... (Legacy migration logic kept for anonymous users) ...
-          const legacyDanbooru = localStorage.getItem('booruFavorites')
-          if (legacyDanbooru) {
-            try {
-              const arr = JSON.parse(legacyDanbooru)
-              if (Array.isArray(arr) && arr.length > 0) {
-                arr.forEach(id => newSet.add(`danbooru:${id}`))
-                localStorage.removeItem('booruFavorites')
-                migrated = true
-              }
-            } catch (e) { }
-          }
-
+          setFolders(loadedFolders)
           setFavorites(newSet)
-          if (migrated) saveFavoritesToStorage(newSet)
+          setFavoriteFolderMap(newMap)
           setFavoritesLoaded(true)
+        } else {
+          // Build anonymous state
+          if (typeof window !== 'undefined') {
+            const newSet = new Set<string>()
+            let newFolders: FavoriteFolder[] = []
+            const newMap: Record<string, string[]> = {}
+            let shouldSave = false
+
+            const savedV3 = localStorage.getItem('booruFavoritesV3')
+            const savedV2 = localStorage.getItem('booruFavoritesV2')
+            const savedLegacy = localStorage.getItem('globalBooruFavorites')
+
+            if (savedV3) {
+              try {
+                const parsed: LocalStorageV3 = JSON.parse(savedV3)
+                if (parsed.folders) newFolders = parsed.folders
+                if (parsed.favorites) {
+                  for (const [key, folderIds] of Object.entries(parsed.favorites)) {
+                    newSet.add(key)
+                    newMap[key] = folderIds
+                  }
+                }
+              } catch (e) { }
+            } else if (savedV2) {
+              // Migrate local V2 to V3
+              try {
+                const parsed: LocalStorageV2 = JSON.parse(savedV2)
+                if (parsed.folders) newFolders = parsed.folders
+                if (parsed.favorites) {
+                  for (const [key, folderId] of Object.entries(parsed.favorites)) {
+                    newSet.add(key)
+                    newMap[key] = folderId ? [folderId] : []
+                  }
+                }
+                shouldSave = true
+              } catch (e) { }
+            }
+
+            if (savedLegacy) {
+              try {
+                const arr = JSON.parse(savedLegacy)
+                if (Array.isArray(arr)) {
+                  arr.forEach(k => {
+                    if (!newSet.has(k)) {
+                      newSet.add(k)
+                      newMap[k] = []
+                      shouldSave = true
+                    }
+                  })
+                }
+              } catch (e) { }
+              if (shouldSave) localStorage.removeItem('globalBooruFavorites')
+            }
+
+            setFolders(newFolders)
+            setFavorites(newSet)
+            setFavoriteFolderMap(newMap)
+            if (shouldSave) {
+              localStorage.setItem('booruFavoritesV3', JSON.stringify({ folders: newFolders, favorites: newMap }))
+              localStorage.removeItem('booruFavoritesV2')
+            }
+            setFavoritesLoaded(true)
+          }
         }
       }
+
+      loadFavorites()
     }
-
-    loadFavorites()
-  }, [user, userLoading, saveFavoritesToStorage, supabase])
-
-  const toggleFavorite = useCallback(async (postId: number, providerOverride?: string) => {
+  }, [user, userLoading, supabase, booruProvider])
+  const toggleFavorite = useCallback(async (postId: number, providerOverride?: string, folderId?: string | null) => {
     const targetProvider = providerOverride || booruProvider
     const uniqueKey = `${targetProvider}:${postId}`
     const isCurrentlyFavorited = favorites.has(uniqueKey)
-    const newFavorites = new Set(favorites)
+    const currentlyInFolders = favoriteFolderMap[uniqueKey] || []
 
-    // Optimistic Update
-    if (isCurrentlyFavorited) {
-      newFavorites.delete(uniqueKey)
-      toast({ title: "Removed from favorites", description: "Image removed from your favorites" })
-      trackFavorite(postId, 'remove')
-    } else {
+    let isRemovingEntirely = false
+    let isRemovingFolder = false
+    let isAddingFolder = false
+
+    const newFavorites = new Set(favorites)
+    const newMap = { ...favoriteFolderMap }
+
+    if (folderId === undefined) {
+      // Toggle the entire favorite (Main heart button)
+      if (isCurrentlyFavorited) {
+        isRemovingEntirely = true
+        newFavorites.delete(uniqueKey)
+        delete newMap[uniqueKey]
+        toast({ title: "Removed from favorites", description: "Image removed from your favorites" })
+        trackFavorite(postId, 'remove')
+      } else {
+        newFavorites.add(uniqueKey)
+        newMap[uniqueKey] = []
+        toast({ title: "Saved to favorites", description: "Saved to Uncategorized" })
+        trackFavorite(postId, 'add')
+      }
+    } else if (folderId === null) {
+      // Explicitly setting to Uncategorized (clearing all folders but keeping it favorited)
       newFavorites.add(uniqueKey)
-      toast({ title: "Added to favorites", description: "Image added to your favorites" })
-      trackFavorite(postId, 'add')
+      newMap[uniqueKey] = []
+      toast({ title: "Saved to favorites", description: "Saved to Uncategorized" })
+    } else {
+      // Toggling a specific folder
+      newFavorites.add(uniqueKey)
+      const hasFolder = currentlyInFolders.includes(folderId)
+
+      if (hasFolder) {
+        isRemovingFolder = true
+        newMap[uniqueKey] = currentlyInFolders.filter(id => id !== folderId)
+        // If they remove the last folder, it behaves like uncategorized but stays favorited.
+      } else {
+        isAddingFolder = true
+        newMap[uniqueKey] = [...currentlyInFolders, folderId]
+      }
     }
+
     setFavorites(newFavorites)
+    setFavoriteFolderMap(newMap)
 
     // Persist
     if (user) {
-      if (isCurrentlyFavorited) {
+      if (isRemovingEntirely) {
         await supabase.from('favorites').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId })
       } else {
-        await supabase.from('favorites').upsert({ user_id: user.id, provider: targetProvider, post_id: postId })
+        if (!isCurrentlyFavorited) {
+          // Ensure base favorite row exists
+          await supabase.from('favorites').upsert({
+            user_id: user.id,
+            provider: targetProvider,
+            post_id: postId
+          })
+        }
+
+        if (folderId === null) {
+          // Clear all folders for this post
+          await supabase.from('favorite_folder_items').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId })
+        } else if (folderId !== undefined) {
+          if (isRemovingFolder) {
+            await supabase.from('favorite_folder_items').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId, folder_id: folderId })
+          } else if (isAddingFolder) {
+            await supabase.from('favorite_folder_items').upsert({
+              user_id: user.id,
+              provider: targetProvider,
+              post_id: postId,
+              folder_id: folderId
+            })
+          }
+        }
       }
-    } else {
-      saveFavoritesToStorage(newFavorites)
     }
-  }, [favorites, booruProvider, saveFavoritesToStorage, user, supabase])
+  }, [favorites, favoriteFolderMap, folders, booruProvider, user, supabase])
+
+  const createFolder = useCallback(async (name: string, icon?: string | null): Promise<FavoriteFolder | null> => {
+    const trimmed = name.trim()
+    if (!trimmed) return null
+    if (folders.some(f => f.name.toLowerCase() === trimmed.toLowerCase())) {
+      toast({ title: "Category exists", description: "You already have a category with this name.", variant: "destructive" })
+      return null
+    }
+
+    let newFolder: FavoriteFolder
+    if (user) {
+      const { data, error } = await supabase
+        .from('favorite_folders')
+        .insert({ user_id: user.id, name: trimmed, icon: icon || null })
+        .select()
+        .single()
+
+      if (error || !data) {
+        toast({ title: "Error creating category", description: error?.message || "Something went wrong", variant: "destructive" })
+        return null
+      }
+      newFolder = { id: data.id, name: data.name, icon: data.icon }
+    } else {
+      newFolder = { id: generateLocalId(), name: trimmed, icon: icon || null }
+    }
+
+    const newFolders = [...folders, newFolder]
+    setFolders(newFolders)
+
+    toast({ title: "Category created", description: `"${trimmed}" is now available.` })
+    return newFolder
+  }, [folders, user, supabase])
+
+  const deleteFolder = useCallback(async (folderId: string) => {
+    const newFolders = folders.filter(f => f.id !== folderId)
+    const newMap = { ...favoriteFolderMap }
+
+    // Remove this folder completely from all items' arrays
+    for (const [key, val] of Object.entries(newMap)) {
+      if (val.includes(folderId)) {
+        newMap[key] = val.filter(id => id !== folderId)
+      }
+    }
+
+    setFolders(newFolders)
+    setFavoriteFolderMap(newMap)
+
+    if (user) {
+      await supabase.from('favorite_folders').delete().match({ id: folderId })
+      // favorites in db automatically cascade to NULL via ON DELETE SET NULL foreign key policy
+    }
+
+    toast({ title: "Category deleted", description: "Items moved to Uncategorized" })
+  }, [folders, favoriteFolderMap, user, supabase])
 
   const toggleShowFavorites = useCallback(() => {
     setShowFavorites(prev => {
@@ -171,13 +461,12 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
 
   const clearFavorites = useCallback(async () => {
     setFavorites(new Set())
+    setFavoriteFolderMap({})
     if (user) {
       await supabase.from('favorites').delete().eq('user_id', user.id)
-    } else {
-      saveFavoritesToStorage(new Set())
     }
     toast({ title: "Favorites cleared", description: "All favorites have been removed" })
-  }, [saveFavoritesToStorage, user, supabase])
+  }, [user, supabase])
 
   const isFavorite = useCallback((provider: string, id: number) => {
     return favorites.has(`${provider}:${id}`)
@@ -194,16 +483,19 @@ export function useBooruFavorites(booruProvider: BooruProvider) {
 
   const {
     posts: favoritePosts,
-    error: favoritesError,
     isLoading: favoritesLoading,
   } = useFavoritePosts(favoriteItems)
 
   return {
     favorites,
+    folders,
+    favoriteFolderMap,
     favoritesLoaded,
     showFavorites,
     favoritePosts,
     toggleFavorite,
+    createFolder,
+    deleteFolder,
     toggleShowFavorites,
     clearFavorites,
     isFavorite,

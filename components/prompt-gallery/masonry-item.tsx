@@ -38,6 +38,8 @@ import {
     DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { SaveFavoriteButton } from "./save-favorite-button"
+import { FavoriteFolder } from "@/hooks/use-booru-favorites"
 import { trackExternalLink } from "@/lib/analytics"
 import { toast } from "@/hooks/use-toast"
 import { SCALE_CONFIG } from "@/components/masonry-grid"
@@ -111,8 +113,11 @@ interface MasonryItemProps {
     viewMode?: "grid" | "list"
     effectiveScale: "small" | "medium" | "large"
     booruProvider: BooruProvider
-    favorites: Set<string>
-    toggleFavorite: (id: number, provider?: string) => void
+    isFavorited: boolean
+    folders: FavoriteFolder[]
+    currentFolderIds: string[]
+    toggleFavorite: (id: number, provider?: string, folderId?: string | null) => void
+    createFolder: (name: string) => Promise<FavoriteFolder | null>
     isMergeMode: boolean
     isSelected: boolean
     selectedParts?: Set<TagCategory>
@@ -144,8 +149,11 @@ export const MasonryItem = memo(function MasonryItem({
     viewMode = "grid",
     effectiveScale,
     booruProvider,
-    favorites,
+    isFavorited,
+    folders,
+    currentFolderIds,
     toggleFavorite,
+    createFolder,
     isMergeMode,
     isSelected,
     selectedParts,
@@ -173,6 +181,12 @@ export const MasonryItem = memo(function MasonryItem({
 
     // State to hold modified prompt from user interaction
     const [modifiedContent, setModifiedContent] = useState<string | null>(null)
+
+    const itemProvider = post._provider || booruProvider
+
+    const handleToggleFavorite = (folderId: string | null | undefined) => {
+        toggleFavorite(post.id, itemProvider, folderId)
+    }
 
     // Check if this is an Aibooru post with prompt
     const isAiPost = isAibooruPost(post)
@@ -307,8 +321,6 @@ export const MasonryItem = memo(function MasonryItem({
         }
     }
 
-    const itemProvider = post._provider || booruProvider
-
     // Optimization: Use preview image for small cards to save bandwidth/CPU
     // For Gelbooru: ALWAYS use thumbnail — it loads directly without proxy,
     // avoiding all origin transfer. Full images (img*.gelbooru.com) have hotlink protection.
@@ -335,8 +347,6 @@ export const MasonryItem = memo(function MasonryItem({
     } else if (itemProvider === 'gelbooru') {
         postUrl = `https://gelbooru.com/index.php?page=post&s=view&id=${post.id}`
     }
-
-    const isFavorited = favorites.has(`${itemProvider}:${post.id}`)
 
     const getCardContentClass = () => {
         switch (effectiveScale) {
@@ -472,24 +482,13 @@ export const MasonryItem = memo(function MasonryItem({
 
                     {/* Overlay actions */}
                     <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    size="icon"
-                                    variant="secondary"
-                                    className={`glass-effect ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
-                                    onClick={() => toggleFavorite(post.id, post._provider)}
-                                    aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
-                                >
-                                    <Heart
-                                        className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} ${isFavorited ? "fill-red-500 text-red-500" : ""}`}
-                                    />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                {isFavorited ? "Remove from favorites" : "Add to favorites"}
-                            </TooltipContent>
-                        </Tooltip>
+                        <SaveFavoriteButton
+                            folders={folders}
+                            selectedFolderIds={currentFolderIds}
+                            isFavorited={isFavorited}
+                            onToggleFavorite={handleToggleFavorite}
+                            onCreateFolder={createFolder}
+                        />
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -635,21 +634,16 @@ export const MasonryItem = memo(function MasonryItem({
                 <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                     <div
                         className="image-container-list-2-3 mx-auto sm:mx-0 relative group cursor-pointer"
-                        onDoubleClick={() => toggleFavorite(post.id, itemProvider)}
+                        onDoubleClick={() => handleToggleFavorite(null)}
                     >
-                        <div className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                                size="icon"
-                                variant="secondary"
-                                className={`h-6 w-6 rounded-full shadow-sm ${isFavorited ? 'text-red-500 bg-white' : 'text-muted-foreground bg-white/80'}`}
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    toggleFavorite(post.id, itemProvider)
-                                }}
-                                aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
-                            >
-                                <Heart className={`h-3 w-3 ${isFavorited ? "fill-current" : ""}`} />
-                            </Button>
+                        <div className="absolute top-1 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <SaveFavoriteButton
+                                folders={folders}
+                                selectedFolderIds={currentFolderIds}
+                                isFavorited={isFavorited}
+                                onToggleFavorite={handleToggleFavorite}
+                                onCreateFolder={createFolder}
+                            />
                         </div>
                         <Image
                             src={fileUrl!}
@@ -669,24 +663,13 @@ export const MasonryItem = memo(function MasonryItem({
                             </div>
 
                             <div className="flex gap-2">
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            onClick={() => toggleFavorite(post.id)}
-                                            className="focus-ring h-8 w-8"
-                                            aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
-                                        >
-                                            <Heart
-                                                className={`h-4 w-4 ${isFavorited ? "fill-red-500 text-red-500" : ""}`}
-                                            />
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        {isFavorited ? "Remove from favorites" : "Add to favorites"}
-                                    </TooltipContent>
-                                </Tooltip>
+                                <SaveFavoriteButton
+                                    folders={folders}
+                                    selectedFolderIds={currentFolderIds}
+                                    isFavorited={isFavorited}
+                                    onToggleFavorite={handleToggleFavorite}
+                                    onCreateFolder={createFolder}
+                                />
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <Button

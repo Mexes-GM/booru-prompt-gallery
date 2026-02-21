@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import {
   Copy,
   Check,
@@ -45,7 +46,8 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { UserNav } from "@/components/auth/user-nav"
 import Image from "next/image"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion"
+import { renderIcon } from "@/components/prompt-gallery/save-favorite-button"
 import {
   hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost,
 } from "@/lib/api-client"
@@ -116,6 +118,16 @@ import { useDebounce } from "@/hooks/use-debounce"
 
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePreferencesSync } from "@/hooks/use-preferences-sync"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 type CardScale = "small" | "medium" | "large"
 
@@ -149,6 +161,9 @@ export function PromptGallery() {
 
   // Slider state needs to stay in sync with persisted cardScale
   const [scaleValue, setScaleValue] = useState([2])
+
+  // Folder filter state
+  const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null | 'all'>('all')
 
   // Sync slider when cardScale changes (e.g. loaded from storage)
   useEffect(() => {
@@ -194,6 +209,9 @@ export function PromptGallery() {
   const [showSettings, setShowSettings] = useState(true)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
+
+  // Folder Delete State
+  const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
 
   // Modals
   const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
@@ -497,7 +515,25 @@ export function PromptGallery() {
   ], [search.isShuffle])
 
   const filteredPosts = useMemo(() => {
-    const source = favs.showFavorites ? (favs.favoritePosts || []) : search.allPosts
+    let source = search.allPosts
+    if (favs.showFavorites) {
+      source = favs.favoritePosts || []
+      if (activeFavoriteFolder !== 'all') {
+        source = source.filter(post => {
+          const itemProvider = post._provider || search.booruProvider
+          const uniqueKey = `${itemProvider}:${post.id}`
+          const postFolderIds = favs.favoriteFolderMap[uniqueKey] || []
+
+          if (activeFavoriteFolder === null) {
+            // Uncategorized mode: show items that belong to no folders
+            return postFolderIds.length === 0
+          }
+
+          return postFolderIds.includes(activeFavoriteFolder)
+        })
+      }
+    }
+
     return source.filter(post => {
       // Blacklist filter
       if (post.tag_string) {
@@ -510,9 +546,17 @@ export function PromptGallery() {
       const fileUrl = post.large_file_url || post.file_url
       return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
     })
-  }, [favs.showFavorites, favs.favoritePosts, search.allPosts, blacklist])
+  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist])
+
+  // Constant empty array reference for memoization
+  const EMPTY_ARRAY = useRef<string[]>([]).current
 
   const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number) => {
+    const itemProvider = post._provider || search.booruProvider
+    const uniqueKey = `${itemProvider}:${post.id}`
+    const isFavorited = favs.favorites.has(uniqueKey)
+    const currentFolderIds = favs.favoriteFolderMap[uniqueKey] || EMPTY_ARRAY
+
     return <MasonryItem
       post={post}
       width={width}
@@ -520,8 +564,11 @@ export function PromptGallery() {
       viewMode={viewMode}
       effectiveScale={effectiveScale}
       booruProvider={search.booruProvider}
-      favorites={favs.favorites}
+      isFavorited={isFavorited}
+      folders={favs.folders}
+      currentFolderIds={currentFolderIds}
       toggleFavorite={favs.toggleFavorite}
+      createFolder={favs.createFolder}
       downloadImage={downloadImage}
       copyToClipboard={copyToClipboard}
       excludeInput={debouncedExcludeInput}
@@ -544,7 +591,7 @@ export function PromptGallery() {
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.toggleFavorite, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, EMPTY_ARRAY])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -853,16 +900,27 @@ export function PromptGallery() {
 
 
                         <Button
-                          type="button"
+                          asChild
                           variant="secondary"
-                          onClick={favs.toggleShowFavorites}
-                          className={`h-9 px-3 gap-1 transition-colors duration-200 ${favs.showFavorites
-                            ? "bg-red-200 text-red-800 hover:bg-red-300 dark:bg-red-800 dark:text-red-100 dark:hover:bg-red-700"
+                          className={`h-9 px-3 gap-1 transition-colors duration-200 cursor-pointer ${favs.showFavorites
+                            ? "bg-red-200 text-red-800 hover:bg-red-300 dark:bg-red-800 dark:text-red-100 dark:hover:bg-red-700 shadow-inner"
                             : "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
                             }`}
                         >
-                          <Heart className={`w-4 h-4 ${favs.showFavorites ? "fill-current" : ""}`} />
-                          <span className="text-xs font-medium">Favs ({favs.favorites.size})</span>
+                          <motion.button
+                            type="button"
+                            onClick={favs.toggleShowFavorites}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            <motion.div
+                              animate={favs.showFavorites ? { scale: [1, 1.3, 1], rotate: [0, -10, 10, -10, 0] } : { scale: 1, rotate: 0 }}
+                              transition={{ duration: 0.4 }}
+                            >
+                              <Heart className={`w-4 h-4 ${favs.showFavorites ? "fill-current" : ""}`} />
+                            </motion.div>
+                            <span className="text-xs font-medium">Favs ({favs.favorites.size})</span>
+                          </motion.button>
                         </Button>
 
                         {/* Trending Sheet */}
@@ -1332,6 +1390,83 @@ export function PromptGallery() {
           </div>
 
           {/* Gallery Grid */}
+          <AnimatePresence>
+            {favs.showFavorites && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                animate={{ opacity: 1, height: "auto", marginBottom: 24 }}
+                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                className="flex flex-col gap-3 overflow-hidden"
+              >
+                <div className="flex items-center justify-between px-2 pt-2">
+                  <h2 className="text-lg font-semibold tracking-tight">Your Favorites</h2>
+                </div>
+                <ScrollArea className="w-full whitespace-nowrap pb-2 pt-1">
+                  <div className="flex w-max space-x-2 px-2">
+                    <LayoutGroup id="favoritesTabs">
+                      {(() => {
+                        const itemsWithFolders = Object.values(favs.favoriteFolderMap).filter(arr => Array.isArray(arr) && arr.length > 0).length;
+                        const uncategorizedCount = Math.max(0, favs.favorites.size - itemsWithFolders);
+
+                        return [
+                          { id: 'all', name: 'All Favorites', count: favs.favorites.size, icon: null },
+                          { id: null, name: 'Uncategorized', count: uncategorizedCount, icon: 'Folder' },
+                          ...favs.folders.map(f => ({
+                            id: f.id,
+                            name: f.name,
+                            count: Object.values(favs.favoriteFolderMap).filter(arr => Array.isArray(arr) && arr.includes(f.id)).length,
+                            icon: f.icon
+                          }))
+                        ].map((tab, i) => {
+                          const isActive = activeFavoriteFolder === tab.id;
+                          return (
+                            <motion.button
+                              key={String(tab.id)}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: i * 0.05, type: "spring", stiffness: 300, damping: 20 }}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setActiveFavoriteFolder(tab.id as any)}
+                              className={`relative px-4 py-1.5 rounded-full text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 flex items-center gap-2 ${isActive ? "text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-secondary/50 hover:bg-secondary border border-border/50"}`}
+                            >
+                              {isActive && (
+                                <motion.div
+                                  layoutId="activeFavoriteFolderBubble"
+                                  className="absolute inset-0 bg-red-500 rounded-full shadow-sm"
+                                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                              )}
+                              <span className="relative z-10 flex items-center gap-2">
+                                {tab.icon && renderIcon(tab.icon, { className: `w-3.5 h-3.5 ${isActive ? "text-primary-foreground" : "opacity-80"}` })}
+                                <span>{tab.name}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isActive ? "bg-black/20" : "bg-background/80"}`}>{tab.count}</span>
+                                {tab.id !== 'all' && tab.id !== null && (
+                                  <div
+                                    role="button"
+                                    title="Delete Folder"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setFolderToDelete({ id: tab.id as string, name: tab.name })
+                                    }}
+                                    className={`ml-1 rounded-full p-0.5 transition-colors ${isActive ? "hover:bg-black/20 text-primary-foreground" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </div>
+                                )}
+                              </span>
+                            </motion.button>
+                          )
+                        });
+                      })()}
+                    </LayoutGroup>
+                  </div>
+                  <ScrollBar orientation="horizontal" className="h-2.5" />
+                </ScrollArea>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {viewMode === "grid" ? (
             <div className="mb-8 min-h-[500px]">
               <MasonryGrid
@@ -1342,36 +1477,46 @@ export function PromptGallery() {
             </div>
           ) : (
             <div className="space-y-4 mb-8">
-              {finalPosts.map((post) => (
-                <div key={`${post.id}`}>
-                  <MasonryItem
-                    post={post}
-                    width={800} // Dummy width for list view
-                    height={600} // Dummy height
-                    viewMode="list"
-                    effectiveScale="medium" // Fixed for list
-                    booruProvider={search.booruProvider}
-                    favorites={favs.favorites}
-                    toggleFavorite={favs.toggleFavorite}
-                    downloadImage={downloadImage}
-                    copyToClipboard={copyToClipboard}
-                    excludeInput={debouncedExcludeInput}
-                    addInput={debouncedAddInput}
-                    includeCharacters={includeCharacters}
-                    optimizeTags={optimizeTags}
-                    removeLoRaTags={search.removeLoRaTags}
-                    removeQualityTags={search.removeQualityTags}
-                    tagOverrides={tagOverrides}
-                    copiedId={copiedId}
-                    setTeachModalData={setTeachModalData}
-                    isMergeMode={mergeMode.isMergeMode}
-                    isSelected={mergeMode.selectedPosts.has(post.id)}
-                    selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
-                    onTogglePart={mergeMode.togglePostPart}
-                    onMergeSelect={() => { }}
-                  />
-                </div>
-              ))}
+              {finalPosts.map((post) => {
+                const itemProvider = post._provider || search.booruProvider
+                const uniqueKey = `${itemProvider}:${post.id}`
+                const isFavorited = favs.favorites.has(uniqueKey)
+                const currentFolderIds = favs.favoriteFolderMap[uniqueKey] || EMPTY_ARRAY
+
+                return (
+                  <div key={`${post.id}`}>
+                    <MasonryItem
+                      post={post}
+                      width={800} // Dummy width for list view
+                      height={600} // Dummy height
+                      viewMode="list"
+                      effectiveScale="medium" // Fixed for list
+                      booruProvider={search.booruProvider}
+                      isFavorited={isFavorited}
+                      folders={favs.folders}
+                      currentFolderIds={currentFolderIds}
+                      toggleFavorite={favs.toggleFavorite}
+                      createFolder={favs.createFolder}
+                      downloadImage={downloadImage}
+                      copyToClipboard={copyToClipboard}
+                      excludeInput={debouncedExcludeInput}
+                      addInput={debouncedAddInput}
+                      includeCharacters={includeCharacters}
+                      optimizeTags={optimizeTags}
+                      removeLoRaTags={search.removeLoRaTags}
+                      removeQualityTags={search.removeQualityTags}
+                      tagOverrides={tagOverrides}
+                      copiedId={copiedId}
+                      setTeachModalData={setTeachModalData}
+                      isMergeMode={mergeMode.isMergeMode}
+                      isSelected={mergeMode.selectedPosts.has(post.id)}
+                      selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
+                      onTogglePart={mergeMode.togglePostPart}
+                      onMergeSelect={() => { }}
+                    />
+                  </div>
+                )
+              })}
             </div>
           )}
 
@@ -1485,6 +1630,33 @@ export function PromptGallery() {
         onClearWeights={handleClearGlobalWeights}
         onSaveWeight={handleGlobalWeightChange}
       />
+
+      <AlertDialog open={!!folderToDelete} onOpenChange={(open) => !open && setFolderToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the folder "{folderToDelete?.name}". Any favorited post within this folder will be moved back to the "Uncategorized" section if they are not part of any other folder.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (folderToDelete) {
+                  favs.deleteFolder(folderToDelete.id)
+                  if (activeFavoriteFolder === folderToDelete.id) {
+                    setActiveFavoriteFolder('all')
+                  }
+                }
+              }}
+            >
+              Delete Folder
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </TooltipProvider>
   )
 }
