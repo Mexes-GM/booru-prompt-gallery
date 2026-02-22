@@ -20,10 +20,11 @@ export interface UseBooruFavoritesReturn {
   favoritePosts: BooruPost[] | undefined
 
   toggleFavorite: (postId: number, providerOverride?: string, folderId?: string | null) => Promise<void>
-  createFolder: (name: string) => Promise<FavoriteFolder | null>
+  createFolder: (name: string, icon?: string | null) => Promise<FavoriteFolder | null>
   deleteFolder: (folderId: string) => Promise<void>
   toggleShowFavorites: () => void
   clearFavorites: () => Promise<void>
+  syncFavorites: () => Promise<void>
   isFavorite: (provider: string, id: number) => boolean
   favoriteItems: FavoriteItem[]
   isLoading: boolean
@@ -40,13 +41,14 @@ interface LocalStorageV3 {
 }
 
 export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavoritesReturn {
+  const hookId = useMemo(() => Math.random().toString(36).substring(2, 6), [])
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [folders, setFolders] = useState<FavoriteFolder[]>([])
   const [favoriteFolderMap, setFavoriteFolderMap] = useState<Record<string, string[]>>({})
   const [favoritesLoaded, setFavoritesLoaded] = useState(false)
   const [showFavorites, setShowFavorites] = useState(false)
 
-  const { user, loading: userLoading } = useUser()
+  const { user, session, loading: userLoading } = useUser()
   const supabase = createClient()
 
   // Auto-save favorites to localStorage (Legacy/Anonymous) when state changes
@@ -73,180 +75,266 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
   // Load favorites
   useEffect(() => {
-    async function loadFavorites() {
-      if (userLoading) return
+    console.log(`[useBooruFavorites:${hookId}] useEffect | user: ${!!user} | userLoading: ${userLoading} | session: ${!!session}`)
+    if (userLoading) return
 
-      if (user) {
-        // Load from Supabase
-        const { data: dbFolders } = await supabase
-          .from('favorite_folders')
-          .select('id, name, icon')
-          .order('created_at', { ascending: true })
+    let isMounted = true
 
-        const { data: dbFavorites } = await supabase
-          .from('favorites')
-          .select('provider, post_id')
+    async function fetchFavorites() {
+      try {
+        if (user) {
+          console.log('[loadFavorites] RUNNING. user_id:', user.id)
+          const { data: dbFolders, error: foldersErr } = await supabase
+            .from('favorite_folders')
+            .select('id, name, icon')
+            .order('created_at', { ascending: true })
+          if (foldersErr) console.error("Folders fetch error:", foldersErr)
+          console.log('[loadFavorites] dbFolders returned:', dbFolders?.length)
+          if (foldersErr) console.error("Folders fetch error:", foldersErr)
 
-        const { data: dbFolderItems } = await supabase
-          .from('favorite_folder_items')
-          .select('provider, post_id, folder_id')
+          const { data: dbFavorites, error: favsErr } = await supabase
+            .from('favorites')
+            .select('provider, post_id')
+          if (favsErr) console.error("Favorites fetch error:", favsErr)
 
-        const loadedFolders: FavoriteFolder[] = dbFolders || []
-        const newSet = new Set<string>()
-        const newMap: Record<string, string[]> = {}
+          const { data: dbFolderItems, error: itemsErr } = await supabase
+            .from('favorite_folder_items')
+            .select('provider, post_id, folder_id')
+          if (itemsErr) console.error("Items fetch error:", itemsErr)
 
-        if (dbFavorites) {
-          dbFavorites.forEach((item: any) => {
-            const key = `${item.provider}:${item.post_id}`
-            newSet.add(key)
-            newMap[key] = []
-          })
-        }
+          const loadedFolders: FavoriteFolder[] = dbFolders || []
+          const newSet = new Set<string>()
+          const newMap: Record<string, string[]> = {}
 
-        if (dbFolderItems) {
-          dbFolderItems.forEach((item: any) => {
-            const key = `${item.provider}:${item.post_id}`
-            if (newMap[key] !== undefined) {
-              newMap[key].push(item.folder_id)
-            }
-          })
-        }
-
-        // Migrate local favorites V2 and V3 to account
-        if (typeof window !== 'undefined') {
-          const savedV3 = localStorage.getItem('booruFavoritesV3')
-          const savedV2 = localStorage.getItem('booruFavoritesV2')
-          const savedLegacy = localStorage.getItem('globalBooruFavorites')
-
-          if (savedV3 || savedV2 || savedLegacy) {
-            let migrated = false
-            const upsertFavorites: any[] = []
-
-            const localFolderIdMap: Record<string, string> = {} // maps local folder ID to Supabase UUID
-
-            // Process local folders first (from V2 or V3)
-            const processFolders = async (foldersToProcess: FavoriteFolder[]) => {
-              if (foldersToProcess && foldersToProcess.length > 0) {
-                for (const lf of foldersToProcess) {
-                  const existing = loadedFolders.find(df => df.name === lf.name)
-                  if (existing) {
-                    localFolderIdMap[lf.id] = existing.id
-                  } else {
-                    const { data: newFolderData } = await supabase
-                      .from('favorite_folders')
-                      .insert({ user_id: user.id, name: lf.name, icon: lf.icon || null })
-                      .select()
-                      .single()
-
-                    if (newFolderData) {
-                      loadedFolders.push({ id: newFolderData.id, name: newFolderData.name, icon: newFolderData.icon })
-                      localFolderIdMap[lf.id] = newFolderData.id
-                    }
-                  }
-                }
-              }
-            }
-
-            if (savedV2) {
-              try {
-                const parsed: LocalStorageV2 = JSON.parse(savedV2)
-                await processFolders(parsed.folders)
-
-              } catch (e) {
-                console.error('V2 Migration error:', e)
-              }
-            }
-
-            // Migrate V3 folders and favorites
-            if (savedV3) {
-              try {
-                const parsedV3: LocalStorageV3 = JSON.parse(savedV3)
-                await processFolders(parsedV3.folders)
-                if (parsedV3.favorites) {
-                  for (const [key, localFolderIds] of Object.entries(parsedV3.favorites)) {
-                    if (!newSet.has(key)) {
-                      newSet.add(key)
-                      migrated = true
-
-                      const [p, idStr] = key.split(':')
-                      const post_id = parseInt(idStr, 10)
-
-                      let targetFolderIds: string[] = []
-                      if (Array.isArray(localFolderIds)) {
-                        for (const lId of localFolderIds) {
-                          if (localFolderIdMap[lId]) {
-                            targetFolderIds.push(localFolderIdMap[lId])
-                          }
-                        }
-                      }
-
-                      newMap[key] = targetFolderIds
-
-                      if (!isNaN(post_id)) {
-                        upsertFavorites.push({
-                          user_id: user.id,
-                          provider: p,
-                          post_id
-                        })
-                        if (targetFolderIds.length > 0) {
-                          // we would upsert to folder_items but since this is an array let's just do it
-                          // actually, we will handle junction table insertions below
-                          for (const tfId of targetFolderIds) {
-                            upsertFavorites.push({ type: 'item', user_id: user.id, provider: p, post_id, folder_id: tfId })
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-
-              } catch (e) {
-                console.error('V3 Migration error:', e)
-              }
-            }
-
-            // Migrate V1 Legacy
-            if (savedLegacy) {
-              try {
-                const arr = JSON.parse(savedLegacy)
-                if (Array.isArray(arr) && arr.length > 0) {
-                  for (const key of arr) {
-                    if (!newSet.has(key)) {
-                      newSet.add(key)
-                      migrated = true
-                      newMap[key] = []
-
-                      const [p, idStr] = key.split(':')
-                      const post_id = parseInt(idStr, 10)
-                      if (!isNaN(post_id)) {
-                        upsertFavorites.push({ user_id: user.id, provider: p, post_id })
-                      }
-                    }
-                  }
-                }
-              } catch (e) {
-                console.error('Legacy migration error:', e)
-              }
-            }
-
-            if (upsertFavorites.length > 0) {
-              const baseFavs = upsertFavorites.filter(u => !u.type)
-              const folderFavs = upsertFavorites.filter(u => u.type === 'item').map(({ type, ...rest }) => rest)
-              if (baseFavs.length > 0) await supabase.from('favorites').upsert(baseFavs)
-              if (folderFavs.length > 0) await supabase.from('favorite_folder_items').upsert(folderFavs)
-            }
-            if (migrated) {
-              localStorage.removeItem('booruFavoritesV3')
-              localStorage.removeItem('booruFavoritesV2')
-            }
+          if (dbFavorites) {
+            dbFavorites.forEach((item: any) => {
+              const key = `${item.provider}:${item.post_id}`
+              newSet.add(key)
+              newMap[key] = []
+            })
           }
 
-          setFolders(loadedFolders)
-          setFavorites(newSet)
-          setFavoriteFolderMap(newMap)
-          setFavoritesLoaded(true)
+          console.log('[loadFavorites] parsed DB raw items:', newSet.size, 'for map:', Object.keys(newMap).length)
+
+          if (dbFolderItems) {
+            dbFolderItems.forEach((item: any) => {
+              const key = `${item.provider}:${item.post_id}`
+              if (newMap[key] !== undefined) {
+                newMap[key].push(item.folder_id)
+              }
+            })
+          }
+
+          // Migrate local favorites V2 and V3 to account
+          if (typeof window !== 'undefined') {
+            const savedV3 = localStorage.getItem('booruFavoritesV3')
+            const savedV2 = localStorage.getItem('booruFavoritesV2')
+            const savedLegacy = localStorage.getItem('globalBooruFavorites')
+
+            if (savedV3 || savedV2 || savedLegacy) {
+              let migrated = false
+              const upsertFavorites: any[] = []
+
+              const localFolderIdMap: Record<string, string> = {} // maps local folder ID to Supabase UUID
+
+              // Process local folders first (from V2 or V3)
+              const processFolders = async (foldersToProcess: FavoriteFolder[]) => {
+                if (foldersToProcess && foldersToProcess.length > 0) {
+                  for (const lf of foldersToProcess) {
+                    const existing = loadedFolders.find(df => df.name === lf.name)
+                    if (existing) {
+                      localFolderIdMap[lf.id] = existing.id
+                    } else {
+                      const { data: newFolderData } = await supabase
+                        .from('favorite_folders')
+                        .upsert({ user_id: user.id, name: lf.name, icon: lf.icon || null }, { onConflict: 'user_id,name' })
+                        .select()
+                        .single()
+
+                      if (newFolderData) {
+                        loadedFolders.push({ id: newFolderData.id, name: newFolderData.name, icon: newFolderData.icon })
+                        localFolderIdMap[lf.id] = newFolderData.id
+                      }
+                    }
+                  }
+                }
+              }
+
+              if (savedV2) {
+                try {
+                  const parsed: LocalStorageV2 = JSON.parse(savedV2)
+                  await processFolders(parsed.folders)
+
+                } catch (e) {
+                  console.error('V2 Migration error:', e)
+                }
+              }
+
+              // Migrate V3 folders and favorites
+              if (savedV3) {
+                try {
+                  const parsedV3: LocalStorageV3 = JSON.parse(savedV3)
+                  await processFolders(parsedV3.folders)
+                  if (parsedV3.favorites) {
+                    for (const [key, localFolderIds] of Object.entries(parsedV3.favorites)) {
+                      if (!newSet.has(key)) {
+                        newSet.add(key)
+                        migrated = true
+
+                        const [p, idStr] = key.split(':')
+                        const post_id = parseInt(idStr, 10)
+
+                        let targetFolderIds: string[] = []
+                        if (Array.isArray(localFolderIds)) {
+                          for (const lId of localFolderIds) {
+                            if (localFolderIdMap[lId]) {
+                              targetFolderIds.push(localFolderIdMap[lId])
+                            }
+                          }
+                        }
+
+                        newMap[key] = targetFolderIds
+
+                        if (!isNaN(post_id)) {
+                          upsertFavorites.push({
+                            user_id: user.id,
+                            provider: p,
+                            post_id
+                          })
+                          if (targetFolderIds.length > 0) {
+                            // we would upsert to folder_items but since this is an array let's just do it
+                            // actually, we will handle junction table insertions below
+                            for (const tfId of targetFolderIds) {
+                              upsertFavorites.push({ type: 'item', user_id: user.id, provider: p, post_id, folder_id: tfId })
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+
+                } catch (e) {
+                  console.error('V3 Migration error:', e)
+                }
+              }
+
+              // Migrate V1 Legacy
+              if (savedLegacy) {
+                try {
+                  const arr = JSON.parse(savedLegacy)
+                  if (Array.isArray(arr) && arr.length > 0) {
+                    for (const key of arr) {
+                      if (!newSet.has(key)) {
+                        newSet.add(key)
+                        migrated = true
+                        newMap[key] = []
+
+                        const [p, idStr] = key.split(':')
+                        const post_id = parseInt(idStr, 10)
+                        if (!isNaN(post_id)) {
+                          upsertFavorites.push({ user_id: user.id, provider: p, post_id })
+                        }
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.error('Legacy migration error:', e)
+                }
+              }
+
+              let hasUpsertError = false
+              if (upsertFavorites.length > 0) {
+                const baseFavs = upsertFavorites.filter(u => !u.type)
+                const folderFavs = upsertFavorites.filter(u => u.type === 'item').map(({ type, ...rest }) => rest)
+
+                if (baseFavs.length > 0) {
+                  const { error } = await supabase.from('favorites').upsert(baseFavs, { onConflict: 'user_id,provider,post_id', ignoreDuplicates: true })
+                  if (error) {
+                    console.error('[loadFavorites] Migration base upsert error:', error)
+                    hasUpsertError = true
+                  }
+                }
+                if (folderFavs.length > 0 && !hasUpsertError) {
+                  const { error } = await supabase.from('favorite_folder_items').upsert(folderFavs, { onConflict: 'user_id,provider,post_id,folder_id', ignoreDuplicates: true })
+                  if (error) {
+                    console.error('[loadFavorites] Migration folder upsert error:', error)
+                    hasUpsertError = true
+                  }
+                }
+              }
+
+              if (hasUpsertError) {
+                console.error('[loadFavorites] Aborting local storage wipe due to Supabase upsert error.')
+                migrated = false
+              }
+
+              if (migrated) {
+                console.log('[loadFavorites] finished migration logic, refetching fresh state to be safe.')
+                // Re-fetch from DB strictly after migration to ensure local state has everything 
+                // plus any existing cloud data that wasn't local.
+                const { data: refreshedFolders } = await supabase.from('favorite_folders').select('id, name, icon').order('created_at', { ascending: true })
+                const { data: refreshedFavs } = await supabase.from('favorites').select('provider, post_id')
+                const { data: refreshedFolderItems } = await supabase.from('favorite_folder_items').select('provider, post_id, folder_id')
+
+                if (refreshedFolders) {
+                  loadedFolders.length = 0
+                  loadedFolders.push(...refreshedFolders)
+                }
+
+                if (refreshedFavs) {
+                  newSet.clear()
+                  for (const k in newMap) delete newMap[k]
+
+                  refreshedFavs.forEach((item: any) => {
+                    const key = `${item.provider}:${item.post_id}`
+                    newSet.add(key)
+                    newMap[key] = []
+                  })
+                }
+
+                if (refreshedFolderItems) {
+                  refreshedFolderItems.forEach((item: any) => {
+                    const key = `${item.provider}:${item.post_id}`
+                    if (newMap[key] !== undefined) {
+                      newMap[key].push(item.folder_id)
+                    }
+                  })
+                }
+              }
+
+              if (!hasUpsertError) {
+                localStorage.removeItem('booruFavoritesV3')
+                localStorage.removeItem('booruFavoritesV2')
+                localStorage.removeItem('globalBooruFavorites')
+              }
+
+              if (!isMounted) return
+
+              console.log(`[loadFavorites:${hookId}] Final Set size (Migrated):`, newSet.size, 'Final Folders:', loadedFolders.length)
+              setFolders(loadedFolders)
+              setFavorites(newSet)
+              setFavoriteFolderMap(newMap)
+              setFavoritesLoaded(true)
+            } else {
+              // User is authenticated, but has NO local storage to migrate.
+              // We just set the state using the freshly parsed cloud database data.
+              if (!isMounted) return
+              console.log(`[loadFavorites:${hookId}] Final Set size (Cloud Only):`, newSet.size, 'Final Folders:', loadedFolders.length)
+              setFolders(loadedFolders)
+              setFavorites(newSet)
+              setFavoriteFolderMap(newMap)
+              setFavoritesLoaded(true)
+            }
+          } else {
+            // SSR fallback for authenticated users
+            if (!isMounted) return
+            setFolders(loadedFolders)
+            setFavorites(newSet)
+            setFavoriteFolderMap(newMap)
+            setFavoritesLoaded(true)
+          }
         } else {
-          // Build anonymous state
+          // Build anonymous state for unauthenticated users
           if (typeof window !== 'undefined') {
             const newSet = new Set<string>()
             let newFolders: FavoriteFolder[] = []
@@ -302,18 +390,80 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
             setFolders(newFolders)
             setFavorites(newSet)
             setFavoriteFolderMap(newMap)
+            setFavoritesLoaded(true)
+
             if (shouldSave) {
               localStorage.setItem('booruFavoritesV3', JSON.stringify({ folders: newFolders, favorites: newMap }))
               localStorage.removeItem('booruFavoritesV2')
             }
-            setFavoritesLoaded(true)
           }
         }
+      } catch (error) {
+        console.error(`[loadFavorites:${hookId}] CRITICAL EXCEPTION:`, error)
+      }
+    } // end of async function fetchFavorites()
+
+    fetchFavorites()
+
+    return () => {
+      isMounted = false
+    }
+  }, [user?.id, session?.access_token, userLoading, booruProvider, hookId])
+
+  // Expose the manual sync function
+  const syncFavorites = useCallback(async () => {
+    console.log('[syncFavorites] CLICKED. user:', !!user, 'userLoading:', userLoading)
+    try {
+      if (!user || userLoading) return
+      setFavoritesLoaded(false)
+
+      const { data: dbFolders, error: foldersErr } = await supabase
+        .from('favorite_folders')
+        .select('id, name, icon')
+        .order('created_at', { ascending: true })
+      if (foldersErr) console.error("Folders fetch error:", foldersErr)
+
+      const { data: dbFavorites, error: favsErr } = await supabase
+        .from('favorites')
+        .select('provider, post_id')
+      if (favsErr) console.error("Favorites fetch error:", favsErr)
+
+      const { data: dbFolderItems, error: itemsErr } = await supabase
+        .from('favorite_folder_items')
+        .select('provider, post_id, folder_id')
+      if (itemsErr) console.error("Items fetch error:", itemsErr)
+
+      const loadedFolders: FavoriteFolder[] = dbFolders || []
+      const newSet = new Set<string>()
+      const newMap: Record<string, string[]> = {}
+
+      if (dbFavorites) {
+        dbFavorites.forEach((item: any) => {
+          const key = `${item.provider}:${item.post_id}`
+          newSet.add(key)
+          newMap[key] = []
+        })
       }
 
-      loadFavorites()
+      if (dbFolderItems) {
+        dbFolderItems.forEach((item: any) => {
+          const key = `${item.provider}:${item.post_id}`
+          if (newMap[key] !== undefined) {
+            newMap[key].push(item.folder_id)
+          }
+        })
+      }
+
+      setFolders(loadedFolders)
+      setFavorites(newSet)
+      setFavoriteFolderMap(newMap)
+      setFavoritesLoaded(true)
+      toast({ title: "Sync Complete", description: "Favorites downloaded from cloud" })
+    } catch (error) {
+      console.error('[syncFavorites] CRITICAL EXCEPTION:', error)
     }
-  }, [user, userLoading, supabase, booruProvider])
+  }, [user, userLoading])
+
   const toggleFavorite = useCallback(async (postId: number, providerOverride?: string, folderId?: string | null) => {
     const targetProvider = providerOverride || booruProvider
     const uniqueKey = `${targetProvider}:${postId}`
@@ -375,7 +525,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
             user_id: user.id,
             provider: targetProvider,
             post_id: postId
-          })
+          }, { onConflict: 'user_id,provider,post_id', ignoreDuplicates: true })
         }
 
         if (folderId === null) {
@@ -390,12 +540,12 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
               provider: targetProvider,
               post_id: postId,
               folder_id: folderId
-            })
+            }, { onConflict: 'user_id,provider,post_id,folder_id', ignoreDuplicates: true })
           }
         }
       }
     }
-  }, [favorites, favoriteFolderMap, folders, booruProvider, user, supabase])
+  }, [favorites, favoriteFolderMap, folders, booruProvider, user])
 
   const createFolder = useCallback(async (name: string, icon?: string | null): Promise<FavoriteFolder | null> => {
     const trimmed = name.trim()
@@ -409,7 +559,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     if (user) {
       const { data, error } = await supabase
         .from('favorite_folders')
-        .insert({ user_id: user.id, name: trimmed, icon: icon || null })
+        .upsert({ user_id: user.id, name: trimmed, icon: icon || null }, { onConflict: 'user_id,name' })
         .select()
         .single()
 
@@ -427,7 +577,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
     toast({ title: "Category created", description: `"${trimmed}" is now available.` })
     return newFolder
-  }, [folders, user, supabase])
+  }, [folders, user])
 
   const deleteFolder = useCallback(async (folderId: string) => {
     const newFolders = folders.filter(f => f.id !== folderId)
@@ -449,7 +599,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     }
 
     toast({ title: "Category deleted", description: "Items moved to Uncategorized" })
-  }, [folders, favoriteFolderMap, user, supabase])
+  }, [folders, favoriteFolderMap, user])
 
   const toggleShowFavorites = useCallback(() => {
     setShowFavorites(prev => {
@@ -466,7 +616,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
       await supabase.from('favorites').delete().eq('user_id', user.id)
     }
     toast({ title: "Favorites cleared", description: "All favorites have been removed" })
-  }, [user, supabase])
+  }, [user])
 
   const isFavorite = useCallback((provider: string, id: number) => {
     return favorites.has(`${provider}:${id}`)
@@ -498,6 +648,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     deleteFolder,
     toggleShowFavorites,
     clearFavorites,
+    syncFavorites,
     isFavorite,
     favoriteItems,
     isLoading: favoritesLoading
