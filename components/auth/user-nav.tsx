@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useRouter } from "next/navigation"
 import { useUser } from "@/hooks/use-user"
 import { LoginDialog } from "./login-dialog"
-import { LogOut, User as UserIcon } from "lucide-react"
+import { LogOut, User as UserIcon, RefreshCw } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { motion } from "framer-motion"
 
@@ -76,7 +76,6 @@ export function UserNav() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-
 
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer p-2 text-destructive focus:bg-destructive/5 focus:text-destructive">
           <LogOut className="mr-2 h-4 w-4" />

@@ -113,6 +113,7 @@ import { MergeStickyFooter } from "./merge-sticky-footer"
 import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { FeedbackDialog } from "@/components/feedback-dialog"
+import { SaveFavoriteButton } from "./save-favorite-button"
 import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-modal"
 import { useDebounce } from "@/hooks/use-debounce"
 
@@ -635,8 +636,21 @@ export function PromptGallery() {
                     </Button>                  </div>
                 </div>
               </div>
-
               <div className="flex items-center space-x-1 sm:space-x-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => favs.syncFavorites()}
+                      className="focus-ring h-8 w-8"
+                      aria-label="Sync Data"
+                    >
+                      <RefreshCw className="h-4 w-4 text-primary" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Sync Data from Cloud</TooltipContent>
+                </Tooltip>
                 {viewMode === "grid" && (
                   <div className="hidden sm:flex items-center space-x-2 border-r pr-2 mr-2">
                     <Tooltip>
