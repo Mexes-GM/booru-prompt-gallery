@@ -12,12 +12,12 @@ interface ProcessSuggestionParams {
  * Orchestrates the AI classification logic with database caching and audit logging.
  * Returns true if the tag was approved (category match), false if it needs review.
  */
-export async function processTagSuggestionWithAI({ 
-    suggestionId, 
-    tagName, 
-    suggestedCategory 
+export async function processTagSuggestionWithAI({
+    suggestionId,
+    tagName,
+    suggestedCategory
 }: ProcessSuggestionParams): Promise<{ approved: boolean, result: AIClassificationResult }> {
-    
+
     // 1. Check Cache (High Confidence Previous Results)
     const { data: cached } = await supabaseAdmin.from('ai_audit_logs')
         .select('ai_prediction, confidence')
@@ -28,10 +28,10 @@ export async function processTagSuggestionWithAI({
         .maybeSingle();
 
     let result: AIClassificationResult;
-    
+
     // 1.5. Check Static Heuristics (Cost Optimization)
     const heuristicCategory = classifyTag(tagName);
-    
+
     if (heuristicCategory !== 'other') {
         // We have a static rule match! Trust this 100%
         result = {
@@ -72,7 +72,7 @@ export async function processTagSuggestionWithAI({
         if (rpcError) {
             console.error("[AI Service] Auto-Approve RPC Failed:", rpcError);
         } else {
-            console.log(`[AI Service] ✅ Auto-Approved: ${tagName} -> ${suggestedCategory}`);
+
         }
 
         // Audit Log (Success)
@@ -81,8 +81,8 @@ export async function processTagSuggestionWithAI({
         return { approved: true, result };
     } else {
         // Queue for Review
-        console.log(`[AI Service] ⚠️ Review Needed: ${tagName} (User: ${suggestedCategory} != AI: ${result.aiCategory})`);
-        
+
+
         // Audit Log (Review)
         await logAudit(tagName, suggestedCategory, result, 'queued_for_review');
 
@@ -91,9 +91,9 @@ export async function processTagSuggestionWithAI({
 }
 
 async function logAudit(
-    tagName: string, 
-    suggestedCategory: string, 
-    result: AIClassificationResult, 
+    tagName: string,
+    suggestedCategory: string,
+    result: AIClassificationResult,
     action: 'auto_approved' | 'queued_for_review'
 ) {
     await supabaseAdmin.from('ai_audit_logs').insert({

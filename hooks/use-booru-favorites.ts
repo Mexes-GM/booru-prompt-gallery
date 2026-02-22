@@ -41,7 +41,7 @@ interface LocalStorageV3 {
 }
 
 export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavoritesReturn {
-  const hookId = useMemo(() => Math.random().toString(36).substring(2, 6), [])
+
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [folders, setFolders] = useState<FavoriteFolder[]>([])
   const [favoriteFolderMap, setFavoriteFolderMap] = useState<Record<string, string[]>>({})
@@ -75,7 +75,6 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
   // Load favorites
   useEffect(() => {
-    console.log(`[useBooruFavorites:${hookId}] useEffect | user: ${!!user} | userLoading: ${userLoading} | session: ${!!session}`)
     if (userLoading) return
 
     let isMounted = true
@@ -83,13 +82,10 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     async function fetchFavorites() {
       try {
         if (user) {
-          console.log('[loadFavorites] RUNNING. user_id:', user.id)
           const { data: dbFolders, error: foldersErr } = await supabase
             .from('favorite_folders')
             .select('id, name, icon')
             .order('created_at', { ascending: true })
-          if (foldersErr) console.error("Folders fetch error:", foldersErr)
-          console.log('[loadFavorites] dbFolders returned:', dbFolders?.length)
           if (foldersErr) console.error("Folders fetch error:", foldersErr)
 
           const { data: dbFavorites, error: favsErr } = await supabase
@@ -113,8 +109,6 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
               newMap[key] = []
             })
           }
-
-          console.log('[loadFavorites] parsed DB raw items:', newSet.size, 'for map:', Object.keys(newMap).length)
 
           if (dbFolderItems) {
             dbFolderItems.forEach((item: any) => {
@@ -269,7 +263,6 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
               }
 
               if (migrated) {
-                console.log('[loadFavorites] finished migration logic, refetching fresh state to be safe.')
                 // Re-fetch from DB strictly after migration to ensure local state has everything 
                 // plus any existing cloud data that wasn't local.
                 const { data: refreshedFolders } = await supabase.from('favorite_folders').select('id, name, icon').order('created_at', { ascending: true })
@@ -310,7 +303,6 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
               if (!isMounted) return
 
-              console.log(`[loadFavorites:${hookId}] Final Set size (Migrated):`, newSet.size, 'Final Folders:', loadedFolders.length)
               setFolders(loadedFolders)
               setFavorites(newSet)
               setFavoriteFolderMap(newMap)
@@ -319,7 +311,6 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
               // User is authenticated, but has NO local storage to migrate.
               // We just set the state using the freshly parsed cloud database data.
               if (!isMounted) return
-              console.log(`[loadFavorites:${hookId}] Final Set size (Cloud Only):`, newSet.size, 'Final Folders:', loadedFolders.length)
               setFolders(loadedFolders)
               setFavorites(newSet)
               setFavoriteFolderMap(newMap)
@@ -399,7 +390,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
           }
         }
       } catch (error) {
-        console.error(`[loadFavorites:${hookId}] CRITICAL EXCEPTION:`, error)
+        console.error('[loadFavorites] CRITICAL EXCEPTION:', error)
       }
     } // end of async function fetchFavorites()
 
@@ -408,11 +399,10 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     return () => {
       isMounted = false
     }
-  }, [user?.id, session?.access_token, userLoading, booruProvider, hookId])
+  }, [user?.id, session?.access_token, userLoading, booruProvider])
 
   // Expose the manual sync function
   const syncFavorites = useCallback(async () => {
-    console.log('[syncFavorites] CLICKED. user:', !!user, 'userLoading:', userLoading)
     try {
       if (!user || userLoading) return
       setFavoritesLoaded(false)
