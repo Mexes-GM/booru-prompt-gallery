@@ -1650,7 +1650,7 @@ export function PromptGallery() {
           <AlertDialogHeader>
             <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the folder "{folderToDelete?.name}". Any favorited post within this folder will be moved back to the "Uncategorized" section if they are not part of any other folder.
+              This will permanently delete the folder &quot;{folderToDelete?.name}&quot;. Any favorited post within this folder will be moved back to the &quot;Uncategorized&quot; section if they are not part of any other folder.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
