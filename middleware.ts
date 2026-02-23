@@ -79,6 +79,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|icon\\.png|manifest\\.json|robots\\.txt|sitemap\\.xml|_vercel).*)',
+    // Only match pages that actually need middleware processing.
+    // Exclude static assets, images, and well-known files to reduce CPU.
+    '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|icon\\.png|apple-icon\\.png|manifest\\.json|robots\\.txt|sitemap\\.xml|_vercel|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|css|js|woff|woff2|ttf|eot|map)$).*)',
   ],
 }

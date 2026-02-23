@@ -10,15 +10,13 @@ export async function GET(request: NextRequest) {
   const tags = searchParams.get('tags') || ''
   const order = (searchParams.get('order') || 'popular') as 'popular' | 'recent' | 'random'
   const providerType = (searchParams.get('provider') || 'danbooru') as 'danbooru' | 'rule34' | 'aibooru' | 'e621' | 'gelbooru'
-  
+
   const cacheKey = `${providerType}-${tags}-${page}-${order}`
   const cacheDuration = 600
-  
+
   try {
-    console.log(`[API] Requesting ${providerType}: tags='${tags}' page=${page} order=${order}`)
     const provider = BooruFactory.getProvider(providerType)
     const posts = await provider.search({ tags, page, order })
-    console.log(`[API] Success ${providerType}: ${posts.length} posts found`)
 
     return NextResponse.json(posts, {
       headers: {
@@ -38,7 +36,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('API Error:', error)
     const status = error.status || 500
-    
+
     if (status === 429) {
       return NextResponse.json(
         { error: 'Rate limit exceeded' },

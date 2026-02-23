@@ -1,120 +1,38 @@
-import { track } from '@vercel/analytics'
+/**
+ * Analytics module — kept intentionally minimal to stay within
+ * Vercel Web Analytics free-tier limits (50K events/month).
+ *
+ * Only the `<Analytics />` component in layout.tsx sends automatic
+ * pageview events.  Custom events are disabled to save quota.
+ *
+ * If you need granular tracking later, re-enable individual
+ * functions and budget ~20 events/session × expected sessions.
+ */
 
-const ENABLED = process.env.NEXT_PUBLIC_DISABLE_ANALYTICS !== '1'
+/* eslint-disable @typescript-eslint/no-unused-vars */
 
-let _sessionId: string | null = null
-function getSessionId() {
-  if (typeof window === 'undefined') return 'ssr'
-  if (_sessionId) return _sessionId
-  try {
-    const stored = sessionStorage.getItem('sessionId')
-    if (stored) {
-      _sessionId = stored
-    } else {
-      _sessionId = crypto.randomUUID()
-      sessionStorage.setItem('sessionId', _sessionId)
-    }
-  } catch {
-    _sessionId = 'na'
-  }
-  return _sessionId
+// No-op: every consumer can still call these without breaking,
+// but nothing is sent to Vercel Analytics.
+export function safeTrack(_event: string, _props: Record<string, any> = {}) {
+  // intentionally empty — saves Web Analytics Events quota
 }
 
-export function safeTrack(event: string, props: Record<string, any> = {}) {
-  if (!ENABLED) return
-  try {
-    track(event, { ...props, sessionId: getSessionId() })
-  } catch {
-    // ignore
-  }
-}
-
-const firedDepths = new Set<number>()
-export function initScrollDepthTracking() {
-  if (typeof window === 'undefined') return
-  const handler = () => {
-    const scrollTop = window.scrollY
-    const docHeight = document.documentElement.scrollHeight - window.innerHeight
-    if (docHeight <= 0) return
-    const pct = Math.min(100, Math.round((scrollTop / docHeight) * 100))
-    const checkpoints = [25, 50, 75, 90]
-    for (const cp of checkpoints) {
-      if (pct >= cp && !firedDepths.has(cp)) {
-        firedDepths.add(cp)
-        safeTrack('scroll_depth', { depth: cp })
-      }
-    }
-  }
-  window.addEventListener('scroll', handler, { passive: true })
-  return () => window.removeEventListener('scroll', handler)
-}
-
-export function trackTimeOnPage(startTime: number) {
-  const now = Date.now()
-  const seconds = Math.round((now - startTime) / 1000)
-  safeTrack('session_end', { duration_s: seconds })
-}
-
-export function trackExternalLink(href: string, context?: string) {
-  safeTrack('external_link', { href, context })
-}
-
-export function trackFavorite(postId: number, action: 'add' | 'remove') {
-  safeTrack('favorite', { postId, action })
-}
-
-export function trackCopy(postId: number) {
-  safeTrack('copy_prompt', { postId })
-}
-
-export function trackSearch(params: { query: string; rating: string; order: string; tagCount: number }) {
-  safeTrack('search', params)
-}
-
-export function trackLoadMore(params: { order: string; nextPage: number; currentCount: number }) {
-  safeTrack('load_more', params)
-}
-
-export function trackViewMode(mode: string) {
-  safeTrack('view_mode_change', { mode })
-}
-
-export function trackScaleChange(scale: string) {
-  safeTrack('card_scale_change', { scale })
-}
-
-export function trackFilterChange(key: string, value: string) {
-  safeTrack('filter_change', { key, value })
-}
-
-export function trackRefresh(order: string) {
-  safeTrack('refresh', { order })
-}
-
-export function trackProviderChange(provider: string) {
-  safeTrack('provider_change', { provider })
-}
-
-export function trackAibooruOption(option: string, enabled: boolean) {
-  safeTrack('aibooru_option', { option, enabled })
-}
-
-export function trackRatingChange(rating: string) {
-  safeTrack('rating_change', { rating })
-}
-
-export function trackOrderChange(order: string) {
-  safeTrack('order_change', { order })
-}
-
-export function trackDanbooruOption(option: string, enabled: boolean) {
-  safeTrack('danbooru_option', { option, enabled })
-}
-
-export function trackRule34Option(option: string, enabled: boolean) {
-  safeTrack('rule34_option', { option, enabled })
-}
-
-export function trackE621Option(option: string, enabled: boolean) {
-  safeTrack('e621_option', { option, enabled })
-}
+// Stubs so existing imports don't break
+export function initScrollDepthTracking() { return () => { } }
+export function trackTimeOnPage(_startTime: number) { }
+export function trackExternalLink(_href: string, _context?: string) { }
+export function trackFavorite(_postId: number, _action: 'add' | 'remove') { }
+export function trackCopy(_postId: number) { }
+export function trackSearch(_params: { query: string; rating: string; order: string; tagCount: number }) { }
+export function trackLoadMore(_params: { order: string; nextPage: number; currentCount: number }) { }
+export function trackViewMode(_mode: string) { }
+export function trackScaleChange(_scale: string) { }
+export function trackFilterChange(_key: string, _value: string) { }
+export function trackRefresh(_order: string) { }
+export function trackProviderChange(_provider: string) { }
+export function trackAibooruOption(_option: string, _enabled: boolean) { }
+export function trackRatingChange(_rating: string) { }
+export function trackOrderChange(_order: string) { }
+export function trackDanbooruOption(_option: string, _enabled: boolean) { }
+export function trackRule34Option(_option: string, _enabled: boolean) { }
+export function trackE621Option(_option: string, _enabled: boolean) { }

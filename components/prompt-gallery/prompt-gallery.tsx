@@ -431,33 +431,31 @@ export function PromptGallery() {
         return
       }
 
-      const urlPath = imageUrl.split('?')[0] // Remove query params
+      const urlPath = imageUrl.split('?')[0]
       const extension = urlPath.split('.').pop() || 'jpg'
       const itemProvider = post._provider || search.booruProvider
       const filename = `${itemProvider}_${post.id}.${extension}`
-      const alwaysProxy = imageUrl.includes('rule34.xxx') || imageUrl.includes('e621.net')
-      let fetchUrl = alwaysProxy ? `/api/download?url=${encodeURIComponent(imageUrl)}` : imageUrl
 
-      let response: Response
-      try {
-        response = await fetch(fetchUrl)
-        if (!response.ok) throw new Error(`Status ${response.status}`)
-      } catch (directError) {
-        if (!alwaysProxy) {
-          fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
-          response = await fetch(fetchUrl)
-        } else {
-          throw directError
-        }
-      }
+      // Providers that need the Vercel proxy due to CORS/referrer restrictions
+      const needsProxy = imageUrl.includes('rule34.xxx') ||
+        imageUrl.includes('e621.net') ||
+        imageUrl.includes('gelbooru.com')
+
+      // For Danbooru/Aibooru: fetch directly from the browser (client-side).
+      // This avoids routing through Vercel's /api/download, saving bandwidth + CPU.
+      // For Rule34/e621/Gelbooru: use the Vercel proxy (they block cross-origin).
+      const fetchUrl = needsProxy
+        ? `/api/download?url=${encodeURIComponent(imageUrl)}`
+        : imageUrl
+
+      const response = await fetch(fetchUrl)
 
       if (!response.ok) {
-        let errorMessage = `Failed to fetch image: ${response.status} ${response.statusText}`
+        let errorMessage = `Failed to fetch image: ${response.status}`
         try {
-          // @ts-ignore
           const errorData = await response.json()
           if (errorData.error) errorMessage = errorData.error
-        } catch (e) { }
+        } catch { }
         throw new Error(errorMessage)
       }
 

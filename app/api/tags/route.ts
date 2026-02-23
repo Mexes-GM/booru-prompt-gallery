@@ -16,7 +16,7 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const category = searchParams.get('category')
-  
+
   try {
     const now = Date.now()
     if (!tagsCache || now - cacheTimestamp > CACHE_DURATION) {
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
         const { data, error } = await supabase
           .from('auto_suggest_tags')
           .select('name, category')
-          .limit(10000) // Increased limit for better auto-suggest range
+          .limit(3000) // Reduced from 10K to save CPU/bandwidth on cold starts
 
         if (error) throw error
 
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
         } else {
           throw new Error('No tags in database')
         }
-        
+
         cacheTimestamp = now
       } catch (error) {
         console.error('Error fetching tags from Supabase, using fallback:', error)
