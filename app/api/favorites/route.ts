@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     if (body.ids && Array.isArray(body.ids)) {
       const provider = body.provider || 'danbooru';
       favoritesToFetch = body.ids.map((id: number) => ({ id, provider }));
-    } 
+    }
     // Handle new format (favorites: [{id, provider}, ...])
     else if (body.favorites && Array.isArray(body.favorites)) {
       favoritesToFetch = body.favorites;
@@ -34,9 +34,9 @@ export async function POST(request: NextRequest) {
     favoritesToFetch.forEach(item => {
       uniqueMap.set(`${item.provider}:${item.id}`, item);
     });
-    
-    // Convert back to array and limit to 100 items
-    const limitedFavorites = Array.from(uniqueMap.values()).slice(0, 100);
+
+    // Convert back to array and limit to 500 items
+    const limitedFavorites = Array.from(uniqueMap.values()).slice(0, 500);
 
     // Group by provider
     const groups: Record<string, number[]> = {};
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       try {
         // Just checking if factory throws
         BooruFactory.getProvider(item.provider as any);
-        
+
         if (!groups[item.provider]) {
           groups[item.provider] = [];
         }
@@ -55,37 +55,45 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // Execute requests in parallel
+    // Batch size matches providers' default page limit (20)
+    // to ensure all IDs are fetched without exceeding API limits
+    const BATCH_SIZE = 20;
+
+    // Execute requests in parallel — split large ID lists into batches
     const promiseResults = await Promise.allSettled(
-      Object.entries(groups).map(async ([providerName, ids]) => {
-        try {
-          const provider = BooruFactory.getProvider(providerName as any);
-          
-          // Construct ID query
-          // Most boorus support id:1,2,3
-          // Limit batch size if necessary, but we capped total at 100 so split per provider is safe-ish
-          const query = `id:${ids.join(',')}`;
+      Object.entries(groups).flatMap(([providerName, ids]) => {
+        const provider = BooruFactory.getProvider(providerName as any);
 
-          const posts = await provider.search({
-             tags: query,
-             page: '1',
-             limit: '100',
-             order: 'recent' // 'popular' might add redundant sorting
-          });
-
-          // Inject provider info into the posts so UI knows origin
-          return posts.map(post => ({
-            ...post,
-            _provider: providerName // Add a client-hint property
-          }));
-        } catch (err) {
-          console.error(`Error fetching favorites for ${providerName}:`, err);
-          return [];
+        // Split IDs into batches of BATCH_SIZE
+        const batches: number[][] = [];
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+          batches.push(ids.slice(i, i + BATCH_SIZE));
         }
+
+        return batches.map(async (batchIds) => {
+          try {
+            const query = `id:${batchIds.join(',')}`;
+
+            const posts = await provider.search({
+              tags: query,
+              page: '1',
+              order: 'recent',
+            });
+
+            // Inject provider info into the posts so UI knows origin
+            return posts.map(post => ({
+              ...post,
+              _provider: providerName,
+            }));
+          } catch (err) {
+            console.error(`Error fetching favorites batch for ${providerName}:`, err);
+            return [] as (BooruPost & { _provider?: string })[];
+          }
+        });
       })
     );
 
-    // Flatten results
+    // Flatten results from all batches
     const allPosts: (BooruPost & { _provider?: string })[] = [];
     promiseResults.forEach(result => {
       if (result.status === 'fulfilled') {
