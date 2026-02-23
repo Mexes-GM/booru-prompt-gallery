@@ -1,3 +1,4 @@
+import { withSentryConfig } from '@sentry/nextjs';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
@@ -154,6 +155,24 @@ const nextConfig = {
   },
 }
 
-export default nextConfig
+export default withSentryConfig(nextConfig, {
+  org: "boorupromptgallery",
+  project: "sentry-fulvous-anchor",
 
-// Trigger rebuild
+  // Only print logs for uploading source maps in CI
+  silent: !process.env.CI,
+
+  // Upload a larger set of source maps for prettier stack traces
+  widenClientFileUpload: true,
+
+  // Do NOT tunnel Sentry requests through Next.js server —
+  // this would add CPU and bandwidth to your Vercel bill.
+  // tunnelRoute: "/monitoring",  // DISABLED to save resources
+
+  webpack: {
+    automaticVercelMonitors: true,
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
+});

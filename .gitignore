@@ -64,3 +64,6 @@ copilot-instructions.md
 .kiro/
 .trae/
 skills/
+
+# Sentry Config File
+.env.sentry-build-plugin
