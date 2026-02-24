@@ -135,7 +135,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
     return () => observer.disconnect()
   }, [])
 
-  const debouncedContainerWidth = useDebounce(containerWidth, 200)
+  const debouncedContainerWidth = useDebounce(containerWidth, 50)
 
   // Calculate Layout
   const layout = useMemo(() => {
