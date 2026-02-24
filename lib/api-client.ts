@@ -599,7 +599,15 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         }
 
         const posts = await response.json()
-        return posts as BooruPost[]
+        
+        // Sort posts to match the requested order to prevent layout shifts (API race conditions)
+        const postsMap = new Map(posts.map((p: any) => [`${p._provider || p.provider}:${p.id}`, p]))
+        
+        const sortedPosts = favorites
+          .map(f => postsMap.get(`${f.provider}:${f.id}`))
+          .filter((p): p is BooruPost => p !== undefined)
+
+        return sortedPosts
       } catch (fetchError: any) {
         // Silently handle connection errors which are common during navigation/logout
         if (fetchError instanceof TypeError || fetchError.name === 'AbortError' || fetchError.message === 'Failed to fetch') {
