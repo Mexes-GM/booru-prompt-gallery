@@ -122,7 +122,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
           if (dbFavorites) {
             dbFavorites.forEach((item: any) => {
-              const key = `${item.provider}:${item.post_id}`
+              const key = `${item.provider.toLowerCase()}:${item.post_id}`
               newSet.add(key)
               newMap[key] = []
             })
@@ -130,7 +130,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
           if (dbFolderItems) {
             dbFolderItems.forEach((item: any) => {
-              const key = `${item.provider}:${item.post_id}`
+              const key = `${item.provider.toLowerCase()}:${item.post_id}`
               if (newMap[key] !== undefined) {
                 newMap[key].push(item.folder_id)
               }
@@ -297,7 +297,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
                   for (const k in newMap) delete newMap[k]
 
                   refreshedFavs.forEach((item: any) => {
-                    const key = `${item.provider}:${item.post_id}`
+                    const key = `${item.provider.toLowerCase()}:${item.post_id}`
                     newSet.add(key)
                     newMap[key] = []
                   })
@@ -305,7 +305,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
                 if (refreshedFolderItems) {
                   refreshedFolderItems.forEach((item: any) => {
-                    const key = `${item.provider}:${item.post_id}`
+                    const key = `${item.provider.toLowerCase()}:${item.post_id}`
                     if (newMap[key] !== undefined) {
                       newMap[key].push(item.folder_id)
                     }
@@ -447,7 +447,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
       if (dbFavorites) {
         dbFavorites.forEach((item: any) => {
-          const key = `${item.provider}:${item.post_id}`
+          const key = `${item.provider.toLowerCase()}:${item.post_id}`
           newSet.add(key)
           newMap[key] = []
         })
@@ -455,7 +455,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
       if (dbFolderItems) {
         dbFolderItems.forEach((item: any) => {
-          const key = `${item.provider}:${item.post_id}`
+          const key = `${item.provider.toLowerCase()}:${item.post_id}`
           if (newMap[key] !== undefined) {
             newMap[key].push(item.folder_id)
           }
@@ -535,6 +535,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
       const newCacheKey = getFavoritesCacheKey(newFavoriteItems)
 
       if (newCacheKey) {
+        console.log('[toggleFavorite] Mutating Key:', newCacheKey)
         // 2. Filter the current posts to exclude the removed one
         const filteredPosts = favoritePosts.filter(p => {
           const k = `${p._provider || p.provider}:${p.id}`

@@ -563,6 +563,7 @@ export const getFavoritesCacheKey = (favorites: FavoriteItem[]) => {
 export function useFavoritePosts(favorites: FavoriteItem[]) {
   const shouldFetch = favorites.length > 0
   const cacheKey = getFavoritesCacheKey(favorites)
+  if (cacheKey) console.log('[useFavoritePosts] Hook Key:', cacheKey)
   const { reportError, reportSlowResponse } = useApiStatus()
 
   const { data, error, isLoading, mutate } = useSWR<BooruPost[]>(
