@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
-import { useSWRConfig } from "swr"
+import { mutate } from "swr"
 import { BooruProvider, FavoriteItem, useFavoritePosts, BooruPost } from "@/lib/api-client"
 import { toast } from "@/hooks/use-toast"
 import { trackFavorite, safeTrack } from "@/lib/analytics"
