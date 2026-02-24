@@ -545,8 +545,8 @@ export interface FavoriteItem {
   provider: BooruProvider;
 }
 
-export function useFavoritePosts(favorites: FavoriteItem[]) {
-  const shouldFetch = favorites.length > 0
+export const getFavoritesCacheKey = (favorites: FavoriteItem[]) => {
+  if (favorites.length === 0) return null
   // Sort by provider then ID for consistent cache key
   const sortedKey = favorites
     .slice()
@@ -557,7 +557,12 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
     .map(f => `${f.provider}:${f.id}`)
     .join(',');
 
-  const cacheKey = shouldFetch ? `favorites-mixed-${sortedKey}` : null
+  return `favorites-mixed-${sortedKey}`
+}
+
+export function useFavoritePosts(favorites: FavoriteItem[]) {
+  const shouldFetch = favorites.length > 0
+  const cacheKey = getFavoritesCacheKey(favorites)
   const { reportError, reportSlowResponse } = useApiStatus()
 
   const { data, error, isLoading, mutate } = useSWR<BooruPost[]>(

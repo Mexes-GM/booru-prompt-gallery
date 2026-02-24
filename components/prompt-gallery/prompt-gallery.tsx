@@ -1417,16 +1417,28 @@ export function PromptGallery() {
                   <div className="flex w-max space-x-2 px-2">
                     <LayoutGroup id="favoritesTabs">
                       {(() => {
-                        const itemsWithFolders = Object.values(favs.favoriteFolderMap).filter(arr => Array.isArray(arr) && arr.length > 0).length;
-                        const uncategorizedCount = Math.max(0, favs.favorites.size - itemsWithFolders);
+                        // Calculate counts based on *loaded* posts to ensure consistency with the grid
+                        const loadedPosts = favs.favoritePosts || [];
+                        
+                        // Helper to get folder IDs for a post
+                        const getPostFolders = (post: any) => {
+                          const key = `${post._provider || post.provider}:${post.id}`;
+                          return favs.favoriteFolderMap[key] || [];
+                        };
+
+                        const allCount = loadedPosts.length;
+                        
+                        const uncategorizedCount = loadedPosts.filter(post => {
+                            return getPostFolders(post).length === 0;
+                        }).length;
 
                         return [
-                          { id: 'all', name: 'All Favorites', count: favs.favorites.size, icon: null },
+                          { id: 'all', name: 'All Favorites', count: allCount, icon: null },
                           { id: null, name: 'Uncategorized', count: uncategorizedCount, icon: 'Folder' },
                           ...favs.folders.map(f => ({
                             id: f.id,
                             name: f.name,
-                            count: Object.values(favs.favoriteFolderMap).filter(arr => Array.isArray(arr) && arr.includes(f.id)).length,
+                            count: loadedPosts.filter(post => getPostFolders(post).includes(f.id)).length,
                             icon: f.icon
                           }))
                         ].map((tab, i) => {

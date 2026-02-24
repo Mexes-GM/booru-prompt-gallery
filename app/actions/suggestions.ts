@@ -33,6 +33,7 @@ export type SubmitSuggestionResult = {
 export type TagReclassification = z.infer<typeof TagReclassificationSchema>
 
 // --- Rate Limiting ---
+// ... (rest of file)
 
 async function checkRateLimit(ip: string): Promise<{ allowed: boolean }> {
   // Run reputation lookup and count check in parallel — they're independent
