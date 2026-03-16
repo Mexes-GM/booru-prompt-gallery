@@ -2,7 +2,7 @@
 
 import { useState, memo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Tag, Plus, X, RotateCcw, AlertOctagon, Sparkles, Ghost, ShieldAlert } from "lucide-react"
+import { Tag, Plus, X, RotateCcw, AlertOctagon, Sparkles, Ghost, ShieldAlert, AlertCircle, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -62,8 +62,13 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset }: Blackl
   const [isOpen, setIsOpen] = useState(false)
 
   const handleAdd = () => {
-    if (inputValue.trim()) {
-      onAdd(inputValue.trim())
+    const tags = inputValue
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0)
+    
+    if (tags.length > 0) {
+      tags.forEach(tag => onAdd(tag))
       setInputValue("")
     }
   }
@@ -101,7 +106,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset }: Blackl
           {/* Decorative Header Background */}
           <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-destructive/5 to-transparent pointer-events-none" />
 
-          <DialogHeader className="p-6 pb-2 z-10">
+          <DialogHeader className="p-6 pb-4 z-10">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2.5 bg-destructive/10 rounded-xl shadow-inner">
                 <AlertOctagon className="w-5 h-5 text-destructive" />
@@ -111,6 +116,26 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset }: Blackl
             <DialogDescription className="text-sm leading-relaxed text-muted-foreground pr-4">
               Posts matching these tags will be hidden from your view.
             </DialogDescription>
+            
+            {/* Info Section */}
+            <div className="mt-4 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20 flex gap-3">
+              <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                <p className="font-semibold">Client-side filtering</p>
+                <p>Blacklisted tags are filtered after results load. Blocking very common tags may result in few or no images.</p>
+              </div>
+            </div>
+            
+            {/* Warning if many tags are blocked */}
+            {blacklist.length > 8 && (
+              <div className="mt-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 flex gap-3">
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                <div className="text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                  <p className="font-semibold">Many tags blocked</p>
+                  <p>You have {blacklist.length} tags filtered. This may significantly reduce available images.</p>
+                </div>
+              </div>
+            )}
           </DialogHeader>
 
           <motion.div
@@ -127,7 +152,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset }: Blackl
               <div className="relative group">
                 <Input
                   id="blacklist-input"
-                  placeholder="Enter tag (e.g. gore, spoilers...)"
+                  placeholder="Enter tag (e.g. gore, spoilers, violence)"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}

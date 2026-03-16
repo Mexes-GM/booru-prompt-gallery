@@ -106,6 +106,7 @@ import { useBooruFavorites } from "@/hooks/use-booru-favorites"
 import { MasonryItem } from "./masonry-item"
 import { useBlacklist } from "@/hooks/use-blacklist"
 import { BlacklistManager } from "@/components/prompt-gallery/blacklist-manager"
+import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 
 import { TrendSheet } from "@/components/trends/trend-sheet"
 import { useMergeMode } from "@/hooks/use-merge-mode"
@@ -1127,7 +1128,7 @@ export function PromptGallery() {
                             <div className="space-y-2">
                               <label htmlFor="add-tags" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                                Tags to Add
+                                Tags to Add <span className="text-[10px] font-normal text-muted-foreground/70">(Only modify final prompt)</span>
                               </label>
                               <div className="flex h-9 w-full items-center rounded-md border border-input bg-background/50 pl-3 pr-1 text-sm shadow-sm transition-colors focus-within:outline-none focus-within:ring-1 focus-within:ring-ring">
                                 <input
@@ -1228,7 +1229,7 @@ export function PromptGallery() {
                             <div className="space-y-2">
                               <label htmlFor="exclude-tags" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                                Tags to Exclude
+                                Tags to Exclude <span className="text-[10px] font-normal text-muted-foreground/70">(Only modify final prompt)</span>
                               </label>
                               <div className="relative">
                                 <Input
@@ -1491,57 +1492,59 @@ export function PromptGallery() {
             )}
           </AnimatePresence>
 
-          {viewMode === "grid" ? (
-            <div className="mb-8 min-h-[500px]">
-              <MasonryGrid
-                items={filteredPosts}
-                scale={effectiveScale}
-                renderItem={renderMasonryItem}
-              />
-            </div>
-          ) : (
-            <div className="space-y-4 mb-8">
-              {finalPosts.map((post) => {
-                const itemProvider = post._provider || search.booruProvider
-                const uniqueKey = `${itemProvider}:${post.id}`
-                const isFavorited = favs.favorites.has(uniqueKey)
-                const currentFolderIds = favs.favoriteFolderMap[uniqueKey] || EMPTY_ARRAY
+          {filteredPosts.length > 0 && (
+            viewMode === "grid" ? (
+              <div className="mb-8 min-h-[500px]">
+                <MasonryGrid
+                  items={filteredPosts}
+                  scale={effectiveScale}
+                  renderItem={renderMasonryItem}
+                />
+              </div>
+            ) : (
+              <div className="space-y-4 mb-8">
+                {finalPosts.map((post) => {
+                  const itemProvider = post._provider || search.booruProvider
+                  const uniqueKey = `${itemProvider}:${post.id}`
+                  const isFavorited = favs.favorites.has(uniqueKey)
+                  const currentFolderIds = favs.favoriteFolderMap[uniqueKey] || EMPTY_ARRAY
 
-                return (
-                  <div key={`${post.id}`}>
-                    <MasonryItem
-                      post={post}
-                      width={800} // Dummy width for list view
-                      height={600} // Dummy height
-                      viewMode="list"
-                      effectiveScale="medium" // Fixed for list
-                      booruProvider={search.booruProvider}
-                      isFavorited={isFavorited}
-                      folders={favs.folders}
-                      currentFolderIds={currentFolderIds}
-                      toggleFavorite={favs.toggleFavorite}
-                      createFolder={favs.createFolder}
-                      downloadImage={downloadImage}
-                      copyToClipboard={copyToClipboard}
-                      excludeInput={debouncedExcludeInput}
-                      addInput={debouncedAddInput}
-                      includeCharacters={includeCharacters}
-                      optimizeTags={optimizeTags}
-                      removeLoRaTags={search.removeLoRaTags}
-                      removeQualityTags={search.removeQualityTags}
-                      tagOverrides={tagOverrides}
-                      copiedId={copiedId}
-                      setTeachModalData={setTeachModalData}
-                      isMergeMode={mergeMode.isMergeMode}
-                      isSelected={mergeMode.selectedPosts.has(post.id)}
-                      selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
-                      onTogglePart={mergeMode.togglePostPart}
-                      onMergeSelect={() => { }}
-                    />
-                  </div>
-                )
-              })}
-            </div>
+                  return (
+                    <div key={`${post.id}`}>
+                      <MasonryItem
+                        post={post}
+                        width={800} // Dummy width for list view
+                        height={600} // Dummy height
+                        viewMode="list"
+                        effectiveScale="medium" // Fixed for list
+                        booruProvider={search.booruProvider}
+                        isFavorited={isFavorited}
+                        folders={favs.folders}
+                        currentFolderIds={currentFolderIds}
+                        toggleFavorite={favs.toggleFavorite}
+                        createFolder={favs.createFolder}
+                        downloadImage={downloadImage}
+                        copyToClipboard={copyToClipboard}
+                        excludeInput={debouncedExcludeInput}
+                        addInput={debouncedAddInput}
+                        includeCharacters={includeCharacters}
+                        optimizeTags={optimizeTags}
+                        removeLoRaTags={search.removeLoRaTags}
+                        removeQualityTags={search.removeQualityTags}
+                        tagOverrides={tagOverrides}
+                        copiedId={copiedId}
+                        setTeachModalData={setTeachModalData}
+                        isMergeMode={mergeMode.isMergeMode}
+                        isSelected={mergeMode.selectedPosts.has(post.id)}
+                        selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
+                        onTogglePart={mergeMode.togglePostPart}
+                        onMergeSelect={() => { }}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            )
           )}
 
           {/* Load More / States */}
@@ -1585,9 +1588,15 @@ export function PromptGallery() {
           )}
 
           {!search.isLoading && !favs.isLoading && filteredPosts.length === 0 && (
-            <div className="text-center py-12 px-4">
-              <p className="text-lg font-medium">{favs.showFavorites ? "No favorites yet" : "No images found"}</p>
-            </div>
+            <>
+              {favs.showFavorites ? (
+                <div className="text-center py-12 px-4">
+                  <p className="text-lg font-medium">No favorites yet</p>
+                </div>
+              ) : (
+                <NoResultsState />
+              )}
+            </>
           )}
 
           {/* Footer Links for E-E-A-T and Legal */}
