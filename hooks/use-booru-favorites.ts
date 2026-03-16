@@ -543,6 +543,18 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
         // 3. Mutate the NEW key with the filtered data
         // We set revalidate: false because we know the data is correct (it's a subset)
         mutate(newCacheKey, filteredPosts, { revalidate: false })
+
+        // 4. Mutate the CURRENT key as well to ensure an instant UI update before the hook re-renders
+        const currentItems = Array.from(favorites).map(key => {
+          const [p, idStr] = key.split(':')
+          if (!idStr) return { provider: 'danbooru' as BooruProvider, id: parseInt(key, 10) }
+          return { provider: p as BooruProvider, id: parseInt(idStr, 10) }
+        }).filter(item => !isNaN(item.id))
+        
+        const currentCacheKey = getFavoritesCacheKey(currentItems)
+        if (currentCacheKey) {
+          mutate(currentCacheKey, filteredPosts, { revalidate: false })
+        }
       }
     }
     
