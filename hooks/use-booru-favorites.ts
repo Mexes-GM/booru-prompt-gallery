@@ -109,6 +109,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
           const { data: dbFavorites, error: favsErr } = await supabase
             .from('favorites')
             .select('provider, post_id')
+            .order('created_at', { ascending: false })
           if (favsErr) console.error("Favorites fetch error:", favsErr)
 
           const { data: dbFolderItems, error: itemsErr } = await supabase
@@ -284,7 +285,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
                 // Re-fetch from DB strictly after migration to ensure local state has everything 
                 // plus any existing cloud data that wasn't local.
                 const { data: refreshedFolders } = await supabase.from('favorite_folders').select('id, name, icon').order('created_at', { ascending: true })
-                const { data: refreshedFavs } = await supabase.from('favorites').select('provider, post_id')
+                const { data: refreshedFavs } = await supabase.from('favorites').select('provider, post_id').order('created_at', { ascending: false })
                 const { data: refreshedFolderItems } = await supabase.from('favorite_folder_items').select('provider, post_id, folder_id')
 
                 if (refreshedFolders) {
@@ -434,6 +435,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
       const { data: dbFavorites, error: favsErr } = await supabase
         .from('favorites')
         .select('provider, post_id')
+        .order('created_at', { ascending: false })
       if (favsErr) console.error("Favorites fetch error:", favsErr)
 
       const { data: dbFolderItems, error: itemsErr } = await supabase
@@ -482,7 +484,8 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     let isRemovingFolder = false
     let isAddingFolder = false
 
-    const newFavorites = new Set(favorites)
+    // Put new favorites at the beginning of the Set to show them first
+    const newFavorites = new Set(!isCurrentlyFavorited ? [uniqueKey, ...favorites] : favorites)
     const newMap = { ...favoriteFolderMap }
 
     if (folderId === undefined) {
@@ -494,19 +497,16 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
         toast({ title: "Removed from favorites", description: "Image removed from your favorites" })
         trackFavorite(postId, 'remove')
       } else {
-        newFavorites.add(uniqueKey)
         newMap[uniqueKey] = []
         toast({ title: "Saved to favorites", description: "Saved to Uncategorized" })
         trackFavorite(postId, 'add')
       }
     } else if (folderId === null) {
       // Explicitly setting to Uncategorized (clearing all folders but keeping it favorited)
-      newFavorites.add(uniqueKey)
       newMap[uniqueKey] = []
       toast({ title: "Saved to favorites", description: "Saved to Uncategorized" })
     } else {
       // Toggling a specific folder
-      newFavorites.add(uniqueKey)
       const hasFolder = currentlyInFolders.includes(folderId)
 
       if (hasFolder) {
