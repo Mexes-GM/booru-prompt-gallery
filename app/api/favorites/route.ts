@@ -72,19 +72,42 @@ export async function POST(request: NextRequest) {
 
         return batches.map(async (batchIds) => {
           try {
-            const query = `id:${batchIds.join(',')}`;
+            if (providerName === 'gelbooru') {
+              // Gelbooru DAPI doesn't support multiple IDs in one tag query (id:1,2)
+              // We must fetch them concurrently
+              const indPosts = await Promise.allSettled(
+                batchIds.map(async (id) => {
+                  const p = await provider.search({
+                    tags: `id:${id}`,
+                    page: '1',
+                    order: 'recent',
+                  });
+                  return p[0];
+                })
+              );
+              
+              const resolvedPosts = indPosts
+                .filter((res): res is PromiseFulfilledResult<BooruPost> => res.status === 'fulfilled' && !!res.value)
+                .map(res => ({
+                  ...res.value,
+                  _provider: providerName,
+                }));
+              return resolvedPosts;
+            } else {
+              const query = `id:${batchIds.join(',')}`;
 
-            const posts = await provider.search({
-              tags: query,
-              page: '1',
-              order: 'recent',
-            });
+              const posts = await provider.search({
+                tags: query,
+                page: '1',
+                order: 'recent',
+              });
 
-            // Inject provider info into the posts so UI knows origin
-            return posts.map(post => ({
-              ...post,
-              _provider: providerName,
-            }));
+              // Inject provider info into the posts so UI knows origin
+              return posts.map(post => ({
+                ...post,
+                _provider: providerName,
+              }));
+            }
           } catch (err) {
             console.error(`Error fetching favorites batch for ${providerName}:`, err);
             return [] as (BooruPost & { _provider?: string })[];

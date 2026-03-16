@@ -574,36 +574,75 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
       const startTime = Date.now()
 
       try {
-        const response = await fetch('/api/favorites', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ favorites }),
-        })
+        const aibooruFavs = favorites.filter(f => f.provider === 'aibooru')
+        const serverFavs = favorites.filter(f => f.provider !== 'aibooru')
 
-        const responseTime = Date.now() - startTime
+        const fetchPromises: Promise<any[]>[] = []
 
-        if (!response.ok) {
-          const errorData = new Error(`HTTP error! status: ${response.status}`) as Error & { info?: unknown; status?: number }
-          errorData.status = response.status
+        if (serverFavs.length > 0) {
+          const serverPromise = fetch('/api/favorites', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ favorites: serverFavs }),
+          }).then(async (response) => {
+            const responseTime = Date.now() - startTime
 
-          // Reportar error a las notificaciones
-          reportError(new Error(`Error ${response.status}: Error al cargar favoritos`))
+            if (!response.ok) {
+              const errorData = new Error(`HTTP error! status: ${response.status}`) as Error & { info?: unknown; status?: number }
+              errorData.status = response.status
 
-          throw errorData
+              reportError(new Error(`Error ${response.status}: Error al cargar favoritos`))
+
+              throw errorData
+            }
+
+            if (responseTime > 10000) {
+              reportSlowResponse(responseTime)
+            }
+
+            return response.json()
+          })
+
+          fetchPromises.push(serverPromise)
         }
 
-        // Verificar si la respuesta fue lenta (>10 segundos)
-        if (responseTime > 10000) {
-          reportSlowResponse(responseTime)
+        if (aibooruFavs.length > 0) {
+          const aibooruIds = aibooruFavs.map(f => f.id).join(',')
+          const params = new URLSearchParams({
+            limit: "500",
+            only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
+            tags: `id:${aibooruIds}`
+          })
+          
+          const aibooruPromise = fetch(`https://aibooru.online/posts.json?${params.toString()}`)
+            .then(res => res.ok ? res.json() : [])
+            .then(data => {
+              if (Array.isArray(data)) {
+                return data
+                  .filter(post => post && post.id)
+                  .map(post => ({
+                    ...transformAibooruPost(post),
+                    _provider: 'aibooru'
+                  }))
+              }
+              return []
+            })
+            .catch(err => {
+              console.warn("[useFavoritePosts] Aibooru client fetch error:", err)
+              return []
+            })
+            
+          fetchPromises.push(aibooruPromise)
         }
 
-        const posts = await response.json()
-        
+        const results = await Promise.all(fetchPromises)
+        const allPosts = results.flat()
+
         // Sort posts to match the requested order to prevent layout shifts (API race conditions)
-        const postsMap = new Map(posts.map((p: any) => [`${p._provider || p.provider}:${p.id}`, p]))
-        
+        const postsMap = new Map(allPosts.map((p: any) => [`${p._provider || p.provider}:${p.id}`, p]))
+
         const sortedPosts = favorites
           .map(f => postsMap.get(`${f.provider}:${f.id}`))
           .filter((p): p is BooruPost => p !== undefined)

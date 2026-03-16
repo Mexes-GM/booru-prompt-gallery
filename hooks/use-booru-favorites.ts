@@ -536,7 +536,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
         console.log('[toggleFavorite] Mutating Key:', newCacheKey)
         // 2. Filter the current posts to exclude the removed one
         const filteredPosts = favoritePosts.filter(p => {
-          const k = `${p._provider || p.provider}:${p.id}`
+          const k = `${p._provider || (p as any).provider}:${p.id}`
           return k !== uniqueKey
         })
         
