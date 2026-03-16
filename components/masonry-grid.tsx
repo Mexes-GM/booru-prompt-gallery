@@ -226,7 +226,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
       <AnimatePresence mode="popLayout">
         {visibleItems.map((pos) => (
           <MasonryItem
-            key={pos.item.id}
+            key={`${(pos.item as any)._provider || pos.item.provider || 'post'}-${pos.item.id}`}
             pos={pos}
             renderItem={renderItem}
           />

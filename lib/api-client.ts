@@ -623,6 +623,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
       dedupingInterval: 60000,
+      keepPreviousData: true,
     }
   )
 
