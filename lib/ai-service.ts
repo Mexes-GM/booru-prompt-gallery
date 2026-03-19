@@ -63,7 +63,8 @@ export async function processTagSuggestionWithAI({
     }
 
     // 3. Process Outcome
-    if (result.match) {
+    // TEMPORARILY DISABLED: Auto-approval is disabled - all suggestions go to review queue
+    if (false && result.match) {
         // Auto-Approve
         const { error: rpcError } = await supabaseAdmin.rpc('approve_tag_suggestion', {
             suggestion_id: suggestionId
