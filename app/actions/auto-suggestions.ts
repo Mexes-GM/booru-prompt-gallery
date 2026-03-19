@@ -1,7 +1,7 @@
 'use server'
 
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { classifyTagWithLLM } from '@/lib/llm-classifier'
+// import { classifyTagWithLLM } from '@/lib/llm-classifier' // DISABLED: AI classification disabled
 import { classifyTag, TagCategory } from '@/lib/tag-classifier'
 import { cookies } from 'next/headers'
 import { normalize } from '@/lib/cleanPrompt'
@@ -176,16 +176,17 @@ export async function generateAutoSuggestions() {
 
             // B. Classify (If not already statically matched)
             if (!aiResultCategory) {
+                 // DISABLED: AI classification disabled
                  // Add delay to prevent rate limit
-                 await new Promise(r => setTimeout(r, 500));
+                 // await new Promise(r => setTimeout(r, 500));
                  
-                 const aiResponse = await classifyTagWithLLM(tagName, 'other'); // we pass 'other' as suggestion since current is unknown
-                 if (aiResponse.aiCategory && aiResponse.aiCategory !== 'other') {
-                     aiResultCategory = aiResponse.aiCategory;
-                     aiReasoning = aiResponse.reasoning || "AI Classification";
-                     aiConfidence = aiResponse.confidence;
-                     aiModel = aiResponse.usedModel;
-                 }
+                 // const aiResponse = await classifyTagWithLLM(tagName, 'other'); // we pass 'other' as suggestion since current is unknown
+                 // if (aiResponse.aiCategory && aiResponse.aiCategory !== 'other') {
+                 //     aiResultCategory = aiResponse.aiCategory;
+                 //     aiReasoning = aiResponse.reasoning || "AI Classification";
+                 //     aiConfidence = aiResponse.confidence;
+                 //     aiModel = aiResponse.usedModel;
+                 // }
             }
 
             // C. Create Suggestion if we have a category

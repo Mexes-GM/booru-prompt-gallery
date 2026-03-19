@@ -4,8 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { headers } from 'next/headers'
 import { z } from 'zod'
 import { waitUntil } from '@vercel/functions'
-import { processTagSuggestionWithAI } from '@/lib/ai-service'
-import { TagCategory } from '@/lib/tag-classifier'
+// import { processTagSuggestionWithAI } from '@/lib/ai-service' // DISABLED: AI classification disabled
+// import { TagCategory } from '@/lib/tag-classifier' // DISABLED: AI classification disabled
 
 // --- Schema Validation ---
 
@@ -196,13 +196,14 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
         if (!tagName) continue
 
         try {
+          // DISABLED: AI classification disabled
           // Throttle to respect OpenRouter Free Tier (~8-10 RPM)
-          await new Promise(resolve => setTimeout(resolve, 2000))
-          await processTagSuggestionWithAI({
-            suggestionId: suggestion.id,
-            tagName,
-            suggestedCategory: suggestion.suggested_category as TagCategory
-          })
+          // await new Promise(resolve => setTimeout(resolve, 2000))
+          // await processTagSuggestionWithAI({
+          //   suggestionId: suggestion.id,
+          //   tagName,
+          //   suggestedCategory: suggestion.suggested_category as TagCategory
+          // })
         } catch (e) {
           console.error(`[submitTagSuggestions] Background AI processing failed for "${tagName}":`, e)
         }
