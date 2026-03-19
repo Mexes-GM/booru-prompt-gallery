@@ -133,6 +133,7 @@ interface MasonryItemProps {
     removeQualityTags: boolean
     tagOverrides: Record<string, string>
     copiedId: number | null
+    isPreviouslyCopied?: boolean
     setTeachModalData: (data: { open: boolean, tags: any }) => void
     onSkipAnimation?: () => void
     globalWeights?: Record<string, number>
@@ -169,6 +170,7 @@ export const MasonryItem = memo(function MasonryItem({
     removeQualityTags,
     tagOverrides,
     copiedId,
+    isPreviouslyCopied,
     setTeachModalData,
     onSkipAnimation,
     globalWeights = {},
@@ -372,8 +374,25 @@ export const MasonryItem = memo(function MasonryItem({
         const imageHeight = height - footerHeight
 
         return (
-            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative">
+            <Card className={`w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300 ${isPreviouslyCopied ? 'ring-1 ring-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.05)]' : ''}`}>
                 <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
+                    {isPreviouslyCopied && (
+                        <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-green-500/40 shadow-sm"
+                            >
+                                <motion.div
+                                   animate={{ scale: [1, 1.2, 1] }}
+                                   transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
+                                >
+                                    <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
+                                </motion.div>
+                            </motion.div>
+                        </div>
+                    )}
                     <AnimatePresence>
                         {isMergeMode && (
                             <motion.div
@@ -537,7 +556,7 @@ export const MasonryItem = memo(function MasonryItem({
                             ) : (
                                 <>
                                     <Copy className={`${getIconClass()} mr-1`} />
-                                    {effectiveScale === "small" ? "Copy" : "Copy"}
+                                {effectiveScale === "small" ? "Copy" : (isPreviouslyCopied ? "Copy Again" : "Copy")}
                                 </>
                             )}
                         </Button>
@@ -629,13 +648,30 @@ export const MasonryItem = memo(function MasonryItem({
 
     // List View
     return (
-        <Card className="overflow-hidden card-hover relative">
+        <Card className={`overflow-hidden card-hover relative transition-all duration-300 ${isPreviouslyCopied ? 'ring-1 ring-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.05)]' : ''}`}>
             <CardContent className="p-4 sm:p-6">
                 <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                     <div
                         className="image-container-list-2-3 mx-auto sm:mx-0 relative group cursor-pointer"
                         onDoubleClick={() => handleToggleFavorite(null)}
                     >
+                        {isPreviouslyCopied && (
+                            <div className="absolute top-1.5 right-1.5 z-20 pointer-events-none" aria-label="Previously copied">
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-green-500/40 shadow-sm"
+                                >
+                                    <motion.div
+                                       animate={{ scale: [1, 1.2, 1] }}
+                                       transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
+                                    >
+                                        <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
+                                    </motion.div>
+                                </motion.div>
+                            </div>
+                        )}
                         <div className="absolute top-1 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
                             <SaveFavoriteButton
                                 folders={folders}
@@ -715,7 +751,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 ) : (
                                     <>
                                         <Copy className="w-4 h-4 mr-2" />
-                                        Copy Prompt
+                                        {isPreviouslyCopied ? "Copy Again" : "Copy Prompt"}
                                     </>
                                 )}
                             </Button>

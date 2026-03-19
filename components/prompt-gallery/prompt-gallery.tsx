@@ -223,6 +223,10 @@ export function PromptGallery() {
   const [presetName, setPresetName] = useState("")
   const [history, setHistory] = useState<HistoryItem[]>([])
 
+  const previouslyCopiedPostIds = useMemo(() => {
+    return new Set(history.map(item => item.postId).filter((id): id is number => id !== undefined))
+  }, [history])
+
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
 
   // Debounce expensive inputs
@@ -556,9 +560,11 @@ export function PromptGallery() {
     const uniqueKey = `${itemProvider}:${post.id}`
     const isFavorited = favs.favorites.has(uniqueKey)
     const currentFolderIds = favs.favoriteFolderMap[uniqueKey] || EMPTY_ARRAY
+    const isPreviouslyCopied = previouslyCopiedPostIds.has(post.id)
 
     return <MasonryItem
       post={post}
+      isPreviouslyCopied={isPreviouslyCopied}
       width={width}
       height={height}
       viewMode={viewMode}
@@ -1508,11 +1514,13 @@ export function PromptGallery() {
                   const uniqueKey = `${itemProvider}:${post.id}`
                   const isFavorited = favs.favorites.has(uniqueKey)
                   const currentFolderIds = favs.favoriteFolderMap[uniqueKey] || EMPTY_ARRAY
+                  const isPreviouslyCopied = previouslyCopiedPostIds.has(post.id)
 
                   return (
                     <div key={`${post.id}`}>
                       <MasonryItem
                         post={post}
+                        isPreviouslyCopied={isPreviouslyCopied}
                         width={800} // Dummy width for list view
                         height={600} // Dummy height
                         viewMode="list"
