@@ -374,7 +374,7 @@ export const MasonryItem = memo(function MasonryItem({
         const imageHeight = height - footerHeight
 
         return (
-            <Card className={`w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300 ${isPreviouslyCopied ? 'ring-1 ring-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.05)]' : ''}`}>
+            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300">
                 <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
                     {isPreviouslyCopied && (
                         <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
@@ -648,7 +648,7 @@ export const MasonryItem = memo(function MasonryItem({
 
     // List View
     return (
-        <Card className={`overflow-hidden card-hover relative transition-all duration-300 ${isPreviouslyCopied ? 'ring-1 ring-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.05)]' : ''}`}>
+        <Card className="overflow-hidden card-hover relative transition-all duration-300">
             <CardContent className="p-4 sm:p-6">
                 <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                     <div
