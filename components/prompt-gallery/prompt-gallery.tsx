@@ -542,7 +542,8 @@ export function PromptGallery() {
       // Blacklist filter
       if (post.tag_string) {
         const postTags = post.tag_string.split(' ')
-        if (postTags.some(tag => blacklist.includes(tag))) {
+        const normalizedBlacklist = blacklist.map(tag => tag.replace(/\s+/g, '_'))
+        if (postTags.some(tag => normalizedBlacklist.includes(tag))) {
           return false
         }
       }

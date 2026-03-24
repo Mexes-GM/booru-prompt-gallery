@@ -15,7 +15,7 @@ export function useBlacklist() {
   const { toast } = useToast()
 
   const addTag = (tag: string) => {
-    const cleanTag = tag.trim().toLowerCase()
+    const cleanTag = tag.trim().toLowerCase().replace(/\s+/g, '_')
     if (!cleanTag) return
 
     if (blacklist.includes(cleanTag)) {

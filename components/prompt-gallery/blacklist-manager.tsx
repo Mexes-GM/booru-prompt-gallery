@@ -152,7 +152,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset }: Blackl
               <div className="relative group">
                 <Input
                   id="blacklist-input"
-                  placeholder="Enter tag (e.g. gore, spoilers, violence)"
+                  placeholder="Enter tags (comma separated, e.g. gore, 1girl)"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
