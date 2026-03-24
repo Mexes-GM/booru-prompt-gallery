@@ -34,6 +34,7 @@ import {
   Shuffle,
   Sparkles,
   BrainCircuit,
+  ScrollText,
 } from "lucide-react"
 
 import { TeachModal } from "@/components/teach-modal"
@@ -639,24 +640,23 @@ export function PromptGallery() {
                     >
                       <Sparkles className="h-3 w-3 text-amber-500" />
                       What&apos;s New
-                    </Button>                  </div>
+                    </Button>
+                    
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                      className="hidden sm:flex text-xs h-7 px-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <a href="https://civitai.com/articles/17747" target="_blank" rel="noopener noreferrer">
+                        <ScrollText className="h-3 w-3 text-blue-500" />
+                        Changelog
+                      </a>
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center space-x-1 sm:space-x-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => favs.syncFavorites()}
-                      className="focus-ring h-8 w-8"
-                      aria-label="Sync Data"
-                    >
-                      <RefreshCw className="h-4 w-4 text-primary" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Sync Data from Cloud</TooltipContent>
-                </Tooltip>
                 {viewMode === "grid" && (
                   <div className="hidden sm:flex items-center space-x-2 border-r pr-2 mr-2">
                     <Tooltip>
