@@ -1380,7 +1380,10 @@ export function PromptGallery() {
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                   <div className="flex items-center">     
                                     <div className="flex flex-col gap-0.5">
-                                      <Label htmlFor="background-handling-select" className="text-sm font-medium cursor-pointer">Background Options</Label>
+                                      <div className="flex items-center gap-2">
+                                        <Label htmlFor="background-handling-select" className="text-sm font-medium cursor-pointer">Background Options</Label>
+                                        <Badge variant="default" className="text-xs py-0 px-2 !rounded-lg">Beta</Badge>
+                                      </div>
                                       <span className="text-[10px] text-muted-foreground leading-tight">Modify scenery tags</span>
                                     </div>
                                   </div>
