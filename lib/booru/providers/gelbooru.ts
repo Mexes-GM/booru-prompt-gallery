@@ -64,7 +64,7 @@ export class GelbooruProvider extends BaseBooruProvider {
 
         const validPosts = this.filterValidPosts(postsList)
 
-        return validPosts.map((post: any) => ({
+        const finalPosts = validPosts.map((post: any) => ({
             id: parseInt(post.id),
             file_url: post.file_url,
             large_file_url: post.sample_url || post.file_url,
@@ -79,5 +79,7 @@ export class GelbooruProvider extends BaseBooruProvider {
             height: parseInt(post.height),
             source: post.source || '',
         }))
+        
+        return this.enrichPostsWithCategories(finalPosts)
     }
 }

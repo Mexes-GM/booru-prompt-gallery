@@ -7,6 +7,7 @@
  */
 
 import { classifyTags } from "./tag-classifier"
+import { processBackgroundTags, BackgroundMode } from "./background-detector"
 
 // --------------- Types ---------------
 interface TagData {
@@ -34,6 +35,8 @@ export interface CleanPromptOptions {
   tagOverrides?: Record<string, string>
   escapeOutput?: boolean
   metaTags?: string
+  backgroundMode?: BackgroundMode
+  simpleBackgroundReplacementTags?: string
 }
 
 // --------------- Utilities ---------------
@@ -630,13 +633,22 @@ export function cleanPrompt(
   // Classify content tags to respect requested order:
   // Appearance -> Clothing -> Pose -> Scenery -> Other
   const classified = classifyTags(contentTags, options?.tagOverrides)
-  const sortedContentTags = [
+  let sortedContentTags = [
     ...classified.appearance,
     ...classified.clothing,
     ...classified.pose,
     ...classified.scenery,
     ...classified.other,
   ]
+
+  // Optional: Process Backgrounds based on rules
+  if (options?.backgroundMode && Array.isArray(sortedContentTags)) {
+    sortedContentTags = processBackgroundTags(
+      sortedContentTags, 
+      options.backgroundMode, 
+      options.simpleBackgroundReplacementTags
+    )
+  }
 
   const characterAndFranchiseTags = [
     ...(includeCharacters ? characterTagsArray : []),

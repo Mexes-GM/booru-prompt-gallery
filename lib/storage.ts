@@ -61,7 +61,9 @@ export const STORAGE_KEYS = {
   EXCLUDE_TAGS: 'exclude-tags-input',
   PROMPT_OPTIONS: 'prompt-options',
   VIEW_MODE: 'view-mode',
-  CARD_SCALE: 'card-scale'
+  CARD_SCALE: 'card-scale',
+  BACKGROUND_MODE: 'background-mode',
+  SIMPLE_BACKGROUND_REPLACEMENT_TAGS: 'simple-background-replacement-tags'
 } as const
 
 export interface HistoryItem {
@@ -235,5 +237,17 @@ export const userPreferences = {
     storage.get(STORAGE_KEYS.CARD_SCALE, 'medium'),
 
   setCardScale: (scale: 'small' | 'medium' | 'large') =>
-    storage.set(STORAGE_KEYS.CARD_SCALE, scale)
+    storage.set(STORAGE_KEYS.CARD_SCALE, scale),
+
+  getBackgroundMode: (): 'keep' | 'remove_all' | 'force_simple' =>
+    storage.get(STORAGE_KEYS.BACKGROUND_MODE, 'keep'),
+
+  setBackgroundMode: (mode: 'keep' | 'remove_all' | 'force_simple') =>
+    storage.set(STORAGE_KEYS.BACKGROUND_MODE, mode),
+
+  getSimpleBackgroundReplacementTags: (): string =>
+    storage.get(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, 'simple background, white background'),
+
+  setSimpleBackgroundReplacementTags: (tags: string) =>
+    storage.set(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, tags)
 }

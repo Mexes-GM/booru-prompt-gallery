@@ -11,3 +11,4 @@ tsnode.register({
 
 require('./cleanPrompt.spec.ts')
 require('./tag-classifier.spec.ts')
+require('./background-detector.spec.ts')

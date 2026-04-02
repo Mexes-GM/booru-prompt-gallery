@@ -1,10 +1,11 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -34,6 +35,8 @@ import {
   Shuffle,
   Sparkles,
   BrainCircuit,
+  CornerDownRight,
+  Image as ImageIcon,
   ScrollText,
 } from "lucide-react"
 
@@ -57,7 +60,9 @@ import { userPreferences, STORAGE_KEYS, type HistoryItem, type TagPreset } from 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
+import { type BackgroundMode } from "@/lib/background-detector"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import {
   DropdownMenu,
@@ -193,6 +198,24 @@ export function PromptGallery() {
   const setOptimizeTags = (val: boolean) =>
     setPromptOptions(prev => ({ ...prev, optimizeTags: val }))
 
+  const [backgroundMode, setBackgroundMode] = usePersistentState<BackgroundMode>(
+    "keep",
+    userPreferences.getBackgroundMode,
+    userPreferences.setBackgroundMode,
+    "backgroundMode",
+    STORAGE_KEYS.BACKGROUND_MODE
+  )
+  const deferredBackgroundMode = useDeferredValue(backgroundMode)
+
+  const [simpleBackgroundReplacementTags, setSimpleBackgroundReplacementTags] = usePersistentState(
+    "simple background, white background",
+    userPreferences.getSimpleBackgroundReplacementTags,
+    userPreferences.setSimpleBackgroundReplacementTags,
+    "simpleBackgroundReplacementTags",
+    STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS
+  )
+  const debouncedSimpleBackgroundReplacementTags = useDebounce(simpleBackgroundReplacementTags, 500)
+
   const [excludeInput, setExcludeInput] = usePersistentState(
     "",
     userPreferences.getExcludeTagsInput,
@@ -249,7 +272,7 @@ export function PromptGallery() {
   const [weightsLoaded, setWeightsLoaded] = useState(false)
 
   // Merge Mode Hook
-  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides)
+  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags)
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -585,6 +608,8 @@ export function PromptGallery() {
       optimizeTags={optimizeTags}
       removeLoRaTags={search.removeLoRaTags}
       removeQualityTags={search.removeQualityTags}
+      backgroundMode={deferredBackgroundMode}
+      simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       setTeachModalData={setTeachModalData}
@@ -599,7 +624,7 @@ export function PromptGallery() {
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1138,14 +1163,7 @@ export function PromptGallery() {
                                 Tags to Add <span className="text-[10px] font-normal text-muted-foreground/70">(Only modify final prompt)</span>
                               </label>
                               <div className="flex h-9 w-full items-center rounded-md border border-input bg-background/50 pl-3 pr-1 text-sm shadow-sm transition-colors focus-within:outline-none focus-within:ring-1 focus-within:ring-ring">
-                                <input
-                                  id="add-tags"
-                                  value={addInput}
-                                  onChange={(e) => setAddInput(e.target.value)}
-                                  placeholder="masterpiece, best quality..."
-                                  aria-label="Tags to include input"
-                                  className="flex-1 bg-transparent border-none p-0 placeholder:text-muted-foreground focus:outline-none h-full min-w-0"
-                                />
+                                <DebouncedHTMLInput id="add-tags" value={addInput} onChange={setAddInput} debounceTime={400} placeholder="masterpiece, best quality..." aria-label="Tags to include input" className="flex-1 bg-transparent border-none p-0 placeholder:text-muted-foreground focus:outline-none h-full min-w-0" />
                                 <div className="flex items-center gap-0.5 ml-1.5 shrink-0">
                                   {addInput && (
                                     <Button
@@ -1178,11 +1196,7 @@ export function PromptGallery() {
                                         <div className="space-y-4 py-4">
                                           <div className="space-y-2">
                                             <Label>Preset Name</Label>
-                                            <Input
-                                              value={presetName}
-                                              onChange={(e) => setPresetName(e.target.value)}
-                                              placeholder="My awesome preset"
-                                            />
+                                            <DebouncedInput value={presetName} onChange={setPresetName} debounceTime={300} placeholder="My awesome preset" />
                                           </div>
                                           <div className="space-y-2">
                                             <Label>Tags</Label>
@@ -1239,14 +1253,7 @@ export function PromptGallery() {
                                 Tags to Exclude <span className="text-[10px] font-normal text-muted-foreground/70">(Only modify final prompt)</span>
                               </label>
                               <div className="relative">
-                                <Input
-                                  id="exclude-tags"
-                                  value={excludeInput}
-                                  onChange={(e) => setExcludeInput(e.target.value)}
-                                  placeholder="bad quality, watermark..."
-                                  className="h-9 text-sm bg-background/50"
-                                  aria-label="Tags to exclude input"
-                                />
+                                <DebouncedInput id="exclude-tags" value={excludeInput} onChange={setExcludeInput} debounceTime={400} placeholder="bad quality, watermark..." className="h-9 text-sm bg-background/50" aria-label="Tags to exclude input" />
                                 {excludeInput && (
                                   <button type="button" onClick={() => setExcludeInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-6 w-6 rounded-full hover:bg-muted" aria-label="Clear excluded tags">
                                     <X className="h-3 w-3" />
@@ -1259,7 +1266,7 @@ export function PromptGallery() {
                                 <span className={`w-1.5 h-1.5 rounded-full ${isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}`}></span>
                                 Minimum Tag Count ({`>`} {search.tagCountFilter})
                               </label>
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center">
                                 <Slider
                                   min={5}
                                   max={100}
@@ -1271,14 +1278,14 @@ export function PromptGallery() {
                                   className={`flex-1 ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
                                   aria-label="Minimum tag count"
                                 />
-                                <Input
+                                <DebouncedInput
                                   id="tag-count"
                                   type="number"
                                   min={5}
                                   max={1000}
                                   value={search.tagCountFilter}
-                                  onChange={(e) => search.setTagCountFilter(e.target.value)}
-                                  // Simplified logic for brevity, the original was more verbose w.r.t blur handling
+                                  onChange={search.setTagCountFilter}
+                                  debounceTime={500}
                                   onBlur={() => search.setAppliedTagCountFilter(search.tagCountFilter)}
                                   disabled={!isTagCountSupported}
                                   className={`h-8 w-16 text-xs text-center bg-background/50 ${!isTagCountValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
@@ -1367,6 +1374,48 @@ export function PromptGallery() {
                                     Manage
                                   </Button>
                                 </div>
+                              </div>
+
+                              <div className="sm:col-span-2 flex flex-col gap-2 p-3 mt-1 rounded-xl bg-muted/40 border border-border/50 shadow-sm transition-colors hover:border-border/80">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                  <div className="flex items-center">     
+                                    <div className="flex flex-col gap-0.5">
+                                      <Label htmlFor="background-handling-select" className="text-sm font-medium cursor-pointer">Background Options</Label>
+                                      <span className="text-[10px] text-muted-foreground leading-tight">Modify scenery tags</span>
+                                    </div>
+                                  </div>
+                                  <div className="w-full sm:w-auto sm:min-w-[160px]">
+                                    <Select
+                                      value={backgroundMode}
+                                      onValueChange={(val: any) => setBackgroundMode(val)}
+                                    >
+                                      <SelectTrigger id="background-handling-select" className="h-8 text-xs bg-background">
+                                        <SelectValue placeholder="Keep Original" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="keep">Keep Original</SelectItem>
+                                        <SelectItem value="remove_all">Remove All</SelectItem>
+                                        <SelectItem value="force_simple">Replace</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                                <AnimatePresence>
+                                  {backgroundMode === 'force_simple' && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: "auto", opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      transition={{ duration: 0.2, ease: "easeInOut" }}
+                                      className="overflow-hidden"
+                                    >
+                                      <div className="pt-2 pl-0 sm:pl-[3.25rem] flex items-center gap-2">
+                                        <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground hidden sm:block shrink-0" />
+                                        <DebouncedInput value={simpleBackgroundReplacementTags} onChange={setSimpleBackgroundReplacementTags} debounceTime={400} placeholder="e.g. simple background, white background" className="h-8 text-xs bg-background focus-visible:ring-1 min-w-0 flex-1" aria-label="Tags to replace background with" />
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
                               </div>
                             </div>
                           </div>
@@ -1540,6 +1589,8 @@ export function PromptGallery() {
                         optimizeTags={optimizeTags}
                         removeLoRaTags={search.removeLoRaTags}
                         removeQualityTags={search.removeQualityTags}
+                        backgroundMode={deferredBackgroundMode}
+                        simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
                         tagOverrides={tagOverrides}
                         copiedId={copiedId}
                         setTeachModalData={setTeachModalData}
@@ -1702,3 +1753,15 @@ export function PromptGallery() {
     </TooltipProvider>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+

@@ -26,6 +26,7 @@ import {
     BooruProvider
 } from "@/lib/api-client"
 import { cleanPrompt } from "@/lib/cleanPrompt"
+import { type BackgroundMode } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
 import { classifyTags, TagCategory } from "@/lib/tag-classifier"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
@@ -131,6 +132,8 @@ interface MasonryItemProps {
     optimizeTags: boolean
     removeLoRaTags: boolean
     removeQualityTags: boolean
+    backgroundMode?: BackgroundMode
+    simpleBackgroundReplacementTags?: string
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
@@ -168,6 +171,8 @@ export const MasonryItem = memo(function MasonryItem({
     optimizeTags,
     removeLoRaTags,
     removeQualityTags,
+    backgroundMode,
+    simpleBackgroundReplacementTags,
     tagOverrides,
     copiedId,
     isPreviouslyCopied,
@@ -212,16 +217,16 @@ export const MasonryItem = memo(function MasonryItem({
                 "",
                 "",
                 "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
             )
             : cleanPrompt(
                 post.tag_string,
                 post.tag_string_artist,
                 post.tag_string_character,
                 post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
             )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, addList, tagOverrides])
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, addList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags])
 
     // Generate pure content WITHOUT added tags for category copying/classification
     const pureContent = useMemo(() => {
@@ -231,16 +236,16 @@ export const MasonryItem = memo(function MasonryItem({
                 "",
                 "",
                 "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
             )
             : cleanPrompt(
                 post.tag_string,
                 post.tag_string_artist,
                 post.tag_string_character,
                 post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
             )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides])
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags])
 
     const displayContent = useMemo(() => {
         if (isGlobalWeightsEnabled && baseContent) {
@@ -269,15 +274,15 @@ export const MasonryItem = memo(function MasonryItem({
             "",
             "",
             "",
-            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, escapeOutput: false, metaTags: post.tag_string_meta },
+            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, backgroundMode: 'keep', simpleBackgroundReplacementTags, escapeOutput: false, metaTags: post.tag_string_meta },
         )
         : cleanPrompt(
             post.tag_string,
             post.tag_string_artist,
             post.tag_string_character,
             post.tag_string_copyright,
-            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, escapeOutput: false, metaTags: post.tag_string_meta },
-        ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides])
+            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, backgroundMode: 'keep', simpleBackgroundReplacementTags, escapeOutput: false, metaTags: post.tag_string_meta },
+        ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags])
 
     // Pre-classify tags for the dropdown counts (USING PUR DISPLAY CONTENT)
     // This ensures that "added tags" don't inflate the category counts or get copied when selecting a category

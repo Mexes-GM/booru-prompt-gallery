@@ -1,7 +1,8 @@
 import { useState, useCallback, useMemo } from 'react'
 import { BooruPost } from '@/lib/booru/types'
-import { TagCategory, classifyTags } from '@/lib/tag-classifier'
+import { TagCategory, classifyTags, classifyTag } from '@/lib/tag-classifier'
 import { applyWeights } from '@/lib/weight-utils'
+import { processBackgroundTags, type BackgroundMode } from '@/lib/background-detector'
 
 export interface SelectedPostParts {
     post: BooruPost
@@ -15,7 +16,9 @@ export function useMergeMode(
     globalWeights: Record<string, number> = {},
     isGlobalWeightsEnabled: boolean = false,
     addedTagsInput: string = "",
-    tagOverrides: Record<string, string> = {}
+    tagOverrides: Record<string, string> = {},
+    backgroundMode: BackgroundMode = 'keep',
+    simpleBackgroundReplacementTags: string = "simple background, white background"
 ) {
     const [isMergeMode, setIsMergeMode] = useState(false)
     const [selectedPosts, setSelectedPosts] = useState<Map<number, SelectedPostParts>>(new Map())
@@ -152,8 +155,40 @@ export function useMergeMode(
             })
         })
 
+        // 3. Apply Background Processing Mode
+        if (backgroundMode !== 'keep') {
+            const rawTextArray = segments.map(s => s.text);
+            const processedTextArray = processBackgroundTags(rawTextArray, backgroundMode, simpleBackgroundReplacementTags);
+            
+            // Rebuild segments based on the processed array
+            const finalSegments: typeof segments = [];
+            const originalSegmentsMap = new Map(segments.map(s => [s.text, s]));
+            
+            processedTextArray.forEach(pt => {
+                // If it existed before, keep its display and category
+                if (originalSegmentsMap.has(pt)) {
+                    finalSegments.push(originalSegmentsMap.get(pt)!);
+                } else {
+                    // It's a newly injected tag (like from force_simple)
+                    let displayText = escapeParentheses(pt);
+                    if (isGlobalWeightsEnabled) {
+                        const w = globalWeights[pt];
+                        if (w !== undefined && w !== 1.0) {
+                            displayText = `(${displayText}:${w})`;
+                        }
+                    }
+                    finalSegments.push({
+                        text: pt,
+                        display: displayText,
+                        category: classifyTag(pt, tagOverrides) // classify it dynamically
+                    });
+                }
+            });
+            return finalSegments;
+        }
+
         return segments
-    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput, tagOverrides])
+    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput, tagOverrides, backgroundMode, simpleBackgroundReplacementTags])
 
     const mergedPrompt = useMemo(() => {
         return mergedPromptSegments.map(s => s.display).join(', ')
