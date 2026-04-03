@@ -1,4 +1,4 @@
-import { useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
+import { useCallback, useMemo, memo, useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,6 +15,8 @@ import {
     Mountain,
     Smile,
     GraduationCap,
+    AlertCircle,
+    Sliders
 } from "lucide-react"
 import Image from "next/image"
 import {
@@ -29,6 +31,7 @@ import { cleanPrompt } from "@/lib/cleanPrompt"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
 import { classifyTags, TagCategory } from "@/lib/tag-classifier"
+import { resolveTagConflicts } from "@/lib/tag-conflicts"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import {
     DropdownMenu,
@@ -130,6 +133,7 @@ interface MasonryItemProps {
     addInput: string
     includeCharacters: boolean
     optimizeTags: boolean
+    smartTagExclusion?: boolean
     removeLoRaTags: boolean
     removeQualityTags: boolean
     backgroundMode?: BackgroundMode
@@ -169,6 +173,7 @@ export const MasonryItem = memo(function MasonryItem({
     addInput,
     includeCharacters,
     optimizeTags,
+    smartTagExclusion = true,
     removeLoRaTags,
     removeQualityTags,
     backgroundMode,
@@ -209,25 +214,6 @@ export const MasonryItem = memo(function MasonryItem({
         aiPrompt = removeQualityTagsUtil(aiPrompt)
     }
 
-    // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
-    const baseContent = useMemo(() => {
-        return aiPrompt
-            ? cleanPrompt(
-                aiPrompt,
-                "",
-                "",
-                "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
-            )
-            : cleanPrompt(
-                post.tag_string,
-                post.tag_string_artist,
-                post.tag_string_character,
-                post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: addList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
-            )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, addList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags])
-
     // Generate pure content WITHOUT added tags for category copying/classification
     const pureContent = useMemo(() => {
         return aiPrompt
@@ -246,6 +232,31 @@ export const MasonryItem = memo(function MasonryItem({
                 { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
             )
     }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags])
+
+    const conflictResolution = useMemo(() => {
+        if (!pureContent || addList.length === 0 || !smartTagExclusion) return { validTags: addList, conflictingTags: [] };
+        const baseTags = pureContent.split(',').map(t => t.trim());
+        return resolveTagConflicts(baseTags, addList);
+    }, [pureContent, addList, smartTagExclusion])
+
+    // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
+    const baseContent = useMemo(() => {
+        return aiPrompt
+            ? cleanPrompt(
+                aiPrompt,
+                "",
+                "",
+                "",
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
+            )
+            : cleanPrompt(
+                post.tag_string,
+                post.tag_string_artist,
+                post.tag_string_character,
+                post.tag_string_copyright,
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
+            )
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags])
 
     const displayContent = useMemo(() => {
         if (isGlobalWeightsEnabled && baseContent) {
@@ -285,12 +296,8 @@ export const MasonryItem = memo(function MasonryItem({
         ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags])
 
     // Pre-classify tags for the dropdown counts (USING PUR DISPLAY CONTENT)
-    // This ensures that "added tags" don't inflate the category counts or get copied when selecting a category
+    // This ensures that "added tags" don't inflate the category counts
     const tagsForClassification = useMemo(() => pureDisplayContent ? pureDisplayContent.split(',').map(t => t.trim()) : [], [pureDisplayContent])
-
-    // For the main inline selection bar, we might want to know if parts exist in the MAIN display content? 
-    // Actually, usually "tags to add" are generic and shouldn't affect the "Pose/Clothing" indicators of the image itself.
-    // So using pureDisplayContent is likely correct for the indicators too.
 
     const teachTagsForClassification = useMemo(() => teachContent ? teachContent.split(',').map(t => t.trim()) : [], [teachContent])
 
@@ -373,6 +380,12 @@ export const MasonryItem = memo(function MasonryItem({
         }
     }
 
+    // Determine if options are active that affect the prompt
+    const hasActiveOptions = useMemo(() => {
+        // Only show indicator if Smart Tag Exclusion actively blocked tags from being added
+        return conflictResolution.conflictingTags.length > 0
+    }, [conflictResolution.conflictingTags.length])
+
     // Grid View
     if (viewMode === "grid") {
         const footerHeight = SCALE_CONFIG[effectiveScale].footerHeight
@@ -394,6 +407,23 @@ export const MasonryItem = memo(function MasonryItem({
                                    transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
                                 >
                                     <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
+                                </motion.div>
+                            </motion.div>
+                        </div>
+                    )}
+                    {hasActiveOptions && (
+                        <div className="absolute top-2 right-2 z-20 pointer-events-none" aria-label="Options affecting prompt">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-blue-500/40 shadow-sm"
+                            >
+                                <motion.div
+                                   animate={{ rotate: [0, 10, -10, 0] }}
+                                   transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                                >
+                                    <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
                                 </motion.div>
                             </motion.div>
                         </div>
@@ -542,6 +572,7 @@ export const MasonryItem = memo(function MasonryItem({
                             onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
                             globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                             onSearch={onSearch}
+                            conflictingTags={conflictResolution.conflictingTags}
                         />
                     </div>
 
@@ -677,6 +708,23 @@ export const MasonryItem = memo(function MasonryItem({
                                 </motion.div>
                             </div>
                         )}
+                        {hasActiveOptions && (
+                            <div className="absolute top-1.5 left-1.5 z-20 pointer-events-none" aria-label="Options affecting prompt">
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-blue-500/40 shadow-sm"
+                                >
+                                    <motion.div
+                                       animate={{ rotate: [0, 10, -10, 0] }}
+                                       transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                                    >
+                                        <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
+                                    </motion.div>
+                                </motion.div>
+                            </div>
+                        )}
                         <div className="absolute top-1 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
                             <SaveFavoriteButton
                                 folders={folders}
@@ -737,6 +785,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
                                 globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                                 onSearch={onSearch}
+                                conflictingTags={conflictResolution.conflictingTags}
                             />
                         </div>
 

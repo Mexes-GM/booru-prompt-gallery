@@ -1,8 +1,9 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Plus, Minus, RotateCcw, Globe, Search } from "lucide-react"
+import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { parseTagString } from "@/lib/weight-utils"
@@ -27,6 +28,7 @@ interface InteractivePromptProps {
   onPromoteToGlobal?: (tag: string, weight: number) => void
   globalWeights?: Record<string, number>
   onSearch?: (tag: string) => void
+  conflictingTags?: { tag: string; reason: string }[]
 }
 
 const buildPrompt = (tags: TagData[]): string => {
@@ -43,7 +45,8 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
   onWeightChange,
   onPromoteToGlobal,
   globalWeights = {},
-  onSearch
+  onSearch,
+  conflictingTags = []
 }: InteractivePromptProps) {
   const [tags, setTags] = useState<TagData[]>([])
 
@@ -92,33 +95,54 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
     onUpdate(buildPrompt(nextTags))
   }
 
-  if (!tags.length) return <p className="text-foreground/80 leading-relaxed italic">No prompt content</p>
+  if (!tags.length && !conflictingTags.length) return <p className="text-foreground/80 leading-relaxed italic">No prompt content</p>
 
   return (
     <div className="text-sm text-foreground/80 leading-relaxed break-all text-left">
-      {tags.map((tag, i) => {
-        // Check if this tag is globally weighted
-        // Only consider it "Global" (purple) if the weight is NOT 1.0
-        // A global weight of 1.0 is treated as "pass-through" or "neutral"
-        const globalVal = globalWeights[tag.text.toLowerCase()]
-        const isGlobal = globalVal !== undefined && globalVal !== 1.0
+      <TooltipProvider>
+        {tags.map((tag, i) => {
+          // Check if this tag is globally weighted
+          // Only consider it "Global" (purple) if the weight is NOT 1.0
+          // A global weight of 1.0 is treated as "pass-through" or "neutral"
+          const globalVal = globalWeights[tag.text.toLowerCase()]
+          const isGlobal = globalVal !== undefined && globalVal !== 1.0
 
-        return (
-          <React.Fragment key={tag.id}>
-            <PromptTag
-              tag={tag}
-              onCommit={handleCommit}
-              onReset={handleReset}
-              isEditable={isEditable}
-              isGlobal={isGlobal}
-              onPromote={(w) => onPromoteToGlobal?.(tag.text, w)}
-              canPromote={!!onPromoteToGlobal}
-              onSearch={onSearch ? () => onSearch(tag.text) : undefined}
-            />
-            {i < tags.length - 1 && <span>, </span>}
+          return (
+            <React.Fragment key={tag.id}>
+              <PromptTag
+                tag={tag}
+                onCommit={handleCommit}
+                onReset={handleReset}
+                isEditable={isEditable}
+                isGlobal={isGlobal}
+                onPromote={(w) => onPromoteToGlobal?.(tag.text, w)}
+                canPromote={!!onPromoteToGlobal}
+                onSearch={onSearch ? () => onSearch(tag.text) : undefined}
+              />
+              {i < tags.length - 1 && <span>, </span>}
+            </React.Fragment>
+          )
+        })}
+
+        {tags.length > 0 && conflictingTags.length > 0 && <span>, </span>}
+
+        {conflictingTags.map((conflict, i) => (
+          <React.Fragment key={`conflict-${i}`}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive line-through decoration-destructive/50 cursor-help border border-destructive/20 transition-colors hover:bg-destructive/20 font-medium">
+                  <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                  {conflict.tag}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs font-medium">
+                {conflict.reason}
+              </TooltipContent>
+            </Tooltip>
+            {i < conflictingTags.length - 1 && <span>, </span>}
           </React.Fragment>
-        )
-      })}
+        ))}
+      </TooltipProvider>
     </div>
   )
 })

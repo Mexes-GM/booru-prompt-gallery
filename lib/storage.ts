@@ -63,7 +63,8 @@ export const STORAGE_KEYS = {
   VIEW_MODE: 'view-mode',
   CARD_SCALE: 'card-scale',
   BACKGROUND_MODE: 'background-mode',
-  SIMPLE_BACKGROUND_REPLACEMENT_TAGS: 'simple-background-replacement-tags'
+  SIMPLE_BACKGROUND_REPLACEMENT_TAGS: 'simple-background-replacement-tags',
+  SMART_TAG_EXCLUSION: 'smart-tag-exclusion'
 } as const
 
 export interface HistoryItem {
@@ -84,10 +85,17 @@ export interface TagPreset {
 export interface PromptOptions {
   includeCharacters: boolean
   optimizeTags: boolean
+  smartTagExclusion: boolean
 }
 
 // Type-safe getters and setters for specific preferences
 export const userPreferences = {
+  getPromptOptions: (): PromptOptions =>
+    storage.get(STORAGE_KEYS.PROMPT_OPTIONS, { includeCharacters: true, optimizeTags: true, smartTagExclusion: true }),
+
+  setPromptOptions: (options: PromptOptions) =>
+    storage.set(STORAGE_KEYS.PROMPT_OPTIONS, options),
+
   getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru' =>
     storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'danbooru'),
 
@@ -195,6 +203,12 @@ export const userPreferences = {
 
   getGlobalWeights: (): Record<string, number> =>
     storage.get(STORAGE_KEYS.GLOBAL_WEIGHTS, {}),
+
+  getSmartTagExclusion: (): boolean =>
+    storage.get(STORAGE_KEYS.SMART_TAG_EXCLUSION, true),
+
+  setSmartTagExclusion: (enabled: boolean) =>
+    storage.set(STORAGE_KEYS.SMART_TAG_EXCLUSION, enabled),
 
   setGlobalWeights: (weights: Record<string, number>) =>
     storage.set(STORAGE_KEYS.GLOBAL_WEIGHTS, weights),
