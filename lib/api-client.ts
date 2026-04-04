@@ -403,8 +403,8 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
 
   // Add tag count filter if present and supported (only Danbooru)
   if (tagCountFilter && provider === 'danbooru') {
-    // Always force ">" operator for tag count
-    tags.push(`tagcount:>${tagCountFilter.replace(/\D/g, '')}`)
+    // Use ">="  operator to include the exact value and above
+    tags.push(`tagcount:>=${tagCountFilter.replace(/\D/g, '')}`)
   }
 
   // Add order tag if popular or random
@@ -441,8 +441,8 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
 
   const ratingPart = effectiveRating && effectiveRating !== 'all' ? `${effectiveRating} ` : ''
   // Apply tag count filter for Danbooru and E621
-  // Danbooru uses tagcount:>X, E621 supports range but tagcount:>X is standard range syntax for them
-  const tagCountPart = (tagCountFilter && (provider === 'danbooru' || provider === 'e621')) ? `tagcount:>${tagCountFilter.replace(/\D/g, '')} ` : ''
+  // Using >= operator to include the exact value and above (minimum tag count = exact value or more)
+  const tagCountPart = (tagCountFilter && (provider === 'danbooru' || provider === 'e621')) ? `tagcount:>=${tagCountFilter.replace(/\D/g, '')} ` : ''
 
   const extraTagsCount = 0
   const processedTags = processTagsForAPI(tags, order, extraTagsCount)

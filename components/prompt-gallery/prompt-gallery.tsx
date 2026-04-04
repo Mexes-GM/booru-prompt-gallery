@@ -1352,7 +1352,7 @@ export function PromptGallery() {
                                     </div>
                                   }
                                 >
-                                  Minimum Tag Count ({`>`} {search.tagCountFilter})
+                                  Minimum Tag Count ({`>=`} {search.tagCountFilter})
                                 </InfoTooltip>
                               </label>
                               <div className="flex items-center">

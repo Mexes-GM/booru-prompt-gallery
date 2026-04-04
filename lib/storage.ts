@@ -64,7 +64,11 @@ export const STORAGE_KEYS = {
   CARD_SCALE: 'card-scale',
   BACKGROUND_MODE: 'background-mode',
   SIMPLE_BACKGROUND_REPLACEMENT_TAGS: 'simple-background-replacement-tags',
-  SMART_TAG_EXCLUSION: 'smart-tag-exclusion'
+  SMART_TAG_EXCLUSION: 'smart-tag-exclusion',
+  // Search and filter preferences
+  SEARCH_TAGS: 'search-tags',
+  IS_SHUFFLE: 'is-shuffle',
+  HAS_PROMPT_FILTER: 'has-prompt-filter'
 } as const
 
 export interface HistoryItem {
@@ -263,5 +267,24 @@ export const userPreferences = {
     storage.get(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, 'simple background, white background'),
 
   setSimpleBackgroundReplacementTags: (tags: string) =>
-    storage.set(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, tags)
+    storage.set(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, tags),
+
+  // Search and filter preferences
+  getSearchTags: (): string =>
+    storage.get(STORAGE_KEYS.SEARCH_TAGS, ''),
+
+  setSearchTags: (tags: string) =>
+    storage.set(STORAGE_KEYS.SEARCH_TAGS, tags),
+
+  getIsShuffle: (): boolean =>
+    storage.get(STORAGE_KEYS.IS_SHUFFLE, false),
+
+  setIsShuffle: (shuffle: boolean) =>
+    storage.set(STORAGE_KEYS.IS_SHUFFLE, shuffle),
+
+  getHasPromptFilter: (): boolean =>
+    storage.get(STORAGE_KEYS.HAS_PROMPT_FILTER, false),
+
+  setHasPromptFilter: (hasPrompt: boolean) =>
+    storage.set(STORAGE_KEYS.HAS_PROMPT_FILTER, hasPrompt)
 }

@@ -20,10 +20,10 @@ export function usePreferencesSync() {
         .from('profiles')
         .select('preferences')
         .eq('id', user!.id) // Non-null assertion safe because of check above
-        .single()
+        .maybeSingle()
 
       if (error) {
-        console.error("Failed to load cloud preferences:", error)
+        console.error("Failed to load cloud preferences:", error.message || error, error.details || "")
         return
       }
 
@@ -155,7 +155,7 @@ export function usePreferencesSync() {
           .eq('id', user.id)
 
         if (error) {
-          console.error("Failed to save preferences to cloud:", error)
+          console.error("Failed to save preferences to cloud:", error.message || error, error.details || "")
         }
       }, 2000) // 2 second debounce
     }

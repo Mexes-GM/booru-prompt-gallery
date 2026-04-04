@@ -16,7 +16,13 @@ import {
 import { useToast } from "@/hooks/use-toast"
 
 export function useBooruSearch() {
-  const [searchTags, setSearchTags] = useState("")
+  const [searchTags, setSearchTags] = usePersistentState(
+    "",
+    userPreferences.getSearchTags,
+    userPreferences.setSearchTags,
+    "searchTags",
+    STORAGE_KEYS.SEARCH_TAGS
+  )
   const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
 
   // --- Persistent State ---
@@ -29,7 +35,13 @@ export function useBooruSearch() {
     STORAGE_KEYS.RATING_FILTER
   )
 
-  const [isShuffle, setIsShuffle] = useState(false)
+  const [isShuffle, setIsShuffle] = usePersistentState(
+    false,
+    userPreferences.getIsShuffle,
+    userPreferences.setIsShuffle,
+    "isShuffle",
+    STORAGE_KEYS.IS_SHUFFLE
+  )
   const order = isShuffle ? "random" : "recent"
 
   const [booruProvider, setBooruProvider] = usePersistentState<BooruProvider>(
@@ -40,7 +52,13 @@ export function useBooruSearch() {
     STORAGE_KEYS.BOORU_PROVIDER
   )
 
-  const [hasPromptFilter, setHasPromptFilter] = useState(false)
+  const [hasPromptFilter, setHasPromptFilter] = usePersistentState(
+    false,
+    userPreferences.getHasPromptFilter,
+    userPreferences.setHasPromptFilter,
+    "hasPromptFilter",
+    STORAGE_KEYS.HAS_PROMPT_FILTER
+  )
 
   const [removeLoRaTags, setRemoveLoRaTags] = usePersistentState(
     false,
@@ -103,6 +121,13 @@ export function useBooruSearch() {
     setIsClient(true)
     setRandomSeed(Date.now())
   }, []) // Run once on mount
+
+  // Generate new seed when shuffle is enabled (useful when isShuffle is restored from storage)
+  useEffect(() => {
+    if (isShuffle && isClient) {
+      setRandomSeed(Date.now())
+    }
+  }, [isShuffle, isClient])
 
   // Sync applied filter when persistent changes (e.g. from UI)
   // But wait for debounce/blur logic usually? In this component, setAppliedTagCountFilter is usually manual.
