@@ -83,3 +83,17 @@ console.log("Starting Tag Classifier Tests...");
 }
 
 console.log("Tag Classifier Tests Complete");
+
+// Overrides Derivation Tests
+{
+  const overrides = { "weird skirt": "clothing", "funny looking": "pose" };
+  expectEqual(classifyTag("blue weird skirt", overrides), "clothing", "Classify blue weird skirt as clothing via override derivation");
+  expectEqual(classifyTag("very funny looking", overrides), "pose", "Classify very funny looking as pose via override derivation");
+}
+
+
+{
+  const overrides = { "bizarre object": "scenery" };
+  expectEqual(classifyTag("large bizarre object", overrides), "scenery", "Classify large bizarre object via override derivation");
+}
+

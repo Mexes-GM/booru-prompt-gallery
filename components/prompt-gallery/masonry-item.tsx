@@ -886,5 +886,53 @@ export const MasonryItem = memo(function MasonryItem({
             </AnimatePresence>
         </Card>
     )
-})
+}, arePropsEqual)
+
+// Custom comparison function for React.memo to prevent deep unnecessary re-renders.
+// Specifically targets the expensive tagOverrides and globalWeights objects.
+function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
+    if (prev.post.id !== next.post.id) return false
+    if (prev.width !== next.width) return false
+    if (prev.height !== next.height) return false
+    if (prev.viewMode !== next.viewMode) return false
+    if (prev.effectiveScale !== next.effectiveScale) return false
+    if (prev.booruProvider !== next.booruProvider) return false
+    if (prev.isFavorited !== next.isFavorited) return false
+    if (prev.isMergeMode !== next.isMergeMode) return false
+    if (prev.isSelected !== next.isSelected) return false
+    if (prev.excludeInput !== next.excludeInput) return false
+    if (prev.addInput !== next.addInput) return false
+    if (prev.includeCharacters !== next.includeCharacters) return false
+    if (prev.optimizeTags !== next.optimizeTags) return false
+    if (prev.smartTagExclusion !== next.smartTagExclusion) return false
+    if (prev.removeLoRaTags !== next.removeLoRaTags) return false
+    if (prev.removeQualityTags !== next.removeQualityTags) return false
+    if (prev.backgroundMode !== next.backgroundMode) return false
+    if (prev.simpleBackgroundReplacementTags !== next.simpleBackgroundReplacementTags) return false
+    if (prev.isGlobalWeightsEnabled !== next.isGlobalWeightsEnabled) return false
+    if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false
+
+    if (prev.folders !== next.folders) return false
+    if (prev.currentFolderIds.length !== next.currentFolderIds.length || 
+        !prev.currentFolderIds.every((id, i) => id === next.currentFolderIds[i])) return false
+    
+    if (prev.selectedParts?.size !== next.selectedParts?.size) return false
+    if (prev.selectedParts && next.selectedParts) {
+        for (const part of prev.selectedParts) {
+            if (!next.selectedParts.has(part)) return false
+        }
+    }
+
+    if (prev.copiedId !== next.copiedId && (prev.copiedId === prev.post.id || next.copiedId === next.post.id)) {
+        return false
+    }
+
+    const postTags = next.post.tag_string.split(' ')
+    for (const tag of postTags) {
+        if (prev.tagOverrides[tag] !== next.tagOverrides[tag]) return false
+        if (next.isGlobalWeightsEnabled && (prev.globalWeights?.[tag] !== next.globalWeights?.[tag])) return false
+    }
+
+    return true
+}
 

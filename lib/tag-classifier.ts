@@ -51,36 +51,69 @@ const APPEARANCE_KEYWORDS = [
 ];
 
 export function classifyTag(tag: string, overrides?: Record<string, string>): TagCategory {
+  const lowerWithSpaces = tag.toLowerCase().replace(/_/g, " ");
+
   // 1. Check overrides first
-  if (overrides && overrides[tag]) {
-    // Ensure the DB value is a valid TagCategory, otherwise default to 'other' (or keep as is if we trust DB)
-    const dbCategory = overrides[tag] as TagCategory;
-    if (['clothing', 'pose', 'scenery', 'appearance', 'other'].includes(dbCategory)) {
-      return dbCategory;
+  if (overrides) {
+    // We normalize keys from DB to lowercase and spaces, so check against lowerWithSpaces
+    let overrideValue = overrides[lowerWithSpaces] || overrides[tag.toLowerCase()];
+
+    // 1.5 Derivations: if tag is "blue skirt", check if "skirt" is in overrides
+    if (!overrideValue && lowerWithSpaces.includes(" ")) {
+      const cleanedForSuffix = lowerWithSpaces.replace(/\s*\([^)]*\)/g, "").trim();
+      const parts = cleanedForSuffix.split(" ");
+      
+      let currentSuffix = "";
+      for (let i = parts.length - 1; i >= 0; i--) {
+        currentSuffix = currentSuffix === "" ? parts[i] : parts[i] + " " + currentSuffix;
+        if (currentSuffix === cleanedForSuffix) continue;
+        
+        if (overrides[currentSuffix]) {
+          overrideValue = overrides[currentSuffix];
+          break;
+        }
+      }
+    }
+
+    if (overrideValue) {
+      const dbCategory = overrideValue.toLowerCase().trim() as TagCategory;
+      if (["clothing", "pose", "scenery", "appearance", "other"].includes(dbCategory)) {
+        return dbCategory;
+      }
     }
   }
 
-  const lower = tag.toLowerCase().replace(/_/g, " ");
-  const words = lower.split(" ");
+  const subjectForMatching = lowerWithSpaces.replace(/\s*\(.*?\)/g, "").trim();
+  const words = subjectForMatching.split(" ");
   const lastWord = words[words.length - 1];
 
+  const hasKeyword = (keywords: string[], text: string) => {
+    return keywords.some(k => new RegExp(`\\b${k}\\b`).test(text));
+  };
+
   // Clothing
-  if (CLOTHING_SUFFIXES.some(suffix => lower.endsWith(suffix) || lower.includes(` ${suffix}`))) {
+  if (CLOTHING_SUFFIXES.some(suffix => subjectForMatching.endsWith(suffix) || subjectForMatching.includes(` ${suffix}`))) {
     return 'clothing';
   }
 
   // Pose (often verbs or positions)
-  if (POSE_KEYWORDS.some(k => lower.includes(k))) {
+  if (hasKeyword(POSE_KEYWORDS, subjectForMatching)) {
     return 'pose';
   }
 
   // Scenery
-  if (SCENERY_KEYWORDS.some(k => lower.includes(k) || lower.endsWith(" background"))) {
+  if (hasKeyword(SCENERY_KEYWORDS, subjectForMatching) || subjectForMatching.endsWith(" background")) {
     return 'scenery';
   }
 
   // Appearance
-  if (APPEARANCE_KEYWORDS.some(k => lower.includes(k) || lastWord === "hair" || lastWord === "eyes")) {
+  if (hasKeyword(APPEARANCE_KEYWORDS, subjectForMatching) || lastWord === "hair" || lastWord === "eyes") {
+    return 'appearance';
+  }
+
+  // Booru Pattern: Tags with parentheses (like `character (series)` or `character (costume)`) 
+  // usually denote specific characters or franchise variants. If it hasn't matched anything else, default to appearance.
+  if (lowerWithSpaces.includes('(') && lowerWithSpaces.includes(')')) {
     return 'appearance';
   }
 

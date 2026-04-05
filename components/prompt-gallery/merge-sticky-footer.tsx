@@ -1,18 +1,19 @@
-import { useRef, useEffect, useState, memo, useCallback } from 'react'
+import { useRef, useEffect, useState, memo, useCallback, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
-import { X, Copy, Trash2, Check } from "lucide-react"
+import { X, Copy, Trash2, Check, Shuffle, Type } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
-import { SelectedPostParts } from '@/hooks/use-merge-mode'
+import { SelectedPostParts, MergeModeType } from '@/hooks/use-merge-mode'
 import { TagCategory } from '@/lib/tag-classifier'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface MergeStickyFooterProps {
     isOpen: boolean
     selectedPosts: Map<number, SelectedPostParts>
     mergedPrompt: string
-    mergedPromptSegments: { text: string, display: string, category: TagCategory }[]
+    mergedPromptSegments: { text: string, display: string, category: TagCategory, postId?: number }[]
     onRemovePost: (id: number) => void
     onClearAll: () => void
     onExit: () => void
@@ -21,6 +22,8 @@ interface MergeStickyFooterProps {
     globalWeights?: Record<string, number>
     onGlobalWeightChange?: (tag: string, weight: number) => void
     isGlobalWeightsEnabled?: boolean
+    mergeModeType: MergeModeType
+    onToggleMergeModeType: () => void
 }
 
 const ExplodingTag = memo(({
@@ -67,6 +70,32 @@ const ExplodingTag = memo(({
 })
 ExplodingTag.displayName = "ExplodingTag"
 
+const SymbolTag = memo(({ 
+    symbol, 
+    category, 
+    getCategoryTextColor, 
+    getCategoryBorderColor 
+}: { 
+    symbol: string
+    category: TagCategory
+    getCategoryTextColor: (c: TagCategory) => string
+    getCategoryBorderColor: (c: TagCategory) => string 
+}) => {
+    return (
+        <motion.div
+            layout
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5, filter: "blur(4px)" }}
+            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            className={`flex items-center justify-center px-1.5 py-1.5 sm:py-0.5 rounded border border-dashed ${getCategoryBorderColor(category)} bg-background/30 font-mono text-xs font-medium opacity-80 ${getCategoryTextColor(category)} select-none`}
+        >
+            <span className="relative">{symbol}</span>
+        </motion.div>
+    )
+})
+SymbolTag.displayName = "SymbolTag"
+
 const PARTICLES_MAP = {
     green: "bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.8)]",
     red: "bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]"
@@ -109,7 +138,9 @@ const MergeStickyFooterComponent = ({
     onRemoveTag,
     globalWeights,
     onGlobalWeightChange,
-    isGlobalWeightsEnabled
+    isGlobalWeightsEnabled,
+    mergeModeType,
+    onToggleMergeModeType
 }: MergeStickyFooterProps) => {
 
     const [isCopied, setIsCopied] = useState(false)
@@ -138,6 +169,53 @@ const MergeStickyFooterComponent = ({
             default: return 'text-muted-foreground bg-muted border-transparent'
         }
     }, [])
+
+    const getCategoryTextColor = useCallback((category: TagCategory) => {
+        switch (category) {
+            case 'appearance': return 'text-blue-500'
+            case 'pose': return 'text-purple-500'
+            case 'clothing': return 'text-green-500'
+            case 'scenery': return 'text-orange-500'
+            default: return 'text-muted-foreground'
+        }
+    }, [])
+
+    const getCategoryBorderColor = useCallback((category: TagCategory) => {
+        switch (category) {
+            case 'appearance': return 'border-blue-500/30 bg-blue-500/5'
+            case 'pose': return 'border-purple-500/30 bg-purple-500/5'
+            case 'clothing': return 'border-green-500/30 bg-green-500/5'
+            case 'scenery': return 'border-orange-500/30 bg-orange-500/5'
+            default: return 'border-border/50 bg-muted/30'
+        }
+    }, [])
+
+    // Process variations data structure for UI rendering
+    const variationsOutput = useMemo(() => {
+        if (mergeModeType !== 'variations') return null;
+
+        const commonTags = mergedPromptSegments.filter(s => !s.postId);
+        const categories: TagCategory[] = ['appearance', 'clothing', 'pose', 'scenery', 'other'];
+        const dynamicBlocks: { category: TagCategory, variations: { postId: number, tags: typeof mergedPromptSegments }[] }[] = [];
+        
+        categories.forEach(cat => {
+            const catSegments = mergedPromptSegments.filter(s => s.postId && s.category === cat);
+            if (catSegments.length === 0) return;
+            
+            const postGroups = new Map<number, typeof mergedPromptSegments>();
+            catSegments.forEach(s => {
+                if (!postGroups.has(s.postId!)) postGroups.set(s.postId!, []);
+                postGroups.get(s.postId!)!.push(s);
+            });
+            
+            if (postGroups.size > 0) {
+                const variations = Array.from(postGroups.entries()).map(([postId, tags]) => ({ postId, tags }));
+                dynamicBlocks.push({ category: cat, variations });
+            }
+        });
+
+        return { commonTags, dynamicBlocks };
+    }, [mergedPromptSegments, mergeModeType]);
 
     return (
         <AnimatePresence>
@@ -176,10 +254,33 @@ const MergeStickyFooterComponent = ({
                         {/* Header / Controls */}
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <span className="font-bold text-sm sm:text-base">Merge Prompt</span>
+                                <span className="font-bold text-sm sm:text-base">
+                                    {mergeModeType === 'merge' ? 'Merge Prompt' : 'Variations Mode'}
+                                </span>
                                 <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                                     {selectedPosts.size} posts
                                 </span>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={onToggleMergeModeType}
+                                            className="ml-2 h-7 px-2 text-xs font-medium"
+                                        >
+                                            {mergeModeType === 'merge' ? (
+                                                <><Shuffle className="w-3 h-3 mr-1" /> To Variations</>
+                                            ) : (
+                                                <><Type className="w-3 h-3 mr-1" /> To Merge</>
+                                            )}
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        {mergeModeType === 'merge' 
+                                            ? 'Switch to Variations Mode ({ tagA | tagB })' 
+                                            : 'Switch to Merge Mode (combines tags into one prompt)'}
+                                    </TooltipContent>
+                                </Tooltip>
                             </div>
                             <div className="flex items-center gap-2">
                                 <Button
@@ -274,33 +375,114 @@ const MergeStickyFooterComponent = ({
 
                         {/* Prompt Output */}
                         <div className="relative">
-                            <div className="min-h-[80px] max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-2 text-sm shadow-sm overflow-y-auto overflow-x-hidden">
-                                {mergedPromptSegments.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start">
+                            <div className="min-h-[80px] max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-3 text-sm shadow-sm overflow-y-auto overflow-x-hidden flex flex-col gap-2">
+                                {mergeModeType === 'variations' && variationsOutput ? (
+                                    <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start items-center">
                                         <AnimatePresence mode="popLayout">
-                                            {mergedPromptSegments.map((segment) => (
+                                            {variationsOutput.commonTags.map((segment, index) => (
                                                 <ExplodingTag
-                                                    key={segment.text}
+                                                    key={`common-${segment.text}-${index}`}
                                                     text={segment.display}
                                                     category={segment.category}
                                                     onRemove={() => onRemoveTag(segment.text)}
                                                     getCategoryClass={getCategoryClass}
                                                 />
                                             ))}
+
+                                            {variationsOutput.dynamicBlocks.flatMap((block, blockIndex) => {
+                                                const isVariation = block.variations.length > 1;
+                                                const elements: any[] = [];
+
+                                                if (isVariation) {
+                                                    elements.push(
+                                                        <SymbolTag 
+                                                            key={`start-${block.category}-${blockIndex}`} 
+                                                            symbol="{" 
+                                                            category={block.category} 
+                                                            getCategoryTextColor={getCategoryTextColor}
+                                                            getCategoryBorderColor={getCategoryBorderColor}
+                                                        />
+                                                    );
+                                                }
+
+                                                block.variations.forEach((variation, varIndex) => {
+                                                    if (isVariation && varIndex > 0) {
+                                                        elements.push(
+                                                            <SymbolTag 
+                                                                key={`pipe-${block.category}-${blockIndex}-${varIndex}`} 
+                                                                symbol="|" 
+                                                                category={block.category} 
+                                                                getCategoryTextColor={getCategoryTextColor}
+                                                                getCategoryBorderColor={getCategoryBorderColor}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    variation.tags.forEach((segment, tagIndex) => {
+                                                        elements.push(
+                                                            <ExplodingTag
+                                                                key={`var-${variation.postId}-${segment.text}-${tagIndex}`}
+                                                                text={segment.display}
+                                                                category={segment.category}
+                                                                onRemove={() => onRemoveTag(segment.text)}
+                                                                getCategoryClass={getCategoryClass}
+                                                            />
+                                                        );
+                                                    });
+                                                });
+
+                                                if (isVariation) {
+                                                    elements.push(
+                                                        <SymbolTag 
+                                                            key={`end-${block.category}-${blockIndex}`} 
+                                                            symbol="}" 
+                                                            category={block.category} 
+                                                            getCategoryTextColor={getCategoryTextColor}
+                                                            getCategoryBorderColor={getCategoryBorderColor}
+                                                        />
+                                                    );
+                                                }
+
+                                                return elements;
+                                            })}
                                         </AnimatePresence>
+                                        
                                         {mergedPromptSegments.length === 0 && (
                                             <motion.span
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
                                                 exit={{ opacity: 0 }}
-                                                className="text-muted-foreground italic"
+                                                className="text-muted-foreground italic block mt-1"
                                             >
-                                                Select posts to merge prompt parts...
+                                                Select posts to generate dynamic variations...
                                             </motion.span>
                                         )}
                                     </div>
                                 ) : (
-                                    null
+                                    mergedPromptSegments.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start">
+                                            <AnimatePresence mode="popLayout">
+                                                {mergedPromptSegments.map((segment, index) => (
+                                                    <ExplodingTag
+                                                        key={`${segment.text}-${index}`}
+                                                        text={segment.display}
+                                                        category={segment.category}
+                                                        onRemove={() => onRemoveTag(segment.text)}
+                                                        getCategoryClass={getCategoryClass}
+                                                    />
+                                                ))}
+                                            </AnimatePresence>
+                                        </div>
+                                    ) : (
+                                        <motion.span
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            className="text-muted-foreground italic block mt-1"
+                                        >
+                                            Select posts to merge prompt parts...
+                                        </motion.span>
+                                    )
                                 )}
                             </div>
 

@@ -130,7 +130,8 @@ export function analyzeBackground(tags: string[]): BackgroundAnalysis {
 export function processBackgroundTags(
   tags: string[],
   mode: BackgroundMode,
-  replacementTags: string = "simple background, white background"
+  replacementTags: string = "simple background, white background",
+  tagOverrides?: Record<string, string>
 ): string[] {
   if (mode === 'keep') return tags;
 
@@ -139,11 +140,11 @@ export function processBackgroundTags(
   if (analysis.backgroundTags.length === 0 && mode !== 'force_simple' && mode !== 'remove_all') return tags;
 
   // Filter out the detected background tags
-  let newTags = tags.filter(tag => !analysis.backgroundTags.includes(tag));
+  let newTags = tags.filter(tag => !analysis.backgroundTags.includes(tag));     
 
   // If mode requires removing scenery classifications
   if (mode === 'remove_all' || mode === 'force_simple') {
-    newTags = newTags.filter(tag => classifyTag(tag) !== 'scenery');
+    newTags = newTags.filter(tag => classifyTag(tag, tagOverrides) !== 'scenery');
   }
 
   // If forcing simple, inject the replacement tags

@@ -56,7 +56,7 @@ function withNormalizedVariants(list: string[]): Set<string> {
   return set
 }
 
-function parseTagList(input: string): string[] {
+export function parseTagList(input: string): string[] {
   if (!input) return []
   const parts = input.includes(",") ? input.split(",") : input.trim().split(/\s+/)
   return parts.map((t) => t.trim()).filter(Boolean)
@@ -97,7 +97,7 @@ const EYE_COLORS_SET = new Set([
   "grey eyes",
 ].map(normalize))
 
-const QUALITY_TAGS_SET = new Set([
+export const QUALITY_TAGS_SET = new Set([
   "masterpiece",
   "best quality",
   "high quality",
@@ -644,9 +644,10 @@ export function cleanPrompt(
   // Optional: Process Backgrounds based on rules
   if (options?.backgroundMode && Array.isArray(sortedContentTags)) {
     sortedContentTags = processBackgroundTags(
-      sortedContentTags, 
-      options.backgroundMode, 
-      options.simpleBackgroundReplacementTags
+      sortedContentTags,
+      options.backgroundMode,
+      options.simpleBackgroundReplacementTags,
+      options.tagOverrides
     )
   }
 

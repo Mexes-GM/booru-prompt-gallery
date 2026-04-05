@@ -22,6 +22,7 @@ interface MergeSelectionDialogProps {
     onOpenChange: (open: boolean) => void
     onConfirm: (post: BooruPost, parts: Set<TagCategory>) => void
     initialSelection?: Set<TagCategory>
+    tagOverrides?: Record<string, string>
 }
 
 export function MergeSelectionDialog({
@@ -29,7 +30,8 @@ export function MergeSelectionDialog({
     open,
     onOpenChange,
     onConfirm,
-    initialSelection
+    initialSelection,
+    tagOverrides = {}
 }: MergeSelectionDialogProps) {
     const [selectedParts, setSelectedParts] = useState<Set<TagCategory>>(new Set())
 
@@ -47,8 +49,8 @@ export function MergeSelectionDialog({
     const classifiedTags = useMemo(() => {
         if (!post) return null
         const tags = post.tag_string.split(' ').filter(Boolean)
-        return classifyTags(tags)
-    }, [post])
+        return classifyTags(tags, tagOverrides)
+    }, [post, tagOverrides])
 
     if (!post || !classifiedTags) return null
 

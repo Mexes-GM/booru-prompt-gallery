@@ -67,3 +67,4 @@ skills/
 
 # Sentry Config File
 .env.sentry-build-plugin
+docs/plans/2026-04-03-prompt-tools-design.md

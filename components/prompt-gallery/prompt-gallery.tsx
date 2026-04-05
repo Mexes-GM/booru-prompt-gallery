@@ -125,6 +125,7 @@ import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { FeedbackDialog } from "@/components/feedback-dialog"
 import { SaveFavoriteButton } from "./save-favorite-button"
 import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-modal"
+import { ReversePromptParserModal } from "@/components/prompt-gallery/reverse-prompt-parser-modal"
 import { useDebounce } from "@/hooks/use-debounce"
 
 import { usePersistentState } from "@/hooks/use-persistent-state"
@@ -276,6 +277,7 @@ export function PromptGallery() {
 
   const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
   const [weightsLoaded, setWeightsLoaded] = useState(false)
+  const [isReverseParserModalOpen, setIsReverseParserModalOpen] = useState(false)
 
   // Merge Mode Hook
   const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags)
@@ -415,6 +417,13 @@ export function PromptGallery() {
   const toggleGlobalWeights = (enabled: boolean) => {
     setIsGlobalWeightsEnabled(enabled)
   }
+
+  const handleImportRawPrompt = useCallback((prompt: string) => {
+    // Set the imported prompt as search tag
+    search.setSearchTags(prompt)
+    setIsReverseParserModalOpen(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [search])
 
   // Persist Global Weights state changes
   useEffect(() => {
@@ -997,6 +1006,25 @@ export function PromptGallery() {
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
                             {mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Prompt Mode"}
+                          </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              onClick={() => setIsReverseParserModalOpen(true)}
+                              variant="secondary"
+                              className="h-9 px-3 gap-1 transition-colors duration-200 bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:hover:bg-purple-900/40"
+                              title="Import & Clean Prompt"
+                              aria-label="Open Reverse Prompt Parser"
+                            >
+                              <Sparkles className="w-4 h-4 fill-current" />
+                              <span className="text-xs font-medium">Import</span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            Import & Clean Prompt
                           </TooltipContent>
                         </Tooltip>
 
@@ -1970,6 +1998,8 @@ export function PromptGallery() {
         onExit={mergeMode.toggleMergeMode}
         onCopy={(text) => copyToClipboard(text, 0, true)}
         onRemoveTag={mergeMode.excludeTag}
+        mergeModeType={mergeMode.mergeModeType}
+        onToggleMergeModeType={mergeMode.toggleVariationsMode}
       />
 
       <GlobalWeightsModal
@@ -1979,6 +2009,12 @@ export function PromptGallery() {
         onRemoveWeight={handleRemoveGlobalWeight}
         onClearWeights={handleClearGlobalWeights}
         onSaveWeight={handleGlobalWeightChange}
+      />
+
+      <ReversePromptParserModal
+        open={isReverseParserModalOpen}
+        onOpenChange={setIsReverseParserModalOpen}
+        onImport={handleImportRawPrompt}
       />
 
       <AlertDialog open={!!folderToDelete} onOpenChange={(open) => !open && setFolderToDelete(null)}>
