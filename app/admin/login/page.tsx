@@ -17,36 +17,65 @@ export default function AdminLoginPage() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isMagicLinkSent, setIsMagicLinkSent] = useState(false)
+  const [rateLimitReset, setRateLimitReset] = useState<number | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
+  const isRateLimited = rateLimitReset !== null && Date.now() < rateLimitReset
 
+  const handleRateLimit = (remaining: number, reset: number) => {
+    if (remaining <= 0) {
+      setRateLimitReset(reset)
+      setTimeout(() => setRateLimitReset(null), reset - Date.now())
+    }
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (isRateLimited) {
+      setError('Too many attempts. Please wait before trying again.')
+      return
+    }
+    
     setIsLoading(true)
     setError('')
 
     try {
       if (password) {
-        // Email + Password login
-        const { error: signInError } = await supabase.auth.signInWithPassword({
+        const { error: signInError, data } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
 
-        if (signInError) throw signInError
+        if (signInError) {
+          if (signInError.message.includes('Invalid login credentials')) {
+            throw new Error('Invalid email or password')
+          }
+          if (signInError.message.includes('rate limit')) {
+            throw new Error('Too many attempts. Please wait before trying again.')
+          }
+          throw signInError
+        }
+        
         router.refresh()
         router.push('/admin')
       } else {
-        // Magic Link
         const { error: magicLinkError } = await supabase.auth.signInWithOtp({
           email,
           options: {
             emailRedirectTo: `${window.location.origin}/auth/callback?next=/admin`,
+            shouldCreateUser: false,
           }
         })
-        if (magicLinkError) throw magicLinkError
+        
+        if (magicLinkError) {
+          if (magicLinkError.message.includes('rate limit')) {
+            throw new Error('Too many magic link requests. Please wait before trying again.')
+          }
+          throw magicLinkError
+        }
+        
         setIsMagicLinkSent(true)
       }
 

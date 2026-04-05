@@ -1,9 +1,11 @@
 
+import { splitCommaSeparatedTags, joinTags } from '@/lib/utils/tag-utils'
+
 export const applyWeights = (prompt: string, weights: Record<string, number>): string => {
     if (!prompt) return ""
 
     // Split by comma to respect tag boundaries
-    const tags = prompt.split(',').map(t => t.trim()).filter(Boolean)
+    const tags = splitCommaSeparatedTags(prompt)
 
     const processedTags = tags.map(tag => {
         // Parse current tag to extract base name and current weight
@@ -46,14 +48,14 @@ export const applyWeights = (prompt: string, weights: Record<string, number>): s
         return tag
     })
 
-    return processedTags.join(', ')
+    return joinTags(processedTags)
 }
 
 export const extractWeights = (prompt: string): Record<string, number> => {
     if (!prompt) return {}
 
     const weights: Record<string, number> = {}
-    const tags = prompt.split(',').map(t => t.trim()).filter(Boolean)
+    const tags = splitCommaSeparatedTags(prompt)
 
     tags.forEach(tag => {
         const weightMatch = tag.match(/^\((.*):([0-9.]+)\)$/)

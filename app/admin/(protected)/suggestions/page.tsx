@@ -18,11 +18,6 @@ export default async function AdminSuggestionsPage(props: {
   const currentCategory = typeof searchParams.currentCategory === 'string' ? searchParams.currentCategory : undefined
   const suggestedCategory = typeof searchParams.suggestedCategory === 'string' ? searchParams.suggestedCategory : undefined
 
-  // Basic "Auth" Check placeholder
-  // In a real app, check session here:
-  // const { data: { session } } = await supabase.auth.getSession()
-  // if (!session) redirect('/login')
-
   const { data, count, totalPages } = await getSuggestions(page, 20, {
     status,
     currentCategory,

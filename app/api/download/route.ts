@@ -1,5 +1,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
+import { PROVIDER_REFERERS } from '@/lib/constants'
 
 // Use Node.js runtime for better stability with outgoing requests
 export const runtime = 'nodejs'
@@ -43,11 +44,11 @@ export async function GET(request: NextRequest) {
     // Determine appropriate Referer based on domain
     // Danbooru and Aibooru can be sensitive to Referer, or sometimes block if referer is set
     // Rule34 fails if referer is wrong.
-    let referer = 'https://danbooru.donmai.us/'
-    if (urlDomain.includes('rule34')) referer = 'https://rule34.xxx/'
-    else if (urlDomain.includes('aibooru')) referer = 'https://aibooru.online/'
-    else if (urlDomain.includes('e621')) referer = 'https://e621.net/'
-    else if (urlDomain.includes('gelbooru')) referer = 'https://gelbooru.com/'
+    let referer: string = PROVIDER_REFERERS.DANBOORU
+    if (urlDomain.includes('rule34')) referer = PROVIDER_REFERERS.RULE34
+    else if (urlDomain.includes('aibooru')) referer = PROVIDER_REFERERS.AIBOORU
+    else if (urlDomain.includes('e621')) referer = PROVIDER_REFERERS.E621
+    else if (urlDomain.includes('gelbooru')) referer = PROVIDER_REFERERS.GELBOORU
 
     // Don't set User-Agent to a generic fixed string, try to look like a browser but generic enough
     // Some sites block specific "bot" User-Agents

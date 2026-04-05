@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Trash2, Plus, Minus, Tag, Scale, Sparkles, X, Check } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion, AnimatePresence, Variants } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
@@ -26,7 +26,7 @@ interface GlobalWeightsModalProps {
 }
 
 // Animation Variants
-const containerVariants: any = {
+const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
         opacity: 1,
@@ -37,7 +37,7 @@ const containerVariants: any = {
     },
 }
 
-const itemVariants: any = {
+const itemVariants: Variants = {
     hidden: { opacity: 0, y: 10, scale: 0.95 },
     visible: {
         opacity: 1,
@@ -195,8 +195,9 @@ export function GlobalWeightsModal({
                                         <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-8 w-8 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                                            className="h-8 w-8 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                                             onClick={() => onRemoveWeight(tag)}
+                                            aria-label={`Remove weight for ${tag}`}
                                         >
                                             <X className="h-4 w-4" />
                                         </Button>

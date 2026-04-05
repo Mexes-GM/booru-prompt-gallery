@@ -1,4 +1,3 @@
-import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { TrendItem } from '@/lib/booru/types'
 
@@ -11,7 +10,7 @@ const TABLE = 'trend_cache'
  */
 export async function getCachedTrends(): Promise<TrendItem[] | null> {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from(TABLE)
             .select('data, expires_at')
             .limit(1)

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { PROVIDER_URLS, PROVIDER_REFERERS } from '@/lib/constants'
+import { healthCheckResponse, getErrorMessage } from '@/lib/utils/api-response'
 
 export const runtime = 'edge'
 
@@ -13,17 +15,15 @@ export async function GET() {
     // Verificar conectividad con las APIs externas
     const healthChecks = await Promise.allSettled([
       // Verificar Danbooru
-      fetch('https://danbooru.donmai.us/posts.json?limit=1', {
+      fetch(`${PROVIDER_URLS.DANBOORU}/posts.json?limit=1`, {
         method: 'HEAD',
         signal: AbortSignal.timeout(API_CONFIG.timeout)
       }),
-      // Verificar Aibooru
-      fetch('https://aibooru.online/posts.json?limit=1', {
+      fetch(`${PROVIDER_URLS.AIBOORU}/posts.json?limit=1`, {
         method: 'HEAD', 
         signal: AbortSignal.timeout(API_CONFIG.timeout)
       }),
-      // Verificar Rule34
-      fetch('https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&limit=1', {
+      fetch(`${PROVIDER_REFERERS.RULE34}index.php?page=dapi&s=post&q=index&json=1&limit=1`, {
         method: 'HEAD',
         signal: AbortSignal.timeout(API_CONFIG.timeout)
       })
@@ -87,22 +87,13 @@ export async function GET() {
     // Retornar código de estado apropiado
     const httpStatus = allHealthy ? 200 : partiallyHealthy ? 207 : 503
     
-    return NextResponse.json(healthData, {
-      status: httpStatus,
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Content-Type': 'application/json',
-        'X-Health-Check': 'true'
-      }
-    })
+    return healthCheckResponse(healthData, httpStatus)
     
   } catch (error) {
     const responseTime = Date.now() - startTime
-    const errorMessage = error instanceof Error ? error.message : 'Error desconocido'
+    const errorMessage = getErrorMessage(error)
     
-    return NextResponse.json(
+    return healthCheckResponse(
       {
         status: 'unhealthy',
         message: `Error en verificación de salud: ${errorMessage}`,
@@ -110,16 +101,7 @@ export async function GET() {
         responseTime,
         error: errorMessage
       },
-      {
-        status: 503,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-          'Content-Type': 'application/json',
-          'X-Health-Check': 'true'
-        }
-      }
+      503
     )
   }
 }

@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, memo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { Tag, Plus, X, RotateCcw, AlertOctagon, Sparkles, Ghost, ShieldAlert, AlertCircle, Info } from "lucide-react"
+import { motion, AnimatePresence, Variants } from "framer-motion"
+import { Tag, Plus, X, RotateCcw, AlertOctagon, Ghost, AlertCircle, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,7 +27,7 @@ interface BlacklistManagerProps {
 }
 
 // --- Animation Variants ---
-const containerVariants: any = {
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -42,7 +42,7 @@ const containerVariants: any = {
   }
 }
 
-const itemVariants: any = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 10 },
   visible: {
     opacity: 1,
@@ -51,7 +51,7 @@ const itemVariants: any = {
   },
 }
 
-const badgeVariants: any = {
+const badgeVariants: Variants = {
   initial: { opacity: 0, scale: 0.8 },
   animate: { opacity: 1, scale: 1 },
   exit: { opacity: 0, scale: 0.8, transition: { duration: 0.15 } }

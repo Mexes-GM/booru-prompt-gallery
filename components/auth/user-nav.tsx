@@ -41,12 +41,16 @@ export function UserNav() {
     try {
       const { error } = await supabase.auth.signOut()
       if (error) throw error
+      toast({
+        title: "Signed out",
+        description: "You have been successfully signed out.",
+      })
       router.refresh()
     } catch (error) {
       console.error("Logout error:", error)
       toast({
-        title: "Logout warning",
-        description: "Session ended locally, but server might be unreachable.",
+        title: "Sign out failed",
+        description: "Could not sign out. Please try again.",
         variant: "destructive",
       })
     }

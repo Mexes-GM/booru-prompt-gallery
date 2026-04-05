@@ -57,6 +57,37 @@ interface LocalStorageV3 {
   favorites: Record<string, string[]>
 }
 
+interface DbFavoriteRow {
+  provider: string
+  post_id: number
+}
+
+interface DbFavoriteRow {
+  provider: string
+  post_id: number
+}
+
+interface DbFolderItemRow {
+  provider: string
+  post_id: number
+  folder_id: string
+}
+
+interface DbFavoriteInsert {
+  user_id: string
+  provider: string
+  post_id: number
+  type?: never
+}
+
+interface DbFolderItemInsert {
+  user_id: string
+  provider: string
+  post_id: number
+  folder_id: string
+  type: 'item'
+}
+
 export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavoritesReturn {
 
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
@@ -67,7 +98,6 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
   const { user, session, loading: userLoading } = useUser()
   const supabase = createClient()
-  // const { mutate } = useSWRConfig()
 
   // Auto-save favorites to localStorage (Legacy/Anonymous) when state changes
   useEffect(() => {
@@ -122,7 +152,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
           const newMap: Record<string, string[]> = {}
 
           if (dbFavorites) {
-            dbFavorites.forEach((item: any) => {
+            dbFavorites.forEach((item: DbFavoriteRow) => {
               const key = `${item.provider.toLowerCase()}:${item.post_id}`
               newSet.add(key)
               newMap[key] = []
@@ -130,7 +160,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
           }
 
           if (dbFolderItems) {
-            dbFolderItems.forEach((item: any) => {
+            dbFolderItems.forEach((item: DbFolderItemRow) => {
               const key = `${item.provider.toLowerCase()}:${item.post_id}`
               if (newMap[key] !== undefined) {
                 newMap[key].push(item.folder_id)
@@ -146,7 +176,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
             if (savedV3 || savedV2 || savedLegacy) {
               let migrated = false
-              const upsertFavorites: any[] = []
+              const upsertFavorites: (DbFavoriteInsert | DbFolderItemInsert)[] = []
 
               const localFolderIdMap: Record<string, string> = {} // maps local folder ID to Supabase UUID
 
@@ -294,24 +324,24 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
                 }
 
                 if (refreshedFavs) {
-                  newSet.clear()
-                  for (const k in newMap) delete newMap[k]
+                   newSet.clear()
+                   for (const k in newMap) delete newMap[k]
 
-                  refreshedFavs.forEach((item: any) => {
-                    const key = `${item.provider.toLowerCase()}:${item.post_id}`
-                    newSet.add(key)
+                   refreshedFavs.forEach((item: DbFavoriteRow) => {
+                     const key = `${item.provider.toLowerCase()}:${item.post_id}`
+                     newSet.add(key)
                     newMap[key] = []
                   })
                 }
 
                 if (refreshedFolderItems) {
-                  refreshedFolderItems.forEach((item: any) => {
-                    const key = `${item.provider.toLowerCase()}:${item.post_id}`
-                    if (newMap[key] !== undefined) {
-                      newMap[key].push(item.folder_id)
-                    }
-                  })
-                }
+                   refreshedFolderItems.forEach((item: DbFolderItemRow) => {
+                     const key = `${item.provider.toLowerCase()}:${item.post_id}`
+                     if (newMap[key] !== undefined) {
+                       newMap[key].push(item.folder_id)
+                     }
+                   })
+                 }
               }
 
               if (!hasUpsertError) {
@@ -448,7 +478,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
       const newMap: Record<string, string[]> = {}
 
       if (dbFavorites) {
-        dbFavorites.forEach((item: any) => {
+        dbFavorites.forEach((item: DbFavoriteRow) => {
           const key = `${item.provider.toLowerCase()}:${item.post_id}`
           newSet.add(key)
           newMap[key] = []
@@ -456,7 +486,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
       }
 
       if (dbFolderItems) {
-        dbFolderItems.forEach((item: any) => {
+        dbFolderItems.forEach((item: DbFolderItemRow) => {
           const key = `${item.provider.toLowerCase()}:${item.post_id}`
           if (newMap[key] !== undefined) {
             newMap[key].push(item.folder_id)

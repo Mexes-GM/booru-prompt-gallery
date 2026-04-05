@@ -300,9 +300,13 @@ Stay hydrated and don’t forget to blink.
 - **Streaming**: Large file handling and downloads *must* use Web Streams (e.g., `app/api/download`) to prevent memory exhaustion.
 - **Prompt Cleaning**: Use `lib/cleanPrompt.ts` utilities for tag processing.
 - **Supabase & Auth**:
-  - Client initialization is in `lib/supabase.ts`.
-  - Admin/Server functions use `lib/supabase-admin.ts` (requires Service Role Key).
-  - Auth uses a custom JWT implementation via `jose` (`lib/session.ts`) for Admin access, not standard Supabase Auth.
+  - Browser client: `lib/supabase/client.ts` (singleton via `@supabase/ssr`)
+  - Server client: `lib/supabase/server.ts` (cookie-based session via `@supabase/ssr`)
+  - Admin/Server functions use `lib/supabase-admin.ts` (requires Service Role Key)
+  - Auth uses Supabase Auth exclusively (email/password + magic links). No custom JWT.
+  - Authorization module: `lib/auth/authorization.ts` (centralized `requireAuth`, `requireAdmin`, `requireRole`)
+  - Auth audit logging: `lib/auth/audit.ts` (logs auth events with hashed IPs)
+  - Session middleware: `lib/supabase/middleware.ts` (Supabase SSR session handling)
 
 ---
 

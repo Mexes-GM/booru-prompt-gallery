@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export const runtime = 'edge'
 
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     if (!tagsCache || now - cacheTimestamp > CACHE_DURATION) {
       try {
         // Try to load from Supabase instead of local JSON
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
           .from('auto_suggest_tags')
           .select('name, category')
           .limit(3000) // Reduced from 10K to save CPU/bandwidth on cold starts

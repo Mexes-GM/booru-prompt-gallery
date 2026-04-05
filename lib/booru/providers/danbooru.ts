@@ -1,9 +1,26 @@
 
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions, TrendItem } from '../types'
+import { PROVIDER_URLS } from '@/lib/constants'
+
+interface DanbooruPost {
+  id: number
+  file_url: string
+  large_file_url: string
+  preview_file_url: string
+  tag_string: string
+  tag_string_artist: string
+  tag_string_character: string
+  tag_string_copyright: string
+  tag_string_meta?: string
+  rating: string
+  score: number
+  image_width: number
+  image_height: number
+}
 
 export class DanbooruProvider extends BaseBooruProvider {
-  protected baseUrl = "https://danbooru.donmai.us"
+  protected baseUrl = PROVIDER_URLS.DANBOORU
   protected defaultParams = {
     limit: "20",
     only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,score,image_width,image_height",
@@ -23,12 +40,12 @@ export class DanbooruProvider extends BaseBooruProvider {
           tags: "order:rank status:active",
           only: "id,file_url,tag_string,tag_string_character,tag_string_copyright"
         })
-        return this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, params)
+        return this.fetchJson<DanbooruPost[]>(`${this.baseUrl}/posts.json`, params)
       })
 
       const results = await Promise.all(fetchPromises)
       const allRawPosts = results.flat()
-      const validPosts = this.filterValidPosts(allRawPosts)
+      const validPosts = this.filterValidPosts<DanbooruPost>(allRawPosts)
 
       // Aggregation
       const charStats = new Map<string, number>()
@@ -73,7 +90,7 @@ export class DanbooruProvider extends BaseBooruProvider {
             only: "preview_file_url,file_url,large_file_url"
           })
 
-          let imageData = await this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, imageParams)
+           let imageData = await this.fetchJson<DanbooruPost[]>(`${this.baseUrl}/posts.json`, imageParams)
 
           // Fallback for character if 'solo' returns nothing
           if ((!imageData || imageData.length === 0) && item.type === 'character') {
@@ -223,8 +240,8 @@ export class DanbooruProvider extends BaseBooruProvider {
       tags: finalTags,
     })
 
-    const data = await this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, params)
-    const validPosts = this.filterValidPosts(data)
+    const data = await this.fetchJson<DanbooruPost[]>(`${this.baseUrl}/posts.json`, params)
+    const validPosts = this.filterValidPosts<DanbooruPost>(data)
 
     return validPosts.map(post => ({
       id: post.id,

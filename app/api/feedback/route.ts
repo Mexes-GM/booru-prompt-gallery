@@ -17,9 +17,6 @@ const RATE_LIMIT_WINDOW = 60 * 60 * 1000 // 1 hour
 const MAX_REQUESTS_PER_WINDOW = 3 // 3 requests per hour
 
 
-// export const runtime = 'edge'; // Switch to Node.js for better Zod compatibility in this setup
-
-
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json()
@@ -33,8 +30,6 @@ export async function POST(req: NextRequest) {
         }
 
         // 0. Honeypot check
-        // If honeypot field is present, silently fail (it's a bot)
-        // @ts-ignore
         if (result.data.honeypot) {
             return NextResponse.json({ success: true }) // Fake success
         }

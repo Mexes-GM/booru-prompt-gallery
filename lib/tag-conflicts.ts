@@ -915,7 +915,6 @@ export interface ConflictResolution {
           // GLOBAL EXCEPTION 2: Face indicators unblock facial anatomy against posture blocks
           if (!unblocked && POSTURE_TRIGGERS.includes(trigger)) {
             if (hasFaceIndicators && FACIAL_FEATURES.some(f => isRelatedTag(f, added))) {
-              // console.log(`Unblocked ${added} by face indicator!`);
               unblocked = true;
             }
           }

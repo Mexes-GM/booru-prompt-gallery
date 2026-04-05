@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory, classifyTags, classifyTag } from '@/lib/tag-classifier'
-import { applyWeights } from '@/lib/weight-utils'
 import { processBackgroundTags, type BackgroundMode } from '@/lib/background-detector'
 
 export interface SelectedPostParts {

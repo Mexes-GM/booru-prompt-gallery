@@ -1,8 +1,27 @@
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
+import { PROVIDER_URLS, PROVIDER_REFERERS } from '@/lib/constants'
+
+interface GelbooruPostResponse {
+  id: string | number
+  file_url: string
+  sample_url?: string
+  preview_url?: string
+  tags: string
+  rating: string
+  score: string | number
+  width: string | number
+  height: string | number
+  source?: string
+}
+
+interface GelbooruResponse {
+  post?: GelbooruPostResponse | GelbooruPostResponse[]
+  [key: string]: unknown
+}
 
 export class GelbooruProvider extends BaseBooruProvider {
-    protected baseUrl = "https://gelbooru.com"
+    protected baseUrl = PROVIDER_URLS.GELBOORU
     protected defaultParams = {
         limit: "20",
         page: "dapi",
@@ -38,34 +57,35 @@ export class GelbooruProvider extends BaseBooruProvider {
             params.user_id = this.userId
         }
 
-        let rawResponse: any
+        let rawResponse: GelbooruResponse
 
         try {
             const urlParams = new URLSearchParams(params)
             const requestUrl = `${this.baseUrl}/index.php?${urlParams.toString()}`
             console.log(`[Gelbooru] Fetching: ${requestUrl}`)
             
-            rawResponse = await this.fetchJson<any>(`${this.baseUrl}/index.php`, urlParams, {
-                'Referer': 'https://gelbooru.com/',
+            rawResponse = await this.fetchJson<GelbooruResponse>(`${this.baseUrl}/index.php`, urlParams, {
+                'Referer': PROVIDER_REFERERS.GELBOORU,
             })
-        } catch (e: any) {
-            console.error("[Gelbooru] JSON fetch failed for tags:", tags, "Error:", e.message)
-            if (e.cause) console.error("[Gelbooru] Cause:", e.cause)
+        } catch (e) {
+            const error = e instanceof Error ? e : new Error(String(e))
+            console.error("[Gelbooru] JSON fetch failed for tags:", tags, "Error:", error.message)
+            if (error.cause) console.error("[Gelbooru] Cause:", error.cause)
             return []
         }
 
         // Gelbooru wraps results in { "@attributes": {...}, "post": [...] }
-        let postsList: any[] = []
+        let postsList: GelbooruPostResponse[] = []
         if (rawResponse && rawResponse.post) {
             postsList = Array.isArray(rawResponse.post) ? rawResponse.post : [rawResponse.post]
         } else if (Array.isArray(rawResponse)) {
-            postsList = rawResponse
+            postsList = rawResponse as GelbooruPostResponse[]
         }
 
-        const validPosts = this.filterValidPosts(postsList)
+        const validPosts = this.filterValidPosts<GelbooruPostResponse>(postsList)
 
-        const finalPosts = validPosts.map((post: any) => ({
-            id: parseInt(post.id),
+        const finalPosts = validPosts.map((post: GelbooruPostResponse) => ({
+            id: parseInt(String(post.id)),
             file_url: post.file_url,
             large_file_url: post.sample_url || post.file_url,
             preview_file_url: post.preview_url || post.file_url,
@@ -74,9 +94,9 @@ export class GelbooruProvider extends BaseBooruProvider {
             tag_string_character: '',
             tag_string_copyright: '',
             rating: post.rating,
-            score: parseInt(post.score),
-            width: parseInt(post.width),
-            height: parseInt(post.height),
+            score: parseInt(String(post.score)),
+            width: parseInt(String(post.width)),
+            height: parseInt(String(post.height)),
             source: post.source || '',
         }))
         

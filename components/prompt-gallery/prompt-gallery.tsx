@@ -108,6 +108,7 @@ import {
   trackScaleChange,
   trackProviderChange,
 } from '@/lib/analytics'
+import { SOCIAL_URLS } from '@/lib/constants'
 
 import { MasonryGrid } from "@/components/masonry-grid"
 import { useBooruSearch } from "@/hooks/use-booru-search"
@@ -673,6 +674,46 @@ export function PromptGallery() {
                       <VersionDisplay />
                     </button>
 
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="sm:hidden text-xs h-7 px-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label="More options"
+                        >
+                          <Sparkles className="h-3 w-3 text-amber-500" />
+                          More
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-48">
+                        <DropdownMenuItem onClick={() => setShowWelcomeModal(true)}>
+                          <Sparkles className="mr-2 h-4 w-4 text-amber-500" />
+                          What&apos;s New
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <a href={SOCIAL_URLS.CIVITAI_ARTICLE} target="_blank" rel="noopener noreferrer">
+                            <ScrollText className="mr-2 h-4 w-4 text-blue-500" />
+                            Changelog
+                          </a>
+                        </DropdownMenuItem>
+                        {viewMode === "grid" && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Card Size</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={decreaseScale} disabled={scaleValue[0] === 1}>
+                              <ZoomOut className="mr-2 h-4 w-4" />
+                              Smaller
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={increaseScale} disabled={scaleValue[0] === 3}>
+                              <ZoomIn className="mr-2 h-4 w-4" />
+                              Larger
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
                     <Button
                       variant="ghost"
                       size="sm"
@@ -689,7 +730,7 @@ export function PromptGallery() {
                       asChild
                       className="hidden sm:flex text-xs h-7 px-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
                     >
-                      <a href="https://civitai.com/articles/17747" target="_blank" rel="noopener noreferrer">
+                      <a href={SOCIAL_URLS.CIVITAI_ARTICLE} target="_blank" rel="noopener noreferrer">
                         <ScrollText className="h-3 w-3 text-blue-500" />
                         Changelog
                       </a>
@@ -825,10 +866,10 @@ export function PromptGallery() {
                     <TooltipTrigger asChild>
                       <a
                         id="social-civitai"
-                        href="https://civitai.com/user/Mexes"
+                        href={SOCIAL_URLS.CIVITAI_PROFILE}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={() => trackExternalLink('https://civitai.com/user/Mexes', 'social')}
+                        onClick={() => trackExternalLink(SOCIAL_URLS.CIVITAI_PROFILE, 'social')}
                         className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                         aria-label="Visit Mexes on CivitAI"
                       >
@@ -848,10 +889,10 @@ export function PromptGallery() {
                     <TooltipTrigger asChild>
                       <a
                         id="social-tensor"
-                        href="https://tensor.art/u/616420638671868313"
+                        href={SOCIAL_URLS.TENSOR_ART}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={() => trackExternalLink('https://tensor.art/u/616420638671868313', 'social')}
+                        onClick={() => trackExternalLink(SOCIAL_URLS.TENSOR_ART, 'social')}
                         className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                         aria-label="Visit Mexes on Tensor.Art"
                       >
@@ -871,10 +912,10 @@ export function PromptGallery() {
                     <TooltipTrigger asChild>
                       <a
                         id="social-seaart"
-                        href="https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T"
+                        href={SOCIAL_URLS.SEAART}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={() => trackExternalLink('https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T', 'social')}
+                        onClick={() => trackExternalLink(SOCIAL_URLS.SEAART, 'social')}
                         className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                         aria-label="Visit Mexes on SeaArt AI"
                       >
@@ -895,10 +936,10 @@ export function PromptGallery() {
                 <div className="flex items-center justify-center mt-3">
                   <a
                     id="support-kofi"
-                    href="https://ko-fi.com/mexes"
+                    href={SOCIAL_URLS.KO_FI}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => trackExternalLink('https://ko-fi.com/mexes', 'support')}
+                    onClick={() => trackExternalLink(SOCIAL_URLS.KO_FI, 'support')}
                     className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
                     aria-label="Support me on Ko-fi"
                   >
@@ -1295,11 +1336,11 @@ export function PromptGallery() {
                                               <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                className="h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive hover:bg-destructive/10"
                                                 onClick={(e) => deletePreset(preset.id, e)}
                                                 aria-label={`Delete preset ${preset.name}`}
                                               >
-                                                <Trash2 className="h-3 w-3" />
+                                                <Trash2 className="h-4 w-4" />
                                               </Button>
                                             </DropdownMenuItem>
                                           ))
@@ -1807,17 +1848,18 @@ export function PromptGallery() {
                                 <span>{tab.name}</span>
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isActive ? "bg-black/20" : "bg-background/80"}`}>{tab.count}</span>
                                 {tab.id !== 'all' && tab.id !== null && (
-                                  <div
-                                    role="button"
+                                  <button
+                                    type="button"
                                     title="Delete Folder"
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       setFolderToDelete({ id: tab.id as string, name: tab.name })
                                     }}
-                                    className={`ml-1 rounded-full p-0.5 transition-colors ${isActive ? "hover:bg-black/20 text-primary-foreground" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
+                                    className={`ml-1 rounded-full p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center transition-colors ${isActive ? "hover:bg-black/20 text-primary-foreground" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
+                                    aria-label={`Delete folder ${tab.name}`}
                                   >
-                                    <X className="w-3 h-3" />
-                                  </div>
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
                                 )}
                               </span>
                             </motion.button>
@@ -1954,7 +1996,7 @@ export function PromptGallery() {
           </footer>
         </main>
 
-        <div className={`fixed ${mergeMode.isMergeMode ? 'bottom-[280px] sm:bottom-[200px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none hidden'
+        <div className={`fixed ${mergeMode.isMergeMode ? 'bottom-[220px] sm:bottom-[200px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none hidden'
           }`}>
           <Tooltip>
             <TooltipTrigger asChild>

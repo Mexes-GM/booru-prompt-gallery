@@ -1,11 +1,11 @@
 'use server'
 
 import { supabaseAdmin } from '@/lib/supabase-admin'
-// import { classifyTagWithLLM } from '@/lib/llm-classifier' // DISABLED: AI classification disabled
 import { classifyTag, TagCategory } from '@/lib/tag-classifier'
 import { cookies } from 'next/headers'
 import { normalize } from '@/lib/cleanPrompt'
-import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/authorization'
+import { PROVIDER_URLS } from '@/lib/constants'
 
 // Rate Limit Configuration
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -22,18 +22,7 @@ interface DanbooruPost {
 export async function generateAutoSuggestions() {
     try {
         // 1. Security & Auth Check
-        const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        
-        if (!user) throw new Error("Unauthorized: No session found");
-        
-        const { data: profile } = await supabaseAdmin
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-            
-        if (!profile || profile.role !== 'admin') throw new Error("Unauthorized: Invalid session");
+        await requireAdmin()
 
         // 2. Simple Rate Limiting (Database based)
         // Check how many 'mining_proposal_created' logs were created in the last minute by 'auto_mining'
@@ -54,7 +43,7 @@ export async function generateAutoSuggestions() {
         console.log("[Auto-Suggest] Fetching random posts from Danbooru...");
         // 3. Fetch Random Posts from Danbooru
         // Using "random:5" optimized tag to avoid DB timeouts
-        const response = await fetch("https://danbooru.donmai.us/posts.json?tags=random:5", {
+        const response = await fetch(`${PROVIDER_URLS.DANBOORU}/posts.json?tags=random:5`, {
             headers: {
                 "User-Agent": "BooruPromptGallery/1.0"
             }
@@ -175,19 +164,7 @@ export async function generateAutoSuggestions() {
             }
 
             // B. Classify (If not already statically matched)
-            if (!aiResultCategory) {
-                 // DISABLED: AI classification disabled
-                 // Add delay to prevent rate limit
-                 // await new Promise(r => setTimeout(r, 500));
-                 
-                 // const aiResponse = await classifyTagWithLLM(tagName, 'other'); // we pass 'other' as suggestion since current is unknown
-                 // if (aiResponse.aiCategory && aiResponse.aiCategory !== 'other') {
-                 //     aiResultCategory = aiResponse.aiCategory;
-                 //     aiReasoning = aiResponse.reasoning || "AI Classification";
-                 //     aiConfidence = aiResponse.confidence;
-                 //     aiModel = aiResponse.usedModel;
-                 // }
-            }
+            // AI classification is disabled - heuristic classifier handles most cases
 
             // C. Create Suggestion if we have a category
             if (aiResultCategory && aiResultCategory !== 'other') {

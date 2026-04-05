@@ -7,11 +7,7 @@ import {
   trackLoadMore,
   trackRefresh,
   trackProviderChange,
-  trackAibooruOption,
   trackRatingChange,
-  trackDanbooruOption,
-  trackRule34Option,
-  trackE621Option
 } from '@/lib/analytics'
 import { useToast } from "@/hooks/use-toast"
 

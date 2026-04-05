@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { getRateLimit } from '@/lib/rate-limit'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl
@@ -39,7 +40,7 @@ export async function middleware(request: NextRequest) {
   // --- Non-API Routes: Full Supabase auth path ---
   const { response, user } = await updateSession(request)
 
-  // Admin route protection
+  // Admin route protection with role verification
   if (url.pathname.startsWith('/admin')) {
     if (url.pathname === '/admin/login') {
       if (user) {
@@ -49,6 +50,17 @@ export async function middleware(request: NextRequest) {
       if (!user) {
         const loginUrl = new URL('/admin/login', request.url)
         return NextResponse.redirect(loginUrl)
+      }
+      
+      // Verify admin role
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+      
+      if (!profile || profile.role !== 'admin') {
+        return NextResponse.redirect(new URL('/', request.url))
       }
     }
   }

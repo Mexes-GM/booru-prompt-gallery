@@ -188,8 +188,7 @@ export function PlaceholdersAndVanishInput({
   const handleSubmit = (e: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     if (!disableVanish) vanishAndSubmit();
-    // @ts-ignore
-    if (onSubmit) onSubmit(e);
+    if (onSubmit) onSubmit(e as React.FormEvent<HTMLFormElement>);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -197,8 +196,7 @@ export function PlaceholdersAndVanishInput({
        if (!animating && !disableVanish) {
          vanishAndSubmit();
        }
-       // @ts-ignore
-       if (onSubmit) onSubmit(e);
+       if (onSubmit) onSubmit(e as unknown as React.FormEvent<HTMLFormElement>);
     }
   };
 

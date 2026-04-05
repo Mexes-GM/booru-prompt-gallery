@@ -1,4 +1,6 @@
 // Utility functions for localStorage persistence
+import { DEFAULT_BLACKLIST } from '@/lib/constants'
+import { generateId } from '@/lib/utils/id-generator'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -107,13 +109,13 @@ export const userPreferences = {
     storage.set(STORAGE_KEYS.BOORU_PROVIDER, provider),
 
   getBlacklist: (): string[] =>
-    storage.get(STORAGE_KEYS.BLACKLIST, ['guro', 'scat']),
+    storage.get(STORAGE_KEYS.BLACKLIST, [...DEFAULT_BLACKLIST]),
 
   setBlacklist: (tags: string[]) =>
     storage.set(STORAGE_KEYS.BLACKLIST, tags),
 
   addBlacklistTag: (tag: string) => {
-    const current = storage.get<string[]>(STORAGE_KEYS.BLACKLIST, ['guro', 'scat'])
+    const current = storage.get<string[]>(STORAGE_KEYS.BLACKLIST, [...DEFAULT_BLACKLIST])
     if (!current.includes(tag)) {
       const updated = [...current, tag]
       storage.set(STORAGE_KEYS.BLACKLIST, updated)
@@ -123,7 +125,7 @@ export const userPreferences = {
   },
 
   removeBlacklistTag: (tag: string) => {
-    const current = storage.get<string[]>(STORAGE_KEYS.BLACKLIST, ['guro', 'scat'])
+    const current = storage.get<string[]>(STORAGE_KEYS.BLACKLIST, [...DEFAULT_BLACKLIST])
     const updated = current.filter(t => t !== tag)
     storage.set(STORAGE_KEYS.BLACKLIST, updated)
     return updated
@@ -169,7 +171,7 @@ export const userPreferences = {
     const presets = storage.get<TagPreset[]>(STORAGE_KEYS.ADD_TAGS_PRESETS, [])
     const newPreset: TagPreset = {
       ...preset,
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString() + Math.random().toString(36).substring(2),
+      id: generateId(),
       timestamp: Date.now()
     }
     const newPresets = [newPreset, ...presets]
@@ -188,7 +190,7 @@ export const userPreferences = {
     const history = storage.get<HistoryItem[]>(STORAGE_KEYS.HISTORY, [])
     const newItem: HistoryItem = {
       ...item,
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString() + Math.random().toString(36).substring(2),
+      id: generateId(),
       timestamp: Date.now()
     }
     // Add to beginning, limit to last 100 items
@@ -238,12 +240,6 @@ export const userPreferences = {
 
   setExcludeTagsInput: (value: string) =>
     storage.set(STORAGE_KEYS.EXCLUDE_TAGS, value),
-
-  getPromptOptions: (): PromptOptions =>
-    storage.get(STORAGE_KEYS.PROMPT_OPTIONS, { includeCharacters: true, optimizeTags: true }),
-
-  setPromptOptions: (options: PromptOptions) =>
-    storage.set(STORAGE_KEYS.PROMPT_OPTIONS, options),
 
   getViewMode: (): 'grid' | 'list' =>
     storage.get(STORAGE_KEYS.VIEW_MODE, 'grid'),

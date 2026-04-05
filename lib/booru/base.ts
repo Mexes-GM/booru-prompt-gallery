@@ -1,7 +1,12 @@
 
 import { smartFetch } from '../network/smart-fetch'
 import { BooruPost, IBooruProvider, SearchOptions } from './types'
-import { supabase } from '../supabase'
+import { supabaseAdmin } from '../supabase-admin'
+
+interface TagCategoryRow {
+  name: string
+  category: number
+}
 
 export abstract class BaseBooruProvider implements IBooruProvider {
   protected abstract baseUrl: string
@@ -29,32 +34,38 @@ export abstract class BaseBooruProvider implements IBooruProvider {
     
     const text = await response.text()
     if (!text || text.trim().length === 0) {
-        return [] as any
+        return [] as unknown as T
     }
 
     try {
-        return JSON.parse(text)
+        return JSON.parse(text) as T
     } catch (e) {
         console.error('JSON Parse Error:', text.substring(0, 100))
         throw new Error('Invalid JSON response from provider')
     }
   }
 
-  protected filterValidPosts(posts: any[]): any[] {
-    return posts.filter(post => 
-      post && 
-      post.file_url && 
-      !post.file_url.includes("deleted") && 
-      post.id && 
-      (post.tag_string || post.tags) &&
-      !post.file_url.match(/\.(mp4|webm|avi|mov|mkv)$/i)
-    )
+  protected filterValidPosts<T>(posts: T[]): T[] {
+    return posts.filter(post => {
+      if (!post || typeof post !== 'object') return false
+      const p = post as Record<string, unknown>
+      const fileUrl = p.file_url || p.sample_url || ''
+      const tagString = p.tag_string || p.tags || ''
+      return (
+        fileUrl &&
+        typeof fileUrl === 'string' &&
+        !fileUrl.includes("deleted") && 
+        p.id && 
+        tagString &&
+        !fileUrl.match(/\.(mp4|webm|avi|mov|mkv)$/i)
+      )
+    })
   }
 
   /**
-   * Enriches posts from providers like Gelbooru and Rule34 that return flat tags.
-   * It queries the Supabase `auto_suggest_tags` table to classify tags into artist/character/copyright correctly.
-   */
+    * Enriches posts from providers like Gelbooru and Rule34 that return flat tags.
+    * It queries the Supabase `auto_suggest_tags` table to classify tags into artist/character/copyright correctly.
+    */
   protected async enrichPostsWithCategories(posts: BooruPost[]): Promise<BooruPost[]> {
     if (!posts || posts.length === 0) return posts
 
@@ -78,13 +89,13 @@ export abstract class BaseBooruProvider implements IBooruProvider {
         // Fetch categories in chunks to avoid URL too long or PostgREST limits
         for (let i = 0; i < uniqueTagsArray.length; i += CHUNK_SIZE) {
             const chunk = uniqueTagsArray.slice(i, i + CHUNK_SIZE)
-            const { data } = await supabase
+            const { data } = await supabaseAdmin
                 .from('auto_suggest_tags')
                 .select('name, category')
                 .in('name', chunk)
             
             if (data) {
-                data.forEach((row: any) => tagMap.set(row.name, row.category))
+                data.forEach((row: TagCategoryRow) => tagMap.set(row.name, row.category))
             }
         }
 

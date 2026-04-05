@@ -2,22 +2,16 @@
 
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/authorization'
 import { redirect } from 'next/navigation'
 
 async function checkAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) return false
-
-  const { data: profile } = await supabaseAdmin
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  return profile?.role === 'admin'
+  try {
+    await requireAdmin()
+    return true
+  } catch {
+    return false
+  }
 }
 
 export type TagSuggestion = {

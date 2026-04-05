@@ -1,6 +1,6 @@
 'use server'
 
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export async function getAllTagOverrides() {
   // Fetch all tags that have a specific category assigned
@@ -12,7 +12,7 @@ export async function getAllTagOverrides() {
   let hasMore = true
   
   while (hasMore) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('tags')
       .select('name, category')
       .range(page * pageSize, (page + 1) * pageSize - 1)

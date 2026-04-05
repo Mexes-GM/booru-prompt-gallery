@@ -1,9 +1,23 @@
 
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
+import { PROVIDER_URLS, PROVIDER_REFERERS } from '@/lib/constants'
+
+interface Rule34PostResponse {
+  id: string | number
+  file_url: string
+  sample_url?: string
+  preview_url?: string
+  preview_file_url?: string
+  tags: string
+  rating: string
+  score: string | number
+  width: string | number
+  height: string | number
+}
 
 export class Rule34Provider extends BaseBooruProvider {
-  protected baseUrl = "https://api.rule34.xxx"
+  protected baseUrl = PROVIDER_URLS.RULE34
   protected defaultParams = {
     limit: "20",
     page: "dapi",
@@ -48,33 +62,32 @@ export class Rule34Provider extends BaseBooruProvider {
 
     const randomUserAgent = this.userAgents[Math.floor(Math.random() * this.userAgents.length)]
     
-    let rawPosts: any[] = []
+    let rawPosts: unknown = []
     
     try {
         const urlParams = new URLSearchParams(params)
-        rawPosts = await this.fetchJson<any[]>(`${this.baseUrl}/index.php`, urlParams, {
+        rawPosts = await this.fetchJson<unknown>(`${this.baseUrl}/index.php`, urlParams, {
             'User-Agent': randomUserAgent,
-            'Referer': 'https://rule34.xxx/',
-            'Origin': 'https://rule34.xxx',
+            'Referer': PROVIDER_REFERERS.RULE34,
+            'Origin': PROVIDER_REFERERS.RULE34.replace(/\/$/, ''),
         })
     } catch (e) {
         console.error("Rule34 JSON fetch failed", e)
         return []
     }
 
-    let postsList = rawPosts
-    // @ts-expect-error
-    if (rawPosts && !Array.isArray(rawPosts) && rawPosts.post) {
-        // @ts-expect-error
-        postsList = Array.isArray(rawPosts.post) ? rawPosts.post : [rawPosts.post]
-    } else if (!Array.isArray(rawPosts)) {
-        postsList = []
+    let postsList: Rule34PostResponse[] = []
+    if (Array.isArray(rawPosts)) {
+        postsList = rawPosts as Rule34PostResponse[]
+    } else if (rawPosts && typeof rawPosts === 'object' && 'post' in rawPosts) {
+        const postProp = (rawPosts as { post: unknown }).post
+        postsList = Array.isArray(postProp) ? (postProp as Rule34PostResponse[]) : [postProp as Rule34PostResponse]
     }
 
-    const validPosts = this.filterValidPosts(postsList)
+    const validPosts = this.filterValidPosts<Rule34PostResponse>(postsList)
 
-    const finalPosts = validPosts.map((post: any) => ({
-      id: parseInt(post.id),
+    const finalPosts = validPosts.map((post: Rule34PostResponse) => ({
+      id: parseInt(String(post.id)),
       file_url: post.file_url,
       large_file_url: post.sample_url || post.file_url,
       preview_file_url: post.preview_url || post.preview_file_url || post.file_url,
@@ -83,9 +96,9 @@ export class Rule34Provider extends BaseBooruProvider {
       tag_string_character: '',
       tag_string_copyright: '',
       rating: post.rating,
-      score: parseInt(post.score),
-      width: parseInt(post.width),
-      height: parseInt(post.height),
+      score: parseInt(String(post.score)),
+      width: parseInt(String(post.width)),
+      height: parseInt(String(post.height)),
     }))
 
     return this.enrichPostsWithCategories(finalPosts)

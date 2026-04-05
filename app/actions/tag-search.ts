@@ -1,6 +1,6 @@
 'use server'
 
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export type TagResult = {
   name: string
@@ -18,7 +18,7 @@ export async function searchTags(query: string): Promise<TagResult[]> {
 
   try {
     // Search tags in Supabase using ILIKE for case-insensitive search
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('auto_suggest_tags')
       .select('name, category')
       .ilike('name', `%${normalizedQuery}%`)

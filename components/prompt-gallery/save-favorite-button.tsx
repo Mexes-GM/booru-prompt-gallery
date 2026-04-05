@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Check, ChevronDown, Folder, Plus, Heart, Loader2, Star, Bookmark, Flame, Zap, Sparkles, Image as ImageIcon, Moon, Sun, Ghost, Cat, Dog, Gamepad2, Music, Camera } from "lucide-react"
+import { Check, ChevronDown, Folder, Plus, Heart, Loader2, Star, Bookmark, Flame, Zap, Sparkles, Image as ImageIcon, Moon, Sun, Ghost, Cat, Dog, Gamepad2, Music, Camera, type LucideIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -30,11 +30,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { FavoriteFolder } from "@/hooks/use-booru-favorites"
 
-export const iconMap: Record<string, React.FC<any>> = {
+export const iconMap: Record<string, LucideIcon> = {
     Folder, Star, Heart, Bookmark, Flame, Zap, Sparkles, Image: ImageIcon, Moon, Sun, Ghost, Cat, Dog, Gamepad2, Music, Camera
 }
 
-export const renderIcon = (name?: string | null, props: any = {}) => {
+export const renderIcon = (name?: string | null, props: Record<string, unknown> = {}) => {
     const Icon = iconMap[name || 'Folder'] || Folder
     return <Icon {...props} />
 }

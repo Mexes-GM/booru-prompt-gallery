@@ -32,22 +32,46 @@ ALTER TABLE tag_suggestions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public tags are viewable by everyone" ON tags
     FOR SELECT USING (true);
 
--- Allow authenticated users (admins) to insert/update tags
+-- Allow authenticated users with admin role to insert/update tags
 CREATE POLICY "Admins can insert tags" ON tags
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE profiles.id = auth.uid() 
+            AND profiles.role = 'admin'
+        )
+    );
 
 CREATE POLICY "Admins can update tags" ON tags
-    FOR UPDATE USING (auth.role() = 'authenticated');
+    FOR UPDATE USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE profiles.id = auth.uid() 
+            AND profiles.role = 'admin'
+        )
+    );
 
--- Suggestions: Allow public to insert (crowdsourcing), but only admins to update status
+-- Suggestions: Allow public to insert (crowdsourcing), but only admins to view/update status
 CREATE POLICY "Public can insert suggestions" ON tag_suggestions
     FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Admins can view all suggestions" ON tag_suggestions
-    FOR SELECT USING (auth.role() = 'authenticated');
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE profiles.id = auth.uid() 
+            AND profiles.role = 'admin'
+        )
+    );
 
 CREATE POLICY "Admins can update suggestions" ON tag_suggestions
-    FOR UPDATE USING (auth.role() = 'authenticated');
+    FOR UPDATE USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE profiles.id = auth.uid() 
+            AND profiles.role = 'admin'
+        )
+    );
 
 -- Favorites Folders (added via AI)
 CREATE TABLE IF NOT EXISTS public.favorite_folders (

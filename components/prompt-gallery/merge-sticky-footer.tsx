@@ -59,9 +59,9 @@ const ExplodingTag = memo(({
                     {text}
                 </span>
 
-                <span className="absolute inset-0 bg-red-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                <span className="absolute inset-0 bg-red-500/20 sm:opacity-0 opacity-100 group-hover:opacity-100 transition-opacity duration-200" />
 
-                <span className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+                <span className="absolute right-1 top-1/2 -translate-y-1/2 sm:opacity-0 opacity-100 group-hover:opacity-100 transition-opacity duration-200 z-10">
                     <X className="w-3 h-3" />
                 </span>
             </motion.button>
@@ -231,7 +231,7 @@ const MergeStickyFooterComponent = ({
                         damping: 25,
                         mass: 0.8
                     }}
-                    className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85 border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10"
+                    className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85 border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 sm:max-h-[400px] max-h-[320px]"
                     style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
                     {/* Border Glow Effect */}
@@ -249,7 +249,7 @@ const MergeStickyFooterComponent = ({
                             className="absolute inset-0"
                         />
                     </div>
-                    <div className="p-4 flex flex-col gap-4">
+                    <div className="p-3 sm:p-4 flex flex-col gap-3 sm:gap-4">
 
                         {/* Header / Controls */}
                         <div className="flex items-center justify-between">
@@ -354,7 +354,7 @@ const MergeStickyFooterComponent = ({
                                                     whileHover={{ scale: 1.1 }}
                                                     whileTap={{ scale: 0.9 }}
                                                     onClick={() => onRemovePost(post.id)}
-                                                    className="absolute top-1 right-1 bg-black/60 hover:bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 backdrop-blur-sm"
+                                                    className="absolute top-1 right-1 bg-black/60 hover:bg-red-500 text-white rounded-full p-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10 backdrop-blur-sm"
                                                 >
                                                     <X className="w-3 h-3" />
                                                 </motion.button>
@@ -375,7 +375,7 @@ const MergeStickyFooterComponent = ({
 
                         {/* Prompt Output */}
                         <div className="relative">
-                            <div className="min-h-[80px] max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-3 text-sm shadow-sm overflow-y-auto overflow-x-hidden flex flex-col gap-2">
+                            <div className="min-h-[60px] max-h-[120px] sm:max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-3 text-sm shadow-sm overflow-y-auto overflow-x-hidden flex flex-col gap-2">
                                 {mergeModeType === 'variations' && variationsOutput ? (
                                     <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start items-center">
                                         <AnimatePresence mode="popLayout">

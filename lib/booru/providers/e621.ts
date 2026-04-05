@@ -1,8 +1,39 @@
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
+import { PROVIDER_URLS } from '@/lib/constants'
+
+interface E621FileData {
+  url?: string
+  width?: number
+  height?: number
+}
+
+interface E621TagsData {
+  general?: string[]
+  species?: string[]
+  character?: string[]
+  copyright?: string[]
+  artist?: string[]
+  lore?: string[]
+}
+
+interface E621PostData {
+  id: number
+  file?: E621FileData
+  sample?: E621FileData
+  preview?: E621FileData
+  tags?: E621TagsData
+  rating: string
+  score?: { total: number }
+  sources?: string[]
+}
+
+interface E621Response {
+  posts: E621PostData[]
+}
 
 export class E621Provider extends BaseBooruProvider {
-  protected baseUrl = 'https://e621.net'
+  protected baseUrl = PROVIDER_URLS.E621
   protected defaultParams = {
     limit: '20'
   }
@@ -29,7 +60,7 @@ export class E621Provider extends BaseBooruProvider {
 
     try {
       // E621 returns { posts: [...] }
-      const data = await this.fetchJson<{ posts: any[] }>(
+      const data = await this.fetchJson<E621Response>(
         `${this.baseUrl}/posts.json`, 
         params
       )
@@ -38,11 +69,11 @@ export class E621Provider extends BaseBooruProvider {
         return []
       }
 
-      const mappedPosts = data.posts.map((post: any) => {
+      const mappedPosts = data.posts.map((post: E621PostData) => {
         // Collect all content tags into a single list for tag_string
         // We explicitly EXCLUDE 'meta' and 'invalid' categories to act like a pre-cleaned Danbooru
         // We INCLUDE 'species' as they are important content tags
-        const contentCategories = ['general', 'species', 'character', 'copyright', 'artist', 'lore']
+        const contentCategories: (keyof E621TagsData)[] = ['general', 'species', 'character', 'copyright', 'artist', 'lore']
         const allTags: string[] = []
         
         const tagsObj = post.tags || {}

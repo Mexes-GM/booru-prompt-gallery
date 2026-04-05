@@ -3,10 +3,11 @@
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import { useToast } from "@/hooks/use-toast"
+import { DEFAULT_BLACKLIST } from "@/lib/constants"
 
 export function useBlacklist() {
   const [blacklist, setBlacklist] = usePersistentState<string[]>(
-    ['guro', 'scat'],
+    [...DEFAULT_BLACKLIST],
     userPreferences.getBlacklist,
     userPreferences.setBlacklist,
     "blacklist",
@@ -42,11 +43,11 @@ export function useBlacklist() {
   }
 
   const resetBlacklist = () => {
-    const defaults = ['guro', 'scat']
+    const defaults = [...DEFAULT_BLACKLIST]
     setBlacklist(defaults)
     toast({
       title: "Blacklist reset",
-      description: "Restored default filters (guro, scat)",
+      description: "Restored default filters",
     })
   }
 

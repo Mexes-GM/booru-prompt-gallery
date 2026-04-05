@@ -27,10 +27,11 @@ import {
     removeQualityTags as removeQualityTagsUtil,
     BooruProvider
 } from "@/lib/api-client"
+import { PROVIDER_POST_URLS } from "@/lib/constants"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
-import { classifyTags, TagCategory } from "@/lib/tag-classifier"
+import { classifyTags, TagCategory, ClassifiedTags } from "@/lib/tag-classifier"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import {
@@ -141,7 +142,7 @@ interface MasonryItemProps {
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
-    setTeachModalData: (data: { open: boolean, tags: any }) => void
+    setTeachModalData: (data: { open: boolean, tags: ClassifiedTags }) => void
     onSkipAnimation?: () => void
     globalWeights?: Record<string, number>
     isGlobalWeightsEnabled?: boolean
@@ -350,16 +351,16 @@ export const MasonryItem = memo(function MasonryItem({
         ? `/api/image-proxy?url=${encodeURIComponent(rawFileUrl!)}`
         : rawFileUrl
 
-    let postUrl = `https://danbooru.donmai.us/posts/${post.id}`
+    let postUrl = PROVIDER_POST_URLS.DANBOORU(post.id)
 
     if (isAiPost || itemProvider === 'aibooru') {
-        postUrl = `https://aibooru.online/posts/${post.id}`
+        postUrl = PROVIDER_POST_URLS.AIBOORU(post.id)
     } else if (itemProvider === 'rule34') {
-        postUrl = `https://rule34.xxx/index.php?page=post&s=view&id=${post.id}`
+        postUrl = PROVIDER_POST_URLS.RULE34(post.id)
     } else if (itemProvider === 'e621') {
-        postUrl = `https://e621.net/posts/${post.id}`
+        postUrl = PROVIDER_POST_URLS.E621(post.id)
     } else if (itemProvider === 'gelbooru') {
-        postUrl = `https://gelbooru.com/index.php?page=post&s=view&id=${post.id}`
+        postUrl = PROVIDER_POST_URLS.GELBOORU(post.id)
     }
 
     const getCardContentClass = () => {

@@ -14,12 +14,6 @@ interface TagData {
   weight: number
 }
 
-interface TagData {
-  id: string
-  text: string
-  weight: number
-}
-
 interface InteractivePromptProps {
   initialPrompt: string
   onUpdate: (newPrompt: string) => void
@@ -84,17 +78,6 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
     }
   }
 
-  // Handle immediate visual update for simple reset
-  const handleReset = (id: string) => {
-    const nextTags = tags.map(t => {
-      if (t.id !== id) return t
-      return { ...t, weight: 1.0 }
-    })
-
-    setTags(nextTags)
-    onUpdate(buildPrompt(nextTags))
-  }
-
   if (!tags.length && !conflictingTags.length) return <p className="text-foreground/80 leading-relaxed italic">No prompt content</p>
 
   return (
@@ -112,7 +95,6 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
               <PromptTag
                 tag={tag}
                 onCommit={handleCommit}
-                onReset={handleReset}
                 isEditable={isEditable}
                 isGlobal={isGlobal}
                 onPromote={(w) => onPromoteToGlobal?.(tag.text, w)}
@@ -149,16 +131,15 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
 
 interface PromptTagProps {
   tag: TagData
-  onCommit: (id: string, newWeight: number) => void
-  onReset: (id: string) => void
+  onCommit: (id: string, weight: number) => void
   isEditable: boolean
-  isGlobal?: boolean
+  isGlobal: boolean
   onPromote?: (weight: number) => void
   canPromote?: boolean
   onSearch?: () => void
 }
 
-const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, canPromote, onSearch }: PromptTagProps) => {
+const PromptTag = ({ tag, onCommit, isEditable, isGlobal, onPromote, canPromote, onSearch }: PromptTagProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const [draftWeight, setDraftWeight] = useState(tag.weight)
 
@@ -182,19 +163,6 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
       const next = Math.max(0.1, Math.min(3.0, prev + delta))
       return parseFloat(next.toFixed(1))
     })
-  }
-
-  const handlePromote = () => {
-    if (onPromote) {
-      // If we promote, we want to use the current draft weight
-      // But onPromote uses tag.weight (committed). 
-      // We should commit first? Or pass draftWeight to onPromote?
-      // The prop passed to PromptTag wraps onPromoteToGlobal(tag.text, tag.weight)
-      // We need to pass the *new* weight if it hasn't been committed yet.
-      // BUT, to simplify: let's commit first then promote?
-      // Or change the onPromote signature in PromptTag.
-      // Let's change onPromote signature to accept weight.
-    }
   }
 
   // Determine what text to show: live draft if open, stable prop if closed
@@ -268,8 +236,9 @@ const PromptTag = ({ tag, onCommit, onReset, isEditable, isGlobal, onPromote, ca
       {isEditable && (
         <PopoverContent
           className="w-auto p-1 z-50"
-          side="top"
+          sideOffset={4}
           align="center"
+          collisionPadding={8}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <div className="flex flex-col gap-1">

@@ -9,10 +9,10 @@ interface PromptImportZoneProps {
   isDragActive: boolean;
   isLoading: boolean;
   error: string | null;
-  onDragEnter: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnter: (e: React.DragEvent<HTMLElement>) => void;
+  onDragLeave: (e: React.DragEvent<HTMLElement>) => void;
+  onDragOver: (e: React.DragEvent<HTMLElement>) => void;
+  onDrop: (e: React.DragEvent<HTMLElement>) => void;
   onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onErrorDismiss: () => void;
   value: string;
@@ -42,7 +42,7 @@ export function PromptImportZone({
     };
   }, [imagePreview]);
 
-  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (e: React.DragEvent<HTMLElement>) => {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       setLastFileName(files[0].name);
@@ -117,10 +117,10 @@ export function PromptImportZone({
         {/* Drop Zone */}
         <label
           htmlFor="file-input"
-          onDragEnter={onDragEnter}
-          onDragLeave={onDragLeave}
-          onDragOver={onDragOver}
-          onDrop={handleDrop}
+          onDragEnter={onDragEnter as React.DragEventHandler<HTMLLabelElement>}
+          onDragLeave={onDragLeave as React.DragEventHandler<HTMLLabelElement>}
+          onDragOver={onDragOver as React.DragEventHandler<HTMLLabelElement>}
+          onDrop={handleDrop as React.DragEventHandler<HTMLLabelElement>}
           className={cn(
             "relative flex flex-col items-center justify-center rounded-lg transition-all duration-200 overflow-hidden cursor-pointer",
             "border-2 border-dashed",

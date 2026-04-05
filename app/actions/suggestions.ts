@@ -3,9 +3,6 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { headers } from 'next/headers'
 import { z } from 'zod'
-import { waitUntil } from '@vercel/functions'
-// import { processTagSuggestionWithAI } from '@/lib/ai-service' // DISABLED: AI classification disabled
-// import { TagCategory } from '@/lib/tag-classifier' // DISABLED: AI classification disabled
 
 // --- Schema Validation ---
 
@@ -185,30 +182,6 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
       return { success: true, message: "Successfully submitted suggestions." }
     }
     return { success: false, message: "Failed to submit suggestions" }
-  }
-
-  // 7. Background AI auto-classification (non-blocking)
-  if (insertedSuggestions && insertedSuggestions.length > 0) {
-    waitUntil((async () => {
-      for (const suggestion of insertedSuggestions) {
-        const tagsData = suggestion.tags as any
-        const tagName = Array.isArray(tagsData) ? tagsData[0]?.name : tagsData?.name
-        if (!tagName) continue
-
-        try {
-          // DISABLED: AI classification disabled
-          // Throttle to respect OpenRouter Free Tier (~8-10 RPM)
-          // await new Promise(resolve => setTimeout(resolve, 2000))
-          // await processTagSuggestionWithAI({
-          //   suggestionId: suggestion.id,
-          //   tagName,
-          //   suggestedCategory: suggestion.suggested_category as TagCategory
-          // })
-        } catch (e) {
-          console.error(`[submitTagSuggestions] Background AI processing failed for "${tagName}":`, e)
-        }
-      }
-    })())
   }
 
   return { success: true, message: "Successfully submitted suggestions." }

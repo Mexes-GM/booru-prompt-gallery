@@ -301,6 +301,7 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
   const [existingSuggestions, setExistingSuggestions] = useState<Record<string, string>>({})
   const [showExitAlert, setShowExitAlert] = useState(false)
   const [isReady, setIsReady] = useState(false)
+  const [activeMobileTab, setActiveMobileTab] = useState<ColumnId>('other')
   const { toast } = useToast()
 
   // Reset states when modal is closed
@@ -552,7 +553,6 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
         })
 
         // Removed immediate onSuccess() to avoid parent re-render cutting the animation
-        // onOpenChange(false) // Removed default close, handled by effect
       } else {
         toast({
           title: "Submission Failed",
@@ -642,16 +642,56 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
                 onDragEnd={handleDragEnd}
               >
                 <div className="h-[65vh] w-full overflow-y-auto md:overflow-hidden">
+                  {/* Mobile Tab Bar */}
+                  <div className="md:hidden sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b px-2 py-1.5">
+                    <ScrollArea className="w-full whitespace-nowrap">
+                      <div className="flex gap-1.5 pb-1">
+                        {COLUMNS.map((col) => {
+                          const count = items[col.id]?.length || 0
+                          const isActive = activeMobileTab === col.id
+                          return (
+                            <button
+                              key={col.id}
+                              type="button"
+                              onClick={() => setActiveMobileTab(col.id)}
+                              className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all shrink-0",
+                                isActive
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "bg-muted text-muted-foreground hover:bg-muted/80 border border-border/50"
+                              )}
+                            >
+                              {col.title}
+                              <span className={cn(
+                                "text-[10px] px-1 py-0 rounded-full font-mono",
+                                isActive ? "bg-black/20" : "bg-background/80"
+                              )}>{count}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <ScrollBar orientation="horizontal" className="h-1.5" />
+                    </ScrollArea>
+                  </div>
+
                   <div className="flex flex-col md:flex-row h-auto md:h-full gap-3 md:gap-4 w-full p-2 md:p-6">
                     {COLUMNS.map((col) => (
-                      <Column
+                      <div
                         key={col.id}
-                        id={col.id}
-                        title={col.title}
-                        description={col.description}
-                        items={items[col.id]}
-                        suggestions={existingSuggestions}
-                      />
+                        className={cn(
+                          "md:flex-1 md:w-auto",
+                          "md:block",
+                          activeMobileTab === col.id ? "block" : "hidden md:block"
+                        )}
+                      >
+                        <Column
+                          id={col.id}
+                          title={col.title}
+                          description={col.description}
+                          items={items[col.id]}
+                          suggestions={existingSuggestions}
+                        />
+                      </div>
                     ))}
                   </div>
                 </div>

@@ -3,6 +3,7 @@ import useSWRInfinite from 'swr/infinite'
 import useSWR from 'swr'
 import { useApiStatus } from '@/hooks/use-api-status'
 import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
+import { PROVIDER_URLS } from '@/lib/constants'
 
 // Re-export types
 export type { BooruPost }
@@ -193,26 +194,27 @@ export const getPromptFromPost = (post: BooruPost): string | null => {
 }
 
 // Helper to transform raw Aibooru posts to BooruPost
-const transformAibooruPost = (post: any): BooruPost => {
+const transformAibooruPost = (post: unknown): BooruPost => {
   // Ensure we have minimal required fields
   if (!post || typeof post !== 'object') {
     throw new Error('Invalid post data from Aibooru')
   }
 
+  const typedPost = post as Record<string, unknown>
   return {
-    id: post.id || 0,
-    file_url: post.file_url || '',
-    large_file_url: post.large_file_url || post.file_url || '',
-    preview_file_url: post.preview_file_url || post.file_url || '',
-    tag_string: post.tag_string || '',
-    tag_string_artist: post.tag_string_artist || '',
-    tag_string_character: post.tag_string_character || '',
-    tag_string_copyright: post.tag_string_copyright || '',
-    rating: post.rating || 'q',
-    score: post.score || 0,
-    ai_metadata: post.ai_metadata || undefined,
-    width: post.image_width || 0,
-    height: post.image_height || 0,
+    id: (typedPost.id as number) || 0,
+    file_url: (typedPost.file_url as string) || '',
+    large_file_url: (typedPost.large_file_url as string) || (typedPost.file_url as string) || '',
+    preview_file_url: (typedPost.preview_file_url as string) || (typedPost.file_url as string) || '',
+    tag_string: (typedPost.tag_string as string) || '',
+    tag_string_artist: (typedPost.tag_string_artist as string) || '',
+    tag_string_character: (typedPost.tag_string_character as string) || '',
+    tag_string_copyright: (typedPost.tag_string_copyright as string) || '',
+    rating: (typedPost.rating as string) || 'q',
+    score: (typedPost.score as number) || 0,
+    ai_metadata: typedPost.ai_metadata as any,
+    width: (typedPost.image_width as number) || 0,
+    height: (typedPost.image_height as number) || 0,
     _provider: 'aibooru', // Explicitly mark as Aibooru
   }
 }
@@ -221,7 +223,7 @@ const transformAibooruPost = (post: any): BooruPost => {
 const fetcher = async (url: string) => {
   try {
     // Check if we are fetching directly from Aibooru (client-side bypass)
-    const isDirectAibooru = url.startsWith('https://aibooru.online')
+    const isDirectAibooru = url.startsWith(PROVIDER_URLS.AIBOORU)
 
     const headers: HeadersInit = isDirectAibooru
       ? {} // Browsers automatically set Origin, no special headers for CORS requests
@@ -266,9 +268,11 @@ const fetcher = async (url: string) => {
     }
 
     return data
-  } catch (fetchError: any) {
+  } catch (fetchError: unknown) {
     // Log only critical errors, not 404s for end of pagination
-    if (fetchError.status !== 404) {
+    if (fetchError instanceof Response && fetchError.status !== 404) {
+      console.error('[ApiClient] Fetch Error:', fetchError)
+    } else if (!(fetchError instanceof Response)) {
       console.error('[ApiClient] Fetch Error:', fetchError)
     }
     throw fetchError
@@ -488,7 +492,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
           params.append("seed", `${randomSeed}_${pageIndex}`)
         }
 
-        const directUrl = `https://aibooru.online/posts.json?${params.toString()}`
+        const directUrl = `${PROVIDER_URLS.AIBOORU}/posts.json?${params.toString()}`
         return directUrl
       }
 
@@ -577,7 +581,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         const aibooruFavs = favorites.filter(f => f.provider === 'aibooru')
         const serverFavs = favorites.filter(f => f.provider !== 'aibooru')
 
-        const fetchPromises: Promise<any[]>[] = []
+        const fetchPromises: Promise<BooruPost[]>[] = []
 
         if (serverFavs.length > 0) {
           const serverPromise = fetch('/api/favorites', {
@@ -616,7 +620,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
             tags: `id:${aibooruIds}`
           })
           
-          const aibooruPromise = fetch(`https://aibooru.online/posts.json?${params.toString()}`)
+          const aibooruPromise = fetch(`${PROVIDER_URLS.AIBOORU}/posts.json?${params.toString()}`)
             .then(res => res.ok ? res.json() : [])
             .then(data => {
               if (Array.isArray(data)) {
@@ -638,19 +642,19 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         }
 
         const results = await Promise.all(fetchPromises)
-        const allPosts = results.flat()
+        const allPosts = results.flat() as BooruPost[]
 
         // Sort posts to match the requested order to prevent layout shifts (API race conditions)
-        const postsMap = new Map(allPosts.map((p: any) => [`${p._provider || p.provider}:${p.id}`, p]))
+        const postsMap = new Map(allPosts.map((p: BooruPost) => [`${p._provider}:${p.id}`, p]))
 
         const sortedPosts = favorites
           .map(f => postsMap.get(`${f.provider}:${f.id}`))
           .filter((p): p is BooruPost => p !== undefined)
 
         return sortedPosts
-      } catch (fetchError: any) {
+      } catch (fetchError: unknown) {
         // Silently handle connection errors which are common during navigation/logout
-        if (fetchError instanceof TypeError || fetchError.name === 'AbortError' || fetchError.message === 'Failed to fetch') {
+        if (fetchError instanceof TypeError || (fetchError instanceof Error && (fetchError.name === 'AbortError' || fetchError.message === 'Failed to fetch'))) {
           console.warn('[ApiClient] Favorites fetch interrupted (likely navigation/logout)')
           return []
         }

@@ -1,9 +1,35 @@
 
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
+import { PROVIDER_URLS, PROVIDER_REFERERS } from '@/lib/constants'
+
+interface AibooruPost {
+  id: number
+  file_url: string
+  large_file_url: string
+  preview_file_url: string
+  tag_string: string
+  tag_string_artist: string
+  tag_string_character: string
+  tag_string_copyright: string
+  tag_string_meta?: string
+  rating: string
+  score: number
+  ai_metadata?: {
+    prompt?: string
+    negative_prompt?: string
+    model?: string
+    steps?: number
+    cfg_scale?: number
+    sampler?: string
+    seed?: number
+  }
+  image_width: number
+  image_height: number
+}
 
 export class AibooruProvider extends BaseBooruProvider {
-  protected baseUrl = "https://aibooru.online"
+  protected baseUrl = PROVIDER_URLS.AIBOORU
   protected defaultParams = {
     limit: "20",
     only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,score,ai_metadata,image_width,image_height",
@@ -31,11 +57,11 @@ export class AibooruProvider extends BaseBooruProvider {
       tags: finalTags,
     })
 
-    const data = await this.fetchJson<any[]>(`${this.baseUrl}/posts.json`, params, {
-      'Referer': 'https://aibooru.online/',
+    const data = await this.fetchJson<AibooruPost[]>(`${this.baseUrl}/posts.json`, params, {
+      'Referer': PROVIDER_REFERERS.AIBOORU,
       // Aibooru often blocks requests without a valid Referer or specific headers
     })
-    const validPosts = this.filterValidPosts(data)
+    const validPosts = this.filterValidPosts<AibooruPost>(data)
 
     return validPosts.map(post => ({
       id: post.id,

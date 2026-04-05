@@ -25,8 +25,11 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.favorites ENABLE ROW LEVEL SECURITY;
 
 -- Profiles Policies
-CREATE POLICY "Public profiles are viewable by everyone" 
-  ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Authenticated users can view profiles" 
+  ON public.profiles FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Users can view own profile" 
+  ON public.profiles FOR SELECT USING (auth.uid() = id);
 
 CREATE POLICY "Users can insert their own profile" 
   ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);

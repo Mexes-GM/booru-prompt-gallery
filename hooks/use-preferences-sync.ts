@@ -28,16 +28,16 @@ export function usePreferencesSync() {
       }
 
       if (data?.preferences) {
-        const cloudPrefs = data.preferences as Record<string, any>
+        const cloudPrefs = data.preferences as Record<string, unknown>
         let needsCloudUpdate = false
-        const currentPrefs: Record<string, any> = {}
+        const currentPrefs: Record<string, unknown> = {}
 
         // Iterate over known keys and merge local storage with cloud
         Object.values(STORAGE_KEYS).forEach(key => {
-          const localValue = storage.get<any>(key, undefined)
+          const localValue = storage.get<unknown>(key, undefined)
           const cloudValue = cloudPrefs[key]
 
-          let mergedValue: any = localValue
+          let mergedValue: unknown = localValue
 
           const isCloudEmpty = cloudValue === undefined ||
             (Array.isArray(cloudValue) && cloudValue.length === 0) ||
@@ -59,13 +59,17 @@ export function usePreferencesSync() {
                 mergedValue = Array.from(new Set([...cloudValue, ...localValue]))
               } else {
                 // array of objects with id
-                const map = new Map()
-                for (const item of cloudValue) if (item && item.id) map.set(item.id, item)
-                for (const item of localValue) if (item && item.id && !map.has(item.id)) map.set(item.id, item)
-                mergedValue = Array.from(map.values())
-                if (mergedValue.length > 0 && mergedValue[0].timestamp) {
-                  mergedValue.sort((a: any, b: any) => b.timestamp - a.timestamp)
-                }
+                 const map = new Map()
+                 for (const item of cloudValue) if (item && item.id) map.set(item.id, item)
+                 for (const item of localValue) if (item && item.id && !map.has(item.id)) map.set(item.id, item)
+                 mergedValue = Array.from(map.values())
+                 if (Array.isArray(mergedValue) && mergedValue.length > 0 && typeof mergedValue[0] === 'object' && mergedValue[0] !== null && 'timestamp' in mergedValue[0]) {
+                   (mergedValue as Array<Record<string, unknown>>).sort((a, b) => {
+                     const aTime = typeof a.timestamp === 'number' ? a.timestamp : 0
+                     const bTime = typeof b.timestamp === 'number' ? b.timestamp : 0
+                     return bTime - aTime
+                   })
+                 }
               }
               if (JSON.stringify(mergedValue) !== JSON.stringify(cloudValue)) {
                 needsCloudUpdate = true

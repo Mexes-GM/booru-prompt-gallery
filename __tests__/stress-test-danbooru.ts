@@ -5,6 +5,7 @@
 
 import { resolveTagConflicts } from "../lib/tag-conflicts"
 import { normalize } from "../lib/cleanPrompt"
+import { PROVIDER_URLS } from "../lib/constants"
 
 interface StressTestResult {
   postId: number
@@ -17,7 +18,7 @@ interface StressTestResult {
   hasFaceIndicators: boolean
 }
 
-const DANBOORU_API = "https://danbooru.donmai.us/posts.json"
+const DANBOORU_API = `${PROVIDER_URLS.DANBOORU}/posts.json`
 
 async function fetchDanbooruPosts(limit: number = 50): Promise<any[]> {
   console.log(`\n📥 Fetching ${limit} random Danbooru posts with 40+ tags...`)

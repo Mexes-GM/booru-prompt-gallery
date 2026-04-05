@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import React, { useState, useEffect, useRef, useMemo } from "react"
 import { BooruPost } from "@/lib/api-client"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { motion, AnimatePresence } from "framer-motion"
@@ -209,13 +209,14 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
     if (!containerRef.current) return layout.positions
 
     const containerTop = containerRef.current.offsetTop
-    const renderTop = Math.max(0, scrollTop - containerTop - 500) // 500px overscan top
-    const renderBottom = scrollTop - containerTop + windowHeight + 500 // 500px overscan bottom
+    const overscan = isMobile ? 200 : 500
+    const renderTop = Math.max(0, scrollTop - containerTop - overscan)
+    const renderBottom = scrollTop - containerTop + windowHeight + overscan
 
     return layout.positions.filter((pos) => {
       return (pos.y + pos.height > renderTop) && (pos.y < renderBottom)
     })
-  }, [layout.positions, scrollTop, windowHeight])
+  }, [layout.positions, scrollTop, windowHeight, isMobile])
 
   return (
     <div
