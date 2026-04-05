@@ -20,9 +20,6 @@ export function VersionDisplay() {
 
   if (error || isLoading || !data) return null
 
-  const date = new Date(data.lastUpdated).toLocaleDateString()
-  const time = new Date(data.lastUpdated).toLocaleTimeString()
-
   return (
     <TooltipProvider>
       <Tooltip>
@@ -38,7 +35,6 @@ export function VersionDisplay() {
           <div className="space-y-1">
             <p className="font-semibold">Current Version</p>
             <p>v{data.version}</p>
-            <p className="text-muted-foreground">Updated: {date} {time}</p>
           </div>
         </TooltipContent>
       </Tooltip>
