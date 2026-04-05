@@ -1777,7 +1777,10 @@ export function PromptGallery() {
                                   <div className="w-full sm:w-auto sm:min-w-[160px]">
                                     <Select
                                       value={backgroundMode}
-                                      onValueChange={(val: any) => setBackgroundMode(val)}
+                                      onValueChange={(val: any) => {
+                                        setBackgroundMode(val);
+                                        userPreferences.setBackgroundMode(val);
+                                      }}
                                     >
                                       <SelectTrigger id="background-handling-select" className="h-8 text-xs bg-background">
                                         <SelectValue placeholder="Keep Original" />
@@ -1801,7 +1804,10 @@ export function PromptGallery() {
                                     >
                                       <div className="pt-2 pl-0 sm:pl-[3.25rem] flex items-center gap-2">
                                         <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground hidden sm:block shrink-0" />
-                                        <DebouncedInput value={simpleBackgroundReplacementTags} onChange={setSimpleBackgroundReplacementTags} debounceTime={400} placeholder="e.g. simple background, white background" className="h-8 text-xs bg-background focus-visible:ring-1 min-w-0 flex-1" aria-label="Tags to replace background with" />
+                                        <DebouncedInput value={simpleBackgroundReplacementTags} onChange={(val) => {
+                                          setSimpleBackgroundReplacementTags(val);
+                                          userPreferences.setSimpleBackgroundReplacementTags(val);
+                                        }} debounceTime={400} placeholder="e.g. simple background, white background" className="h-8 text-xs bg-background focus-visible:ring-1 min-w-0 flex-1" aria-label="Tags to replace background with" />
                                       </div>
                                     </motion.div>
                                   )}
