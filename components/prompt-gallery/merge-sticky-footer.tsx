@@ -1,13 +1,17 @@
 import { useRef, useEffect, useState, memo, useCallback, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
-import { X, Copy, Trash2, Check, Shuffle, Type } from "lucide-react"
+import { X, Copy, Trash2, Check, Shuffle, Type, Dices, Settings2 } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
-import { SelectedPostParts, MergeModeType } from '@/hooks/use-merge-mode'
+import { SelectedPostParts, MergeModeType, RandomSettings } from '@/hooks/use-merge-mode'
 import { TagCategory } from '@/lib/tag-classifier'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Slider } from "@/components/ui/slider"
 
 interface MergeStickyFooterProps {
     isOpen: boolean
@@ -24,6 +28,9 @@ interface MergeStickyFooterProps {
     isGlobalWeightsEnabled?: boolean
     mergeModeType: MergeModeType
     onToggleMergeModeType: () => void
+    onRandomize?: () => void
+    randomSettings: RandomSettings
+    setRandomSettings: (settings: RandomSettings | ((prev: RandomSettings) => RandomSettings)) => void
 }
 
 const ExplodingTag = memo(({
@@ -140,7 +147,10 @@ const MergeStickyFooterComponent = ({
     onGlobalWeightChange,
     isGlobalWeightsEnabled,
     mergeModeType,
-    onToggleMergeModeType
+    onToggleMergeModeType,
+    onRandomize,
+    randomSettings,
+    setRandomSettings
 }: MergeStickyFooterProps) => {
 
     const [isCopied, setIsCopied] = useState(false)
@@ -283,6 +293,130 @@ const MergeStickyFooterComponent = ({
                                 </Tooltip>
                             </div>
                             <div className="flex items-center gap-2">
+                                <div className="flex items-center">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={onRandomize}
+                                        className="relative overflow-visible h-8 text-xs font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 hover:text-amber-700 border-amber-500/20 rounded-r-none border-r-0"
+                                        title="Randomize selections from visible posts"
+                                    >
+                                        <Dices className="w-3.5 h-3.5 mr-1.5" />
+                                        Random
+                                    </Button>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-8 px-2 rounded-l-none bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/20 text-amber-600"
+                                            >
+                                                <Settings2 className="w-3.5 h-3.5" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-72 p-0 overflow-hidden border-amber-500/20 shadow-2xl" align="end" sideOffset={8}>
+                                            <div className="bg-gradient-to-r from-amber-500/10 to-transparent p-3 border-b border-amber-500/10 flex items-center gap-2">
+                                                <Dices className="w-4 h-4 text-amber-600" />
+                                                <span className="text-sm font-semibold text-amber-700 dark:text-amber-500">Randomizer Settings</span>
+                                            </div>
+                                            
+                                            <div className="p-4 space-y-6">
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Posts to combine</Label>
+                                                        <motion.span 
+                                                            key={randomSettings.postCount}
+                                                            initial={{ scale: 0.8, opacity: 0 }}
+                                                            animate={{ scale: 1, opacity: 1 }}
+                                                            className="text-xs font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full"
+                                                        >
+                                                            {randomSettings.postCount}
+                                                        </motion.span>
+                                                    </div>
+                                                    <div className="px-1 relative">
+                                                        <Slider
+                                                            min={1}
+                                                            max={10}
+                                                            step={1}
+                                                            value={[randomSettings.postCount]}
+                                                            onValueChange={([val]) => setRandomSettings(prev => ({ ...prev, postCount: val }))}
+                                                            className="[&_[role=slider]]:border-amber-500 [&_[role=slider]]:focus-visible:ring-amber-500/50 [&_.relative>.absolute]:bg-amber-500 cursor-grab active:cursor-grabbing"
+                                                        />
+                                                    </div>
+                                                    <div className="flex justify-between text-[10px] text-muted-foreground font-mono px-1">
+                                                        <span>1</span>
+                                                        <span>10</span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="space-y-3">
+                                                    <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Categories to roll</Label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {(['appearance', 'clothing', 'pose', 'scenery'] as TagCategory[]).map(cat => {
+                                                            const isSelected = randomSettings.allowedCategories.includes(cat);
+                                                            
+                                                            const catStyles = {
+                                                                appearance: {
+                                                                    active: 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400 shadow-sm',
+                                                                    border: 'border-blue-500/50'
+                                                                },
+                                                                clothing: {
+                                                                    active: 'bg-green-500/15 border-green-500/30 text-green-600 dark:text-green-400 shadow-sm',
+                                                                    border: 'border-green-500/50'
+                                                                },
+                                                                pose: {
+                                                                    active: 'bg-purple-500/15 border-purple-500/30 text-purple-600 dark:text-purple-400 shadow-sm',
+                                                                    border: 'border-purple-500/50'
+                                                                },
+                                                                scenery: {
+                                                                    active: 'bg-orange-500/15 border-orange-500/30 text-orange-600 dark:text-orange-400 shadow-sm',
+                                                                    border: 'border-orange-500/50'
+                                                                },
+                                                                other: {
+                                                                    active: 'bg-muted border-muted-foreground/30 text-foreground shadow-sm',
+                                                                    border: 'border-muted-foreground/50'
+                                                                }
+                                                            }[cat] || { active: '', border: '' };
+
+                                                            return (
+                                                                <button
+                                                                    key={cat}
+                                                                    onClick={() => {
+                                                                        setRandomSettings(prev => ({
+                                                                            ...prev,
+                                                                            allowedCategories: isSelected
+                                                                                ? prev.allowedCategories.filter(c => c !== cat)
+                                                                                : [...prev.allowedCategories, cat]
+                                                                        }))
+                                                                    }}
+                                                                    className={`relative overflow-hidden flex items-center justify-center py-2.5 text-xs font-medium rounded-md border transition-all duration-200 ${
+                                                                        isSelected 
+                                                                            ? catStyles.active 
+                                                                            : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                                                                    }`}
+                                                                >
+                                                                    {isSelected && (
+                                                                        <motion.div
+                                                                            layoutId={`active-cat-bg-${cat}`}
+                                                                            className={`absolute inset-0 border ${catStyles.border} rounded-md`}
+                                                                            initial={{ opacity: 0 }}
+                                                                            animate={{ opacity: 1 }}
+                                                                            transition={{ duration: 0.2 }}
+                                                                        />
+                                                                    )}
+                                                                    <span className="capitalize z-10 flex items-center gap-1.5">
+                                                                        {isSelected && <Check className="w-3 h-3" />}
+                                                                        {cat}
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
                                 <Button
                                     variant="ghost"
                                     size="sm"

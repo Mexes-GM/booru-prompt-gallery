@@ -68,3 +68,4 @@ skills/
 # Sentry Config File
 .env.sentry-build-plugin
 docs/plans/2026-04-03-prompt-tools-design.md
+backup_2026-04-05T06-01-15.sql

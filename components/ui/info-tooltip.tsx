@@ -19,6 +19,8 @@ interface InfoTooltipProps {
   delayDuration?: number;      // Tiempo en ms antes de mostrarse (defecto: 500ms)
   side?: "top" | "bottom" | "left" | "right"; // Dirección del tooltip
   className?: string;          // Clases adicionales
+  hideIcon?: boolean;          // Ocultar el icono de Info
+  triggerClassName?: string;   // Clases adicionales para el contenedor del trigger
 }
 
 export function InfoTooltip({
@@ -29,6 +31,8 @@ export function InfoTooltip({
   delayDuration = 500, // Retraso de medio segundo para no saturar al usuario
   side = "top",
   className,
+  hideIcon = false,
+  triggerClassName,
 }: InfoTooltipProps) {
   const [isOpen, setIsOpen] = React.useState(false);
 
@@ -36,11 +40,14 @@ export function InfoTooltip({
     <TooltipProvider delayDuration={delayDuration}>
       <Tooltip open={isOpen} onOpenChange={setIsOpen}>
         <TooltipTrigger asChild>
-          {/* El elemento disparador (ej. un botón o un label) */}
-          <span className="cursor-help inline-flex items-center gap-1.5">
-            {children}
-            <Info className="w-4 h-4 text-muted-foreground/70 hover:text-primary transition-colors" />
-          </span>
+          {hideIcon ? (
+            children
+          ) : (
+            <span className={cn("cursor-help inline-flex items-center gap-1.5", triggerClassName)}>
+              {children}
+              <Info className="w-4 h-4 text-muted-foreground/70 hover:text-primary transition-colors" />
+            </span>
+          )}
         </TooltipTrigger>
         
         <TooltipContent

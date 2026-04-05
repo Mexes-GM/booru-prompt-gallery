@@ -13,6 +13,11 @@ export type MergeModeType = 'merge' | 'variations'
 
 const escapeParentheses = (s: string) => s.replace(/\(/g, "\\(").replace(/\)/g, "\\)")
 
+export interface RandomSettings {
+    postCount: number
+    allowedCategories: TagCategory[]
+}
+
 export function useMergeMode(
     globalWeights: Record<string, number> = {},
     isGlobalWeightsEnabled: boolean = false,
@@ -24,6 +29,10 @@ export function useMergeMode(
     const [isMergeMode, setIsMergeMode] = useState(false)
     const [mergeModeType, setMergeModeType] = useState<MergeModeType>('merge')
     const [selectedPosts, setSelectedPosts] = useState<Map<number, SelectedPostParts>>(new Map())
+    const [randomSettings, setRandomSettings] = useState<RandomSettings>({
+        postCount: 3,
+        allowedCategories: ['appearance', 'clothing', 'pose', 'scenery']
+    })
 
     const toggleMergeMode = useCallback(() => {
         setIsMergeMode(prev => !prev)
@@ -31,6 +40,20 @@ export function useMergeMode(
 
     const toggleVariationsMode = useCallback(() => {
         setMergeModeType(prev => prev === 'merge' ? 'variations' : 'merge')
+    }, [])
+
+    const enableVariationMode = useCallback(() => {
+        setIsMergeMode(true)
+        setMergeModeType('variations')
+    }, [])
+
+    const enableMergeMode = useCallback(() => {
+        setIsMergeMode(true)
+        setMergeModeType('merge')
+    }, [])
+
+    const disableMergeMode = useCallback(() => {
+        setIsMergeMode(false)
     }, [])
 
     const togglePostPart = useCallback((post: BooruPost, part: TagCategory) => {
@@ -83,6 +106,103 @@ export function useMergeMode(
             return next
         })
     }, [])
+
+    const setRandomSelection = useCallback((availablePosts: BooruPost[]) => {
+        if (!availablePosts || availablePosts.length === 0) return
+        if (randomSettings.allowedCategories.length === 0) return
+
+        const next = new Map<number, SelectedPostParts>()
+        const categories = randomSettings.allowedCategories
+
+        // 1. Keep existing selections for categories that are NOT allowed (not randomized)
+        selectedPosts.forEach((data, postId) => {
+            const keptParts = new Set<TagCategory>()
+            data.parts.forEach(p => {
+                if (!categories.includes(p)) {
+                    keptParts.add(p)
+                }
+            })
+            if (keptParts.size > 0) {
+                next.set(postId, { ...data, parts: keptParts })
+            }
+        })
+
+        // 2. Pick random posts
+        const numPostsToPick = Math.min(availablePosts.length, randomSettings.postCount)
+        const shuffledPosts = [...availablePosts].sort(() => 0.5 - Math.random())
+        const pickedPosts = shuffledPosts.slice(0, numPostsToPick)
+
+        if (mergeModeType === 'merge') {
+            pickedPosts.forEach((post, i) => {
+                const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(Boolean)
+                const charTags = post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : []
+                const tags = Array.from(new Set([...charTags, ...rawTags]))
+                const classified = classifyTags(tags, tagOverrides, charTags)
+
+                // Force coverage: the first `categories.length` posts get assigned `categories[i]`.
+                // The rest get a random category.
+                let targetCat: TagCategory
+                if (i < categories.length) {
+                    targetCat = categories[i]
+                } else {
+                    targetCat = categories[Math.floor(Math.random() * categories.length)]
+                }
+
+                if (classified[targetCat] && classified[targetCat].length > 0) {
+                    if (next.has(post.id)) {
+                        next.get(post.id)!.parts.add(targetCat)
+                    } else {
+                        next.set(post.id, { post, parts: new Set([targetCat]), previewTags: classified })
+                    }
+                } else {
+                    // Fallback: pick any category that has tags
+                    const availableCats = categories.filter(c => classified[c] && classified[c].length > 0)
+                    if (availableCats.length > 0) {
+                        const fallbackCat = availableCats[Math.floor(Math.random() * availableCats.length)]
+                        if (next.has(post.id)) {
+                            next.get(post.id)!.parts.add(fallbackCat)
+                        } else {
+                            next.set(post.id, { post, parts: new Set([fallbackCat]), previewTags: classified })
+                        }
+                    }
+                }
+            })
+        } else {
+            // In variations mode, assign random allowed categories to each picked post
+            pickedPosts.forEach(post => {
+                const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(Boolean)
+                const charTags = post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : []
+                const tags = Array.from(new Set([...charTags, ...rawTags]))
+                const classified = classifyTags(tags, tagOverrides, charTags)
+
+                const numCatsToPick = Math.floor(Math.random() * categories.length) + 1
+                const shuffledCats = [...categories].sort(() => 0.5 - Math.random())
+                const pickedCats = shuffledCats.slice(0, numCatsToPick)
+
+                const activeParts = new Set<TagCategory>()
+                pickedCats.forEach(cat => {
+                    if (classified[cat] && classified[cat].length > 0) {
+                        activeParts.add(cat)
+                    }
+                })
+
+                if (activeParts.size > 0) {
+                    if (next.has(post.id)) {
+                        const existingParts = next.get(post.id)!.parts
+                        activeParts.forEach(p => existingParts.add(p))
+                    } else {
+                        next.set(post.id, {
+                            post,
+                            parts: activeParts,
+                            previewTags: classified
+                        })
+                    }
+                }
+            })
+        }
+
+        setSelectedPosts(next)
+    }, [mergeModeType, tagOverrides, randomSettings, selectedPosts])
 
     const [excludedTags, setExcludedTags] = useState<Set<string>>(new Set())
 
@@ -253,10 +373,16 @@ export function useMergeMode(
         mergeModeType,
         setMergeModeType,
         toggleVariationsMode,
+        enableVariationMode,
+        enableMergeMode,
+        disableMergeMode,
         selectedPosts,
         togglePostPart,
         removePost,
         clearAll,
+        setRandomSelection,
+        randomSettings,
+        setRandomSettings,
         mergedPrompt,
         mergedPromptSegments,
         excludeTag

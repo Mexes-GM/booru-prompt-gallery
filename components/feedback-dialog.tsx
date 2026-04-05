@@ -55,6 +55,8 @@ const itemVariants: any = {
 }
 
 // --- Success Animation Component ---
+import { InfoTooltip } from "@/components/ui/info-tooltip"
+
 const SuccessAnimation = memo(function SuccessAnimation() {
     return (
         <motion.div
@@ -186,14 +188,23 @@ export function FeedbackDialog() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    className="gap-1 h-9 px-4 transition-all bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
-                >
-                    <MessageSquarePlus className="h-4 w-4" />
-                    <span className="hidden sm:inline font-medium">Feedback</span>
-                </Button>
+                <div className="inline-block">
+                    <InfoTooltip
+                        hideIcon
+                        side="bottom"
+                        title="Feedback & Suggestions"
+                        description="Help us improve! Found a bug? Have an idea for a cool new feature? Or just want to share your thoughts? Drop your comments here and contribute to the app's development."
+                    >
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            className="gap-1 h-9 px-4 transition-all bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+                        >
+                            <MessageSquarePlus className="h-4 w-4" />
+                            <span className="hidden sm:inline font-medium">Feedback</span>
+                        </Button>
+                    </InfoTooltip>
+                </div>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden gap-0 border-0 shadow-2xl">
                 <AnimatePresence mode="wait">

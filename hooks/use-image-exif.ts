@@ -66,6 +66,13 @@ export function useImageExif(options: UseImageExifOptions = {}) {
         }
 
         const result: ExifExtractionResult = await response.json()
+        
+        if (!result.prompt || result.prompt.trim() === '') {
+          const err = 'No prompt metadata found in this image'
+          setError(err)
+          options.onError?.(err)
+        }
+        
         options.onSuccess?.(result)
         return result
       } catch (err) {
