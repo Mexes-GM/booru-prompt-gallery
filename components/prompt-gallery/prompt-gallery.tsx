@@ -848,7 +848,7 @@ export function PromptGallery() {
 
         <main id="main-content" className="container mx-auto px-4 py-8">
           {/* Hero */}
-          <div className="w-fit max-w-5xl mx-auto mb-8 space-y-6">
+          <div className="w-full max-w-6xl mx-auto mb-8 space-y-6">
             <div className="text-center space-y-2">
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
               <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
