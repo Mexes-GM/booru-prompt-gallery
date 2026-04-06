@@ -20,6 +20,22 @@ Sentry.init({
 
   // Only capture errors in production
   enabled: process.env.NODE_ENV === "production",
+
+  // Filter out noisy errors from local files/extensions
+  ignoreErrors: [
+    "Event `Event` (type=error) captured as promise rejection",
+  ],
+  beforeSend(event) {
+    // Ignore events originating from file:// or chrome-extension:// protocols
+    if (event.request?.url && (event.request.url.startsWith("file://") || event.request.url.startsWith("chrome-extension://"))) {
+      return null;
+    }
+    const stacktrace = event.exception?.values?.[0]?.stacktrace;
+    if (stacktrace?.frames?.some((frame) => frame.filename?.startsWith("file://"))) {
+      return null;
+    }
+    return event;
+  },
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
