@@ -20,17 +20,16 @@ import {
 } from "@/components/ui/carousel"
 import { Card, CardContent } from "@/components/ui/card"
 import { 
-  ShieldBan, 
-  Search, 
-  Flame, 
-  Merge, 
-  MessageSquareHeart, 
-  Globe, 
+  Upload,
+  ImagePlus,
+  Eraser,
+  Wand2,
+  Dices,
+  Image as ImageIcon,
+  Info,
   Check, 
   Sparkles,
-  ArrowRight,
-  MousePointerClick,
-  GraduationCap
+  ArrowRight
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
@@ -41,7 +40,7 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
   const [current, setCurrent] = useState(0)
 
   // Update this key to force the modal to show again for existing users
-  const STORAGE_KEY = "hasSeenFeatureUpdateV2.1"
+  const STORAGE_KEY = "hasSeenFeatureUpdateV9.0"
 
   useEffect(() => {
     if (triggerOpen) {
@@ -76,78 +75,59 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
 
   const slides = useMemo(() => [
     {
-      title: "Enhanced Search Tools",
-      description: "Find exactly what you want—and hide what you don't.",
+      title: "Import & Clean Prompts",
+      description: "Extract prompts directly from your images.",
       color: "text-blue-500",
       bg: "bg-blue-500/10",
       border: "border-blue-500/20",
       features: [
         {
-          icon: ShieldBan,
-          title: "Blacklist",
-          text: "Filter out unwanted content by adding specific tags to your personal blacklist in the settings."
+          icon: ImagePlus,
+          title: "Import & Clean",
+          text: "Paste an existing prompt or extract one directly from an image. It will automatically be processed through our internal prompt cleaner—removing irrelevant tags, reorganizing categories, and optimizing it just like prompts fetched directly from the APIs."
         },
         {
-          icon: Search,
-          title: "Autocomplete",
-          text: "Not sure how a tag is spelled? Our new autocomplete system helps you find valid Danbooru tags instantly."
+          icon: Eraser,
+          title: "Smart Tag Exclusion",
+          text: "Automatically resolves logical conflicts between your base prompt and added tags. It detects contradictions (like adding facial features to a back-view, or conflicting clothing) and disables them to keep your prompt accurate."
         }
       ]
     },
     {
-      title: "Creative Workflow",
-      description: "Discover trends and combine ideas seamlessly.",
+      title: "Variations & Merge Modes",
+      description: "Generate creative alternatives and hybrids easily.",
       color: "text-purple-500",
       bg: "bg-purple-500/10",
       border: "border-purple-500/20",
       features: [
         {
-          icon: Flame,
-          title: "Trending",
-          text: "See what's popular today. Click cards to search their prompts, or right-click to copy them directly."
+          icon: Wand2,
+          title: "Prompt Variations",
+          text: "Select multiple prompts and format them into Wildcard variations ({ promptA | promptB }). Perfect for quickly creating diverse examples."
         },
         {
-          icon: Merge,
-          title: "Merge Mode",
-          text: "Combine poses, outfits, and backgrounds from multiple cards to create unique, hybrid prompts."
+          icon: Dices,
+          title: "Randomize",
+          text: "Not sure what to mix? Use the new random button in both Merge and Variation modes to let the app generate unexpected prompt combinations for you."
         }
       ]
     },
     {
-      title: "Advanced Tag Control",
-      description: "Take full control of your prompt engineering with granular tools.",
+      title: "Backgrounds & Guidance",
+      description: "More control over settings and clearer UI explanations.",
       color: "text-orange-500",
       bg: "bg-orange-500/10",
       border: "border-orange-500/20",
       features: [
         {
-          icon: MousePointerClick,
-          title: "Interactive Tags",
-          text: "Click any tag on a card to open its panel. From there, you can adjust its weight or search for it immediately."
+          icon: ImageIcon,
+          title: "Background Options",
+          text: "Take control of your backgrounds with advanced replacement tags, easily allowing you to set transparent, simple, or custom backgrounds for your generated prompts."
         },
         {
-          icon: Globe,
-          title: "Global Weights",
-          text: "Enable 'Global Tag Weights' to see the planet icon. Click it to apply a specific weight to that tag across all cards instantly."
-        }
-      ]
-    },
-    {
-      title: "Community & Feedback",
-      description: "Contribute to the platform's growth and accuracy.",
-      color: "text-rose-500",
-      bg: "bg-rose-500/10",
-      border: "border-rose-500/20",
-      features: [
-        {
-          icon: GraduationCap,
-          title: "Teach System",
-          text: "Help improve tag classification by moving tags to their correct categories in the Teach panel."
-        },
-        {
-          icon: MessageSquareHeart,
-          title: "Feedback",
-          text: "Help us grow! Send bug reports or feature requests directly through the new feedback button."
+          icon: Info,
+          title: "Helpful Tooltips",
+          text: "We've added detailed Info Tooltips across all options to explain exactly what each feature does. Hover over any info icon to learn more!"
         }
       ]
     }
@@ -169,7 +149,7 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
               <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">What&apos;s New</span>
             </div>
             <DialogTitle className="text-2xl sm:text-3xl font-bold tracking-tight">
-              Booru Gallery V8
+              Booru Gallery V9.0
             </DialogTitle>
             <DialogDescription className="text-base">
               We&apos;ve added powerful new tools to help you create better prompts.
