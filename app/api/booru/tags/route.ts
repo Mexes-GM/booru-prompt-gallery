@@ -86,22 +86,23 @@ export async function GET(request: Request) {
             })
 
             const rowsToUpsert = chunk.map(tag => {
+               // Normalizar la etiqueta usando el estándar de la app.
+               const normalizedTag = tag.trim().toLowerCase().replace(/_/g, ' ').replace(/\s{2,}/g, ' ')
+               
                // Danbooru omits invalid/deleted tags, mark them as 0 to avoid refetching.
                const count = fetchedMap[tag] !== undefined ? fetchedMap[tag] : 0
-               tagCounts[tag] = count // add to response payload
-               return { provider, tag_name: tag, post_count: count }
+               tagCounts[normalizedTag] = count // add to response payload
+               return { provider, tag_name: normalizedTag, post_count: count }
             })
 
             // Save to database
             const { error: upsertError } = await supabaseAdmin
-               const failedTags = chunk.join(', ')
-               throw new Error(
-                 `[DB Error] Failed to upsert provider_tag_counts for provider "${provider}" and tags [${failedTags}]: ${upsertError.message}`
-               )
+               .from('provider_tag_counts')
                .upsert(rowsToUpsert, { onConflict: 'provider,tag_name' })
 
             if (upsertError) {
-               console.error(`[DB Error] upserting to supabase:`, upsertError)
+               const failedTags = chunk.join(', ')
+               console.error(`[DB Error] Failed to upsert provider_tag_counts for provider "${provider}" and tags [${failedTags}]: ${upsertError.message}`)
             }
           } else {
             console.error(`Invalid non-array response from ${provider}:`, data)
