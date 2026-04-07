@@ -678,3 +678,38 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
     mutate,
   }
 }
+
+/**
+ * Fetch post counts for a batch of character tags.
+ * Falls back to an empty record for unsupported providers.
+ */
+export async function fetchBatchTagCounts(
+  tags: string[],
+  provider: BooruProvider
+): Promise<Record<string, number>> {
+  if (!tags.length) return {}
+  
+  if (provider !== 'danbooru' && provider !== 'aibooru') {
+    return {} // Only supported providers via the api route
+  }
+
+  try {
+    const params = new URLSearchParams({
+      tags: tags.join(','),
+      provider
+    })
+    
+    // Uses the relative path since this runs on the client
+    const response = await fetch(`/api/booru/tags?${params.toString()}`)
+    
+    if (!response.ok) {
+      console.error(`Failed to fetch tag counts: ${response.status}`)
+      return {}
+    }
+    
+    return await response.json()
+  } catch (error) {
+    console.error('Error fetching batch tag counts:', error)
+    return {}
+  }
+}

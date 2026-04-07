@@ -1,6 +1,7 @@
 "use client"
 
 import React from 'react'
+import * as Sentry from "@sentry/nextjs"
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -72,12 +73,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log error details
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
-    
+    Sentry.captureException(error, {
+      contexts: { react: { componentStack: errorInfo.componentStack } },
+    })
+
     // Check if it's a DOM manipulation error (common with browser translators)
     if (this.isDOMManipulationError(error)) {
-      console.warn('DOM manipulation error detected - likely caused by browser translator')
+      Sentry.setTag('error_type', 'dom_manipulation')
+      Sentry.setTag('likely_cause', 'browser_translator')
     }
   }
 

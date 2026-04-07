@@ -17,4 +17,21 @@ Sentry.init({
 
   // Only capture errors in production
   enabled: process.env.NODE_ENV === "production",
+
+  // Filter out noisy errors
+  ignoreErrors: [
+    "NetworkError when attempting to fetch resource",
+    "Load failed",
+    "Failed to fetch",
+    "Request failed with status code 0",
+  ],
+  beforeSend(event) {
+    // Tag server errors with runtime info
+    if (event.tags) {
+      event.tags.runtime = "nodejs";
+    } else {
+      event.tags = { runtime: "nodejs" };
+    }
+    return event;
+  },
 });

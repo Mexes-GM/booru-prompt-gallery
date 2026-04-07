@@ -16,7 +16,8 @@ import {
     Smile,
     GraduationCap,
     AlertCircle,
-    Sliders
+    Sliders,
+    Users
 } from "lucide-react"
 import Image from "next/image"
 import {
@@ -113,6 +114,7 @@ SuccessOverlay.displayName = "SuccessOverlay"
 
 interface MasonryItemProps {
     post: BooruPost
+    tagCounts?: Record<string, number>
     width: number
     height: number
     viewMode?: "grid" | "list"
@@ -153,6 +155,7 @@ interface MasonryItemProps {
 // Memoized MasonryItem to prevent unnecessary re-renders
 export const MasonryItem = memo(function MasonryItem({
     post,
+    tagCounts,
     width,
     height,
     viewMode = "grid",
@@ -305,6 +308,30 @@ export const MasonryItem = memo(function MasonryItem({
     // Prepare character tags
     const characterTagsArray = useMemo(() => (post.tag_string_character ? post.tag_string_character.split(' ') : [])
         .map(t => t.replace(/_/g, ' ').toLowerCase().replace(/\(/g, "\\(").replace(/\)/g, "\\)")), [post.tag_string_character])
+
+    const tagCountIndicator = useMemo(() => {
+        if (!tagCounts || characterTagsArray.length === 0) return null;
+        
+        let maxCount = 0;
+        let sumCounts = 0;
+        
+        // Find the top character's count
+        for (const rawTag of characterTagsArray) {
+            // Re-normalize tag to match how it might be stored in the dictionary if needed, 
+            // but Danbooru tags typically keep underscores. 
+            // In characterTagsArray spaces were replaced, we should check both.
+            const withSpaces = rawTag.replace(/\\/g, ''); // remove escapes
+            const withUnderscores = withSpaces.replace(/\s+/g, '_');
+            
+            const count = tagCounts[withUnderscores] ?? tagCounts[withSpaces] ?? 0;
+            if (count > maxCount) maxCount = count;
+            sumCounts += count;
+        }
+        
+        if (maxCount === 0) return null;
+        
+        return Intl.NumberFormat('en', { notation: 'compact' }).format(maxCount);
+    }, [tagCounts, characterTagsArray]);
 
     const classifiedTags = useMemo(() => {
         // Ensure character tags are included in the classification source
@@ -535,6 +562,21 @@ export const MasonryItem = memo(function MasonryItem({
                         unoptimized={isGelbooru}
                     />
 
+                    {/* Character Tag Count Indicator */}
+                    {tagCountIndicator && includeCharacters && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help z-10">
+                                    <Users className="w-3.5 h-3.5 opacity-70" />
+                                    {tagCountIndicator}
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs">
+                                Character Post Count
+                            </TooltipContent>
+                        </Tooltip>
+                    )}
+
                     {/* Overlay actions */}
                     <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                         <SaveFavoriteButton
@@ -573,7 +615,7 @@ export const MasonryItem = memo(function MasonryItem({
                             onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
                             globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                             onSearch={onSearch}
-                            conflictingTags={conflictResolution.conflictingTags}
+                              conflictingTags={conflictResolution.conflictingTags}
                         />
                     </div>
 
@@ -742,6 +784,21 @@ export const MasonryItem = memo(function MasonryItem({
                             className="object-cover"
                             sizes="128px"
                         />
+                        
+                        {/* Character Tag Count Indicator */}
+                        {tagCountIndicator && includeCharacters && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help z-10">
+                                        <Users className="w-3 h-3 opacity-70" />
+                                        {tagCountIndicator}
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                    Character Post Count
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
                     </div>
 
                     <div className="flex-1 space-y-3">
@@ -936,4 +993,9 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
 
     return true
 }
+
+
+
+
+
 

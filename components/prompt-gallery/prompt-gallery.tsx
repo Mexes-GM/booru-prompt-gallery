@@ -143,6 +143,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 
+import { useTagCounts } from "@/hooks/use-tag-counts"
+
 type CardScale = "small" | "medium" | "large"
 
 export function PromptGallery() {
@@ -150,6 +152,7 @@ export function PromptGallery() {
   const search = useBooruSearch()
   const { blacklist, addTag, removeTag, resetBlacklist } = useBlacklist()
   const favs = useBooruFavorites(search.booruProvider)
+  const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
   const isMobile = useIsMobile()
 
@@ -606,6 +609,7 @@ export function PromptGallery() {
 
     return <MasonryItem
       post={post}
+      tagCounts={tagCounts}
       isPreviouslyCopied={isPreviouslyCopied}
       width={width}
       height={height}
@@ -642,7 +646,7 @@ export function PromptGallery() {
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1967,6 +1971,7 @@ export function PromptGallery() {
                     <div key={`${post.id}`}>
                       <MasonryItem
                         post={post}
+                        tagCounts={tagCounts}
                         isPreviouslyCopied={isPreviouslyCopied}
                         width={800} // Dummy width for list view
                         height={600} // Dummy height

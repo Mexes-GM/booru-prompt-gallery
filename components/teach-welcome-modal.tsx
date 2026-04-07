@@ -29,7 +29,8 @@ import {
   Info,
   Check, 
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Users
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
@@ -128,6 +129,20 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
           icon: Info,
           title: "Helpful Tooltips",
           text: "We've added detailed Info Tooltips across all options to explain exactly what each feature does. Hover over any info icon to learn more!"
+        }
+      ]
+    },
+    {
+      title: "Character Popularity Insights",
+      description: "Discover how popular characters are across the booru.",
+      color: "text-pink-500",
+      bg: "bg-pink-500/10",
+      border: "border-pink-500/20",
+      features: [
+        {
+          icon: Users,
+          title: "Character Post Count",
+          text: "Each card now displays a small indicator in the bottom-left corner showing the maximum post count of all characters in that image. This helps recognize how accurate the character will be when generating it; the more posts it has, the more likely the base model knows the character and can generate it correctly."
         }
       ]
     }
