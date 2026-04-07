@@ -3,6 +3,7 @@ import useSWRInfinite from 'swr/infinite'
 import useSWR from 'swr'
 import { useApiStatus } from '@/hooks/use-api-status'
 import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
+import { prefetchTagCounts } from '@/hooks/use-tag-counts'
 import { PROVIDER_URLS } from '@/lib/constants'
 
 // Re-export types
@@ -248,10 +249,14 @@ const fetcher = async (url: string) => {
 
     const data = await res.json()
 
+    let resultPosts = data
+    let identifiedProvider: 'danbooru' | 'aibooru' | null = null
+
     // Transform data if it's from Aibooru direct fetch
     if (isDirectAibooru) {
+      identifiedProvider = 'aibooru'
       if (Array.isArray(data)) {
-        return data
+        resultPosts = data
           .filter(post =>
             post &&
             post.id &&
@@ -263,11 +268,30 @@ const fetcher = async (url: string) => {
           .map(transformAibooruPost)
       } else {
         // Handle empty response or unexpected format gracefully
-        return []
+        resultPosts = []
       }
+    } else if (
+      url.includes('/api/posts') || 
+      url.includes('/api/favorites') || 
+      (url.includes('api/booru/search') && url.includes('provider=danbooru')) || 
+      url.includes('danbooru.donmai.us')
+    ) {
+      identifiedProvider = 'danbooru'
     }
 
-    return data
+    // Prefetch tags directly from network layer before React updates!
+    if (identifiedProvider && Array.isArray(resultPosts)) {
+      // Fire and forget without delaying the main fetch result
+      queueMicrotask(() => {
+        try {
+          prefetchTagCounts(resultPosts as BooruPost[], identifiedProvider)
+        } catch (error) {
+          console.error('[ApiClient] Background tag prefetch error:', error)
+        }
+      })
+    }
+
+    return resultPosts
   } catch (fetchError: unknown) {
     // Log only critical errors, not 404s for end of pagination
     if (fetchError instanceof Response && fetchError.status !== 404) {
@@ -686,7 +710,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
 export async function fetchBatchTagCounts(
   tags: string[],
   provider: BooruProvider
-): Promise<Record<string, number>> {
+): Promise<Record<string, number> | null> {
   if (!tags.length) return {}
   
   if (provider !== 'danbooru' && provider !== 'aibooru') {
@@ -704,12 +728,12 @@ export async function fetchBatchTagCounts(
     
     if (!response.ok) {
       console.error(`Failed to fetch tag counts: ${response.status}`)
-      return {}
+      return null
     }
     
     return await response.json()
   } catch (error) {
     console.error('Error fetching batch tag counts:', error)
-    return {}
+    return null
   }
 }

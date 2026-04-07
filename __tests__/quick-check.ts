@@ -1,6 +1,41 @@
 import { cleanPrompt } from "../lib/cleanPrompt";
 
-const tagString = "1girl, hair between eyes, looking at viewer, black long hair, large breasts, symbol in eye, black corset, heart in eye, patreon logo, black dress, web address, earrings, jewelry, blush, smile, sweat, solo";
+type CleanPromptArgs = {
+  tagString: string;
+  characterString: string;
+  thirdArgument: string;
+  fourthArgument: string;
+  fifthArgument: string;
+  provider: 'danbooru';
+};
 
+function cleanPromptWithNamedArgs({
+  tagString,
+  characterString,
+  thirdArgument,
+  fourthArgument,
+  fifthArgument,
+  provider,
+}: CleanPromptArgs) {
+  return cleanPrompt(
+    tagString,
+    characterString,
+    thirdArgument,
+    fourthArgument,
+    fifthArgument,
+    provider
+  );
+}
+
+const tagString = '1girl asuna_(blue_archive) asuna_(bunny)_(blue_archive) ichinose_asuna_(blue_archive) fake_char';
+const characterString = 'asuna_(blue_archive) asuna_(bunny)_(blue_archive) ichinose_asuna_(blue_archive) fake_char';
+const result = cleanPromptWithNamedArgs({
+  tagString,
+  characterString,
+  thirdArgument: '',
+  fourthArgument: '',
+  fifthArgument: '',
+  provider: 'danbooru',
+});
 const result = cleanPrompt(tagString, "", "", "", { optimizeTags: false });
 console.log(result);
