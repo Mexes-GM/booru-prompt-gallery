@@ -106,6 +106,10 @@ export function ReversePromptParserModal({
     quality: true,
     other: true,
   })
+  const [parserOptions, setParserOptions] = useState({
+    removeWeights: true,
+    removeLoras: true,
+  })
 
   // Image EXIF extraction hook
   const {
@@ -132,8 +136,8 @@ export function ReversePromptParserModal({
 
   // Parse the input
   const parsed = useMemo(() => {
-    return parseRawPrompt(rawInput, tagOverrides)
-  }, [rawInput, tagOverrides])
+    return parseRawPrompt(rawInput, tagOverrides, parserOptions)
+  }, [rawInput, tagOverrides, parserOptions])
 
   const totalTags = countClassifiedTags(parsed.classified, parsed.quality)
 
@@ -212,6 +216,46 @@ export function ReversePromptParserModal({
 
           {/* Divider */}
           <div className="h-px bg-border" />
+
+          {/* Parser Options */}
+          {rawInput.trim().length > 0 && (
+            <div className="space-y-2 pb-1 border-b border-border/50">
+              <label className="text-sm font-semibold block">
+                Parser Options
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+                <button
+                  onClick={() => setParserOptions(p => ({ ...p, removeWeights: !p.removeWeights }))}
+                  className={cn(
+                    "px-3 py-2 rounded-lg border-2 text-xs transition-all flex flex-col items-start gap-0.5 text-left",
+                    parserOptions.removeWeights
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                      : "bg-muted text-muted-foreground border-transparent opacity-50"
+                  )}
+                >
+                  <span className="font-semibold">Strip Weights & Brackets</span>
+                  <span className="font-normal opacity-80 text-[10px]">
+                    Converts <code className="bg-background/50 px-1 py-0.5 rounded leading-none">(elf:1.2)</code> to <code className="bg-background/50 px-1 py-0.5 rounded leading-none">elf</code>
+                  </span>
+                </button>
+                
+                <button
+                  onClick={() => setParserOptions(p => ({ ...p, removeLoras: !p.removeLoras }))}
+                  className={cn(
+                    "px-3 py-2 rounded-lg border-2 text-xs transition-all flex flex-col items-start gap-0.5 text-left",
+                    parserOptions.removeLoras
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                      : "bg-muted text-muted-foreground border-transparent opacity-50"
+                  )}
+                >
+                  <span className="font-semibold">Remove LoRA Tags</span>
+                  <span className="font-normal opacity-80 text-[10px]">
+                    Removes <code className="bg-background/50 px-1 py-0.5 rounded leading-none">&lt;lora:...&gt;</code> completely
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Category Toggles */}
           {totalTags > 0 && (

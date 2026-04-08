@@ -42,7 +42,39 @@ export interface CleanPromptOptions {
 // --------------- Utilities ---------------
 export const toSpace = (s: string) => s.replace(/_/g, " ")
 export const toUnderscore = (s: string) => s.replace(/\s+/g, "_")
-export const normalize = (s: string) => toSpace(s).toLowerCase().trim().replace(/\s{2,}/g, " ")
+
+// Diccionario de auto-correcciones rapidas
+const COMMON_TYPOS: Record<string, string> = {
+  "1 girl": "1girl",
+  "2 girls": "2girls",
+  "3 girls": "3girls",
+  "4 girls": "4girls",
+  "5 girls": "5girls",
+  "6 girls": "6girls",
+  "1 boy": "1boy",
+  "2 boys": "2boys",
+  "3 boys": "3boys",
+  "4 boys": "4boys",
+  "5 boys": "5boys",
+  "6 boys": "6boys",
+}
+
+export const normalize = (s: string) => {
+  const norm = toSpace(s).toLowerCase().trim().replace(/\s{2,}/g, " ")
+  
+  const match = norm.match(/^([\[\(\{<]*\s*)(.*?)(\s*(?::\s*[\d.]+)?\s*[\]\)\}>]*)$/)
+  if (match) {
+    const prefix = match[1]
+    const coreTag = match[2]
+    const suffix = match[3]
+    
+    if (COMMON_TYPOS[coreTag]) {
+      return prefix + COMMON_TYPOS[coreTag] + suffix
+    }
+  }
+  
+  return COMMON_TYPOS[norm] || norm
+}
 const escapeParentheses = (s: string) => s.replace(/\(/g, "\\(").replace(/\)/g, "\\)")
 
 function withNormalizedVariants(list: string[]): Set<string> {
@@ -105,6 +137,12 @@ export const QUALITY_TAGS_SET = new Set([
   "detailed",
   "extremely detailed",
   "highly detailed",
+  "amazing quality",
+  "newest",
+  "beautiful lighting",
+  "soft reflections",
+  "amazing composition",
+  "flat color",
 ].map(normalize))
 
 const SUBJECT_TAGS_SET = new Set(

@@ -60,7 +60,7 @@ export function classifyTag(tag: string, overrides?: Record<string, string>): Ta
 
     // 1.5 Derivations: if tag is "blue skirt", check if "skirt" is in overrides
     if (!overrideValue && lowerWithSpaces.includes(" ")) {
-      const cleanedForSuffix = lowerWithSpaces.replace(/\s*\([^)]*\)/g, "").trim();
+      const cleanedForSuffix = lowerWithSpaces.replace(/[<>[\](){}]/g, "").replace(/:\s*\d+(\.\d+)?\s*$/, "").replace(/\s{2,}/g, " ").trim();
       const parts = cleanedForSuffix.split(" ");
       
       let currentSuffix = "";
@@ -83,7 +83,7 @@ export function classifyTag(tag: string, overrides?: Record<string, string>): Ta
     }
   }
 
-  const subjectForMatching = lowerWithSpaces.replace(/\s*\(.*?\)/g, "").trim();
+  const subjectForMatching = lowerWithSpaces.replace(/[<>[\](){}]/g, "").replace(/:\s*\d+(\.\d+)?\s*$/, "").replace(/\s{2,}/g, " ").trim();
   const words = subjectForMatching.split(" ");
   const lastWord = words[words.length - 1];
 

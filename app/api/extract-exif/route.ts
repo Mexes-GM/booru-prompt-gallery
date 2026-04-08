@@ -55,26 +55,38 @@ export async function POST(request: NextRequest) {
 
     if (!isPNG) {
       try {
-        const binaryString = String.fromCharCode.apply(
-          null,
-          Array.from(
-            uint8Array.slice(0, Math.min(uint8Array.length, 1024 * 1024)),
-          ),
-        );
+        // Safe conversion of uint8array to binary string, avoiding Maximum Call Stack Size Exceeded
+        const chunk = uint8Array.slice(0, Math.min(uint8Array.length, 1024 * 1024));
+        const binaryString = Buffer.from(chunk).toString("binary");
+        
         const exifDict = piexif.load(binaryString);
 
         const exifFieldsToCheck = [
           [piexif.ImageIFD.ImageDescription, "description"],
           [piexif.ImageIFD.XPComment, "userComment"],
           [piexif.ImageIFD.XPKeywords, "keywords"],
-          [37510, "comment"],
+          [37510, "comment"], // UserComment is 37510
         ];
 
         for (const [tag, key] of exifFieldsToCheck) {
+          // Check both 0th and Exif IFD
+          let value = null;
           if (exifDict["0th"] && exifDict["0th"][tag as number]) {
-            const value = exifDict["0th"][tag as number][0];
-            if (typeof value === "string") {
-              exifMetadata[key] = value.trim();
+            value = exifDict["0th"][tag as number];
+          } else if (exifDict["Exif"] && exifDict["Exif"][tag as number]) {
+            value = exifDict["Exif"][tag as number];
+          }
+
+          if (value) {
+            // piexif can return arrays for strings depending on the tag type, or raw strings
+            let strValue = Array.isArray(value) ? value[0] : value;
+            
+            if (typeof strValue === "string") {
+              // UserComments often start with a character code prefix like "UNICODE\0" or "ASCII\0\0\0"
+              strValue = strValue.replace(/^(UNICODE|ASCII)\x00+/ig, "");
+              // Also remove any remaining null bytes (common in UTF16LE parsed as ASCII)
+              strValue = strValue.replace(/\x00/g, "");
+              exifMetadata[key] = strValue.trim();
             }
           }
         }

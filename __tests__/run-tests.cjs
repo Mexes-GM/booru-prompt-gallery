@@ -13,3 +13,4 @@ require('./cleanPrompt.spec.ts')
 require('./tag-classifier.spec.ts')
 require('./background-detector.spec.ts');
 require('./tag-conflicts.spec.ts');
+require('./reverse-prompt-parser.spec.ts');

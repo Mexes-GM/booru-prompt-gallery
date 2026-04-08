@@ -14,13 +14,71 @@ export interface ParsedRawPrompt {
 }
 
 /**
+ * Distributes weights and brackets to individual tags inside comma-separated blocks.
+ * E.g. "(((elf, ears)))" -> ["(((elf)))", "(((ears)))"]
+ */
+export function distributeBracketsAndSplit(prompt: string): string[] {
+  const result: string[] = [];
+  let currentWord = "";
+  let inBrackets = 0;
+  const bracketStack: string[] = [];
+
+  for (let i = 0; i < prompt.length; i++) {
+    const char = prompt[i];
+
+    if (char === '(' || char === '[' || char === '{' || char === '<') {
+      inBrackets++;
+      bracketStack.push(char);
+      currentWord += char;
+    } else if (char === ')' || char === ']' || char === '}' || char === '>') {
+      inBrackets--;
+      bracketStack.pop();
+      currentWord += char;
+    } else if (char === ',' && inBrackets === 0) {
+      if (currentWord.trim()) result.push(currentWord.trim());
+      currentWord = "";
+    } else if (char === ',' && inBrackets > 0) {
+      const closingBrackets = bracketStack.slice().reverse().map(c => {
+        if (c === '(') return ')';
+        if (c === '[') return ']';
+        if (c === '{') return '}';
+        if (c === '<') return '>';
+        return c;
+      }).join('');
+      
+      const parts = currentWord.split(':');
+      let weight = '';
+      if (parts.length > 1 && /^[\d\.]+$/.test(parts[parts.length - 1].trim())) {
+        weight = ':' + parts.pop()!;
+        currentWord = parts.join(':');
+      }
+
+      currentWord += weight + closingBrackets;
+      if (currentWord.trim()) result.push(currentWord.trim());
+
+      currentWord = bracketStack.join(''); // Restart with opening brackets
+    } else {
+      currentWord += char;
+    }
+  }
+
+  if (currentWord.trim()) result.push(currentWord.trim());
+  return result;
+}
+
+/**
  * Parses a raw prompt string (from Civitai, PNG metadata, etc.)
  * Splits by comma or space and normalizes tags
  * @param rawPrompt Raw prompt string with messy formatting
  * @param tagOverrides Dictionary of tag overrides (usually from Lazy Fetch)
+ * @param options Options to remove weights and LoRAs
  * @returns Parsed and cleaned tags
  */
-export function parseRawPrompt(rawPrompt: string, tagOverrides?: Record<string, string>): ParsedRawPrompt {
+export function parseRawPrompt(
+  rawPrompt: string, 
+  tagOverrides?: Record<string, string>,
+  options?: { removeWeights?: boolean, removeLoras?: boolean }
+): ParsedRawPrompt {
   if (!rawPrompt || typeof rawPrompt !== "string") {
     return {
       rawTags: [],
@@ -51,24 +109,40 @@ export function parseRawPrompt(rawPrompt: string, tagOverrides?: Record<string, 
     workingPrompt = workingPrompt.substring(0, stepsMatch.index).trim();
   }
 
+  // Sometimes EXIF data is improperly pasted or extracted with keys at the start
+  // e.g. "ResolutionUnit None\nUserComment masterpiece, best quality..."
+  // or "parameters\nmasterpiece, best quality..."
+  const exifGarbageMatch = workingPrompt.match(/^(?:ResolutionUnit\s+None\s*\n*)?(?:UserComment|parameters)\s*/i);
+  if (exifGarbageMatch && exifGarbageMatch.index === 0) {
+    workingPrompt = workingPrompt.substring(exifGarbageMatch[0].length).trim();
+  }
+
+  // Replace newlines with commas so tags separated by newlines are parsed correctly (like BREAK)
+  workingPrompt = workingPrompt.replace(/\n/g, ", ");
+
   // Determine delimiter: prefer comma if present
   const hasComma = workingPrompt.includes(",")
   const delimiter = hasComma ? "," : " "
 
-  let rawTags: string[] = []
-  if (hasComma) {
-    rawTags = workingPrompt
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean)
-  } else {
-    rawTags = workingPrompt
-      .split(/\s+/)
-      .filter(Boolean)
+  let intialFilteredTags: string[] = hasComma 
+    ? distributeBracketsAndSplit(workingPrompt).map((t) => t.trim()).filter(Boolean)
+    : workingPrompt.split(/\s+/).filter(Boolean);
+
+  if (options?.removeLoras) {
+    intialFilteredTags = intialFilteredTags.filter((tag) => !tag.toLowerCase().startsWith("<lora:"));
+  }
+
+  let rawTags: string[] = [...intialFilteredTags];
+  if (options?.removeWeights) {
+    intialFilteredTags = intialFilteredTags.map((tag) => {
+      // Don't strip brackets from LORAs if we kept them, but actually we mostly care about tags.
+      if (tag.toLowerCase().startsWith("<lora:")) return tag;
+      return tag.replace(/[<>[\](){}]/g, "").replace(/:\s*\d+(\.\d+)?\s*$/, "").trim();
+    });
   }
 
   // Normalize: lowercase, underscores->spaces, trim
-  const cleanedTags = rawTags
+  const cleanedTags = intialFilteredTags
     .map((tag) => normalize(tag))
     .filter((tag) => {
       // Remove empty strings, single characters, and obvious noise
