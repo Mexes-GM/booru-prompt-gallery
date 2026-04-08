@@ -29,12 +29,23 @@ export async function GET(request: Request) {
       return NextResponse.json({}, { status: 200 })
     }
 
+    const normalizedToOriginal = new Map<string, string[]>()
+    requestedTags.forEach(tag => {
+      const normalized = tag.replace(/_/g, ' ').replace(/\s{2,}/g, ' ')
+      if (!normalizedToOriginal.has(normalized)) {
+        normalizedToOriginal.set(normalized, [])
+      }
+      normalizedToOriginal.get(normalized)!.push(tag)
+    })
+    
+    const uniqueNormalizedTags = Array.from(normalizedToOriginal.keys())
+
     // 1. Fetch tags from Supabase first
     const { data: dbTags, error: dbError } = await supabaseAdmin
       .from('provider_tag_counts')
       .select('tag_name, post_count')
       .eq('provider', provider)
-      .in('tag_name', requestedTags)
+      .in('tag_name', uniqueNormalizedTags)
 
     if (dbError) {
       console.error(`[DB Error] fetching from supabase in edge:`, dbError)
@@ -49,11 +60,14 @@ export async function GET(request: Request) {
     // Populate cached tags from DB
     if (dbTags) {
       dbTags.forEach(row => {
-        tagCounts[row.tag_name] = row.post_count
+        const originals = normalizedToOriginal.get(row.tag_name) || []
+        originals.forEach(orig => {
+          tagCounts[orig] = row.post_count
+        })
       })
     }
 
-    // 2. Identify requested tags completely missing from our local DB cache
+    // 2. Identify requested tags completely missing from our local DB cache using original names
     const missingTags = requestedTags.filter(tag => tagCounts[tag] === undefined)
 
     // 3. If there are missing tags, fetch them from the external provider
@@ -90,8 +104,11 @@ export async function GET(request: Request) {
                const normalizedTag = tag.trim().toLowerCase().replace(/_/g, ' ').replace(/\s{2,}/g, ' ')
                
                // Danbooru omits invalid/deleted tags, mark them as 0 to avoid refetching.
-               const count = fetchedMap[tag] !== undefined ? fetchedMap[tag] : 0
-               tagCounts[normalizedTag] = count // add to response payload
+               const count = fetchedMap[tag] !== undefined 
+                           ? fetchedMap[tag] 
+                           : (fetchedMap[normalizedTag] !== undefined ? fetchedMap[normalizedTag] : 0)
+
+               tagCounts[tag] = count // add to response payload using original tag
                return { provider, tag_name: normalizedTag, post_count: count }
             })
 

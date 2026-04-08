@@ -132,7 +132,7 @@ export function parseRawPrompt(
     intialFilteredTags = intialFilteredTags.filter((tag) => !tag.toLowerCase().startsWith("<lora:"));
   }
 
-  let rawTags: string[] = [...intialFilteredTags];
+    const rawTags: string[] = [...intialFilteredTags];
   if (options?.removeWeights) {
     intialFilteredTags = intialFilteredTags.map((tag) => {
       // Don't strip brackets from LORAs if we kept them, but actually we mostly care about tags.
