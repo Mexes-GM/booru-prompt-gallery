@@ -207,20 +207,13 @@ const PromptTag = ({ tag, onCommit, isEditable, isGlobal, onPromote, canPromote,
           )}
           onClick={(e) => {
             e.stopPropagation()
-            // Trigger handles open, but stopping prop is good
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault()
-              // Let PopoverTrigger handle the click simulation or manual open?
-              // PopoverTrigger usually handles click. We might need to simulate click.
-              // Actually, Radix UI PopoverTrigger works on click.
-              // For non-button elements, we usually need to trigger onClick manually or let Radix handle it if it detects it?
-              // Radix Primitives usually handle generic elements if asChild is true?
-              // Let's verify. Radix PopoverTrigger adds onClick.
-              // But for keyboard, buttons get native Enter/Space support. Spans don't.
-              // We need to trigger the click handler that Radix attached.
-              e.currentTarget.click()
+              // Let Radix PopoverTrigger handle the keyboard interaction
+              // Radix automatically adds click handlers when using asChild
+              handleOpenChange(!isOpen)
             }
           }}
           title={isGlobal ? "Global weight applied" : undefined}

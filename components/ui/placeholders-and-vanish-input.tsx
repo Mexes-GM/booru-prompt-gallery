@@ -59,6 +59,7 @@ export function PlaceholdersAndVanishInput({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const newDataRef = useRef<any[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
   const [value, setValue] = useState(propValue || "");
   const [animating, setAnimating] = useState(false);
 
@@ -67,6 +68,15 @@ export function PlaceholdersAndVanishInput({
       setValue(propValue);
     }
   }, [propValue]);
+
+  // Cleanup animation frames on unmount
+  useEffect(() => {
+    return () => {
+      if (cleanupRef.current) {
+        cleanupRef.current();
+      }
+    };
+  }, []);
 
   const draw = useCallback(() => {
     if (!inputRef.current) return;
@@ -112,65 +122,21 @@ export function PlaceholdersAndVanishInput({
       }
     }
 
-    newDataRef.current = newData.map(({ x, y, color }) => ({
+    // Create new array instead of mutating ref to avoid stale closures
+    const processedData = newData.map(({ x, y, color }) => ({
       x,
       y,
       r: 1,
       color: `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3]})`,
     }));
+    newDataRef.current = processedData;
   }, [value]);
 
   useEffect(() => {
     draw();
   }, [value, draw]);
 
-  const animate = (start: number) => {
-    const animateFrame = (pos: number = 0) => {
-      requestAnimationFrame(() => {
-        const newArr = [];
-        for (let i = 0; i < newDataRef.current.length; i++) {
-          const current = newDataRef.current[i];
-          if (current.x < pos) {
-            newArr.push(current);
-          } else {
-            if (current.r <= 0) {
-              current.r = 0;
-              continue;
-            }
-            current.x += Math.random() > 0.5 ? 1 : -1;
-            current.y += Math.random() > 0.5 ? 1 : -1;
-            current.r -= 0.05 * Math.random();
-            newArr.push(current);
-          }
-        }
-        newDataRef.current = newArr;
-        const ctx = canvasRef.current?.getContext("2d");
-        if (ctx) {
-          ctx.clearRect(pos, 0, 800, 800);
-          newDataRef.current.forEach((t) => {
-            const { x: n, y: i, r: s, color: color } = t;
-            if (n > pos) {
-              ctx.beginPath();
-              ctx.rect(n, i, s, s);
-              ctx.fillStyle = color;
-              ctx.strokeStyle = color;
-              ctx.stroke();
-            }
-          });
-        }
-        if (newDataRef.current.length > 0) {
-          animateFrame(pos - 8);
-        } else {
-          setValue("");
-          if (setPropValue) setPropValue("");
-          setAnimating(false);
-        }
-      });
-    };
-    animateFrame(start);
-  };
-
-  const vanishAndSubmit = () => {
+  const vanishAndSubmit = useCallback(() => {
     if (disableVanish) return;
     setAnimating(true);
     draw();
@@ -181,9 +147,70 @@ export function PlaceholdersAndVanishInput({
         (prev, current) => (current.x > prev ? current.x : prev),
         0
       );
-      animate(maxX);
+
+      // Define animate inline to avoid dependency issues
+      const animate = (start: number) => {
+        // Track animation frame to cancel if component unmounts
+        let frameId: number | null = null;
+        
+        const animateFrame = (pos: number = 0) => {
+          frameId = requestAnimationFrame(() => {
+            const newArr = [];
+            for (let i = 0; i < newDataRef.current.length; i++) {
+              const current = newDataRef.current[i];
+              if (current.x < pos) {
+                newArr.push(current);
+              } else {
+                if (current.r <= 0) {
+                  current.r = 0;
+                  continue;
+                }
+                current.x += Math.random() > 0.5 ? 1 : -1;
+                current.y += Math.random() > 0.5 ? 1 : -1;
+                current.r -= 0.05 * Math.random();
+                newArr.push(current);
+              }
+            }
+            newDataRef.current = newArr;
+            const canvas = canvasRef.current;
+            const ctx = canvas?.getContext("2d");
+            if (ctx && canvas) {
+              ctx.clearRect(pos, 0, 800, 800);
+              newDataRef.current.forEach((t) => {
+                const { x: n, y: i, r: s, color: color } = t;
+                if (n > pos) {
+                  ctx.beginPath();
+                  ctx.rect(n, i, s, s);
+                  ctx.fillStyle = color;
+                  ctx.strokeStyle = color;
+                  ctx.stroke();
+                }
+              });
+            }
+            if (newDataRef.current.length > 0) {
+              animateFrame(pos - 8);
+            } else {
+              setValue("");
+              if (setPropValue) setPropValue("");
+              setAnimating(false);
+            }
+          });
+        };
+        animateFrame(start);
+        
+        // Return cleanup function to cancel animation if component unmounts
+        return () => {
+          if (frameId !== null) {
+            cancelAnimationFrame(frameId);
+          }
+        };
+      };
+
+      const cleanup = animate(maxX);
+      // Store cleanup for potential cancellation on unmount
+      cleanupRef.current = cleanup || null;
     }
-  };
+  }, [disableVanish, draw, setPropValue]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();

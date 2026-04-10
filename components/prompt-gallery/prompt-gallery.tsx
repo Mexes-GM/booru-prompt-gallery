@@ -309,9 +309,12 @@ export function PromptGallery() {
     }
   }, [])
 
+  // Load tag overrides on mount - no circular dependency
   useEffect(() => {
     refreshOverrides()
-  }, [refreshOverrides])
+    // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (search.isClient) {

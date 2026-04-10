@@ -120,20 +120,36 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
     }
   }, [])
 
-  // Update container width on resize (debounced via ResizeObserver if needed, but window resize handles most cases)
-  // For more robustness with sidebar changes etc, we can use ResizeObserver
+  // Update container width on resize via ResizeObserver
+  // This is a separate effect to avoid conflicts with window resize listener
   useEffect(() => {
     if (!containerRef.current) return
 
+    // Use ResizeObserver only if the container has changed significantly
+    // and window resize didn't capture the change (e.g., sidebar collapse)
+    let timeoutId: NodeJS.Timeout | null = null
+
     const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width)
-      }
+      // Debounce ResizeObserver updates to avoid excessive state updates
+      if (timeoutId) clearTimeout(timeoutId)
+      
+      timeoutId = setTimeout(() => {
+        for (const entry of entries) {
+          // Only update if there's a meaningful change (>1px difference)
+          if (Math.abs(entry.contentRect.width - containerWidth) > 1) {
+            setContainerWidth(entry.contentRect.width)
+          }
+        }
+      }, 50)
     })
 
     observer.observe(containerRef.current)
-    return () => observer.disconnect()
-  }, [])
+    
+    return () => {
+      observer.disconnect()
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [containerWidth])
 
   const debouncedContainerWidth = useDebounce(containerWidth, 50)
 
