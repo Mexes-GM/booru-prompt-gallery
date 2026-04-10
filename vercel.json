@@ -31,7 +31,12 @@
   ],
   "env": {
     "NEXT_PUBLIC_APP_URL": "",
+    "NEXT_PUBLIC_APP_VERSION": "@sentry/nextjs:version",
     "API_BASE_URL": "",
-    "API_KEY": ""
+    "API_KEY": "",
+    "NEXT_PUBLIC_SENTRY_DSN": "@sentry/nextjs:dsn",
+    "SENTRY_ORG": "boorupromptgallery",
+    "SENTRY_PROJECT": "sentry-fulvous-anchor",
+    "SENTRY_AUTH_TOKEN": "@sentry/nextjs:auth_token"
   }
 }

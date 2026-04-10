@@ -165,6 +165,13 @@ export default withSentryConfig(nextConfig, {
   // Upload a larger set of source maps for prettier stack traces
   widenClientFileUpload: true,
 
+  // Attach source maps for better debugging
+  // Requires SENTRY_AUTH_TOKEN to be set in environment
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+
+  // Hide source maps from bundle to reduce size
+  hideSourceMaps: true,
+
   // Do NOT tunnel Sentry requests through Next.js server —
   // this would add CPU and bandwidth to your Vercel bill.
   // tunnelRoute: "/monitoring",  // DISABLED to save resources
