@@ -1,19 +1,29 @@
-"use client"
+import type { Metadata } from "next"
+import PageClient from "./page-client"
 
-import dynamic from "next/dynamic"
-import { Loader2 } from "lucide-react"
+type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>
 
-const PromptGallery = dynamic(
-  () => import("@/components/prompt-gallery/prompt-gallery").then((mod) => mod.PromptGallery),
-  {
-    loading: () => (
-      <div className="flex h-screen w-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    ),
-  },
-)
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: SearchParams
+}): Promise<Metadata> {
+  const params = await searchParams
+  const rawTags = params?.tags
+  const tags = Array.isArray(rawTags) ? rawTags[0] : rawTags
+  const trimmed = tags?.trim()
+
+  if (trimmed) {
+    return {
+      title: `${trimmed} | Booru Prompt Gallery`,
+    }
+  }
+
+  return {
+    title: "Booru Prompt Gallery - By Mexes",
+  }
+}
 
 export default function DanbooruPromptGenerator() {
-  return <PromptGallery />
+  return <PageClient />
 }

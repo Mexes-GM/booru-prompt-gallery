@@ -353,6 +353,8 @@ export function PromptGallery() {
     }
   }, [scaleValue, cardScale, setCardScale])
 
+  // We will render <title> directly in the JSX instead of useEffect
+  
   // Scroll tracking
   useEffect(() => {
     const handleScroll = () => setShowBackToTop(window.scrollY > 400)
@@ -444,10 +446,8 @@ export function PromptGallery() {
   const handleTagSearch = useCallback((tag: string) => {
     // Unescape parentheses for search (kashima \(kancolle\) -> kashima (kancolle))
     const cleanTag = tag.replace(/\\([()])/g, '$1')
-    search.setSearchTags(cleanTag)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-    // The debounce in useBooruSearch will trigger the search after 500ms
-  }, [search])
+    window.open(`/?tags=${encodeURIComponent(cleanTag)}`, '_blank')
+  }, [])
 
   // --- Helpers ---
 
@@ -659,6 +659,9 @@ export function PromptGallery() {
 
   return (
     <TooltipProvider>
+      {search.searchTags?.trim() ? (
+        <title>{`${search.searchTags.trim()} | Booru Prompt Gallery`}</title>
+      ) : null}
       <div className="min-h-screen bg-background">
         {/* Header */}
         <header className="w-full border-b glass-effect">
@@ -1926,18 +1929,26 @@ export function PromptGallery() {
                                 <span>{tab.name}</span>
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isActive ? "bg-black/20" : "bg-background/80"}`}>{tab.count}</span>
                                 {tab.id !== 'all' && tab.id !== null && (
-                                  <button
-                                    type="button"
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
                                     title="Delete Folder"
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       setFolderToDelete({ id: tab.id as string, name: tab.name })
                                     }}
-                                    className={`ml-1 rounded-full p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center transition-colors ${isActive ? "hover:bg-black/20 text-primary-foreground" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        setFolderToDelete({ id: tab.id as string, name: tab.name })
+                                      }
+                                    }}
+                                    className={`ml-1 rounded-full p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center transition-colors cursor-pointer ${isActive ? "hover:bg-black/20 text-primary-foreground" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
                                     aria-label={`Delete folder ${tab.name}`}
                                   >
                                     <X className="w-3.5 h-3.5" />
-                                  </button>
+                                  </span>
                                 )}
                               </span>
                             </motion.button>

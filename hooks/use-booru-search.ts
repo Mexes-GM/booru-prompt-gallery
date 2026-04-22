@@ -12,13 +12,37 @@ import {
 import { useToast } from "@/hooks/use-toast"
 
 export function useBooruSearch() {
-  const [searchTags, setSearchTags] = usePersistentState(
-    "",
-    userPreferences.getSearchTags,
-    userPreferences.setSearchTags,
-    "searchTags",
-    STORAGE_KEYS.SEARCH_TAGS
-  )
+  const [searchTags, setSearchTagsState] = useState(() => {
+    if (typeof window === 'undefined') return ""
+    const params = new URLSearchParams(window.location.search)
+    const tagsFromUrl = params.get('tags')
+    if (tagsFromUrl) return tagsFromUrl
+    return ""
+  })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const tagsFromUrl = params.get('tags')
+
+      if (tagsFromUrl) {
+        userPreferences.setSearchTags(tagsFromUrl)
+      } else {
+        const saved = userPreferences.getSearchTags()
+        if (saved) {
+          setSearchTagsState(saved)
+        }
+      }
+    }
+  }, [])
+
+  const setSearchTags = useCallback((value: string | ((prev: string) => string)) => {
+    setSearchTagsState(prev => {
+      const newValue = typeof value === 'function' ? value(prev) : value
+      userPreferences.setSearchTags(newValue)
+      return newValue
+    })
+  }, [])
   const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
 
   // --- Persistent State ---
@@ -166,6 +190,24 @@ export function useBooruSearch() {
     }, 500)
     return () => clearTimeout(timer)
   }, [searchTags])
+
+  // Sync URL (?tags=...) with the current (debounced) search, without polluting
+  // history or triggering a Next router navigation. The <title> in the JSX
+  // tree (React 19 hoisting) already reflects searchTags instantly, so we
+  // debounce this to avoid a replaceState call on every keystroke.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    const trimmed = debouncedSearchTags.trim()
+    const current = url.searchParams.get('tags') ?? ''
+    if (trimmed === current) return
+    if (trimmed) {
+      url.searchParams.set('tags', trimmed)
+    } else {
+      url.searchParams.delete('tags')
+    }
+    window.history.replaceState(window.history.state, '', url.toString())
+  }, [debouncedSearchTags])
 
   // Reset pagination
   useEffect(() => {

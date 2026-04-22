@@ -1,12 +1,15 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
-import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle } from "lucide-react"
+import React, { useState, useEffect, useCallback, useRef } from "react"
+import { createPortal } from "react-dom"
+import { motion, AnimatePresence } from "framer-motion"
+import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle, Copy, Check } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { parseTagString } from "@/lib/weight-utils"
+import { useToast } from "@/hooks/use-toast"
 
 interface TagData {
   id: string
@@ -63,20 +66,27 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
     setTags(parsed)
   }, [initialPrompt])
 
-  const handleCommit = (id: string, newWeight: number) => {
-    const nextTags = tags.map(t => {
-      if (t.id !== id) return t
-      return { ...t, weight: newWeight }
+  const handleCommit = useCallback((id: string, newWeight: number) => {
+    setTags(prevTags => {
+      const nextTags = prevTags.map(t => {
+        if (t.id !== id) return t
+        return { ...t, weight: newWeight }
+      })
+      onUpdate(buildPrompt(nextTags))
+      if (onWeightChange) {
+        onWeightChange(id.replace(/^tag-\d+-/, ''), newWeight)
+      }
+      return nextTags
     })
+  }, [onUpdate, onWeightChange])
 
-    setTags(nextTags)
-    onUpdate(buildPrompt(nextTags))
+  const handleSearchTag = useCallback((tagText: string) => {
+    onSearch?.(tagText)
+  }, [onSearch])
 
-    // Notify about weight change for specific tag
-    if (onWeightChange) {
-      onWeightChange(id.replace(/^tag-\d+-/, ''), newWeight)
-    }
-  }
+  const handlePromoteTag = useCallback((tagText: string, weight: number) => {
+    onPromoteToGlobal?.(tagText, weight)
+  }, [onPromoteToGlobal])
 
   if (!tags.length && !conflictingTags.length) return <p className="text-foreground/80 leading-relaxed italic">No prompt content</p>
 
@@ -97,9 +107,9 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
                 onCommit={handleCommit}
                 isEditable={isEditable}
                 isGlobal={isGlobal}
-                onPromote={(w) => onPromoteToGlobal?.(tag.text, w)}
+                onPromoteTag={onPromoteToGlobal ? handlePromoteTag : undefined}
                 canPromote={!!onPromoteToGlobal}
-                onSearch={onSearch ? () => onSearch(tag.text) : undefined}
+                onSearchTag={onSearch ? handleSearchTag : undefined}
               />
               {i < tags.length - 1 && <span>, </span>}
             </React.Fragment>
@@ -134,14 +144,51 @@ interface PromptTagProps {
   onCommit: (id: string, weight: number) => void
   isEditable: boolean
   isGlobal: boolean
-  onPromote?: (weight: number) => void
+  onPromoteTag?: (text: string, weight: number) => void
   canPromote?: boolean
-  onSearch?: () => void
+  onSearchTag?: (text: string) => void
 }
 
-const PromptTag = ({ tag, onCommit, isEditable, isGlobal, onPromote, canPromote, onSearch }: PromptTagProps) => {
+const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isGlobal, onPromoteTag, canPromote, onSearchTag }: PromptTagProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [draftWeight, setDraftWeight] = useState(tag.weight)
+  const [justCopied, setJustCopied] = useState(false)
+  const [badgePos, setBadgePos] = useState<{ top: number; left: number } | null>(null)
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const triggerRef = useRef<HTMLSpanElement | null>(null)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+    }
+  }, [])
+
+  const copyTag = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(tag.text)
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect()
+        setBadgePos({
+          top: rect.top,
+          left: rect.left + rect.width / 2,
+        })
+      }
+      setJustCopied(true)
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+      copyTimeoutRef.current = setTimeout(() => setJustCopied(false), 1200)
+      toast({
+        title: "Tag copied",
+        description: tag.text,
+      })
+    } catch {
+      toast({
+        title: "Copy failed",
+        description: "Could not copy tag to clipboard",
+        variant: "destructive",
+      })
+    }
+  }, [tag.text, toast])
 
   // Sync draft weight when tag changes externally
   useEffect(() => {
@@ -197,16 +244,28 @@ const PromptTag = ({ tag, onCommit, isEditable, isGlobal, onPromote, canPromote,
   return (
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <span
+        <motion.span
+          ref={triggerRef}
           role="button"
           tabIndex={0}
           className={cn(
             "cursor-pointer px-0.5 -mx-0.5 rounded transition-colors duration-200 decoration-clone select-text outline-none inline relative border-none bg-transparent font-inherit whitespace-normal text-left break-words",
             textClass,
-            bgClass
+            justCopied ? "!bg-emerald-500/25 ring-1 ring-emerald-500/50" : bgClass
           )}
+          animate={
+            justCopied
+              ? { scale: [1, 1.12, 1] }
+              : { scale: 1 }
+          }
+          transition={{ duration: 0.45, ease: "easeOut" }}
           onClick={(e) => {
             e.stopPropagation()
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            copyTag()
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -216,15 +275,42 @@ const PromptTag = ({ tag, onCommit, isEditable, isGlobal, onPromote, canPromote,
               handleOpenChange(!isOpen)
             }
           }}
-          title={isGlobal ? "Global weight applied" : undefined}
-          aria-label={isGlobal ? `Edit weight for ${tag.text} (Global)` : `Edit weight for ${tag.text}`}
+          title={isGlobal ? "Global weight applied · Right-click to copy" : "Right-click to copy"}
+          aria-label={isGlobal ? `Edit weight for ${tag.text} (Global). Right-click to copy.` : `Edit weight for ${tag.text}. Right-click to copy.`}
         >
           {currentText}
           {isGlobal && (
             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full shadow-sm" />
           )}
-        </span>
+        </motion.span>
       </PopoverTrigger>
+
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {justCopied && badgePos && (
+              <motion.span
+                key="copied-badge"
+                initial={{ opacity: 0, y: 6, scale: 0.85 }}
+                animate={{ opacity: 1, y: -10, scale: 1 }}
+                exit={{ opacity: 0, y: -18, scale: 0.9 }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                style={{
+                  position: "fixed",
+                  top: badgePos.top,
+                  left: badgePos.left,
+                  transform: "translate(-50%, -100%)",
+                }}
+                className="pointer-events-none z-[100] flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow-lg shadow-emerald-500/30 whitespace-nowrap"
+                aria-hidden="true"
+              >
+                <Check className="h-2.5 w-2.5" />
+                Copied
+              </motion.span>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
 
       {isEditable && (
         <PopoverContent
@@ -307,7 +393,7 @@ const PromptTag = ({ tag, onCommit, isEditable, isGlobal, onPromote, canPromote,
                         targetWeight = 1.1
                       }
 
-                      onPromote?.(targetWeight)
+                      onPromoteTag?.(tag.text, targetWeight)
                       setIsOpen(false)
                     }}
                     aria-label={isGlobal ? "Remove global weight" : "Set as global weight"}
@@ -319,26 +405,39 @@ const PromptTag = ({ tag, onCommit, isEditable, isGlobal, onPromote, canPromote,
               )}
             </div>
 
-            {onSearch && (
-              <div className="flex items-center justify-center border-t pt-1 mt-1">
+            <div className="flex flex-col gap-1 border-t pt-1 mt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-full text-xs font-normal text-muted-foreground hover:text-foreground justify-start"
+                onClick={() => {
+                  copyTag()
+                  setIsOpen(false)
+                }}
+              >
+                <Copy className="h-3 w-3 mr-2" />
+                Copy Tag
+              </Button>
+              
+              {onSearchTag && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-full text-xs font-normal text-muted-foreground hover:text-foreground"
+                  className="h-7 w-full text-xs font-normal text-muted-foreground hover:text-foreground justify-start"
                   onClick={() => {
-                    onSearch()
+                    onSearchTag(tag.text)
                     setIsOpen(false)
                   }}
                 >
-                  <Search className="h-3 w-3 mr-1.5" />
+                  <Search className="h-3 w-3 mr-2" />
                   Search Tag
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
 
           </div>
         </PopoverContent>
       )}
     </Popover>
   )
-}
+})
