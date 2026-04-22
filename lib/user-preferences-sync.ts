@@ -36,7 +36,7 @@ export class UserPreferencesSync {
 
       if (data) {
         // Sync each preference to localStorage
-        if (data.search_tags) storage.set(STORAGE_KEYS.SEARCH_TAGS, data.search_tags)
+        // Note: search_tags are explicitly excluded from cloud sync to allow cross-tab independence
         if (data.is_shuffle !== null) storage.set(STORAGE_KEYS.IS_SHUFFLE, data.is_shuffle)
         if (data.smart_tag_exclusion !== null) storage.set(STORAGE_KEYS.SMART_TAG_EXCLUSION, data.smart_tag_exclusion)
         if (data.background_mode) storage.set(STORAGE_KEYS.BACKGROUND_MODE, data.background_mode)
@@ -110,7 +110,6 @@ export class UserPreferencesSync {
    */
   static getLocalPreferences(): Partial<UserPreferencesData> {
     return {
-      search_tags: storage.get(STORAGE_KEYS.SEARCH_TAGS, ''),
       is_shuffle: storage.get(STORAGE_KEYS.IS_SHUFFLE, false),
       smart_tag_exclusion: storage.get(STORAGE_KEYS.SMART_TAG_EXCLUSION, true),
       background_mode: storage.get(STORAGE_KEYS.BACKGROUND_MODE, 'none'),

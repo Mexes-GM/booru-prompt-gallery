@@ -34,6 +34,8 @@ export function usePreferencesSync() {
 
         // Iterate over known keys and merge local storage with cloud
         Object.values(STORAGE_KEYS).forEach(key => {
+          if (key === STORAGE_KEYS.SEARCH_TAGS) return; // Do not sync search tags
+
           const localValue = storage.get<unknown>(key, undefined)
           const cloudValue = cloudPrefs[key]
 
@@ -103,6 +105,8 @@ export function usePreferencesSync() {
         const currentPrefs: Record<string, any> = {}
         let hasData = false
         Object.values(STORAGE_KEYS).forEach(key => {
+          if (key === STORAGE_KEYS.SEARCH_TAGS) return; // Do not sync search tags
+
           const val = storage.get<any>(key, undefined)
           if (val !== undefined) {
             currentPrefs[key] = val
@@ -132,7 +136,7 @@ export function usePreferencesSync() {
       const value = customEvent.detail?.value
 
       // Only sync known keys
-      if (!Object.values(STORAGE_KEYS).includes(key)) return
+      if (!Object.values(STORAGE_KEYS).includes(key) || key === STORAGE_KEYS.SEARCH_TAGS) return
 
       // Debounce the save operation
       clearTimeout(saveTimer)
@@ -146,6 +150,8 @@ export function usePreferencesSync() {
         // Let's gather all current preferences
         const currentPrefs: Record<string, any> = {}
         Object.values(STORAGE_KEYS).forEach(k => {
+          if (k === STORAGE_KEYS.SEARCH_TAGS) return; // Do not sync search tags
+
           const val = storage.get(k, undefined)
           if (val !== undefined) {
             currentPrefs[k] = val

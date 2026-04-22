@@ -266,11 +266,18 @@ export const userPreferences = {
     storage.set(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, tags),
 
   // Search and filter preferences
-  getSearchTags: (): string =>
-    storage.get(STORAGE_KEYS.SEARCH_TAGS, ''),
+  getSearchTags: (): string => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem(STORAGE_KEYS.SEARCH_TAGS) || ''
+    }
+    return ''
+  },
 
-  setSearchTags: (tags: string) =>
-    storage.set(STORAGE_KEYS.SEARCH_TAGS, tags),
+  setSearchTags: (tags: string) => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(STORAGE_KEYS.SEARCH_TAGS, tags)
+    }
+  },
 
   getIsShuffle: (): boolean =>
     storage.get(STORAGE_KEYS.IS_SHUFFLE, false),
