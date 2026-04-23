@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic"
 import { Loader2 } from "lucide-react"
+import { SavedArtistsProvider } from "@/hooks/use-saved-artists"
 
 const PromptGallery = dynamic(
   () => import("@/components/prompt-gallery/prompt-gallery").then((mod) => mod.PromptGallery),
@@ -16,5 +17,9 @@ const PromptGallery = dynamic(
 )
 
 export default function PageClient() {
-  return <PromptGallery />
+  return (
+    <SavedArtistsProvider>
+      <PromptGallery />
+    </SavedArtistsProvider>
+  )
 }

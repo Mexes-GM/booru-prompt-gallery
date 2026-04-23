@@ -20,6 +20,52 @@ export const PROVIDER_POST_URLS = {
   GELBOORU: (id: number | string) => `${PROVIDER_URLS.GELBOORU}/index.php?page=post&s=view&id=${id}`,
 } as const
 
+// Builds an external URL to browse posts tagged with a specific tag on the provider's website
+export function getProviderSearchUrl(provider: string, tag: string): string {
+  const encoded = encodeURIComponent(tag)
+  switch (provider.toLowerCase()) {
+    case 'danbooru':
+      return `${PROVIDER_URLS.DANBOORU}/posts?tags=${encoded}`
+    case 'aibooru':
+      return `${PROVIDER_URLS.AIBOORU}/posts?tags=${encoded}`
+    case 'rule34':
+      return `${PROVIDER_URLS.RULE34_WEB}/index.php?page=post&s=list&tags=${encoded}`
+    case 'e621':
+      return `${PROVIDER_URLS.E621}/posts?tags=${encoded}`
+    case 'gelbooru':
+      return `${PROVIDER_URLS.GELBOORU}/index.php?page=post&s=list&tags=${encoded}`
+    default:
+      return `${PROVIDER_URLS.DANBOORU}/posts?tags=${encoded}`
+  }
+}
+
+// Generic artist tags that aren't useful to save as specific artists
+const GENERIC_ARTIST_TAGS = new Set([
+  'unknown_artist',
+  'artist_request',
+  'anonymous',
+  'anonymous_artist',
+  'third-party_edit',
+  'third_party_edit',
+  'artist_name',
+  'banned_artist',
+])
+
+// Splits a provider's artist tag string into individual tags, filtering out empty/generic ones
+export function parseArtistTags(tagStringArtist: string | null | undefined): string[] {
+  if (!tagStringArtist) return []
+  return tagStringArtist
+    .split(/\s+/)
+    .map(t => t.trim())
+    .filter(Boolean)
+    .filter(t => !GENERIC_ARTIST_TAGS.has(t.toLowerCase()))
+}
+
+export function isValidArtistTag(tag: string): boolean {
+  if (!tag || !tag.trim()) return false
+  return !GENERIC_ARTIST_TAGS.has(tag.trim().toLowerCase())
+}
+
 // Provider referer URLs (for API requests)
 export const PROVIDER_REFERERS: Record<string, string> = {
   DANBOORU: `${PROVIDER_URLS.DANBOORU}/`,

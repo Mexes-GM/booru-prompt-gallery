@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { SaveFavoriteButton } from "./save-favorite-button"
+import { SaveArtistButton } from "./save-artist-button"
 import { FavoriteFolder } from "@/hooks/use-booru-favorites"
 import { trackExternalLink } from "@/lib/analytics"
 import { toast } from "@/hooks/use-toast"
@@ -190,7 +191,7 @@ export const MasonryItem = memo(function MasonryItem({
     globalWeights = {},
     isGlobalWeightsEnabled = false,
     onGlobalWeightChange,
-    onSearch
+    onSearch,
 }: MasonryItemProps) {
     const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
     const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
@@ -586,6 +587,11 @@ export const MasonryItem = memo(function MasonryItem({
                             onToggleFavorite={handleToggleFavorite}
                             onCreateFolder={createFolder}
                         />
+                        <SaveArtistButton
+                            post={post}
+                            booruProvider={itemProvider}
+                            size={effectiveScale === "small" ? "sm" : "md"}
+                        />
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -768,13 +774,18 @@ export const MasonryItem = memo(function MasonryItem({
                                 </motion.div>
                             </div>
                         )}
-                        <div className="absolute top-1 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute top-1 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                             <SaveFavoriteButton
                                 folders={folders}
                                 selectedFolderIds={currentFolderIds}
                                 isFavorited={isFavorited}
                                 onToggleFavorite={handleToggleFavorite}
                                 onCreateFolder={createFolder}
+                            />
+                            <SaveArtistButton
+                                post={post}
+                                booruProvider={itemProvider}
+                                size="sm"
                             />
                         </div>
                         <Image
@@ -816,6 +827,11 @@ export const MasonryItem = memo(function MasonryItem({
                                     isFavorited={isFavorited}
                                     onToggleFavorite={handleToggleFavorite}
                                     onCreateFolder={createFolder}
+                                />
+                                <SaveArtistButton
+                                    post={post}
+                                    booruProvider={itemProvider}
+                                    size="md"
                                 />
                                 <Tooltip>
                                     <TooltipTrigger asChild>

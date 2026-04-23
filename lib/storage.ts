@@ -70,7 +70,9 @@ export const STORAGE_KEYS = {
   // Search and filter preferences
   SEARCH_TAGS: 'search-tags',
   IS_SHUFFLE: 'is-shuffle',
-  HAS_PROMPT_FILTER: 'has-prompt-filter'
+  HAS_PROMPT_FILTER: 'has-prompt-filter',
+  // Saved Artists (local fallback when not authenticated)
+  SAVED_ARTISTS: 'booru-saved-artists'
 } as const
 
 export interface HistoryItem {
@@ -289,5 +291,41 @@ export const userPreferences = {
     storage.get(STORAGE_KEYS.HAS_PROMPT_FILTER, false),
 
   setHasPromptFilter: (hasPrompt: boolean) =>
-    storage.set(STORAGE_KEYS.HAS_PROMPT_FILTER, hasPrompt)
+    storage.set(STORAGE_KEYS.HAS_PROMPT_FILTER, hasPrompt),
+
+  // Saved Artists (local fallback when not authenticated)
+  getSavedArtists: (): SavedArtist[] =>
+    storage.get<SavedArtist[]>(STORAGE_KEYS.SAVED_ARTISTS, []),
+
+  setSavedArtists: (artists: SavedArtist[]) =>
+    storage.set(STORAGE_KEYS.SAVED_ARTISTS, artists),
+
+  addSavedArtist: (artist: Omit<SavedArtist, 'timestamp'>): SavedArtist[] => {
+    const current = storage.get<SavedArtist[]>(STORAGE_KEYS.SAVED_ARTISTS, [])
+    // Dedupe by (provider, artistTag)
+    const exists = current.some(a => a.provider === artist.provider && a.artistTag === artist.artistTag)
+    if (exists) return current
+    const newArtist: SavedArtist = { ...artist, timestamp: Date.now() }
+    const updated = [newArtist, ...current]
+    storage.set(STORAGE_KEYS.SAVED_ARTISTS, updated)
+    return updated
+  },
+
+  removeSavedArtist: (provider: string, artistTag: string): SavedArtist[] => {
+    const current = storage.get<SavedArtist[]>(STORAGE_KEYS.SAVED_ARTISTS, [])
+    const updated = current.filter(a => !(a.provider === provider && a.artistTag === artistTag))
+    storage.set(STORAGE_KEYS.SAVED_ARTISTS, updated)
+    return updated
+  },
+
+  clearSavedArtists: () =>
+    storage.remove(STORAGE_KEYS.SAVED_ARTISTS)
+}
+
+export interface SavedArtist {
+  provider: string
+  artistTag: string
+  thumbnailUrl: string | null
+  thumbnailPostId: number | null
+  timestamp: number
 }

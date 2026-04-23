@@ -114,7 +114,10 @@ import { SOCIAL_URLS } from '@/lib/constants'
 import { MasonryGrid } from "@/components/masonry-grid"
 import { useBooruSearch } from "@/hooks/use-booru-search"
 import { useBooruFavorites } from "@/hooks/use-booru-favorites"
+import { useSavedArtists } from "@/hooks/use-saved-artists"
+import { cn } from "@/lib/utils"
 import { MasonryItem } from "./masonry-item"
+import { ArtistGrid } from "./artist-card"
 import { useBlacklist } from "@/hooks/use-blacklist"
 import { BlacklistManager } from "@/components/prompt-gallery/blacklist-manager"
 import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
@@ -152,6 +155,7 @@ export function PromptGallery() {
   const search = useBooruSearch()
   const { blacklist, addTag, removeTag, resetBlacklist } = useBlacklist()
   const favs = useBooruFavorites(search.booruProvider)
+  const savedArtists = useSavedArtists()
   const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
   const isMobile = useIsMobile()
@@ -179,8 +183,16 @@ export function PromptGallery() {
   // Slider state needs to stay in sync with persisted cardScale
   const [scaleValue, setScaleValue] = useState([2])
 
-  // Folder filter state
-  const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null | 'all'>('all')
+  // Folder filter state ('artists' is a reserved virtual folder for saved artists)
+  const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null | 'all' | 'artists'>('all')
+
+  // Reset folder filter when exiting favorites view so it doesn't linger and hide
+  // the search grid (e.g. 'artists' tab would suppress masonry render on exit).
+  useEffect(() => {
+    if (!favs.showFavorites && activeFavoriteFolder !== 'all') {
+      setActiveFavoriteFolder('all')
+    }
+  }, [favs.showFavorites, activeFavoriteFolder])
 
   // Sync slider when cardScale changes (e.g. loaded from storage)
   useEffect(() => {
@@ -570,6 +582,7 @@ export function PromptGallery() {
     if (favs.showFavorites) {
       source = favs.favoritePosts || []
       if (activeFavoriteFolder !== 'all') {
+        if (activeFavoriteFolder === 'artists') return []
         source = source.filter(post => {
           const itemProvider = post._provider || search.booruProvider
           const uniqueKey = `${itemProvider}:${post.id}`
@@ -1896,16 +1909,21 @@ export function PromptGallery() {
                         }).length;
 
                         return [
-                          { id: 'all', name: 'All Favorites', count: allCount, icon: null },
-                          { id: null, name: 'Uncategorized', count: uncategorizedCount, icon: 'Folder' },
+                          { id: 'all', name: 'All Favorites', count: allCount, icon: null, isArtists: false },
+                          // Reserved virtual folder for saved artists — always pinned
+                          // right after "All Favorites" for discoverability.
+                          { id: 'artists', name: 'Artists', count: savedArtists.savedArtists.length, icon: 'Palette', isArtists: true },
+                          { id: null, name: 'Uncategorized', count: uncategorizedCount, icon: 'Folder', isArtists: false },
                           ...favs.folders.map(f => ({
-                            id: f.id,
+                            id: f.id as string | null | 'all' | 'artists',
                             name: f.name,
                             count: loadedPosts.filter(post => getPostFolders(post).includes(f.id)).length,
-                            icon: f.icon
+                            icon: f.icon,
+                            isArtists: false,
                           }))
                         ].map((tab, i) => {
                           const isActive = activeFavoriteFolder === tab.id;
+                          const isArtistsTab = tab.isArtists;
                           return (
                             <motion.button
                               key={String(tab.id)}
@@ -1915,20 +1933,35 @@ export function PromptGallery() {
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => setActiveFavoriteFolder(tab.id as any)}
-                              className={`relative px-4 py-1.5 rounded-full text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 flex items-center gap-2 ${isActive ? "text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-secondary/50 hover:bg-secondary border border-border/50"}`}
+                              className={cn(
+                                "relative px-4 py-1.5 rounded-full text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 flex items-center gap-2",
+                                isActive
+                                  ? "text-primary-foreground shadow-sm"
+                                  : isArtistsTab
+                                    ? "text-purple-700 dark:text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/40 ring-1 ring-purple-500/20 shadow-[0_0_10px_rgba(168,85,247,0.15)]"
+                                    : "text-muted-foreground hover:text-foreground bg-secondary/50 hover:bg-secondary border border-border/50",
+                              )}
                             >
                               {isActive && (
                                 <motion.div
                                   layoutId="activeFavoriteFolderBubble"
-                                  className="absolute inset-0 bg-red-500 rounded-full shadow-sm"
+                                  className={cn(
+                                    "absolute inset-0 rounded-full shadow-sm",
+                                    isArtistsTab
+                                      ? "bg-gradient-to-r from-purple-500 to-fuchsia-500 shadow-[0_0_16px_rgba(168,85,247,0.45)]"
+                                      : "bg-red-500",
+                                  )}
                                   transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                                 />
                               )}
                               <span className="relative z-10 flex items-center gap-2">
-                                {tab.icon && renderIcon(tab.icon, { className: `w-3.5 h-3.5 ${isActive ? "text-primary-foreground" : "opacity-80"}` })}
+                                {tab.icon && renderIcon(tab.icon, { className: `w-3.5 h-3.5 ${isActive ? "text-primary-foreground" : isArtistsTab ? "text-purple-500" : "opacity-80"}` })}
                                 <span>{tab.name}</span>
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isActive ? "bg-black/20" : "bg-background/80"}`}>{tab.count}</span>
-                                {tab.id !== 'all' && tab.id !== null && (
+                                <span className={cn(
+                                  "text-[10px] px-1.5 py-0.5 rounded-full font-mono",
+                                  isActive ? "bg-black/20" : isArtistsTab ? "bg-purple-500/15 text-purple-700 dark:text-purple-200" : "bg-background/80",
+                                )}>{tab.count}</span>
+                                {tab.id !== 'all' && tab.id !== null && tab.id !== 'artists' && (
                                   <span
                                     role="button"
                                     tabIndex={0}
@@ -1963,7 +1996,31 @@ export function PromptGallery() {
             )}
           </AnimatePresence>
 
-          {filteredPosts.length > 0 && (
+          {favs.showFavorites && activeFavoriteFolder === 'artists' && (
+            <div className="mb-8 min-h-[500px] mt-4">
+              <ArtistGrid
+                artists={savedArtists.savedArtists}
+                onSearch={(tag, provider) => {
+                  // Switch to the provider the artist was originally saved from
+                  // so results come from the correct source.
+                  if (provider) {
+                    const normalized = provider.toLowerCase() as BooruProvider
+                    if (normalized !== search.booruProvider) {
+                      search.setBooruProvider(normalized)
+                      trackProviderChange(normalized)
+                    }
+                  }
+                  search.setSearchTags(tag)
+                  // Exit favorites view so the user sees the fresh search results
+                  if (favs.showFavorites) favs.toggleShowFavorites()
+                  setActiveFavoriteFolder('all')
+                }}
+                onRemove={savedArtists.removeArtist}
+              />
+            </div>
+          )}
+
+          {filteredPosts.length > 0 && activeFavoriteFolder !== 'artists' && (
             viewMode === "grid" ? (
               <div className="mb-8 min-h-[500px]">
                 <MasonryGrid
@@ -2025,7 +2082,7 @@ export function PromptGallery() {
           )}
 
           {/* Load More / States */}
-          {filteredPosts.length > 0 && !favs.showFavorites && (
+          {filteredPosts.length > 0 && !favs.showFavorites && activeFavoriteFolder !== 'artists' && (
             <div className="text-center pb-8">
               {!search.loadMoreError ? (
                 <InfiniteScrollTrigger
@@ -2057,14 +2114,14 @@ export function PromptGallery() {
           )}
 
           {/* Loading / Empty States */}
-          {((search.isLoading && filteredPosts.length === 0 && !favs.showFavorites) || (favs.showFavorites && favs.isLoading)) && (
+          {((search.isLoading && filteredPosts.length === 0 && !favs.showFavorites) || (favs.showFavorites && favs.isLoading && activeFavoriteFolder !== 'artists')) && (
             <div className="text-center py-12">
               <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
               <p className="mt-4">Loading...</p>
             </div>
           )}
 
-          {!search.isLoading && !favs.isLoading && filteredPosts.length === 0 && (
+          {!search.isLoading && !favs.isLoading && filteredPosts.length === 0 && activeFavoriteFolder !== 'artists' && (
             <>
               {favs.showFavorites ? (
                 <div className="text-center py-12 px-4">
