@@ -48,6 +48,7 @@ import { TeachWelcomeModal } from "@/components/teach-welcome-modal"
 import { getAllTagOverrides } from "@/app/actions/tags"
 
 import { VersionDisplay } from "@/components/version-display"
+import versionInfo from "@/version.json"
 import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -295,6 +296,25 @@ export function PromptGallery() {
   const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
   const [weightsLoaded, setWeightsLoaded] = useState(false)
   const [isReverseParserModalOpen, setIsReverseParserModalOpen] = useState(false)
+
+  // Announcements Panel state: auto-expand on new version
+  const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(true)
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('announcements_state')
+      const parsed = raw ? JSON.parse(raw) : null
+      if (parsed && parsed.version === versionInfo.version) {
+        setIsAnnouncementsOpen(!parsed.collapsed)
+      } else {
+        setIsAnnouncementsOpen(true)
+        localStorage.setItem('announcements_state', JSON.stringify({ collapsed: false, version: versionInfo.version }))
+      }
+    } catch {
+      setIsAnnouncementsOpen(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Merge Mode Hook
   const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags)
@@ -977,6 +997,82 @@ export function PromptGallery() {
                     Support me on Ko-fi
                   </a>
                 </div>
+
+                {/* Announcements Panel */}
+                {isAnnouncementsOpen && (
+                <Card className="mt-4 glass-effect overflow-hidden min-w-[280px] mx-auto">
+                  <CardContent className="p-3.5">
+                    <div className="relative flex items-center justify-center gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10">
+                          <Sparkles className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-foreground tracking-tight">Update Notes: v{versionInfo.version}</h3>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setIsAnnouncementsOpen(false)
+                          localStorage.setItem('announcements_state', JSON.stringify({ collapsed: true, version: versionInfo.version }))
+                        }}
+                        className="absolute right-0 h-7 w-7 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                        aria-label="Dismiss update notes"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="space-y-0">
+                      {/* Item 1: Parallel Tabs */}
+                      <div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Parallel Tabs</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Feature</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          Added the ability to have multiple tabs in parallel with different searches. The Search Tag menu now opens in a new tab instead of replacing the current search.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 2: Quick Tag Copy */}
+                      <div className="border-l-2 border-indigo-500 bg-indigo-500/5 hover:bg-indigo-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Quick Tag Copy</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20">Feature</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          Added the ability to quickly copy tags from prompts by right-clicking on them. A dedicated Copy Tag button was also added to the tag menu for one-click copying.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 3: Save Artists to Favorites */}
+                      <div className="border-l-2 border-purple-500 bg-purple-500/5 hover:bg-purple-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Save Artists to Favorites</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-purple-500/15 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20">Feature</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          When hovering over a card, a new button allows you to save the artist. They appear in My Favs inside a dedicated folder where you can search or navigate to their page.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 4: Minor Fixes */}
+                      <div className="border-l-2 border-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Minor Fixes</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">Fix</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          Fixed a bug where deleting a favorites card and then deleting another one caused the previously deleted card to reappear unexpectedly.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                )}
               </div>
             </div>
 
