@@ -77,6 +77,12 @@ Sentry.init({
     "chrome-extension://",
     "moz-extension://",
     "safari-extension://",
+    // DOM manipulation errors (caused by browser extensions/translators)
+    "Failed to execute 'removeChild' on 'Node'",
+    "Failed to execute 'insertBefore' on 'Node'",
+    "Failed to execute 'appendChild' on 'Node'",
+    "The node to be removed is not a child of this node",
+    "The node before which the new node is to be inserted is not a child of this node",
   ],
   beforeSend(event) {
     // Ignore events originating from file:// or chrome-extension:// protocols
@@ -87,22 +93,35 @@ Sentry.init({
     if (stacktrace?.frames?.some((frame) => frame.filename?.startsWith("file://"))) {
       return null;
     }
-    
+
+    // Ignore DOM manipulation errors (caused by browser extensions/translators)
+    const errorMessage = event.exception?.values?.[0]?.value || "";
+    const isDOMManipulationError =
+      errorMessage.includes("removeChild") ||
+      errorMessage.includes("insertBefore") ||
+      errorMessage.includes("appendChild") ||
+      errorMessage.includes("The node to be removed is not a child") ||
+      errorMessage.includes("The node before which the new node is to be inserted is not a child");
+
+    if (isDOMManipulationError) {
+      return null;
+    }
+
     // Scrub sensitive data from URLs
     if (event.request?.url) {
       event.request.url = scrubSensitiveData(event.request.url);
     }
-    
+
     // Scrub query strings
     if (event.request?.query_string) {
       event.request.query_string = '***';
     }
-    
+
     // Scrub cookies
     if (event.request?.cookies) {
       event.request.cookies = '***';
     }
-    
+
     // Scrub headers (Authorization, Cookie, etc.)
     if (event.request?.headers) {
       const headersToScrub = ['authorization', 'cookie', 'x-api-key', 'x-auth-token'];
@@ -112,13 +131,13 @@ Sentry.init({
         }
       }
     }
-    
+
     // Tag as browser runtime for easier filtering
     if (!event.tags) {
       event.tags = {};
     }
     event.tags.runtime = 'browser';
-    
+
     return event;
   },
 });

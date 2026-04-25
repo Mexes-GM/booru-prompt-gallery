@@ -16,10 +16,12 @@ import { LoginDialog } from "./login-dialog"
 import { LogOut, User as UserIcon, RefreshCw } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { motion } from "framer-motion"
+import { createClient } from "@/lib/supabase/client"
 
 export function UserNav() {
-  const { user, loading, supabase } = useUser()
+  const { user, loading } = useUser()
   const router = useRouter()
+  const supabase = createClient()
 
   if (loading) {
     return <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />

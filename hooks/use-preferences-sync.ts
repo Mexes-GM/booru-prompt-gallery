@@ -1,6 +1,7 @@
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import { useUser } from "@/hooks/use-user"
 import { storage, STORAGE_KEYS, STORAGE_EVENT_NAME } from "@/lib/storage"
+import { createClient } from "@/lib/supabase/client"
 
 /**
  * Hook to sync local preferences with Supabase cloud storage.
@@ -9,18 +10,23 @@ import { storage, STORAGE_KEYS, STORAGE_EVENT_NAME } from "@/lib/storage"
  * 2. PUSH: Listens for local storage changes and updates Supabase.
  */
 export function usePreferencesSync() {
-  const { user, supabase } = useUser()
+  const { user } = useUser()
+  const supabase = useMemo(() => createClient(), [])
 
   // 1. PULL from Supabase on login
   useEffect(() => {
     if (!user) return
 
+    let isSubscribed = true
+
     async function loadCloudPreferences() {
       const { data, error } = await supabase
         .from('profiles')
         .select('preferences')
-        .eq('id', user!.id) // Non-null assertion safe because of check above
+        .eq('id', user!.id)
         .maybeSingle()
+
+      if (!isSubscribed) return
 
       if (error) {
         console.error("Failed to load cloud preferences:", error.message || error, error.details || "")
@@ -32,9 +38,8 @@ export function usePreferencesSync() {
         let needsCloudUpdate = false
         const currentPrefs: Record<string, unknown> = {}
 
-        // Iterate over known keys and merge local storage with cloud
         Object.values(STORAGE_KEYS).forEach(key => {
-          if (key === STORAGE_KEYS.SEARCH_TAGS) return; // Do not sync search tags
+          if (key === STORAGE_KEYS.SEARCH_TAGS) return
 
           const localValue = storage.get<unknown>(key, undefined)
           const cloudValue = cloudPrefs[key]
@@ -55,12 +60,10 @@ export function usePreferencesSync() {
             mergedValue = localValue
             needsCloudUpdate = true
           } else if (!isCloudEmpty && !isLocalEmpty) {
-            // Both have data
             if (Array.isArray(cloudValue) && Array.isArray(localValue)) {
               if (typeof cloudValue[0] === 'string' || typeof localValue[0] === 'string') {
                 mergedValue = Array.from(new Set([...cloudValue, ...localValue]))
               } else {
-                // array of objects with id
                  const map = new Map()
                  for (const item of cloudValue) if (item && item.id) map.set(item.id, item)
                  for (const item of localValue) if (item && item.id && !map.has(item.id)) map.set(item.id, item)
@@ -82,7 +85,6 @@ export function usePreferencesSync() {
                 needsCloudUpdate = true
               }
             } else {
-              // Primitive values, cloud wins
               mergedValue = cloudValue
             }
           }
@@ -91,21 +93,19 @@ export function usePreferencesSync() {
             currentPrefs[key] = mergedValue
           }
 
-          // Update local if different
           if (mergedValue !== undefined && JSON.stringify(localValue) !== JSON.stringify(mergedValue)) {
             storage.set(key, mergedValue)
           }
         })
 
-        if (needsCloudUpdate) {
+        if (needsCloudUpdate && isSubscribed) {
           supabase.from('profiles').update({ preferences: currentPrefs }).eq('id', user!.id).then()
         }
       } else {
-        // Cloud has no preferences, push local preferences
         const currentPrefs: Record<string, any> = {}
         let hasData = false
         Object.values(STORAGE_KEYS).forEach(key => {
-          if (key === STORAGE_KEYS.SEARCH_TAGS) return; // Do not sync search tags
+          if (key === STORAGE_KEYS.SEARCH_TAGS) return
 
           const val = storage.get<any>(key, undefined)
           if (val !== undefined) {
@@ -114,43 +114,42 @@ export function usePreferencesSync() {
           }
         })
 
-        if (hasData) {
+        if (hasData && isSubscribed) {
           supabase.from('profiles').update({ preferences: currentPrefs }).eq('id', user!.id).then()
         }
       }
     }
 
     loadCloudPreferences()
+
+    return () => {
+      isSubscribed = false
+    }
   }, [user, supabase])
 
   // 2. PUSH to Supabase on local change
   useEffect(() => {
     if (!user) return
 
-    // Debounce timer for saving
     let saveTimer: NodeJS.Timeout
+    let isSubscribed = true
 
     const handleStorageChange = (e: Event) => {
+      if (!isSubscribed) return
+
       const customEvent = e as CustomEvent
       const key = customEvent.detail?.key
       const value = customEvent.detail?.value
 
-      // Only sync known keys
       if (!Object.values(STORAGE_KEYS).includes(key) || key === STORAGE_KEYS.SEARCH_TAGS) return
 
-      // Debounce the save operation
       clearTimeout(saveTimer)
       saveTimer = setTimeout(async () => {
-        // Re-read all keys to save a snapshot
-        // Or better, just update the changed key?
-        // The `preferences` column is JSONB. We can merge.
-        // However, Supabase updates usually replace the column unless we use a custom function or JSONb set logic.
-        // But doing a full JSON update is safer to keep everything in sync.
+        if (!isSubscribed) return
 
-        // Let's gather all current preferences
         const currentPrefs: Record<string, any> = {}
         Object.values(STORAGE_KEYS).forEach(k => {
-          if (k === STORAGE_KEYS.SEARCH_TAGS) return; // Do not sync search tags
+          if (k === STORAGE_KEYS.SEARCH_TAGS) return
 
           const val = storage.get(k, undefined)
           if (val !== undefined) {
@@ -158,7 +157,6 @@ export function usePreferencesSync() {
           }
         })
 
-        // Update Supabase
         const { error } = await supabase
           .from('profiles')
           .update({ preferences: currentPrefs })
@@ -167,12 +165,13 @@ export function usePreferencesSync() {
         if (error) {
           console.error("Failed to save preferences to cloud:", error.message || error, error.details || "")
         }
-      }, 2000) // 2 second debounce
+      }, 2000)
     }
 
     window.addEventListener(STORAGE_EVENT_NAME, handleStorageChange)
 
     return () => {
+      isSubscribed = false
       window.removeEventListener(STORAGE_EVENT_NAME, handleStorageChange)
       clearTimeout(saveTimer)
     }
