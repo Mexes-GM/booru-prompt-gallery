@@ -1035,14 +1035,14 @@ export function PromptGallery() {
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
 
-                      {/* Item 2: Authentication Improvements */}
+                      {/* Item 2: Login Improvements */}
                       <div className="border-l-2 border-orange-500 bg-orange-500/5 hover:bg-orange-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Authentication Improvements</p>
+                          <p className="text-xs font-semibold text-foreground leading-snug">Login Improvements</p>
                           <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-orange-500/15 text-orange-600 dark:text-orange-400 hover:bg-orange-500/20">Fix</Badge>
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          Added some improvements to the authentication system for better error handling and user feedback.
+                          Added some improvements to the login system for better error handling and user feedback.
                         </p>
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
