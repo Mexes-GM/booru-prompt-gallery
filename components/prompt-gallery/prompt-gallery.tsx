@@ -1023,10 +1023,10 @@ export function PromptGallery() {
                       </Button>
                     </div>
                     <div className="space-y-0">
-                      {/* Item 1: Danbooru Images Fix */}
+                      {/* Item 1: Danbooru images fix */}
                       <div className="border-l-2 border-red-500 bg-red-500/5 hover:bg-red-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Danbooru Images Fix</p>
+                          <p className="text-xs font-semibold text-foreground leading-snug">Danbooru images fix</p>
                           <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/20">Fix</Badge>
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
