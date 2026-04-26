@@ -478,7 +478,15 @@ const MergeStickyFooterComponent = ({
                                                 className="relative group w-16 h-24 flex-shrink-0 rounded-md overflow-hidden bg-muted border ring-offset-background transition-all hover:ring-2 hover:ring-primary/50"
                                             >
                                                 <Image
-                                                    src={post.preview_file_url || post.file_url}
+                                                    src={(() => {
+                                                        const rawUrl = post.preview_file_url || post.file_url
+                                                        const provider = post._provider || 'danbooru'
+                                                        // Use proxy for Danbooru to avoid 403 errors in production
+                                                        if (provider === 'danbooru' && rawUrl) {
+                                                            return `/api/image-proxy?url=${encodeURIComponent(rawUrl)}`
+                                                        }
+                                                        return rawUrl
+                                                    })()}
                                                     alt={`Selected post ${post.id}`}
                                                     fill
                                                     className="object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-300"

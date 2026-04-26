@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PROVIDER_REFERERS } from '@/lib/constants'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 const ALLOWED_DOMAINS = [
     'gelbooru.com',
     'img1.gelbooru.com',
     'img2.gelbooru.com',
     'img3.gelbooru.com',
+    'danbooru.donmai.us',
+    'cdn.donmai.us',
 ]
 
 export async function GET(request: NextRequest) {
@@ -30,10 +32,27 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        const fetchHeaders = {
-            'Referer': PROVIDER_REFERERS.GELBOORU,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        const fetchHeaders: HeadersInit = {
+            'User-Agent': 'BooruPromptGallery/1.0',
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        }
+
+        // Add Danbooru authentication if credentials are available
+        if (parsedUrl.hostname.includes('danbooru') || parsedUrl.hostname.includes('donmai.us')) {
+            const username = process.env.DANBOORU_USERNAME
+            const apiKey = process.env.DANBOORU_API_KEY
+
+            if (username && apiKey) {
+                // HTTP Basic Auth: base64(username:api_key)
+                const credentials = Buffer.from(`${username}:${apiKey}`).toString('base64')
+                fetchHeaders['Authorization'] = `Basic ${credentials}`
+            }
+
+            // Use Danbooru's own referer to bypass hotlink protection
+            fetchHeaders['Referer'] = 'https://danbooru.donmai.us/'
+        } else {
+            // Add referer for other providers
+            fetchHeaders['Referer'] = PROVIDER_REFERERS.GELBOORU
         }
 
         let response = await fetch(url, { headers: fetchHeaders, redirect: 'follow' })

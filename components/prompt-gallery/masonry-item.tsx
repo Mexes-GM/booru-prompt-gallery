@@ -367,14 +367,18 @@ export const MasonryItem = memo(function MasonryItem({
     // Optimization: Use preview image for small cards to save bandwidth/CPU
     // For Gelbooru: ALWAYS use thumbnail — it loads directly without proxy,
     // avoiding all origin transfer. Full images (img*.gelbooru.com) have hotlink protection.
+    // For Danbooru: Use proxy for all images to avoid 403 errors in production
     const isGelbooru = itemProvider === 'gelbooru'
+    const isDanbooru = itemProvider === 'danbooru'
     const usePreview = isGelbooru
         ? !!post.preview_file_url
         : (effectiveScale === 'small' && post.preview_file_url)
     const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
 
-    // Only proxy Gelbooru full images if no thumbnail available (rare fallback)
-    const needsProxy = isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')
+    // Proxy for Gelbooru full images if no thumbnail available (rare fallback)
+    // Proxy for ALL Danbooru images to avoid 403 errors in production
+    const needsProxy = (isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')) ||
+                       (isDanbooru && rawFileUrl)
     const fileUrl = needsProxy
         ? `/api/image-proxy?url=${encodeURIComponent(rawFileUrl!)}`
         : rawFileUrl

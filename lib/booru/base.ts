@@ -18,12 +18,27 @@ export abstract class BaseBooruProvider implements IBooruProvider {
     const finalUrl = new URL(url)
     finalUrl.search = params.toString()
 
+    const requestHeaders: HeadersInit = {
+      'Accept': 'application/json',
+      'User-Agent': 'BooruPromptGallery/1.0',
+      ...headers
+    }
+
+    // Add Danbooru authentication if credentials are available
+    if (url.includes('danbooru.donmai.us')) {
+      const username = process.env.DANBOORU_USERNAME
+      const apiKey = process.env.DANBOORU_API_KEY
+
+      if (username && apiKey) {
+        // HTTP Basic Auth: base64(username:api_key)
+        // Use btoa for Edge Runtime compatibility
+        const credentials = btoa(`${username}:${apiKey}`)
+        requestHeaders['Authorization'] = `Basic ${credentials}`
+      }
+    }
+
     const response = await smartFetch(finalUrl.toString(), {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'BooruPromptGallery/1.0',
-        ...headers
-      },
+      headers: requestHeaders,
       retries: 2,
       timeout: 12000 // 12s timeout
     })
