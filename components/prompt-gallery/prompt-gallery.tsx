@@ -1023,7 +1023,31 @@ export function PromptGallery() {
                       </Button>
                     </div>
                     <div className="space-y-0">
-                      {/* Item 1: Parallel Tabs */}
+                      {/* Item 1: Danbooru Images Fix */}
+                      <div className="border-l-2 border-red-500 bg-red-500/5 hover:bg-red-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Danbooru Images Fix</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/20">Fix</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          Fixed an issue where Danbooru images weren't loading correctly. Now all images should display properly.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 2: Authentication Improvements */}
+                      <div className="border-l-2 border-orange-500 bg-orange-500/5 hover:bg-orange-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Authentication Improvements</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-orange-500/15 text-orange-600 dark:text-orange-400 hover:bg-orange-500/20">Fix</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          Added some improvements to the authentication system for better error handling and user feedback.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 3: Parallel Tabs */}
                       <div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
                           <p className="text-xs font-semibold text-foreground leading-snug">Parallel Tabs</p>
@@ -1035,7 +1059,7 @@ export function PromptGallery() {
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
 
-                      {/* Item 2: Quick Tag Copy */}
+                      {/* Item 4: Quick Tag Copy */}
                       <div className="border-l-2 border-indigo-500 bg-indigo-500/5 hover:bg-indigo-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
                           <p className="text-xs font-semibold text-foreground leading-snug">Quick Tag Copy</p>
@@ -1047,7 +1071,7 @@ export function PromptGallery() {
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
 
-                      {/* Item 3: Save Artists to Favorites */}
+                      {/* Item 5: Save Artists to Favorites */}
                       <div className="border-l-2 border-purple-500 bg-purple-500/5 hover:bg-purple-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
                           <p className="text-xs font-semibold text-foreground leading-snug">Save Artists to Favorites</p>
@@ -1055,18 +1079,6 @@ export function PromptGallery() {
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
                           When hovering over a card, a new button allows you to save the artist. They appear in My Favs inside a dedicated folder where you can search or navigate to their page.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 4: Minor Fixes */}
-                      <div className="border-l-2 border-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Minor Fixes</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">Fix</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          Fixed a bug where deleting a favorites card and then deleting another one caused the previously deleted card to reappear unexpectedly.
                         </p>
                       </div>
                     </div>
