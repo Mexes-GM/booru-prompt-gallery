@@ -1030,7 +1030,7 @@ export function PromptGallery() {
                           <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/20">Fix</Badge>
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          Fixed an issue where Danbooru images weren't loading correctly. Now all images should display properly.
+                          Fixed an issue where Danbooru images were not loading correctly. Now all images should display properly.
                         </p>
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
