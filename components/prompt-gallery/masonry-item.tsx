@@ -576,6 +576,7 @@ export const MasonryItem = memo(function MasonryItem({
                         sizes={`${width}px`}
                         priority={false}
                         unoptimized={isGelbooru}
+                        referrerPolicy="no-referrer"
                         onError={isDanbooru && !danbooruImageFailed ? () => setDanbooruImageFailed(true) : undefined}
                     />
 
@@ -810,6 +811,7 @@ export const MasonryItem = memo(function MasonryItem({
                             fill
                             className="object-cover"
                             sizes="128px"
+                            referrerPolicy="no-referrer"
                             onError={isDanbooru && !danbooruImageFailed ? () => setDanbooruImageFailed(true) : undefined}
                         />
                         

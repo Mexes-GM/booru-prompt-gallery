@@ -497,6 +497,7 @@ const MergeStickyFooterComponent = ({
                                                     fill
                                                     className="object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-300"
                                                     unoptimized
+                                                    referrerPolicy="no-referrer"
                                                     onError={(() => {
                                                         const provider = post._provider || 'danbooru'
                                                         if (provider === 'danbooru' && !failedDanbooruImages[post.id]) {
