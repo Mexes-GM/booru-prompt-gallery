@@ -570,7 +570,6 @@ export const MasonryItem = memo(function MasonryItem({
                         className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
                         sizes={`${width}px`}
                         priority={false}
-                        unoptimized={isGelbooru}
                     />
 
                     {/* Character Tag Count Indicator */}
