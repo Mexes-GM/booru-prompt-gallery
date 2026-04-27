@@ -142,6 +142,7 @@ interface MasonryItemProps {
     removeQualityTags: boolean
     backgroundMode?: BackgroundMode
     simpleBackgroundReplacementTags?: string
+    randomBackgroundPatterns?: boolean
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
@@ -183,6 +184,7 @@ export const MasonryItem = memo(function MasonryItem({
     removeQualityTags,
     backgroundMode,
     simpleBackgroundReplacementTags,
+    randomBackgroundPatterns = false,
     tagOverrides,
     copiedId,
     isPreviouslyCopied,
@@ -227,16 +229,16 @@ export const MasonryItem = memo(function MasonryItem({
                 "",
                 "",
                 "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, metaTags: post.tag_string_meta },
             )
             : cleanPrompt(
                 post.tag_string,
                 post.tag_string_artist,
                 post.tag_string_character,
                 post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, metaTags: post.tag_string_meta },
             )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags])
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns])
 
     const conflictResolution = useMemo(() => {
         if (!pureContent || addList.length === 0 || !smartTagExclusion) return { validTags: addList, conflictingTags: [] };
@@ -252,16 +254,16 @@ export const MasonryItem = memo(function MasonryItem({
                 "",
                 "",
                 "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, metaTags: post.tag_string_meta },
             )
             : cleanPrompt(
                 post.tag_string,
                 post.tag_string_artist,
                 post.tag_string_character,
                 post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, metaTags: post.tag_string_meta },
             )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags])
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns])
 
     const displayContent = useMemo(() => {
         if (isGlobalWeightsEnabled && baseContent) {

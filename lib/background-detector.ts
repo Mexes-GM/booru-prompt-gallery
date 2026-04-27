@@ -1,6 +1,8 @@
-export type BackgroundMode = 'keep' | 'remove_all' | 'force_simple';
+export type BackgroundMode = 'keep' | 'remove_all' | 'force_simple' | 'random';
 
 import { classifyTag } from "./tag-classifier";
+import { BACKGROUND_DICTIONARY } from "./background-dictionary";
+import { extractColorsFromTags, getDominantColor, getCoherentBackgroundColors, getRandomElement } from "./color-theory";
 
 export const SIMPLE_BG_TAGS = new Set([
   "simple background",
@@ -127,23 +129,28 @@ export function analyzeBackground(tags: string[]): BackgroundAnalysis {
   return { type, backgroundTags };
 }
 
+export interface RandomBackgroundOptions {
+  patternsEnabled?: boolean;
+}
+
 export function processBackgroundTags(
   tags: string[],
   mode: BackgroundMode,
   replacementTags: string = "simple background, white background",
-  tagOverrides?: Record<string, string>
+  tagOverrides?: Record<string, string>,
+  randomOptions?: RandomBackgroundOptions
 ): string[] {
   if (mode === 'keep') return tags;
 
   const analysis = analyzeBackground(tags);
 
-  if (analysis.backgroundTags.length === 0 && mode !== 'force_simple' && mode !== 'remove_all') return tags;
+  if (analysis.backgroundTags.length === 0 && mode !== 'force_simple' && mode !== 'remove_all' && mode !== 'random') return tags;
 
   // Filter out the detected background tags
   let newTags = tags.filter(tag => !analysis.backgroundTags.includes(tag));     
 
   // If mode requires removing scenery classifications
-  if (mode === 'remove_all' || mode === 'force_simple') {
+  if (mode === 'remove_all' || mode === 'force_simple' || mode === 'random') {
     newTags = newTags.filter(tag => classifyTag(tag, tagOverrides) !== 'scenery');
   }
 
@@ -152,6 +159,44 @@ export function processBackgroundTags(
     const replTags = replacementTags.split(',').map(t => t.trim()).filter(Boolean);
     // Add replacement tags if they aren't already there
     replTags.forEach(rt => {
+      if (!newTags.some(t => t.toLowerCase() === rt.toLowerCase())) {
+        newTags.push(rt);
+      }
+    });
+  }
+
+  if (mode === 'random') {
+    const generatedTags: string[] = [];
+    
+    // 1. Color Theory Detection
+    const colors = extractColorsFromTags(newTags);
+    const dominantColor = getDominantColor(colors);
+    const coherentColors = getCoherentBackgroundColors(dominantColor);
+    
+    // Pick a random coherent color
+    const pickedColor = getRandomElement(coherentColors);
+    
+    // Always start with a base background tag
+    if (pickedColor) {
+      generatedTags.push(`${pickedColor} background`);
+    } else {
+      generatedTags.push("simple background");
+    }
+
+    // 2. Decide if we add a pattern
+    if (randomOptions?.patternsEnabled && Math.random() > 0.5) {
+      const pattern = getRandomElement(BACKGROUND_DICTIONARY.patterns);
+      if (pattern) generatedTags.push(pattern);
+    } else if (Math.random() > 0.5) {
+      // If no pattern, maybe a medium
+       const medium = getRandomElement(BACKGROUND_DICTIONARY.mediums);
+       if (medium) generatedTags.push(medium);
+    }
+
+    // Ensure we don't exceed 3 tags to keep tokenizer happy
+    const finalGenerated = generatedTags.slice(0, 3);
+    
+    finalGenerated.forEach(rt => {
       if (!newTags.some(t => t.toLowerCase() === rt.toLowerCase())) {
         newTags.push(rt);
       }

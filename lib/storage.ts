@@ -67,6 +67,8 @@ export const STORAGE_KEYS = {
   BACKGROUND_MODE: 'background-mode',
   SIMPLE_BACKGROUND_REPLACEMENT_TAGS: 'simple-background-replacement-tags',
   SMART_TAG_EXCLUSION: 'smart-tag-exclusion',
+  RANDOM_BACKGROUND_PATTERNS: 'random-background-patterns',
+
   // Search and filter preferences
   SEARCH_TAGS: 'search-tags',
   IS_SHUFFLE: 'is-shuffle',
@@ -255,11 +257,17 @@ export const userPreferences = {
   setCardScale: (scale: 'small' | 'medium' | 'large') =>
     storage.set(STORAGE_KEYS.CARD_SCALE, scale),
 
-  getBackgroundMode: (): 'keep' | 'remove_all' | 'force_simple' =>
+  getBackgroundMode: (): 'keep' | 'remove_all' | 'force_simple' | 'random' =>
     storage.get(STORAGE_KEYS.BACKGROUND_MODE, 'keep'),
 
-  setBackgroundMode: (mode: 'keep' | 'remove_all' | 'force_simple') =>
+  setBackgroundMode: (mode: 'keep' | 'remove_all' | 'force_simple' | 'random') =>
     storage.set(STORAGE_KEYS.BACKGROUND_MODE, mode),
+
+  getRandomBackgroundPatterns: (): boolean =>
+    storage.get(STORAGE_KEYS.RANDOM_BACKGROUND_PATTERNS, true),
+
+  setRandomBackgroundPatterns: (enabled: boolean) =>
+    storage.set(STORAGE_KEYS.RANDOM_BACKGROUND_PATTERNS, enabled),
 
   getSimpleBackgroundReplacementTags: (): string =>
     storage.get(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, 'simple background, white background'),

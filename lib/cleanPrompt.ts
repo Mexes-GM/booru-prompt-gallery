@@ -37,6 +37,7 @@ export interface CleanPromptOptions {
   metaTags?: string
   backgroundMode?: BackgroundMode
   simpleBackgroundReplacementTags?: string
+  randomBackgroundPatterns?: boolean
 }
 
 // --------------- Utilities ---------------
@@ -685,7 +686,10 @@ export function cleanPrompt(
       sortedContentTags,
       options.backgroundMode,
       options.simpleBackgroundReplacementTags,
-      options.tagOverrides
+      options.tagOverrides,
+      {
+        patternsEnabled: options.randomBackgroundPatterns
+      }
     )
   }
 

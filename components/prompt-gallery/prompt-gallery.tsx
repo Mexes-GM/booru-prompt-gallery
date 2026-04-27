@@ -241,6 +241,14 @@ export function PromptGallery() {
   )
   const debouncedSimpleBackgroundReplacementTags = useDebounce(simpleBackgroundReplacementTags, 500)
 
+  const [randomBackgroundPatterns, setRandomBackgroundPatterns] = usePersistentState(
+    true,
+    userPreferences.getRandomBackgroundPatterns,
+    userPreferences.setRandomBackgroundPatterns,
+    "randomBackgroundPatterns",
+    STORAGE_KEYS.RANDOM_BACKGROUND_PATTERNS
+  )
+
   const [excludeInput, setExcludeInput] = usePersistentState(
     "",
     userPreferences.getExcludeTagsInput,
@@ -668,6 +676,7 @@ export function PromptGallery() {
       removeQualityTags={search.removeQualityTags}
       backgroundMode={deferredBackgroundMode}
       simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
+      randomBackgroundPatterns={randomBackgroundPatterns}
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       setTeachModalData={setTeachModalData}
@@ -682,7 +691,7 @@ export function PromptGallery() {
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1920,6 +1929,7 @@ export function PromptGallery() {
                                         <SelectItem value="keep">Keep Original</SelectItem>
                                         <SelectItem value="remove_all">Remove All</SelectItem>
                                         <SelectItem value="force_simple">Replace</SelectItem>
+                                        <SelectItem value="random">Random</SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </div>
@@ -1939,6 +1949,25 @@ export function PromptGallery() {
                                           setSimpleBackgroundReplacementTags(val);
                                           userPreferences.setSimpleBackgroundReplacementTags(val);
                                         }} debounceTime={400} placeholder="e.g. simple background, white background" className="h-8 text-xs bg-background focus-visible:ring-1 min-w-0 flex-1" aria-label="Tags to replace background with" />
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                  {backgroundMode === 'random' && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: "auto", opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      transition={{ duration: 0.2, ease: "easeInOut" }}
+                                      className="overflow-hidden"
+                                    >
+                                      <div className="pt-3 pl-0 sm:pl-[3.25rem] flex flex-col gap-3">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-xs font-medium text-foreground">Include Patterns</span>
+                                            <span className="text-[10px] text-muted-foreground leading-tight">Allow generation of patterned backgrounds.</span>
+                                          </div>
+                                          <Switch checked={randomBackgroundPatterns} onCheckedChange={(val) => { setRandomBackgroundPatterns(val); userPreferences.setRandomBackgroundPatterns(val); }} className="scale-75 origin-right" />
+                                        </div>
                                       </div>
                                     </motion.div>
                                   )}
@@ -2173,6 +2202,7 @@ export function PromptGallery() {
                         removeQualityTags={search.removeQualityTags}
                         backgroundMode={deferredBackgroundMode}
                         simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
+                        randomBackgroundPatterns={randomBackgroundPatterns}
                         tagOverrides={tagOverrides}
                         copiedId={copiedId}
                         setTeachModalData={setTeachModalData}
