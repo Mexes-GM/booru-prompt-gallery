@@ -7,6 +7,7 @@ import { SelectedPostParts, MergeModeType, RandomSettings } from '@/hooks/use-me
 import { TagCategory } from '@/lib/tag-classifier'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
+import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Label } from "@/components/ui/label"
@@ -155,11 +156,6 @@ const MergeStickyFooterComponent = ({
 
     const [isCopied, setIsCopied] = useState(false)
     const [isCleared, setIsCleared] = useState(false)
-    const [failedDanbooruImages, setFailedDanbooruImages] = useState<Record<number, boolean>>({})
-
-    const buildProxyUrl = (url: string) =>
-        `/api/image-proxy?url=${encodeURIComponent(url)}`
-
     const handleCopy = (text: string) => {
         onCopy(text)
         setIsCopied(true)
@@ -485,11 +481,8 @@ const MergeStickyFooterComponent = ({
                                                     src={(() => {
                                                         const rawUrl = post.preview_file_url || post.file_url
                                                         const provider = post._provider || 'danbooru'
-                                                        // Danbooru: direct first, proxy only on error
                                                         if (provider === 'danbooru' && rawUrl) {
-                                                            return failedDanbooruImages[post.id]
-                                                                ? buildProxyUrl(rawUrl)
-                                                                : rawUrl
+                                                            return getDanbooruProxyUrl(rawUrl)
                                                         }
                                                         return rawUrl
                                                     })()}
@@ -497,14 +490,6 @@ const MergeStickyFooterComponent = ({
                                                     fill
                                                     className="object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-300"
                                                     unoptimized
-                                                    referrerPolicy="no-referrer"
-                                                    onError={(() => {
-                                                        const provider = post._provider || 'danbooru'
-                                                        if (provider === 'danbooru' && !failedDanbooruImages[post.id]) {
-                                                            return () => setFailedDanbooruImages(prev => ({ ...prev, [post.id]: true }))
-                                                        }
-                                                        return undefined
-                                                    })()}
                                                 />
                                                 <motion.button
                                                     whileHover={{ scale: 1.1 }}

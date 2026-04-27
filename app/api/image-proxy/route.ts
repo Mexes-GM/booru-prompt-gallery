@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
     try {
         const fetchHeaders: HeadersInit = {
-            'User-Agent': 'BooruPromptGallery/1.0',
+            'User-Agent': 'boorugallery/9.2.1 (Danbooru user: Momon312)',
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
         }
 

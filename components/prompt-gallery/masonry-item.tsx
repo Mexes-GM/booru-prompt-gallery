@@ -29,6 +29,7 @@ import {
     BooruProvider
 } from "@/lib/api-client"
 import { PROVIDER_POST_URLS } from "@/lib/constants"
+import { getDanbooruProxyUrl, getVercelProxyUrl } from "@/lib/proxy-url"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
@@ -378,20 +379,14 @@ export const MasonryItem = memo(function MasonryItem({
         : (effectiveScale === 'small' && post.preview_file_url)
     const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
 
-    // Build proxy URL using query param format (Vercel CDN caches full URL including query string)
-    const buildProxyUrl = (url: string) =>
-        `/api/image-proxy?url=${encodeURIComponent(url)}`
-
     // Gelbooru full images always need proxy (hotlink protection)
     const gelbooruNeedsProxy = isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')
 
-    // Danbooru: start direct, switch to proxy only if image fails to load
-    const [danbooruImageFailed, setDanbooruImageFailed] = useState(false)
-
+    // Danbooru: use Cloudflare Worker (egress gratuito, dentro de la red Cloudflare)
     const fileUrl = gelbooruNeedsProxy
-        ? buildProxyUrl(rawFileUrl!)
-        : (isDanbooru && rawFileUrl && danbooruImageFailed)
-            ? buildProxyUrl(rawFileUrl)
+        ? getVercelProxyUrl(rawFileUrl!)
+        : isDanbooru && rawFileUrl
+            ? getDanbooruProxyUrl(rawFileUrl)
             : rawFileUrl
 
     let postUrl = PROVIDER_POST_URLS.DANBOORU(post.id)
@@ -576,8 +571,6 @@ export const MasonryItem = memo(function MasonryItem({
                         sizes={`${width}px`}
                         priority={false}
                         unoptimized={isGelbooru}
-                        referrerPolicy="no-referrer"
-                        onError={isDanbooru && !danbooruImageFailed ? () => setDanbooruImageFailed(true) : undefined}
                     />
 
                     {/* Character Tag Count Indicator */}
@@ -811,10 +804,8 @@ export const MasonryItem = memo(function MasonryItem({
                             fill
                             className="object-cover"
                             sizes="128px"
-                            referrerPolicy="no-referrer"
-                            onError={isDanbooru && !danbooruImageFailed ? () => setDanbooruImageFailed(true) : undefined}
                         />
-                        
+
                         {/* Character Tag Count Indicator */}
                         {tagCountIndicator && includeCharacters && (
                             <Tooltip>
