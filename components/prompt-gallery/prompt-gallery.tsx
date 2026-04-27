@@ -1066,7 +1066,7 @@ export function PromptGallery() {
                           <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/20">Feature</Badge>
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          A new <strong>Random</strong> mode in the Background Options dropdown generates unique backgrounds per card, with or without patterns. It uses basic color detection to suggest colors that won't clash with the image.
+                          A new <strong>Random</strong> mode in the Background Options dropdown generates unique backgrounds per card, with or without patterns. It uses basic color detection to suggest colors that won&rsquo;t clash with the image.
                         </p>
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
@@ -1078,7 +1078,7 @@ export function PromptGallery() {
                           <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20">Feature</Badge>
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          A new slider in the control panel lets you set a minimum post count threshold for character cards in search results. Helps filter out obscure characters the model likely won't recognize well.
+                          A new slider in the control panel lets you set a minimum post count threshold for character cards in search results. Helps filter out obscure characters the model likely won&rsquo;t recognize well.
                         </p>
                       </div>
                     </div>
