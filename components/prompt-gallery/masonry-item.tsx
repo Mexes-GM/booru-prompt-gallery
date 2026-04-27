@@ -378,9 +378,9 @@ export const MasonryItem = memo(function MasonryItem({
         : (effectiveScale === 'small' && post.preview_file_url)
     const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
 
-    // Build proxy URL using path-based format for better CDN caching
+    // Build proxy URL using query param format (Vercel CDN caches full URL including query string)
     const buildProxyUrl = (url: string) =>
-        `/api/image-proxy/${btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
+        `/api/image-proxy?url=${encodeURIComponent(url)}`
 
     // Gelbooru full images always need proxy (hotlink protection)
     const gelbooruNeedsProxy = isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')

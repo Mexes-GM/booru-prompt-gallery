@@ -158,7 +158,7 @@ const MergeStickyFooterComponent = ({
     const [failedDanbooruImages, setFailedDanbooruImages] = useState<Record<number, boolean>>({})
 
     const buildProxyUrl = (url: string) =>
-        `/api/image-proxy/${btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
+        `/api/image-proxy?url=${encodeURIComponent(url)}`
 
     const handleCopy = (text: string) => {
         onCopy(text)

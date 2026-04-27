@@ -12,32 +12,8 @@ const ALLOWED_DOMAINS = [
     'cdn.donmai.us',
 ]
 
-function decodeBase64Url(encoded: string): string {
-    // Restore base64url to standard base64
-    let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
-    // Restore padding
-    while (base64.length % 4) base64 += '='
-    return Buffer.from(base64, 'base64').toString('utf-8')
-}
-
-function resolveProxyUrl(request: NextRequest): string | null {
-    // Path-based format: /api/image-proxy/<base64url>
-    // This format allows Vercel CDN to cache per unique path segment
-    const pathMatch = request.nextUrl.pathname.match(/^\/api\/image-proxy\/(.+)$/)
-    if (pathMatch) {
-        try {
-            return decodeBase64Url(pathMatch[1])
-        } catch {
-            return null
-        }
-    }
-
-    // Legacy query param format: /api/image-proxy?url=...
-    return request.nextUrl.searchParams.get('url')
-}
-
 export async function GET(request: NextRequest) {
-    const url = resolveProxyUrl(request)
+    const url = request.nextUrl.searchParams.get('url')
 
     if (!url) {
         return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 })
