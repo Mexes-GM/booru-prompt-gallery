@@ -1,7 +1,10 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { useUser } from "@/hooks/use-user"
 import { storage, STORAGE_KEYS, STORAGE_EVENT_NAME } from "@/lib/storage"
 import { createClient } from "@/lib/supabase/client"
+
+/** When true, suppresses PUSH-to-cloud during the initial PULL. */
+let _cloudSyncInProgress = false
 
 /**
  * Hook to sync local preferences with Supabase cloud storage.
@@ -12,10 +15,17 @@ import { createClient } from "@/lib/supabase/client"
 export function usePreferencesSync() {
   const { user } = useUser()
   const supabase = useMemo(() => createClient(), [])
+  const hasSyncedRef = useRef(false)
 
   // 1. PULL from Supabase on login
   useEffect(() => {
-    if (!user) return
+    if (!user) {
+      hasSyncedRef.current = false
+      return
+    }
+
+    // Only sync once per session to prevent repeated merge loops
+    if (hasSyncedRef.current) return
 
     let isSubscribed = true
 
@@ -33,10 +43,16 @@ export function usePreferencesSync() {
         return
       }
 
+      // Mark as synced BEFORE applying changes to prevent re-entry
+      hasSyncedRef.current = true
+
       if (data?.preferences) {
         const cloudPrefs = data.preferences as Record<string, unknown>
         let needsCloudUpdate = false
         const currentPrefs: Record<string, unknown> = {}
+
+        // Collect all changes first, then apply in batch
+        const pendingUpdates: Array<{ key: string; value: unknown }> = []
 
         Object.values(STORAGE_KEYS).forEach(key => {
           if (key === STORAGE_KEYS.SEARCH_TAGS) return
@@ -94,9 +110,24 @@ export function usePreferencesSync() {
           }
 
           if (mergedValue !== undefined && JSON.stringify(localValue) !== JSON.stringify(mergedValue)) {
-            storage.set(key, mergedValue)
+            pendingUpdates.push({ key, value: mergedValue })
           }
         })
+
+        // Apply all local storage updates in a batch with sync flag to prevent event cascades
+        if (pendingUpdates.length > 0) {
+          _cloudSyncInProgress = true
+          try {
+            for (const { key, value } of pendingUpdates) {
+              storage.set(key, value)
+            }
+          } finally {
+            // Use a small delay to let any queued microtasks settle before unblocking
+            setTimeout(() => {
+              _cloudSyncInProgress = false
+            }, 50)
+          }
+        }
 
         if (needsCloudUpdate && isSubscribed) {
           supabase.from('profiles').update({ preferences: currentPrefs }).eq('id', user!.id).then()
@@ -137,10 +168,11 @@ export function usePreferencesSync() {
     const handleStorageChange = (e: Event) => {
       if (!isSubscribed) return
 
+      // Don't push to cloud during the initial cloud sync pull
+      if (_cloudSyncInProgress) return
+
       const customEvent = e as CustomEvent
       const key = customEvent.detail?.key
-      const value = customEvent.detail?.value
-
       if (!Object.values(STORAGE_KEYS).includes(key) || key === STORAGE_KEYS.SEARCH_TAGS) return
 
       clearTimeout(saveTimer)
