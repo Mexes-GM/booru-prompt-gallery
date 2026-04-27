@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, Mail, ArrowRight, CheckCircle2 } from "lucide-react"
+import * as Sentry from "@sentry/nextjs"
 import { toast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
@@ -30,6 +31,11 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
     e.preventDefault()
     try {
       setIsLoading(true)
+      Sentry.addBreadcrumb({
+        category: "auth",
+        message: "User initiated magic link login",
+        level: "info"
+      })
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
@@ -39,6 +45,9 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
       if (error) throw error
       setIsSuccess(true)
     } catch (error) {
+      Sentry.captureException(error, {
+        tags: { context: "magic_link_login" }
+      })
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Something went wrong",

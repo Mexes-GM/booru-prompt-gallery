@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import * as Sentry from "@sentry/nextjs"
 
 export function useUser() {
   const [user, setUser] = useState<User | null>(null)
@@ -22,15 +23,34 @@ export function useUser() {
 
     let isSubscribed = true
 
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        Sentry.captureException(error, { tags: { context: "use_user_get_session" } })
+      }
       if (!isSubscribed) return
+      
+      Sentry.addBreadcrumb({
+        category: "auth",
+        message: "Session loaded from getSession",
+        level: "info",
+        data: { hasUser: !!session?.user, userId: session?.user?.id }
+      })
+
       setUser(session?.user ?? null)
       setSession(session ?? null)
       setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       if (!isSubscribed) return
+
+      Sentry.addBreadcrumb({
+        category: "auth",
+        message: `Auth state changed: ${event}`,
+        level: "info",
+        data: { hasUser: !!session?.user, userId: session?.user?.id }
+      })
+
       setUser(session?.user ?? null)
       setSession(session ?? null)
       setLoading(false)

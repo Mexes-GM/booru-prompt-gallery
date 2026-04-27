@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { mutate } from "swr"
+import * as Sentry from "@sentry/nextjs"
 import { BooruProvider, FavoriteItem, useFavoritePosts, BooruPost } from "@/lib/api-client"
 import { toast } from "@/hooks/use-toast"
 import { trackFavorite, safeTrack } from "@/lib/analytics"
@@ -90,6 +91,11 @@ interface DbFolderItemInsert {
 
 export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavoritesReturn {
 
+  // Diagnostic refs to track potential infinite loops causing error #185
+  const renderCountRef = useRef(0)
+  renderCountRef.current += 1
+  const fetchEffectTriggerCount = useRef(0)
+
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [folders, setFolders] = useState<FavoriteFolder[]>([])
   const [favoriteFolderMap, setFavoriteFolderMap] = useState<Record<string, string[]>>({})
@@ -125,9 +131,34 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
   useEffect(() => {
     if (userLoading) return
 
+    fetchEffectTriggerCount.current += 1
+    const currentTriggerCount = fetchEffectTriggerCount.current
+    
+    // Safety guard for excessive triggers
+    if (currentTriggerCount > 10) {
+      Sentry.captureMessage("fetchFavorites effect triggered excessively (Potential Loop #185)", {
+        level: "warning",
+        extra: { triggerCount: currentTriggerCount, booruProvider, userId: user?.id }
+      })
+      // If it's spinning uncontrollably, break out to prevent full browser crash
+      if (currentTriggerCount > 50) return
+    }
+
+    Sentry.addBreadcrumb({
+      category: "favorites",
+      message: "useEffect for fetchFavorites triggered",
+      level: "info",
+      data: { triggerCount: currentTriggerCount, userId: user?.id, booruProvider, hasAccessToken: !!session?.access_token }
+    })
+
     let isMounted = true
 
     async function fetchFavorites() {
+      Sentry.addBreadcrumb({
+        category: "favorites",
+        message: "fetchFavorites async execution started",
+        level: "info"
+      })
       try {
         if (user) {
           const { data: dbFolders, error: foldersErr } = await supabase
@@ -146,6 +177,20 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
             .from('favorite_folder_items')
             .select('provider, post_id, folder_id')
           if (itemsErr) console.error("Items fetch error:", itemsErr)
+
+          Sentry.addBreadcrumb({
+            category: "favorites",
+            message: "Initial Supabase fetch complete",
+            level: "info",
+            data: {
+              foldersErr: foldersErr?.message,
+              favsErr: favsErr?.message,
+              itemsErr: itemsErr?.message,
+              foldersCount: dbFolders?.length,
+              favsCount: dbFavorites?.length,
+              itemsCount: dbFolderItems?.length
+            }
+          })
 
           const loadedFolders: FavoriteFolder[] = dbFolders || []
           const newSet = new Set<string>()
@@ -352,6 +397,13 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
               if (!isMounted) return
 
+              Sentry.addBreadcrumb({
+                category: "favorites",
+                message: "Setting state after successful migration/refresh",
+                level: "info",
+                data: { foldersCount: loadedFolders.length, favsCount: newSet.size, folderMapKeys: Object.keys(newMap).length }
+              })
+
               setFolders(loadedFolders)
               setFavorites(newSet)
               setFavoriteFolderMap(newMap)
@@ -360,6 +412,14 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
               // User is authenticated, but has NO local storage to migrate.
               // We just set the state using the freshly parsed cloud database data.
               if (!isMounted) return
+              
+              Sentry.addBreadcrumb({
+                category: "favorites",
+                message: "Setting state (no migration needed)",
+                level: "info",
+                data: { foldersCount: loadedFolders.length, favsCount: newSet.size, folderMapKeys: Object.keys(newMap).length }
+              })
+              
               setFolders(loadedFolders)
               setFavorites(newSet)
               setFavoriteFolderMap(newMap)
@@ -368,6 +428,14 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
           } else {
             // SSR fallback for authenticated users
             if (!isMounted) return
+            
+            Sentry.addBreadcrumb({
+                category: "favorites",
+                message: "Setting state (fallback)",
+                level: "info",
+                data: { foldersCount: loadedFolders.length, favsCount: newSet.size }
+            })
+            
             setFolders(loadedFolders)
             setFavorites(newSet)
             setFavoriteFolderMap(newMap)
@@ -440,6 +508,10 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
         }
       } catch (error) {
         console.error('[loadFavorites] CRITICAL EXCEPTION:', error)
+        Sentry.captureException(error, {
+          tags: { context: "fetchFavorites_catch" },
+          extra: { userId: user?.id, booruProvider, renderCount: renderCountRef.current }
+        })
       }
     } // end of async function fetchFavorites()
 
