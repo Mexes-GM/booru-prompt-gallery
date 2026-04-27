@@ -1,6 +1,6 @@
 {
-  "version": "9.1.2",
+  "version": "9.2.0",
   "name": "Booru Prompt Gallery",
   "description": "Web tool to quickly get clean prompts from booru sites",
-  "buildDate": "2026-04-26"
+  "buildDate": "2026-04-27"
 }

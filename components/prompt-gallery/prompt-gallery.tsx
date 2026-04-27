@@ -637,7 +637,7 @@ export function PromptGallery() {
       }
 
       // Character count filter
-      const minCharPostCount = parseInt(search.appliedCharacterCountFilter) || 0
+      const minCharPostCount = (includeCharacters && parseInt(search.appliedCharacterCountFilter)) || 0
       if (minCharPostCount > 0) {
         if (!post.tag_string_character) {
           return false // If the filter is active, it must have a character tag
@@ -666,7 +666,7 @@ export function PromptGallery() {
       const fileUrl = post.large_file_url || post.file_url
       return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
     })
-  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist, search.appliedCharacterCountFilter, tagCounts])
+  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts])
 
   // Constant empty array reference for memoization
   const EMPTY_ARRAY = useRef<string[]>([]).current
@@ -1059,62 +1059,26 @@ export function PromptGallery() {
                       </Button>
                     </div>
                     <div className="space-y-0">
-                      {/* Item 1: Danbooru images fix */}
-                      <div className="border-l-2 border-red-500 bg-red-500/5 hover:bg-red-500/10 transition-colors p-3">
+                      {/* Item 1: Random Background */}
+                      <div className="border-l-2 border-green-500 bg-green-500/5 hover:bg-green-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Danbooru images fix</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/20">Fix</Badge>
+                          <p className="text-xs font-semibold text-foreground leading-snug">New Background Options</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/20">Feature</Badge>
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          Fixed an issue where Danbooru images were not loading correctly. Now all images should display properly.
+                          A new <strong>Random</strong> mode in the Background Options dropdown generates unique backgrounds per card, with or without patterns. It uses basic color detection to suggest colors that won't clash with the image.
                         </p>
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
 
-                      {/* Item 2: Login Improvements */}
-                      <div className="border-l-2 border-orange-500 bg-orange-500/5 hover:bg-orange-500/10 transition-colors p-3">
+                      {/* Item 2: Minimum Character Post Count */}
+                      <div className="border-l-2 border-cyan-500 bg-cyan-500/5 hover:bg-cyan-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Login Improvements</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-orange-500/15 text-orange-600 dark:text-orange-400 hover:bg-orange-500/20">Fix</Badge>
+                          <p className="text-xs font-semibold text-foreground leading-snug">Minimum Character Post Count</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20">Feature</Badge>
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          Added some improvements to the login system for better error handling and user feedback.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 3: Parallel Tabs */}
-                      <div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Parallel Tabs</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Feature</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          Added the ability to have multiple tabs in parallel with different searches. The Search Tag menu now opens in a new tab instead of replacing the current search.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 4: Quick Tag Copy */}
-                      <div className="border-l-2 border-indigo-500 bg-indigo-500/5 hover:bg-indigo-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Quick Tag Copy</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20">Feature</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          Added the ability to quickly copy tags from prompts by right-clicking on them. A dedicated Copy Tag button was also added to the tag menu for one-click copying.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 5: Save Artists to Favorites */}
-                      <div className="border-l-2 border-purple-500 bg-purple-500/5 hover:bg-purple-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Save Artists to Favorites</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-purple-500/15 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20">Feature</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          When hovering over a card, a new button allows you to save the artist. They appear in My Favs inside a dedicated folder where you can search or navigate to their page.
+                          A new slider in the control panel lets you set a minimum post count threshold for character cards in search results. Helps filter out obscure characters the model likely won't recognize well.
                         </p>
                       </div>
                     </div>
@@ -1701,7 +1665,8 @@ export function PromptGallery() {
                                   value={[parseInt(search.characterCountFilter) || 0]}
                                   onValueChange={(val) => search.setCharacterCountFilter(val[0].toString())}
                                   onValueCommit={(val) => search.setAppliedCharacterCountFilter(val[0].toString())}
-                                  className="flex-1"
+                                  disabled={!includeCharacters}
+                                  className={`flex-1 ${!includeCharacters ? "opacity-50 cursor-not-allowed" : ""}`}
                                   aria-label="Minimum character post count"
                                 />
                                 <DebouncedInput
@@ -1713,7 +1678,8 @@ export function PromptGallery() {
                                   onChange={search.setCharacterCountFilter}
                                   debounceTime={500}
                                   onBlur={() => search.setAppliedCharacterCountFilter(search.characterCountFilter)}
-                                  className={`h-8 w-16 text-xs text-center bg-background/50 ${(!search.characterCountFilter || !/^\d+$/.test(search.characterCountFilter)) ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                                  disabled={!includeCharacters}
+                                  className={`h-8 w-16 text-xs text-center bg-background/50 ${(!search.characterCountFilter || !/^\d+$/.test(search.characterCountFilter)) ? "border-red-500 focus-visible:ring-red-500" : ""} ${!includeCharacters ? "opacity-50 cursor-not-allowed" : ""}`}
                                   aria-label="Minimum character post count input"
                                 />
                               </div>
