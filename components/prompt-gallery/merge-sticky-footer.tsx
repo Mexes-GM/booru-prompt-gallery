@@ -155,6 +155,10 @@ const MergeStickyFooterComponent = ({
 
     const [isCopied, setIsCopied] = useState(false)
     const [isCleared, setIsCleared] = useState(false)
+    const [failedDanbooruImages, setFailedDanbooruImages] = useState<Record<number, boolean>>({})
+
+    const buildProxyUrl = (url: string) =>
+        `/api/image-proxy/${btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
 
     const handleCopy = (text: string) => {
         onCopy(text)
@@ -481,9 +485,11 @@ const MergeStickyFooterComponent = ({
                                                     src={(() => {
                                                         const rawUrl = post.preview_file_url || post.file_url
                                                         const provider = post._provider || 'danbooru'
-                                                        // Use proxy for Danbooru to avoid 403 errors in production
+                                                        // Danbooru: direct first, proxy only on error
                                                         if (provider === 'danbooru' && rawUrl) {
-                                                            return `/api/image-proxy?url=${encodeURIComponent(rawUrl)}`
+                                                            return failedDanbooruImages[post.id]
+                                                                ? buildProxyUrl(rawUrl)
+                                                                : rawUrl
                                                         }
                                                         return rawUrl
                                                     })()}
@@ -491,6 +497,13 @@ const MergeStickyFooterComponent = ({
                                                     fill
                                                     className="object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-300"
                                                     unoptimized
+                                                    onError={(() => {
+                                                        const provider = post._provider || 'danbooru'
+                                                        if (provider === 'danbooru' && !failedDanbooruImages[post.id]) {
+                                                            return () => setFailedDanbooruImages(prev => ({ ...prev, [post.id]: true }))
+                                                        }
+                                                        return undefined
+                                                    })()}
                                                 />
                                                 <motion.button
                                                     whileHover={{ scale: 1.1 }}

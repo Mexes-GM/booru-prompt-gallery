@@ -369,7 +369,8 @@ export const MasonryItem = memo(function MasonryItem({
     // Optimization: Use preview image for small cards to save bandwidth/CPU
     // For Gelbooru: ALWAYS use thumbnail — it loads directly without proxy,
     // avoiding all origin transfer. Full images (img*.gelbooru.com) have hotlink protection.
-    // For Danbooru: Use proxy for all images to avoid 403 errors in production
+    // For Danbooru: try direct CDN URL first, fall back to image proxy only on 403/error.
+    // This avoids unnecessary Fast Origin Transfer when direct access works.
     const isGelbooru = itemProvider === 'gelbooru'
     const isDanbooru = itemProvider === 'danbooru'
     const usePreview = isGelbooru
@@ -377,13 +378,21 @@ export const MasonryItem = memo(function MasonryItem({
         : (effectiveScale === 'small' && post.preview_file_url)
     const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
 
-    // Proxy for Gelbooru full images if no thumbnail available (rare fallback)
-    // Proxy for ALL Danbooru images to avoid 403 errors in production
-    const needsProxy = (isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')) ||
-                       (isDanbooru && rawFileUrl)
-    const fileUrl = needsProxy
-        ? `/api/image-proxy?url=${encodeURIComponent(rawFileUrl!)}`
-        : rawFileUrl
+    // Build proxy URL using path-based format for better CDN caching
+    const buildProxyUrl = (url: string) =>
+        `/api/image-proxy/${btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
+
+    // Gelbooru full images always need proxy (hotlink protection)
+    const gelbooruNeedsProxy = isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')
+
+    // Danbooru: start direct, switch to proxy only if image fails to load
+    const [danbooruImageFailed, setDanbooruImageFailed] = useState(false)
+
+    const fileUrl = gelbooruNeedsProxy
+        ? buildProxyUrl(rawFileUrl!)
+        : (isDanbooru && rawFileUrl && danbooruImageFailed)
+            ? buildProxyUrl(rawFileUrl)
+            : rawFileUrl
 
     let postUrl = PROVIDER_POST_URLS.DANBOORU(post.id)
 
@@ -567,6 +576,7 @@ export const MasonryItem = memo(function MasonryItem({
                         sizes={`${width}px`}
                         priority={false}
                         unoptimized={isGelbooru}
+                        onError={isDanbooru && !danbooruImageFailed ? () => setDanbooruImageFailed(true) : undefined}
                     />
 
                     {/* Character Tag Count Indicator */}
@@ -800,6 +810,7 @@ export const MasonryItem = memo(function MasonryItem({
                             fill
                             className="object-cover"
                             sizes="128px"
+                            onError={isDanbooru && !danbooruImageFailed ? () => setDanbooruImageFailed(true) : undefined}
                         />
                         
                         {/* Character Tag Count Indicator */}
