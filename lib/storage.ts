@@ -55,6 +55,7 @@ export const STORAGE_KEYS = {
   HISTORY: 'prompt-history',
   ADD_TAGS_PRESETS: 'add-tags-presets',
   MINIMUM_TAG_COUNT: 'minimum-tag-count',
+  MINIMUM_CHARACTER_COUNT: 'minimum-character-count',
   BLACKLIST: 'blacklist',
   GLOBAL_WEIGHTS: 'global-weights',
   GLOBAL_WEIGHTS_ENABLED: 'global-weights-enabled',
@@ -158,6 +159,12 @@ export const userPreferences = {
 
   setMinimumTagCount: (count: string) =>
     storage.set(STORAGE_KEYS.MINIMUM_TAG_COUNT, count),
+
+  getMinimumCharacterCount: (): string =>
+    storage.get(STORAGE_KEYS.MINIMUM_CHARACTER_COUNT, "0"),
+
+  setMinimumCharacterCount: (count: string) =>
+    storage.set(STORAGE_KEYS.MINIMUM_CHARACTER_COUNT, count),
 
   getOrder: (): 'popular' | 'recent' | 'random' =>
     storage.get(STORAGE_KEYS.ORDER, 'popular'),

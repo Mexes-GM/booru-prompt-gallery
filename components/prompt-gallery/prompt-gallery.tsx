@@ -636,10 +636,37 @@ export function PromptGallery() {
         }
       }
 
+      // Character count filter
+      const minCharPostCount = parseInt(search.appliedCharacterCountFilter) || 0
+      if (minCharPostCount > 0) {
+        if (!post.tag_string_character) {
+          return false // If the filter is active, it must have a character tag
+        }
+        
+        const charTags = post.tag_string_character.split(' ').filter(Boolean)
+        let hasValidCount = false
+        let isPending = false
+        
+        for (const tag of charTags) {
+          const count = tagCounts[tag]
+          if (count === undefined) {
+            isPending = true
+          } else if (count >= minCharPostCount) {
+            hasValidCount = true
+            break
+          }
+        }
+        
+        // If no tag meets the requirement and all are loaded, filter it out
+        if (!hasValidCount && !isPending) {
+          return false
+        }
+      }
+
       const fileUrl = post.large_file_url || post.file_url
       return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
     })
-  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist])
+  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist, search.appliedCharacterCountFilter, tagCounts])
 
   // Constant empty array reference for memoization
   const EMPTY_ARRAY = useRef<string[]>([]).current
@@ -1653,6 +1680,41 @@ export function PromptGallery() {
                                   disabled={!isTagCountSupported}
                                   className={`h-8 w-16 text-xs text-center bg-background/50 ${!isTagCountValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
                                   aria-label="Minimum tag count input"
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <label htmlFor="character-count" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                <InfoTooltip
+                                  title="Minimum Character Post Count"
+                                  description="This option ensures that only posts containing characters with a minimum amount of booru posts appear. Useful for filtering out obscure characters."
+                                >
+                                  Minimum Character Post Count ({`>=`} {search.characterCountFilter})
+                                </InfoTooltip>
+                              </label>
+                              <div className="flex items-center">
+                                <Slider
+                                  min={0}
+                                  max={10000}
+                                  step={100}
+                                  value={[parseInt(search.characterCountFilter) || 0]}
+                                  onValueChange={(val) => search.setCharacterCountFilter(val[0].toString())}
+                                  onValueCommit={(val) => search.setAppliedCharacterCountFilter(val[0].toString())}
+                                  className="flex-1"
+                                  aria-label="Minimum character post count"
+                                />
+                                <DebouncedInput
+                                  id="character-count"
+                                  type="number"
+                                  min={0}
+                                  max={1000000}
+                                  value={search.characterCountFilter}
+                                  onChange={search.setCharacterCountFilter}
+                                  debounceTime={500}
+                                  onBlur={() => search.setAppliedCharacterCountFilter(search.characterCountFilter)}
+                                  className={`h-8 w-16 text-xs text-center bg-background/50 ${(!search.characterCountFilter || !/^\d+$/.test(search.characterCountFilter)) ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                                  aria-label="Minimum character post count input"
                                 />
                               </div>
                             </div>
