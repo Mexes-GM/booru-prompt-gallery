@@ -1,7 +1,7 @@
 
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
-import { PROVIDER_URLS, PROVIDER_REFERERS } from '@/lib/constants'
+import { PROVIDER_URLS, PROVIDER_REFERERS, USER_AGENT } from '@/lib/constants'
 
 interface Rule34PostResponse {
   id: string | number
@@ -29,11 +29,6 @@ export class Rule34Provider extends BaseBooruProvider {
   private apiKey = process.env.RULE34_API_KEY || ''
   private userId = process.env.RULE34_USER_ID || ''
   
-  private userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  ]
-
   async search(options: SearchOptions): Promise<BooruPost[]> {
     const { tags, page, order } = options
     
@@ -60,14 +55,12 @@ export class Rule34Provider extends BaseBooruProvider {
       params.user_id = this.userId
     }
 
-    const randomUserAgent = this.userAgents[Math.floor(Math.random() * this.userAgents.length)]
-    
     let rawPosts: unknown = []
-    
+
     try {
         const urlParams = new URLSearchParams(params)
         rawPosts = await this.fetchJson<unknown>(`${this.baseUrl}/index.php`, urlParams, {
-            'User-Agent': randomUserAgent,
+            'User-Agent': USER_AGENT,
             'Referer': PROVIDER_REFERERS.RULE34,
             'Origin': PROVIDER_REFERERS.RULE34.replace(/\/$/, ''),
         })

@@ -5,7 +5,7 @@ import { classifyTag, TagCategory } from '@/lib/tag-classifier'
 import { cookies } from 'next/headers'
 import { normalize } from '@/lib/cleanPrompt'
 import { requireAdmin } from '@/lib/auth/authorization'
-import { PROVIDER_URLS } from '@/lib/constants'
+import { PROVIDER_URLS, USER_AGENT_DANBOORU } from '@/lib/constants'
 
 // Rate Limit Configuration
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -40,13 +40,21 @@ export async function generateAutoSuggestions() {
              throw new Error("Rate limit exceeded. Please wait a moment before mining again.");
         }
 
-        console.log("[Auto-Suggest] Fetching random posts from Danbooru...");
         // 3. Fetch Random Posts from Danbooru
         // Using "random:5" optimized tag to avoid DB timeouts
+        const headers: Record<string, string> = {
+            "User-Agent": USER_AGENT_DANBOORU,
+            "Accept": "application/json",
+        }
+
+        // Add Danbooru authentication if credentials are available
+        if (process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY) {
+            const credentials = btoa(`${process.env.DANBOORU_USERNAME}:${process.env.DANBOORU_API_KEY}`)
+            headers["Authorization"] = `Basic ${credentials}`
+        }
+
         const response = await fetch(`${PROVIDER_URLS.DANBOORU}/posts.json?tags=random:5`, {
-            headers: {
-                "User-Agent": "BooruPromptGallery/1.0"
-            }
+            headers
         });
 
         if (!response.ok) {
@@ -70,8 +78,6 @@ export async function generateAutoSuggestions() {
         });
 
         const allTags = Array.from(uniqueTags);
-        console.log(`[Auto-Suggest] Found ${allTags.length} unique tags from 5 posts.`);
-
         // 3. Filter: Find tags that are NOT in DB or are 'other'
         // We select only "name" from tags where name is in our list
         const { data: existingTags, error: dbError } = await supabaseAdmin
@@ -89,8 +95,6 @@ export async function generateAutoSuggestions() {
             return !cat || cat === 'other';
         });
 
-        console.log(`[Auto-Suggest] ${candidates.length} tags need classification.`);
-
         // Limit to avoid burning tokens (e.g., process 10 max per click)
         const toProcess = candidates.slice(0, 10);
         let processedCount = 0;
@@ -107,7 +111,6 @@ export async function generateAutoSuggestions() {
             let aiModel = "unknown";
 
             if (heuristicCategory !== 'other') {
-                console.log(`[Auto-Suggest] logic: "${tagName}" matched static classifier -> ${heuristicCategory}`);
                 aiResultCategory = heuristicCategory;
                 aiReasoning = "Static Keyword Match";
                 aiConfidence = "high";

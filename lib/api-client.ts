@@ -4,7 +4,7 @@ import useSWR from 'swr'
 import { useApiStatus } from '@/hooks/use-api-status'
 import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
 import { prefetchTagCounts } from '@/hooks/use-tag-counts'
-import { PROVIDER_URLS } from '@/lib/constants'
+import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
 
 // Re-export types
 export type { BooruPost }
@@ -220,87 +220,126 @@ const transformAibooruPost = (post: unknown): BooruPost => {
   }
 }
 
-// Production fetcher with error handling and retry logic
+// Client-side request deduplication: prevents SWR from firing multiple
+// identical requests in rapid succession (React Strict Mode double-render,
+// filter changes, etc.). Holds results for 5s after resolution so rapid
+// re-renders reuse the settled promise instead of creating new ones.
+const inflightRequests = new Map<string, Promise<unknown>>()
+
+// Page-1 Danbooru request sequencer. During SWR initialization React can
+// trigger 3+ different page-1 URLs in <100ms as state settles (default
+// filter → saved preference → random seed). With 10 concurrent users
+// that's 30+ requests hitting Danbooru in the first second.
+// This chain serializes unique page-1 requests at 1s intervals so they
+// never burst through Danbooru's 10 req/s limit.
+let page1Chain: Promise<void> = Promise.resolve()
+let isFirstPage1 = true
+const PAGE1_SPACING_MS = 1000
+
+// Production fetcher with error handling, retry logic, and page-1 sequencing.
 const fetcher = async (url: string) => {
-  try {
-    // Check if we are fetching directly from Aibooru (client-side bypass)
-    const isDirectAibooru = url.startsWith(PROVIDER_URLS.AIBOORU)
-
-    const headers: HeadersInit = isDirectAibooru
-      ? {} // Browsers automatically set Origin, no special headers for CORS requests
-      : {
-        'Accept': 'application/json',
-        'User-Agent': 'BooruPromptGallery/1.0',
-      }
-
-    // Add signal support if needed, but for now simple fetch
-    const res = await fetch(url, { headers })
-
-    if (!res.ok) {
-      const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
-      try {
-        error.info = await res.json()
-      } catch {
-        error.info = { message: res.statusText }
-      }
-      error.status = res.status
-      throw error
-    }
-
-    const data = await res.json()
-
-    let resultPosts = data
-    let identifiedProvider: 'danbooru' | 'aibooru' | null = null
-
-    // Transform data if it's from Aibooru direct fetch
-    if (isDirectAibooru) {
-      identifiedProvider = 'aibooru'
-      if (Array.isArray(data)) {
-        resultPosts = data
-          .filter(post =>
-            post &&
-            post.id &&
-            (post.file_url || post.large_file_url) &&
-            !post.file_url?.includes("deleted") &&
-            (post.tag_string || post.tags) &&
-            !post.file_url?.match(/\.(mp4|webm|avi|mov|mkv)$/i)
-          )
-          .map(transformAibooruPost)
-      } else {
-        // Handle empty response or unexpected format gracefully
-        resultPosts = []
-      }
-    } else if (
-      url.includes('/api/posts') || 
-      url.includes('/api/favorites') || 
-      (url.includes('api/booru/search') && url.includes('provider=danbooru')) || 
-      url.includes('danbooru.donmai.us')
-    ) {
-      identifiedProvider = 'danbooru'
-    }
-
-    // Prefetch tags directly from network layer before React updates!
-    if (identifiedProvider && Array.isArray(resultPosts)) {
-      // Fire and forget without delaying the main fetch result
-      queueMicrotask(() => {
-        try {
-          prefetchTagCounts(resultPosts as BooruPost[], identifiedProvider)
-        } catch (error) {
-          console.error('[ApiClient] Background tag prefetch error:', error)
-        }
-      })
-    }
-
-    return resultPosts
-  } catch (fetchError: unknown) {
-    // Log only critical errors, not 404s for end of pagination
-    if (fetchError instanceof Response && fetchError.status !== 404) {
-      console.error('[ApiClient] Fetch Error:', fetchError)
-    } else if (!(fetchError instanceof Response)) {
-      console.error('[ApiClient] Fetch Error:', fetchError)
-    }
-    throw fetchError
+  // Deduplicate identical concurrent requests
+  const inflight = inflightRequests.get(url)
+  if (inflight) {
+    return inflight
   }
+
+  const isDanbooruApi = url.includes('/api/posts') || url.includes('danbooru.donmai.us')
+  const isDanbooruPage1 = isDanbooruApi && url.includes('page=1')
+
+  const doFetch = async () => {
+    try {
+      const isDirectAibooru = url.startsWith(PROVIDER_URLS.AIBOORU)
+
+      const headers: HeadersInit = isDirectAibooru
+        ? {}
+        : {
+          'Accept': 'application/json',
+          'User-Agent': USER_AGENT,
+        }
+
+      const res = await fetch(url, { headers })
+
+      if (!res.ok) {
+        const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
+        try { error.info = await res.json() } catch { error.info = { message: res.statusText } }
+        error.status = res.status
+        throw error
+      }
+
+      const data = await res.json()
+
+      let resultPosts = data
+      let identifiedProvider: 'danbooru' | 'aibooru' | null = null
+
+      if (isDirectAibooru) {
+        identifiedProvider = 'aibooru'
+        if (Array.isArray(data)) {
+          resultPosts = data
+            .filter(post =>
+              post && post.id &&
+              (post.file_url || post.large_file_url) &&
+              !post.file_url?.includes("deleted") &&
+              (post.tag_string || post.tags) &&
+              !post.file_url?.match(/\.(mp4|webm|avi|mov|mkv)$/i)
+            )
+            .map(transformAibooruPost)
+        } else {
+          resultPosts = []
+        }
+      } else if (
+        url.includes('/api/posts') ||
+        url.includes('/api/favorites') ||
+        (url.includes('api/booru/search') && url.includes('provider=danbooru')) ||
+        url.includes('danbooru.donmai.us')
+      ) {
+        identifiedProvider = 'danbooru'
+      }
+
+      if (identifiedProvider && Array.isArray(resultPosts)) {
+        queueMicrotask(() => {
+          try { prefetchTagCounts(resultPosts as BooruPost[], identifiedProvider) }
+          catch (error) { console.error('[ApiClient] Background tag prefetch error:', error) }
+        })
+      }
+
+      return resultPosts
+    } catch (fetchError: unknown) {
+      if (fetchError instanceof Response && fetchError.status !== 404) {
+        console.error('[ApiClient] Fetch Error:', fetchError)
+      } else if (!(fetchError instanceof Response)) {
+        console.error('[ApiClient] Fetch Error:', fetchError)
+      }
+      throw fetchError
+    }
+  }
+
+  // Serialize unique page-1 Danbooru requests. The first fires immediately;
+  // each subsequent one waits 1s after the previous one settles. This
+  // prevents SWR initialization bursts without delaying the first paint.
+  let promise: Promise<unknown>
+  if (isDanbooruPage1) {
+    if (isFirstPage1) {
+      isFirstPage1 = false
+      const chained = Promise.resolve().then(doFetch)
+      page1Chain = chained.catch(() => {})
+      promise = chained
+    } else {
+      const prevChain = page1Chain
+      const chained = prevChain.then(() => new Promise(r => setTimeout(r, PAGE1_SPACING_MS))).then(doFetch)
+      page1Chain = chained.catch(() => {})
+      promise = chained
+    }
+  } else {
+    promise = doFetch()
+  }
+
+  inflightRequests.set(url, promise)
+  promise.finally(() => {
+    setTimeout(() => inflightRequests.delete(url), 5000)
+  })
+
+  return promise
 }
 
 
@@ -440,7 +479,7 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
     tags.push('order:rank')
   } else if (order === 'random') {
     // For random, we use random:N instead of order:random for better performance
-    tags.push('random:20') // Using the same limit as in API_CONFIG.randomParams
+    tags.push('random:60')
   }
 
   // Calculate extra tags count (rating + tagcount)
@@ -494,7 +533,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         if (order === 'recent') {
           finalTags = [query, promptFilter].filter(Boolean).join(' ').trim()
         } else if (order === 'random') {
-          const randomCount = "20"
+          const randomCount = "60"
           finalTags = [query, promptFilter, `random:${randomCount}`].filter(Boolean).join(' ')
         } else {
           finalTags = [query, promptFilter, 'order:rank'].filter(Boolean).join(' ')
@@ -506,8 +545,8 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         const effectivePage = isRandom ? "1" : (pageIndex + 1).toString()
 
         const params = new URLSearchParams({
-          limit: "20",
-          only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
+          limit: "60",
+          only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,ai_metadata,image_width,image_height",
           page: effectivePage,
           tags: finalTags
         })
@@ -554,7 +593,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       persistSize: false,
       revalidateOnFocus: false,
       revalidateOnReconnect: false, // FIXED: Prevent reconnect from triggering revalidation
-      dedupingInterval: 5000, // 5s dedup window; random uses unique seed keys so it's unaffected
+      dedupingInterval: 15000, // 15s dedup window; random uses unique seed keys so it's unaffected
       shouldRetryOnError: (error) => {
         // Don't retry on 422 errors (invalid tags/search parameters)
         // Don't retry on 4xx client errors in general

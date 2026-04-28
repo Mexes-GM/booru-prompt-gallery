@@ -1,4 +1,4 @@
-import { useState, memo } from "react"
+import { useState, memo, useMemo } from "react"
 import { TrendItem } from "@/lib/booru/types"
 import { Card } from "@/components/ui/card"
 import { User, Copyright, Check, Copy } from "lucide-react"
@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
+import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 
 interface TrendCardProps {
   item: TrendItem
@@ -19,6 +20,13 @@ const PARTICLES = Array.from({ length: 12 })
 function TrendCardComponent({ item, onClick, rank, index }: TrendCardProps) {
   const [isCopied, setIsCopied] = useState(false)
   const { toast } = useToast()
+
+  const imageUrl = useMemo(() => {
+    if (!item.imageUrl) return item.imageUrl
+    const isDanbooruUrl = item.imageUrl.includes('donmai.us')
+    const finalUrl = isDanbooruUrl ? getDanbooruProxyUrl(item.imageUrl) : item.imageUrl
+    return finalUrl
+  }, [item.imageUrl])
 
   const handleRightClick = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -54,7 +62,7 @@ function TrendCardComponent({ item, onClick, rank, index }: TrendCardProps) {
           {/* Image with subtle zoom on hover */}
           <div className="absolute inset-0 transition-transform duration-700 ease-in-out group-hover:scale-110">
             <Image
-              src={item.imageUrl}
+              src={imageUrl}
               alt={item.name}
               fill
               className="object-cover"

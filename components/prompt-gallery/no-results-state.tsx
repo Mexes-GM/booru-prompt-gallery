@@ -1,7 +1,7 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { Search, Shield, Ban, Zap, Ghost } from "lucide-react"
+import { Search, Shield, Ban, Zap, Ghost, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface NoResultsStateProps {
@@ -12,7 +12,7 @@ const REASONS = [
   {
     type: 'nsfw',
     title: 'NSFW Filter Enabled',
-    description: 'You might be searching for adult content while your Safe filter is active.',
+    description: 'You might be searching for adult content while your Safe filter is active. Try changing the rating filter.',
     icon: Shield,
     colorClass: 'text-green-500',
     bgClass: 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/50',
@@ -40,6 +40,14 @@ const REASONS = [
     icon: Ghost,
     colorClass: 'text-slate-500',
     bgClass: 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800',
+  },
+  {
+    type: 'ratelimit',
+    title: 'Service Busy',
+    description: 'The image provider is temporarily rate-limiting requests. Results should appear if you wait a moment and try again.',
+    icon: Clock,
+    colorClass: 'text-amber-600 dark:text-amber-500',
+    bgClass: 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50',
   }
 ]
 

@@ -402,3 +402,32 @@ nav,
     transform: none !important;
   }
 }
+
+/* Masonry Grid — animación de entrada solo con CSS (sin Framer Motion) */
+.masonry-item-inner {
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.masonry-item-enter .masonry-item-inner {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Stagger: hasta 8 items usando animation-delay via inline style */
+.masonry-item-inner[style*="animation-delay"] {
+  animation: masonry-reveal 0.3s ease-out forwards;
+  transition: none;
+}
+
+@keyframes masonry-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

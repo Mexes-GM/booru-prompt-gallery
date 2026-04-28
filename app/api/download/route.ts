@@ -1,9 +1,15 @@
 
 import { NextRequest, NextResponse } from 'next/server'
-import { PROVIDER_REFERERS } from '@/lib/constants'
+import { PROVIDER_REFERERS, USER_AGENT, USER_AGENT_DANBOORU } from '@/lib/constants'
+import { getDanbooruApiRateLimit } from '@/lib/rate-limit'
+import { isCircuitOpen, getCircuitRetryAfter } from '@/lib/circuit-breaker'
 
 // Use Node.js runtime for better stability with outgoing requests
 export const runtime = 'nodejs'
+
+function getClientIp(request: NextRequest): string {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -22,9 +28,11 @@ export async function GET(request: NextRequest) {
   ]
 
   let urlDomain: string
+  let isDanbooru: boolean
   try {
     const url = new URL(imageUrl)
     urlDomain = url.hostname
+    isDanbooru = urlDomain.includes('danbooru') || urlDomain.includes('donmai.us')
   } catch (error) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
@@ -35,6 +43,39 @@ export async function GET(request: NextRequest) {
 
   if (!isAllowedDomain) {
     return NextResponse.json({ error: 'URL domain not allowed' }, { status: 403 })
+  }
+
+  // Rate limit check for Danbooru downloads
+  if (isDanbooru) {
+    const ratelimit = getDanbooruApiRateLimit()
+    if (ratelimit) {
+      const clientIp = getClientIp(request)
+      const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
+
+      if (!success) {
+        return NextResponse.json(
+          { error: 'Too many downloads. Please wait before downloading another image.' },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
+              'X-RateLimit-Limit': String(limit),
+              'X-RateLimit-Remaining': String(remaining),
+              'X-RateLimit-Reset': String(reset),
+            },
+          }
+        )
+      }
+    }
+
+    // Circuit breaker check
+    if (isCircuitOpen('danbooru-api')) {
+      const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
+      return NextResponse.json(
+        { error: 'Danbooru is saturated. Please wait before downloading.', retryAfter },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+      )
+    }
   }
 
   try {
@@ -50,16 +91,22 @@ export async function GET(request: NextRequest) {
     else if (urlDomain.includes('e621')) referer = PROVIDER_REFERERS.E621
     else if (urlDomain.includes('gelbooru')) referer = PROVIDER_REFERERS.GELBOORU
 
-    // Don't set User-Agent to a generic fixed string, try to look like a browser but generic enough
-    // Some sites block specific "bot" User-Agents
     const fetchHeaders: HeadersInit = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'User-Agent': isDanbooru ? USER_AGENT_DANBOORU : USER_AGENT,
       'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     }
 
-    // Only set referer for Rule34/Aibooru/e621, or if Danbooru actually needs it (usually better without for raw cdn links?)
-    // But let's keep it generally, except maybe ensure it matches what they expect.
-    if (referer) {
+    // Add Danbooru authentication for CDN images if credentials are available
+    if (isDanbooru) {
+      const username = process.env.DANBOORU_USERNAME
+      const apiKey = process.env.DANBOORU_API_KEY
+
+      if (username && apiKey) {
+        const credentials = btoa(`${username}:${apiKey}`)
+        fetchHeaders['Authorization'] = `Basic ${credentials}`
+      }
+      fetchHeaders['Referer'] = 'https://danbooru.donmai.us/'
+    } else if (referer) {
       fetchHeaders['Referer'] = referer
     }
 

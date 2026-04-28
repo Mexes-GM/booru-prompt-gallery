@@ -1,6 +1,6 @@
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
-import { PROVIDER_URLS } from '@/lib/constants'
+import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
 
 interface E621FileData {
   url?: string
@@ -42,7 +42,7 @@ export class E621Provider extends BaseBooruProvider {
     const params = new URLSearchParams(this.defaultParams)
     params.set('page', options.page || '1')
     // E621 requests a descriptive User-Agent or client parameter
-    params.set('_client', 'BooruPromptGallery/1.0')
+    params.set('_client', USER_AGENT)
 
     let tags = (options.tags || '').trim()
     

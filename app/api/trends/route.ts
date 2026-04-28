@@ -1,7 +1,7 @@
 
 import { NextResponse } from 'next/server'
 import { BooruFactory } from '@/lib/booru/factory'
-import { getCachedTrends, setCachedTrends } from '@/lib/trend-cache'
+import { getCachedTrends, setCachedTrends, tryAcquireTrendFetchLock } from '@/lib/trend-cache'
 
 // Cache-Control: serve cached for 24h, allow stale for 1h while revalidating
 const CACHE_HEADERS = {
@@ -17,7 +17,23 @@ export async function GET() {
       return NextResponse.json(cached, { headers: CACHE_HEADERS })
     }
 
-    // 2. Cache miss or expired — fetch fresh data from Danbooru
+    // 2. Cache miss or expired — try to acquire fetch lock
+    const acquired = await tryAcquireTrendFetchLock()
+
+    if (!acquired) {
+      return NextResponse.json(
+        { message: 'Trends refresh in progress, please retry', retryAfter: 30 },
+        {
+          status: 202,
+          headers: {
+            ...CACHE_HEADERS,
+            'Retry-After': '30',
+          },
+        }
+      )
+    }
+
+    // 3. We hold the lock — fetch fresh data from Danbooru
     const provider = BooruFactory.getProvider('danbooru')
 
     if (!provider.getTrending) {
@@ -29,7 +45,7 @@ export async function GET() {
 
     const trends = await provider.getTrending()
 
-    // 3. Store in Supabase cache (fire-and-forget, don't block response)
+    // 4. Store in Supabase cache (fire-and-forget, don't block response)
     setCachedTrends(trends).catch((err) =>
       console.error('[trends] Failed to persist cache:', err)
     )

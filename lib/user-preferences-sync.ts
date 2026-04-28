@@ -47,7 +47,6 @@ export class UserPreferencesSync {
         if (data.remove_lora_tags !== null) storage.set(STORAGE_KEYS.REMOVE_LORA_TAGS, data.remove_lora_tags)
         if (data.remove_quality_tags !== null) storage.set(STORAGE_KEYS.REMOVE_QUALITY_TAGS, data.remove_quality_tags)
 
-        console.log('✓ User preferences synchronized from Supabase')
       }
     } catch (error) {
       console.error('Failed to load user preferences:', error)
@@ -75,7 +74,6 @@ export class UserPreferencesSync {
         return
       }
 
-      console.log('✓ Preferences saved to Supabase')
     } catch (error) {
       console.error('Failed to save user preferences:', error)
     }

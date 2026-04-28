@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { smartFetch } from '@/lib/network/smart-fetch'
-import { PROVIDER_URLS } from '@/lib/constants'
+import { PROVIDER_URLS, USER_AGENT_DANBOORU } from '@/lib/constants'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { getDanbooruApiRateLimit } from '@/lib/rate-limit'
 
 // Vercel Edge Runtime for faster performance
 export const runtime = 'edge'
@@ -70,8 +71,26 @@ export async function GET(request: Request) {
     // 2. Identify requested tags completely missing from our local DB cache using original names
     const missingTags = requestedTags.filter(tag => tagCounts[tag] === undefined)
 
+    if (missingTags.length === 0) {
+      // All tags found in local cache — no external call needed
+    }
+
     // 3. If there are missing tags, fetch them from the external provider
     if (missingTags.length > 0) {
+      // Rate limit check before calling external API
+      const ratelimit = getDanbooruApiRateLimit()
+      if (ratelimit) {
+        const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
+        const { success } = await ratelimit.limit(clientIp)
+
+        if (!success) {
+          return NextResponse.json(
+            { error: 'Too many requests. Please wait before searching tags.' },
+            { status: 429, headers: { 'Retry-After': '10' } }
+          )
+        }
+      }
+
       // Create smaller chunks to avoid URI too long errors in external providers
       const CHUNK_SIZE = 50
       
@@ -84,6 +103,12 @@ export async function GET(request: Request) {
         url.searchParams.set('limit', '100')
 
         const response = await smartFetch(url.toString(), {
+          headers: {
+            'User-Agent': USER_AGENT_DANBOORU,
+            ...(process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY
+              ? { 'Authorization': `Basic ${btoa(`${process.env.DANBOORU_USERNAME}:${process.env.DANBOORU_API_KEY}`)}` }
+              : {}),
+          },
           retries: 2,
           retryDelay: 1000,
         })

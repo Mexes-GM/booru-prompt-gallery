@@ -66,6 +66,12 @@ export function isValidArtistTag(tag: string): boolean {
   return !GENERIC_ARTIST_TAGS.has(tag.trim().toLowerCase())
 }
 
+// Centralized User-Agent for all API requests
+export const USER_AGENT = 'Boorugallery/9.2'
+
+// Danbooru-specific User-Agent — identifies the Danbooru account so admins can contact us
+export const USER_AGENT_DANBOORU = 'Boorugallery/9.2 (Danbooru user: Momon312)'
+
 // Provider referer URLs (for API requests)
 export const PROVIDER_REFERERS: Record<string, string> = {
   DANBOORU: `${PROVIDER_URLS.DANBOORU}/`,

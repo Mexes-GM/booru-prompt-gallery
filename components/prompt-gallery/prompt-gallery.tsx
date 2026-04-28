@@ -43,9 +43,15 @@ import {
   ArrowRight,
 } from "lucide-react"
 
-import { TeachModal } from "@/components/teach-modal"
-import { TeachWelcomeModal } from "@/components/teach-welcome-modal"
+import dynamic from "next/dynamic"
 import { getAllTagOverrides } from "@/app/actions/tags"
+
+const TeachModal = dynamic(() => import("@/components/teach-modal").then(m => m.TeachModal))
+const TeachWelcomeModal = dynamic(() => import("@/components/teach-welcome-modal").then(m => m.TeachWelcomeModal))
+const TrendSheet = dynamic(() => import("@/components/trends/trend-sheet").then(m => m.TrendSheet))
+const ReversePromptParserModal = dynamic(() => import("@/components/prompt-gallery/reverse-prompt-parser-modal").then(m => m.ReversePromptParserModal))
+const GlobalWeightsModal = dynamic(() => import("@/components/prompt-gallery/global-weights-modal").then(m => m.GlobalWeightsModal))
+const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog))
 
 import { VersionDisplay } from "@/components/version-display"
 import versionInfo from "@/version.json"
@@ -66,6 +72,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Slider } from "@/components/ui/slider"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
 import { type BackgroundMode } from "@/lib/background-detector"
+import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
@@ -115,6 +122,7 @@ import { SOCIAL_URLS } from '@/lib/constants'
 import { MasonryGrid } from "@/components/masonry-grid"
 import { useBooruSearch } from "@/hooks/use-booru-search"
 import { useBooruFavorites } from "@/hooks/use-booru-favorites"
+import { useImageLoadPool } from "@/hooks/use-image-load-pool"
 import { useSavedArtists } from "@/hooks/use-saved-artists"
 import { cn } from "@/lib/utils"
 import { MasonryItem } from "./masonry-item"
@@ -123,15 +131,11 @@ import { useBlacklist } from "@/hooks/use-blacklist"
 import { BlacklistManager } from "@/components/prompt-gallery/blacklist-manager"
 import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 
-import { TrendSheet } from "@/components/trends/trend-sheet"
 import { useMergeMode } from "@/hooks/use-merge-mode"
 import { MergeStickyFooter } from "./merge-sticky-footer"
 import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
-import { FeedbackDialog } from "@/components/feedback-dialog"
 import { SaveFavoriteButton } from "./save-favorite-button"
-import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-modal"
-import { ReversePromptParserModal } from "@/components/prompt-gallery/reverse-prompt-parser-modal"
 import { useDebounce } from "@/hooks/use-debounce"
 
 import { usePersistentState } from "@/hooks/use-persistent-state"
@@ -490,6 +494,18 @@ export function PromptGallery() {
   }, [])
 
   // --- Helpers ---
+  // Ref-stabilized callbacks: las referencias no cambian, pero siempre llaman a la versión más reciente.
+  // Esto evita que renderMasonryItem se recree cuando toast u otras deps cambian.
+  const copyToClipboardRef = useRef<(content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string) => Promise<void>>(async () => {})
+  const downloadImageRef = useRef<(post: BooruPost) => Promise<void>>(async () => {})
+
+  const stableCopyToClipboard = useCallback(async (content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string) => {
+    return copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl)
+  }, [])
+
+  const stableDownloadImage = useCallback(async (post: BooruPost) => {
+    return downloadImageRef.current(post)
+  }, [])
 
   const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string) => {
     try {
@@ -528,17 +544,22 @@ export function PromptGallery() {
       const itemProvider = post._provider || search.booruProvider
       const filename = `${itemProvider}_${post.id}.${extension}`
 
-      // Providers that need the Vercel proxy due to CORS/referrer restrictions
-      const needsProxy = imageUrl.includes('rule34.xxx') ||
+      // Providers that need a proxy due to CORS/referrer restrictions.
+      // Danbooru: use Cloudflare Worker (same as image display, has auth headers)
+      // Rule34/e621/Gelbooru: use Vercel proxy (they block cross-origin)
+      const needsVercelProxy = imageUrl.includes('rule34.xxx') ||
         imageUrl.includes('e621.net') ||
         imageUrl.includes('gelbooru.com')
+      const isDanbooru = imageUrl.includes('donmai.us')
 
-      // For Danbooru/Aibooru: fetch directly from the browser (client-side).
-      // This avoids routing through Vercel's /api/download, saving bandwidth + CPU.
-      // For Rule34/e621/Gelbooru: use the Vercel proxy (they block cross-origin).
-      const fetchUrl = needsProxy
-        ? `/api/download?url=${encodeURIComponent(imageUrl)}`
-        : imageUrl
+      let fetchUrl: string
+      if (needsVercelProxy) {
+        fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
+      } else if (isDanbooru) {
+        fetchUrl = getDanbooruProxyUrl(imageUrl)
+      } else {
+        fetchUrl = imageUrl
+      }
 
       const response = await fetch(fetchUrl)
 
@@ -571,6 +592,10 @@ export function PromptGallery() {
       })
     }
   }, [search.booruProvider, toast])
+
+  // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
+  copyToClipboardRef.current = copyToClipboard
+  downloadImageRef.current = downloadImage
 
   // --- Preset Handlers ---
   const savePreset = () => {
@@ -671,7 +696,7 @@ export function PromptGallery() {
   // Constant empty array reference for memoization
   const EMPTY_ARRAY = useRef<string[]>([]).current
 
-  const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number) => {
+  const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number, index: number) => {
     const itemProvider = post._provider || search.booruProvider
     const uniqueKey = `${itemProvider}:${post.id}`
     const isFavorited = favs.favorites.has(uniqueKey)
@@ -686,14 +711,15 @@ export function PromptGallery() {
       height={height}
       viewMode={viewMode}
       effectiveScale={effectiveScale}
+      index={index}
       booruProvider={search.booruProvider}
       isFavorited={isFavorited}
       folders={favs.folders}
       currentFolderIds={currentFolderIds}
       toggleFavorite={favs.toggleFavorite}
       createFolder={favs.createFolder}
-      downloadImage={downloadImage}
-      copyToClipboard={copyToClipboard}
+      downloadImage={stableDownloadImage}
+      copyToClipboard={stableCopyToClipboard}
       excludeInput={debouncedExcludeInput}
       addInput={debouncedAddInput}
       includeCharacters={includeCharacters}
@@ -711,20 +737,31 @@ export function PromptGallery() {
       isSelected={mergeMode.selectedPosts.has(post.id)}
       selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
       onTogglePart={mergeMode.togglePostPart}
-      onMergeSelect={() => { }} // No longer used for card click, but keeping prop if needed or refactoring MasonryItem signature next
+      onMergeSelect={() => { }}
       onSkipAnimation={() => setCopiedId(null)}
       globalWeights={globalWeights}
       isGlobalWeightsEnabled={isGlobalWeightsEnabled}
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, downloadImage, copyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
   const finalPosts = filteredPosts
+
+  // Progressive image loading — Danbooru only. Its random mode pulls from
+  // 50M images so Worker/CDN cache is near-zero. Other providers have smaller
+  // pools and/or cache well, so they don't need the progressive reveal.
+  const isDanbooru = search.booruProvider === 'danbooru'
+  const poolResetKey = `${search.debouncedSearchTags}::${search.ratingFilter}::${search.order}`
+  const poolResult = useImageLoadPool(isDanbooru ? filteredPosts.length : 0, poolResetKey)
+  const visibleCount = isDanbooru ? poolResult.visibleCount : filteredPosts.length
+  const isRevealing = isDanbooru ? poolResult.isRevealing : false
+  const visiblePosts = useMemo(() => filteredPosts.slice(0, visibleCount), [filteredPosts, visibleCount])
+  const visibleFinalPosts = useMemo(() => finalPosts.slice(0, visibleCount), [finalPosts, visibleCount])
 
   return (
     <TooltipProvider>
@@ -2189,14 +2226,14 @@ export function PromptGallery() {
             viewMode === "grid" ? (
               <div className="mb-8 min-h-[500px]">
                 <MasonryGrid
-                  items={filteredPosts}
+                  items={visiblePosts}
                   scale={effectiveScale}
                   renderItem={renderMasonryItem}
                 />
               </div>
             ) : (
               <div className="space-y-4 mb-8">
-                {finalPosts.map((post) => {
+                {visibleFinalPosts.map((post) => {
                   const itemProvider = post._provider || search.booruProvider
                   const uniqueKey = `${itemProvider}:${post.id}`
                   const isFavorited = favs.favorites.has(uniqueKey)
@@ -2255,7 +2292,10 @@ export function PromptGallery() {
                   onIntersect={search.loadMore}
                   hasNextPage={!search.noMoreResults}
                   isLoading={search.isLoadingMore || search.isLoadingLock}
+                  forceStop={isRevealing}
                   error={search.loadMoreError}
+                  isScrollThrottled={search.isScrollThrottled}
+                  throttleCountdown={search.throttleCountdown}
                 />
               ) : (
                 <div className="space-y-2">

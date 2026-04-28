@@ -2,6 +2,7 @@
 import { smartFetch } from '../network/smart-fetch'
 import { BooruPost, IBooruProvider, SearchOptions } from './types'
 import { supabaseAdmin } from '../supabase-admin'
+import { USER_AGENT, USER_AGENT_DANBOORU } from '../constants'
 
 interface TagCategoryRow {
   name: string
@@ -18,14 +19,16 @@ export abstract class BaseBooruProvider implements IBooruProvider {
     const finalUrl = new URL(url)
     finalUrl.search = params.toString()
 
+    const isDanbooru = url.includes('danbooru.donmai.us')
+
     const requestHeaders: HeadersInit = {
       'Accept': 'application/json',
-      'User-Agent': 'BooruPromptGallery/1.0',
+      'User-Agent': isDanbooru ? USER_AGENT_DANBOORU : USER_AGENT,
       ...headers
     }
 
     // Add Danbooru authentication if credentials are available
-    if (url.includes('danbooru.donmai.us')) {
+    if (isDanbooru) {
       const username = process.env.DANBOORU_USERNAME
       const apiKey = process.env.DANBOORU_API_KEY
 

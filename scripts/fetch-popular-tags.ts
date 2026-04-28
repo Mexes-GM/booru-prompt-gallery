@@ -1,7 +1,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { PROVIDER_URLS } from '../lib/constants';
+import { PROVIDER_URLS, USER_AGENT_DANBOORU } from '../lib/constants';
 
 const OUTPUT_FILE = path.join(process.cwd(), 'tags.json');
 const TAGS_TO_FETCH = 100000; // Top 100k tags for a solid database
@@ -22,7 +22,7 @@ async function fetchTags() {
       
       const response = await fetch(url, {
         headers: {
-          "User-Agent": "BooruPromptGallery/1.0"
+          "User-Agent": USER_AGENT_DANBOORU
         }
       });
 

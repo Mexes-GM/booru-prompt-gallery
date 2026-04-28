@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PROVIDER_REFERERS } from '@/lib/constants'
+import { PROVIDER_REFERERS, USER_AGENT, USER_AGENT_DANBOORU } from '@/lib/constants'
 
 export const runtime = 'nodejs'
 
@@ -32,13 +32,15 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        const isDanbooru = parsedUrl.hostname.includes('danbooru') || parsedUrl.hostname.includes('donmai.us')
+
         const fetchHeaders: HeadersInit = {
-            'User-Agent': 'boorugallery/9.2.1 (Danbooru user: Momon312)',
+            'User-Agent': isDanbooru ? USER_AGENT_DANBOORU : USER_AGENT,
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
         }
 
         // Add Danbooru authentication if credentials are available
-        if (parsedUrl.hostname.includes('danbooru') || parsedUrl.hostname.includes('donmai.us')) {
+        if (isDanbooru) {
             const username = process.env.DANBOORU_USERNAME
             const apiKey = process.env.DANBOORU_API_KEY
 

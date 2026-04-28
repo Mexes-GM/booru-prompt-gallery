@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, memo } from "react"
 import useSWR from "swr"
 import { Flame, Loader2, AlertCircle } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
@@ -25,7 +25,7 @@ interface TrendSheetProps {
   onSelectTag: (tag: string) => void
 }
 
-export function TrendSheet({ onSelectTag }: TrendSheetProps) {
+export const TrendSheet = memo(function TrendSheet({ onSelectTag }: TrendSheetProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("character")
 
@@ -37,7 +37,8 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
       if (!res.ok) {
         throw new Error('Failed to fetch')
       }
-      return res.json()
+      const data = await res.json()
+      return data
     },
     {
       revalidateOnFocus: false,
@@ -191,4 +192,4 @@ export function TrendSheet({ onSelectTag }: TrendSheetProps) {
       </DialogContent>
     </Dialog>
   )
-}
+})

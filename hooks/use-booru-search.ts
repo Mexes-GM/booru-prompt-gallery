@@ -11,6 +11,25 @@ import {
 } from '@/lib/analytics'
 import { useToast } from "@/hooks/use-toast"
 
+// Only 1 API call (~60 images) per window to stay under Danbooru's radar.
+// The user must wait out the window before loading the next batch.
+const DANBOORU_MAX_LOADS_PER_WINDOW = 1
+const DANBOORU_WINDOW_MS = 30_000
+const DEFAULT_SCROLL_COOLDOWN_MS = 1500
+
+// Jitter: add ±30% random variation to delays so multiple clients
+// don't synchronize their request windows and hammer the server.
+function applyJitter(baseMs: number): number {
+  const jitter = (Math.random() - 0.5) * 0.6 // ±30%
+  return Math.round(baseMs * (1 + jitter))
+}
+
+// Search hash for cross-tab coordination — only tabs with the same
+// search parameters share rate limit state.
+function getSearchHash(tags: string, rating: string, order: string): string {
+  return `${tags}::${rating}::${order}`
+}
+
 export function useBooruSearch() {
   const [searchTags, setSearchTagsState] = useState(() => {
     if (typeof window === 'undefined') return ""
@@ -142,6 +161,13 @@ export function useBooruSearch() {
   const [noMoreResults, setNoMoreResults] = useState(false)
   const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
   const [randomSeed, setRandomSeed] = useState<number>(0)
+  const loadTimestampsRef = useRef<number[]>([])
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const broadcastChannelRef = useRef<BroadcastChannel | null>(null)
+  const [isScrollThrottled, setIsScrollThrottled] = useState(false)
+  const [throttleCountdown, setThrottleCountdown] = useState(0)
+  const [circuitOpen, setCircuitOpen] = useState(false)
 
   // Store the rating before we forced it to 'all' for Rule34
   const forcedRule34RatingRef = useRef<string | null>(null)
@@ -230,6 +256,18 @@ export function useBooruSearch() {
     setNoMoreResults(false)
     setLoadMoreError(false)
     setLastLoadAttempt(0)
+    setIsScrollThrottled(false)
+    setThrottleCountdown(0)
+    setCircuitOpen(false)
+    loadTimestampsRef.current = []
+    if (cooldownTimerRef.current) {
+      clearTimeout(cooldownTimerRef.current)
+      cooldownTimerRef.current = null
+    }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
   }, [order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
 
   // --- Derived Data ---
@@ -261,10 +299,108 @@ export function useBooruSearch() {
   const lastPageFromAPI = pages && pages.length > 0 ? pages[pages.length - 1] : null
   const isReachingEnd = isEmpty || (lastPageFromAPI !== null && lastPageFromAPI.length === 0)
 
+  // Prefetch next page API response when new data arrives
+  useEffect(() => {
+    if (!pages || pages.length === 0) return
+    if (noMoreResults || isReachingEnd) return
+
+    const nextPage = size + 1
+    const encodedQuery = encodeURIComponent(debouncedSearchTags || '')
+
+    let apiEndpoint = '/api/posts'
+    if (booruProvider === 'rule34') apiEndpoint = '/api/rule34'
+    else if (booruProvider === 'e621') apiEndpoint = '/api/e621'
+    else if (booruProvider === 'gelbooru') apiEndpoint = '/api/gelbooru'
+
+    const isRandomOrder = order === 'random'
+    const effectivePage = isRandomOrder ? 1 : nextPage
+    const seedParam = isRandomOrder && randomSeed ? `&seed=${randomSeed}_${nextPage - 1}` : ''
+
+    const nextUrl = `${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}${seedParam}`
+
+    const link = document.createElement('link')
+    link.rel = 'prefetch'
+    link.href = nextUrl
+    link.as = 'fetch'
+    document.head.appendChild(link)
+
+    return () => {
+      if (link.parentNode) link.parentNode.removeChild(link)
+    }
+  }, [pages, size, noMoreResults, isReachingEnd, debouncedSearchTags, order, booruProvider, randomSeed])
+
   // --- Actions ---
 
   const loadMore = useCallback(() => {
-    if (isLoadingLock || isLoadingMore) return
+    const now = Date.now()
+
+    if (isLoadingLock || isLoadingMore) {
+      return
+    }
+
+    const isDanbooru = booruProvider === 'danbooru'
+
+    if (isDanbooru) {
+      const windowStart = now - DANBOORU_WINDOW_MS
+      loadTimestampsRef.current = loadTimestampsRef.current.filter(t => t > windowStart)
+
+      if (loadTimestampsRef.current.length >= DANBOORU_MAX_LOADS_PER_WINDOW) {
+        const oldestTimestamp = loadTimestampsRef.current[0]
+        const baseRetryAfter = oldestTimestamp + DANBOORU_WINDOW_MS - now
+        const retryAfter = Math.max(1000, applyJitter(baseRetryAfter))
+
+        setIsScrollThrottled(true)
+        setThrottleCountdown(Math.ceil(retryAfter / 1000))
+
+        // Start countdown timer
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+        countdownIntervalRef.current = setInterval(() => {
+          setThrottleCountdown(prev => {
+            const next = prev - 1
+            if (next <= 0) {
+              if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+              return 0
+            }
+            return next
+          })
+        }, 1000)
+
+        // Cross-tab broadcast
+        if (broadcastChannelRef.current) {
+          const searchHash = getSearchHash(debouncedSearchTags, ratingFilter, order)
+          broadcastChannelRef.current.postMessage({
+            type: 'throttled',
+            searchHash,
+            countdown: Math.ceil(retryAfter / 1000),
+          })
+        }
+
+        if (!cooldownTimerRef.current) {
+          cooldownTimerRef.current = setTimeout(() => {
+            setIsScrollThrottled(false)
+            setThrottleCountdown(0)
+            cooldownTimerRef.current = null
+
+            // Cross-tab broadcast
+            if (broadcastChannelRef.current) {
+              const searchHash = getSearchHash(debouncedSearchTags, ratingFilter, order)
+              broadcastChannelRef.current.postMessage({ type: 'unthrottled', searchHash })
+            }
+          }, retryAfter)
+        }
+        return
+      }
+
+      // Apply jitter to cooldown
+      const jitteredCooldown = applyJitter(DEFAULT_SCROLL_COOLDOWN_MS)
+      loadTimestampsRef.current.push(now)
+
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current)
+        cooldownTimerRef.current = null
+      }
+    }
+    // Non-Danbooru providers: no rate limit, unrestricted infinite scroll
 
     setIsLoadingLock(true)
     setLoadMoreError(false)
@@ -274,14 +410,58 @@ export function useBooruSearch() {
 
     setSize(size + 1)
     trackLoadMore({ order, nextPage: size + 1, currentCount: allPosts.length })
-  }, [isLoadingLock, isLoadingMore, pages, order, searchTags, size, setSize, allPosts.length])
+  }, [isLoadingLock, isLoadingMore, booruProvider, size, pages, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
 
-  // Release look effect
+  // Release lock effect
   useEffect(() => {
     if (!isLoadingMore && isLoadingLock) {
       setIsLoadingLock(false)
     }
   }, [isLoadingMore, isLoadingLock])
+
+  // Cleanup cooldown timer and countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current)
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+      if (broadcastChannelRef.current) broadcastChannelRef.current.close()
+    }
+  }, [])
+
+  // Cross-tab coordination via BroadcastChannel
+  // Tabs with the same search share rate limit state so multi-tab
+  // browsing doesn't double the request rate on Danbooru.
+  useEffect(() => {
+    if (typeof window === 'undefined' || booruProvider !== 'danbooru') return
+
+    try {
+      const channel = new BroadcastChannel('booru-rate-limit')
+      broadcastChannelRef.current = channel
+
+      channel.onmessage = (event) => {
+        const { type, searchHash, countdown } = event.data || {}
+        const currentHash = getSearchHash(debouncedSearchTags, ratingFilter, order)
+
+        // Only react to messages from tabs with the same search
+        if (searchHash && searchHash !== currentHash) return
+
+        if (type === 'throttled' && countdown > 0) {
+          setIsScrollThrottled(true)
+          setThrottleCountdown(countdown)
+        } else if (type === 'unthrottled') {
+          setIsScrollThrottled(false)
+          setThrottleCountdown(0)
+        }
+      }
+
+      return () => {
+        channel.close()
+        broadcastChannelRef.current = null
+      }
+    } catch {
+      // BroadcastChannel not available (e.g., some mobile browsers)
+    }
+  }, [booruProvider, debouncedSearchTags, ratingFilter, order])
 
   const refresh = useCallback(() => {
     if (order === 'random' || /order:random|random:\d+/i.test(searchTags)) {
@@ -323,25 +503,40 @@ export function useBooruSearch() {
       if (error) {
         setLoadMoreError(true)
         setNoMoreResults(false)
+
+        const message = error?.message || ''
+        const isCircuitOpen = message.includes('saturated') || message.includes('circuit breaker')
+        const isRateLimit = !isCircuitOpen && (message.includes('429') || message.includes('rate limit') || message.includes('Too many requests'))
+
+        if (isCircuitOpen) {
+          setCircuitOpen(true)
+          // Auto-recover after 65s (circuit timeout is 60s + margin)
+          setTimeout(() => setCircuitOpen(false), 65_000)
+        }
+
         toast({
-          title: "Error loading more posts",
-          description: "There was an error loading more posts. Click 'Retry' to try again.",
-          variant: "destructive",
+          title: isCircuitOpen
+            ? "Danbooru Saturated"
+            : isRateLimit
+              ? "Service Temporarily Busy"
+              : "Error Loading More Posts",
+          description: isCircuitOpen
+            ? "Danbooru is saturated. Requests are paused for 60 seconds to avoid a block."
+            : isRateLimit
+              ? "The image provider is limiting requests right now. Please wait a moment before loading more."
+              : "There was an error loading more posts. Click 'Retry' to try again.",
+          variant: isCircuitOpen || isRateLimit ? "default" : "destructive",
         })
         setLastLoadAttempt(0)
       } else if (currentRawPostCount === lastLoadAttempt || isReachingEnd) {
         setNoMoreResults(true)
         setLoadMoreError(false)
-        toast({
-          title: "No more results",
-          description: "No more recent posts found for this search. Try different search terms or change the rating filter.",
-          variant: "default",
-        })
         setLastLoadAttempt(0)
       } else if (currentRawPostCount > lastLoadAttempt) {
         setNoMoreResults(false)
         setLoadMoreError(false)
         setLastLoadAttempt(0)
+        setCircuitOpen(false)
       }
     }
   }, [pages, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast])
@@ -372,6 +567,9 @@ export function useBooruSearch() {
     noMoreResults,
     loadMoreError,
     isLoadingLock,
+    isScrollThrottled,
+    throttleCountdown,
+    circuitOpen,
 
     loadMore,
     refresh,

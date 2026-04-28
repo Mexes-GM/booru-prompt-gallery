@@ -5,7 +5,8 @@ import { STORAGE_EVENT_NAME } from '@/lib/storage'
  * Syncs React state with localStorage via typed getter/setter pairs.
  *
  * - Hydrates synchronously on first render (lazy useState initializer).
- * - Writes back to storage when state changes, skipping redundant writes.
+ * - Writes back to storage when state changes, batched via 300ms debounce
+ *   to avoid blocking the main thread during rapid updates (sliders, toggles).
  * - Listens for external storage events (cloud sync, other tabs) and
  *   updates state only when the new value actually differs.
  * - Prevents infinite loops by tracking own writes via `isWritingRef`
@@ -31,12 +32,14 @@ export function usePersistentState<T>(
 
   const isWritingRef = useRef(false)
   const lastJsonRef = useRef<string>(JSON.stringify(state))
+  const pendingWriteRef = useRef<T | null>(null)
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   const setState: Dispatch<SetStateAction<T>> = useCallback((action) => {
     setStateRaw(action)
   }, [])
 
-  // Write state back to storage on change
+  // Batched write to localStorage: collects rapid changes and flushes after 300ms idle
   useEffect(() => {
     const stateJson = JSON.stringify(state)
     if (stateJson === lastJsonRef.current) return
@@ -51,15 +54,57 @@ export function usePersistentState<T>(
       // Proceed with write if getter fails
     }
 
-    isWritingRef.current = true
-    lastJsonRef.current = stateJson
-    try {
-      setter(state)
-    } catch {
-      // Silently fail on write errors
+    // Debounce: queue the latest state and flush after 300ms of no changes
+    pendingWriteRef.current = state
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
     }
-    queueMicrotask(() => { isWritingRef.current = false })
+
+    debounceTimerRef.current = setTimeout(() => {
+      const toWrite = pendingWriteRef.current
+      if (toWrite === null) return
+
+      const json = JSON.stringify(toWrite)
+      if (json === lastJsonRef.current) return
+
+      isWritingRef.current = true
+      lastJsonRef.current = json
+      try {
+        setter(toWrite)
+      } catch {
+        // Silently fail on write errors
+      }
+      queueMicrotask(() => { isWritingRef.current = false })
+      pendingWriteRef.current = null
+    }, 300)
+
+    return () => {
+      // Flush pending write on unmount or before next effect
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
   }, [state, setter, getter])
+
+  // Flush pending writes on page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (pendingWriteRef.current !== null) {
+        const json = JSON.stringify(pendingWriteRef.current)
+        if (json !== lastJsonRef.current) {
+          try {
+            setter(pendingWriteRef.current)
+          } catch {
+            // Last-chance write
+          }
+        }
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [setter])
 
   // Listen for external storage changes (cloud sync, other tabs)
   useEffect(() => {

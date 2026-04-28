@@ -62,8 +62,6 @@ export class GelbooruProvider extends BaseBooruProvider {
         try {
             const urlParams = new URLSearchParams(params)
             const requestUrl = `${this.baseUrl}/index.php?${urlParams.toString()}`
-            console.log(`[Gelbooru] Fetching: ${requestUrl}`)
-            
             rawResponse = await this.fetchJson<GelbooruResponse>(`${this.baseUrl}/index.php`, urlParams, {
                 'Referer': PROVIDER_REFERERS.GELBOORU,
             })

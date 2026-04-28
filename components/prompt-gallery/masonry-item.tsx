@@ -119,6 +119,7 @@ interface MasonryItemProps {
     tagCounts?: Record<string, number>
     width: number
     height: number
+    index?: number
     viewMode?: "grid" | "list"
     effectiveScale: "small" | "medium" | "large"
     booruProvider: BooruProvider
@@ -161,6 +162,7 @@ export const MasonryItem = memo(function MasonryItem({
     tagCounts,
     width,
     height,
+    index = 999,
     viewMode = "grid",
     effectiveScale,
     booruProvider,
@@ -568,8 +570,11 @@ export const MasonryItem = memo(function MasonryItem({
                         alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
                         fill
                         className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
-                        sizes={`${width}px`}
-                        priority={false}
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw"
+                        priority={index < 8}
+                        fetchPriority={index < 8 ? "high" : "low"}
+                        decoding={index < 8 ? "sync" : "async"}
+                        unoptimized={!!rawFileUrl}
                     />
 
                     {/* Character Tag Count Indicator */}
@@ -803,6 +808,9 @@ export const MasonryItem = memo(function MasonryItem({
                             fill
                             className="object-cover"
                             sizes="128px"
+                            loading="lazy"
+                            decoding="async"
+                            unoptimized={!!rawFileUrl}
                         />
 
                         {/* Character Tag Count Indicator */}
@@ -977,6 +985,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.post.id !== next.post.id) return false
     if (prev.width !== next.width) return false
     if (prev.height !== next.height) return false
+    if (prev.index !== next.index) return false
     if (prev.viewMode !== next.viewMode) return false
     if (prev.effectiveScale !== next.effectiveScale) return false
     if (prev.booruProvider !== next.booruProvider) return false

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type MouseEvent as ReactMouseEvent } from "react"
+import { useState, useMemo, type MouseEvent as ReactMouseEvent } from "react"
 import Image from "next/image"
 import { motion, AnimatePresence } from "framer-motion"
 import { Palette, Search, ExternalLink, Trash2, ImageOff } from "lucide-react"
@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import { getProviderSearchUrl } from "@/lib/constants"
 import type { SavedArtist } from "@/hooks/use-saved-artists"
+import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 
 interface ArtistCardProps {
     artist: SavedArtist
@@ -32,6 +33,13 @@ export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {
 
     const displayName = artist.artistTag.replace(/_/g, " ")
     const providerLabel = PROVIDER_LABELS[artist.provider.toLowerCase()] || artist.provider
+
+    const thumbnailUrl = useMemo(() => {
+        if (!artist.thumbnailUrl) return artist.thumbnailUrl
+        const isDanbooru = artist.provider === 'danbooru' || artist.thumbnailUrl.includes('donmai.us')
+        const finalUrl = isDanbooru ? getDanbooruProxyUrl(artist.thumbnailUrl) : artist.thumbnailUrl
+        return finalUrl
+    }, [artist.thumbnailUrl, artist.provider])
 
     const handleSearch = () => onSearch(artist.artistTag, artist.provider)
     const handleOpenProvider = () => {
@@ -67,14 +75,16 @@ export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {
             >
                 {/* Image section — matches masonry card proportions (3/4) */}
                 <div className="relative bg-muted overflow-hidden aspect-[3/4]">
-                    {artist.thumbnailUrl && !imageError ? (
+                    {thumbnailUrl && !imageError ? (
                         <Image
-                            src={artist.thumbnailUrl}
+                            src={thumbnailUrl}
                             alt={`Reference artwork by ${displayName}`}
                             fill
                             className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
                             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
                             unoptimized
+                            loading="lazy"
+                            decoding="async"
                             onError={() => setImageError(true)}
                         />
                     ) : (
