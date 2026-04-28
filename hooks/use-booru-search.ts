@@ -16,10 +16,12 @@ import { useToast } from "@/hooks/use-toast"
 const DANBOORU_MAX_LOADS_PER_WINDOW = 1
 const DANBOORU_WINDOW_MS = 15_000
 
-// Jitter: add ±30% random variation to delays so multiple clients
-// don't synchronize their request windows and hammer the server.
+// Jitter: add 0%–30% random delay so multiple clients don't
+// synchronize their request windows and hammer the server.
+// Only positive jitter — negative jitter would expire the throttle
+// before the window ends, causing a cascade of re-throttles.
 function applyJitter(baseMs: number): number {
-  const jitter = (Math.random() - 0.5) * 0.6 // ±30%
+  const jitter = Math.random() * 0.3 // 0% to +30%
   return Math.round(baseMs * (1 + jitter))
 }
 
@@ -164,6 +166,7 @@ export function useBooruSearch() {
   const throttleExpiresAtRef = useRef<number>(0)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null)
+  const loadMoreGuardRef = useRef(false)
   const [isScrollThrottled, setIsScrollThrottled] = useState(false)
   const [throttleCountdown, setThrottleCountdown] = useState(0)
   const [circuitOpen, setCircuitOpen] = useState(false)
@@ -260,6 +263,7 @@ export function useBooruSearch() {
     setCircuitOpen(false)
     loadTimestampsRef.current = []
     throttleExpiresAtRef.current = 0
+    loadMoreGuardRef.current = false
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current)
       countdownIntervalRef.current = null
@@ -328,11 +332,17 @@ export function useBooruSearch() {
   // --- Actions ---
 
   const loadMore = useCallback(() => {
+    // Synchronous guard: prevents re-entry from stale closures
+    // (e.g. IntersectionObserver callback firing after React has
+    // already committed a loadMore call in the same tick).
+    if (loadMoreGuardRef.current) return
     const now = Date.now()
 
     if (isLoadingLock || isLoadingMore) {
       return
     }
+
+    loadMoreGuardRef.current = true
 
     const isDanbooru = booruProvider === 'danbooru'
 
@@ -382,6 +392,7 @@ export function useBooruSearch() {
             expiresAt,
           })
         }
+        loadMoreGuardRef.current = false
         return
       }
 
@@ -403,6 +414,7 @@ export function useBooruSearch() {
   useEffect(() => {
     if (!isLoadingMore && isLoadingLock) {
       setIsLoadingLock(false)
+      loadMoreGuardRef.current = false
     }
   }, [isLoadingMore, isLoadingLock])
 
