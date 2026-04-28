@@ -1096,7 +1096,31 @@ export function PromptGallery() {
                       </Button>
                     </div>
                     <div className="space-y-0">
-                      {/* Item 1: Random Background */}
+                      {/* Item 1: Danbooru Strict Limit */}
+                      <div className="border-l-2 border-amber-500 bg-amber-500/5 hover:bg-amber-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Danbooru Strict Limit</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">Important</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          More conservative rate limits have been added to the Danbooru API provider to prevent abuse and avoid IP bans (which had occurred previously). These will be adjusted over time based on usage patterns.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 2: Optimize Gallery */}
+                      <div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Optimize Gallery</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Improvement</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          Several optimization changes have been made to prevent stuttering and choppy animations. The gallery should now provide a much smoother browsing experience.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 3: Random Background */}
                       <div className="border-l-2 border-green-500 bg-green-500/5 hover:bg-green-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
                           <p className="text-xs font-semibold text-foreground leading-snug">New Background Options</p>
@@ -1108,7 +1132,7 @@ export function PromptGallery() {
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
 
-                      {/* Item 2: Minimum Character Post Count */}
+                      {/* Item 4: Minimum Character Post Count */}
                       <div className="border-l-2 border-cyan-500 bg-cyan-500/5 hover:bg-cyan-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
                           <p className="text-xs font-semibold text-foreground leading-snug">Minimum Character Post Count</p>
