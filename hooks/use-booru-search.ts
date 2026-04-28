@@ -167,6 +167,7 @@ export function useBooruSearch() {
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null)
   const loadMoreGuardRef = useRef(false)
+  const wasLoadingMoreRef = useRef(false)
   const [isScrollThrottled, setIsScrollThrottled] = useState(false)
   const [throttleCountdown, setThrottleCountdown] = useState(0)
   const [circuitOpen, setCircuitOpen] = useState(false)
@@ -264,6 +265,7 @@ export function useBooruSearch() {
     loadTimestampsRef.current = []
     throttleExpiresAtRef.current = 0
     loadMoreGuardRef.current = false
+    wasLoadingMoreRef.current = false
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current)
       countdownIntervalRef.current = null
@@ -298,6 +300,21 @@ export function useBooruSearch() {
   const isEmpty = !isLoading && pages?.[0]?.length === 0
   const lastPageFromAPI = pages && pages.length > 0 ? pages[pages.length - 1] : null
   const isReachingEnd = isEmpty || (lastPageFromAPI !== null && lastPageFromAPI.length === 0)
+
+  // Diagnostic: log SWR state transitions to trace data loading
+  useEffect(() => {
+    console.log('[DanbooruThrottle] SWR state changed', {
+      size,
+      pagesCount: pages?.length ?? 0,
+      totalPosts: pages ? pages.flat().length : 0,
+      isValidating,
+      isLoadingMore,
+      isLoading,
+      isReachingEnd,
+      error: error ? String(error) : null,
+      lastPageEmpty: lastPageFromAPI !== null && lastPageFromAPI.length === 0,
+    })
+  }, [size, pages, isValidating, isLoading, error, isReachingEnd])
 
   // Prefetch next page API response when new data arrives
   useEffect(() => {
@@ -436,15 +453,34 @@ export function useBooruSearch() {
     const currentRawPostCount = pages ? pages.flat().length : 0
     setLastLoadAttempt(currentRawPostCount)
 
-    setSize(size + 1)
-    trackLoadMore({ order, nextPage: size + 1, currentCount: allPosts.length })
+    const nextSize = size + 1
+    console.log('[DanbooruThrottle] loadMore calling setSize', {
+      currentSize: size,
+      nextSize,
+      currentPostCount: allPosts.length,
+      currentPageCount: pages?.length ?? 0,
+    })
+    setSize(nextSize)
+    trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
   }, [isLoadingLock, isLoadingMore, booruProvider, size, pages, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
 
-  // Release lock effect
+  // Track previous isLoadingMore so we only release on true→false transition.
+  // Prevents premature release when SWR hasn't set isValidating yet after setSize.
   useEffect(() => {
-    if (!isLoadingMore && isLoadingLock) {
+    wasLoadingMoreRef.current = wasLoadingMoreRef.current || isLoadingMore
+  }, [isLoadingMore])
+
+  // Release lock effect — only fires when a load was actually in progress
+  // (wasLoadingMore was true) and then completed (isLoadingMore becomes false).
+  useEffect(() => {
+    console.log('[DanbooruThrottle] Release effect CHECK', {
+      isLoadingMore, isLoadingLock, wasLoadingMore: wasLoadingMoreRef.current
+    })
+    if (!isLoadingMore && isLoadingLock && wasLoadingMoreRef.current) {
+      console.log('[DanbooruThrottle] Release effect FIRED — clearing lock and guard')
       setIsLoadingLock(false)
       loadMoreGuardRef.current = false
+      wasLoadingMoreRef.current = false
     }
   }, [isLoadingMore, isLoadingLock])
 
