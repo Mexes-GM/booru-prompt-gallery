@@ -14,8 +14,7 @@ import { useToast } from "@/hooks/use-toast"
 // Only 1 API call (~60 images) per window to stay under Danbooru's radar.
 // The user must wait out the window before loading the next batch.
 const DANBOORU_MAX_LOADS_PER_WINDOW = 1
-const DANBOORU_WINDOW_MS = 30_000
-const DEFAULT_SCROLL_COOLDOWN_MS = 1500
+const DANBOORU_WINDOW_MS = 15_000
 
 // Jitter: add ±30% random variation to delays so multiple clients
 // don't synchronize their request windows and hammer the server.
@@ -162,7 +161,7 @@ export function useBooruSearch() {
   const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
   const [randomSeed, setRandomSeed] = useState<number>(0)
   const loadTimestampsRef = useRef<number[]>([])
-  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const throttleExpiresAtRef = useRef<number>(0)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null)
   const [isScrollThrottled, setIsScrollThrottled] = useState(false)
@@ -260,10 +259,7 @@ export function useBooruSearch() {
     setThrottleCountdown(0)
     setCircuitOpen(false)
     loadTimestampsRef.current = []
-    if (cooldownTimerRef.current) {
-      clearTimeout(cooldownTimerRef.current)
-      cooldownTimerRef.current = null
-    }
+    throttleExpiresAtRef.current = 0
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current)
       countdownIntervalRef.current = null
@@ -348,22 +344,34 @@ export function useBooruSearch() {
         const oldestTimestamp = loadTimestampsRef.current[0]
         const baseRetryAfter = oldestTimestamp + DANBOORU_WINDOW_MS - now
         const retryAfter = Math.max(1000, applyJitter(baseRetryAfter))
+        const expiresAt = now + retryAfter
 
+        throttleExpiresAtRef.current = expiresAt
         setIsScrollThrottled(true)
         setThrottleCountdown(Math.ceil(retryAfter / 1000))
 
-        // Start countdown timer
+        // Single interval: both counts down AND expires the throttle.
+        // Uses absolute expiresAt so it survives background-tab throttling.
         if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
         countdownIntervalRef.current = setInterval(() => {
-          setThrottleCountdown(prev => {
-            const next = prev - 1
-            if (next <= 0) {
-              if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-              return 0
+          const remaining = Math.max(0, throttleExpiresAtRef.current - Date.now())
+          const countdown = Math.ceil(remaining / 1000)
+          setThrottleCountdown(countdown)
+
+          if (remaining <= 0) {
+            if (countdownIntervalRef.current) {
+              clearInterval(countdownIntervalRef.current)
+              countdownIntervalRef.current = null
             }
-            return next
-          })
-        }, 1000)
+            setIsScrollThrottled(false)
+            throttleExpiresAtRef.current = 0
+
+            if (broadcastChannelRef.current) {
+              const hash = getSearchHash(debouncedSearchTags, ratingFilter, order)
+              broadcastChannelRef.current.postMessage({ type: 'unthrottled', searchHash: hash })
+            }
+          }
+        }, 250)
 
         // Cross-tab broadcast
         if (broadcastChannelRef.current) {
@@ -371,34 +379,13 @@ export function useBooruSearch() {
           broadcastChannelRef.current.postMessage({
             type: 'throttled',
             searchHash,
-            countdown: Math.ceil(retryAfter / 1000),
+            expiresAt,
           })
-        }
-
-        if (!cooldownTimerRef.current) {
-          cooldownTimerRef.current = setTimeout(() => {
-            setIsScrollThrottled(false)
-            setThrottleCountdown(0)
-            cooldownTimerRef.current = null
-
-            // Cross-tab broadcast
-            if (broadcastChannelRef.current) {
-              const searchHash = getSearchHash(debouncedSearchTags, ratingFilter, order)
-              broadcastChannelRef.current.postMessage({ type: 'unthrottled', searchHash })
-            }
-          }, retryAfter)
         }
         return
       }
 
-      // Apply jitter to cooldown
-      const jitteredCooldown = applyJitter(DEFAULT_SCROLL_COOLDOWN_MS)
       loadTimestampsRef.current.push(now)
-
-      if (cooldownTimerRef.current) {
-        clearTimeout(cooldownTimerRef.current)
-        cooldownTimerRef.current = null
-      }
     }
     // Non-Danbooru providers: no rate limit, unrestricted infinite scroll
 
@@ -419,10 +406,9 @@ export function useBooruSearch() {
     }
   }, [isLoadingMore, isLoadingLock])
 
-  // Cleanup cooldown timer and countdown on unmount
+  // Cleanup countdown on unmount
   useEffect(() => {
     return () => {
-      if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current)
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
       if (broadcastChannelRef.current) broadcastChannelRef.current.close()
     }
@@ -439,18 +425,44 @@ export function useBooruSearch() {
       broadcastChannelRef.current = channel
 
       channel.onmessage = (event) => {
-        const { type, searchHash, countdown } = event.data || {}
+        const { type, searchHash, expiresAt: remoteExpiresAt } = event.data || {}
         const currentHash = getSearchHash(debouncedSearchTags, ratingFilter, order)
 
         // Only react to messages from tabs with the same search
         if (searchHash && searchHash !== currentHash) return
 
-        if (type === 'throttled' && countdown > 0) {
+        if (type === 'throttled' && remoteExpiresAt) {
+          const remaining = Math.max(0, remoteExpiresAt - Date.now())
+          if (remaining <= 0) return // already expired, ignore
+
+          throttleExpiresAtRef.current = remoteExpiresAt
           setIsScrollThrottled(true)
-          setThrottleCountdown(countdown)
+          setThrottleCountdown(Math.ceil(remaining / 1000))
+
+          // Start local countdown so this tab also counts down
+          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+          countdownIntervalRef.current = setInterval(() => {
+            const r = Math.max(0, throttleExpiresAtRef.current - Date.now())
+            const cd = Math.ceil(r / 1000)
+            setThrottleCountdown(cd)
+
+            if (r <= 0) {
+              if (countdownIntervalRef.current) {
+                clearInterval(countdownIntervalRef.current)
+                countdownIntervalRef.current = null
+              }
+              setIsScrollThrottled(false)
+              throttleExpiresAtRef.current = 0
+            }
+          }, 250)
         } else if (type === 'unthrottled') {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current)
+            countdownIntervalRef.current = null
+          }
           setIsScrollThrottled(false)
           setThrottleCountdown(0)
+          throttleExpiresAtRef.current = 0
         }
       }
 
