@@ -32,14 +32,20 @@ export function InfiniteScrollTrigger({
 
     useEffect(() => {
         if (isLoading || !hasNextPage || forceStop || error || isScrollThrottled) {
+            console.log('[DanbooruThrottle] Observer effect SKIP', {
+              isLoading, hasNextPage, forceStop, error, isScrollThrottled
+            })
             return
         }
+
+        console.log('[DanbooruThrottle] Observer CREATED')
 
         const observer = new IntersectionObserver(
             (entries) => {
                 // Re-check via ref — the observer callback may fire after
                 // disconnect() if it was queued before cleanup ran.
                 if (entries[0].isIntersecting && !forceStopRef.current) {
+                    console.log('[DanbooruThrottle] IO callback FIRED — calling onIntersect')
                     onIntersect()
                 }
             },
@@ -55,17 +61,28 @@ export function InfiniteScrollTrigger({
         }
 
         return () => {
+            console.log('[DanbooruThrottle] Observer DISCONNECTED')
             observer.disconnect()
         }
     }, [onIntersect, isLoading, hasNextPage, forceStop, error, isScrollThrottled])
 
     // Auto-retry: when throttle expires and the trigger is visible, fire onIntersect
     useEffect(() => {
+        console.log('[DanbooruThrottle] Auto-retry effect CHECK', {
+          isScrollThrottled, throttleCountdown, hasNextPage, isLoading, error, forceStop
+        })
         if (!isScrollThrottled && throttleCountdown <= 0 && hasNextPage && !isLoading && !error && !forceStop) {
             const el = triggerRef.current
             if (el) {
                 const rect = el.getBoundingClientRect()
+                console.log('[DanbooruThrottle] Auto-retry trigger position', {
+                  rectTop: rect.top,
+                  windowInnerHeight: window.innerHeight,
+                  threshold: window.innerHeight + 800,
+                  visible: rect.top < window.innerHeight + 800
+                })
                 if (rect.top < window.innerHeight + 800) {
+                    console.log('[DanbooruThrottle] Auto-retry FIRED — calling onIntersect')
                     onIntersect()
                 }
             }

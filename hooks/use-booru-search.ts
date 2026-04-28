@@ -335,10 +335,14 @@ export function useBooruSearch() {
     // Synchronous guard: prevents re-entry from stale closures
     // (e.g. IntersectionObserver callback firing after React has
     // already committed a loadMore call in the same tick).
-    if (loadMoreGuardRef.current) return
+    if (loadMoreGuardRef.current) {
+      console.log('[DanbooruThrottle] loadMore BLOCKED by guard ref')
+      return
+    }
     const now = Date.now()
 
     if (isLoadingLock || isLoadingMore) {
+      console.log('[DanbooruThrottle] loadMore BLOCKED by lock', { isLoadingLock, isLoadingMore })
       return
     }
 
@@ -348,17 +352,35 @@ export function useBooruSearch() {
 
     if (isDanbooru) {
       const windowStart = now - DANBOORU_WINDOW_MS
+      const timestampsBefore = loadTimestampsRef.current.length
       loadTimestampsRef.current = loadTimestampsRef.current.filter(t => t > windowStart)
+      const timestampsAfter = loadTimestampsRef.current.length
 
       if (loadTimestampsRef.current.length >= DANBOORU_MAX_LOADS_PER_WINDOW) {
         const oldestTimestamp = loadTimestampsRef.current[0]
+        const oldestAge = now - oldestTimestamp
         const baseRetryAfter = oldestTimestamp + DANBOORU_WINDOW_MS - now
         const retryAfter = Math.max(1000, applyJitter(baseRetryAfter))
         const expiresAt = now + retryAfter
+        const countdownDisplay = Math.ceil(retryAfter / 1000)
+
+        console.log('[DanbooruThrottle] THROTTLE ACTIVATED', {
+          oldestAge,
+          oldestAgeSec: (oldestAge / 1000).toFixed(1) + 's',
+          windowMs: DANBOORU_WINDOW_MS,
+          baseRetryAfter,
+          baseRetryAfterSec: (baseRetryAfter / 1000).toFixed(1) + 's',
+          retryAfter,
+          retryAfterSec: (retryAfter / 1000).toFixed(1) + 's',
+          expiresAt,
+          countdownDisplay,
+          timestampsBefore,
+          timestampsAfter,
+        })
 
         throttleExpiresAtRef.current = expiresAt
         setIsScrollThrottled(true)
-        setThrottleCountdown(Math.ceil(retryAfter / 1000))
+        setThrottleCountdown(countdownDisplay)
 
         // Single interval: both counts down AND expires the throttle.
         // Uses absolute expiresAt so it survives background-tab throttling.
@@ -369,6 +391,7 @@ export function useBooruSearch() {
           setThrottleCountdown(countdown)
 
           if (remaining <= 0) {
+            console.log('[DanbooruThrottle] THROTTLE EXPIRED via interval')
             if (countdownIntervalRef.current) {
               clearInterval(countdownIntervalRef.current)
               countdownIntervalRef.current = null
@@ -397,6 +420,12 @@ export function useBooruSearch() {
       }
 
       loadTimestampsRef.current.push(now)
+      console.log('[DanbooruThrottle] loadMore ALLOWED — pushed timestamp', {
+        now,
+        timestampsBefore,
+        timestampsAfter,
+        totalInWindow: loadTimestampsRef.current.length,
+      })
     }
     // Non-Danbooru providers: no rate limit, unrestricted infinite scroll
 
@@ -445,7 +474,15 @@ export function useBooruSearch() {
 
         if (type === 'throttled' && remoteExpiresAt) {
           const remaining = Math.max(0, remoteExpiresAt - Date.now())
-          if (remaining <= 0) return // already expired, ignore
+          if (remaining <= 0) {
+            console.log('[DanbooruThrottle] Broadcast RX throttled — already expired, ignoring')
+            return
+          }
+
+          console.log('[DanbooruThrottle] Broadcast RX throttled', {
+            remainingSec: (remaining / 1000).toFixed(1) + 's',
+            remoteExpiresAt,
+          })
 
           throttleExpiresAtRef.current = remoteExpiresAt
           setIsScrollThrottled(true)
@@ -459,6 +496,7 @@ export function useBooruSearch() {
             setThrottleCountdown(cd)
 
             if (r <= 0) {
+              console.log('[DanbooruThrottle] Broadcast THROTTLE EXPIRED via interval')
               if (countdownIntervalRef.current) {
                 clearInterval(countdownIntervalRef.current)
                 countdownIntervalRef.current = null
@@ -468,6 +506,7 @@ export function useBooruSearch() {
             }
           }, 250)
         } else if (type === 'unthrottled') {
+          console.log('[DanbooruThrottle] Broadcast RX unthrottled')
           if (countdownIntervalRef.current) {
             clearInterval(countdownIntervalRef.current)
             countdownIntervalRef.current = null
