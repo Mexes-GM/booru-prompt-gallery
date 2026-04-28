@@ -24,11 +24,16 @@ export function InfiniteScrollTrigger({
 }: InfiniteScrollTriggerProps) {
     const triggerRef = useRef<HTMLDivElement>(null)
     const forceStopRef = useRef(forceStop)
+    const isLoadingRef = useRef(isLoading)
 
-    // Keep ref in sync so the observer callback can read the current value
+    // Keep refs in sync so callbacks can read current values without
+    // re-running effects on every props change.
     useEffect(() => {
         forceStopRef.current = forceStop
     }, [forceStop])
+    useEffect(() => {
+        isLoadingRef.current = isLoading
+    }, [isLoading])
 
     useEffect(() => {
         if (isLoading || !hasNextPage || forceStop || error || isScrollThrottled) {
@@ -66,12 +71,15 @@ export function InfiniteScrollTrigger({
         }
     }, [onIntersect, isLoading, hasNextPage, forceStop, error, isScrollThrottled])
 
-    // Auto-retry: when throttle expires and the trigger is visible, fire onIntersect
+    // Auto-retry: when throttle expires and the trigger is visible, fire onIntersect.
+    // Does NOT depend on isLoading or throttleCountdown — uses refs to avoid
+    // re-firing when data finishes loading (which would see the just-pushed
+    // timestamp and trigger an unnecessary throttle loop).
     useEffect(() => {
         console.log('[DanbooruThrottle] Auto-retry effect CHECK', {
           isScrollThrottled, throttleCountdown, hasNextPage, isLoading, error, forceStop
         })
-        if (!isScrollThrottled && throttleCountdown <= 0 && hasNextPage && !isLoading && !error && !forceStop) {
+        if (!isScrollThrottled && throttleCountdown <= 0 && hasNextPage && !isLoadingRef.current && !error && !forceStop) {
             const el = triggerRef.current
             if (el) {
                 const rect = el.getBoundingClientRect()
@@ -87,7 +95,7 @@ export function InfiniteScrollTrigger({
                 }
             }
         }
-    }, [isScrollThrottled, throttleCountdown, hasNextPage, isLoading, error, onIntersect, forceStop])
+    }, [isScrollThrottled, hasNextPage, error, onIntersect, forceStop])
 
     if (!hasNextPage) return null
 

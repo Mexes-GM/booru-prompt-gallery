@@ -388,7 +388,8 @@ export function useBooruSearch() {
         countdownIntervalRef.current = setInterval(() => {
           const remaining = Math.max(0, throttleExpiresAtRef.current - Date.now())
           const countdown = Math.ceil(remaining / 1000)
-          setThrottleCountdown(countdown)
+          // Only update state when the displayed value actually changes
+          setThrottleCountdown(prev => prev === countdown ? prev : countdown)
 
           if (remaining <= 0) {
             console.log('[DanbooruThrottle] THROTTLE EXPIRED via interval')
@@ -493,7 +494,7 @@ export function useBooruSearch() {
           countdownIntervalRef.current = setInterval(() => {
             const r = Math.max(0, throttleExpiresAtRef.current - Date.now())
             const cd = Math.ceil(r / 1000)
-            setThrottleCountdown(cd)
+            setThrottleCountdown(prev => prev === cd ? prev : cd)
 
             if (r <= 0) {
               console.log('[DanbooruThrottle] Broadcast THROTTLE EXPIRED via interval')
