@@ -72,6 +72,7 @@ const fallbackGeneral = new InMemoryRatelimit(10, 10_000)
 const fallbackAuth = new InMemoryRatelimit(5, 900_000)
 const fallbackMagicLink = new InMemoryRatelimit(3, 600_000)
 const fallbackDanbooruApi = new InMemoryRatelimit(10, 10_000) // stricter than Redis 15/10s
+const fallbackDanbooruGlobal = new InMemoryRatelimit(5, 1_000) // 5 req/s per-instance fallback
 
 function logFallback(layer: string, reason: string): void {
   console.log(JSON.stringify({
@@ -198,5 +199,28 @@ export function getDanbooruApiRateLimit(): SafeRatelimit | null {
 
   return {
     limit: (key: string) => safeLimit(upstash, fallbackDanbooruApi, key, 'danbooru-api'),
+  }
+}
+
+// Global Danbooru rate limiter — caps total outbound requests from ALL users.
+// Danbooru enforces 10 req/s per IP. All Vercel functions share the same
+// outbound IP, so we must cap total throughput regardless of user count.
+// Call with a fixed key like "danbooru-outbound" (NOT per-user IP).
+export function getDanbooruGlobalRateLimit(): SafeRatelimit | null {
+  if (process.env.NODE_ENV === 'development') return null
+
+  if (!redis) {
+    return { limit: (key: string) => Promise.resolve(fallbackDanbooruGlobal.limit(key)) }
+  }
+
+  const upstash = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(8, "1 s"),
+    analytics: true,
+    prefix: "@upstash/ratelimit/danbooru-global",
+  })
+
+  return {
+    limit: (key: string) => safeLimit(upstash, fallbackDanbooruGlobal, key, 'danbooru-global'),
   }
 }

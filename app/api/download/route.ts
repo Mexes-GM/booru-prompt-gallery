@@ -1,8 +1,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { PROVIDER_REFERERS, USER_AGENT, USER_AGENT_DANBOORU } from '@/lib/constants'
-import { getDanbooruApiRateLimit } from '@/lib/rate-limit'
-import { isCircuitOpen, getCircuitRetryAfter } from '@/lib/circuit-breaker'
+import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
+import { isCircuitOpenShared, getCircuitRetryAfter } from '@/lib/circuit-breaker'
 
 // Use Node.js runtime for better stability with outgoing requests
 export const runtime = 'nodejs'
@@ -68,8 +68,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Global rate limit — caps total outbound Danbooru requests from ALL users
+    const globalLimit = getDanbooruGlobalRateLimit()
+    if (globalLimit) {
+      const { success } = await globalLimit.limit('danbooru-outbound')
+      if (!success) {
+        return NextResponse.json(
+          { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+          { status: 429, headers: { 'Retry-After': '2' } }
+        )
+      }
+    }
+
     // Circuit breaker check
-    if (isCircuitOpen('danbooru-api')) {
+    if (await isCircuitOpenShared('danbooru-api')) {
       const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
       return NextResponse.json(
         { error: 'Danbooru is saturated. Please wait before downloading.', retryAfter },

@@ -8,8 +8,9 @@ const ALLOWED_DOMAINS = [
     'img1.gelbooru.com',
     'img2.gelbooru.com',
     'img3.gelbooru.com',
-    'danbooru.donmai.us',
-    'cdn.donmai.us',
+    // Danbooru images go through the Cloudflare Worker (proxy-url.ts),
+    // NOT through this Vercel proxy. Allowing them here would bypass
+    // all rate limiting and circuit breaker protections.
 ]
 
 export async function GET(request: NextRequest) {

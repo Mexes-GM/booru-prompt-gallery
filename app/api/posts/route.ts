@@ -1,9 +1,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { BooruFactory } from '@/lib/booru/factory'
-import { getDanbooruApiRateLimit } from '@/lib/rate-limit'
+import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
 import { coalesce } from '@/lib/request-coalescer'
-import { isCircuitOpen, getCircuitRetryAfter } from '@/lib/circuit-breaker'
+import { isCircuitOpenShared, getCircuitRetryAfter } from '@/lib/circuit-breaker'
 
 export const runtime = 'edge'
 
@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   const tags = searchParams.get('tags') || ''
   const order = (searchParams.get('order') || 'popular') as 'popular' | 'recent' | 'random'
   const providerType = (searchParams.get('provider') || 'danbooru') as 'danbooru' | 'rule34' | 'aibooru' | 'e621' | 'gelbooru'
+  const seed = searchParams.get('seed') || ''
 
   // Rate limit check — only for Danbooru which hits the external API
   if (providerType === 'danbooru') {
@@ -40,13 +41,28 @@ export async function GET(request: NextRequest) {
         )
       }
     }
+
+    // Global rate limit — caps total outbound requests from ALL users
+    const globalLimit = getDanbooruGlobalRateLimit()
+    if (globalLimit) {
+      const { success } = await globalLimit.limit('danbooru-outbound')
+      if (!success) {
+        return NextResponse.json(
+          { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+          { status: 429, headers: { 'Retry-After': '2' } }
+        )
+      }
+    }
   }
 
-  const cacheKey = `${providerType}-${tags}-${page}-${order}`
+  // Include seed in the cache key so random-mode pagination (which always
+  // sends page=1 and differentiates pages via the seed) doesn't collapse
+  // multiple distinct requests into a single coalesced/cached response.
+  const cacheKey = `${providerType}-${tags}-${page}-${order}${seed ? `-${seed}` : ''}`
   const cacheDuration = 600
 
   // Circuit breaker check — fail fast if Danbooru circuit is open
-  if (providerType === 'danbooru' && isCircuitOpen('danbooru-api')) {
+  if (providerType === 'danbooru' && await isCircuitOpenShared('danbooru-api')) {
     const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
     return NextResponse.json(
       { error: 'Danbooru is saturated. Please wait before retrying.', retryAfter },

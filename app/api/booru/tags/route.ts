@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { smartFetch } from '@/lib/network/smart-fetch'
 import { PROVIDER_URLS, USER_AGENT_DANBOORU } from '@/lib/constants'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { getDanbooruApiRateLimit } from '@/lib/rate-limit'
+import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
 
 // Vercel Edge Runtime for faster performance
 export const runtime = 'edge'
@@ -87,6 +87,18 @@ export async function GET(request: Request) {
           return NextResponse.json(
             { error: 'Too many requests. Please wait before searching tags.' },
             { status: 429, headers: { 'Retry-After': '10' } }
+          )
+        }
+      }
+
+      // Global rate limit — caps total outbound Danbooru requests from ALL users
+      const globalLimit = getDanbooruGlobalRateLimit()
+      if (globalLimit) {
+        const { success } = await globalLimit.limit('danbooru-outbound')
+        if (!success) {
+          return NextResponse.json(
+            { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+            { status: 429, headers: { 'Retry-After': '2' } }
           )
         }
       }
