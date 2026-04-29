@@ -145,6 +145,7 @@ export function useBooruSearch() {
   const [randomSeed, setRandomSeed] = useState<number>(0)
   const loadMoreGuardRef = useRef(false)
   const wasLoadingMoreRef = useRef(false)
+  const lockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [circuitOpen, setCircuitOpen] = useState(false)
 
   // Store the rating before we forced it to 'all' for Rule34
@@ -319,6 +320,17 @@ export function useBooruSearch() {
     const currentRawPostCount = pages ? pages.flat().length : 0
     setLastLoadAttempt(currentRawPostCount)
 
+    // Safety timeout: force-release lock if it gets stuck (e.g. CDN cache
+    // resolves so fast that isValidating never observably transitions to true).
+    if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current)
+    lockTimeoutRef.current = setTimeout(() => {
+      if (loadMoreGuardRef.current) {
+        setIsLoadingLock(false)
+        loadMoreGuardRef.current = false
+        wasLoadingMoreRef.current = false
+      }
+    }, 8000)
+
     const nextSize = size + 1
     setSize(nextSize)
     trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
@@ -337,8 +349,30 @@ export function useBooruSearch() {
       setIsLoadingLock(false)
       loadMoreGuardRef.current = false
       wasLoadingMoreRef.current = false
+      if (lockTimeoutRef.current) { clearTimeout(lockTimeoutRef.current); lockTimeoutRef.current = null }
     }
   }, [isLoadingMore, isLoadingLock])
+
+  // Fallback lock release: when CDN cache resolves so fast that isValidating
+  // never observably transitions to true, the above effect never fires.
+  // Detect data arrival (pages change) while lock is held and release it.
+  useEffect(() => {
+    if (!isLoadingLock || isLoadingMore) return
+
+    // If the lock is held but data has arrived (pages changed) and SWR is
+    // no longer validating, the request completed without an observable
+    // isValidating=true transition. Release the lock.
+    if (lastLoadAttempt > 0 && !wasLoadingMoreRef.current) {
+      const currentRawPostCount = pages ? pages.flat().length : 0
+      // Data changed or API returned empty — either way the request completed
+      if (currentRawPostCount !== lastLoadAttempt || (pages && pages.length >= size)) {
+        setIsLoadingLock(false)
+        loadMoreGuardRef.current = false
+        wasLoadingMoreRef.current = false
+        if (lockTimeoutRef.current) { clearTimeout(lockTimeoutRef.current); lockTimeoutRef.current = null }
+      }
+    }
+  }, [pages, isLoadingLock, isLoadingMore, lastLoadAttempt, size])
 
   const refresh = useCallback(() => {
     if (order === 'random' || /order:random|random:\d+/i.test(searchTags)) {
