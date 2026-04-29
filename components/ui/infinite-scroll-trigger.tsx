@@ -23,23 +23,19 @@ export function InfiniteScrollTrigger({
     throttleCountdown = 0,
 }: InfiniteScrollTriggerProps) {
     const triggerRef = useRef<HTMLDivElement>(null)
-    const forceStopRef = useRef(forceStop)
-    const isLoadingRef = useRef(isLoading)
     const onIntersectRef = useRef(onIntersect)
+    const forceStopRef = useRef(forceStop)
     const hasNextPageRef = useRef(hasNextPage)
     const errorRef = useRef(error)
 
-    // Keep refs in sync so callbacks can read current values without
-    // re-running effects on every prop change.
-    useEffect(() => {
-        forceStopRef.current = forceStop
-    }, [forceStop])
-    useEffect(() => {
-        isLoadingRef.current = isLoading
-    }, [isLoading])
+    // Sync refs so the IO callback always calls the latest onIntersect
+    // and checks current values without re-creating the observer.
     useEffect(() => {
         onIntersectRef.current = onIntersect
     }, [onIntersect])
+    useEffect(() => {
+        forceStopRef.current = forceStop
+    }, [forceStop])
     useEffect(() => {
         hasNextPageRef.current = hasNextPage
     }, [hasNextPage])
@@ -47,10 +43,17 @@ export function InfiniteScrollTrigger({
         errorRef.current = error
     }, [error])
 
+    // Single observer: created when the component mounts or when the throttle
+    // state changes. The IO callback fires when the trigger enters the viewport,
+    // including immediately after creation if already visible.
+    // Dependencies:
+    //   isScrollThrottled — re-enable observer after throttle expires
+    //   isLoading         — trigger position may have changed after data loads
+    //   forceStop         — reveal animation ended, re-check intersection
     useEffect(() => {
-        if (isLoadingRef.current || !hasNextPageRef.current || forceStopRef.current || errorRef.current || isScrollThrottled) {
-            console.log('[DanbooruThrottle] Observer effect SKIP', {
-              isLoading: isLoadingRef.current, hasNextPage: hasNextPageRef.current, forceStop: forceStopRef.current, error: errorRef.current, isScrollThrottled
+        if (isLoading || !hasNextPageRef.current || forceStop || error || isScrollThrottled) {
+            console.log('[DanbooruThrottle] Observer SKIP', {
+                isLoading, hasNextPage: hasNextPageRef.current, forceStop, error, isScrollThrottled
             })
             return
         }
@@ -59,10 +62,8 @@ export function InfiniteScrollTrigger({
 
         const observer = new IntersectionObserver(
             (entries) => {
-                // Re-check via ref — the observer callback may fire after
-                // disconnect() if it was queued before cleanup ran.
                 if (entries[0].isIntersecting && !forceStopRef.current) {
-                    console.log('[DanbooruThrottle] IO callback FIRED — calling onIntersect')
+                    console.log('[DanbooruThrottle] IO callback FIRED')
                     onIntersectRef.current()
                 }
             },
@@ -81,33 +82,7 @@ export function InfiniteScrollTrigger({
             console.log('[DanbooruThrottle] Observer DISCONNECTED')
             observer.disconnect()
         }
-    }, [isScrollThrottled])
-
-    // Auto-retry: when throttle expires and the trigger is visible, fire onIntersect.
-    // Only depends on isScrollThrottled — uses refs for everything else.
-    // This prevents re-firing when data finishes loading (isLoading→false),
-    // when loadMore is recreated (onIntersect changes), or on every countdown tick.
-    useEffect(() => {
-        console.log('[DanbooruThrottle] Auto-retry effect CHECK', {
-          isScrollThrottled, throttleCountdown, hasNextPage, isLoading, error, forceStop
-        })
-        if (!isScrollThrottled && throttleCountdown <= 0 && hasNextPageRef.current && !isLoadingRef.current && !errorRef.current && !forceStopRef.current) {
-            const el = triggerRef.current
-            if (el) {
-                const rect = el.getBoundingClientRect()
-                console.log('[DanbooruThrottle] Auto-retry trigger position', {
-                  rectTop: rect.top,
-                  windowInnerHeight: window.innerHeight,
-                  threshold: window.innerHeight + 800,
-                  visible: rect.top < window.innerHeight + 800
-                })
-                if (rect.top < window.innerHeight + 800) {
-                    console.log('[DanbooruThrottle] Auto-retry FIRED — calling onIntersect')
-                    onIntersectRef.current()
-                }
-            }
-        }
-    }, [isScrollThrottled])
+    }, [isScrollThrottled, isLoading, forceStop])
 
     if (!hasNextPage) return null
 
