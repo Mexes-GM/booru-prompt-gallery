@@ -224,7 +224,7 @@ const transformAibooruPost = (post: unknown): BooruPost => {
 // identical requests in rapid succession (React Strict Mode double-render,
 // filter changes, etc.). Holds results for 5s after resolution so rapid
 // re-renders reuse the settled promise instead of creating new ones.
-const inflightRequests = new Map<string, Promise<unknown>>()
+const inflightRequests = new Map<string, Promise<BooruPost[]>>()
 
 // Page-1 Danbooru request sequencer. During SWR initialization React can
 // trigger 3+ different page-1 URLs in <100ms as state settles (default
@@ -232,7 +232,7 @@ const inflightRequests = new Map<string, Promise<unknown>>()
 // that's 30+ requests hitting Danbooru in the first second.
 // This chain serializes unique page-1 requests at 1s intervals so they
 // never burst through Danbooru's 10 req/s limit.
-let page1Chain: Promise<void> = Promise.resolve()
+let page1Chain: Promise<unknown> = Promise.resolve()
 let isFirstPage1 = true
 const PAGE1_SPACING_MS = 1000
 
@@ -247,77 +247,100 @@ const fetcher = async (url: string) => {
   const isDanbooruApi = url.includes('/api/posts') || url.includes('danbooru.donmai.us')
   const isDanbooruPage1 = isDanbooruApi && url.includes('page=1')
 
-  const doFetch = async () => {
-    try {
-      const isDirectAibooru = url.startsWith(PROVIDER_URLS.AIBOORU)
+  const doFetch = async (): Promise<BooruPost[]> => {
+    const MAX_RETRIES = 2
 
-      const headers: HeadersInit = isDirectAibooru
-        ? {}
-        : {
-          'Accept': 'application/json',
-          'User-Agent': USER_AGENT,
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const isDirectAibooru = url.startsWith(PROVIDER_URLS.AIBOORU)
+
+        const headers: HeadersInit = isDirectAibooru
+          ? {}
+          : {
+            'Accept': 'application/json',
+            'User-Agent': USER_AGENT,
+          }
+
+        const res = await fetch(url, { headers })
+
+        // Retry 429 responses after the server-suggested delay
+        if (res.status === 429 && attempt < MAX_RETRIES) {
+          let retryAfter = 5
+          try {
+            const body = await res.json()
+            retryAfter = Math.min(body.retryAfter || 5, 30)
+          } catch { /* use default */ }
+          await new Promise(r => setTimeout(r, retryAfter * 1000))
+          continue
         }
 
-      const res = await fetch(url, { headers })
-
-      if (!res.ok) {
-        const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
-        try { error.info = await res.json() } catch { error.info = { message: res.statusText } }
-        error.status = res.status
-        throw error
-      }
-
-      const data = await res.json()
-
-      let resultPosts = data
-      let identifiedProvider: 'danbooru' | 'aibooru' | null = null
-
-      if (isDirectAibooru) {
-        identifiedProvider = 'aibooru'
-        if (Array.isArray(data)) {
-          resultPosts = data
-            .filter(post =>
-              post && post.id &&
-              (post.file_url || post.large_file_url) &&
-              !post.file_url?.includes("deleted") &&
-              (post.tag_string || post.tags) &&
-              !post.file_url?.match(/\.(mp4|webm|avi|mov|mkv)$/i)
-            )
-            .map(transformAibooruPost)
-        } else {
-          resultPosts = []
+        if (!res.ok) {
+          const error = new Error('Failed to fetch data') as Error & { info?: unknown; status?: number }
+          try { error.info = await res.json() } catch { error.info = { message: res.statusText } }
+          error.status = res.status
+          throw error
         }
-      } else if (
-        url.includes('/api/posts') ||
-        url.includes('/api/favorites') ||
-        (url.includes('api/booru/search') && url.includes('provider=danbooru')) ||
-        url.includes('danbooru.donmai.us')
-      ) {
-        identifiedProvider = 'danbooru'
-      }
 
-      if (identifiedProvider && Array.isArray(resultPosts)) {
-        queueMicrotask(() => {
-          try { prefetchTagCounts(resultPosts as BooruPost[], identifiedProvider) }
-          catch (error) { console.error('[ApiClient] Background tag prefetch error:', error) }
-        })
-      }
+        const data = await res.json()
 
-      return resultPosts
-    } catch (fetchError: unknown) {
-      if (fetchError instanceof Response && fetchError.status !== 404) {
-        console.error('[ApiClient] Fetch Error:', fetchError)
-      } else if (!(fetchError instanceof Response)) {
-        console.error('[ApiClient] Fetch Error:', fetchError)
+        let resultPosts = data
+        let identifiedProvider: 'danbooru' | 'aibooru' | null = null
+
+        if (isDirectAibooru) {
+          identifiedProvider = 'aibooru'
+          if (Array.isArray(data)) {
+            resultPosts = data
+              .filter(post =>
+                post && post.id &&
+                (post.file_url || post.large_file_url) &&
+                !post.file_url?.includes("deleted") &&
+                (post.tag_string || post.tags) &&
+                !post.file_url?.match(/\.(mp4|webm|avi|mov|mkv)$/i)
+              )
+              .map(transformAibooruPost)
+          } else {
+            resultPosts = []
+          }
+        } else if (
+          url.includes('/api/posts') ||
+          url.includes('/api/favorites') ||
+          (url.includes('api/booru/search') && url.includes('provider=danbooru')) ||
+          url.includes('danbooru.donmai.us')
+        ) {
+          identifiedProvider = 'danbooru'
+        }
+
+        if (identifiedProvider && Array.isArray(resultPosts)) {
+          queueMicrotask(() => {
+            try { prefetchTagCounts(resultPosts as BooruPost[], identifiedProvider) }
+            catch (error) { console.error('[ApiClient] Background tag prefetch error:', error) }
+          })
+        }
+
+        return resultPosts
+      } catch (fetchError: unknown) {
+        // Retry network errors (TypeError) — e.g. connection refused, DNS failure
+        if (fetchError instanceof TypeError && attempt < MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, 2000))
+          continue
+        }
+
+        if (fetchError instanceof Response && fetchError.status !== 404) {
+          console.error('[ApiClient] Fetch Error:', fetchError)
+        } else if (!(fetchError instanceof Response)) {
+          console.error('[ApiClient] Fetch Error:', fetchError)
+        }
+        throw fetchError
       }
-      throw fetchError
     }
+
+    throw new Error('Failed to fetch data')
   }
 
   // Serialize unique page-1 Danbooru requests. The first fires immediately;
   // each subsequent one waits 1s after the previous one settles. This
   // prevents SWR initialization bursts without delaying the first paint.
-  let promise: Promise<unknown>
+  let promise: Promise<BooruPost[]>
   if (isDanbooruPage1) {
     if (isFirstPage1) {
       isFirstPage1 = false

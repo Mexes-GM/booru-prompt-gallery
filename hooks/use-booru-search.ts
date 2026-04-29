@@ -268,10 +268,13 @@ export function useBooruSearch() {
   const lastPageFromAPI = pages && pages.length > 0 ? pages[pages.length - 1] : null
   const isReachingEnd = isEmpty || (lastPageFromAPI !== null && lastPageFromAPI.length === 0)
 
-  // Prefetch next page API response when new data arrives
+  // Prefetch next page API response when new data arrives.
+  // Skip random order — each seed produces a unique URL so there is no
+  // cache to warm, and the extra request only consumes rate-limit budget.
   useEffect(() => {
     if (!pages || pages.length === 0) return
     if (noMoreResults || isReachingEnd) return
+    if (order === 'random') return
 
     const nextPage = size + 1
     const encodedQuery = encodeURIComponent(debouncedSearchTags || '')
@@ -281,11 +284,7 @@ export function useBooruSearch() {
     else if (booruProvider === 'e621') apiEndpoint = '/api/e621'
     else if (booruProvider === 'gelbooru') apiEndpoint = '/api/gelbooru'
 
-    const isRandomOrder = order === 'random'
-    const effectivePage = isRandomOrder ? 1 : nextPage
-    const seedParam = isRandomOrder && randomSeed ? `&seed=${randomSeed}_${nextPage - 1}` : ''
-
-    const nextUrl = `${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}${seedParam}`
+    const nextUrl = `${apiEndpoint}?page=${nextPage}&tags=${encodedQuery}&order=${order}`
 
     const link = document.createElement('link')
     link.rel = 'prefetch'
@@ -382,9 +381,10 @@ export function useBooruSearch() {
         setLoadMoreError(true)
         setNoMoreResults(false)
 
-        const message = error?.message || ''
-        const isCircuitOpen = message.includes('saturated') || message.includes('circuit breaker')
-        const isRateLimit = !isCircuitOpen && (message.includes('429') || message.includes('rate limit') || message.includes('Too many requests'))
+        const status = (error as any)?.status
+        const serverErrorMessage = (error as any)?.info?.error || ''
+        const isCircuitOpen = status === 429 && serverErrorMessage.includes('saturated')
+        const isRateLimit = status === 429 && !isCircuitOpen
 
         if (isCircuitOpen) {
           setCircuitOpen(true)
