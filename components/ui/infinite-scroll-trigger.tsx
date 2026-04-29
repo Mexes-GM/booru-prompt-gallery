@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useRef } from "react"
-import { Loader2 } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Loader2, ChevronDown } from "lucide-react"
 
 interface InfiniteScrollTriggerProps {
     onIntersect: () => void
@@ -23,6 +23,9 @@ export function InfiniteScrollTrigger({
     const forceStopRef = useRef(forceStop)
     const hasNextPageRef = useRef(hasNextPage)
     const errorRef = useRef(error)
+    const cooldownRef = useRef(false)
+    const wasLoadingRef = useRef(isLoading)
+    const [cooldownActive, setCooldownActive] = useState(false)
 
     // Sync refs so the IO callback always calls the latest onIntersect
     // and checks current values without re-creating the observer.
@@ -39,18 +42,31 @@ export function InfiniteScrollTrigger({
         errorRef.current = error
     }, [error])
 
-    // Single observer: the IO callback fires when the trigger enters the viewport,
-    // including immediately after creation if already visible.
-    // Dependencies:
-    //   isLoading — trigger position may have changed after data loads
-    //   forceStop — reveal animation ended, re-check intersection
+    // Track isLoading → false transitions to apply cooldown.
+    // Prevents the observer from firing synchronously on observe() when the
+    // target element is already intersecting after a load cycle completes.
     useEffect(() => {
-        if (isLoading || !hasNextPageRef.current || forceStop || error) {
+        if (wasLoadingRef.current && !isLoading) {
+            cooldownRef.current = true
+            setCooldownActive(true)
+            const timer = setTimeout(() => {
+                cooldownRef.current = false
+                setCooldownActive(false)
+            }, 500)
+            wasLoadingRef.current = isLoading
+            return () => clearTimeout(timer)
+        }
+        wasLoadingRef.current = isLoading
+    }, [isLoading])
+
+    useEffect(() => {
+        if (isLoading || !hasNextPageRef.current || forceStop || errorRef.current) {
             return
         }
 
         const observer = new IntersectionObserver(
             (entries) => {
+                if (cooldownRef.current) return
                 if (entries[0].isIntersecting && !forceStopRef.current) {
                     onIntersectRef.current()
                 }
@@ -78,11 +94,18 @@ export function InfiniteScrollTrigger({
             ref={triggerRef}
             className="w-full py-8 flex flex-col justify-center items-center min-h-[60px] gap-2"
         >
-            {isLoading && (
+            {isLoading ? (
                 <>
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">Loading more results...</p>
                 </>
+            ) : cooldownActive ? (
+                <p className="text-sm text-muted-foreground/60">Loading more...</p>
+            ) : (
+                <div className="flex flex-col items-center gap-1">
+                    <ChevronDown className="w-4 h-4 text-muted-foreground/40" />
+                    <p className="text-xs text-muted-foreground/40">Scroll for more</p>
+                </div>
             )}
         </div>
     )
