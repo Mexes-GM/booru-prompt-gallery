@@ -2318,8 +2318,7 @@ export function PromptGallery() {
                   isLoading={search.isLoadingMore || search.isLoadingLock}
                   forceStop={isRevealing}
                   error={search.loadMoreError}
-                  isScrollThrottled={search.isScrollThrottled}
-                  throttleCountdown={search.throttleCountdown}
+
                 />
               ) : (
                 <div className="space-y-2">

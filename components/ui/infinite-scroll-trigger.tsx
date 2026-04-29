@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { Loader2, Clock } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 interface InfiniteScrollTriggerProps {
     onIntersect: () => void
@@ -9,8 +9,6 @@ interface InfiniteScrollTriggerProps {
     hasNextPage: boolean
     forceStop?: boolean
     error?: boolean
-    isScrollThrottled?: boolean
-    throttleCountdown?: number
 }
 
 export function InfiniteScrollTrigger({
@@ -19,8 +17,6 @@ export function InfiniteScrollTrigger({
     hasNextPage,
     forceStop = false,
     error = false,
-    isScrollThrottled = false,
-    throttleCountdown = 0,
 }: InfiniteScrollTriggerProps) {
     const triggerRef = useRef<HTMLDivElement>(null)
     const onIntersectRef = useRef(onIntersect)
@@ -43,27 +39,19 @@ export function InfiniteScrollTrigger({
         errorRef.current = error
     }, [error])
 
-    // Single observer: created when the component mounts or when the throttle
-    // state changes. The IO callback fires when the trigger enters the viewport,
+    // Single observer: the IO callback fires when the trigger enters the viewport,
     // including immediately after creation if already visible.
     // Dependencies:
-    //   isScrollThrottled — re-enable observer after throttle expires
-    //   isLoading         — trigger position may have changed after data loads
-    //   forceStop         — reveal animation ended, re-check intersection
+    //   isLoading — trigger position may have changed after data loads
+    //   forceStop — reveal animation ended, re-check intersection
     useEffect(() => {
-        if (isLoading || !hasNextPageRef.current || forceStop || error || isScrollThrottled) {
-            console.log('[DanbooruThrottle] Observer SKIP', {
-                isLoading, hasNextPage: hasNextPageRef.current, forceStop, error, isScrollThrottled
-            })
+        if (isLoading || !hasNextPageRef.current || forceStop || error) {
             return
         }
-
-        console.log('[DanbooruThrottle] Observer CREATED')
 
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries[0].isIntersecting && !forceStopRef.current) {
-                    console.log('[DanbooruThrottle] IO callback FIRED')
                     onIntersectRef.current()
                 }
             },
@@ -79,10 +67,9 @@ export function InfiniteScrollTrigger({
         }
 
         return () => {
-            console.log('[DanbooruThrottle] Observer DISCONNECTED')
             observer.disconnect()
         }
-    }, [isScrollThrottled, isLoading, forceStop])
+    }, [isLoading, forceStop])
 
     if (!hasNextPage) return null
 
@@ -95,14 +82,6 @@ export function InfiniteScrollTrigger({
                 <>
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">Loading more results...</p>
-                </>
-            )}
-            {isScrollThrottled && throttleCountdown > 0 && (
-                <>
-                    <Clock className="w-5 h-5 text-amber-500" />
-                    <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                        Loading too fast. Wait {throttleCountdown}s before loading more...
-                    </p>
                 </>
             )}
         </div>
