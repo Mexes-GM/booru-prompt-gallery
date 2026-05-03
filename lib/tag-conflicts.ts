@@ -10,11 +10,15 @@ export interface TagConflictRule {
 export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
   // === CHARACTER COUNT & GENDER (10 tags) ===
   "1girl": {
-    blocks: ["2girls", "3girls", "4girls", "5girls", "6+girls"],
+    blocks: ["2girls", "3girls", "4girls", "5girls", "6+girls", "7+girls", "8+girls", "9+girls",
+             "1boy", "2boys", "3boys", "4boys", "5boys", "6+boys", "7+boys", "8+boys", "9+boys",
+             "multiple_boys", "no_humans"],
     exceptions: {}
   },
   "1boy": {
-    blocks: ["2boys", "3boys", "4boys", "5boys", "6+boys"],
+    blocks: ["2boys", "3boys", "4boys", "5boys", "6+boys", "7+boys", "8+boys", "9+boys",
+             "1girl", "2girls", "3girls", "4girls", "5girls", "6+girls", "7+girls", "8+girls", "9+girls",
+             "multiple_girls", "no_humans"],
     exceptions: {}
   },
   "solo": {
@@ -139,7 +143,10 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
     exceptions: {
       "looking_back": ["lips", "nose", "eyes", "mouth", "smile", "blush", "tears"],
       "looking_over_shoulder": ["lips", "nose", "eyes", "mouth", "smile", "blush", "tears"],
-      "profile": ["lips", "nose", "eyes", "mouth", "smile", "blush", "tears"]
+      "profile": ["lips", "nose", "eyes", "mouth", "smile", "blush", "tears"],
+      "mirror_reflection": ["lips", "nose", "eyes", "mouth", "smile", "blush", "tears", "breasts", "cleavage", "chest", "navel", "stomach"],
+      "mirror": ["lips", "nose", "eyes", "mouth", "smile", "blush", "tears", "breasts", "cleavage", "chest", "navel", "stomach"],
+      "selfie": ["lips", "nose", "eyes", "mouth", "smile", "blush", "tears", "face"]
     }
   },
   "profile": {
@@ -166,7 +173,10 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
     exceptions: {
       "naked_apron": ["apron"],
       "naked_cape": ["cape", "cloak"],
-      "naked_ribbon": ["ribbon"]
+      "naked_ribbon": ["ribbon"],
+      "naked_towel": ["towel"],
+      "towel": ["towel"],
+      "bath_towel": ["towel"]
     }
   },
   "naked": {
@@ -178,7 +188,10 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
       "t-shirt", "sweater", "hoodie", "long_sleeves", "tank_top"
     ],
     exceptions: {
-      "naked_apron": ["apron"]
+      "naked_apron": ["apron"],
+      "naked_towel": ["towel"],
+      "towel": ["towel"],
+      "bath_towel": ["towel"]
     }
   },
   "clothed": {
@@ -398,7 +411,9 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
       "standing", "walking", "running", "fighting", "dancing", "reading"
     ],
     exceptions: {
-      "sleepwalking": ["walking", "standing"]
+      "sleepwalking": ["walking", "standing"],
+      "half-asleep": ["eyes_open", "looking_at_viewer", "looking_away"],
+      "drowsy": ["eyes_open", "looking_at_viewer"]
     }
   },
   "closed_eyes": {
@@ -832,6 +847,148 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
   "meme": {
     blocks: ["serious", "photorealistic", "realistic", "masterpiece"],
     exceptions: {}
+  },
+
+  // === HAIR COLOR (NEW — from gap analysis) ===
+  "blonde_hair": {
+    blocks: ["black_hair", "brown_hair", "red_hair", "blue_hair", "pink_hair", "purple_hair", "green_hair", "white_hair", "silver_hair", "gray_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["black_hair", "brown_hair", "white_hair"],
+      "multicolored_hair": ["black_hair", "brown_hair", "white_hair", "pink_hair", "blue_hair"],
+      "streaked_hair": ["black_hair", "brown_hair", "white_hair", "pink_hair", "blue_hair", "red_hair"],
+      "gradient_hair": ["black_hair", "brown_hair", "white_hair", "pink_hair", "blue_hair"]
+    }
+  },
+  "black_hair": {
+    blocks: ["blonde_hair", "white_hair", "silver_hair", "gray_hair", "red_hair", "blue_hair", "pink_hair", "green_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["blonde_hair", "white_hair", "red_hair", "pink_hair", "blue_hair"],
+      "multicolored_hair": ["blonde_hair", "white_hair", "red_hair", "pink_hair", "blue_hair"],
+      "streaked_hair": ["blonde_hair", "white_hair", "red_hair", "pink_hair", "blue_hair"],
+      "gradient_hair": ["blonde_hair", "white_hair", "red_hair"]
+    }
+  },
+  "white_hair": {
+    blocks: ["black_hair", "brown_hair", "red_hair", "blue_hair", "pink_hair", "purple_hair", "green_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["black_hair", "brown_hair", "red_hair", "blue_hair"],
+      "multicolored_hair": ["black_hair", "brown_hair", "red_hair", "blue_hair"],
+      "streaked_hair": ["black_hair", "brown_hair", "red_hair", "blue_hair"],
+      "gradient_hair": ["black_hair", "brown_hair", "red_hair", "blue_hair"]
+    }
+  },
+
+  // === EYEWEAR (NEW — from gap analysis) ===
+  "glasses": {
+    blocks: ["blindfold", "eye_mask", "sleep_mask", "bare_face"],
+    exceptions: {}
+  },
+  "blindfold": {
+    blocks: ["glasses", "sunglasses", "monocle", "goggles", "looking_at_viewer", "eye_contact"],
+    exceptions: {
+      "see-through_blindfold": ["looking_at_viewer", "eye_contact"]
+    }
+  },
+
+  // === WEAPONS (NEW — from gap analysis) ===
+  "holding_weapon": {
+    blocks: ["empty_hands", "hands_in_pockets", "arms_behind_back", "peaceful", "relaxing"],
+    exceptions: {}
+  },
+
+  // === SPECIES (NEW — from gap analysis) ===
+  "robot": {
+    blocks: ["human", "flesh", "skin", "blood", "organic", "blush", "tears", "sweat", "saliva"],
+    exceptions: {
+      "android": ["blush", "tears", "sweat", "saliva"],
+      "cyborg": ["human", "flesh", "skin", "blood", "blush", "tears", "sweat"],
+      "gynoid": ["human", "blush"]
+    }
+  },
+  "angel": {
+    blocks: ["demon", "devil", "fallen_angel", "succubus", "incubus", "evil", "dark"],
+    exceptions: {
+      "fallen_angel": []
+    }
+  },
+  "demon": {
+    blocks: ["angel", "holy", "sacred", "pure", "blessed"],
+    exceptions: {}
+  },
+  "vampire": {
+    blocks: ["angel", "holy", "sacred", "sunlight", "garlic", "cross"],
+    exceptions: {}
+  },
+
+  // === COMPOSITION (NEW — from gap analysis) ===
+  "symmetry": {
+    blocks: ["asymmetry", "chaotic", "random", "messy", "unbalanced"],
+    exceptions: {}
+  },
+
+  // === ACTIONS — EXPANDED (NEW — from gap analysis) ===
+  "swimming": {
+    blocks: ["winter_clothes", "armor", "heavy_coat", "fully_clothed", "snow", "desert", "indoors"],
+    exceptions: {
+      "indoor_pool": ["indoors"]
+    }
+  },
+  "dancing": {
+    blocks: ["sleeping", "lying_down", "sitting", "kneeling", "seiza", "indian_style", "bound", "tied", "handcuffed"],
+    exceptions: {}
+  },
+  "surprised": {
+    blocks: ["calm", "peaceful", "sleeping", "bored", "apathetic", "content"],
+    exceptions: {}
+  },
+
+  // === SETTING — EXPANDED (NEW — from gap analysis) ===
+  "space": {
+    blocks: ["sky", "cloud", "sun", "sunlight", "beach", "forest", "mountain", "ocean", "underwater", "rain", "snow"],
+    exceptions: {
+      "spaceship": ["sky", "cloud"],
+      "planet": ["sky", "cloud", "mountain"]
+    }
+  },
+  "cave": {
+    blocks: ["sky", "sun", "outdoors", "sunlight", "beach", "ocean", "cloud", "sunny", "cityscape"],
+    exceptions: {
+      "cave_entrance": ["outdoors", "sunlight", "sky"],
+      "open_cave": ["outdoors", "sky"]
+    }
+  },
+  "ruins": {
+    blocks: ["pristine", "new", "modern", "futuristic", "space_station", "laboratory"],
+    exceptions: {}
+  },
+
+  // === POSTURE — EXPANDED (NEW — from gap analysis) ===
+  "upside-down": {
+    blocks: ["standing", "walking", "running", "sitting", "kneeling"],
+    exceptions: {}
+  },
+  "handstand": {
+    blocks: ["standing", "walking", "sitting", "lying_down", "kneeling", "seiza"],
+    exceptions: {}
+  },
+
+  // === MISC EXPANSIONS (NEW — from gap analysis) ===
+  "bald": {
+    blocks: ["long_hair", "short_hair", "very_long_hair", "ponytail", "twintails", "braids", "hair_bun", "hair_down", "loose_hair", "medium_hair", "floor-length_hair",
+             "blonde_hair", "brown_hair", "black_hair", "white_hair", "red_hair", "blue_hair", "pink_hair"],
+    exceptions: {}
+  },
+  "armor": {
+    blocks: ["nude", "naked", "topless", "bottomless", "swimsuit", "bikini", "bare_shoulders", "bare_chest", "bare_arms", "bare_legs",
+             "tank_top", "camisole", "lingerie", "underwear", "panties"],
+    exceptions: {
+      "damaged_armor": ["bare_shoulders", "bare_arms", "bare_legs"],
+      "broken_armor": ["bare_shoulders", "bare_chest", "bare_arms", "bare_legs"]
+    }
+  },
+  "blood": {
+    blocks: ["clean", "pristine", "immaculate", "peaceful", "sparkling", "pure"],
+    exceptions: {}
   }
 }
 
@@ -841,9 +998,67 @@ export function isRelatedTag(blockedTag: string, targetTag: string): boolean {
   const normTarget = normalize(targetTag);
   
   if (normBlocked === normTarget) return true;
-  if (normBlocked === "eyes" && normTarget.endsWith("eyes")) return true;
-  if (normBlocked === "hair" && normTarget.endsWith("hair")) return true;
-  if (normBlocked === "breasts" && normTarget.endsWith("breasts")) return true;
+  
+  // Suffix-based fuzzy matching for compound tags
+  const suffixMap: Record<string, string[]> = {
+    "eyes": ["eyes"],
+    "hair": ["hair"],
+    "breasts": ["breasts"],
+    "skin": ["skin"],
+    "legs": ["legs", "leg"],
+    "arms": ["arms", "arm"],
+    "clothes": ["clothes", "clothing", "clothed"],
+    "shoes": ["shoes", "shoe"],
+    "ears": ["ears", "ear"],
+    "tail": ["tail", "tails"],
+    "background": ["background"],
+    "sleeves": ["sleeves", "sleeve"],
+    "body": ["body"],
+    "face": ["face"],
+    "hands": ["hands", "hand"],
+    "feet": ["feet", "foot"],
+    "skirt": ["skirt", "skirts"],
+    "dress": ["dress", "dresses"],
+    "pants": ["pants"],
+    "socks": ["socks", "sock"],
+    "uniform": ["uniform", "uniforms"],
+    "headwear": ["hat", "hood", "helmet", "cap", "beanie"],
+    "neck": ["neck", "necks"],
+    "teeth": ["teeth", "tooth", "fangs"],
+    "tongue": ["tongue", "tongues"],
+    "mouth": ["mouth", "mouths"],
+    "lips": ["lips", "lip"],
+    "nose": ["nose", "noses"],
+    "eyebrows": ["eyebrows", "eyebrow"],
+    "shoulders": ["shoulders", "shoulder"],
+    "knees": ["knees", "knee"],
+    "elbows": ["elbows", "elbow"],
+    "wrists": ["wrists", "wrist"],
+    "ankles": ["ankles", "ankle"],
+    "toes": ["toes", "toe"],
+    "fingers": ["fingers", "finger"],
+    "thighs": ["thighs", "thigh"],
+    "hips": ["hips", "hip"],
+    "chest": ["chest", "chests"],
+    "stomach": ["stomach", "stomachs"],
+    "waist": ["waist", "waists"],
+    "back": ["back", "backs"],
+    "navel": ["navel", "navels"],
+    "butt": ["butt", "butts", "ass"],
+    "pussy": ["pussy"],
+    "penis": ["penis"],
+  };
+  
+  for (const [category, suffixes] of Object.entries(suffixMap)) {
+    if (normBlocked === category) {
+      for (const suffix of suffixes) {
+        if (normTarget.endsWith(" " + suffix) || normTarget.startsWith(suffix + " ")) {
+          return true;
+        }
+      }
+    }
+  }
+  
   return false;
 }
 

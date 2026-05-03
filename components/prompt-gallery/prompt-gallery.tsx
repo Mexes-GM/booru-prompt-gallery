@@ -71,7 +71,7 @@ import { userPreferences, STORAGE_KEYS, type HistoryItem, type TagPreset } from 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
-import { type BackgroundMode } from "@/lib/background-detector"
+import { type BackgroundMode, type BackgroundRemoveMode } from "@/lib/background-detector"
 import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -252,6 +252,10 @@ export function PromptGallery() {
     "randomBackgroundPatterns",
     STORAGE_KEYS.RANDOM_BACKGROUND_PATTERNS
   )
+
+  const [backgroundRemoveMode, setBackgroundRemoveMode] = useState<BackgroundRemoveMode>('all')
+
+  const [randomBackgroundIncludeGradients, setRandomBackgroundIncludeGradients] = useState(true)
 
   const [excludeInput, setExcludeInput] = usePersistentState(
     "",
@@ -730,6 +734,8 @@ export function PromptGallery() {
       backgroundMode={deferredBackgroundMode}
       simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
       randomBackgroundPatterns={randomBackgroundPatterns}
+      backgroundRemoveMode={backgroundRemoveMode}
+      randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       setTeachModalData={setTeachModalData}
@@ -744,7 +750,7 @@ export function PromptGallery() {
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, backgroundRemoveMode, randomBackgroundIncludeGradients, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1096,7 +1102,33 @@ export function PromptGallery() {
                       </Button>
                     </div>
                     <div className="space-y-0">
-                      {/* Item 1: Danbooru Strict Limit */}
+                      {/* Newest first — reverse chronological order */}
+
+                      {/* Item 1: Background Options Expansion */}
+                      <div className="border-l-2 border-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Background Options Expansion</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">Enhancement</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          The <strong>Background Options</strong> detection dictionary has been significantly expanded to <strong>200+ scenery tags</strong> for more accurate background removal. The <strong>Remove All</strong> mode now includes a Scope selector to target only simple or detailed backgrounds. The <strong>Random</strong> mode gains two-tone <strong>gradient backgrounds</strong> and a new Gradients toggle for extra variety and finer control.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 2: Smart Exclusion Expansion */}
+                      <div className="border-l-2 border-violet-500 bg-violet-500/5 hover:bg-violet-500/10 transition-colors p-3">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <p className="text-xs font-semibold text-foreground leading-snug">Smart Exclusion Expansion</p>
+                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-violet-500/15 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20">Enhancement</Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                          The exclusion dictionary for the <strong>Smart Tag Exclusion</strong> option has been massively expanded to <strong>180+ conflict rules</strong> across <strong>41 tag families</strong> — covering hair color, eyewear, weapons, species, armor, blood, swimming, dancing, and many more. Added 6 new exception patterns and expanded fuzzy matching to 50+ tag suffixes for more accurate blocking.
+                        </p>
+                      </div>
+                      <div className="h-px bg-border/60 mx-3" />
+
+                      {/* Item 3: Danbooru Strict Limit */}
                       <div className="border-l-2 border-amber-500 bg-amber-500/5 hover:bg-amber-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
                           <p className="text-xs font-semibold text-foreground leading-snug">Danbooru Strict Limit</p>
@@ -1104,42 +1136,6 @@ export function PromptGallery() {
                         </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
                           More conservative rate limits have been added to the Danbooru API provider to prevent abuse and avoid IP bans (which had occurred previously). These will be adjusted over time based on usage patterns.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 2: Optimize Gallery */}
-                      <div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Optimize Gallery</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Improvement</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          Several optimization changes have been made to prevent stuttering and choppy animations. The gallery should now provide a much smoother browsing experience.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 3: Random Background */}
-                      <div className="border-l-2 border-green-500 bg-green-500/5 hover:bg-green-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">New Background Options</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/20">Feature</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          A new <strong>Random</strong> mode in the Background Options dropdown generates unique backgrounds per card, with or without patterns. It uses basic color detection to suggest colors that won&rsquo;t clash with the image.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 4: Minimum Character Post Count */}
-                      <div className="border-l-2 border-cyan-500 bg-cyan-500/5 hover:bg-cyan-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Minimum Character Post Count</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20">Feature</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          A new slider in the control panel lets you set a minimum post count threshold for character cards in search results. Helps filter out obscure characters the model likely won&rsquo;t recognize well.
                         </p>
                       </div>
                     </div>
@@ -2024,6 +2020,31 @@ export function PromptGallery() {
                                   </div>
                                 </div>
                                 <AnimatePresence>
+                                  {backgroundMode === 'remove_all' && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: "auto", opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      transition={{ duration: 0.2, ease: "easeInOut" }}
+                                      className="overflow-hidden"
+                                    >
+                                      <div className="pt-3 pl-0 sm:pl-[3.25rem] flex flex-col gap-3">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-xs font-medium text-foreground">Scope</span>
+                                          <Select value={backgroundRemoveMode} onValueChange={(val: BackgroundRemoveMode) => setBackgroundRemoveMode(val)}>
+                                            <SelectTrigger className="h-7 text-[11px] w-[130px] bg-background">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="all">Everything</SelectItem>
+                                              <SelectItem value="simple_only">Simple Only</SelectItem>
+                                              <SelectItem value="detailed_only">Detailed Only</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+                                    </motion.div>
+                                  )}
                                   {backgroundMode === 'force_simple' && (
                                     <motion.div
                                       initial={{ height: 0, opacity: 0 }}
@@ -2056,6 +2077,13 @@ export function PromptGallery() {
                                             <span className="text-[10px] text-muted-foreground leading-tight">Allow generation of patterned backgrounds.</span>
                                           </div>
                                           <Switch checked={randomBackgroundPatterns} onCheckedChange={(val) => { setRandomBackgroundPatterns(val); userPreferences.setRandomBackgroundPatterns(val); }} className="scale-75 origin-right" />
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-xs font-medium text-foreground">Include Gradients</span>
+                                            <span className="text-[10px] text-muted-foreground leading-tight">Add two-tone and gradient backgrounds.</span>
+                                          </div>
+                                          <Switch checked={randomBackgroundIncludeGradients} onCheckedChange={setRandomBackgroundIncludeGradients} className="scale-75 origin-right" />
                                         </div>
                                       </div>
                                     </motion.div>
@@ -2289,10 +2317,12 @@ export function PromptGallery() {
                         smartTagExclusion={smartTagExclusion}
                         removeLoRaTags={search.removeLoRaTags}
                         removeQualityTags={search.removeQualityTags}
-                        backgroundMode={deferredBackgroundMode}
-                        simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
-                        randomBackgroundPatterns={randomBackgroundPatterns}
-                        tagOverrides={tagOverrides}
+      backgroundMode={deferredBackgroundMode}
+      simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
+      randomBackgroundPatterns={randomBackgroundPatterns}
+      backgroundRemoveMode={backgroundRemoveMode}
+      randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
+      tagOverrides={tagOverrides}
                         copiedId={copiedId}
                         setTeachModalData={setTeachModalData}
                         isMergeMode={mergeMode.isMergeMode}

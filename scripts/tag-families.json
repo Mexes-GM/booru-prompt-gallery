@@ -1,0 +1,265 @@
+{
+  "$schema": "tag-families-schema.json",
+  "description": "Semantic tag families for analyzing coverage of the Smart Tag Exclusion dictionary. Each family groups tags that share a semantic domain. Used by analyze-tag-conflicts.ts to detect gaps.",
+  "version": "1.0.0",
+  "families": {
+    "character_count": {
+      "description": "Number of characters in the scene",
+      "trigger_candidates": ["1girl", "1boy", "solo"],
+      "tags": ["1girl", "1boy", "2girls", "2boys", "3girls", "3boys", "4girls", "4boys", "5girls", "5boys", "6+girls", "6+boys", "7+girls", "7+boys", "8+girls", "8+boys", "9+girls", "9+boys", "multiple_girls", "multiple_boys", "no_humans"],
+      "internal_conflicts": true
+    },
+    "subject": {
+      "description": "Subject grouping",
+      "trigger_candidates": ["solo", "couple", "group", "multiple_girls", "multiple_boys"],
+      "tags": ["solo", "couple", "group", "multiple_girls", "multiple_boys", "crowd", "duo", "trio"],
+      "internal_conflicts": true
+    },
+    "framing": {
+      "description": "Camera framing / shot type",
+      "trigger_candidates": ["upper_body", "lower_body", "full_body", "headshot", "portrait", "cowboy_shot", "close_up"],
+      "tags": ["upper_body", "lower_body", "full_body", "headshot", "portrait", "close_up", "cowboy_shot", "medium_shot", "wide_shot", "long_shot", "extreme_closeup", "dutch_angle", "worm's-eye_view", "bird's-eye_view", "panoramic", "fish-eye", "pov", "over-the-shoulder", "from_side"],
+      "internal_conflicts": true
+    },
+    "camera_angle": {
+      "description": "Camera angle relative to subject",
+      "trigger_candidates": ["from_behind", "from_above", "from_below", "profile", "facing_viewer"],
+      "tags": ["from_behind", "from_above", "from_below", "profile", "facing_viewer", "from_front", "from_side", "three-quarter_view", "back", "chest"],
+      "internal_conflicts": true
+    },
+    "posture_modifiers": {
+      "description": "Special posture modifiers that create exceptions",
+      "trigger_candidates": [],
+      "tags": ["looking_back", "looking_over_shoulder", "mirror_reflection", "mirror", "selfie", "reflection"],
+      "internal_conflicts": false
+    },
+    "nudity_level": {
+      "description": "Level of clothing/nudity",
+      "trigger_candidates": ["nude", "naked", "topless", "bottomless", "clothed", "fully_clothed"],
+      "tags": ["nude", "naked", "topless", "bottomless", "exposed", "clothed", "fully_clothed", "bare_breasts", "bare_chest", "bare_shoulders", "bare_legs", "bare_arms", "barefoot", "bare_hands", "bare_neck", "bare_back", "bare_stomach", "micro_bikini", "pasties", "nipples", "pussy", "penis", "see-through", "transparent_clothing", "open_clothes", "open_shirt", "open_jacket", "shirt_lift", "skirt_lift", "sideboob", "underboob", "naked_apron", "naked_cape", "naked_ribbon", "naked_towel", "towel"],
+      "internal_conflicts": true
+    },
+    "eyes": {
+      "description": "Eye color and state",
+      "trigger_candidates": ["closed_eyes", "eyes_open", "winking", "heterochromia"],
+      "tags": ["blue_eyes", "red_eyes", "green_eyes", "yellow_eyes", "purple_eyes", "pink_eyes", "brown_eyes", "black_eyes", "white_eyes", "gray_eyes", "orange_eyes", "aqua_eyes", "amber_eyes", "closed_eyes", "eyes_open", "half-closed_eyes", "one_eye_closed", "winking", "wide_eyed", "narrow_eyed", "constricted_pupils", "dilated_pupils", "slit_pupils", "symbol-shaped_pupils", "heart-shaped_pupils", "star-shaped_pupils", "glowing_eyes", "empty_eyes", "blank_eyes", "heterochromia", "gradient_eyes", "multi-colored_eyes"],
+      "internal_conflicts": true
+    },
+    "gaze": {
+      "description": "Gaze direction",
+      "trigger_candidates": ["looking_at_viewer", "looking_away", "looking_to_the_side"],
+      "tags": ["looking_at_viewer", "looking_away", "looking_to_the_side", "looking_up", "looking_down", "looking_back", "staring", "eye_contact", "glancing", "peeking", "sideways_glance", "glaring"],
+      "internal_conflicts": true
+    },
+    "mouth": {
+      "description": "Mouth state and features",
+      "trigger_candidates": ["open_mouth", "closed_mouth", "tongue_out", "kissing"],
+      "tags": ["open_mouth", "closed_mouth", "tongue_out", "lips", "teeth", "fangs", "clenched_teeth", "parted_lips", "puckered_lips", "biting_lip", "licking_lips", "smile", "grin", "frown", ":3", ":-3", "cat_smile", "biting_own_lip", "saliva", "drooling", "blood_from_mouth", "nosebleed"],
+      "internal_conflicts": true
+    },
+    "expression": {
+      "description": "Facial expression / emotion",
+      "trigger_candidates": ["smile", "happy", "crying", "angry", "sad", "laughing", "screaming", "yelling", "peaceful", "content", "sleeping"],
+      "tags": ["smile", "happy", "crying", "angry", "sad", "laughing", "screaming", "yelling", "peaceful", "content", "sleeping", "surprised", "shocked", "embarrassed", "nervous", "scared", "disgusted", "annoyed", "bored", "confused", "pouting", "scowling", "smug", "serious", "determined", "depressed", "apathetic", "excited", "blush", "tears", "tears_of_joy", "sad_smile", "smirk", "grinning", "grimacing"],
+      "internal_conflicts": true
+    },
+    "pose": {
+      "description": "Body pose / position",
+      "trigger_candidates": ["standing", "sitting", "lying_down", "kneeling", "squatting", "walking", "running", "jumping", "floating", "crouching"],
+      "tags": ["standing", "standing_still", "standing_on_one_leg", "sitting", "lying_down", "kneeling", "squatting", "walking", "walking_slowly", "running", "jumping", "floating", "crouching", "crawling", "seiza", "indian_style", "on_stomach", "on_back", "on_side", "upside-down", "handstand", "spread_eagle", "legs_up", "fetal_position", "slouching", "leaning", "leaning_forward", "stretching"],
+      "internal_conflicts": true
+    },
+    "arms_position": {
+      "description": "Arm position",
+      "trigger_candidates": ["arms_up", "arms_down", "arms_behind_back", "arms_crossed", "hands_in_pockets"],
+      "tags": ["arms_up", "arms_down", "arms_behind_back", "arms_crossed", "hands_in_pockets", "one_hand_in_pocket", "hands_on_hips", "hands_on_own_chest", "hands_on_head", "hands_on_face", "reaching_out", "holding", "holding_hands", "self_hug", "adjusting_clothing", "adjusting_glasses", "hand_on_face", "hand_on_own_face"],
+      "internal_conflicts": true
+    },
+    "legs_position": {
+      "description": "Leg position",
+      "trigger_candidates": ["legs_apart", "crossed_legs"],
+      "tags": ["legs_apart", "crossed_legs", "knees_together", "knees_together_feet_apart", "feet_together", "feet_apart", "knees_apart", "legs_up", "legs_crossed", "ankle_crossed"],
+      "internal_conflicts": true
+    },
+    "hair_length": {
+      "description": "Hair length",
+      "trigger_candidates": ["short_hair", "long_hair", "very_long_hair", "floor-length_hair", "bald"],
+      "tags": ["short_hair", "medium_hair", "long_hair", "very_long_hair", "floor-length_hair", "waist-length_hair", "knee-length_hair", "calf-length_hair", "ankle-length_hair", "pixie_cut", "buzz_cut", "crew_cut", "bald", "very_short_hair", "bob_cut", "shoulder-length_hair"],
+      "internal_conflicts": true
+    },
+    "hair_style": {
+      "description": "Hairstyle / hairdo",
+      "trigger_candidates": ["straight_hair", "curly_hair", "wavy_hair", "ponytail", "twintails", "braids", "hair_bun", "double_bun", "hair_down", "loose_hair"],
+      "tags": ["straight_hair", "curly_hair", "wavy_hair", "drill_hair", "ringlets", "ponytail", "side_ponytail", "short_ponytail", "twintails", "short_twintails", "single_braid", "twin_braids", "braids", "french_braid", "hair_bun", "double_bun", "hair_down", "loose_hair", "updo", "half_updo", "messy_hair", "bedhead", "asymmetrical_hair", "ahoge", "hair_bow", "hair_ribbon", "hair_flower", "hairpin", "hairband", "headband"],
+      "internal_conflicts": true
+    },
+    "hair_color": {
+      "description": "Hair color (not yet a trigger, candidate for expansion)",
+      "trigger_candidates": [],
+      "tags": ["blonde_hair", "brown_hair", "black_hair", "white_hair", "silver_hair", "gray_hair", "red_hair", "blue_hair", "pink_hair", "purple_hair", "green_hair", "orange_hair", "two-tone_hair", "multicolored_hair", "streaked_hair", "gradient_hair"],
+      "internal_conflicts": true
+    },
+    "skin_tone": {
+      "description": "Skin color",
+      "trigger_candidates": ["dark_skin", "pale_skin"],
+      "tags": ["dark_skin", "pale_skin", "fair_skin", "light_skin", "tan", "tanned", "tanned_skin", "brown_skin", "sun_kissed", "porcelain_skin", "translucent_skin", "white_skin", "olive_skin", "tan_lines"],
+      "internal_conflicts": true
+    },
+    "breast_size": {
+      "description": "Breast size",
+      "trigger_candidates": ["flat_chest", "small_breasts", "large_breasts", "huge_breasts"],
+      "tags": ["flat_chest", "pettanko", "micro_breasts", "small_breasts", "medium_breasts", "large_breasts", "huge_breasts", "gigantic_breasts", "busty", "cleavage"],
+      "internal_conflicts": true
+    },
+    "body_type": {
+      "description": "Body build / type",
+      "trigger_candidates": ["tall", "short", "chibi", "loli", "shota", "muscular", "chubby", "fat", "skinny", "slim", "curvy"],
+      "tags": ["tall", "short", "chibi", "loli", "shota", "muscular", "muscle_girl", "ripped", "shredded", "chubby", "fat", "plump", "obese", "skinny", "slim", "curvy", "voluptuous", "petite", "tiny", "delicate", "boyish_figure", "anorexic", "emaciated", "mature_female", "mature_male", "giant", "giantess", "milf", "old_man", "old_woman", "adult", "child", "teenager"],
+      "internal_conflicts": true
+    },
+    "footwear": {
+      "description": "Shoes / foot state",
+      "trigger_candidates": ["high_heels", "boots", "barefoot"],
+      "tags": ["shoes", "boots", "sneakers", "high_heels", "sandals", "slippers", "loafers", "flats", "flat_shoes", "open_toe", "barefoot", "platform_shoes", "stilettos", "combat_boots", "knee_boots", "thigh_boots", "mary_janes", "flip-flops", "crocs", "wooden_sandals", "geta", "tabi"],
+      "internal_conflicts": true
+    },
+    "legwear": {
+      "description": "Legwear / hosiery",
+      "trigger_candidates": ["pantyhose"],
+      "tags": ["socks", "pantyhose", "tights", "stockings", "thighhighs", "kneehighs", "ankle_socks", "leg_warmers", "toeless_legwear", "fishnets", "suspender_legwear", "garter_belt", "bare_legs"],
+      "internal_conflicts": true
+    },
+    "clothing_top": {
+      "description": "Upper body clothing",
+      "trigger_candidates": ["collared_shirt", "long_sleeves", "bare_shoulders"],
+      "tags": ["shirt", "black_shirt", "collared_shirt", "t-shirt", "sweater", "hoodie", "jacket", "coat", "blazer", "cardigan", "vest", "long_sleeves", "short_sleeves", "sleeveless", "tank_top", "camisole", "crop_top", "tube_top", "off_shoulder", "bare_shoulders", "halter_top", "bodysuit", "leotard", "apron", "cape", "cloak", "scarf", "shawl", "poncho", "kimono"],
+      "internal_conflicts": true
+    },
+    "clothing_bottom": {
+      "description": "Lower body clothing",
+      "trigger_candidates": ["skirt", "pants"],
+      "tags": ["pants", "jeans", "shorts", "skirt", "miniskirt", "pleated_skirt", "pencil_skirt", "leggings", "sweatpants", "cargo_pants", "hot_pants", "underwear", "panties", "thong", "boxers", "briefs", "bikini_bottom"],
+      "internal_conflicts": true
+    },
+    "clothing_full": {
+      "description": "Full-body outfits",
+      "trigger_candidates": ["dress", "swimsuit", "bikini", "winter_clothes"],
+      "tags": ["dress", "uniform", "school_uniform", "sailor_uniform", "maid_uniform", "nurse_uniform", "military_uniform", "police_uniform", "business_suit", "swimsuit", "bikini", "one-piece_swimsuit", "school_swimsuit", "lingerie", "bra", "negligee", "babydoll", "winter_clothes", "heavy_coat", "parka", "trench_coat", "armor", "plate_armor", "chainmail", "mecha", "power_armor", "yukata", "cheongsam", "china_dress", "qipao", "sari", "dirndl", "lolita_fashion", "gothic_lolita", "wa_lolita"],
+      "internal_conflicts": true
+    },
+    "headwear": {
+      "description": "Head accessories",
+      "trigger_candidates": ["hat", "unworn_hat"],
+      "tags": ["hat", "unworn_hat", "unworn_headwear", "bare_head", "beanie", "hood", "hood_up", "hood_down", "helmet", "crown", "tiara", "veil", "cap", "baseball_cap", "beret", "fedora", "cowboy_hat", "sun_hat", "wizard_hat", "witch_hat", "straw_hat", "top_hat", "bowler_hat", "bucket_hat", "cat_ear_hat", "animal_hat", "wearing_hat"],
+      "internal_conflicts": true
+    },
+    "handwear": {
+      "description": "Hand coverings",
+      "trigger_candidates": ["gloves", "bare_hands"],
+      "tags": ["gloves", "fingerless_gloves", "mittens", "gauntlets", "bare_hands", "elbow_gloves", "wrist_gloves", "medical_gloves", "evening_gloves", "gardening_gloves", "boxing_gloves"],
+      "internal_conflicts": true
+    },
+    "eyewear": {
+      "description": "Glasses / eye accessories",
+      "trigger_candidates": [],
+      "tags": ["glasses", "sunglasses", "eyepatch", "monocle", "goggles", "safety_glasses", "reading_glasses", "half-rim_glasses", "rimless_glasses", "blindfold", "mask", "eye_mask", "domino_mask", "sleep_mask"],
+      "internal_conflicts": true
+    },
+    "time_of_day": {
+      "description": "Time / lighting condition",
+      "trigger_candidates": ["day", "night", "sunset", "twilight"],
+      "tags": ["day", "night", "sunset", "dusk", "twilight", "pitch_black", "starry_sky", "midnight", "midday", "morning", "evening", "dawn", "golden_hour", "blue_hour"],
+      "internal_conflicts": true
+    },
+    "setting": {
+      "description": "Location / environment",
+      "trigger_candidates": ["indoors", "outdoors", "beach", "underwater", "sky"],
+      "tags": ["indoors", "outdoors", "beach", "forest", "mountain", "snow", "space", "cave", "desert", "cityscape", "ocean", "river", "lake", "park", "garden", "rooftop", "alley", "street", "highway", "ruins", "temple", "castle", "dungeon", "laboratory", "classroom", "bedroom", "bathroom", "living_room", "kitchen", "office", "hospital", "library", "church", "graveyard", "school", "restaurant", "pool", "hot_spring", "onsen", "spa", "gym", "stadium", "arena", "prison", "throne_room", "balcony", "bridge", "airport", "train_station", "open_air", "inside", "nature"],
+      "internal_conflicts": true
+    },
+    "background_type": {
+      "description": "Background complexity",
+      "trigger_candidates": ["white_background", "simple_background", "detailed_background", "transparent_background"],
+      "tags": ["white_background", "simple_background", "detailed_background", "transparent_background", "solid_color_background", "gradient_background", "pattern_background", "scenery", "landscape", "blurry_background", "bokeh", "no_background"],
+      "internal_conflicts": true
+    },
+    "weather": {
+      "description": "Weather / precipitation",
+      "trigger_candidates": ["rain", "snow", "sunny"],
+      "tags": ["rain", "heavy_rain", "drizzle", "snow", "blizzard", "sunny", "clear_sky", "clouds", "overcast", "storm", "lightning", "thunder", "wind", "fog", "mist", "sandstorm", "hail", "rainbow"],
+      "internal_conflicts": true
+    },
+    "style": {
+      "description": "Art style / medium aesthetic",
+      "trigger_candidates": ["monochrome", "sketch", "lineart", "3d", "realistic", "pixel_art", "comic"],
+      "tags": ["monochrome", "sketch", "colored_sketch", "lineart", "3d", "realistic", "photorealistic", "hyper_detailed", "pixel_art", "comic", "anime_style", "cel_shading", "watercolor", "oil_painting", "vector", "flat_color", "pastel", "chalk", "crayon", "charcoal", "marker", "pen_and_ink", "gouache", "acrylic", "digital_painting", "sprite", "voxel", "low-poly", "toon", "cartoon", "anime", "manga", "western_comic", "webcomic", "pop_art", "impressionism", "abstract", "surreal", "minimalist", "baroque", "art_nouveau"],
+      "internal_conflicts": true
+    },
+    "censor": {
+      "description": "Censorship degree",
+      "trigger_candidates": ["censored", "mosaic_censoring", "uncensored"],
+      "tags": ["censored", "mosaic_censoring", "bar_censor", "censor_steam", "light_beam", "convenient_censoring", "uncensored", "explicit", "heart_censor", "sticker_censor", "self_censor", "hand_censor", "text_censor", "partial_censor"],
+      "internal_conflicts": true
+    },
+    "parody_status": {
+      "description": "Original vs derivative",
+      "trigger_candidates": ["parody", "meme"],
+      "tags": ["parody", "original", "meme", "fanart", "tribute", "homage", "serious"],
+      "internal_conflicts": true
+    },
+    "action": {
+      "description": "Actions / activities",
+      "trigger_candidates": ["fighting", "eating", "drinking", "holding", "reading", "flying"],
+      "tags": ["fighting", "eating", "drinking", "holding", "reading", "flying", "swimming", "dancing", "climbing", "falling", "cooking", "singing", "playing_music", "writing", "drawing", "painting", "typing", "gaming", "exercising", "yoga", "meditating", "praying", "bathing", "showering", "brushing_teeth", "shopping", "driving", "riding", "cycling", "skating", "skiing", "surfing", "fishing", "hugging", "kissing", "handshake", "high-five", "waving", "pointing", "saluting", "bowing", "curtsey", "posing", "modeling", "shooting", "stabbing", "slashing", "punching", "kicking", "throwing", "catching", "lifting", "pushing", "pulling", "cutting", "opening", "closing", "tying", "untying", "sleepwalking"],
+      "internal_conflicts": false
+    },
+    "action_state": {
+      "description": "State/condition of the subject",
+      "trigger_candidates": ["wet", "dirty", "covered_in_blood", "injury", "bound"],
+      "tags": ["clean", "dirty", "wet", "dry", "dry_clothes", "injured", "uninjured", "healthy", "sick", "tired", "exhausted", "energetic", "drunk", "drugged", "hypnotized", "possessed", "mind_control", "covered_in_blood", "blood", "blood_on_face", "blood_on_clothes", "sweaty", "dusty", "muddy", "greasy", "oily", "shiny", "sparkling", "immaculate", "pristine", "bound", "tied", "handcuffed", "shackled", "chained", "free", "restrained", "caged"],
+      "internal_conflicts": true
+    },
+    "accessories": {
+      "description": "Accessories and jewelry",
+      "trigger_candidates": ["scarf"],
+      "tags": ["necklace", "choker", "earrings", "bracelet", "ring", "watch", "ribbon", "bow", "bell", "collar", "leash", "backpack", "bag", "purse", "satchel", "belt", "suspenders", "wings", "halo", "bandage", "band-aid", "cast", "piercing", "ear_piercing", "nose_piercing", "lip_piercing", "tattoo", "scar", "birthmark", "mole", "freckles"],
+      "internal_conflicts": false
+    },
+    "weapon": {
+      "description": "Weapons",
+      "trigger_candidates": [],
+      "tags": ["sword", "katana", "knife", "dagger", "gun", "pistol", "rifle", "shotgun", "sniper_rifle", "machine_gun", "bow", "crossbow", "arrow", "spear", "lance", "axe", "hammer", "mace", "flail", "whip", "shield", "battle_axe", "claymore", "rapier", "scythe", "staff", "wand", "baton", "tonfa", "nunchaku", "shuriken", "bomb", "grenade", "bazooka", "flamethrower", "chainsaw"],
+      "internal_conflicts": true
+    },
+    "species": {
+      "description": "Species / non-human features",
+      "trigger_candidates": [],
+      "tags": ["cat_girl", "cat_boy", "dog_girl", "dog_boy", "fox_girl", "fox_boy", "bunny_girl", "bunny_boy", "wolf_girl", "wolf_boy", "elf", "dark_elf", "dwarf", "orc", "goblin", "slime", "demon", "angel", "fallen_angel", "vampire", "zombie", "ghost", "robot", "android", "cyborg", "alien", "monster", "dragon", "dragon_girl", "centaur", "mermaid", "lamia", "harpy", "slime_girl", "spider_girl", "snake_girl", "skeleton", "fairy", "succubus", "incubus", "oni", "kappa", "yokai", "tanuki", "kitsune", "nekomimi", "inuneko", "usamimi", "human"],
+      "internal_conflicts": true
+    },
+    "animal_ears": {
+      "description": "Animal ears",
+      "trigger_candidates": ["animal_ears", "cat_ears"],
+      "tags": ["animal_ears", "cat_ears", "dog_ears", "fox_ears", "wolf_ears", "bunny_ears", "bear_ears", "mouse_ears", "raccoon_ears", "squirrel_ears", "human_ears", "bare_ears", "pointy_ears", "elf_ears", "four_ears", "multiple_ears"],
+      "internal_conflicts": true
+    },
+    "animal_tail": {
+      "description": "Animal tails",
+      "trigger_candidates": ["cat_tail"],
+      "tags": ["cat_tail", "dog_tail", "fox_tail", "wolf_tail", "bunny_tail", "raccoon_tail", "squirrel_tail", "mouse_tail", "dragon_tail", "demon_tail", "multiple_tails", "no_tail", "fluffy_tail", "prehensile_tail"],
+      "internal_conflicts": true
+    },
+    "age": {
+      "description": "Apparent age of character",
+      "trigger_candidates": ["loli", "shota"],
+      "tags": ["loli", "shota", "child", "teenager", "adult", "middle_aged", "old_man", "old_woman", "milf", "dilf", "young", "youthful", "aged_up", "aged_down", "age_progression", "age_regression"],
+      "internal_conflicts": true
+    },
+    "composition": {
+      "description": "Composition / layout",
+      "trigger_candidates": [],
+      "tags": ["symmetry", "asymmetry", "centered", "rule_of_thirds", "framed", "vignette", "border", "white_border", "black_border", "full_bleed", "letterboxed", "pillarboxed", "split_screen", "collage", "mosaic", "triptych", "four_panel", "comic_panel", "multi-panel", "sequence"],
+      "internal_conflicts": true
+    }
+  }
+}

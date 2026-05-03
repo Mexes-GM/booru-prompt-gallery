@@ -145,6 +145,8 @@ interface MasonryItemProps {
     backgroundMode?: BackgroundMode
     simpleBackgroundReplacementTags?: string
     randomBackgroundPatterns?: boolean
+    backgroundRemoveMode?: string
+    randomBackgroundIncludeGradients?: boolean
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
@@ -188,6 +190,8 @@ export const MasonryItem = memo(function MasonryItem({
     backgroundMode,
     simpleBackgroundReplacementTags,
     randomBackgroundPatterns = false,
+    backgroundRemoveMode,
+    randomBackgroundIncludeGradients = true,
     tagOverrides,
     copiedId,
     isPreviouslyCopied,
@@ -224,6 +228,12 @@ export const MasonryItem = memo(function MasonryItem({
         aiPrompt = removeQualityTagsUtil(aiPrompt)
     }
 
+    // Shared background options for all cleanPrompt calls
+    const bgOptions = useMemo(() => ({
+        backgroundRemoveMode,
+        randomBackgroundIncludeGradients,
+    }), [backgroundRemoveMode, randomBackgroundIncludeGradients])
+
     // Generate pure content WITHOUT added tags for category copying/classification
     const pureContent = useMemo(() => {
         return aiPrompt
@@ -232,16 +242,16 @@ export const MasonryItem = memo(function MasonryItem({
                 "",
                 "",
                 "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, ...bgOptions, metaTags: post.tag_string_meta },
             )
             : cleanPrompt(
                 post.tag_string,
                 post.tag_string_artist,
                 post.tag_string_character,
                 post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, ...bgOptions, metaTags: post.tag_string_meta },
             )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns])
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, bgOptions])
 
     const conflictResolution = useMemo(() => {
         if (!pureContent || addList.length === 0 || !smartTagExclusion) return { validTags: addList, conflictingTags: [] };
@@ -257,16 +267,16 @@ export const MasonryItem = memo(function MasonryItem({
                 "",
                 "",
                 "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, ...bgOptions, metaTags: post.tag_string_meta },
             )
             : cleanPrompt(
                 post.tag_string,
                 post.tag_string_artist,
                 post.tag_string_character,
                 post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, metaTags: post.tag_string_meta },
+                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, ...bgOptions, metaTags: post.tag_string_meta },
             )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns])
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, bgOptions])
 
     const displayContent = useMemo(() => {
         if (isGlobalWeightsEnabled && baseContent) {
@@ -1001,6 +1011,9 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.removeQualityTags !== next.removeQualityTags) return false
     if (prev.backgroundMode !== next.backgroundMode) return false
     if (prev.simpleBackgroundReplacementTags !== next.simpleBackgroundReplacementTags) return false
+    if (prev.randomBackgroundPatterns !== next.randomBackgroundPatterns) return false
+    if (prev.backgroundRemoveMode !== next.backgroundRemoveMode) return false
+    if (prev.randomBackgroundIncludeGradients !== next.randomBackgroundIncludeGradients) return false
     if (prev.isGlobalWeightsEnabled !== next.isGlobalWeightsEnabled) return false
     if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false
 

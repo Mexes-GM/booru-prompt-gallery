@@ -7,7 +7,7 @@
  */
 
 import { classifyTags } from "./tag-classifier"
-import { processBackgroundTags, BackgroundMode } from "./background-detector"
+import { processBackgroundTags, BackgroundMode, type BackgroundRemoveMode } from "./background-detector"
 
 // --------------- Types ---------------
 interface TagData {
@@ -38,6 +38,8 @@ export interface CleanPromptOptions {
   backgroundMode?: BackgroundMode
   simpleBackgroundReplacementTags?: string
   randomBackgroundPatterns?: boolean
+  backgroundRemoveMode?: BackgroundRemoveMode
+  randomBackgroundIncludeGradients?: boolean
 }
 
 // --------------- Utilities ---------------
@@ -688,8 +690,10 @@ export function cleanPrompt(
       options.simpleBackgroundReplacementTags,
       options.tagOverrides,
       {
-        patternsEnabled: options.randomBackgroundPatterns
-      }
+        patternsEnabled: options.randomBackgroundPatterns,
+        includeGradients: options.randomBackgroundIncludeGradients,
+      },
+      options.backgroundRemoveMode || 'all'
     )
   }
 
