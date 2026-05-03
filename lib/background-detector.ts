@@ -158,11 +158,6 @@ export interface RandomBackgroundOptions {
 }
 
 // ─── New: Procedural Gradient Generation ──────────────────────────────────
-const GRADIENT_STYLES = [
-  "gradient background",
-  "two-tone background",
-];
-
 const COOL_GRADIENT_COMBOS: [string, string][] = [
   ["blue", "purple"], ["blue", "cyan"], ["blue", "pink"],
   ["purple", "pink"], ["purple", "orange"], ["pink", "orange"],
@@ -174,21 +169,26 @@ const COOL_GRADIENT_COMBOS: [string, string][] = [
   ["cream", "beige"], ["cream", "brown"], ["grey", "blue"],
 ];
 
-function generateGradientBackground(dominantColor: string | null): string | null {
+function generateGradientBackground(dominantColor: string | null): string[] | null {
   if (Math.random() > 0.25) return null;
-  
+
+  let combo: [string, string];
+
   if (dominantColor && dominantColor !== "white" && dominantColor !== "black" && dominantColor !== "grey") {
     const matching = COOL_GRADIENT_COMBOS.filter(
       ([a, b]) => a === dominantColor || b === dominantColor
     );
     if (matching.length > 0) {
-      const combo = matching[Math.floor(Math.random() * matching.length)];
-      return `${combo[0]} and ${combo[1]} gradient background`;
+      combo = matching[Math.floor(Math.random() * matching.length)];
+    } else {
+      combo = COOL_GRADIENT_COMBOS[Math.floor(Math.random() * COOL_GRADIENT_COMBOS.length)];
     }
+  } else {
+    combo = COOL_GRADIENT_COMBOS[Math.floor(Math.random() * COOL_GRADIENT_COMBOS.length)];
   }
-  
-  const combo = COOL_GRADIENT_COMBOS[Math.floor(Math.random() * COOL_GRADIENT_COMBOS.length)];
-  return `${combo[0]} and ${combo[1]} gradient background`;
+
+  const style = Math.random() > 0.5 ? "gradient background" : "two-tone background";
+  return [`${combo[0]} background`, `${combo[1]} background`, style];
 }
 
 // ─── Core Processing ────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ export function processBackgroundTags(
     if (randomOptions?.includeGradients !== false) {
       const gradient = generateGradientBackground(dominantColor);
       if (gradient) {
-        generatedTags.push(gradient);
+        generatedTags.push(...gradient);
       }
     }
 
