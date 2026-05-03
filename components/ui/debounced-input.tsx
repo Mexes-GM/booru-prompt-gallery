@@ -1,8 +1,8 @@
 import * as React from "react"
 import { useState, useEffect } from "react"
-import { Input, type InputProps } from "@/components/ui/input"
+import { Input } from "@/components/ui/input"
 
-export interface DebouncedInputProps extends Omit<InputProps, "value" | "onChange"> {
+export interface DebouncedInputProps extends Omit<React.ComponentPropsWithoutRef<"input">, "value" | "onChange"> {
   value: string
   onChange: (value: string) => void
   debounceTime?: number

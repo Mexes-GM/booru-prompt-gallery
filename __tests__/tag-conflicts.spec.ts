@@ -1,4 +1,4 @@
-import { resolveTagConflicts } from "../lib/tag-conflicts.ts"
+import { resolveTagConflicts } from "../lib/tag-conflicts"
 
 function runTests() {
   console.log("Running Tag Conflicts Stress Tests...\n")

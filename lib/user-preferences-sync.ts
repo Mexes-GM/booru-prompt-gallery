@@ -126,7 +126,7 @@ export class UserPreferencesSync {
   static subscribeToPreferences(userId: string, callback: (data: UserPreferencesData) => void) {
     return this.supabase
       .from(`user_preferences:user_id=eq.${userId}`)
-      .on('*', (payload) => {
+      .on('*', (payload: any) => {
         callback(payload.new as UserPreferencesData)
       })
       .subscribe()

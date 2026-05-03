@@ -14,7 +14,6 @@ function cleanPromptWithNamedArgs({
   characterString,
   thirdArgument,
   fourthArgument,
-  fifthArgument,
   provider,
 }: CleanPromptArgs) {
   return cleanPrompt(
@@ -22,8 +21,6 @@ function cleanPromptWithNamedArgs({
     characterString,
     thirdArgument,
     fourthArgument,
-    fifthArgument,
-    provider
   );
 }
 
@@ -37,5 +34,6 @@ const result = cleanPromptWithNamedArgs({
   fifthArgument: '',
   provider: 'danbooru',
 });
-const result = cleanPrompt(tagString, "", "", "", { optimizeTags: false });
+const result2 = cleanPrompt(tagString, "", "", "", { optimizeTags: false });
 console.log(result);
+console.log(result2);

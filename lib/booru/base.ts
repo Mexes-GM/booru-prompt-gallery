@@ -15,13 +15,13 @@ export abstract class BaseBooruProvider implements IBooruProvider {
 
   abstract search(options: SearchOptions): Promise<BooruPost[]>
 
-  protected async fetchJson<T>(url: string, params: URLSearchParams, headers: HeadersInit = {}): Promise<T> {
+  protected async fetchJson<T>(url: string, params: URLSearchParams, headers: Record<string, string> = {}): Promise<T> {
     const finalUrl = new URL(url)
     finalUrl.search = params.toString()
 
     const isDanbooru = url.includes('danbooru.donmai.us')
 
-    const requestHeaders: HeadersInit = {
+    const requestHeaders: Record<string, string> = {
       'Accept': 'application/json',
       'User-Agent': isDanbooru ? USER_AGENT_DANBOORU : USER_AGENT,
       ...headers

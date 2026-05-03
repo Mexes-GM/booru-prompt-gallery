@@ -73,7 +73,7 @@ Sentry.init({
     
     // Scrub cookies
     if (event.request?.cookies) {
-      event.request.cookies = '***';
+      (event.request as any).cookies = '***';
     }
     
     // Scrub headers (Authorization, Cookie, etc.)

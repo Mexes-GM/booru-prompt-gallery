@@ -38,7 +38,7 @@ const MasonryItem = React.memo(({
   isInitial,
 }: {
   pos: { x: number; y: number; width: number; height: number; item: BooruPost; index: number }
-  renderItem: (item: BooruPost, w: number, h: number) => React.ReactNode
+  renderItem: (item: BooruPost, w: number, h: number, index: number) => React.ReactNode
   isInitial: boolean
 }) => {
   const staggerIndex = pos.index % 8

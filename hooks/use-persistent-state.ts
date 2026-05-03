@@ -33,7 +33,7 @@ export function usePersistentState<T>(
   const isWritingRef = useRef(false)
   const lastJsonRef = useRef<string>(JSON.stringify(state))
   const pendingWriteRef = useRef<T | null>(null)
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const setState: Dispatch<SetStateAction<T>> = useCallback((action) => {
     setStateRaw(action)

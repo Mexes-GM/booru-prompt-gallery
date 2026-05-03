@@ -47,6 +47,8 @@ export interface IBooruProvider {
   getTrending?(): Promise<TrendItem[]>
 }
 
+export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru'
+
 export const isAibooruPost = (post: BooruPost): boolean => {
   return 'ai_metadata' in post && post.ai_metadata !== undefined
 }

@@ -130,8 +130,8 @@ export function ReversePromptParserModal({
     },
   })
 
-  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    await handleExifDrop(e)
+  const handleDrop = (e: React.DragEvent<HTMLElement>) => {
+    void handleExifDrop(e as unknown as React.DragEvent<HTMLDivElement>)
   }
 
   // Parse the input
@@ -204,9 +204,9 @@ export function ReversePromptParserModal({
             isDragActive={isDragActive}
             isLoading={isLoading}
             error={exifError}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter as (e: React.DragEvent<HTMLElement>) => void}
+            onDragLeave={handleDragLeave as (e: React.DragEvent<HTMLElement>) => void}
+            onDragOver={handleDragOver as (e: React.DragEvent<HTMLElement>) => void}
             onDrop={handleDrop}
             onFileInputChange={handleFileInputChange}
             onErrorDismiss={clearExifError}

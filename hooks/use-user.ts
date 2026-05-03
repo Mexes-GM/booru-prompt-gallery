@@ -23,7 +23,7 @@ export function useUser() {
 
     let isSubscribed = true
 
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }: { data: { session: Session | null }; error: unknown }) => {
       if (error) {
         Sentry.captureException(error, { tags: { context: "use_user_get_session" } })
       }

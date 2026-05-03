@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { BooruPost, BooruProvider } from '@/lib/booru/types'
+import { BooruPost, type BooruProvider } from '@/lib/booru/types'
 import { fetchBatchTagCounts } from '@/lib/api-client'
 import { chunkArray } from '@/lib/utils'
 
