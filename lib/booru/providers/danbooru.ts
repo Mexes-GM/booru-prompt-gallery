@@ -35,8 +35,7 @@ export class DanbooruProvider extends BaseBooruProvider {
   protected baseUrl = PROVIDER_URLS.DANBOORU
   protected defaultParams = {
     limit: DANBOORU_PAGE_SIZE,
-    // tag_string_meta and score removed — not displayed in gallery, saves ~20-30% payload
-    only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,image_width,image_height",
+ only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,image_width,image_height",
   }
 
   async getTrending(): Promise<TrendItem[]> {
