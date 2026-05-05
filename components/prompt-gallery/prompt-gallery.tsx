@@ -1098,22 +1098,46 @@ export function PromptGallery() {
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
-                    <div className="space-y-0">
-                      {/* Newest first — reverse chronological order */}
+<div className="space-y-0">
+{/* Newest first — reverse chronological order */}
 
-                      {/* Item 1: Background Options Expansion */}
-                      <div className="border-l-2 border-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Background Options Expansion</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">Enhancement</Badge>
-                        </div>
+{/* Item 1: Infinite Scroll & Results Loading Fix */}
+<div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
+<div className="flex items-center justify-center gap-2 mb-1.5">
+<p className="text-xs font-semibold text-foreground leading-snug">Results Loading</p>
+<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Fix</Badge>
+</div>
+<p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+Improved the loading feedback when fetching results and fixed issues where posts would appear in small batches instead of loading smoothly.
+</p>
+</div>
+<div className="h-px bg-border/60 mx-3" />
+
+{/* Item 2: Favorites Loading Improvements */}
+<div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
+<div className="flex items-center justify-center gap-2 mb-1.5">
+<p className="text-xs font-semibold text-foreground leading-snug">Favorites Loading</p>
+<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Fix</Badge>
+</div>
+<p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+Fixed the favorites loading by adding batch loading and a progress indicator so you can see when favorites are being fetched.
+</p>
+</div>
+<div className="h-px bg-border/60 mx-3" />
+
+ {/* Item 3: Background Options Expansion */}
+ <div className="border-l-2 border-violet-500 bg-violet-500/5 hover:bg-violet-500/10 transition-colors p-3">
+ <div className="flex items-center justify-center gap-2 mb-1.5">
+ <p className="text-xs font-semibold text-foreground leading-snug">Background Options Expansion</p>
+ <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-violet-500/15 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20">Enhancement</Badge>
+ </div>
                         <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
                           The <strong>Background Options</strong> detection dictionary has been significantly expanded to <strong>200+ scenery tags</strong> for more accurate background removal. The <strong>Remove All</strong> mode now includes a Scope selector to target only simple or detailed backgrounds. The <strong>Random</strong> mode gains two-tone <strong>gradient backgrounds</strong> and a new Gradients toggle for extra variety and finer control.
                         </p>
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
 
-                      {/* Item 2: Smart Exclusion Expansion */}
+                      {/* Item 4: Smart Exclusion Expansion */}
                       <div className="border-l-2 border-violet-500 bg-violet-500/5 hover:bg-violet-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
                           <p className="text-xs font-semibold text-foreground leading-snug">Smart Exclusion Expansion</p>
@@ -1125,7 +1149,7 @@ export function PromptGallery() {
                       </div>
                       <div className="h-px bg-border/60 mx-3" />
 
-                      {/* Item 3: Danbooru Strict Limit */}
+                      {/* Item 5: Danbooru Strict Limit */}
                       <div className="border-l-2 border-amber-500 bg-amber-500/5 hover:bg-amber-500/10 transition-colors p-3">
                         <div className="flex items-center justify-center gap-2 mb-1.5">
                           <p className="text-xs font-semibold text-foreground leading-snug">Danbooru Strict Limit</p>
