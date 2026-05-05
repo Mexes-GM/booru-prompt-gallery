@@ -8,6 +8,19 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl
   const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
 
+  // --- Auth callback recovery ---
+  // Supabase magic links sometimes redirect to /?code=... instead of /auth/callback?code=...
+  // (when emailRedirectTo isn't in the Supabase whitelist). Redirect to the proper callback.
+  const code = url.searchParams.get('code')
+  if (code && url.pathname !== '/auth/callback') {
+    const callbackUrl = new URL('/auth/callback', request.url)
+    callbackUrl.searchParams.set('code', code)
+    // Preserve the "next" param if present
+    const next = url.searchParams.get('next')
+    if (next) callbackUrl.searchParams.set('next', next)
+    return NextResponse.redirect(callbackUrl)
+  }
+
   // --- API Routes: Lightweight path (NO Supabase auth) ---
   // API routes don't need session updates. Skipping updateSession() saves
   // a Supabase round-trip on every API call, reducing Fast Origin Transfer.
