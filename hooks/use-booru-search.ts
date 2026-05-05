@@ -137,16 +137,13 @@ export function useBooruSearch() {
     }
   }, [tagCountFilter, characterCountFilter])
 
-  // Loading states
-  const [isLoadingLock, setIsLoadingLock] = useState(false)
-  const [loadMoreError, setLoadMoreError] = useState(false)
-  const [noMoreResults, setNoMoreResults] = useState(false)
-  const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
-  const [randomSeed, setRandomSeed] = useState<number>(0)
-  const loadMoreGuardRef = useRef(false)
-  const wasLoadingMoreRef = useRef(false)
-  const lockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [circuitOpen, setCircuitOpen] = useState(false)
+ // Loading states
+ const [loadMoreError, setLoadMoreError] = useState(false)
+ const [noMoreResults, setNoMoreResults] = useState(false)
+ const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
+ const [randomSeed, setRandomSeed] = useState<number>(0)
+ const loadMoreGuardRef = useRef(false)
+ const [circuitOpen, setCircuitOpen] = useState(false)
 
   // Store the rating before we forced it to 'all' for Rule34
   const forcedRule34RatingRef = useRef<string | null>(null)
@@ -236,9 +233,8 @@ export function useBooruSearch() {
     setLoadMoreError(false)
     setLastLoadAttempt(0)
     setCircuitOpen(false)
-    loadMoreGuardRef.current = false
-    wasLoadingMoreRef.current = false
-  }, [order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
+ loadMoreGuardRef.current = false
+ }, [order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
 
   // --- Derived Data ---
 
@@ -300,79 +296,35 @@ export function useBooruSearch() {
 
   // --- Actions ---
 
-  const loadMore = useCallback(() => {
-    // Synchronous guard: prevents re-entry from stale closures
-    // (e.g. IntersectionObserver callback firing after React has
-    // already committed a loadMore call in the same tick).
-    if (loadMoreGuardRef.current) {
-      return
-    }
+ const loadMore = useCallback(() => {
+ // Synchronous guard: prevents re-entry from stale closures
+ // (e.g. IntersectionObserver callback firing after React has
+ // already committed a loadMore call in the same tick).
+ if (loadMoreGuardRef.current) {
+ return
+ }
 
-    if (isLoadingLock || isLoadingMore) {
-      return
-    }
+ if (isLoadingMore) {
+ return
+ }
 
-    loadMoreGuardRef.current = true
+ loadMoreGuardRef.current = true
+ setLoadMoreError(false)
 
-    setIsLoadingLock(true)
-    setLoadMoreError(false)
+ const currentRawPostCount = pages ? pages.flat().length : 0
+ setLastLoadAttempt(currentRawPostCount)
 
-    const currentRawPostCount = pages ? pages.flat().length : 0
-    setLastLoadAttempt(currentRawPostCount)
+ const nextSize = size + 1
+ setSize(nextSize)
+ trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
+ }, [isLoadingMore, size, pages, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
 
-    // Safety timeout: force-release lock if it gets stuck (e.g. CDN cache
-    // resolves so fast that isValidating never observably transitions to true).
-    if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current)
-    lockTimeoutRef.current = setTimeout(() => {
-      if (loadMoreGuardRef.current) {
-        setIsLoadingLock(false)
-        loadMoreGuardRef.current = false
-        wasLoadingMoreRef.current = false
-      }
-    }, 8000)
-
-    const nextSize = size + 1
-    setSize(nextSize)
-    trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
-  }, [isLoadingLock, isLoadingMore, size, pages, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
-
-  // Track previous isLoadingMore so we only release on true→false transition.
-  // Prevents premature release when SWR hasn't set isValidating yet after setSize.
-  useEffect(() => {
-    wasLoadingMoreRef.current = wasLoadingMoreRef.current || isLoadingMore
-  }, [isLoadingMore])
-
-  // Release lock effect — only fires when a load was actually in progress
-  // (wasLoadingMore was true) and then completed (isLoadingMore becomes false).
-  useEffect(() => {
-    if (!isLoadingMore && isLoadingLock && wasLoadingMoreRef.current) {
-      setIsLoadingLock(false)
-      loadMoreGuardRef.current = false
-      wasLoadingMoreRef.current = false
-      if (lockTimeoutRef.current) { clearTimeout(lockTimeoutRef.current); lockTimeoutRef.current = null }
-    }
-  }, [isLoadingMore, isLoadingLock])
-
-  // Fallback lock release: when CDN cache resolves so fast that isValidating
-  // never observably transitions to true, the above effect never fires.
-  // Detect data arrival (pages change) while lock is held and release it.
-  useEffect(() => {
-    if (!isLoadingLock || isLoadingMore) return
-
-    // If the lock is held but data has arrived (pages changed) and SWR is
-    // no longer validating, the request completed without an observable
-    // isValidating=true transition. Release the lock.
-    if (lastLoadAttempt > 0 && !wasLoadingMoreRef.current) {
-      const currentRawPostCount = pages ? pages.flat().length : 0
-      // Data changed or API returned empty — either way the request completed
-      if (currentRawPostCount !== lastLoadAttempt || (pages && pages.length >= size)) {
-        setIsLoadingLock(false)
-        loadMoreGuardRef.current = false
-        wasLoadingMoreRef.current = false
-        if (lockTimeoutRef.current) { clearTimeout(lockTimeoutRef.current); lockTimeoutRef.current = null }
-      }
-    }
-  }, [pages, isLoadingLock, isLoadingMore, lastLoadAttempt, size])
+ // Clear guard when SWR starts validating (confirms the load was accepted)
+ useEffect(() => {
+ if (isLoadingMore) {
+ loadMoreGuardRef.current = false
+ }
+ }, [isLoadingMore])
 
   const refresh = useCallback(() => {
     if (order === 'random' || /order:random|random:\d+/i.test(searchTags)) {
@@ -477,9 +429,8 @@ export function useBooruSearch() {
     isValidating,
     isEmpty,
     noMoreResults,
-    loadMoreError,
-    isLoadingLock,
-    circuitOpen,
+ loadMoreError,
+ circuitOpen,
 
     loadMore,
     refresh,

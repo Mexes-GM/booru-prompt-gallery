@@ -122,7 +122,6 @@ import { SOCIAL_URLS } from '@/lib/constants'
 import { MasonryGrid } from "@/components/masonry-grid"
 import { useBooruSearch } from "@/hooks/use-booru-search"
 import { useBooruFavorites } from "@/hooks/use-booru-favorites"
-import { useImageLoadPool } from "@/hooks/use-image-load-pool"
 import { useSavedArtists } from "@/hooks/use-saved-artists"
 import { cn } from "@/lib/utils"
 import { MasonryItem } from "./masonry-item"
@@ -674,20 +673,22 @@ export function PromptGallery() {
         
         const charTags = post.tag_string_character.split(' ').filter(Boolean)
         let hasValidCount = false
-        let isPending = false
         
         for (const tag of charTags) {
           const count = tagCounts[tag]
           if (count === undefined) {
-            isPending = true
+            // Count not loaded yet — give benefit of the doubt, keep the post.
+            // This prevents posts from appearing/disappearing as tag counts
+            // resolve asynchronously in batches.
+            hasValidCount = true
+            break
           } else if (count >= minCharPostCount) {
             hasValidCount = true
             break
           }
         }
         
-        // If no tag meets the requirement and all are loaded, filter it out
-        if (!hasValidCount && !isPending) {
+        if (!hasValidCount) {
           return false
         }
       }
@@ -695,7 +696,9 @@ export function PromptGallery() {
       const fileUrl = post.large_file_url || post.file_url
       return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
     })
-  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts])
+  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist, includeCharacters, search.appliedCharacterCountFilter])
+  // NOTE: tagCounts intentionally NOT in deps — prevents progressive re-filtering
+  // as tag counts resolve. Unknown counts are treated as passing (optimistic).
 
   // Constant empty array reference for memoization
   const EMPTY_ARRAY = useRef<string[]>([]).current
@@ -758,16 +761,10 @@ export function PromptGallery() {
 
   const finalPosts = filteredPosts
 
-  // Progressive image loading — Danbooru only. Its random mode pulls from
-  // 50M images so Worker/CDN cache is near-zero. Other providers have smaller
-  // pools and/or cache well, so they don't need the progressive reveal.
-  const isDanbooru = search.booruProvider === 'danbooru'
-  const poolResetKey = `${search.debouncedSearchTags}::${search.ratingFilter}::${search.order}`
-  const poolResult = useImageLoadPool(isDanbooru ? filteredPosts.length : 0, poolResetKey)
-  const visibleCount = isDanbooru ? poolResult.visibleCount : filteredPosts.length
-  const isRevealing = isDanbooru ? poolResult.isRevealing : false
-  const visiblePosts = useMemo(() => filteredPosts.slice(0, visibleCount), [filteredPosts, visibleCount])
-  const visibleFinalPosts = useMemo(() => finalPosts.slice(0, visibleCount), [finalPosts, visibleCount])
+ // Progressive image loading removed — the CF Worker already has rate limiting
+ // and aggressive cache, so throttling on the frontend only caused visible
+ // "dripping" (3-6 posts appearing every 2s) and blocked infinite scroll
+ // (forceStop={isRevealing} disconnected the IntersectionObserver).
 
   return (
     <TooltipProvider>
@@ -2278,14 +2275,14 @@ export function PromptGallery() {
             viewMode === "grid" ? (
               <div className="mb-8 min-h-[500px]">
                 <MasonryGrid
-                  items={visiblePosts}
+                  items={filteredPosts}
                   scale={effectiveScale}
                   renderItem={renderMasonryItem}
                 />
               </div>
             ) : (
               <div className="space-y-4 mb-8">
-                {visibleFinalPosts.map((post) => {
+                {filteredPosts.map((post) => {
                   const itemProvider = post._provider || search.booruProvider
                   const uniqueKey = `${itemProvider}:${post.id}`
                   const isFavorited = favs.favorites.has(uniqueKey)
@@ -2342,12 +2339,12 @@ export function PromptGallery() {
           {filteredPosts.length > 0 && !favs.showFavorites && activeFavoriteFolder !== 'artists' && (
             <div className="text-center pb-8">
               {!search.loadMoreError ? (
-                <InfiniteScrollTrigger
-                  onIntersect={search.loadMore}
-                  hasNextPage={!search.noMoreResults}
-                  isLoading={search.isLoadingMore || search.isLoadingLock}
-                  forceStop={isRevealing}
-                  error={search.loadMoreError}
+ <InfiniteScrollTrigger
+ onIntersect={search.loadMore}
+ hasNextPage={!search.noMoreResults}
+ isLoading={search.isLoadingMore}
+ error={search.loadMoreError}
+ loadedCount={filteredPosts.length}
 
                 />
               ) : (
@@ -2373,14 +2370,48 @@ export function PromptGallery() {
           )}
 
           {/* Loading / Empty States */}
-          {((search.isLoading && filteredPosts.length === 0 && !favs.showFavorites) || (favs.showFavorites && favs.isLoading && activeFavoriteFolder !== 'artists')) && (
+          {((search.isLoading && filteredPosts.length === 0 && !favs.showFavorites) || (favs.showFavorites && (favs.isLoading || favs.isRefreshing) && activeFavoriteFolder !== 'artists')) && (
             <div className="text-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
-              <p className="mt-4">Loading...</p>
+              {favs.showFavorites && favs.favoritesProgress.total > 0 ? (
+                <>
+                  {/* Progress bar */}
+                  <div className="w-full max-w-xs mx-auto mb-3">
+                    <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${Math.round((favs.favoritesProgress.loaded / favs.favoritesProgress.total) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Loading favorites...{" "}
+                    <span className="font-medium text-foreground">
+                      {favs.favoritesProgress.loaded}
+                    </span>
+                    {" / "}
+                    {favs.favoritesProgress.total}
+                    {favs.favoritesProgress.loaded > 0 && (
+                      <span className="text-xs ml-1">
+                        ({Math.round((favs.favoritesProgress.loaded / favs.favoritesProgress.total) * 100)}%)
+                      </span>
+                    )}
+                  </p>
+                  {favs.favoritesProgress.total > 20 && (
+                    <p className="text-xs text-muted-foreground/60 mt-1">
+                      Danbooru rate limiting in effect, loading progressively...
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+                  <p className="mt-4">Loading...</p>
+                </>
+              )}
             </div>
           )}
 
-          {!search.isLoading && !favs.isLoading && filteredPosts.length === 0 && activeFavoriteFolder !== 'artists' && (
+          {!search.isLoading && (!favs.isLoading && !favs.isRefreshing) && filteredPosts.length === 0 && activeFavoriteFolder !== 'artists' && (
             <>
               {favs.showFavorites ? (
                 <div className="text-center py-12 px-4">

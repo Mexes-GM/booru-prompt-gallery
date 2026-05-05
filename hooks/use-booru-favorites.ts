@@ -36,6 +36,8 @@ export interface UseBooruFavoritesReturn {
   favoritesLoaded: boolean
   showFavorites: boolean
   favoritePosts: BooruPost[] | undefined
+  favoritesProgress: { loaded: number; total: number }
+  isRefreshing: boolean
 
   toggleFavorite: (postId: number, providerOverride?: string, folderId?: string | null) => Promise<void>
   createFolder: (name: string, icon?: string | null) => Promise<FavoriteFolder | null>
@@ -95,6 +97,11 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
   const renderCountRef = useRef(0)
   renderCountRef.current += 1
   const fetchEffectTriggerCount = useRef(0)
+  // Prevent concurrent fetches — the effect can fire multiple times during
+  // Next.js hydration + Supabase auth initialization, but we only want one
+  // in-flight fetch at a time. The old safety guard could abort entirely
+  // at triggerCount > 50, permanently breaking favorites loading.
+  const fetchInProgressRef = useRef(false)
 
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [folders, setFolders] = useState<FavoriteFolder[]>([])
@@ -130,18 +137,20 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
   // Load favorites
   useEffect(() => {
     if (userLoading) return
+    // If a fetch is already in progress, skip — prevents concurrent Supabase
+    // requests when the effect fires multiple times during hydration/auth init.
+    if (fetchInProgressRef.current) return
 
     fetchEffectTriggerCount.current += 1
     const currentTriggerCount = fetchEffectTriggerCount.current
     
-    // Safety guard for excessive triggers
+    // Log but don't abort — the old guard at triggerCount > 50 could
+    // permanently break favorites loading during normal React re-renders.
     if (currentTriggerCount > 10) {
       Sentry.captureMessage("fetchFavorites effect triggered excessively (Potential Loop #185)", {
         level: "warning",
         extra: { triggerCount: currentTriggerCount, booruProvider, userId: user?.id }
       })
-      // If it's spinning uncontrollably, break out to prevent full browser crash
-      if (currentTriggerCount > 50) return
     }
 
     Sentry.addBreadcrumb({
@@ -154,6 +163,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     let isMounted = true
 
     async function fetchFavorites() {
+      fetchInProgressRef.current = true
       Sentry.addBreadcrumb({
         category: "favorites",
         message: "fetchFavorites async execution started",
@@ -512,6 +522,8 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
           tags: { context: "fetchFavorites_catch" },
           extra: { userId: user?.id, booruProvider, renderCount: renderCountRef.current }
         })
+      } finally {
+        fetchInProgressRef.current = false
       }
     } // end of async function fetchFavorites()
 
@@ -681,33 +693,61 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
 
     // Persist
     if (user) {
-      if (isRemovingEntirely) {
-        await supabase.from('favorites').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId })
-      } else {
-        if (!isCurrentlyFavorited) {
-          // Ensure base favorite row exists
-          await supabase.from('favorites').upsert({
-            user_id: user.id,
-            provider: targetProvider,
-            post_id: postId
-          }, { onConflict: 'user_id,provider,post_id', ignoreDuplicates: true })
-        }
-
-        if (folderId === null) {
-          // Clear all folders for this post
-          await supabase.from('favorite_folder_items').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId })
-        } else if (folderId !== undefined) {
-          if (isRemovingFolder) {
-            await supabase.from('favorite_folder_items').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId, folder_id: folderId })
-          } else if (isAddingFolder) {
-            await supabase.from('favorite_folder_items').upsert({
+      try {
+        if (isRemovingEntirely) {
+          const { error } = await supabase.from('favorites').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId })
+          if (error) throw error
+        } else {
+          if (!isCurrentlyFavorited) {
+            // Ensure base favorite row exists
+            const { error } = await supabase.from('favorites').upsert({
               user_id: user.id,
               provider: targetProvider,
-              post_id: postId,
-              folder_id: folderId
-            }, { onConflict: 'user_id,provider,post_id,folder_id', ignoreDuplicates: true })
+              post_id: postId
+            }, { onConflict: 'user_id,provider,post_id', ignoreDuplicates: true })
+            if (error) throw error
+          }
+
+          if (folderId === null) {
+            // Clear all folders for this post
+            const { error } = await supabase.from('favorite_folder_items').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId })
+            if (error) throw error
+          } else if (folderId !== undefined) {
+            if (isRemovingFolder) {
+              const { error } = await supabase.from('favorite_folder_items').delete().match({ user_id: user.id, provider: targetProvider, post_id: postId, folder_id: folderId })
+              if (error) throw error
+            } else if (isAddingFolder) {
+              const { error } = await supabase.from('favorite_folder_items').upsert({
+                user_id: user.id,
+                provider: targetProvider,
+                post_id: postId,
+                folder_id: folderId
+              }, { onConflict: 'user_id,provider,post_id,folder_id', ignoreDuplicates: true })
+              if (error) throw error
+            }
           }
         }
+      } catch (dbError) {
+        // Rollback optimistic state update on DB failure
+        console.error('[toggleFavorite] DB operation failed, rolling back:', dbError)
+        setFavorites(currentFavorites)
+        setFavoriteFolderMap(currentFolderMap)
+
+        // Also revert the SWR cache mutations if we removed entirely
+        if (isRemovingEntirely && currentFavoritePosts) {
+          const currentItems = Array.from(currentFavorites).map(key => {
+            const [p, idStr] = key.split(':')
+            if (!idStr) return { provider: 'danbooru' as BooruProvider, id: parseInt(key, 10) }
+            return { provider: p as BooruProvider, id: parseInt(idStr, 10) }
+          }).filter(item => !isNaN(item.id))
+          const currentCacheKey = getFavoritesCacheKey(currentItems)
+          if (currentCacheKey) {
+            mutate(currentCacheKey, currentFavoritePosts, { revalidate: false })
+          }
+        }
+
+        toast({ title: "Error", description: "Could not update favorites. Please try again.", variant: "destructive" })
+        return
       }
     }
   }, [booruProvider, user])
@@ -799,6 +839,8 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
   const {
     posts: favoritePosts,
     isLoading: favoritesLoading,
+    isValidating: isRefreshing,
+    progress: favoritesProgress,
   } = useFavoritePosts(favoriteItems)
 
   // Keep ref in sync so the stable toggleFavorite always sees the latest posts
@@ -811,6 +853,8 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     favoritesLoaded,
     showFavorites,
     favoritePosts,
+    favoritesProgress,
+    isRefreshing,
     toggleFavorite,
     createFolder,
     deleteFolder,

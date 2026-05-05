@@ -1,6 +1,7 @@
 
 import useSWRInfinite from 'swr/infinite'
-import useSWR from 'swr'
+import useSWR, { mutate } from 'swr'
+import { useState, useEffect, useRef } from 'react'
 import { useApiStatus } from '@/hooks/use-api-status'
 import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
 import { prefetchTagCounts } from '@/hooks/use-tag-counts'
@@ -650,100 +651,269 @@ export const getFavoritesCacheKey = (favorites: FavoriteItem[]) => {
   return `favorites-mixed-${sortedKey}`
 }
 
+// ── LocalStorage cache for favorites posts ──
+const FAV_CACHE_PREFIX = 'booru_fav_cache_'
+const MAX_CACHE_ENTRIES = 5
+const MAX_CACHE_SIZE = 2_000_000 // 2MB per entry
+
+function getCachedFavorites(key: string): BooruPost[] | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(FAV_CACHE_PREFIX + key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed as BooruPost[]
+  } catch { /* corrupt entry */ }
+  return null
+}
+
+function setCachedFavorites(key: string, data: BooruPost[]): void {
+  if (typeof window === 'undefined' || data.length === 0) return
+  try {
+    const serialized = JSON.stringify(data)
+    if (serialized.length > MAX_CACHE_SIZE) return // too large, skip
+    localStorage.setItem(FAV_CACHE_PREFIX + key, serialized)
+    // Prune old entries, keep only the most recent MAX_CACHE_ENTRIES
+    const allKeys = Object.keys(localStorage)
+      .filter(k => k.startsWith(FAV_CACHE_PREFIX))
+    if (allKeys.length > MAX_CACHE_ENTRIES) {
+      // Remove oldest entries (first in alphabetical = oldest timestamp prefix)
+      const toRemove = allKeys.slice(0, allKeys.length - MAX_CACHE_ENTRIES)
+      toRemove.forEach(k => localStorage.removeItem(k))
+    }
+  } catch {
+    // localStorage full — clear all favorites cache
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith(FAV_CACHE_PREFIX))
+        .forEach(k => localStorage.removeItem(k))
+    } catch { /* hopeless */ }
+  }
+}
+
+/**
+ * Merge cached posts from ALL previous cache entries.
+ * When adding/removing a single favorite, the exact cache key changes,
+ * but individual posts are still valid. This avoids re-fetching 87 posts
+ * just because 1 new favorite was added.
+ */
+function getMergedCachedFavorites(favorites: FavoriteItem[]): BooruPost[] {
+  if (typeof window === 'undefined') return []
+  const postMap = new Map<string, BooruPost>()
+  const allKeys = Object.keys(localStorage)
+    .filter(k => k.startsWith(FAV_CACHE_PREFIX))
+
+  for (const key of allKeys) {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      const posts = JSON.parse(raw)
+      if (!Array.isArray(posts)) continue
+      for (const post of posts) {
+        if (post && post._provider && post.id) {
+          const entryKey = `${post._provider}:${post.id}`
+          if (!postMap.has(entryKey)) {
+            postMap.set(entryKey, post as BooruPost)
+          }
+        }
+      }
+    } catch { /* corrupt entry, skip */ }
+  }
+
+  return favorites
+    .map(f => postMap.get(`${f.provider}:${f.id}`))
+    .filter((p): p is BooruPost => p !== undefined)
+}
+
 export function useFavoritePosts(favorites: FavoriteItem[]) {
   const shouldFetch = favorites.length > 0
   const cacheKey = getFavoritesCacheKey(favorites)
   const { reportError, reportSlowResponse } = useApiStatus()
+  const [progress, setProgress] = useState({ loaded: 0, total: favorites.length })
 
-  const { data, error, isLoading, mutate } = useSWR<BooruPost[]>(
+  // Keep total in sync when favorites list changes (e.g., after fetchFavorites loads)
+  useEffect(() => {
+    setProgress(prev => ({ ...prev, total: favorites.length }))
+  }, [favorites.length])
+
+  // ── Stale-while-revalidate with cache merge ──
+  // Must run SYNCHRONOUSLY during render (before useSWR) so SWR finds
+  // cached data immediately. If this ran in a useEffect, SWR would start
+  // the fetcher before the cache is populated, defeating the purpose.
+  // cachedPostsRef communicates pre-loaded posts to the fetcher so it
+  // only fetches missing ones.
+  const cachedPostsRef = useRef<Map<string, BooruPost>>(new Map())
+
+  if (cacheKey) {
+    const exactCached = getCachedFavorites(cacheKey)
+    if (exactCached && exactCached.length > 0) {
+      mutate(cacheKey, exactCached, { revalidate: false })
+      cachedPostsRef.current = new Map(exactCached.map(p => [`${p._provider}:${p.id}`, p]))
+    } else {
+      // Cache miss on exact key — try merging from old cache entries
+      const mergedPosts = getMergedCachedFavorites(favorites)
+      if (mergedPosts.length > 0) {
+        mutate(cacheKey, mergedPosts, { revalidate: false })
+        cachedPostsRef.current = new Map(mergedPosts.map(p => [`${p._provider}:${p.id}`, p]))
+      } else {
+        cachedPostsRef.current = new Map()
+      }
+    }
+  } else {
+    cachedPostsRef.current = new Map()
+  }
+
+  const BATCH_SIZE = 20
+  const DANBOORU_DELAY = 1100
+
+  // Helper: sort accumulated posts to match requested order
+  const getSortedPosts = (favs: FavoriteItem[], acc: Map<string, BooruPost>): BooruPost[] => {
+    return favs
+      .map(f => acc.get(`${f.provider}:${f.id}`))
+      .filter((p): p is BooruPost => p !== undefined)
+  }
+
+  const { data, error, isLoading, isValidating, mutate: boundMutate } = useSWR<BooruPost[]>(
     cacheKey,
     async () => {
       if (!shouldFetch) return []
 
       const startTime = Date.now()
+      // Start with any posts already loaded from cache (exact or merged)
+      const accumulated = new Map(cachedPostsRef.current)
+      let loadedCount = accumulated.size
+
+      // Only fetch favorites that aren't already in cache
+      const toFetch = favorites.filter(f => !accumulated.has(`${f.provider}:${f.id}`))
+
+      const addProgress = (count: number) => {
+        loadedCount += count
+        const displayed = Math.min(loadedCount, favorites.length)
+        setProgress({ loaded: displayed, total: favorites.length })
+        // Push partial results to SWR cache so UI updates progressively
+        if (cacheKey) {
+          mutate(cacheKey, getSortedPosts(favorites, accumulated), { revalidate: false })
+        }
+      }
+
+      // Report cached posts as already loaded
+      if (loadedCount > 0) {
+        setProgress({ loaded: loadedCount, total: favorites.length })
+      }
 
       try {
-        const aibooruFavs = favorites.filter(f => f.provider === 'aibooru')
-        const serverFavs = favorites.filter(f => f.provider !== 'aibooru')
+        // If everything was cached, we're done
+        if (toFetch.length === 0) return getSortedPosts(favorites, accumulated)
 
-        const fetchPromises: Promise<BooruPost[]>[] = []
+        const aibooruFavs = toFetch.filter(f => f.provider === 'aibooru')
+        const serverFavs = toFetch.filter(f => f.provider !== 'aibooru')
 
-        if (serverFavs.length > 0) {
-          const serverPromise = fetch('/api/favorites', {
+        // Separate Danbooru (needs sequential rate-limited batching) from others
+        const danbooruFavs = serverFavs.filter(f => f.provider === 'danbooru')
+        const otherServerFavs = serverFavs.filter(f => f.provider !== 'danbooru')
+
+        // Track parallel operations so we can await them before final return
+        const parallelTasks: Promise<void>[] = []
+
+        // 1. Non-Danbooru server favorites — fire and forget, updates progress when done
+        if (otherServerFavs.length > 0) {
+          const task = fetch('/api/favorites', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ favorites: serverFavs }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ favorites: otherServerFavs }),
           }).then(async (response) => {
             const responseTime = Date.now() - startTime
-
             if (!response.ok) {
-              const errorData = new Error(`HTTP error! status: ${response.status}`) as Error & { info?: unknown; status?: number }
-              errorData.status = response.status
-
               reportError(new Error(`Error ${response.status}: Error al cargar favoritos`))
-
-              throw errorData
+              return
             }
-
             if (responseTime > 10000) {
               reportSlowResponse(responseTime)
             }
-
-            return response.json()
+            const posts: any[] = await response.json()
+            posts.forEach((p: any) => accumulated.set(`${p._provider}:${p.id}`, p))
+            addProgress(otherServerFavs.length)
+          }).catch(err => {
+            console.warn("[useFavoritePosts] Other server favs fetch error:", err)
           })
-
-          fetchPromises.push(serverPromise)
+          parallelTasks.push(task)
         }
 
+        // 2. Aibooru — direct client fetch, parallel with everything
         if (aibooruFavs.length > 0) {
-          const aibooruIds = aibooruFavs.map(f => f.id).join(',')
-          const params = new URLSearchParams({
-            limit: "500",
-            only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
-            tags: `id:${aibooruIds}`
-          })
-          
-          const aibooruPromise = fetch(`${PROVIDER_URLS.AIBOORU}/posts.json?${params.toString()}`)
-            .then(res => res.ok ? res.json() : [])
-            .then(data => {
-              if (Array.isArray(data)) {
-                return data
-                  .filter(post => post && post.id)
-                  .map(post => ({
-                    ...transformAibooruPost(post),
-                    _provider: 'aibooru'
-                  }))
+          const task = (async () => {
+            try {
+              const aibooruIds = aibooruFavs.map(f => f.id).join(',')
+              const params = new URLSearchParams({
+                limit: "500",
+                only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
+                tags: `id:${aibooruIds}`
+              })
+              const res = await fetch(`${PROVIDER_URLS.AIBOORU}/posts.json?${params.toString()}`)
+              if (res.ok) {
+                const data = await res.json()
+                if (Array.isArray(data)) {
+                  data
+                    .filter((post: any) => post && post.id)
+                    .forEach((post: any) => {
+                      accumulated.set(`aibooru:${post.id}`, {
+                        ...transformAibooruPost(post),
+                        _provider: 'aibooru' as const
+                      } as BooruPost)
+                    })
+                }
               }
-              return []
-            })
-            .catch(err => {
+            } catch (err) {
               console.warn("[useFavoritePosts] Aibooru client fetch error:", err)
-              return []
-            })
-            
-          fetchPromises.push(aibooruPromise)
+            }
+            addProgress(aibooruFavs.length)
+          })()
+          parallelTasks.push(task)
         }
 
-        const results = await Promise.all(fetchPromises)
-        const allPosts = results.flat() as BooruPost[]
+        // 3. Danbooru — sequential batches with 1.1s delay (respects rate limit)
+        if (danbooruFavs.length > 0) {
+          const batches: FavoriteItem[][] = []
+          for (let i = 0; i < danbooruFavs.length; i += BATCH_SIZE) {
+            batches.push(danbooruFavs.slice(i, i + BATCH_SIZE))
+          }
 
-        // Sort posts to match the requested order to prevent layout shifts (API race conditions)
-        const postsMap = new Map(allPosts.map((p: BooruPost) => [`${p._provider}:${p.id}`, p]))
+          for (let i = 0; i < batches.length; i++) {
+            try {
+              const res = await fetch('/api/favorites', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ favorites: batches[i] }),
+              })
+              if (res.ok) {
+                const posts: any[] = await res.json()
+                posts.forEach((p: any) => accumulated.set(`${p._provider}:${p.id}`, p))
+              }
+            } catch (err) {
+              console.warn(`[useFavoritePosts] Danbooru batch ${i} fetch error:`, err)
+            }
+            // Report progress: this batch's favorites have been attempted
+            addProgress(batches[i].length)
 
-        const sortedPosts = favorites
-          .map(f => postsMap.get(`${f.provider}:${f.id}`))
-          .filter((p): p is BooruPost => p !== undefined)
+            // Delay between Danbooru batches (skip after last)
+            if (i < batches.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, DANBOORU_DELAY))
+            }
+          }
+        }
 
-        return sortedPosts
+        // Wait for parallel tasks to settle before returning final sorted list
+        await Promise.allSettled(parallelTasks)
+
+        const finalPosts = getSortedPosts(favorites, accumulated)
+        // Persist to localStorage cache for instant loads on next visit
+        if (cacheKey) setCachedFavorites(cacheKey, finalPosts)
+        return finalPosts
       } catch (fetchError: unknown) {
-        // Silently handle connection errors which are common during navigation/logout
         if (fetchError instanceof TypeError || (fetchError instanceof Error && (fetchError.name === 'AbortError' || fetchError.message === 'Failed to fetch'))) {
           console.warn('[ApiClient] Favorites fetch interrupted (likely navigation/logout)')
           return []
         }
-
         throw fetchError
       }
     },
@@ -760,7 +930,9 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
     posts: data || [],
     error,
     isLoading,
-    mutate,
+    isValidating,
+    mutate: boundMutate,
+    progress,
   }
 }
 

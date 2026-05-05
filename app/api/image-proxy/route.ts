@@ -8,6 +8,14 @@ const ALLOWED_DOMAINS = [
     'img1.gelbooru.com',
     'img2.gelbooru.com',
     'img3.gelbooru.com',
+    // Rule34 image CDN domains
+    'rule34.xxx',
+    'img.rule34.xxx',
+    'api.rule34.xxx',
+    // e621 image CDN
+    'static1.e621.net',
+    // Aibooru
+    'aibooru.online',
     // Danbooru images go through the Cloudflare Worker (proxy-url.ts),
     // NOT through this Vercel proxy. Allowing them here would bypass
     // all rate limiting and circuit breaker protections.
