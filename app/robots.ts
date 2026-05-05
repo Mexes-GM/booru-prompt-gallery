@@ -13,7 +13,7 @@ export default function robots(): MetadataRoute.Robots {
         allow: '/',
       },
     ],
-    sitemap: 'https://booru-prompt-gallery.vercel.app/sitemap.xml',
-    host: 'https://booru-prompt-gallery.vercel.app',
+ sitemap: `${process.env.NEXT_PUBLIC_APP_URL || 'https://booru-prompt-gallery.netlify.app'}/sitemap.xml`,
+ host: process.env.NEXT_PUBLIC_APP_URL || 'https://booru-prompt-gallery.netlify.app',
   }
 }

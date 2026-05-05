@@ -147,8 +147,9 @@ export async function GET(request: NextRequest) {
     headers.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream')
     headers.set('Content-Disposition', `attachment; filename="${filename}"`)
     headers.set('Cache-Control', 'public, max-age=31536000, immutable')
-    headers.set('CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
-    headers.set('Vercel-CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
+headers.set('CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
+			headers.set('Netlify-CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
+			headers.set('Vercel-CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
 
     const contentLength = response.headers.get('content-length')
     if (contentLength) {

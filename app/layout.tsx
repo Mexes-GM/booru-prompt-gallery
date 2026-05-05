@@ -4,6 +4,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
+// Vercel Analytics — only renders on Vercel deployments (no-op on Netlify/other hosts)
 import { Analytics } from '@vercel/analytics/next'
 import ErrorBoundary from '@/components/error-boundary'
 
@@ -13,7 +14,11 @@ const inter = Inter({
   preload: true,
 })
 
-const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://booru-prompt-gallery.vercel.app'
+// Base URL: set NEXT_PUBLIC_APP_URL in your deployment environment (Vercel or Netlify).
+// Falls back to Vercel auto-detected URL, then hardcoded default.
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL 
+  || (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : '')
+  || 'https://booru-prompt-gallery.netlify.app'
 
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl),

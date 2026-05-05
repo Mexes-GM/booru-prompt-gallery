@@ -88,8 +88,9 @@ export async function GET(request: NextRequest) {
             headers: {
                 'Content-Type': contentType,
                 'Cache-Control': 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400, immutable',
-                'CDN-Cache-Control': 'public, s-maxage=604800, stale-while-revalidate=86400',
-                'Vercel-CDN-Cache-Control': 'public, s-maxage=604800, stale-while-revalidate=86400',
+'CDN-Cache-Control': 'public, s-maxage=604800, stale-while-revalidate=86400',
+ 'Vercel-CDN-Cache-Control': 'public, s-maxage=604800, stale-while-revalidate=86400',
+ 'Netlify-CDN-Cache-Control': 'public, s-maxage=604800, stale-while-revalidate=86400',
                 'Access-Control-Allow-Origin': '*',
             },
         })

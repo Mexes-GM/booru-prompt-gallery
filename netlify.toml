@@ -1,0 +1,56 @@
+# Netlify configuration for Booru Prompt Gallery
+# Next.js 15 is auto-detected via the Essential Next.js plugin in the Netlify UI.
+# This file provides additional headers and settings.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+# Netlify uses Netlify-CDN-Cache-Control for its CDN cache.
+# These headers complement the ones in next.config.mjs.
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "public, s-maxage=300, stale-while-revalidate=600"
+    Netlify-CDN-Cache-Control = "public, s-maxage=300"
+
+[[headers]]
+  for = "/_next/image*"
+  [headers.values]
+    Cache-Control = "public, max-age=2678400, immutable"
+
+[[headers]]
+  for = "/sitemap.xml"
+  [headers.values]
+    Cache-Control = "public, s-maxage=86400, stale-while-revalidate=43200"
+
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Cache-Control = "public, s-maxage=86400, stale-while-revalidate=43200"
+
+[[headers]]
+  for = "/favicon.ico"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/favicon.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/icon.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+# Security headers for all responses
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"

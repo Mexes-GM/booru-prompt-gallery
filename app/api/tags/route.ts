@@ -70,8 +70,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(filteredTags, {
       headers: {
         'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=86400',
-        'CDN-Cache-Control': 'public, s-maxage=86400',
-        'Vercel-CDN-Cache-Control': 'public, s-maxage=86400',
+'CDN-Cache-Control': 'public, s-maxage=86400',
+				'Netlify-CDN-Cache-Control': 'public, s-maxage=86400',
+				'Vercel-CDN-Cache-Control': 'public, s-maxage=86400',
         'X-Content-Type-Options': 'nosniff',
         'X-API-Version': '1.1',
         'X-Total-Count': filteredTags.length.toString(),

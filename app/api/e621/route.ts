@@ -20,8 +20,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(posts, {
       headers: {
         'Cache-Control': `public, s-maxage=${cacheDuration}, stale-while-revalidate=${cacheDuration * 2}`,
-        'CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
-        'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
+'CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
+				'Netlify-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
+				'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
         'ETag': `"${cacheKey}"`,
         'X-Content-Type-Options': 'nosniff',
         'X-API-Version': '1.0',
