@@ -58,15 +58,29 @@ ehthumbs.db
 .cache/
 .parcel-cache/
 copilot-instructions.md
+.mcp.json
 
 # Agents & Tools
+.agent/
 .agents/
+.claude/
+.cursor/
+.gemini/
+.hermes/
 .kiro/
+.playwright-mcp/
+.qwen/
 .trae/
+.venv/
+.windsurf/
 skills/
+docs/
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Cloudflare Workers config (contains account_id)
+workers/image-proxy/wrangler.toml
 docs/plans/2026-04-03-prompt-tools-design.md
 backup_2026-04-05T06-01-15.sql
 tags.json

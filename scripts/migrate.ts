@@ -16,7 +16,7 @@ async function runMigrations() {
   const client = new Client({
     connectionString,
     ssl: {
-      rejectUnauthorized: false
+      rejectUnauthorized: false // Supabase SSL — set to true if your CA store trusts the cert
     }
   })
 

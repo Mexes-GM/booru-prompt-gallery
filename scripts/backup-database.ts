@@ -34,7 +34,7 @@ const OUTPUT_FILE = path.join(OUTPUT_DIR, `backup_${TIMESTAMP}.sql`)
 async function main() {
   const client = new Client({
     connectionString: POSTGRES_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false } // Supabase SSL — set to true if your CA store trusts the cert
   })
 
   let output = ''

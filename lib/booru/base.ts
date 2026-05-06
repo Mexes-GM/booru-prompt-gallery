@@ -2,7 +2,7 @@
 import { smartFetch } from '../network/smart-fetch'
 import { BooruPost, IBooruProvider, SearchOptions } from './types'
 import { supabaseAdmin } from '../supabase-admin'
-import { USER_AGENT, USER_AGENT_DANBOORU } from '../constants'
+import { USER_AGENT, getDanbooruUserAgent } from '../constants'
 
 interface TagCategoryRow {
   name: string
@@ -23,7 +23,7 @@ export abstract class BaseBooruProvider implements IBooruProvider {
 
     const requestHeaders: Record<string, string> = {
       'Accept': 'application/json',
-      'User-Agent': isDanbooru ? USER_AGENT_DANBOORU : USER_AGENT,
+      'User-Agent': isDanbooru ? getDanbooruUserAgent() : USER_AGENT,
       ...headers
     }
 

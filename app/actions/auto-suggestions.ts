@@ -5,7 +5,7 @@ import { classifyTag, TagCategory } from '@/lib/tag-classifier'
 import { cookies } from 'next/headers'
 import { normalize } from '@/lib/cleanPrompt'
 import { requireAdmin } from '@/lib/auth/authorization'
-import { PROVIDER_URLS, USER_AGENT_DANBOORU } from '@/lib/constants'
+import { PROVIDER_URLS, getDanbooruUserAgent } from '@/lib/constants'
 
 // Rate Limit Configuration
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -43,7 +43,7 @@ export async function generateAutoSuggestions() {
         // 3. Fetch Random Posts from Danbooru
         // Using "random:5" optimized tag to avoid DB timeouts
         const headers: Record<string, string> = {
-            "User-Agent": USER_AGENT_DANBOORU,
+            "User-Agent": getDanbooruUserAgent(),
             "Accept": "application/json",
         }
 

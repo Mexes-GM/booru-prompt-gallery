@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { smartFetch } from '@/lib/network/smart-fetch'
-import { PROVIDER_URLS, USER_AGENT_DANBOORU } from '@/lib/constants'
+import { PROVIDER_URLS, getDanbooruUserAgent } from '@/lib/constants'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
 
@@ -116,7 +116,7 @@ export async function GET(request: Request) {
 
         const response = await smartFetch(url.toString(), {
           headers: {
-            'User-Agent': USER_AGENT_DANBOORU,
+            'User-Agent': getDanbooruUserAgent(),
             ...(process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY
               ? { 'Authorization': `Basic ${btoa(`${process.env.DANBOORU_USERNAME}:${process.env.DANBOORU_API_KEY}`)}` }
               : {}),

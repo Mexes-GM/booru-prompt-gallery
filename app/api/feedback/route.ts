@@ -99,12 +99,7 @@ export async function POST(req: NextRequest) {
         const discordWebhookUrl = process.env.DISCORD_FEEDBACK_WEBHOOK_URL
         if (discordWebhookUrl) {
             // Don't await this to speed up response time, or use waitUntil if available (Edge/Vercel)
-            // Vercel Edge Runtime supports context.waitUntil but it's not exposed in simple `runtime = 'edge'` handlers easily 
-            // without using the signature `(req, context)`.
-            // Let's use `fetch` without await, or better, `context.waitUntil` if we change signature.
-            // For now, async execution without await is risky in serverless as it might be killed.
-            // Better to await it quickly or use proper background job. 
-            // Since we want simple execution, we will await it but with a short timeout/error catch so it doesn't block success.
+            // Fire-and-forget with timeout to avoid blocking the response.
 
             const payload = {
                 embeds: [

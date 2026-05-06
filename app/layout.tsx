@@ -161,8 +161,12 @@ export default function RootLayout({
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 z-50 bg-background px-4 py-2 border rounded shadow-md">
           Skip to content
         </a>
-        <link rel="preconnect" href="https://booru-image-proxy.mexesmexecution.workers.dev" />
-        <link rel="dns-prefetch" href="https://booru-image-proxy.mexesmexecution.workers.dev" />
+        {process.env.NEXT_PUBLIC_IMAGE_PROXY_URL && (
+          <>
+            <link rel="preconnect" href={process.env.NEXT_PUBLIC_IMAGE_PROXY_URL} />
+            <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_IMAGE_PROXY_URL} />
+          </>
+        )}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

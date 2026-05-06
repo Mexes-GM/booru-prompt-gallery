@@ -285,7 +285,7 @@ function checkCoverage(conflicts: ConflictDict, families: TagFamilies["families"
       if (blockedElsewhere) continue
       
       // Check if this tag should be blocked (semantic conflict)
-      // For now, flag all tags in same family not yet blocked
+      // Flag all tags in the same family that aren't yet covered.
       reports.push({
         type: "missing_block",
         severity: "medium",

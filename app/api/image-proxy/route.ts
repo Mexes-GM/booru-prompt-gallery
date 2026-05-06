@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PROVIDER_REFERERS, USER_AGENT, USER_AGENT_DANBOORU } from '@/lib/constants'
+import { PROVIDER_REFERERS, USER_AGENT, getDanbooruUserAgent } from '@/lib/constants'
 
 export const runtime = 'nodejs'
 
@@ -16,9 +16,8 @@ const ALLOWED_DOMAINS = [
     'static1.e621.net',
     // Aibooru
     'aibooru.online',
-    // Danbooru images go through the Cloudflare Worker (proxy-url.ts),
-    // NOT through this Vercel proxy. Allowing them here would bypass
-    // all rate limiting and circuit breaker protections.
+    // Danbooru y Gelbooru: ambos van por Cloudflare Worker (egress gratuito).
+    // Esta ruta queda como fallback si el worker está caído.
 ]
 
 export async function GET(request: NextRequest) {
@@ -44,7 +43,7 @@ export async function GET(request: NextRequest) {
         const isDanbooru = parsedUrl.hostname.includes('danbooru') || parsedUrl.hostname.includes('donmai.us')
 
         const fetchHeaders: HeadersInit = {
-            'User-Agent': isDanbooru ? USER_AGENT_DANBOORU : USER_AGENT,
+            'User-Agent': isDanbooru ? getDanbooruUserAgent() : USER_AGENT,
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
         }
 

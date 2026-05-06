@@ -11,10 +11,13 @@
 [[headers]]
   for = "/api/*"
   [headers.values]
-    # Do NOT set Netlify-CDN-Cache-Control here — the API routes set it per-response.
-    # Setting it here would override "no-store" on 429/error responses, causing
-    # the CDN to cache error pages and break infinite scroll pagination.
-    Vary = "Accept, Accept-Encoding"
+  # Netlify CDN: must be no-store because Netlify's auto-generated netlify-vary
+  # header only includes Next.js internal query params (__nextDataReq, _rsc),
+  # NOT our API params (page, tags, seed, order). Any public cache causes all
+  # /api/posts?* URLs to share one cached response, breaking pagination.
+  # Each API route also sets this per-response, but this acts as a safety net.
+  Netlify-CDN-Cache-Control = "no-store"
+  Vary = "Accept, Accept-Encoding"
 
 [[headers]]
   for = "/_next/image*"

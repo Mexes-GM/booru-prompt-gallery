@@ -284,8 +284,8 @@ function detectFalsePositives(results: ValidationResult[]): string[] {
   for (const result of results) {
     for (const conflict of result.conflictingTags) {
       // Flag if a conflict seems wrong
-      // For now, flag any conflict that blocked a tag NOT in the test pool
-      // (this shouldn't happen since we only test with pool tags)
+      // Flag conflicts that blocked tags outside the test pool
+      // (shouldn't happen — we only test with pool tags)
       if (!TEST_TAGS_POOL.some(t => normalize(t) === normalize(conflict))) {
         fps.push(`Post#${result.postId}: Unexpected blocked tag "${conflict}"`)
       }

@@ -154,7 +154,7 @@ export function classifyTags(tags: string[], overrides?: Record<string, string>,
 export function getSmartCombinedTags(tags: string[]): string[] {
   // Re-use cleanPrompt's optimization logic implicitly by calling cleanPrompt?
   // Or simpler: remove redundant subset tags.
-  // For now, let's implement a simple dedupe.
+  // Simple deduplication using Set.
 
   const unique = Array.from(new Set(tags));
   // Remove tags that are substrings of other tags (simple redundancy check)

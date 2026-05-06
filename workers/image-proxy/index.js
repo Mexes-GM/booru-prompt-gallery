@@ -170,7 +170,7 @@ export default {
 
       const headers = {
         'User-Agent': isDanbooru
-          ? 'Boorugallery/9.2 (Danbooru user: Momon312)'
+          ? `Boorugallery/9.2 (Danbooru user: ${env.DANBOORU_USERNAME || 'anonymous'})`
           : 'Boorugallery/9.2',
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
       }

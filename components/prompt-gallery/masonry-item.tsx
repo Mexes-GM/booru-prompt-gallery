@@ -29,7 +29,7 @@ import {
     BooruProvider
 } from "@/lib/api-client"
 import { PROVIDER_POST_URLS } from "@/lib/constants"
-import { getDanbooruProxyUrl, getVercelProxyUrl } from "@/lib/proxy-url"
+import { getDanbooruProxyUrl, getGelbooruProxyUrl, getVercelProxyUrl } from "@/lib/proxy-url"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
@@ -391,12 +391,13 @@ export const MasonryItem = memo(function MasonryItem({
         : (effectiveScale === 'small' && post.preview_file_url)
     const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
 
-    // Gelbooru full images always need proxy (hotlink protection)
+    // Gelbooru: usar Cloudflare Worker (mismo worker que Danbooru, egress gratuito)
+    // Asi se evita consumir bandwidth/CPU de Netlify/Vercel en image proxying.
     const gelbooruNeedsProxy = isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')
 
     // Danbooru: use Cloudflare Worker (egress gratuito, dentro de la red Cloudflare)
     const fileUrl = gelbooruNeedsProxy
-        ? getVercelProxyUrl(rawFileUrl!)
+        ? getGelbooruProxyUrl(rawFileUrl!)
         : isDanbooru && rawFileUrl
             ? getDanbooruProxyUrl(rawFileUrl)
             : rawFileUrl

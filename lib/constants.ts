@@ -69,8 +69,14 @@ export function isValidArtistTag(tag: string): boolean {
 // Centralized User-Agent for all API requests
 export const USER_AGENT = 'Boorugallery/9.2'
 
-// Danbooru-specific User-Agent — identifies the Danbooru account so admins can contact us
-export const USER_AGENT_DANBOORU = 'Boorugallery/9.2 (Danbooru user: Momon312)'
+// Danbooru-specific User-Agent — identifies the Danbooru account so admins can contact us.
+// Set DANBOORU_USERNAME env var to include your account name in the User-Agent.
+export function getDanbooruUserAgent(): string {
+  const username = process.env.DANBOORU_USERNAME
+  return username
+    ? `Boorugallery/9.2 (Danbooru user: ${username})`
+    : 'Boorugallery/9.2'
+}
 
 // Provider referer URLs (for API requests)
 export const PROVIDER_REFERERS: Record<string, string> = {

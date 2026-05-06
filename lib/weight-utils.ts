@@ -26,12 +26,8 @@ export const applyWeights = (prompt: string, weights: Record<string, number>): s
 
         baseTag = baseTag.trim()
 
-        // Check if there is a global weight for this base tag
-        // We use lowercase for specific matching to match behavior in cleanPrompt but let's see
-        // The prompt tags might be normalized or not. 
-        // Best to check exact match first, then normalized?
-        // cleanPrompt normalizes tags.
-        // Let's assume keys in weights are normalized (lowercase).
+        // Check if there is a global weight for this base tag.
+        // Keys in the weights map are normalized (lowercase) by cleanPrompt.
 
         const lowerBase = baseTag.toLowerCase()
         if (weights[lowerBase] !== undefined) {

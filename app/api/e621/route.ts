@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       headers: {
         'Cache-Control': `public, s-maxage=${cacheDuration}, stale-while-revalidate=${cacheDuration * 2}`,
 'CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
-				'Netlify-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
+				'Netlify-CDN-Cache-Control': 'no-store',
 				'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
         'ETag': `"${cacheKey}"`,
         'X-Content-Type-Options': 'nosniff',

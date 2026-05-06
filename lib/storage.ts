@@ -239,7 +239,7 @@ export const userPreferences = {
   // Audit Fix: Persistent Inputs
   getAddTagsInput: (): string => {
     // Migration check: check old key if new one is empty?
-    // For now, let's just support the new key.
+    // Use the new key directly.
     return storage.get(STORAGE_KEYS.ADD_TAGS, "")
   },
 

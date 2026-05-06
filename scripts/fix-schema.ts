@@ -12,7 +12,7 @@ async function fixSchema() {
 
   const client = new Client({
     connectionString,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false } // Supabase SSL — set to true if your CA store trusts the cert
   })
 
   try {

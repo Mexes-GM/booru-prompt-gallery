@@ -12,12 +12,14 @@ function getClientIp(request: NextRequest): string {
 }
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams
-  const page = searchParams.get('page') || '1'
-  const tags = searchParams.get('tags') || ''
-  const order = (searchParams.get('order') || 'popular') as 'popular' | 'recent' | 'random'
-  const providerType = (searchParams.get('provider') || 'danbooru') as 'danbooru' | 'rule34' | 'aibooru' | 'e621' | 'gelbooru'
-  const seed = searchParams.get('seed') || ''
+ const searchParams = request.nextUrl.searchParams
+ const page = searchParams.get('page') || '1'
+ const tags = searchParams.get('tags') || ''
+ const order = (searchParams.get('order') || 'popular') as 'popular' | 'recent' | 'random'
+ const providerType = (searchParams.get('provider') || 'danbooru') as 'danbooru' | 'rule34' | 'aibooru' | 'e621' | 'gelbooru'
+ const seed = searchParams.get('seed') || ''
+
+ console.log(`[API /posts] page=${page}, order=${order}, provider=${providerType}, seed=${seed}, tags="${tags.slice(0,50)}", url=${request.nextUrl.toString().slice(0,150)}`)
 
   // Rate limit check — only for Danbooru which hits the external API
   if (providerType === 'danbooru') {
@@ -89,22 +91,24 @@ export async function GET(request: NextRequest) {
 
     // Propagate circuit state even on success — if half-open and succeeded, recordSuccess already called in provider
 
-    return NextResponse.json(posts, {
-      headers: {
-        'Cache-Control': `public, s-maxage=${cacheDuration}, stale-while-revalidate=${cacheDuration * 2}`,
-'CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
+ return NextResponse.json(posts, {
+ headers: {
+ 'Cache-Control': `public, s-maxage=${cacheDuration}, stale-while-revalidate=${cacheDuration * 2}`,
+ // Netlify CDN: no-store because netlify-vary only includes Next.js internal
+ // query params, not our API params (page, tags, seed, order).
+ // Public cache causes all /api/posts?* URLs to share one cached response.
+ 'Netlify-CDN-Cache-Control': 'no-store',
  'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
- 'Netlify-CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
-        'Vary': 'Accept, Accept-Encoding',
+ 'Vary': 'Accept, Accept-Encoding',
  'ETag': `"${cacheKey}"`,
-        'X-Content-Type-Options': 'nosniff',
-        'X-API-Version': '2.0',
-        'X-Total-Count': posts.length.toString(),
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    })
+ 'X-Content-Type-Options': 'nosniff',
+ 'X-API-Version': '2.0',
+ 'X-Total-Count': posts.length.toString(),
+ 'Access-Control-Allow-Origin': '*',
+ 'Access-Control-Allow-Methods': 'GET',
+ 'Access-Control-Allow-Headers': 'Content-Type',
+ },
+ })
 
   } catch (error: any) {
     console.error(JSON.stringify({

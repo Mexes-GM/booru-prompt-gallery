@@ -507,7 +507,7 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
   }
 
   // Calculate extra tags count (rating + tagcount)
-  // Note: order tags don't count towards the limit in the same way, but let's be safe
+  // Note: order tags don't count towards the limit in the same way — being conservative here.
   // Actually, order:rank counts as 1. rating:x counts as 1. tagcount:x counts as 1.
   // processTagsForAPI handles the limit for *user entered* tags.
   // We need to pass how many *system* tags we are adding that eat into the limit.

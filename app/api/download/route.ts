@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
-import { PROVIDER_REFERERS, USER_AGENT, USER_AGENT_DANBOORU } from '@/lib/constants'
+import { PROVIDER_REFERERS, USER_AGENT, getDanbooruUserAgent } from '@/lib/constants'
 import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
 import { isCircuitOpenShared, getCircuitRetryAfter } from '@/lib/circuit-breaker'
 
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
     else if (urlDomain.includes('gelbooru')) referer = PROVIDER_REFERERS.GELBOORU
 
     const fetchHeaders: HeadersInit = {
-      'User-Agent': isDanbooru ? USER_AGENT_DANBOORU : USER_AGENT,
+      'User-Agent': isDanbooru ? getDanbooruUserAgent() : USER_AGENT,
       'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     }
 

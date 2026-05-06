@@ -322,14 +322,15 @@ export function useBooruSearch() {
  loadMoreGuardRef.current = true
  setLoadMoreError(false)
 
- const currentRawPostCount = pages ? pages.flat().length : 0
- setLastLoadAttempt(currentRawPostCount)
+ // Track deduped count so the no-more-results check can detect
+ // when a new page brings only duplicate posts (CDN cache hit).
+ setLastLoadAttempt(allPosts.length)
 
  const nextSize = size + 1
- console.log(`[loadMore] CALLING setSize(${nextSize}), prevSize=${size}, allPosts=${allPosts.length}, rawCount=${currentRawPostCount}`)
+ console.log(`[loadMore] CALLING setSize(${nextSize}), prevSize=${size}, allPosts=${allPosts.length}`)
  setSize(nextSize)
  trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
- }, [size, pages, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
+ }, [size, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
 
  // Clear guard when SWR starts validating (confirms the load was accepted)
  useEffect(() => {
@@ -374,50 +375,51 @@ export function useBooruSearch() {
  // Handle No More Results / Errors
  useEffect(() => {
  if (lastLoadAttempt > 0 && !isLoadingMore) {
- const currentRawPostCount = pages ? pages.flat().length : 0
- console.log(`[loadMore] no-more-results check: lastLoadAttempt=${lastLoadAttempt}, rawCount=${currentRawPostCount}, isReachingEnd=${isReachingEnd}, error=${!!error}, size=${size}`)
+ const currentDedupedCount = allPosts.length
+ console.log(`[loadMore] no-more-results check: lastLoadAttempt=${lastLoadAttempt}, dedupedCount=${currentDedupedCount}, isReachingEnd=${isReachingEnd}, error=${!!error}, size=${size}`)
 
  if (error) {
-        setLoadMoreError(true)
-        setNoMoreResults(false)
+ setLoadMoreError(true)
+ setNoMoreResults(false)
 
-        const status = (error as any)?.status
-        const serverErrorMessage = (error as any)?.info?.error || ''
-        const isCircuitOpen = status === 429 && serverErrorMessage.includes('saturated')
-        const isRateLimit = status === 429 && !isCircuitOpen
+ const status = (error as any)?.status
+ const serverErrorMessage = (error as any)?.info?.error || ''
+ const isCircuitOpen = status === 429 && serverErrorMessage.includes('saturated')
+ const isRateLimit = status === 429 && !isCircuitOpen
 
-        if (isCircuitOpen) {
-          setCircuitOpen(true)
-          // Auto-recover after 65s (circuit timeout is 60s + margin)
-          setTimeout(() => setCircuitOpen(false), 65_000)
-        }
+ if (isCircuitOpen) {
+ setCircuitOpen(true)
+ // Auto-recover after 65s (circuit timeout is 60s + margin)
+ setTimeout(() => setCircuitOpen(false), 65_000)
+ }
 
-        toast({
-          title: isCircuitOpen
-            ? "Danbooru Saturated"
-            : isRateLimit
-              ? "Service Temporarily Busy"
-              : "Error Loading More Posts",
-          description: isCircuitOpen
-            ? "Danbooru is saturated. Requests are paused for 60 seconds to avoid a block."
-            : isRateLimit
-              ? "The image provider is limiting requests right now. Please wait a moment before loading more."
-              : "There was an error loading more posts. Click 'Retry' to try again.",
-          variant: isCircuitOpen || isRateLimit ? "default" : "destructive",
-        })
-        setLastLoadAttempt(0)
-      } else if (currentRawPostCount === lastLoadAttempt || isReachingEnd) {
-        setNoMoreResults(true)
-        setLoadMoreError(false)
-        setLastLoadAttempt(0)
-      } else if (currentRawPostCount > lastLoadAttempt) {
-        setNoMoreResults(false)
-        setLoadMoreError(false)
-        setLastLoadAttempt(0)
-        setCircuitOpen(false)
-      }
-    }
-  }, [pages, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast])
+ toast({
+ title: isCircuitOpen
+ ? "Danbooru Saturated"
+ : isRateLimit
+ ? "Service Temporarily Busy"
+ : "Error Loading More Posts",
+ description: isCircuitOpen
+ ? "Danbooru is saturated. Requests are paused for 60 seconds to avoid a block."
+ : isRateLimit
+ ? "The image provider is limiting requests right now. Please wait a moment before loading more."
+ : "There was an error loading more posts. Click 'Retry' to try again.",
+ variant: isCircuitOpen || isRateLimit ? "default" : "destructive",
+ })
+ setLastLoadAttempt(0)
+ } else if (currentDedupedCount === lastLoadAttempt || isReachingEnd) {
+ // No new deduped posts arrived — all new pages were duplicates or empty
+ setNoMoreResults(true)
+ setLoadMoreError(false)
+ setLastLoadAttempt(0)
+ } else if (currentDedupedCount > lastLoadAttempt) {
+ setNoMoreResults(false)
+ setLoadMoreError(false)
+ setLastLoadAttempt(0)
+ setCircuitOpen(false)
+ }
+ }
+ }, [allPosts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast])
 
   return {
     searchTags, setSearchTags,

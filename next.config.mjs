@@ -89,19 +89,20 @@ const nextConfig = {
  {
  source: '/api/(.*)',
  headers: [
+ // Vercel CDN cache directive (Vercel varies cache by full URL including query params)
  {
- key: 'Cache-Control',
- value: 'public, s-maxage=300, stale-while-revalidate=600',
+ key: 'Vercel-CDN-Cache-Control',
+ value: 'public, s-maxage=600',
  },
- // Vercel CDN cache directive
- {
- key: 'CDN-Cache-Control',
- value: 'public, s-maxage=300',
- },
- // Netlify CDN cache directive (hybrid: works on both platforms)
+ // Do NOT set Netlify-CDN-Cache-Control here!
+ // Netlify's netlify-vary only includes Next.js internal query params
+ // (__nextDataReq, _rsc), NOT our API params (page, tags, seed, order).
+ // Setting a public cache here causes ALL /api/posts?* URLs to share
+ // one cached response, breaking infinite scroll pagination.
+ // Each API route sets its own Netlify-CDN-Cache-Control per-response.
  {
  key: 'Netlify-CDN-Cache-Control',
- value: 'public, s-maxage=300',
+ value: 'no-store',
  },
  ],
  },
