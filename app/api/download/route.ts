@@ -52,20 +52,22 @@ export async function GET(request: NextRequest) {
       const clientIp = getClientIp(request)
       const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
 
-      if (!success) {
-        return NextResponse.json(
-          { error: 'Too many downloads. Please wait before downloading another image.' },
-          {
-            status: 429,
-            headers: {
-              'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
-              'X-RateLimit-Limit': String(limit),
-              'X-RateLimit-Remaining': String(remaining),
-              'X-RateLimit-Reset': String(reset),
-            },
-          }
-        )
-      }
+	if (!success) {
+			return NextResponse.json(
+				{ error: 'Too many downloads. Please wait before downloading another image.' },
+				{
+					status: 429,
+					headers: {
+						'Cache-Control': 'no-store',
+						'Netlify-CDN-Cache-Control': 'no-store',
+						'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
+						'X-RateLimit-Limit': String(limit),
+						'X-RateLimit-Remaining': String(remaining),
+						'X-RateLimit-Reset': String(reset),
+					},
+				}
+			)
+		}
     }
 
     // Global rate limit — caps total outbound Danbooru requests from ALL users
@@ -73,20 +75,20 @@ export async function GET(request: NextRequest) {
     if (globalLimit) {
       const { success } = await globalLimit.limit('danbooru-outbound')
       if (!success) {
-        return NextResponse.json(
-          { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-          { status: 429, headers: { 'Retry-After': '2' } }
-        )
+			return NextResponse.json(
+				{ error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+				{ status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
+			)
       }
     }
 
     // Circuit breaker check
     if (await isCircuitOpenShared('danbooru-api')) {
       const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
-      return NextResponse.json(
-        { error: 'Danbooru is saturated. Please wait before downloading.', retryAfter },
-        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
-      )
+		return NextResponse.json(
+			{ error: 'Danbooru is saturated. Please wait before downloading.', retryAfter },
+			{ status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Retry-After': String(retryAfter) } }
+		)
     }
   }
 
@@ -146,10 +148,11 @@ export async function GET(request: NextRequest) {
     const headers = new Headers()
     headers.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream')
     headers.set('Content-Disposition', `attachment; filename="${filename}"`)
-    headers.set('Cache-Control', 'public, max-age=31536000, immutable')
-headers.set('CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
+	headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+	headers.set('CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
 			headers.set('Netlify-CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
 			headers.set('Vercel-CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
+			headers.set('Vary', 'Accept, Accept-Encoding')
 
     const contentLength = response.headers.get('content-length')
     if (contentLength) {

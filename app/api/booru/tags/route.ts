@@ -84,10 +84,10 @@ export async function GET(request: Request) {
         const { success } = await ratelimit.limit(clientIp)
 
         if (!success) {
-          return NextResponse.json(
-            { error: 'Too many requests. Please wait before searching tags.' },
-            { status: 429, headers: { 'Retry-After': '10' } }
-          )
+		return NextResponse.json(
+				{ error: 'Too many requests. Please wait before searching tags.' },
+				{ status: 429, headers: { 'Retry-After': '10', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store' } }
+			)
         }
       }
 
@@ -96,10 +96,10 @@ export async function GET(request: Request) {
       if (globalLimit) {
         const { success } = await globalLimit.limit('danbooru-outbound')
         if (!success) {
-          return NextResponse.json(
-            { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-            { status: 429, headers: { 'Retry-After': '2' } }
-          )
+		return NextResponse.json(
+					{ error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+					{ status: 429, headers: { 'Retry-After': '2', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store' } }
+				)
         }
       }
 
@@ -167,11 +167,12 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json(tagCounts, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
-      },
-    })
+	return NextResponse.json(tagCounts, {
+		headers: {
+			'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+			'Vary': 'Accept, Accept-Encoding',
+		},
+	})
   } catch (error) {
     console.error('Error fetching batch tag counts:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

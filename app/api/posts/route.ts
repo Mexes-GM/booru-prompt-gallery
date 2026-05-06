@@ -26,32 +26,34 @@ export async function GET(request: NextRequest) {
       const clientIp = getClientIp(request)
       const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
 
-      if (!success) {
-        return NextResponse.json(
-          { error: 'Too many requests. Please wait before loading more posts.', retryAfter: Math.ceil((reset - Date.now()) / 1000) },
-          {
-            status: 429,
-            headers: {
-              'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
-              'X-RateLimit-Limit': String(limit),
-              'X-RateLimit-Remaining': String(remaining),
-              'X-RateLimit-Reset': String(reset),
-            },
-          }
-        )
-      }
+ if (!success) {
+ return NextResponse.json(
+ { error: 'Too many requests. Please wait before loading more posts.', retryAfter: Math.ceil((reset - Date.now()) / 1000) },
+ {
+ status: 429,
+ headers: {
+ 'Cache-Control': 'no-store',
+ 'Netlify-CDN-Cache-Control': 'no-store',
+ 'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
+ 'X-RateLimit-Limit': String(limit),
+ 'X-RateLimit-Remaining': String(remaining),
+ 'X-RateLimit-Reset': String(reset),
+ },
+ }
+ )
+ }
     }
 
     // Global rate limit — caps total outbound requests from ALL users
     const globalLimit = getDanbooruGlobalRateLimit()
     if (globalLimit) {
       const { success } = await globalLimit.limit('danbooru-outbound')
-      if (!success) {
-        return NextResponse.json(
-          { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-          { status: 429, headers: { 'Retry-After': '2' } }
-        )
-      }
+ if (!success) {
+ return NextResponse.json(
+ { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+ { status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
+ )
+ }
     }
   }
 
@@ -62,18 +64,20 @@ export async function GET(request: NextRequest) {
   const cacheDuration = 600
 
   // Circuit breaker check — fail fast if Danbooru circuit is open
-  if (providerType === 'danbooru' && await isCircuitOpenShared('danbooru-api')) {
-    const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
-    return NextResponse.json(
-      { error: 'Danbooru is saturated. Please wait before retrying.', retryAfter },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(retryAfter),
-        },
-      }
-    )
-  }
+ if (providerType === 'danbooru' && await isCircuitOpenShared('danbooru-api')) {
+ const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
+ return NextResponse.json(
+ { error: 'Danbooru is saturated. Please wait before retrying.', retryAfter },
+ {
+ status: 429,
+ headers: {
+ 'Cache-Control': 'no-store',
+ 'Netlify-CDN-Cache-Control': 'no-store',
+ 'Retry-After': String(retryAfter),
+ },
+ }
+ )
+ }
 
   try {
     const provider = BooruFactory.getProvider(providerType)
@@ -91,7 +95,8 @@ export async function GET(request: NextRequest) {
 'CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
  'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
  'Netlify-CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
-        'ETag': `"${cacheKey}"`,
+        'Vary': 'Accept, Accept-Encoding',
+ 'ETag': `"${cacheKey}"`,
         'X-Content-Type-Options': 'nosniff',
         'X-API-Version': '2.0',
         'X-Total-Count': posts.length.toString(),
@@ -111,23 +116,25 @@ export async function GET(request: NextRequest) {
     }))
     const status = error.status || 500
 
-    if (status === 429) {
-      const retryAfter = error.retryAfter || getCircuitRetryAfter('danbooru-api')
-        ? Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
-        : 60
-      return NextResponse.json(
-        {
-          error: error.message || 'Danbooru is temporarily busy. Please try again in a moment.',
-          retryAfter,
-        },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': String(retryAfter),
-          },
-        }
-      )
-    }
+ if (status === 429) {
+ const retryAfter = error.retryAfter || getCircuitRetryAfter('danbooru-api')
+ ? Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
+ : 60
+ return NextResponse.json(
+ {
+ error: error.message || 'Danbooru is temporarily busy. Please try again in a moment.',
+ retryAfter,
+ },
+ {
+ status: 429,
+ headers: {
+ 'Cache-Control': 'no-store',
+ 'Netlify-CDN-Cache-Control': 'no-store',
+ 'Retry-After': String(retryAfter),
+ },
+ }
+ )
+ }
 
     return NextResponse.json(
       { error: error.message || 'Internal server error', timestamp: new Date().toISOString() },

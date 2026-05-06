@@ -11,8 +11,10 @@
 [[headers]]
   for = "/api/*"
   [headers.values]
-    Cache-Control = "public, s-maxage=300, stale-while-revalidate=600"
-    Netlify-CDN-Cache-Control = "public, s-maxage=300"
+    # Do NOT set Netlify-CDN-Cache-Control here — the API routes set it per-response.
+    # Setting it here would override "no-store" on 429/error responses, causing
+    # the CDN to cache error pages and break infinite scroll pagination.
+    Vary = "Accept, Accept-Encoding"
 
 [[headers]]
   for = "/_next/image*"
