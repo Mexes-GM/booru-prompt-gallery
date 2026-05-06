@@ -226,13 +226,14 @@ export function useBooruSearch() {
     window.history.replaceState(window.history.state, '', url.toString())
   }, [debouncedSearchTags])
 
-  // Reset pagination
-  useEffect(() => {
-    setSize(1)
-    setNoMoreResults(false)
-    setLoadMoreError(false)
-    setLastLoadAttempt(0)
-    setCircuitOpen(false)
+ // Reset pagination
+ useEffect(() => {
+ console.log(`[loadMore] RESET pagination: order=${order}, rating=${ratingFilter}, tags="${debouncedSearchTags.slice(0,30)}", tagCount=${appliedTagCountFilter}, charCount=${appliedCharacterCountFilter}`)
+ setSize(1)
+ setNoMoreResults(false)
+ setLoadMoreError(false)
+ setLastLoadAttempt(0)
+ setCircuitOpen(false)
  loadMoreGuardRef.current = false
  }, [order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
 
@@ -261,6 +262,7 @@ export function useBooruSearch() {
   }, [pages])
 
  const isLoadingMore = isValidating && size > 0
+ console.log(`[SWR] isLoading=${isLoading}, isValidating=${isValidating}, size=${size}, isLoadingMore=${isLoadingMore}, allPosts=${allPosts.length}, noMoreResults=${noMoreResults}`)
  // Ref for loadMore to read isLoadingMore without depending on it
  // (keeps the callback reference stable so the IntersectionObserver
  // in InfiniteScrollTrigger doesn't recreate on every loading change)
@@ -307,10 +309,12 @@ export function useBooruSearch() {
  // (e.g. IntersectionObserver callback firing after React has
  // already committed a loadMore call in the same tick).
  if (loadMoreGuardRef.current) {
+ console.log(`[loadMore] BLOCKED by loadMoreGuardRef, size=${size}`)
  return
  }
 
  if (isLoadingMoreRef.current) {
+ console.log(`[loadMore] BLOCKED by isLoadingMoreRef, size=${size}`)
  return
  }
 
@@ -321,12 +325,14 @@ export function useBooruSearch() {
  setLastLoadAttempt(currentRawPostCount)
 
  const nextSize = size + 1
+ console.log(`[loadMore] CALLING setSize(${nextSize}), prevSize=${size}, allPosts=${allPosts.length}, rawCount=${currentRawPostCount}`)
  setSize(nextSize)
  trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
  }, [size, pages, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
 
  // Clear guard when SWR starts validating (confirms the load was accepted)
  useEffect(() => {
+ console.log(`[loadMore] guard-clear effect: isLoadingMore=${isLoadingMore}, guard=${loadMoreGuardRef.current}, size=${size}`)
  if (isLoadingMore) {
  loadMoreGuardRef.current = false
  }
@@ -364,12 +370,13 @@ export function useBooruSearch() {
     setSize(1)
   }, [setSize])
 
-  // Handle No More Results / Errors
-  useEffect(() => {
-    if (lastLoadAttempt > 0 && !isLoadingMore) {
-      const currentRawPostCount = pages ? pages.flat().length : 0
+ // Handle No More Results / Errors
+ useEffect(() => {
+ if (lastLoadAttempt > 0 && !isLoadingMore) {
+ const currentRawPostCount = pages ? pages.flat().length : 0
+ console.log(`[loadMore] no-more-results check: lastLoadAttempt=${lastLoadAttempt}, rawCount=${currentRawPostCount}, isReachingEnd=${isReachingEnd}, error=${!!error}, size=${size}`)
 
-      if (error) {
+ if (error) {
         setLoadMoreError(true)
         setNoMoreResults(false)
 
