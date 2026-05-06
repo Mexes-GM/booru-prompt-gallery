@@ -260,8 +260,14 @@ export function useBooruSearch() {
     return keptPosts
   }, [pages])
 
-  const isLoadingMore = isValidating && size > 0
-  const isEmpty = !isLoading && pages?.[0]?.length === 0
+ const isLoadingMore = isValidating && size > 0
+ // Ref for loadMore to read isLoadingMore without depending on it
+ // (keeps the callback reference stable so the IntersectionObserver
+ // in InfiniteScrollTrigger doesn't recreate on every loading change)
+ const isLoadingMoreRef = useRef(isLoadingMore)
+ useEffect(() => { isLoadingMoreRef.current = isLoadingMore }, [isLoadingMore])
+
+ const isEmpty = !isLoading && pages?.[0]?.length === 0
   const lastPageFromAPI = pages && pages.length > 0 ? pages[pages.length - 1] : null
   const isReachingEnd = isEmpty || (lastPageFromAPI !== null && lastPageFromAPI.length === 0)
 
@@ -304,7 +310,7 @@ export function useBooruSearch() {
  return
  }
 
- if (isLoadingMore) {
+ if (isLoadingMoreRef.current) {
  return
  }
 
@@ -317,7 +323,7 @@ export function useBooruSearch() {
  const nextSize = size + 1
  setSize(nextSize)
  trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
- }, [isLoadingMore, size, pages, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
+ }, [size, pages, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
 
  // Clear guard when SWR starts validating (confirms the load was accepted)
  useEffect(() => {

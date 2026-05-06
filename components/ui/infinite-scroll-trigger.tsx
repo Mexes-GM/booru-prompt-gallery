@@ -5,97 +5,120 @@ import { ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface InfiniteScrollTriggerProps {
-  onIntersect: () => void
-  isLoading: boolean
-  hasNextPage: boolean
-  error?: boolean
-  /** Total posts already loaded (used to calculate current page) */
-  loadedCount?: number
+ onIntersect: () => void
+ isLoading: boolean
+ hasNextPage: boolean
+ error?: boolean
+ /** Total posts already loaded (used to calculate current page) */
+ loadedCount?: number
 }
 
 const PAGE_SIZE = 30 // Danbooru returns 30 posts per page
 
 export function InfiniteScrollTrigger({
-  onIntersect,
-  isLoading,
-  hasNextPage,
-  error = false,
-  loadedCount = 0,
+ onIntersect,
+ isLoading,
+ hasNextPage,
+ error = false,
+ loadedCount = 0,
 }: InfiniteScrollTriggerProps) {
-  const triggerRef = useRef<HTMLDivElement>(null)
-  const isLoadingRef = useRef(isLoading)
-  // Guard: prevents observer from firing loadMore again while
-  // the previous call hasn't yet caused SWR to transition to isValidating=true.
-  const guardRef = useRef(false)
+ const triggerRef = useRef<HTMLDivElement>(null)
+ const isLoadingRef = useRef(isLoading)
 
-  // Sync isLoading to ref (observer callback reads this)
-  useEffect(() => {
-    isLoadingRef.current = isLoading
-    // When SWR confirms it's loading, clear the guard —
-    // the load was accepted and is in progress.
-    if (isLoading) guardRef.current = false
-  }, [isLoading])
+ // Sync isLoading to ref — the observer callback reads this
+ // to skip intersection when a load is already in progress.
+ useEffect(() => {
+ isLoadingRef.current = isLoading
+ // When SWR confirms it's loading, clear the guard —
+ // the load was accepted and is in progress.
+ if (isLoading) guardRef.current = false
+ }, [isLoading])
 
-  // IntersectionObserver — only active when NOT loading and there's a next page
-  useEffect(() => {
-    if (isLoading || !hasNextPage || error) return
+ // Guard: prevents observer from firing loadMore again while
+ // the previous call hasn't yet caused SWR to transition to isValidating=true.
+ const guardRef = useRef(false)
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting) return
-        if (isLoadingRef.current) return
-        if (guardRef.current) return
+ // --- Persistent IntersectionObserver (NO isLoading dependency) ---
+ // Uses intersection TRANSITIONS instead of observer recreation.
+ // The observer fires loadMore only when the trigger transitions
+ // from not-intersecting → intersecting (the user actually scrolled).
+ // A loadMoreFired flag is set on intersection and only reset when
+ // the trigger LEAVES the viewport. This prevents rapid-fire loops
+ // on Netlify where cached responses toggle isLoading fast enough
+ // that the observer reconnects while the trigger is still in viewport.
+ useEffect(() => {
+ if (!hasNextPage || error) return
 
-        guardRef.current = true
-        onIntersect()
-      },
-      { root: null, rootMargin: "800px", threshold: 0 }
-    )
+ let loadMoreFired = false
 
-    if (triggerRef.current) observer.observe(triggerRef.current)
-    return () => observer.disconnect()
-  }, [isLoading, hasNextPage, error, onIntersect])
+ const observer = new IntersectionObserver(
+ (entries) => {
+ const entry = entries[0]
 
-  // Reset guard when component unmounts or when search changes
-  // (loadedCount resetting signals a new search)
-  const prevLoadedCountRef = useRef(loadedCount)
-  useEffect(() => {
-    if (loadedCount === 0 && prevLoadedCountRef.current > 0) {
-      guardRef.current = false
-    }
-    prevLoadedCountRef.current = loadedCount
-  }, [loadedCount])
+ // Trigger left the viewport → allow next fire
+ if (!entry.isIntersecting) {
+ loadMoreFired = false
+ return
+ }
 
-  if (!hasNextPage) return null
+ // Trigger entered the viewport → fire loadMore once
+ if (loadMoreFired) return
+ if (isLoadingRef.current) return
+ if (guardRef.current) return
 
-  const currentPage = Math.floor(loadedCount / PAGE_SIZE) + 1
+ loadMoreFired = true
+ guardRef.current = true
+ onIntersect()
+ },
+ { root: null, rootMargin: "800px", threshold: 0 }
+ )
 
-  return (
-    <div
-      ref={triggerRef}
-      className="w-full py-8 flex flex-col justify-center items-center min-h-[60px] gap-2"
-    >
-      {isLoading ? (
-        <div className="flex flex-col items-center gap-3 w-full max-w-xs mx-auto">
-          <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-            <div className="w-1/4 h-full bg-primary rounded-full animate-indeterminate-bar" />
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Loading page {currentPage}...
-            <span className="text-xs ml-1 text-muted-foreground/60">
-              ({loadedCount} posts loaded)
-            </span>
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-3">
-          <Button onClick={onIntersect} variant="outline" size="sm" className="gap-2">
-            <ChevronDown className="w-4 h-4" />
-            Load More
-          </Button>
-          <p className="text-xs text-muted-foreground/40">or scroll down</p>
-        </div>
-      )}
-    </div>
-  )
+ if (triggerRef.current) observer.observe(triggerRef.current)
+ return () => observer.disconnect()
+ // IMPORTANT: NO isLoading dependency — the observer is persistent
+ // and reads loading state from a ref, not from the closure.
+ }, [hasNextPage, error, onIntersect])
+
+ // Reset guard when component unmounts or when search changes
+ // (loadedCount resetting signals a new search)
+ const prevLoadedCountRef = useRef(loadedCount)
+ useEffect(() => {
+ if (loadedCount === 0 && prevLoadedCountRef.current > 0) {
+ guardRef.current = false
+ }
+ prevLoadedCountRef.current = loadedCount
+ }, [loadedCount])
+
+ if (!hasNextPage) return null
+
+ const currentPage = Math.floor(loadedCount / PAGE_SIZE) + 1
+
+ return (
+ <div
+ ref={triggerRef}
+ className="w-full py-8 flex flex-col justify-center items-center min-h-[60px] gap-2"
+ >
+ {isLoading ? (
+ <div className="flex flex-col items-center gap-3 w-full max-w-xs mx-auto">
+ <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+ <div className="w-1/4 h-full bg-primary rounded-full animate-indeterminate-bar" />
+ </div>
+ <p className="text-sm text-muted-foreground">
+ Loading page {currentPage}...
+ <span className="text-xs ml-1 text-muted-foreground/60">
+ ({loadedCount} posts loaded)
+ </span>
+ </p>
+ </div>
+ ) : (
+ <div className="flex flex-col items-center gap-3">
+ <Button onClick={onIntersect} variant="outline" size="sm" className="gap-2">
+ <ChevronDown className="w-4 h-4" />
+ Load More
+ </Button>
+ <p className="text-xs text-muted-foreground/40">or scroll down</p>
+ </div>
+ )}
+ </div>
+ )
 }
