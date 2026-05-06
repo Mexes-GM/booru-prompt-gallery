@@ -239,27 +239,28 @@ export function useBooruSearch() {
 
   // --- Derived Data ---
 
-  const allPosts = useMemo(() => {
-    if (!pages) return []
+ const allPosts = useMemo(() => {
+ if (!pages) return []
 
-    const flatPosts = pages.flat()
-    const seenIds = new Set<number>()
-    const keptPosts: BooruPost[] = []
+ const flatPosts = pages.flat()
+ const seenIds = new Set<number>()
+ const keptPosts: BooruPost[] = []
 
-    // Single pass through all posts - O(n) time complexity
-    for (let i = 0; i < flatPosts.length; i++) {
-      const post = flatPosts[i]
+ // Single pass through all posts - O(n) time complexity
+ for (let i = 0; i < flatPosts.length; i++) {
+ const post = flatPosts[i]
 
-      if (seenIds.has(post.id)) {
-        continue
-      }
+ if (seenIds.has(post.id)) {
+ continue
+ }
 
-      seenIds.add(post.id)
-      keptPosts.push(post)
-    }
+ seenIds.add(post.id)
+ keptPosts.push(post)
+ }
 
-    return keptPosts
-  }, [pages])
+ console.log(`[allPosts] pages.length=${pages.length}, flatPosts=${flatPosts.length}, deduped=${keptPosts.length}, firstFewIds=[${flatPosts.slice(0,5).map(p=>p.id).join(',')}]`)
+ return keptPosts
+ }, [pages])
 
  const isLoadingMore = isValidating && size > 0
  console.log(`[SWR] isLoading=${isLoading}, isValidating=${isValidating}, size=${size}, isLoadingMore=${isLoadingMore}, allPosts=${allPosts.length}, noMoreResults=${noMoreResults}`)

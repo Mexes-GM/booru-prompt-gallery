@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef } from "react"
 import { ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -24,100 +24,68 @@ export function InfiniteScrollTrigger({
 }: InfiniteScrollTriggerProps) {
  const triggerRef = useRef<HTMLDivElement>(null)
  const isLoadingRef = useRef(isLoading)
- // Guard: prevents observer from firing loadMore again while
- // the previous call hasn't yet caused SWR to transition to isValidating=true.
- const guardRef = useRef(false)
+ // Stable ref for onIntersect — the observer reads from this instead
+ // of the closure, so the observer effect never recreates when the
+ // callback reference changes (e.g. due to `size` in useCallback deps).
+ const onIntersectRef = useRef(onIntersect)
 
- // Debug: track observer lifecycle
- const observerIdRef = useRef(0)
-
- // Debug: track onIntersect reference stability
- const prevOnIntersectRef = useRef(onIntersect)
- useEffect(() => {
- if (prevOnIntersectRef.current !== onIntersect) {
- console.log(`[InfiniteScroll] onIntersect REF CHANGED (this recreates observer)`)
- prevOnIntersectRef.current = onIntersect
- }
- }, [onIntersect])
-
- // Sync isLoading to ref (observer callback reads this)
+ // Sync props to refs (observer callback reads these, not the closure)
+ useEffect(() => { onIntersectRef.current = onIntersect }, [onIntersect])
  useEffect(() => {
  const prev = isLoadingRef.current
  isLoadingRef.current = isLoading
- console.log(`[InfiniteScroll] isLoading sync: ${prev} → ${isLoading}, guard=${guardRef.current}, loadedCount=${loadedCount}`)
- // When SWR confirms it's loading, clear the guard —
- // the load was accepted and is in progress.
- if (isLoading) guardRef.current = false
+ console.log(`[InfiniteScroll] isLoading sync: ${prev} → ${isLoading}, loadedCount=${loadedCount}`)
  }, [isLoading])
 
- // --- Persistent IntersectionObserver (NO isLoading dependency) ---
- // Uses intersection TRANSITIONS instead of observer recreation.
+ // --- Single persistent IntersectionObserver ---
+ // Created once when hasNextPage/error stabilize, NEVER recreates
+ // on isLoading or onIntersect changes.
  useEffect(() => {
  if (!hasNextPage || error) {
  console.log(`[InfiniteScroll] Observer NOT created: hasNextPage=${hasNextPage}, error=${error}`)
  return
  }
 
- const observerId = ++observerIdRef.current
  let loadMoreFired = false
- console.log(`[InfiniteScroll] Observer #${observerId} CREATED (hasNextPage=${hasNextPage}, error=${error})`)
+ console.log(`[InfiniteScroll] Observer CREATED (persistent, hasNextPage=${hasNextPage})`)
 
  const observer = new IntersectionObserver(
  (entries) => {
  const entry = entries[0]
 
  if (!entry.isIntersecting) {
- console.log(`[InfiniteScroll] Observer #${observerId}: LEFT viewport, resetting loadMoreFired (was ${loadMoreFired})`)
+ // Trigger left viewport — safe to reset for next scroll-down
  loadMoreFired = false
  return
  }
 
- console.log(`[InfiniteScroll] Observer #${observerId}: ENTERED viewport, loadMoreFired=${loadMoreFired}, isLoadingRef=${isLoadingRef.current}, guard=${guardRef.current}`)
-
+ // Trigger entered viewport — fire loadMore ONCE per intersection
  if (loadMoreFired) {
- console.log(`[InfiniteScroll] Observer #${observerId}: SKIPPED — loadMoreFired=true`)
+ console.log(`[InfiniteScroll] SKIPPED — loadMoreFired=true`)
  return
  }
  if (isLoadingRef.current) {
- console.log(`[InfiniteScroll] Observer #${observerId}: SKIPPED — isLoadingRef=true`)
- return
- }
- if (guardRef.current) {
- console.log(`[InfiniteScroll] Observer #${observerId}: SKIPPED — guard=true`)
+ console.log(`[InfiniteScroll] SKIPPED — isLoading=true`)
  return
  }
 
  loadMoreFired = true
- guardRef.current = true
- console.log(`[InfiniteScroll] Observer #${observerId}: FIRING onIntersect(), loadMoreFired=true, guard=true`)
- onIntersect()
+ console.log(`[InfiniteScroll] FIRING onIntersect(), loadMoreFired=true`)
+ onIntersectRef.current()
  },
  { root: null, rootMargin: "800px", threshold: 0 }
  )
 
  if (triggerRef.current) observer.observe(triggerRef.current)
  return () => {
- console.log(`[InfiniteScroll] Observer #${observerId}: DISCONNECTED`)
+ console.log(`[InfiniteScroll] Observer DISCONNECTED`)
  observer.disconnect()
  }
- // IMPORTANT: NO isLoading dependency — the observer is persistent
- // and reads loading state from a ref, not from the closure.
- }, [hasNextPage, error, onIntersect])
-
- // Reset guard when component unmounts or when search changes
- // (loadedCount resetting signals a new search)
- const prevLoadedCountRef = useRef(loadedCount)
- useEffect(() => {
- if (loadedCount === 0 && prevLoadedCountRef.current > 0) {
- console.log(`[InfiniteScroll] Search reset detected (loadedCount ${prevLoadedCountRef.current} → 0), clearing guard`)
- guardRef.current = false
- }
- prevLoadedCountRef.current = loadedCount
- }, [loadedCount])
+ // ONLY hasNextPage and error can recreate the observer.
+ // isLoading and onIntersect are read from refs.
+ }, [hasNextPage, error])
 
  if (!hasNextPage) return null
-
- console.log(`[InfiniteScroll] RENDER: isLoading=${isLoading}, hasNextPage=${hasNextPage}, error=${error}, loadedCount=${loadedCount}, guard=${guardRef.current}`)
 
  const currentPage = Math.floor(loadedCount / PAGE_SIZE) + 1
 
