@@ -6,8 +6,7 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start",
-    "version:update": "node scripts/update-version.js"
+    "start": "next start"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -50,10 +50,6 @@ export async function GET(request: Request) {
 
     if (dbError) {
       console.error(`[DB Error] fetching from supabase in edge:`, dbError)
-      return NextResponse.json(
-        { error: 'Tag cache is temporarily unavailable' },
-        { status: 503 }
-      )
     }
 
     const tagCounts: Record<string, number> = {}

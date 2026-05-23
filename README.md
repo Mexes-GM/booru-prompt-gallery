@@ -140,7 +140,6 @@ __tests__/         → Test suite
 | `npm run build` | Production build |
 | `npm run lint` | Run linter |
 | `node __tests__/run-tests.cjs` | Run all tests |
-| `npx ts-node --transpile-only scripts/analyze-tag-conflicts.ts` | Analyze tag conflict coverage |
 
 ## Architecture
 
