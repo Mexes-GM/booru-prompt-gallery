@@ -59,7 +59,9 @@ export async function GET(request: NextRequest) {
 					status: 429,
 					headers: {
 						'Cache-Control': 'no-store',
+						'CDN-Cache-Control': 'no-store',
 						'Netlify-CDN-Cache-Control': 'no-store',
+						'Vercel-CDN-Cache-Control': 'no-store',
 						'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
 						'X-RateLimit-Limit': String(limit),
 						'X-RateLimit-Remaining': String(remaining),
@@ -77,7 +79,7 @@ export async function GET(request: NextRequest) {
       if (!success) {
 			return NextResponse.json(
 				{ error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-				{ status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
+				{ status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
 			)
       }
     }
@@ -87,7 +89,7 @@ export async function GET(request: NextRequest) {
       const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
 		return NextResponse.json(
 			{ error: 'Danbooru is saturated. Please wait before downloading.', retryAfter },
-			{ status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Retry-After': String(retryAfter) } }
+			{ status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': String(retryAfter) } }
 		)
     }
   }
@@ -134,12 +136,31 @@ export async function GET(request: NextRequest) {
     if (!response.ok) {
       return NextResponse.json(
         { error: `Failed to fetch image: ${response.status} ${response.statusText}` },
-        { status: response.status }
+        { 
+          status: response.status,
+          headers: {
+            'Cache-Control': 'no-store',
+            'CDN-Cache-Control': 'no-store',
+            'Netlify-CDN-Cache-Control': 'no-store',
+            'Vercel-CDN-Cache-Control': 'no-store',
+          }
+        }
       )
     }
 
     if (!response.body) {
-      return NextResponse.json({ error: 'Empty response body' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'Empty response body' },
+        { 
+          status: 500,
+          headers: {
+            'Cache-Control': 'no-store',
+            'CDN-Cache-Control': 'no-store',
+            'Netlify-CDN-Cache-Control': 'no-store',
+            'Vercel-CDN-Cache-Control': 'no-store',
+          }
+        }
+      )
     }
 
     const urlPath = imageUrl.split('?')[0]
@@ -167,6 +188,17 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Download proxy error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Failed to download image'
-    return NextResponse.json({ error: errorMessage }, { status: 500 })
+    return NextResponse.json(
+      { error: errorMessage },
+      {
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store',
+          'CDN-Cache-Control': 'no-store',
+          'Netlify-CDN-Cache-Control': 'no-store',
+          'Vercel-CDN-Cache-Control': 'no-store',
+        }
+      }
+    )
   }
 }

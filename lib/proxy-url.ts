@@ -23,7 +23,3 @@ export function getGelbooruProxyUrl(imageUrl: string): string {
   proxyUrlCache.set(imageUrl, url)
   return url
 }
-
-export function getVercelProxyUrl(imageUrl: string): string {
-  return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
-}

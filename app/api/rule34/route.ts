@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       headers: {
         'Cache-Control': `public, s-maxage=${cacheDuration}, stale-while-revalidate=${cacheDuration * 2}`,
 'CDN-Cache-Control': `public, s-maxage=${cacheDuration}`,
-				'Netlify-CDN-Cache-Control': 'no-store',
+				'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
 				'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
         'ETag': `"${cacheKey}"`,
         'X-Content-Type-Options': 'nosniff',
@@ -41,20 +41,20 @@ export async function GET(request: NextRequest) {
 	if (status === 429 || status === 503) {
 		return NextResponse.json(
 			{ error: 'Rate limit exceeded or service unavailable' },
-			{ status: 503, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store' } }
+			{ status: 503, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
 		)
 	}
 
 	if (error.message.includes('Cloudflare')) {
 		return NextResponse.json(
 			{ error: 'Cloudflare protection detected. Try again later.' },
-			{ status: 503, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store' } }
+			{ status: 503, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
 		)
 	}
 
 	return NextResponse.json(
 		{ error: error.message || 'Internal server error', timestamp: new Date().toISOString() },
-		{ status: status, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store' } }
+		{ status: status, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
 	)
   }
 }

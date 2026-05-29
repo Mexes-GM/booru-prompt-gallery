@@ -82,7 +82,7 @@ export async function GET(request: Request) {
         if (!success) {
 		return NextResponse.json(
 				{ error: 'Too many requests. Please wait before searching tags.' },
-				{ status: 429, headers: { 'Retry-After': '10', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store' } }
+				{ status: 429, headers: { 'Retry-After': '10', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
 			)
         }
       }
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
         if (!success) {
 		return NextResponse.json(
 					{ error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-					{ status: 429, headers: { 'Retry-After': '2', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store' } }
+					{ status: 429, headers: { 'Retry-After': '2', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
 				)
         }
       }

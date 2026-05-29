@@ -14,8 +14,8 @@
       "source": "/api/(.*)",
       "headers": [
         {
-          "key": "Cache-Control",
-          "value": "public, s-maxage=300, stale-while-revalidate=600"
+          "key": "Vary",
+          "value": "Accept, Accept-Encoding"
         }
       ]
     },

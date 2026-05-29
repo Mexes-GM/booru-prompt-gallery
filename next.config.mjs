@@ -88,10 +88,12 @@ const nextConfig = {
       {
         source: '/api/(.*)',
         headers: [
-          // Vercel CDN cache directive (Vercel varies cache by full URL including query params)
+          // Do NOT set public Vercel-CDN-Cache-Control here!
+          // It overrides per-response no-store on 429/503 errors.
+          // Each API route sets its own Vercel-CDN-Cache-Control per-response.
           {
             key: 'Vercel-CDN-Cache-Control',
-            value: 'public, s-maxage=600',
+            value: 'no-store',
           },
           // Do NOT set Netlify-CDN-Cache-Control here!
           // Netlify's netlify-vary only includes Next.js internal query params
@@ -190,7 +192,7 @@ if (sentryConfigured) {
       // tunnelRoute: "/monitoring",  // DISABLED to save resources
 
       webpack: {
-        automaticVercelMonitors: true,
+        automaticVercelMonitors: false,
         treeshake: {
           removeDebugLogging: true,
         },

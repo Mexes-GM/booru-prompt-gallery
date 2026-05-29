@@ -548,18 +548,20 @@ export function PromptGallery() {
       const filename = `${itemProvider}_${post.id}.${extension}`
 
       // Providers that need a proxy due to CORS/referrer restrictions.
-      // Danbooru: use Cloudflare Worker (same as image display, has auth headers)
-      // Rule34/e621/Gelbooru: use Vercel proxy (they block cross-origin)
+      // Rule34/e621/Gelbooru/Aibooru: use Vercel download proxy (they block cross-origin)
       const needsVercelProxy = imageUrl.includes('rule34.xxx') ||
         imageUrl.includes('e621.net') ||
-        imageUrl.includes('gelbooru.com')
+        imageUrl.includes('gelbooru.com') ||
+        imageUrl.includes('aibooru')
       const isDanbooru = imageUrl.includes('donmai.us')
 
       let fetchUrl: string
       if (needsVercelProxy) {
         fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
       } else if (isDanbooru) {
-        fetchUrl = getDanbooruProxyUrl(imageUrl)
+        // Use Cloudflare Worker (free egress) when available, fallback to Vercel
+        const proxyUrl = getDanbooruProxyUrl(imageUrl)
+        fetchUrl = proxyUrl !== imageUrl ? proxyUrl : `/api/download?url=${encodeURIComponent(imageUrl)}`
       } else {
         fetchUrl = imageUrl
       }

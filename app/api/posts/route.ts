@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
  status: 429,
  headers: {
  'Cache-Control': 'no-store',
- 'Netlify-CDN-Cache-Control': 'no-store',
+ 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
  'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
  'X-RateLimit-Limit': String(limit),
  'X-RateLimit-Remaining': String(remaining),
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
  if (!success) {
  return NextResponse.json(
  { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
- { status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
+ { status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
  )
  }
     }
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
  status: 429,
  headers: {
  'Cache-Control': 'no-store',
- 'Netlify-CDN-Cache-Control': 'no-store',
+ 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
  'Retry-After': String(retryAfter),
  },
  }
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
  // Netlify CDN: no-store because netlify-vary only includes Next.js internal
  // query params, not our API params (page, tags, seed, order).
  // Public cache causes all /api/posts?* URLs to share one cached response.
- 'Netlify-CDN-Cache-Control': 'no-store',
+ 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
  'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
  'Vary': 'Accept, Accept-Encoding',
  'ETag': `"${cacheKey}"`,
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
  status: 429,
  headers: {
  'Cache-Control': 'no-store',
- 'Netlify-CDN-Cache-Control': 'no-store',
+ 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
  'Retry-After': String(retryAfter),
  },
  }

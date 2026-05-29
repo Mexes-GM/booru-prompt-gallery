@@ -29,7 +29,7 @@ import {
     BooruProvider
 } from "@/lib/api-client"
 import { PROVIDER_POST_URLS } from "@/lib/constants"
-import { getDanbooruProxyUrl, getGelbooruProxyUrl, getVercelProxyUrl } from "@/lib/proxy-url"
+import { getDanbooruProxyUrl, getGelbooruProxyUrl } from "@/lib/proxy-url"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
