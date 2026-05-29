@@ -88,13 +88,10 @@ const nextConfig = {
       {
         source: '/api/(.*)',
         headers: [
-          // Do NOT set public Vercel-CDN-Cache-Control here!
-          // It overrides per-response no-store on 429/503 errors.
-          // Each API route sets its own Vercel-CDN-Cache-Control per-response.
-          {
-            key: 'Vercel-CDN-Cache-Control',
-            value: 'no-store',
-          },
+          // Do NOT set Vercel-CDN-Cache-Control here!
+          // It overrides per-response headers set by API routes.
+          // Each API route sets its own Vercel-CDN-Cache-Control per-response
+          // (public for success, no-store for errors).
           // Do NOT set Netlify-CDN-Cache-Control here!
           // Netlify's netlify-vary only includes Next.js internal query params
           // (__nextDataReq, _rsc), NOT our API params (page, tags, seed, order).

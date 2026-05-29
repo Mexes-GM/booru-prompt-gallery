@@ -24,19 +24,28 @@ export async function GET(request: NextRequest) {
     const url = request.nextUrl.searchParams.get('url')
 
     if (!url) {
-        return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 })
+        return NextResponse.json({ error: 'Missing url parameter' }, { 
+            status: 400,
+            headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' }
+        })
     }
 
     let parsedUrl: URL
     try {
         parsedUrl = new URL(url)
     } catch {
-        return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
+        return NextResponse.json({ error: 'Invalid URL' }, { 
+            status: 400,
+            headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' }
+        })
     }
 
     // Security: only proxy from allowed domains
     if (!ALLOWED_DOMAINS.some(d => parsedUrl.hostname === d || parsedUrl.hostname.endsWith(`.${d}`))) {
-        return NextResponse.json({ error: 'Domain not allowed' }, { status: 403 })
+        return NextResponse.json({ error: 'Domain not allowed' }, { 
+            status: 403,
+            headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' }
+        })
     }
 
     try {
@@ -76,7 +85,10 @@ export async function GET(request: NextRequest) {
         }
 
         if (!response.ok) {
-            return NextResponse.json({ error: `Upstream error: ${response.status}` }, { status: response.status })
+            return NextResponse.json({ error: `Upstream error: ${response.status}` }, { 
+                status: response.status,
+                headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' }
+            })
         }
 
         const contentType = response.headers.get('content-type') || 'image/jpeg'
@@ -95,6 +107,9 @@ export async function GET(request: NextRequest) {
         })
     } catch (error) {
         console.error('Image proxy error:', error)
-        return NextResponse.json({ error: 'Failed to fetch image' }, { status: 502 })
+        return NextResponse.json({ error: 'Failed to fetch image' }, { 
+            status: 502,
+            headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' }
+        })
     }
 }
