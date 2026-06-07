@@ -994,6 +994,8 @@ export const MasonryItem = memo(function MasonryItem({
 // Specifically targets the expensive tagOverrides and globalWeights objects.
 function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.post.id !== next.post.id) return false
+    if (prev.post.tag_string !== next.post.tag_string) return false
+    if (prev.post.tag_string_meta !== next.post.tag_string_meta) return false
     if (prev.width !== next.width) return false
     if (prev.height !== next.height) return false
     if (prev.index !== next.index) return false

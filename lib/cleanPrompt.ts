@@ -178,6 +178,9 @@ const CURATED_META_LIST = withNormalizedVariants([
   "commentary request",
   "english commentary",
   "chinese commentary",
+  "korean commentary",
+  "mixed-language commentary",
+  "partial commentary",
   "translated",
   "translation request",
   // common meme tag
@@ -446,7 +449,7 @@ const CURATED_META_LIST = withNormalizedVariants([
   "original",
 ])
 
-const META_TAGS_SET = new Set<string>([
+export const META_TAGS_SET = new Set<string>([
   ...loadTagsToRemove(5),
   ...CURATED_META_LIST,
 ])
