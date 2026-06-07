@@ -1,0 +1,16 @@
+name = "booru-image-proxy"
+main = "src/index.ts"
+compatibility_date = "2025-06-07"
+
+[vars]
+APP_VERSION = "9.2.5"
+
+# Secrets set via `wrangler secret put`:
+# SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+# UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
+# DANBOORU_USERNAME, DANBOORU_API_KEY,
+# DISCORD_FEEDBACK_WEBHOOK_URL
+
+[observability]
+enabled = true
+head_sampling_rate = 1

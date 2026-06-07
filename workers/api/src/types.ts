@@ -1,0 +1,10 @@
+export interface Env {
+  SUPABASE_URL?: string
+  SUPABASE_SERVICE_ROLE_KEY?: string
+  UPSTASH_REDIS_REST_URL?: string
+  UPSTASH_REDIS_REST_TOKEN?: string
+  DANBOORU_USERNAME?: string
+  DANBOORU_API_KEY?: string
+  DISCORD_FEEDBACK_WEBHOOK_URL?: string
+  APP_VERSION?: string
+}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
+import { useInfinitePosts, BooruProvider, BooruPost, apiUrl } from "@/lib/api-client"
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
@@ -286,11 +286,13 @@ export function useBooruSearch() {
     const encodedQuery = encodeURIComponent(debouncedSearchTags || '')
 
     let apiEndpoint = '/api/posts'
-    if (booruProvider === 'rule34') apiEndpoint = '/api/rule34'
-    else if (booruProvider === 'e621') apiEndpoint = '/api/e621'
-    else if (booruProvider === 'gelbooru') apiEndpoint = '/api/gelbooru'
+    // All providers now use /api/posts?provider=X (consolidated route)
+    let provider = booruProvider
+    if (booruProvider === 'rule34') provider = 'rule34'
+    else if (booruProvider === 'e621') provider = 'e621'
+    else if (booruProvider === 'gelbooru') provider = 'gelbooru'
 
-    const nextUrl = `${apiEndpoint}?page=${nextPage}&tags=${encodedQuery}&order=${order}`
+    const nextUrl = apiUrl(`${apiEndpoint}?page=${nextPage}&tags=${encodedQuery}&order=${order}&provider=${provider}`)
 
     const link = document.createElement('link')
     link.rel = 'prefetch'

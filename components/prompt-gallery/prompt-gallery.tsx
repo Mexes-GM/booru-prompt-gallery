@@ -64,7 +64,7 @@ import Image from "next/image"
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion"
 import { renderIcon } from "@/components/prompt-gallery/save-favorite-button"
 import {
-  hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost,
+  hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, apiUrl,
 } from "@/lib/api-client"
 
 import { userPreferences, STORAGE_KEYS, type HistoryItem, type TagPreset } from "@/lib/storage"
@@ -557,7 +557,7 @@ export function PromptGallery() {
 
       let fetchUrl: string
       if (needsVercelProxy) {
-        fetchUrl = `/api/download?url=${encodeURIComponent(imageUrl)}`
+        fetchUrl = apiUrl(`/api/download?url=${encodeURIComponent(imageUrl)}`)
       } else if (isDanbooru) {
         fetchUrl = getDanbooruProxyUrl(imageUrl)
       } else {
