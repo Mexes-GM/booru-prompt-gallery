@@ -43,7 +43,7 @@ export abstract class BaseBooruProvider implements IBooruProvider {
     const response = await smartFetch(finalUrl.toString(), {
       headers: requestHeaders,
       retries: 2,
-      timeout: 12000 // 12s timeout
+      timeout: 15000 // 15s — generous for slow providers, within Vercel's 30s maxDuration
     })
 
     if (!response.ok) {

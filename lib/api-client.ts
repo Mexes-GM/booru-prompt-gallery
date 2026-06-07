@@ -583,23 +583,15 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         return directUrl
       }
 
-      // Select the correct API endpoint based on provider
-      let apiEndpoint = '/api/posts' // Default to Danbooru
-      if (provider === 'rule34') {
-        apiEndpoint = '/api/rule34'
-      } else if (provider === 'e621') {
-        apiEndpoint = '/api/e621'
-      } else if (provider === 'gelbooru') {
-        apiEndpoint = '/api/gelbooru'
-      }
-
+      // All providers go through /api/posts with ?provider= to get
+      // request coalescing, circuit breaker, and rate limiting for free.
       // CRITICAL: Page index is 0-based, but API expects 1-based page numbers
       // pageIndex + 1 ensures correct page progression: 0 -> page 1, 1 -> page 2, etc.
       // For random order, we must stick to page 1 because random:20 limits the result set to 20 items.
       const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
       const effectivePage = isRandomOrder ? 1 : pageIndex + 1
 
-      const baseUrl = `${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}`
+      const baseUrl = `/api/posts?page=${effectivePage}&tags=${encodedQuery}&order=${order}&provider=${provider}`
 
       // Add random seed for random searches to force cache invalidation
       // Also add seed if tags contain order:random to ensure we get new results

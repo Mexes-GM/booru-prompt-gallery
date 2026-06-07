@@ -1,6 +1,10 @@
 import type { Metadata } from "next"
 import PageClient from "./page-client"
 
+// ISR: cache the HTML shell for 1 hour — avoids a serverless invocation
+// on every page load. The main content is client-rendered anyway.
+export const revalidate = 3600
+
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>
 
 export async function generateMetadata({

@@ -34,7 +34,7 @@ export class GelbooruProvider extends BaseBooruProvider {
     private userId = process.env.GELBOORU_USER_ID || ''
 
     async search(options: SearchOptions): Promise<BooruPost[]> {
-        const { tags, page, order } = options
+        const { tags, page, order, limit } = options
 
         const pageNum = parseInt(page, 10)
         const pid = Math.max(0, pageNum - 1).toString()
@@ -50,6 +50,10 @@ export class GelbooruProvider extends BaseBooruProvider {
             ...this.defaultParams,
             pid,
             tags: finalTags,
+        }
+
+        if (limit) {
+            params.limit = limit
         }
 
         if (this.apiKey && this.userId) {
@@ -82,11 +86,22 @@ export class GelbooruProvider extends BaseBooruProvider {
 
         const validPosts = this.filterValidPosts<GelbooruPostResponse>(postsList)
 
-        const finalPosts = validPosts.map((post: GelbooruPostResponse) => ({
+        const finalPosts = validPosts.map((post: GelbooruPostResponse) => {
+            // Gelbooru returns hotlink.php wrapper URLs that redirect non-Gelbooru
+            // referers to the listing page. Extract the real CDN path from the hash.
+            const unwrapHotlink = (url: string) => {
+                if (!url) return url
+                const match = url.match(/hotlink\.php\?hash=([^&]+)/)
+                if (match) {
+                    return `https://gelbooru.com${decodeURIComponent(match[1])}`
+                }
+                return url
+            }
+            return {
             id: parseInt(String(post.id)),
-            file_url: post.file_url,
-            large_file_url: post.sample_url || post.file_url,
-            preview_file_url: post.preview_url || post.file_url,
+            file_url: unwrapHotlink(post.file_url),
+            large_file_url: unwrapHotlink(post.sample_url || post.file_url),
+            preview_file_url: unwrapHotlink(post.preview_url || post.file_url),
             tag_string: post.tags,
             tag_string_artist: '',
             tag_string_character: '',
@@ -96,7 +111,7 @@ export class GelbooruProvider extends BaseBooruProvider {
             width: parseInt(String(post.width)),
             height: parseInt(String(post.height)),
             source: post.source || '',
-        }))
+        }})
         
         return this.enrichPostsWithCategories(finalPosts)
     }

@@ -391,9 +391,9 @@ export const MasonryItem = memo(function MasonryItem({
         : (effectiveScale === 'small' && post.preview_file_url)
     const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
 
-    // Gelbooru: usar Cloudflare Worker (mismo worker que Danbooru, egress gratuito)
-    // Asi se evita consumir bandwidth/CPU de Netlify/Vercel en image proxying.
-    const gelbooruNeedsProxy = isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')
+    // Gelbooru images must always go through CF Worker — even direct CDN
+    // URLs get 302-redirected to hotlink.php when Referer is external.
+    const gelbooruNeedsProxy = isGelbooru && rawFileUrl
 
     // Danbooru: use Cloudflare Worker (egress gratuito, dentro de la red Cloudflare)
     const fileUrl = gelbooruNeedsProxy
@@ -586,6 +586,7 @@ export const MasonryItem = memo(function MasonryItem({
                         fetchPriority={index < 8 ? "high" : "low"}
                         decoding={index < 8 ? "sync" : "async"}
                         unoptimized={!!rawFileUrl}
+                        referrerPolicy="no-referrer"
                     />
 
                     {/* Character Tag Count Indicator */}
@@ -822,6 +823,7 @@ export const MasonryItem = memo(function MasonryItem({
                             loading="lazy"
                             decoding="async"
                             unoptimized={!!rawFileUrl}
+                            referrerPolicy="no-referrer"
                         />
 
                         {/* Character Tag Count Indicator */}

@@ -5,6 +5,9 @@
   "framework": "nextjs",
   "outputDirectory": ".next",
   "functions": {
+    "app/api/posts/route.ts": {
+      "maxDuration": 30
+    },
     "app/api/**/*": {
       "maxDuration": 10
     }

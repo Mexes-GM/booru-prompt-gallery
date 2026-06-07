@@ -5,7 +5,7 @@ import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-
 import { coalesce } from '@/lib/request-coalescer'
 import { isCircuitOpenShared, getCircuitRetryAfter } from '@/lib/circuit-breaker'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 function getClientIp(request: NextRequest): string {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
@@ -93,12 +93,13 @@ export async function GET(request: NextRequest) {
 
  return NextResponse.json(posts, {
  headers: {
- 'Cache-Control': `public, s-maxage=${cacheDuration}, stale-while-revalidate=${cacheDuration * 2}`,
- // Netlify CDN: no-store because netlify-vary only includes Next.js internal
- // query params, not our API params (page, tags, seed, order).
- // Public cache causes all /api/posts?* URLs to share one cached response.
- 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
- 'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
+   'Cache-Control': `public, s-maxage=${cacheDuration}, stale-while-revalidate=${cacheDuration * 2}`,
+   // Netlify CDN: no-store because netlify-vary only includes Next.js internal
+   // query params, not our API params (page, tags, seed, order).
+   // Public cache causes all /api/posts?* URLs to share one cached response.
+   'Netlify-CDN-Cache-Control': 'no-store',
+   'CDN-Cache-Control': 'no-store',
+   'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheDuration * 2}`,
  'Vary': 'Accept, Accept-Encoding',
  'ETag': `"${cacheKey}"`,
  'X-Content-Type-Options': 'nosniff',

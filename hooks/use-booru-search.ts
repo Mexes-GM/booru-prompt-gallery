@@ -144,6 +144,7 @@ export function useBooruSearch() {
  const [randomSeed, setRandomSeed] = useState<number>(0)
  const loadMoreGuardRef = useRef(false)
  const [circuitOpen, setCircuitOpen] = useState(false)
+ const stalePageCountRef = useRef(0)
 
   // Store the rating before we forced it to 'all' for Rule34
   const forcedRule34RatingRef = useRef<string | null>(null)
@@ -234,6 +235,7 @@ export function useBooruSearch() {
  setLoadMoreError(false)
  setLastLoadAttempt(0)
  setCircuitOpen(false)
+ stalePageCountRef.current = 0
  loadMoreGuardRef.current = false
  }, [order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
 
@@ -274,34 +276,8 @@ export function useBooruSearch() {
   const lastPageFromAPI = pages && pages.length > 0 ? pages[pages.length - 1] : null
   const isReachingEnd = isEmpty || (lastPageFromAPI !== null && lastPageFromAPI.length === 0)
 
-  // Prefetch next page API response when new data arrives.
-  // Skip random order — each seed produces a unique URL so there is no
-  // cache to warm, and the extra request only consumes rate-limit budget.
-  useEffect(() => {
-    if (!pages || pages.length === 0) return
-    if (noMoreResults || isReachingEnd) return
-    if (order === 'random') return
-
-    const nextPage = size + 1
-    const encodedQuery = encodeURIComponent(debouncedSearchTags || '')
-
-    let apiEndpoint = '/api/posts'
-    if (booruProvider === 'rule34') apiEndpoint = '/api/rule34'
-    else if (booruProvider === 'e621') apiEndpoint = '/api/e621'
-    else if (booruProvider === 'gelbooru') apiEndpoint = '/api/gelbooru'
-
-    const nextUrl = `${apiEndpoint}?page=${nextPage}&tags=${encodedQuery}&order=${order}`
-
-    const link = document.createElement('link')
-    link.rel = 'prefetch'
-    link.href = nextUrl
-    link.as = 'fetch'
-    document.head.appendChild(link)
-
-    return () => {
-      if (link.parentNode) link.parentNode.removeChild(link)
-    }
-  }, [pages, size, noMoreResults, isReachingEnd, debouncedSearchTags, order, booruProvider, randomSeed])
+  // Prefetch removed: it doubled Vercel serverless invocations per page.
+  // Infinite scroll + IntersectionObserver already handles lazy loading.
 
   // --- Actions ---
 
@@ -408,15 +384,22 @@ export function useBooruSearch() {
  })
  setLastLoadAttempt(0)
  } else if (currentDedupedCount === lastLoadAttempt || isReachingEnd) {
- // No new deduped posts arrived — all new pages were duplicates or empty
- setNoMoreResults(true)
- setLoadMoreError(false)
- setLastLoadAttempt(0)
+   // No new deduped posts arrived — all new pages were duplicates or empty.
+   // Require 2 consecutive stale pages before declaring end (Danbooru API
+   // pagination often returns duplicates on a single page due to score drift).
+   stalePageCountRef.current++
+   if (stalePageCountRef.current >= 2) {
+     setNoMoreResults(true)
+     stalePageCountRef.current = 0
+   }
+   setLoadMoreError(false)
+   setLastLoadAttempt(0)
  } else if (currentDedupedCount > lastLoadAttempt) {
- setNoMoreResults(false)
- setLoadMoreError(false)
- setLastLoadAttempt(0)
- setCircuitOpen(false)
+   stalePageCountRef.current = 0
+   setNoMoreResults(false)
+   setLoadMoreError(false)
+   setLastLoadAttempt(0)
+   setCircuitOpen(false)
  }
  }
  }, [allPosts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast])

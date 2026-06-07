@@ -3,6 +3,7 @@ import { smartFetch } from '@/lib/network/smart-fetch'
 import { PROVIDER_URLS, getDanbooruUserAgent } from '@/lib/constants'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
+import { coalesce } from '@/lib/request-coalescer'
 
 // Vercel Edge Runtime for faster performance
 export const runtime = 'edge'
@@ -110,16 +111,20 @@ export async function GET(request: Request) {
         url.searchParams.set('search[name_comma]', chunk.join(','))
         url.searchParams.set('limit', '100')
 
-        const response = await smartFetch(url.toString(), {
-          headers: {
-            'User-Agent': getDanbooruUserAgent(),
-            ...(process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY
-              ? { 'Authorization': `Basic ${btoa(`${process.env.DANBOORU_USERNAME}:${process.env.DANBOORU_API_KEY}`)}` }
-              : {}),
-          },
-          retries: 2,
-          retryDelay: 1000,
-        })
+        const response = await coalesce(
+          `tags:${provider}:${chunk.sort().join(',')}`,
+          () => smartFetch(url.toString(), {
+            headers: {
+              'User-Agent': getDanbooruUserAgent(),
+              ...(process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY
+                ? { 'Authorization': `Basic ${btoa(`${process.env.DANBOORU_USERNAME}:${process.env.DANBOORU_API_KEY}`)}` }
+                : {}),
+            },
+            retries: 2,
+            retryDelay: 1000,
+          }),
+          5000
+        )
 
         if (response.ok) {
           const data = await response.json()
@@ -166,6 +171,9 @@ export async function GET(request: Request) {
 	return NextResponse.json(tagCounts, {
 		headers: {
 			'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+			'CDN-Cache-Control': 'public, s-maxage=3600',
+			'Netlify-CDN-Cache-Control': 'public, s-maxage=3600',
+			'Vercel-CDN-Cache-Control': 'public, s-maxage=7200',
 			'Vary': 'Accept, Accept-Encoding',
 		},
 	})
