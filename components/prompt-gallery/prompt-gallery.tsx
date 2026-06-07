@@ -41,6 +41,7 @@ import {
   ScrollText,
   Globe,
   ArrowRight,
+  Github,
 } from "lucide-react"
 
 import dynamic from "next/dynamic"
@@ -1052,8 +1053,8 @@ export function PromptGallery() {
                   </Tooltip>
                 </div>
 
-                {/* Ko-fi Support Button */}
-                <div className="flex items-center justify-center mt-3">
+                {/* Social Links - Horizontal */}
+                <div className="flex items-center justify-center gap-3 mt-3 flex-wrap w-full">
                   <a
                     id="support-kofi"
                     href={SOCIAL_URLS.KO_FI}
@@ -1071,6 +1072,32 @@ export function PromptGallery() {
                       className="w-4 h-4 mr-2"
                     />
                     Support me on Ko-fi
+                  </a>
+
+                  <a
+                    id="github-repo"
+                    href={SOCIAL_URLS.GITHUB}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => trackExternalLink(SOCIAL_URLS.GITHUB, 'github')}
+                    className="inline-flex items-center px-4 py-2 bg-gray-800 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+                    aria-label="View source code on GitHub"
+                  >
+                    <Github className="w-4 h-4 mr-2" />
+                    View on GitHub
+                  </a>
+
+                  <a
+                    id="netlify-alt"
+                    href={SOCIAL_URLS.NETLIFY}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => trackExternalLink(SOCIAL_URLS.NETLIFY, 'netlify')}
+                    className="inline-flex items-center px-4 py-2 bg-teal-600 hover:bg-teal-500 dark:bg-teal-700 dark:hover:bg-teal-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+                    aria-label="Open alternative version hosted on Netlify"
+                  >
+                    <Globe className="w-4 h-4 mr-2" />
+                    Netlify Mirror
                   </a>
                 </div>
 
@@ -1101,64 +1128,49 @@ export function PromptGallery() {
 <div className="space-y-0">
 {/* Newest first — reverse chronological order */}
 
-{/* Item 1: Infinite Scroll & Results Loading Fix */}
-<div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
+{/* Item 2: Migration Planning */}
+<div className="border-l-4 border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 rounded-r-lg">
+<div className="flex items-start gap-3">
+<div className="flex-shrink-0 mt-0.5">
+<div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20">
+<AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+</div>
+</div>
+<div className="flex-1">
+<div className="flex items-center gap-2 mb-2">
+<p className="text-sm font-semibold text-foreground leading-snug">Migration Planning</p>
+<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">Important</Badge>
+</div>
+<p className="text-xs text-muted-foreground leading-relaxed">
+The app has grown quite a bit, and I'm glad many people have found it useful! However, the free hosting plans are starting to fall short and Vercel (the main link) is constantly hitting its usage limits. I'm running some tests and experimenting with changes to see if things improve — a full migration to Netlify might happen if needed, but nothing is set in stone yet. I wanted to give you a heads up in advance so you know there's an alternative link available just in case.
+</p>
+</div>
+</div>
+</div>
+<div className="h-px bg-border/60 mx-3" />
+
+{/* Item 1: Welcome to Open Source */}
+<div className="border-l-2 border-green-500 bg-green-500/5 hover:bg-green-500/10 transition-colors p-3">
 <div className="flex items-center justify-center gap-2 mb-1.5">
-<p className="text-xs font-semibold text-foreground leading-snug">Results Loading</p>
-<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Fix</Badge>
+<p className="text-xs font-semibold text-foreground leading-snug">Welcome to Open Source!</p>
+<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/20">New</Badge>
 </div>
 <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-Improved the loading feedback when fetching results and fixed issues where posts would appear in small batches instead of loading smoothly.
+I've cleaned up and modified the project to make it fully open source. This means the complete code is now available for anyone to download, explore, and run on their own computer. Whether you want to use it as-is, customize it for your own needs, or even contribute improvements, everything is now out in the open.
 </p>
 </div>
 <div className="h-px bg-border/60 mx-3" />
 
-{/* Item 2: Favorites Loading Improvements */}
+{/* Item 3: Meta Tag Leakage Fix */}
 <div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
 <div className="flex items-center justify-center gap-2 mb-1.5">
-<p className="text-xs font-semibold text-foreground leading-snug">Favorites Loading</p>
+<p className="text-xs font-semibold text-foreground leading-snug">Meta Tag Leakage Fix</p>
 <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Fix</Badge>
 </div>
 <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-Fixed the favorites loading by adding batch loading and a progress indicator so you can see when favorites are being fetched.
+Fixed an issue where commentary tags were leaking into cleaned prompts. The tag cleaner now properly filters out meta commentary tags so your prompts stay clean and accurate.
 </p>
 </div>
-<div className="h-px bg-border/60 mx-3" />
-
- {/* Item 3: Background Options Expansion */}
- <div className="border-l-2 border-violet-500 bg-violet-500/5 hover:bg-violet-500/10 transition-colors p-3">
- <div className="flex items-center justify-center gap-2 mb-1.5">
- <p className="text-xs font-semibold text-foreground leading-snug">Background Options Expansion</p>
- <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-violet-500/15 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20">Enhancement</Badge>
- </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          The <strong>Background Options</strong> detection dictionary has been significantly expanded to <strong>200+ scenery tags</strong> for more accurate background removal. The <strong>Remove All</strong> mode now includes a Scope selector to target only simple or detailed backgrounds. The <strong>Random</strong> mode gains two-tone <strong>gradient backgrounds</strong> and a new Gradients toggle for extra variety and finer control.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 4: Smart Exclusion Expansion */}
-                      <div className="border-l-2 border-violet-500 bg-violet-500/5 hover:bg-violet-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Smart Exclusion Expansion</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-violet-500/15 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20">Enhancement</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          The exclusion dictionary for the <strong>Smart Tag Exclusion</strong> option has been massively expanded to <strong>180+ conflict rules</strong> across <strong>41 tag families</strong> — covering hair color, eyewear, weapons, species, armor, blood, swimming, dancing, and many more. Added 6 new exception patterns and expanded fuzzy matching to 50+ tag suffixes for more accurate blocking.
-                        </p>
-                      </div>
-                      <div className="h-px bg-border/60 mx-3" />
-
-                      {/* Item 5: Danbooru Strict Limit */}
-                      <div className="border-l-2 border-amber-500 bg-amber-500/5 hover:bg-amber-500/10 transition-colors p-3">
-                        <div className="flex items-center justify-center gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-foreground leading-snug">Danbooru Strict Limit</p>
-                          <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">Important</Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-                          More conservative rate limits have been added to the Danbooru API provider to prevent abuse and avoid IP bans (which had occurred previously). These will be adjusted over time based on usage patterns.
-                        </p>
-                      </div>
                     </div>
                   </CardContent>
                 </Card>
