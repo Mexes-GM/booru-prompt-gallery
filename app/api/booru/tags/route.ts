@@ -113,16 +113,20 @@ export async function GET(request: Request) {
 
         const response = await coalesce(
           `tags:${provider}:${chunk.sort().join(',')}`,
-          () => smartFetch(url.toString(), {
-            headers: {
-              'User-Agent': getDanbooruUserAgent(),
-              ...(process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY
-                ? { 'Authorization': `Basic ${btoa(`${process.env.DANBOORU_USERNAME}:${process.env.DANBOORU_API_KEY}`)}` }
-                : {}),
-            },
-            retries: 2,
-            retryDelay: 1000,
-          }),
+          () => {
+            const headers: Record<string, string> = {
+              'User-Agent': provider === 'danbooru' ? getDanbooruUserAgent() : 'Boorugallery/9.2',
+            }
+            // Only send Danbooru credentials to Danbooru — Aibooru rejects them
+            if (provider === 'danbooru' && process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY) {
+              headers['Authorization'] = `Basic ${btoa(`${process.env.DANBOORU_USERNAME}:${process.env.DANBOORU_API_KEY}`)}`
+            }
+            return smartFetch(url.toString(), {
+              headers,
+              retries: 2,
+              retryDelay: 1000,
+            })
+          },
           5000
         )
 
