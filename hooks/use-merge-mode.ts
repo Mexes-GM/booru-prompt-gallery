@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory, classifyTags, classifyTag } from '@/lib/tag-classifier'
 import { processBackgroundTags, type BackgroundMode } from '@/lib/background-detector'
+import { normalize, META_TAGS_SET } from '@/lib/cleanPrompt'
 
 export interface SelectedPostParts {
     post: BooruPost
@@ -81,7 +82,7 @@ export function useMergeMode(
             } else {
                 // New selection
                 // New selection
-                const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(Boolean)
+                const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(t => Boolean(t) && !META_TAGS_SET.has(normalize(t)))
                 const charTags = post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : []
 
                 // Prioritize character tags
@@ -134,7 +135,7 @@ export function useMergeMode(
 
         if (mergeModeType === 'merge') {
             pickedPosts.forEach((post, i) => {
-                const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(Boolean)
+                const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(t => Boolean(t) && !META_TAGS_SET.has(normalize(t)))
                 const charTags = post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : []
                 const tags = Array.from(new Set([...charTags, ...rawTags]))
                 const classified = classifyTags(tags, tagOverrides, charTags)
@@ -170,7 +171,7 @@ export function useMergeMode(
         } else {
             // In variations mode, assign random allowed categories to each picked post
             pickedPosts.forEach(post => {
-                const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(Boolean)
+                const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(t => Boolean(t) && !META_TAGS_SET.has(normalize(t)))
                 const charTags = post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : []
                 const tags = Array.from(new Set([...charTags, ...rawTags]))
                 const classified = classifyTags(tags, tagOverrides, charTags)

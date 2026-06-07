@@ -444,9 +444,33 @@ const CURATED_META_LIST = withNormalizedVariants([
   "censoring",
   "dated",
   "original",
+  // Additional meta tags from Danbooru API (May 2026) — category 5 tags not previously covered
+  "lowres",
+  "variant set",
+  "game asset",
+  "partial commentary",
+  "untranslatable commentary",
+  "paid reward available",
+  "traditional media",
+  "md5 mismatch",
+  "skeb commission",
+  "large variant set",
+  "third-party source",
+  "animated", // meta tag for animated GIF/PNG, NOT the general tag
+  "incredible absurdres",
+  "nominated",
+  "unlisted",
+  "screencap",
+  "video",
+  "webm",
+  "image",
+  "flash",
+  "uncompressed file",
+  "colorized",
+  "pre-rendered 3d",
 ])
 
-const META_TAGS_SET = new Set<string>([
+export const META_TAGS_SET = new Set<string>([
   ...loadTagsToRemove(5),
   ...CURATED_META_LIST,
 ])
