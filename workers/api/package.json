@@ -1,0 +1,22 @@
+{
+  "name": "booru-image-proxy",
+  "version": "9.2.5",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.107.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.0",
+    "itty-router": "^5.0.23",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260607.1",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.98.0"
+  }
+}

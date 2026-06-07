@@ -9,11 +9,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { GitBranch } from "lucide-react"
+import { apiUrl } from "@/lib/api-client"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 export function VersionDisplay() {
-  const { data, error, isLoading } = useSWR('/api/version', fetcher, {
+  const { data, error, isLoading } = useSWR(apiUrl('/api/version'), fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false
   })

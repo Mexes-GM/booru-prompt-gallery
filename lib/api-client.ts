@@ -8,6 +8,15 @@ import { prefetchTagCounts } from '@/hooks/use-tag-counts'
 import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
 
 // Re-export types
+
+// CF Worker base URL — same worker handles both image proxy and API routes.
+// Set NEXT_PUBLIC_IMAGE_PROXY_URL to your Cloudflare Worker URL.
+// When empty (local dev), uses same-origin /api/* routes.
+const API_BASE = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || ''
+
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`
+}
 export type { BooruPost }
 
 // Export function
@@ -583,15 +592,16 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         return directUrl
       }
 
-      // All providers go through /api/posts with ?provider= to get
-      // request coalescing, circuit breaker, and rate limiting for free.
+      // Select the correct API endpoint based on provider
+      const apiEndpoint = '/api/posts' // All providers use consolidated route
+
       // CRITICAL: Page index is 0-based, but API expects 1-based page numbers
       // pageIndex + 1 ensures correct page progression: 0 -> page 1, 1 -> page 2, etc.
       // For random order, we must stick to page 1 because random:20 limits the result set to 20 items.
       const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
       const effectivePage = isRandomOrder ? 1 : pageIndex + 1
 
-      const baseUrl = `/api/posts?page=${effectivePage}&tags=${encodedQuery}&order=${order}&provider=${provider}`
+      const baseUrl = apiUrl(`${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}`)
 
       // Add random seed for random searches to force cache invalidation
       // Also add seed if tags contain order:random to ensure we get new results
@@ -809,7 +819,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
 
         // 1. Non-Danbooru server favorites — fire and forget, updates progress when done
         if (otherServerFavs.length > 0) {
-          const task = fetch('/api/favorites', {
+          const task = fetch(apiUrl('/api/favorites'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ favorites: otherServerFavs }),
@@ -872,7 +882,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
 
           for (let i = 0; i < batches.length; i++) {
             try {
-              const res = await fetch('/api/favorites', {
+              const res = await fetch(apiUrl('/api/favorites'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ favorites: batches[i] }),
@@ -948,8 +958,8 @@ export async function fetchBatchTagCounts(
       provider
     })
     
-    // Uses the relative path since this runs on the client
-    const response = await fetch(`/api/booru/tags?${params.toString()}`)
+    // Uses relative path; apiUrl() prepends CF Worker URL when configured
+    const response = await fetch(apiUrl(`/api/booru/tags?${params.toString()}`))
     
     if (!response.ok) {
       console.error(`Failed to fetch tag counts: ${response.status}`)

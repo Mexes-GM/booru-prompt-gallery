@@ -97,6 +97,8 @@ export const SOCIAL_URLS = {
   TENSOR_ART: 'https://tensor.art/u/616420638671868313',
   SEAART: 'https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T',
   KO_FI: 'https://ko-fi.com/mexes',
+  GITHUB: 'https://github.com/Mexes-GM/booru-prompt-gallery',
+  NETLIFY: 'https://booru-prompt-gallery.netlify.app',
 } as const
 
 // Site URL

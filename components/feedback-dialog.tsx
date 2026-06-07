@@ -3,6 +3,7 @@
 
 import { useState, memo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import { apiUrl } from "@/lib/api-client"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -135,7 +136,7 @@ export function FeedbackDialog() {
 
         setLoading(true)
         try {
-            const response = await fetch("/api/feedback", {
+            const response = await fetch(apiUrl("/api/feedback"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
