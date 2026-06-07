@@ -1142,7 +1142,7 @@ export function PromptGallery() {
 <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">Important</Badge>
 </div>
 <p className="text-xs text-muted-foreground leading-relaxed">
-The app has grown quite a bit, and I'm glad many people have found it useful! However, the free hosting plans are starting to fall short and Vercel (the main link) is constantly hitting its usage limits. I'm running some tests and experimenting with changes to see if things improve — a full migration to Netlify might happen if needed, but nothing is set in stone yet. I wanted to give you a heads up in advance so you know there's an alternative link available just in case.
+The app has grown quite a bit, and I&apos;m glad many people have found it useful! However, the free hosting plans are starting to fall short and Vercel (the main link) is constantly hitting its usage limits. I&apos;m running some tests and experimenting with changes to see if things improve — a full migration to Netlify might happen if needed, but nothing is set in stone yet. I wanted to give you a heads up in advance so you know there&apos;s an alternative link available just in case.
 </p>
 </div>
 </div>
@@ -1156,7 +1156,7 @@ The app has grown quite a bit, and I'm glad many people have found it useful! Ho
 <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/20">New</Badge>
 </div>
 <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-I've cleaned up and modified the project to make it fully open source. This means the complete code is now available for anyone to download, explore, and run on their own computer. Whether you want to use it as-is, customize it for your own needs, or even contribute improvements, everything is now out in the open.
+I&apos;ve cleaned up and modified the project to make it fully open source. This means the complete code is now available for anyone to download, explore, and run on their own computer. Whether you want to use it as-is, customize it for your own needs, or even contribute improvements, everything is now out in the open.
 </p>
 </div>
 <div className="h-px bg-border/60 mx-3" />
