@@ -394,6 +394,7 @@ export const MasonryItem = memo(function MasonryItem({
     // Gelbooru images must always go through CF Worker — even direct CDN
     // URLs get 302-redirected to hotlink.php when Referer is external.
     const gelbooruNeedsProxy = isGelbooru && rawFileUrl
+    const isAibooru = itemProvider === 'aibooru'
 
     // Danbooru: use Cloudflare Worker (egress gratuito, dentro de la red Cloudflare)
     const fileUrl = gelbooruNeedsProxy
@@ -586,7 +587,7 @@ export const MasonryItem = memo(function MasonryItem({
                         fetchPriority={index < 8 ? "high" : "low"}
                         decoding={index < 8 ? "sync" : "async"}
                         unoptimized={!!rawFileUrl}
-                        referrerPolicy="no-referrer"
+                        referrerPolicy={isAibooru ? undefined : "no-referrer"}
                     />
 
                     {/* Character Tag Count Indicator */}
@@ -823,7 +824,7 @@ export const MasonryItem = memo(function MasonryItem({
                             loading="lazy"
                             decoding="async"
                             unoptimized={!!rawFileUrl}
-                            referrerPolicy="no-referrer"
+                            referrerPolicy={isAibooru ? undefined : "no-referrer"}
                         />
 
                         {/* Character Tag Count Indicator */}

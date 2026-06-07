@@ -116,6 +116,7 @@ export async function GET(request: Request) {
           () => {
             const headers: Record<string, string> = {
               'User-Agent': provider === 'danbooru' ? getDanbooruUserAgent() : 'Boorugallery/9.2',
+              'Referer': provider === 'aibooru' ? 'https://aibooru.online/' : 'https://danbooru.donmai.us/',
             }
             // Only send Danbooru credentials to Danbooru — Aibooru rejects them
             if (provider === 'danbooru' && process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY) {
