@@ -135,8 +135,11 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
       if (timeoutId) clearTimeout(timeoutId)
       timeoutId = setTimeout(() => {
         for (const entry of entries) {
-          if (Math.abs(entry.contentRect.width - containerWidth) > 1) {
-            setContainerWidth(entry.contentRect.width)
+          // Ignorar cambios minúsculos (< 5px) para evitar reorganizaciones por sub-píxeles
+          // O scrollbars overlay que varían fraccionalmente
+          const newWidth = Math.round(entry.contentRect.width)
+          if (Math.abs(newWidth - containerWidth) > 5) {
+            setContainerWidth(newWidth)
           }
         }
       }, 50)

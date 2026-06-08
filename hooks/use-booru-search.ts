@@ -238,27 +238,58 @@ export function useBooruSearch() {
 
   // --- Derived Data ---
 
- const allPosts = useMemo(() => {
- if (!pages) return []
+  const stablePostsRef = useRef<BooruPost[]>([])
+  const lastSearchKeyRef = useRef<string>('')
 
- const flatPosts = pages.flat()
- const seenIds = new Set<number>()
- const keptPosts: BooruPost[] = []
+  // Create a stable key for the current search parameters
+  const currentSearchKey = `${booruProvider}-${debouncedSearchTags}-${ratingFilter}-${order}-${randomSeed}`
 
- // Single pass through all posts - O(n) time complexity
- for (let i = 0; i < flatPosts.length; i++) {
- const post = flatPosts[i]
+  const allPosts = useMemo(() => {
+    if (!pages) return []
 
- if (seenIds.has(post.id)) {
- continue
- }
+    // If search parameters changed, clear the stable cache
+    if (currentSearchKey !== lastSearchKeyRef.current) {
+      stablePostsRef.current = []
+      lastSearchKeyRef.current = currentSearchKey
+    }
 
- seenIds.add(post.id)
- keptPosts.push(post)
- }
+    const flatPosts = pages.flat()
+    const newStablePosts = [...stablePostsRef.current]
+    const idToIndex = new Map<number, number>()
+    
+    // Map existing IDs to their indices
+    newStablePosts.forEach((post, index) => {
+      idToIndex.set(post.id, index)
+    })
 
- return keptPosts
- }, [pages])
+    let hasChanges = false
+
+    for (let i = 0; i < flatPosts.length; i++) {
+      const post = flatPosts[i]
+
+      if (idToIndex.has(post.id)) {
+        // Update existing post to get latest data (like score)
+        // This keeps the exact same position in the array
+        const index = idToIndex.get(post.id)!
+        // Only update if the object is actually different to avoid unnecessary re-renders
+        if (JSON.stringify(newStablePosts[index]) !== JSON.stringify(post)) {
+          newStablePosts[index] = post
+          hasChanges = true
+        }
+      } else {
+        // Append new post at the end
+        newStablePosts.push(post)
+        idToIndex.set(post.id, newStablePosts.length - 1)
+        hasChanges = true
+      }
+    }
+
+    if (hasChanges || stablePostsRef.current.length === 0) {
+      stablePostsRef.current = newStablePosts
+    }
+
+    return stablePostsRef.current
+  }, [pages, currentSearchKey])
 
  const isLoadingMore = isValidating && size > 0
  // Ref for loadMore to read isLoadingMore without depending on it
