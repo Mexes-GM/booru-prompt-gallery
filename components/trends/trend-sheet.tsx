@@ -4,6 +4,7 @@ import { useState, useMemo, memo } from "react"
 import useSWR from "swr"
 import { Flame, Loader2, AlertCircle } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
+import { apiUrl } from "@/lib/api-client"
 
 import {
   Dialog,
@@ -31,7 +32,7 @@ export const TrendSheet = memo(function TrendSheet({ onSelectTag }: TrendSheetPr
 
   // Only fetch when open
   const { data: trends, error, isLoading } = useSWR<TrendItem[]>(
-    isOpen ? '/api/trends' : null,
+    isOpen ? apiUrl('/api/trends') : null,
     async (url) => {
       const res = await fetch(url)
       if (!res.ok) {

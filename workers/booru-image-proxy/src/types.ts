@@ -1,3 +1,5 @@
+import { Ai } from '@cloudflare/workers-types'
+
 export interface Env {
   SUPABASE_URL?: string
   SUPABASE_SERVICE_ROLE_KEY?: string
@@ -11,4 +13,5 @@ export interface Env {
   RULE34_USER_ID?: string
   DISCORD_FEEDBACK_WEBHOOK_URL?: string
   APP_VERSION?: string
+  AI?: Ai
 }

@@ -1,3 +1,11 @@
+export interface TrendItem {
+  name: string
+  type: 'character' | 'copyright'
+  count: number
+  imageUrl: string
+  postUrl: string
+}
+
 export interface BooruPost {
   id: number
   file_url: string
@@ -26,4 +34,5 @@ export interface SearchOptions {
 
 export interface IBooruProvider {
   search(options: SearchOptions): Promise<BooruPost[]>
+  getTrending?(env?: any): Promise<TrendItem[]>
 }

@@ -7,8 +7,10 @@ import { downloadHandler } from './routes/download'
 import { feedbackHandler } from './routes/feedback'
 import { healthHandler } from './routes/health'
 import { versionHandler } from './routes/version'
+import { convertPromptHandler } from './routes/convert-prompt'
 import { corsHeaders } from './utils'
 import { imageProxyHandler } from './routes/image-proxy'
+import { trendsHandler } from './routes/trends'
 
 const router = AutoRouter()
 
@@ -21,6 +23,8 @@ router.get('/api/download', downloadHandler)
 router.post('/api/feedback', feedbackHandler)
 router.get('/api/health', healthHandler)
 router.get('/api/version', versionHandler)
+router.post('/api/llm/convert', convertPromptHandler)
+router.get('/api/trends', trendsHandler)
 
 // Image proxy — legacy path (already deployed, used by NEXT_PUBLIC_IMAGE_PROXY_URL)
 router.get('/', imageProxyHandler)

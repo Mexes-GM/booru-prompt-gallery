@@ -19,7 +19,7 @@ export async function favoritesHandler(
   env: Env
 ): Promise<Response> {
   try {
-    const body = await request.json()
+    const body = (await request.json()) as any
     let favoritesToFetch: FavoriteRequestItem[] = []
 
     if (body.ids && Array.isArray(body.ids)) {

@@ -3,7 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-06-07"
 
 [vars]
-APP_VERSION = "9.2.5"
+APP_VERSION = "9.4.0"
 
 # Secrets set via `wrangler secret put`:
 # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
@@ -14,3 +14,6 @@ APP_VERSION = "9.2.5"
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+[ai]
+binding = "AI"

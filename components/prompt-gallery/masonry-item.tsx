@@ -19,7 +19,8 @@ import {
     Sliders,
     Users,
     Loader2,
-    Tag
+    Tag,
+    Sparkles
 } from "lucide-react"
 import Image from "next/image"
 import {
@@ -49,6 +50,7 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { SaveFavoriteButton } from "./save-favorite-button"
 import { SaveArtistButton } from "./save-artist-button"
+import { ConvertPromptDialog } from "./convert-prompt-dialog"
 import { FavoriteFolder } from "@/hooks/use-booru-favorites"
 import { trackExternalLink } from "@/lib/analytics"
 import { toast } from "@/hooks/use-toast"
@@ -211,6 +213,7 @@ export const MasonryItem = memo(function MasonryItem({
 
     // State to hold modified prompt from user interaction
     const [modifiedContent, setModifiedContent] = useState<string | null>(null)
+    const [isConvertDialogOpen, setIsConvertDialogOpen] = useState(false)
 
     const [imageError, setImageError] = useState(false)
     const [retryKey, setRetryKey] = useState(0)
@@ -465,6 +468,7 @@ export const MasonryItem = memo(function MasonryItem({
     }, [conflictResolution.conflictingTags.length])
 
     // Grid View
+    const renderCard = () => {
     if (viewMode === "grid") {
         const footerHeight = SCALE_CONFIG[effectiveScale].footerHeight
         const imageHeight = height - footerHeight
@@ -667,6 +671,28 @@ export const MasonryItem = memo(function MasonryItem({
                             booruProvider={itemProvider}
                             size={effectiveScale === "small" ? "sm" : "md"}
                         />
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    size="icon"
+                                    variant="secondary"
+                                    className={`glass-effect ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
+                                    onClick={(e) => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        setIsConvertDialogOpen(true)
+                                    }}
+                                    aria-label="Convert to Natural Language"
+                                >
+                                    <Sparkles
+                                        className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} text-blue-400`}
+                                    />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                Convert to Natural Language
+                            </TooltipContent>
+                        </Tooltip>
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -940,6 +966,26 @@ export const MasonryItem = memo(function MasonryItem({
                                         <Button
                                             size="icon"
                                             variant="ghost"
+                                            onClick={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                setIsConvertDialogOpen(true)
+                                            }}
+                                            className="focus-ring h-8 w-8"
+                                            aria-label="Convert to Natural Language"
+                                        >
+                                            <Sparkles className="h-4 w-4 text-blue-400" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        Convert to Natural Language
+                                    </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            size="icon"
+                                            variant="ghost"
                                             onClick={() => downloadImage(post)}
                                             className="focus-ring h-8 w-8"
                                             aria-label="Download image"
@@ -1061,6 +1107,17 @@ export const MasonryItem = memo(function MasonryItem({
                 {copiedId === post.id && <SuccessOverlay onSkip={onSkipAnimation} />}
             </AnimatePresence>
         </Card>
+    )}
+
+    return (
+        <>
+            {renderCard()}
+            <ConvertPromptDialog
+                open={isConvertDialogOpen}
+                onOpenChange={setIsConvertDialogOpen}
+                tags={modifiedContent ?? displayContent ?? ""}
+            />
+        </>
     )
 }, arePropsEqual)
 
