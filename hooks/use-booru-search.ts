@@ -234,7 +234,7 @@ export function useBooruSearch() {
    setLastLoadAttempt(0)
    setCircuitOpen(false)
    loadMoreGuardRef.current = false
- }, [order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
+ }, [booruProvider, order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
 
   // --- Derived Data ---
 
