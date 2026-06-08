@@ -224,8 +224,8 @@ const transformAibooruPost = (post: unknown): BooruPost => {
     rating: (typedPost.rating as string) || 'q',
     score: (typedPost.score as number) || 0,
     ai_metadata: typedPost.ai_metadata as any,
-    width: (typedPost.image_width as number) || 0,
-    height: (typedPost.image_height as number) || 0,
+    width: (typedPost.image_width as number) || (typedPost.width as number) || 0,
+    height: (typedPost.image_height as number) || (typedPost.height as number) || 0,
     _provider: 'aibooru', // Explicitly mark as Aibooru
   }
 }
@@ -248,8 +248,8 @@ const transformDanbooruPost = (post: unknown): BooruPost => {
     tag_string_meta: (typedPost.tag_string_meta as string) || undefined,
     rating: (typedPost.rating as string) || 'q',
     score: (typedPost.score as number) || 0,
-    width: (typedPost.image_width as number) || 0,
-    height: (typedPost.image_height as number) || 0,
+    width: (typedPost.image_width as number) || (typedPost.width as number) || 0,
+    height: (typedPost.image_height as number) || (typedPost.height as number) || 0,
     _provider: 'danbooru',
   }
 }

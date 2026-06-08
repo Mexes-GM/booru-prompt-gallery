@@ -138,7 +138,9 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16 }: M
           // Ignorar cambios minúsculos (< 5px) para evitar reorganizaciones por sub-píxeles
           // O scrollbars overlay que varían fraccionalmente
           const newWidth = Math.round(entry.contentRect.width)
-          if (Math.abs(newWidth - containerWidth) > 5) {
+          // Ignorar cambios menores a 20px (como la aparición de la barra de desplazamiento de Windows que suele ser de ~17px)
+          // Esto previene que el grid se reorganice completamente y las tarjetas salten de columna
+          if (Math.abs(newWidth - containerWidth) > 20) {
             setContainerWidth(newWidth)
           }
         }
