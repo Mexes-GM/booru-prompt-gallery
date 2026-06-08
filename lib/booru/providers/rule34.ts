@@ -19,7 +19,7 @@ interface Rule34PostResponse {
 export class Rule34Provider extends BaseBooruProvider {
   protected baseUrl = PROVIDER_URLS.RULE34
   protected defaultParams = {
-    limit: "20",
+    limit: "100",
     page: "dapi",
     s: "post",
     q: "index",
@@ -35,19 +35,25 @@ export class Rule34Provider extends BaseBooruProvider {
     const pageNum = parseInt(page, 10)
     const pid = Math.max(0, pageNum - 1).toString()
 
-    let finalTags = tags
+    let finalTags = tags ? tags.trim() : ''
+    if (!finalTags.includes('-video')) {
+      finalTags = finalTags ? `${finalTags} -video` : '-video'
+    }
+
     if (order === 'popular') {
-      finalTags = tags ? `${tags} sort:score` : 'sort:score'
+      finalTags = `${finalTags} sort:score`
     } else if (order === 'random') {
-      // Rule34 uses sort:random, but we should also ensure limit is respected if needed
-      // Rule34 default limit is 20 (set in defaultParams)
-      finalTags = tags ? `${tags} sort:random` : 'sort:random'
+      finalTags = `${finalTags} sort:random`
     }
 
     const params: Record<string, string> = {
       ...this.defaultParams,
       pid,
       tags: finalTags,
+    }
+
+    if (options.limit) {
+      params.limit = options.limit
     }
 
     if (this.apiKey && this.userId) {

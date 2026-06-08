@@ -23,7 +23,7 @@ interface GelbooruResponse {
 export class GelbooruProvider extends BaseBooruProvider {
     protected baseUrl = PROVIDER_URLS.GELBOORU
     protected defaultParams = {
-        limit: "20",
+        limit: "100",
         page: "dapi",
         s: "post",
         q: "index",
@@ -39,11 +39,15 @@ export class GelbooruProvider extends BaseBooruProvider {
         const pageNum = parseInt(page, 10)
         const pid = Math.max(0, pageNum - 1).toString()
 
-        let finalTags = tags
+        let finalTags = tags ? tags.trim() : ''
+        if (!finalTags.includes('-video')) {
+            finalTags = finalTags ? `${finalTags} -video` : '-video'
+        }
+
         if (order === 'popular') {
-            finalTags = tags ? `${tags} sort:score` : 'sort:score'
+            finalTags = `${finalTags} sort:score`
         } else if (order === 'random') {
-            finalTags = tags ? `${tags} sort:random` : 'sort:random'
+            finalTags = `${finalTags} sort:random`
         }
 
         const params: Record<string, string> = {
