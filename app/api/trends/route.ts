@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { BooruFactory } from '@/lib/booru/factory'
 import { getCachedTrends, setCachedTrends, tryAcquireTrendFetchLock } from '@/lib/trend-cache'
 
+export const runtime = 'edge'
+
 // Cache-Control: serve cached for 24h, allow stale for 1h while revalidating
 const CACHE_HEADERS = {
   'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=3600',

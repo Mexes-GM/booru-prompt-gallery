@@ -4,6 +4,7 @@ import PageClient from "./page-client"
 // ISR: cache the HTML shell for 1 hour — avoids a serverless invocation
 // on every page load. The main content is client-rendered anyway.
 export const revalidate = 3600
+export const runtime = 'edge'
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>
 
