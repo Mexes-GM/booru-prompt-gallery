@@ -43,7 +43,7 @@ export async function middleware(request: NextRequest) {
 
     // Minimal security + CORS headers for API routes
     response.headers.set('X-Content-Type-Options', 'nosniff')
-    response.headers.set('Access-Control-Allow-Origin', '*')
+    response.headers.set('Access-Control-Allow-Origin', url.origin)
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 

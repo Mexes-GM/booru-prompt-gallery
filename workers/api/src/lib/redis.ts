@@ -67,9 +67,13 @@ class MemoryRedis implements Redis {
   }
 
   async incr(key: string): Promise<number> {
-    const val = await this.get(key)
-    const num = (parseInt(val || '0') || 0) + 1
-    await this.set(key, String(num))
+    const entry = memoryStore.get(key)
+    if (!entry || Date.now() > entry.expiresAt) {
+      memoryStore.set(key, { value: '1', expiresAt: Infinity })
+      return 1
+    }
+    const num = (parseInt(entry.value) || 0) + 1
+    entry.value = String(num)
     return num
   }
 
@@ -97,11 +101,10 @@ class UpstashRedis implements Redis {
   }
 
   async set(key: string, value: string, opts?: { ex?: number; nx?: boolean }): Promise<boolean> {
-    const params = new URLSearchParams()
-    if (opts?.ex) params.set('ex', String(opts.ex))
-    if (opts?.nx) params.set('nx', 'true')
-    const qs = params.toString()
-    const url = `/set/${key}/${encodeURIComponent(value)}${qs ? `?${qs}` : ''}`
+    let url = `/set/${key}/${encodeURIComponent(value)}`
+    if (opts?.ex) url += `/EX/${opts.ex}`
+    if (opts?.nx) url += `/NX`
+
     const resp = await redisRequest(this.env, url)
     if (!resp.ok) return false
     const data = await resp.json() as any
@@ -136,9 +139,9 @@ class UpstashRedis implements Redis {
   }
 }
 
-export function getRedis(env: Env): Redis {
+export function getRedis(env: Env): Redis | null {
   if (redisAvailable(env)) {
     return new UpstashRedis(env)
   }
-  return new MemoryRedis()
+  return null
 }

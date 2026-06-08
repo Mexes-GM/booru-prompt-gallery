@@ -31,11 +31,9 @@ export function InfiniteScrollTrigger({
 
  // Sync props to refs (observer callback reads these, not the closure)
  useEffect(() => { onIntersectRef.current = onIntersect }, [onIntersect])
- useEffect(() => {
- const prev = isLoadingRef.current
- isLoadingRef.current = isLoading
- console.log(`[InfiniteScroll] isLoading sync: ${prev} → ${isLoading}, loadedCount=${loadedCount}`)
- }, [isLoading])
+  useEffect(() => {
+    isLoadingRef.current = isLoading
+  }, [isLoading])
 
  // --- Single persistent IntersectionObserver ---
  // Created once when hasNextPage/error stabilize, NEVER recreates

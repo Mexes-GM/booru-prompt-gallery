@@ -133,6 +133,7 @@ export async function downloadHandler(
     headers.set('Content-Disposition', `attachment; filename="${filename}"`)
     headers.set('Cache-Control', 'public, max-age=31536000, immutable')
     headers.set('CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
+    headers.set('Access-Control-Allow-Origin', '*')
     if (contentLength) headers.set('Content-Length', contentLength)
 
     return new Response(response.body, { status: 200, headers })

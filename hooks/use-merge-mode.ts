@@ -134,7 +134,11 @@ export function useMergeMode(
 
         // 2. Pick random posts
         const numPostsToPick = Math.min(availablePosts.length, randomSettings.postCount)
-        const shuffledPosts = [...availablePosts].sort(() => 0.5 - Math.random())
+        const shuffledPosts = [...availablePosts]
+        for (let i = shuffledPosts.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffledPosts[i], shuffledPosts[j]] = [shuffledPosts[j], shuffledPosts[i]];
+        }
         const pickedPosts = shuffledPosts.slice(0, numPostsToPick)
 
         if (mergeModeType === 'merge') {
@@ -181,7 +185,11 @@ export function useMergeMode(
                 const classified = classifyTags(tags, tagOverrides, charTags)
 
                 const numCatsToPick = Math.floor(Math.random() * categories.length) + 1
-                const shuffledCats = [...categories].sort(() => 0.5 - Math.random())
+                const shuffledCats = [...categories]
+                for (let i = shuffledCats.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [shuffledCats[i], shuffledCats[j]] = [shuffledCats[j], shuffledCats[i]];
+                }
                 const pickedCats = shuffledCats.slice(0, numCatsToPick)
 
                 const activeParts = new Set<TagCategory>()

@@ -21,6 +21,9 @@ export async function recordSuccess(redis: Redis, name: string): Promise<void> {
 
 export async function recordFailure(redis: Redis, name: string): Promise<void> {
   const count = await redis.incr(`circuit:${name}:failCount`)
+  if (count === 1) {
+    await redis.expire(`circuit:${name}:failCount`, 120) // Failures expire after 2 mins
+  }
   if (count >= MAX_FAILS) {
     await redis.set(`circuit:${name}:state`, 'open')
     await redis.set(`circuit:${name}:openedAt`, String(Date.now()))

@@ -230,6 +230,30 @@ const transformAibooruPost = (post: unknown): BooruPost => {
   }
 }
 
+// Helper to transform raw Danbooru posts to BooruPost (for direct client fetches bypassing the Worker)
+const transformDanbooruPost = (post: unknown): BooruPost => {
+  if (!post || typeof post !== 'object') {
+    throw new Error('Invalid post data from Danbooru')
+  }
+  const typedPost = post as Record<string, unknown>
+  return {
+    id: (typedPost.id as number) || 0,
+    file_url: (typedPost.file_url as string) || '',
+    large_file_url: (typedPost.large_file_url as string) || (typedPost.file_url as string) || '',
+    preview_file_url: (typedPost.preview_file_url as string) || (typedPost.file_url as string) || '',
+    tag_string: (typedPost.tag_string as string) || '',
+    tag_string_artist: (typedPost.tag_string_artist as string) || '',
+    tag_string_character: (typedPost.tag_string_character as string) || '',
+    tag_string_copyright: (typedPost.tag_string_copyright as string) || '',
+    tag_string_meta: (typedPost.tag_string_meta as string) || undefined,
+    rating: (typedPost.rating as string) || 'q',
+    score: (typedPost.score as number) || 0,
+    width: (typedPost.image_width as number) || 0,
+    height: (typedPost.image_height as number) || 0,
+    _provider: 'danbooru',
+  }
+}
+
 // Client-side request deduplication: prevents SWR from firing multiple
 // identical requests in rapid succession (React Strict Mode double-render,
 // filter changes, etc.). Holds results for 5s after resolution so rapid
@@ -311,11 +335,26 @@ const fetcher = async (url: string) => {
           } else {
             resultPosts = []
           }
+        } else if (url.includes('danbooru.donmai.us') && !url.includes('/api/')) {
+          // Direct Danbooru API response — raw format, needs transformation
+          identifiedProvider = 'danbooru'
+          if (Array.isArray(data)) {
+            resultPosts = data
+              .filter(post =>
+                post && post.id &&
+                (post.file_url || post.large_file_url) &&
+                !post.file_url?.includes("deleted") &&
+                (post.tag_string || post.tags) &&
+                !post.file_url?.match(/\.(mp4|webm|avi|mov|mkv)$/i)
+              )
+              .map(transformDanbooruPost)
+          } else {
+            resultPosts = []
+          }
         } else if (
           url.includes('/api/posts') ||
           url.includes('/api/favorites') ||
-          (url.includes('api/booru/search') && url.includes('provider=danbooru')) ||
-          url.includes('danbooru.donmai.us')
+          (url.includes('api/booru/search') && url.includes('provider=danbooru'))
         ) {
           identifiedProvider = 'danbooru'
         }
@@ -533,6 +572,41 @@ export const getFinalQueryTags = (userTags: string, ratingFilter: string, order:
   return tags
 }
 
+const DANBOORU_ONLY_FIELDS = 'id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,image_width,image_height'
+
+function buildDirectDanbooruUrl(
+  query: string,
+  page: string,
+  order: string,
+  randomSeed?: number,
+  pageIndex?: number
+): string {
+  let finalTags: string
+  const isRandom = order === 'random' || /order:random|random:\d+/i.test(query)
+
+  if (order === 'recent') {
+    finalTags = query || ''
+  } else if (isRandom) {
+    const cleanTags = query ? query.replace(/order:random|random:\d+/gi, '').trim() : ''
+    finalTags = cleanTags ? `${cleanTags} random:30` : 'random:30'
+  } else {
+    finalTags = query ? `${query} order:rank` : 'order:rank'
+  }
+
+  const params = new URLSearchParams({
+    limit: '30',
+    only: DANBOORU_ONLY_FIELDS,
+    page,
+    tags: finalTags,
+  })
+
+  if (isRandom && randomSeed !== undefined && pageIndex !== undefined) {
+    params.append('_seed', `${randomSeed}_${pageIndex}`)
+  }
+
+  return `${PROVIDER_URLS.DANBOORU}/posts.json?${params.toString()}`
+}
+
 export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string) => {
   // E621 uses rating:safe instead of rating:general
   const effectiveRating = (provider === 'e621' && ratingFilter === 'rating:general')
@@ -592,20 +666,22 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         return directUrl
       }
 
-      // Select the correct API endpoint based on provider
-      const apiEndpoint = '/api/posts' // All providers use consolidated route
+      // Danbooru: direct to danbooru.donmai.us to avoid shared IP rate limiting
+      // (each user's browser has its own IP, so Danbooru's 10 req/s limit is per user)
+      if (provider === 'danbooru') {
+        const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
+        const effectivePage = isRandomOrder ? 1 : pageIndex + 1
+        return buildDirectDanbooruUrl(query, String(effectivePage), order, randomSeed, pageIndex)
+      }
 
-      // CRITICAL: Page index is 0-based, but API expects 1-based page numbers
-      // pageIndex + 1 ensures correct page progression: 0 -> page 1, 1 -> page 2, etc.
-      // For random order, we must stick to page 1 because random:20 limits the result set to 20 items.
+      // Other providers — route through the Worker API
+      const apiEndpoint = '/api/posts'
+
       const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
       const effectivePage = isRandomOrder ? 1 : pageIndex + 1
 
       const baseUrl = apiUrl(`${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}&provider=${provider}`)
 
-      // Add random seed for random searches to force cache invalidation
-      // Also add seed if tags contain order:random to ensure we get new results
-      // We append pageIndex to seed to ensure we get *different* random posts for each page
       const seedParam = isRandomOrder && randomSeed ? `&seed=${randomSeed}_${pageIndex}` : ''
 
       const finalUrl = `${baseUrl}${seedParam}`
@@ -744,25 +820,37 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
   // the fetcher before the cache is populated, defeating the purpose.
   // cachedPostsRef communicates pre-loaded posts to the fetcher so it
   // only fetches missing ones.
+  //
+  // GUARD: lastSeededKeyRef prevents infinite re-render loops (React error #185).
+  // Without it, every render calls mutate() which triggers a SWR state update,
+  // which triggers another render, ad infinitum — because localStorage is
+  // checked fresh each time and getCachedFavorites() returns null (mutate
+  // doesn't write to localStorage), so getMergedCachedFavorites() + mutate()
+  // runs on every render. The guard ensures we only seed once per cache key.
   const cachedPostsRef = useRef<Map<string, BooruPost>>(new Map())
+  const lastSeededKeyRef = useRef<string | null>(null)
 
   if (cacheKey) {
-    const exactCached = getCachedFavorites(cacheKey)
-    if (exactCached && exactCached.length > 0) {
-      mutate(cacheKey, exactCached, { revalidate: false })
-      cachedPostsRef.current = new Map(exactCached.map(p => [`${p._provider}:${p.id}`, p]))
-    } else {
-      // Cache miss on exact key — try merging from old cache entries
-      const mergedPosts = getMergedCachedFavorites(favorites)
-      if (mergedPosts.length > 0) {
-        mutate(cacheKey, mergedPosts, { revalidate: false })
-        cachedPostsRef.current = new Map(mergedPosts.map(p => [`${p._provider}:${p.id}`, p]))
+    if (lastSeededKeyRef.current !== cacheKey) {
+      lastSeededKeyRef.current = cacheKey
+      const exactCached = getCachedFavorites(cacheKey)
+      if (exactCached && exactCached.length > 0) {
+        mutate(cacheKey, exactCached, { revalidate: false })
+        cachedPostsRef.current = new Map(exactCached.map(p => [`${p._provider}:${p.id}`, p]))
       } else {
-        cachedPostsRef.current = new Map()
+        // Cache miss on exact key — try merging from old cache entries
+        const mergedPosts = getMergedCachedFavorites(favorites)
+        if (mergedPosts.length > 0) {
+          mutate(cacheKey, mergedPosts, { revalidate: false })
+          cachedPostsRef.current = new Map(mergedPosts.map(p => [`${p._provider}:${p.id}`, p]))
+        } else {
+          cachedPostsRef.current = new Map()
+        }
       }
     }
   } else {
     cachedPostsRef.current = new Map()
+    lastSeededKeyRef.current = null
   }
 
   const BATCH_SIZE = 20

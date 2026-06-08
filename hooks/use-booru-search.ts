@@ -228,13 +228,12 @@ export function useBooruSearch() {
 
  // Reset pagination
  useEffect(() => {
- console.log(`[loadMore] RESET pagination: order=${order}, rating=${ratingFilter}, tags="${debouncedSearchTags.slice(0,30)}", tagCount=${appliedTagCountFilter}, charCount=${appliedCharacterCountFilter}`)
- setSize(1)
- setNoMoreResults(false)
- setLoadMoreError(false)
- setLastLoadAttempt(0)
- setCircuitOpen(false)
- loadMoreGuardRef.current = false
+   setSize(1)
+   setNoMoreResults(false)
+   setLoadMoreError(false)
+   setLastLoadAttempt(0)
+   setCircuitOpen(false)
+   loadMoreGuardRef.current = false
  }, [order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
 
   // --- Derived Data ---
@@ -258,12 +257,10 @@ export function useBooruSearch() {
  keptPosts.push(post)
  }
 
- console.log(`[allPosts] pages.length=${pages.length}, flatPosts=${flatPosts.length}, deduped=${keptPosts.length}, firstFewIds=[${flatPosts.slice(0,5).map(p=>p.id).join(',')}]`)
  return keptPosts
  }, [pages])
 
  const isLoadingMore = isValidating && size > 0
- console.log(`[SWR] isLoading=${isLoading}, isValidating=${isValidating}, size=${size}, isLoadingMore=${isLoadingMore}, allPosts=${allPosts.length}, noMoreResults=${noMoreResults}`)
  // Ref for loadMore to read isLoadingMore without depending on it
  // (keeps the callback reference stable so the IntersectionObserver
  // in InfiniteScrollTrigger doesn't recreate on every loading change)
@@ -307,40 +304,36 @@ export function useBooruSearch() {
 
   // --- Actions ---
 
- const loadMore = useCallback(() => {
- // Synchronous guard: prevents re-entry from stale closures
- // (e.g. IntersectionObserver callback firing after React has
- // already committed a loadMore call in the same tick).
- if (loadMoreGuardRef.current) {
- console.log(`[loadMore] BLOCKED by loadMoreGuardRef, size=${size}`)
- return
- }
+  const loadMore = useCallback(() => {
+    // Synchronous guard: prevents re-entry from stale closures
+    // (e.g. IntersectionObserver callback firing after React has
+    // already committed a loadMore call in the same tick).
+    if (loadMoreGuardRef.current) {
+      return
+    }
 
- if (isLoadingMoreRef.current) {
- console.log(`[loadMore] BLOCKED by isLoadingMoreRef, size=${size}`)
- return
- }
+    if (isLoadingMoreRef.current) {
+      return
+    }
 
- loadMoreGuardRef.current = true
- setLoadMoreError(false)
+    loadMoreGuardRef.current = true
+    setLoadMoreError(false)
 
- // Track deduped count so the no-more-results check can detect
- // when a new page brings only duplicate posts (CDN cache hit).
- setLastLoadAttempt(allPosts.length)
+    // Track deduped count so the no-more-results check can detect
+    // when a new page brings only duplicate posts (CDN cache hit).
+    setLastLoadAttempt(allPosts.length)
 
- const nextSize = size + 1
- console.log(`[loadMore] CALLING setSize(${nextSize}), prevSize=${size}, allPosts=${allPosts.length}`)
- setSize(nextSize)
- trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
- }, [size, order, debouncedSearchTags, ratingFilter, setSize, allPosts.length])
+    const nextSize = size + 1
+    setSize(nextSize)
+    trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
+  }, [size, order, setSize, allPosts.length])
 
- // Clear guard when SWR starts validating (confirms the load was accepted)
- useEffect(() => {
- console.log(`[loadMore] guard-clear effect: isLoadingMore=${isLoadingMore}, guard=${loadMoreGuardRef.current}, size=${size}`)
- if (isLoadingMore) {
- loadMoreGuardRef.current = false
- }
- }, [isLoadingMore])
+  // Clear guard when SWR starts validating (confirms the load was accepted)
+  useEffect(() => {
+    if (isLoadingMore) {
+      loadMoreGuardRef.current = false
+    }
+  }, [isLoadingMore])
 
   const refresh = useCallback(() => {
     if (order === 'random' || /order:random|random:\d+/i.test(searchTags)) {
@@ -364,64 +357,78 @@ export function useBooruSearch() {
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault()
     setSize(1)
+    setNoMoreResults(false)
+    setLoadMoreError(false)
+    setLastLoadAttempt(0)
+    setCircuitOpen(false)
+    loadMoreGuardRef.current = false
+    
+    // NOTE: This uses searchTags, not debouncedSearchTags, because the form
+    // submission should execute immediately with whatever is in the input box,
+    // rather than waiting for the debounce interval to settle.
     const query = searchTags.trim()
     const tagCount = query ? query.split(',').map(t => t.trim()).filter(Boolean).length : 0
     trackSearch({ query: query || '(empty)', rating: ratingFilter, order, tagCount })
-  }, [searchTags, size, setSize, ratingFilter, order])
+  }, [order, ratingFilter, searchTags, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
 
   const clearSearch = useCallback(() => {
     setSearchTags("")
     setSize(1)
   }, [setSize])
 
- // Handle No More Results / Errors
- useEffect(() => {
- if (lastLoadAttempt > 0 && !isLoadingMore) {
- const currentDedupedCount = allPosts.length
- console.log(`[loadMore] no-more-results check: lastLoadAttempt=${lastLoadAttempt}, dedupedCount=${currentDedupedCount}, isReachingEnd=${isReachingEnd}, error=${!!error}, size=${size}`)
+  // Handle No More Results / Errors
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | undefined;
 
- if (error) {
- setLoadMoreError(true)
- setNoMoreResults(false)
+    if (lastLoadAttempt > 0 && !isLoadingMore) {
+      const currentDedupedCount = allPosts.length
 
- const status = (error as any)?.status
- const serverErrorMessage = (error as any)?.info?.error || ''
- const isCircuitOpen = status === 429 && serverErrorMessage.includes('saturated')
- const isRateLimit = status === 429 && !isCircuitOpen
+      if (error) {
+        setLoadMoreError(true)
+        setNoMoreResults(false)
 
- if (isCircuitOpen) {
- setCircuitOpen(true)
- // Auto-recover after 65s (circuit timeout is 60s + margin)
- setTimeout(() => setCircuitOpen(false), 65_000)
- }
+        const status = (error as any)?.status
+        const serverErrorMessage = (error as any)?.info?.error || ''
+        const isCircuitOpen = status === 429 && serverErrorMessage.includes('saturated')
+        const isRateLimit = status === 429 && !isCircuitOpen
 
- toast({
- title: isCircuitOpen
- ? "Danbooru Saturated"
- : isRateLimit
- ? "Service Temporarily Busy"
- : "Error Loading More Posts",
- description: isCircuitOpen
- ? "Danbooru is saturated. Requests are paused for 60 seconds to avoid a block."
- : isRateLimit
- ? "The image provider is limiting requests right now. Please wait a moment before loading more."
- : "There was an error loading more posts. Click 'Retry' to try again.",
- variant: isCircuitOpen || isRateLimit ? "default" : "destructive",
- })
- setLastLoadAttempt(0)
- } else if (currentDedupedCount === lastLoadAttempt || isReachingEnd) {
- // No new deduped posts arrived — all new pages were duplicates or empty
- setNoMoreResults(true)
- setLoadMoreError(false)
- setLastLoadAttempt(0)
- } else if (currentDedupedCount > lastLoadAttempt) {
- setNoMoreResults(false)
- setLoadMoreError(false)
- setLastLoadAttempt(0)
- setCircuitOpen(false)
- }
- }
- }, [allPosts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast])
+        if (isCircuitOpen) {
+          setCircuitOpen(true)
+          // Auto-recover after 65s (circuit timeout is 60s + margin)
+          timeoutId = setTimeout(() => setCircuitOpen(false), 65_000)
+        }
+
+        toast({
+          title: isCircuitOpen
+            ? "Danbooru Saturated"
+            : isRateLimit
+            ? "Service Temporarily Busy"
+            : "Error Loading More Posts",
+          description: isCircuitOpen
+            ? "Danbooru is saturated. Requests are paused for 60 seconds to avoid a block."
+            : isRateLimit
+            ? "The image provider is limiting requests right now. Please wait a moment before loading more."
+            : "There was an error loading more posts. Click 'Retry' to try again.",
+          variant: isCircuitOpen || isRateLimit ? "default" : "destructive",
+        })
+        setLastLoadAttempt(0)
+      } else if (currentDedupedCount === lastLoadAttempt || isReachingEnd) {
+        // No new deduped posts arrived — all new pages were duplicates or empty
+        setNoMoreResults(true)
+        setLoadMoreError(false)
+        setLastLoadAttempt(0)
+      } else if (currentDedupedCount > lastLoadAttempt) {
+        setNoMoreResults(false)
+        setLoadMoreError(false)
+        setLastLoadAttempt(0)
+        setCircuitOpen(false)
+      }
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [allPosts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast])
 
   return {
     searchTags, setSearchTags,

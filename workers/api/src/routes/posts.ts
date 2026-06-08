@@ -4,6 +4,7 @@ import { Redis, getRedis } from '../lib/redis'
 import { isCircuitOpen, recordSuccess, recordFailure, getRetryAfter } from '../lib/circuit-breaker'
 import { coalesce } from '../lib/coalesce'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
+import { getSupabase } from '../lib/supabase'
 
 export async function postsHandler(
   request: Request,
@@ -29,11 +30,11 @@ export async function postsHandler(
   if (providerType === 'danbooru' && redis) {
     const clientIp = getClientIp(request)
 
-    // Per-user: sliding window, 30 req/60s
+    // Per-user: sliding window, 90 req/60s (matching Next.js route: 15/10s)
     const userKey = `ratelimit:danbooru:${clientIp}`
     const userCount = await redis.incr(userKey)
     if (userCount === 1) await redis.expire(userKey, 60)
-    if (userCount > 30) {
+    if (userCount > 90) {
       return errorResponse(
         'Too many requests. Please wait before loading more posts.',
         429,
@@ -45,11 +46,11 @@ export async function postsHandler(
       )
     }
 
-    // Global rate limit
+    // Global rate limit: 480 req/60s (matching Next.js route: 8/1s)
     const globalKey = 'ratelimit:danbooru:global'
     const globalCount = await redis.incr(globalKey)
     if (globalCount === 1) await redis.expire(globalKey, 60)
-    if (globalCount > 100) {
+    if (globalCount > 480) {
       return errorResponse(
         'Danbooru requests are temporarily throttled. Please wait a moment.',
         429,
@@ -84,11 +85,11 @@ export async function postsHandler(
       RULE34_API_KEY: env.RULE34_API_KEY,
       RULE34_USER_ID: env.RULE34_USER_ID,
     }
-    const provider = BooruFactory.getProvider(providerType, envRecord)
+    const provider = BooruFactory.getProvider(providerType, envRecord, getSupabase(env))
 
     const fetcher = () => provider.search({ tags, page, order })
     const posts = redis
-      ? await coalesce(redis, `posts:${cacheKey}`, fetcher, 5)
+      ? await coalesce(redis, `posts:${cacheKey}`, fetcher, cacheDuration)
       : await fetcher()
 
     // Record circuit breaker success
