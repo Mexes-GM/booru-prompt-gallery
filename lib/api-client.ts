@@ -601,7 +601,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
       const effectivePage = isRandomOrder ? 1 : pageIndex + 1
 
-      const baseUrl = apiUrl(`${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}`)
+      const baseUrl = apiUrl(`${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}&provider=${provider}`)
 
       // Add random seed for random searches to force cache invalidation
       // Also add seed if tags contain order:random to ensure we get new results
