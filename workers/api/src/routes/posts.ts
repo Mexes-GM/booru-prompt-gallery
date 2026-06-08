@@ -79,6 +79,10 @@ export async function postsHandler(
     const envRecord: Record<string, string | undefined> = {
       DANBOORU_USERNAME: env.DANBOORU_USERNAME,
       DANBOORU_API_KEY: env.DANBOORU_API_KEY,
+      GELBOORU_API_KEY: env.GELBOORU_API_KEY,
+      GELBOORU_USER_ID: env.GELBOORU_USER_ID,
+      RULE34_API_KEY: env.RULE34_API_KEY,
+      RULE34_USER_ID: env.RULE34_USER_ID,
     }
     const provider = BooruFactory.getProvider(providerType, envRecord)
 
