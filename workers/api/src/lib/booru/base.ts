@@ -29,8 +29,14 @@ export abstract class BaseBooruProvider {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 12000)
 
+        const requestHeaders: Record<string, string> = {
+          'Accept': 'application/json',
+          'User-Agent': 'Boorugallery/9.2',
+          ...headers,
+        }
+
         const response = await fetch(finalUrl.toString(), {
-          headers,
+          headers: requestHeaders,
           signal: controller.signal,
         })
         clearTimeout(timeoutId)
