@@ -1192,7 +1192,7 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
                       <div className="bg-muted/50 p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto"
                         style={{ WebkitOverflowScrolling: 'touch' }}
                       >
-                        {(['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621'] as const).map(p => (
+                        {(['danbooru', 'gelbooru', 'aibooru', 'rule34'] as const).map(p => (
                           <Button
                             key={p}
                             type="button"
