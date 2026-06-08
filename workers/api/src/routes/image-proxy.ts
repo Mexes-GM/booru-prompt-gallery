@@ -1,5 +1,7 @@
 // Image proxy — adapted from original workers/image-proxy/index.js
 // Handles Danbooru/Gelbooru image proxying with CF edge caching
+import { getRedis } from '../lib/redis'
+
 
 const ALLOWED_DOMAINS = [
   'gelbooru.com',
@@ -30,40 +32,12 @@ function isOriginAllowed(origin: string, referer: string): boolean {
   return check(origin) || check(referer)
 }
 
-const RATE_LIMIT_WINDOW_MS = 10_000
 const RATE_LIMIT_MAX = 60
-const requestLog = new Map<string, { count: number; windowStart: number }>()
-let lastCleanup = Date.now()
-
-function cleanupStale(now: number) {
-  if (now - lastCleanup < 60_000) return
-  lastCleanup = now
-  for (const [key, entry] of requestLog) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
-      requestLog.delete(key)
-    }
-  }
-}
 
 function getClientId(request: Request): string {
   const ip = request.headers.get('cf-connecting-ip') || 'unknown'
   const origin = request.headers.get('Origin') || 'no-origin'
   return `${ip}::${origin}`
-}
-
-function checkRateLimit(clientId: string) {
-  const now = Date.now()
-  const entry = requestLog.get(clientId)
-  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    requestLog.set(clientId, { count: 1, windowStart: now })
-    return { allowed: true, remaining: RATE_LIMIT_MAX - 1, reset: now + RATE_LIMIT_WINDOW_MS }
-  }
-  entry.count++
-  return {
-    allowed: entry.count <= RATE_LIMIT_MAX,
-    remaining: Math.max(0, RATE_LIMIT_MAX - entry.count),
-    reset: entry.windowStart + RATE_LIMIT_WINDOW_MS,
-  }
 }
 
 export async function imageProxyHandler(
@@ -74,11 +48,26 @@ export async function imageProxyHandler(
   const url = new URL(request.url)
   const imageUrl = url.searchParams.get('url')
 
+  // Origin validation
+  const origin = request.headers.get('Origin') || ''
+  const referer = request.headers.get('Referer') || ''
+  const isAllowed = isOriginAllowed(origin, referer)
+  const isDirect = !origin && !referer
+
+  const allowedOrigin = origin && isAllowed ? origin : ALLOWED_ORIGINS[0]
+
+  if (!isAllowed && !isDirect) {
+    return new Response(JSON.stringify({ error: 'Unauthorized origin' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
+    })
+  }
+
   // No url param = not an image proxy request (could be root health check)
   if (!imageUrl) {
     return new Response(JSON.stringify({ status: 'ok', worker: 'booru-api' }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
     })
   }
 
@@ -88,27 +77,14 @@ export async function imageProxyHandler(
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid URL' }), {
       status: 400,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
     })
   }
 
   if (!ALLOWED_DOMAINS.some(d => parsedUrl.hostname === d || parsedUrl.hostname.endsWith(`.${d}`))) {
     return new Response(JSON.stringify({ error: 'Domain not allowed' }), {
       status: 403,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    })
-  }
-
-  // Origin validation
-  const origin = request.headers.get('Origin') || ''
-  const referer = request.headers.get('Referer') || ''
-  const isAllowed = isOriginAllowed(origin, referer)
-  const isDirect = !origin && !referer
-
-  if (!isAllowed && !isDirect) {
-    return new Response(JSON.stringify({ error: 'Unauthorized origin' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
     })
   }
 
@@ -119,22 +95,30 @@ export async function imageProxyHandler(
   if (cached) return cached
 
   // Rate limit (cache misses only)
-  cleanupStale(Date.now())
   const clientId = getClientId(request)
-  const rl = checkRateLimit(clientId)
-  if (!rl.allowed) {
-    const retryAfter = Math.ceil((rl.reset - Date.now()) / 1000)
-    return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter }), {
-      status: 429,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': origin || ALLOWED_ORIGINS[0],
-        'Retry-After': String(retryAfter),
-        'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
-        'X-RateLimit-Remaining': String(rl.remaining),
-        'X-RateLimit-Reset': String(rl.reset),
-      },
-    })
+  const redis = getRedis(env as any)
+  let remaining = RATE_LIMIT_MAX
+  let reset = Date.now() + 10000
+
+  if (redis) {
+    const key = `ratelimit:imageproxy:${clientId}`
+    const count = await redis.incr(key)
+    if (count === 1) await redis.expire(key, 10)
+    
+    remaining = Math.max(0, RATE_LIMIT_MAX - count)
+    
+    if (count > RATE_LIMIT_MAX) {
+      return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: 10 }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Retry-After': '10',
+          'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': '0',
+        },
+      })
+    }
   }
 
   try {
@@ -165,12 +149,11 @@ export async function imageProxyHandler(
     if (!response.ok) {
       return new Response(JSON.stringify({ error: `Upstream error: ${response.status}` }), {
         status: response.status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
       })
     }
 
     const contentType = response.headers.get('content-type') || 'image/jpeg'
-    const allowedOrigin = origin && isAllowed ? origin : ALLOWED_ORIGINS[0]
 
     const proxyResponse = new Response(response.body, {
       status: 200,
@@ -179,8 +162,7 @@ export async function imageProxyHandler(
         'Cache-Control': 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400, immutable',
         'Access-Control-Allow-Origin': allowedOrigin,
         'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
-        'X-RateLimit-Remaining': String(rl.remaining),
-        'X-RateLimit-Reset': String(rl.reset),
+        'X-RateLimit-Remaining': String(remaining),
       },
     })
 
@@ -189,7 +171,7 @@ export async function imageProxyHandler(
   } catch (err: any) {
     return new Response(JSON.stringify({ error: 'Failed to fetch image' }), {
       status: 502,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
     })
   }
 }

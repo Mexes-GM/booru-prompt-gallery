@@ -4,6 +4,7 @@ import { Redis, getRedis } from '../lib/redis'
 import { isCircuitOpen, recordSuccess, recordFailure, getRetryAfter } from '../lib/circuit-breaker'
 import { coalesce } from '../lib/coalesce'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
+import { getSupabase } from '../lib/supabase'
 
 export async function postsHandler(
   request: Request,
@@ -84,11 +85,11 @@ export async function postsHandler(
       RULE34_API_KEY: env.RULE34_API_KEY,
       RULE34_USER_ID: env.RULE34_USER_ID,
     }
-    const provider = BooruFactory.getProvider(providerType, envRecord)
+    const provider = BooruFactory.getProvider(providerType, envRecord, getSupabase(env))
 
     const fetcher = () => provider.search({ tags, page, order })
     const posts = redis
-      ? await coalesce(redis, `posts:${cacheKey}`, fetcher, 5)
+      ? await coalesce(redis, `posts:${cacheKey}`, fetcher, cacheDuration)
       : await fetcher()
 
     // Record circuit breaker success

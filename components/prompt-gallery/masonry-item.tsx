@@ -600,7 +600,7 @@ export const MasonryItem = memo(function MasonryItem({
                     </AnimatePresence>
                     <Image
                         key={retryKey}
-                        src={fileUrl!}
+                        src={fileUrl || ''}
                         alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
                         fill
                         className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
@@ -610,7 +610,7 @@ export const MasonryItem = memo(function MasonryItem({
                         decoding={index < 8 ? "sync" : "async"}
                         unoptimized={!!rawFileUrl}
                         onError={handleImageError}
-                        onLoadingComplete={() => setImageError(false)}
+                        onLoad={() => setImageError(false)}
                     />
                     {imageError && (
                         <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
