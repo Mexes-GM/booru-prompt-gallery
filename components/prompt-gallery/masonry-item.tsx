@@ -18,7 +18,8 @@ import {
     AlertCircle,
     Sliders,
     Users,
-    Loader2
+    Loader2,
+    Tag
 } from "lucide-react"
 import Image from "next/image"
 import {
@@ -342,6 +343,8 @@ export const MasonryItem = memo(function MasonryItem({
 
     const teachTagsForClassification = useMemo(() => teachContent ? teachContent.split(',').map(t => t.trim()) : [], [teachContent])
 
+    const totalTagsCount = useMemo(() => tagsForClassification.filter(t => t.length > 0).length, [tagsForClassification])
+
     // Prepare character tags
     const characterTagsArray = useMemo(() => (post.tag_string_character ? post.tag_string_character.split(' ') : [])
         .map(t => t.replace(/_/g, ' ').toLowerCase().replace(/\(/g, "\\(").replace(/\)/g, "\\)")), [post.tag_string_character])
@@ -635,6 +638,21 @@ export const MasonryItem = memo(function MasonryItem({
                         </Tooltip>
                     )}
 
+                    {/* Total Tag Count Indicator */}
+                    {totalTagsCount > 0 && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help z-10">
+                                    <Tag className="w-3.5 h-3.5 opacity-70" />
+                                    {totalTagsCount}
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs">
+                                Total Tags
+                            </TooltipContent>
+                        </Tooltip>
+                    )}
+
                     {/* Overlay actions */}
                     <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                         <SaveFavoriteButton
@@ -876,6 +894,21 @@ export const MasonryItem = memo(function MasonryItem({
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="text-xs">
                                     Character Post Count
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+
+                        {/* Total Tag Count Indicator */}
+                        {totalTagsCount > 0 && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help z-10">
+                                        <Tag className="w-3 h-3 opacity-70" />
+                                        {totalTagsCount}
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                    Total Tags
                                 </TooltipContent>
                             </Tooltip>
                         )}

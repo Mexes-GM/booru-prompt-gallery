@@ -1175,6 +1175,18 @@ The app has grown quite a bit, and I&apos;m glad many people have found it usefu
 </div>
 <div className="h-px bg-border/60 mx-3" />
 
+{/* Item 4: Total Tag Count */}
+<div className="border-l-2 border-purple-500 bg-purple-500/5 hover:bg-purple-500/10 transition-colors p-3">
+<div className="flex items-center justify-center gap-2 mb-1.5">
+<p className="text-xs font-semibold text-foreground leading-snug">Total Tag Count Badge</p>
+<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-purple-500/15 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20">Feature</Badge>
+</div>
+<p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+Added a new badge on the bottom-right of each card showing the total number of tags. This helps quickly identify prompt complexity at a glance.
+</p>
+</div>
+<div className="h-px bg-border/60 mx-3" />
+
 {/* Item 1: Welcome to Open Source */}
 <div className="border-l-2 border-green-500 bg-green-500/5 hover:bg-green-500/10 transition-colors p-3">
 <div className="flex items-center justify-center gap-2 mb-1.5">
