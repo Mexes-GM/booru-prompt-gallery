@@ -257,6 +257,7 @@ html {
   scroll-behavior: smooth;
   scrollbar-gutter: stable;
   overflow-y: scroll;
+  overflow-anchor: none;
 }
 
 /* Custom scrollbar */
