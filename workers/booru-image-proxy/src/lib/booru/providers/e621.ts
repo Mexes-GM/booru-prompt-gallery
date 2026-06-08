@@ -34,11 +34,14 @@ interface E621Response {
 
 export class E621Provider extends BaseBooruProvider {
   protected baseUrl = PROVIDER_URLS.E621
-  protected defaultParams = { limit: '20' }
+  protected defaultParams = { limit: '100' }
 
   async search(options: SearchOptions): Promise<BooruPost[]> {
     const params = new URLSearchParams(this.defaultParams)
     params.set('page', options.page || '1')
+    if (options.limit) {
+      params.set('limit', options.limit)
+    }
     params.set('_client', USER_AGENT)
 
     let tags = (options.tags || '').trim()

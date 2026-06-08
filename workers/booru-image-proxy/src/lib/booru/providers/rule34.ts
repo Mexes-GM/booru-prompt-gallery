@@ -19,7 +19,7 @@ interface Rule34PostResponse {
 
 export class Rule34Provider extends BaseBooruProvider {
   protected baseUrl = PROVIDER_URLS.RULE34
-  protected defaultParams = { limit: '20', page: 'dapi', s: 'post', q: 'index', json: '1' }
+  protected defaultParams = { limit: '100', page: 'dapi', s: 'post', q: 'index', json: '1' }
 
   private apiKey: string
   private userId: string
@@ -38,14 +38,21 @@ export class Rule34Provider extends BaseBooruProvider {
     const pageNum = parseInt(page, 10)
     const pid = Math.max(0, pageNum - 1).toString()
 
-    let finalTags = tags
+    let finalTags = tags ? tags.trim() : ''
+    if (!finalTags.includes('-video')) {
+      finalTags = finalTags ? `${finalTags} -video` : '-video'
+    }
+
     if (order === 'popular') {
-      finalTags = tags ? `${tags} sort:score` : 'sort:score'
+      finalTags = `${finalTags} sort:score`
     } else if (order === 'random') {
-      finalTags = tags ? `${tags} sort:random` : 'sort:random'
+      finalTags = `${finalTags} sort:random`
     }
 
     const params: Record<string, string> = { ...this.defaultParams, pid, tags: finalTags }
+    if (options.limit) {
+      params.limit = options.limit
+    }
     if (this.apiKey && this.userId) {
       params.api_key = this.apiKey
       params.user_id = this.userId
