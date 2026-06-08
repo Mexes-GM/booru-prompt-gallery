@@ -230,6 +230,30 @@ const transformAibooruPost = (post: unknown): BooruPost => {
   }
 }
 
+// Helper to transform raw Danbooru posts to BooruPost (for direct client fetches bypassing the Worker)
+const transformDanbooruPost = (post: unknown): BooruPost => {
+  if (!post || typeof post !== 'object') {
+    throw new Error('Invalid post data from Danbooru')
+  }
+  const typedPost = post as Record<string, unknown>
+  return {
+    id: (typedPost.id as number) || 0,
+    file_url: (typedPost.file_url as string) || '',
+    large_file_url: (typedPost.large_file_url as string) || (typedPost.file_url as string) || '',
+    preview_file_url: (typedPost.preview_file_url as string) || (typedPost.file_url as string) || '',
+    tag_string: (typedPost.tag_string as string) || '',
+    tag_string_artist: (typedPost.tag_string_artist as string) || '',
+    tag_string_character: (typedPost.tag_string_character as string) || '',
+    tag_string_copyright: (typedPost.tag_string_copyright as string) || '',
+    tag_string_meta: (typedPost.tag_string_meta as string) || undefined,
+    rating: (typedPost.rating as string) || 'q',
+    score: (typedPost.score as number) || 0,
+    width: (typedPost.image_width as number) || 0,
+    height: (typedPost.image_height as number) || 0,
+    _provider: 'danbooru',
+  }
+}
+
 // Client-side request deduplication: prevents SWR from firing multiple
 // identical requests in rapid succession (React Strict Mode double-render,
 // filter changes, etc.). Holds results for 5s after resolution so rapid
@@ -311,11 +335,26 @@ const fetcher = async (url: string) => {
           } else {
             resultPosts = []
           }
+        } else if (url.includes('danbooru.donmai.us') && !url.includes('/api/')) {
+          // Direct Danbooru API response — raw format, needs transformation
+          identifiedProvider = 'danbooru'
+          if (Array.isArray(data)) {
+            resultPosts = data
+              .filter(post =>
+                post && post.id &&
+                (post.file_url || post.large_file_url) &&
+                !post.file_url?.includes("deleted") &&
+                (post.tag_string || post.tags) &&
+                !post.file_url?.match(/\.(mp4|webm|avi|mov|mkv)$/i)
+              )
+              .map(transformDanbooruPost)
+          } else {
+            resultPosts = []
+          }
         } else if (
           url.includes('/api/posts') ||
           url.includes('/api/favorites') ||
-          (url.includes('api/booru/search') && url.includes('provider=danbooru')) ||
-          url.includes('danbooru.donmai.us')
+          (url.includes('api/booru/search') && url.includes('provider=danbooru'))
         ) {
           identifiedProvider = 'danbooru'
         }
