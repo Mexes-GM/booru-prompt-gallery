@@ -1,4 +1,4 @@
-import { useCallback, useMemo, memo, useState, useEffect } from "react"
+import { useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -17,7 +17,8 @@ import {
     GraduationCap,
     AlertCircle,
     Sliders,
-    Users
+    Users,
+    Loader2
 } from "lucide-react"
 import Image from "next/image"
 import {
@@ -156,6 +157,7 @@ interface MasonryItemProps {
     isGlobalWeightsEnabled?: boolean
     onGlobalWeightChange?: (tag: string, weight: number) => void
     onSearch?: (tag: string) => void
+    onImageError?: () => void
 }
 
 // Memoized MasonryItem to prevent unnecessary re-renders
@@ -201,12 +203,31 @@ export const MasonryItem = memo(function MasonryItem({
     isGlobalWeightsEnabled = false,
     onGlobalWeightChange,
     onSearch,
+    onImageError,
 }: MasonryItemProps) {
     const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
     const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
 
     // State to hold modified prompt from user interaction
     const [modifiedContent, setModifiedContent] = useState<string | null>(null)
+
+    const [imageError, setImageError] = useState(false)
+    const [retryKey, setRetryKey] = useState(0)
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    const handleImageError = useCallback(() => {
+        setImageError(true)
+        onImageError?.()
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = setTimeout(() => {
+            setImageError(false)
+            setRetryKey(k => k + 1)
+        }, 10_000)
+    }, [onImageError])
+
+    useEffect(() => {
+        return () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current) }
+    }, [])
 
     const itemProvider = post._provider || booruProvider
 
@@ -395,7 +416,7 @@ export const MasonryItem = memo(function MasonryItem({
     // Asi se evita consumir bandwidth/CPU de Netlify/Vercel en image proxying.
     const gelbooruNeedsProxy = isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')
 
-    // Danbooru: use Cloudflare Worker (egress gratuito, dentro de la red Cloudflare)
+    // Danbooru: use Cloudflare Worker (free egress within Cloudflare network)
     const fileUrl = gelbooruNeedsProxy
         ? getGelbooruProxyUrl(rawFileUrl!)
         : isDanbooru && rawFileUrl
@@ -577,6 +598,7 @@ export const MasonryItem = memo(function MasonryItem({
                         )}
                     </AnimatePresence>
                     <Image
+                        key={retryKey}
                         src={fileUrl!}
                         alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
                         fill
@@ -586,7 +608,14 @@ export const MasonryItem = memo(function MasonryItem({
                         fetchPriority={index < 8 ? "high" : "low"}
                         decoding={index < 8 ? "sync" : "async"}
                         unoptimized={!!rawFileUrl}
+                        onError={handleImageError}
+                        onLoadingComplete={() => setImageError(false)}
                     />
+                    {imageError && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
+                            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                        </div>
+                    )}
 
                     {/* Character Tag Count Indicator */}
                     {tagCountIndicator && includeCharacters && (
@@ -814,6 +843,7 @@ export const MasonryItem = memo(function MasonryItem({
                             />
                         </div>
                         <Image
+                            key={retryKey}
                             src={fileUrl!}
                             alt={`${itemProvider} post ${post.id}`}
                             fill
@@ -822,7 +852,14 @@ export const MasonryItem = memo(function MasonryItem({
                             loading="lazy"
                             decoding="async"
                             unoptimized={!!rawFileUrl}
+                            onError={handleImageError}
+                            onLoadingComplete={() => setImageError(false)}
                         />
+                        {imageError && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
+                                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                            </div>
+                        )}
 
                         {/* Character Tag Count Indicator */}
                         {tagCountIndicator && includeCharacters && (

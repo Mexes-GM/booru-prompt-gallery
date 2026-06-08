@@ -165,6 +165,17 @@ export function PromptGallery() {
   const { toast } = useToast()
   const isMobile = useIsMobile()
 
+  const [imageRateLimited, setImageRateLimited] = useState(false)
+  const imageErrorCountRef = useRef(0)
+  const IMAGE_ERROR_THRESHOLD = 8
+
+  const handleImageError = useCallback(() => {
+    imageErrorCountRef.current++
+    if (imageErrorCountRef.current >= IMAGE_ERROR_THRESHOLD && !imageRateLimited) {
+      setImageRateLimited(true)
+    }
+  }, [imageRateLimited])
+
   // Sync preferences with cloud
   usePreferencesSync()
 
@@ -498,8 +509,8 @@ export function PromptGallery() {
   }, [])
 
   // --- Helpers ---
-  // Ref-stabilized callbacks: las referencias no cambian, pero siempre llaman a la versión más reciente.
-  // Esto evita que renderMasonryItem se recree cuando toast u otras deps cambian.
+  // Ref-stabilized callbacks: stable references that always call the latest version.
+  // Prevents renderMasonryItem from recreating when toast or other deps change.
   const copyToClipboardRef = useRef<(content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string) => Promise<void>>(async () => {})
   const downloadImageRef = useRef<(post: BooruPost) => Promise<void>>(async () => {})
 
@@ -753,8 +764,9 @@ export function PromptGallery() {
       isGlobalWeightsEnabled={isGlobalWeightsEnabled}
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
+      onImageError={handleImageError}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, backgroundRemoveMode, randomBackgroundIncludeGradients, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, backgroundRemoveMode, randomBackgroundIncludeGradients, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -2375,15 +2387,30 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
           {/* Load More / States */}
           {filteredPosts.length > 0 && !favs.showFavorites && activeFavoriteFolder !== 'artists' && (
             <div className="text-center pb-8">
-              {!search.loadMoreError ? (
+              {!search.loadMoreError && !imageRateLimited ? (
  <InfiniteScrollTrigger
  onIntersect={search.loadMore}
- hasNextPage={!search.noMoreResults}
+ hasNextPage={!search.noMoreResults && !imageRateLimited}
  isLoading={search.isLoadingMore}
  error={search.loadMoreError}
  loadedCount={filteredPosts.length}
 
                 />
+              ) : imageRateLimited ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-amber-600 dark:text-amber-400">Slow down! Too many requests at once.</p>
+                  <Button
+                    onClick={() => {
+                      setImageRateLimited(false)
+                      imageErrorCountRef.current = 0
+                    }}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Resume Scroll
+                  </Button>
+                </div>
               ) : (
                 <div className="space-y-2">
                   <p className="text-sm text-destructive">Failed to load more posts.</p>
@@ -2398,7 +2425,7 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
                 </div>
               )}
 
-              {search.noMoreResults && !search.loadMoreError && (
+              {search.noMoreResults && !search.loadMoreError && !imageRateLimited && (
                 <p className="text-muted-foreground text-sm py-4">
                   --- End of results ---
                 </p>
