@@ -744,25 +744,37 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
   // the fetcher before the cache is populated, defeating the purpose.
   // cachedPostsRef communicates pre-loaded posts to the fetcher so it
   // only fetches missing ones.
+  //
+  // GUARD: lastSeededKeyRef prevents infinite re-render loops (React error #185).
+  // Without it, every render calls mutate() which triggers a SWR state update,
+  // which triggers another render, ad infinitum — because localStorage is
+  // checked fresh each time and getCachedFavorites() returns null (mutate
+  // doesn't write to localStorage), so getMergedCachedFavorites() + mutate()
+  // runs on every render. The guard ensures we only seed once per cache key.
   const cachedPostsRef = useRef<Map<string, BooruPost>>(new Map())
+  const lastSeededKeyRef = useRef<string | null>(null)
 
   if (cacheKey) {
-    const exactCached = getCachedFavorites(cacheKey)
-    if (exactCached && exactCached.length > 0) {
-      mutate(cacheKey, exactCached, { revalidate: false })
-      cachedPostsRef.current = new Map(exactCached.map(p => [`${p._provider}:${p.id}`, p]))
-    } else {
-      // Cache miss on exact key — try merging from old cache entries
-      const mergedPosts = getMergedCachedFavorites(favorites)
-      if (mergedPosts.length > 0) {
-        mutate(cacheKey, mergedPosts, { revalidate: false })
-        cachedPostsRef.current = new Map(mergedPosts.map(p => [`${p._provider}:${p.id}`, p]))
+    if (lastSeededKeyRef.current !== cacheKey) {
+      lastSeededKeyRef.current = cacheKey
+      const exactCached = getCachedFavorites(cacheKey)
+      if (exactCached && exactCached.length > 0) {
+        mutate(cacheKey, exactCached, { revalidate: false })
+        cachedPostsRef.current = new Map(exactCached.map(p => [`${p._provider}:${p.id}`, p]))
       } else {
-        cachedPostsRef.current = new Map()
+        // Cache miss on exact key — try merging from old cache entries
+        const mergedPosts = getMergedCachedFavorites(favorites)
+        if (mergedPosts.length > 0) {
+          mutate(cacheKey, mergedPosts, { revalidate: false })
+          cachedPostsRef.current = new Map(mergedPosts.map(p => [`${p._provider}:${p.id}`, p]))
+        } else {
+          cachedPostsRef.current = new Map()
+        }
       }
     }
   } else {
     cachedPostsRef.current = new Map()
+    lastSeededKeyRef.current = null
   }
 
   const BATCH_SIZE = 20
