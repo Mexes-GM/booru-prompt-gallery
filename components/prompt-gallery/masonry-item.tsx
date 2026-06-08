@@ -401,8 +401,8 @@ export const MasonryItem = memo(function MasonryItem({
     }
 
     // Optimization: Use preview image for small cards to save bandwidth/CPU
-    // For Gelbooru: ALWAYS use thumbnail — it loads directly without proxy,
-    // avoiding all origin transfer. Full images (img*.gelbooru.com) have hotlink protection.
+    // For Gelbooru: use thumbnail when possible (smaller transfer), but ALL URLs
+    // must go through the Cloudflare Worker proxy due to hotlink protection.
     // For Danbooru: try direct CDN URL first, fall back to image proxy only on 403/error.
     // This avoids unnecessary Fast Origin Transfer when direct access works.
     const isGelbooru = itemProvider === 'gelbooru'
@@ -412,9 +412,10 @@ export const MasonryItem = memo(function MasonryItem({
         : (effectiveScale === 'small' && post.preview_file_url)
     const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
 
-    // Gelbooru: usar Cloudflare Worker (mismo worker que Danbooru, egress gratuito)
-    // Asi se evita consumir bandwidth/CPU de Netlify/Vercel en image proxying.
-    const gelbooruNeedsProxy = isGelbooru && rawFileUrl && !rawFileUrl.includes('gelbooru.com/thumbnails/')
+    // Gelbooru: ALL images (including thumbnails) must go through the Cloudflare Worker proxy.
+    // Gelbooru applies hotlink protection to all URLs — cross-origin requests get
+    // 302-redirected to hotlink.php. The Worker sets Referer: gelbooru.com/ which bypasses this.
+    const gelbooruNeedsProxy = isGelbooru && !!rawFileUrl
 
     // Danbooru: use Cloudflare Worker (free egress within Cloudflare network)
     const fileUrl = gelbooruNeedsProxy
