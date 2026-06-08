@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef, startTransition } from "react"
 import { mutate } from "swr"
 import * as Sentry from "@sentry/nextjs"
 import { BooruProvider, FavoriteItem, useFavoritePosts, BooruPost } from "@/lib/api-client"
@@ -10,17 +10,21 @@ import { createClient } from "@/lib/supabase/client"
 // Helper to generate cache key (inlined to avoid circular dependencies/build issues)
 const getFavoritesCacheKey = (favorites: FavoriteItem[]) => {
   if (favorites.length === 0) return null
-  // Sort by provider then ID for consistent cache key
-  const sortedKey = favorites
+  const sorted = favorites
     .slice()
     .sort((a, b) => {
       const pDiff = a.provider.localeCompare(b.provider);
       return pDiff !== 0 ? pDiff : a.id - b.id;
-    })
-    .map(f => `${f.provider}:${f.id}`)
-    .join(',');
+    });
 
-  return `favorites-mixed-${sortedKey}`
+  let hash = 5381;
+  for (const f of sorted) {
+    const s = `${f.provider}:${f.id}`;
+    for (let i = 0; i < s.length; i++) {
+      hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
+    }
+  }
+  return `favorites-${favorites.length}-${(hash >>> 0).toString(36)}`
 }
 
 export interface FavoriteFolder {
@@ -157,7 +161,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
       category: "favorites",
       message: "useEffect for fetchFavorites triggered",
       level: "info",
-      data: { triggerCount: currentTriggerCount, userId: user?.id, booruProvider, hasAccessToken: !!session?.access_token }
+      data: { triggerCount: currentTriggerCount, userId: user?.id }
     })
 
     let isMounted = true
@@ -532,7 +536,7 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     return () => {
       isMounted = false
     }
-  }, [user?.id, session?.access_token, userLoading, booruProvider])
+  }, [user?.id, userLoading])
 
   // Expose the manual sync function
   const syncFavorites = useCallback(async () => {

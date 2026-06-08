@@ -716,17 +716,21 @@ export interface FavoriteItem {
 
 export const getFavoritesCacheKey = (favorites: FavoriteItem[]) => {
   if (favorites.length === 0) return null
-  // Sort by provider then ID for consistent cache key
-  const sortedKey = favorites
+  const sorted = favorites
     .slice()
     .sort((a, b) => {
       const pDiff = a.provider.localeCompare(b.provider);
       return pDiff !== 0 ? pDiff : a.id - b.id;
-    })
-    .map(f => `${f.provider}:${f.id}`)
-    .join(',');
+    });
 
-  return `favorites-mixed-${sortedKey}`
+  let hash = 5381;
+  for (const f of sorted) {
+    const s = `${f.provider}:${f.id}`;
+    for (let i = 0; i < s.length; i++) {
+      hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
+    }
+  }
+  return `favorites-${favorites.length}-${(hash >>> 0).toString(36)}`
 }
 
 // ── LocalStorage cache for favorites posts ──
@@ -876,12 +880,18 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
       // Only fetch favorites that aren't already in cache
       const toFetch = favorites.filter(f => !accumulated.has(`${f.provider}:${f.id}`))
 
+      let lastProgressUpdate = 0
+      const PROGRESS_THROTTLE_MS = 3000
+
       const addProgress = (count: number) => {
         loadedCount += count
         const displayed = Math.min(loadedCount, favorites.length)
         setProgress({ loaded: displayed, total: favorites.length })
+        
         // Push partial results to SWR cache so UI updates progressively
-        if (cacheKey) {
+        const now = Date.now()
+        if (cacheKey && (now - lastProgressUpdate > PROGRESS_THROTTLE_MS || loadedCount >= favorites.length)) {
+          lastProgressUpdate = now
           mutate(cacheKey, getSortedPosts(favorites, accumulated), { revalidate: false })
         }
       }

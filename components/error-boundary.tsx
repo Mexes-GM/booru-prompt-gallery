@@ -67,6 +67,11 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
            error.message.includes('Failed to execute') && (error.message.includes('insertBefore') || error.message.includes('removeChild'))
   }
 
+  isRenderLoopError(error: Error): boolean {
+    return error.message.includes('Maximum update depth exceeded') ||
+           error.message.includes('#185')
+  }
+
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     // Update state so the next render will show the fallback UI
     return { hasError: true, error }
@@ -82,6 +87,12 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
       Sentry.setTag('error_type', 'dom_manipulation')
       Sentry.setTag('likely_cause', 'browser_translator')
     }
+
+    // Check if it's a render loop error (React #185)
+    if (this.isRenderLoopError(error)) {
+      Sentry.setTag('error_type', 'render_loop')
+      Sentry.setTag('likely_cause', 'cache_loop')
+    }
   }
 
   resetError = () => {
@@ -95,19 +106,39 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         return <FallbackComponent error={this.state.error} resetError={this.resetError} />
       }
 
+      const isRenderLoop = this.state.error ? this.isRenderLoopError(this.state.error) : false
+
       return (
         <div className="min-h-screen flex items-center justify-center p-4">
           <div className="max-w-md w-full space-y-4">
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Something went wrong. This might be caused by browser translation features.
-                Try disabling auto-translate for this site or refresh the page.
+                {isRenderLoop
+                  ? 'The app encountered a loading error, likely caused by cached data. Clear the cache and try again.'
+                  : 'Something went wrong. This might be caused by browser translation features. Try disabling auto-translate for this site or refresh the page.'
+                }
               </AlertDescription>
             </Alert>
             
             <div className="flex flex-col gap-2">
-              <Button onClick={this.resetError} className="w-full">
+              {isRenderLoop && (
+                <Button
+                  onClick={() => {
+                    try {
+                      Object.keys(localStorage)
+                        .filter(k => k.startsWith('booru_fav_cache_'))
+                        .forEach(k => localStorage.removeItem(k))
+                    } catch { /* localStorage might be inaccessible */ }
+                    window.location.reload()
+                  }}
+                  className="w-full"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Clear Cache &amp; Retry
+                </Button>
+              )}
+              <Button onClick={this.resetError} className="w-full"{...(isRenderLoop ? { variant: 'outline' as const } : {})}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Try Again
               </Button>

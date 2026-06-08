@@ -65,7 +65,7 @@ export async function imageProxyHandler(
 
   // No url param = not an image proxy request (could be root health check)
   if (!imageUrl) {
-    return new Response(JSON.stringify({ status: 'ok', worker: 'booru-api' }), {
+    return new Response(JSON.stringify({ status: 'ok', worker: 'booru-image-proxy' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
     })
