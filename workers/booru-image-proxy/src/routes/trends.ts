@@ -119,7 +119,7 @@ export async function trendsHandler(
 
     if (!provider.getTrending) {
       if (supabase && existingId) {
-        ctx.waitUntil(supabase.from(TABLE).update({ fetching_since: null }).eq('id', existingId))
+        ctx.waitUntil((async () => { await supabase.from(TABLE).update({ fetching_since: null }).eq('id', existingId) })())
       }
       return new Response(
         JSON.stringify({ error: 'Provider does not support trending' }),
@@ -133,7 +133,7 @@ export async function trendsHandler(
     } catch (err) {
       console.error('[trends] Failed to fetch from Danbooru:', err)
       if (supabase && existingId) {
-        ctx.waitUntil(supabase.from(TABLE).update({ fetching_since: null }).eq('id', existingId))
+        ctx.waitUntil((async () => { await supabase.from(TABLE).update({ fetching_since: null }).eq('id', existingId) })())
       }
       return new Response(
         JSON.stringify({ error: 'Failed to fetch trending data' }),

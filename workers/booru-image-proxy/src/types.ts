@@ -13,5 +13,6 @@ export interface Env {
   RULE34_USER_ID?: string
   DISCORD_FEEDBACK_WEBHOOK_URL?: string
   APP_VERSION?: string
+  SERVER_GEMINI_API_KEY?: string
   AI?: Ai
 }

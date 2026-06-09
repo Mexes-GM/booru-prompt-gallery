@@ -39,6 +39,7 @@ export function ConvertPromptDialog({ open, onOpenChange, tags }: ConvertPromptD
   // Local state for settings form
   const [tempProvider, setTempProvider] = useState<LLMProvider>('cloudflare')
   const [tempApiKey, setTempApiKey] = useState('')
+  const [tempCustomModel, setTempCustomModel] = useState('')
 
   React.useEffect(() => {
     setHasConverted(false)
@@ -49,15 +50,16 @@ export function ConvertPromptDialog({ open, onOpenChange, tags }: ConvertPromptD
     if (open && isLoaded && !isLoading && !hasConverted) {
       setTempProvider(settings.provider)
       setTempApiKey(settings.apiKey)
+      setTempCustomModel(settings.customModel || '')
       setResult('')
       setError(null)
       setActiveTab('result')
-      handleConvert(settings.provider, settings.apiKey)
+      handleConvert(settings.provider, settings.apiKey, settings.customModel)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isLoaded, hasConverted])
 
-  const handleConvert = async (provider: string, apiKey: string) => {
+  const handleConvert = async (provider: string, apiKey: string, customModel?: string) => {
     if (!tags) return
 
     setIsLoading(true)
@@ -75,6 +77,7 @@ export function ConvertPromptDialog({ open, onOpenChange, tags }: ConvertPromptD
           tags,
           provider,
           apiKey: provider === 'cloudflare' ? undefined : apiKey,
+          model: customModel || undefined,
         }),
       })
 
@@ -93,7 +96,7 @@ export function ConvertPromptDialog({ open, onOpenChange, tags }: ConvertPromptD
       setError(err.message)
       toast({
         title: 'Conversion Failed',
-        description: error.message,
+        description: err.message,
         variant: 'destructive',
       })
     } finally {
@@ -102,12 +105,12 @@ export function ConvertPromptDialog({ open, onOpenChange, tags }: ConvertPromptD
   }
 
   const handleSaveSettings = () => {
-    saveSettings({ provider: tempProvider, apiKey: tempApiKey })
+    saveSettings({ provider: tempProvider, apiKey: tempApiKey, customModel: tempCustomModel })
     toast({
       title: 'Settings Saved',
       description: 'Your API preferences have been updated.',
     })
-    handleConvert(tempProvider, tempApiKey)
+    handleConvert(tempProvider, tempApiKey, tempCustomModel)
     setActiveTab('result')
   }
 
@@ -160,7 +163,7 @@ export function ConvertPromptDialog({ open, onOpenChange, tags }: ConvertPromptD
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
-                onClick={() => handleConvert(settings.provider, settings.apiKey)}
+                onClick={() => handleConvert(settings.provider, settings.apiKey, settings.customModel)}
                 disabled={isLoading}
               >
                 Retry
@@ -181,31 +184,48 @@ export function ConvertPromptDialog({ open, onOpenChange, tags }: ConvertPromptD
                     <SelectValue placeholder="Select a provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cloudflare">Cloudflare Workers AI (Free)</SelectItem>
-                    <SelectItem value="openai">OpenAI (GPT-4o-mini)</SelectItem>
-                    <SelectItem value="gemini">Google Gemini (Flash)</SelectItem>
+                    <SelectItem value="cloudflare">Cloudflare Free (Gemma Fallback)</SelectItem>
+                    <SelectItem value="openai">OpenAI (GPT-5.4 Mini)</SelectItem>
+                    <SelectItem value="gemini">Google Gemini (3.5 Flash)</SelectItem>
+                    <SelectItem value="claude">Anthropic Claude (4.6 Sonnet)</SelectItem>
+                    <SelectItem value="deepseek">DeepSeek (Chat)</SelectItem>
+                    <SelectItem value="openrouter">OpenRouter</SelectItem>
                   </SelectContent>
                 </Select>
                 {tempProvider === 'cloudflare' && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Uses Llama 3 8B. Completely free, no API key required.
+                    Free tier. Uses Google Gemma 4 31B with fallback to Cloudflare Llama-3. No API key needed.
                   </p>
                 )}
               </div>
 
               {tempProvider !== 'cloudflare' && (
-                <div className="space-y-2">
-                  <Label>API Key</Label>
-                  <Input
-                    type="password"
-                    placeholder={`Enter your ${tempProvider} API key`}
-                    value={tempApiKey}
-                    onChange={(e) => setTempApiKey(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Your key is stored securely in your browser&apos;s localStorage.
-                  </p>
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <Label>API Key</Label>
+                    <Input
+                      type="password"
+                      placeholder={`Enter your ${tempProvider} API key`}
+                      value={tempApiKey}
+                      onChange={(e) => setTempApiKey(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Stored securely in your browser&apos;s localStorage.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Custom Model Name (Optional)</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. gpt-5.5, claude-4.6-sonnet, deepseek-chat"
+                      value={tempCustomModel}
+                      onChange={(e) => setTempCustomModel(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Leave blank to use the default state-of-the-art model for this provider.
+                    </p>
+                  </div>
+                </>
               )}
 
               <Button className="w-full" onClick={handleSaveSettings}>

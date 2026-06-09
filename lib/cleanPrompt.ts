@@ -273,6 +273,8 @@ const CURATED_META_LIST = withNormalizedVariants([
   "game logo",
   "anime logo",
   "manga logo",
+  "instagram logo",
+  "pixiv logo",
   "character name",
   "series name",
   "franchise name",

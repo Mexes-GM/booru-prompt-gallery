@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
 
-export type LLMProvider = 'cloudflare' | 'openai' | 'gemini'
+export type LLMProvider = 'cloudflare' | 'openai' | 'gemini' | 'claude' | 'deepseek' | 'openrouter'
 
 export interface LLMSettings {
   provider: LLMProvider
   apiKey: string
+  customModel?: string
 }
 
 const DEFAULT_SETTINGS: LLMSettings = {
   provider: 'cloudflare',
   apiKey: '',
+  customModel: '',
 }
 
 // NOTE: API keys are stored in localStorage in plaintext.
