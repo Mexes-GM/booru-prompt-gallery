@@ -83,12 +83,14 @@ const PROVIDER_MODELS: Record<string, { id: string; label: string; tag?: string 
 interface AiConvertStickyFooterProps {
   isOpen: boolean
   tags: string
+  image?: string
   onExit: () => void
 }
 
 const AiConvertStickyFooterComponent = ({
   isOpen,
   tags,
+  image,
   onExit
 }: AiConvertStickyFooterProps) => {
   const { settings, saveSettings, isLoaded } = useLLMSettings()
@@ -198,6 +200,7 @@ const AiConvertStickyFooterComponent = ({
           provider: prov,
           apiKey: prov === 'cloudflare' ? undefined : key,
           model: model || undefined,
+          image: image || undefined,
         }),
       })
 

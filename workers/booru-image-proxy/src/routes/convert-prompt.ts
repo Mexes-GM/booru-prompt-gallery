@@ -103,7 +103,8 @@ const TEXT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 // '@cf/meta/llama-3.3-70b-instruct-fp8-fast' — 70B, most natural prose
 // '@cf/zai-org/glm-4.7-flash' — instruction-following, fast
 // '@cf/meta/llama-3.1-8b-instruct-fast' — 8B, fastest
-const VISION_MODEL = '@cf/mistralai/mistral-small-3.1-24b-instruct'
+const VISION_MODEL = '@cf/google/gemma-4-26b-a4b-it'
+// Gemma 4 26B MoE (4B active) — vision, fast, uses free CF neurons quota
 
 function isExternalUrl(s: string): boolean {
   return s.startsWith('http://') || s.startsWith('https://')
@@ -224,6 +225,17 @@ Describe the character, their appearance, outfit, pose, the setting, and the lig
   }
 }
 
+/**
+ * Build multimodal messages for providers with native vision (OpenAI, Claude, OpenRouter).
+ * The provider downloads the image directly — no proxy needed.
+ */
+function buildNativeVisionUserContent(tags: string | undefined, image: string): string {
+  if (tags) {
+    return `TAGS:\n${tags}\n\nDescribe this image in natural language, combining the character/outfit/scene information from the tags with the visual details (colors, lighting, composition, spatial relationships) you see in the image.`
+  }
+  return 'Describe this image as a natural language prompt for an image generator. Focus on subject identity, appearance, clothing, pose, setting, lighting, and composition.'
+}
+
 function buildTextMessages(tags: string, model?: string) {
   const userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags)
   return {
@@ -233,6 +245,60 @@ function buildTextMessages(tags: string, model?: string) {
       { role: 'user', content: userMessage }
     ]
   }
+}
+
+/**
+ * Analyze an image using the free vision model (Gemma 4) and return a concise
+ * visual description to inject into the prompt of text-only models.
+ * Returns empty string on failure so the pipeline degrades gracefully.
+ */
+async function analyzeImageForPrompt(
+  tags: string | undefined,
+  image: string,
+  workerHost: string,
+  ai: Ai | undefined,
+): Promise<string> {
+  if (!ai) return ''
+  try {
+    const vision = buildVisionMessages(tags, image, workerHost)
+    const response = await ai.run(vision.model, { messages: vision.messages }) as any
+    const description = response.response
+      || response.choices?.[0]?.message?.content
+      || response.choices?.[0]?.text
+      || ''
+    return description?.trim() || ''
+  } catch (err) {
+    console.error('analyzeImageForPrompt error:', err)
+    return ''
+  }
+}
+
+/**
+ * Build text messages enriched with an image description for models that
+ * lack native vision. The description is injected as context before the tags.
+ */
+function buildEnrichedUserMessage(imageDescription: string, tags: string): string {
+  return `[Visual analysis of the reference image]:\n${imageDescription}\n\nTAGS:\n${tags}\n\nUsing both the visual analysis above and the tags below, produce a natural language description. The visual analysis provides colors, lighting, composition and spatial details. The tags provide character identity, outfits, and attributes. Combine both sources.`
+}
+
+function buildTextMessagesWithVision(tags: string, imageDescription: string, model?: string) {
+  return {
+    model: model || TEXT_MODEL,
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: buildEnrichedUserMessage(imageDescription, tags) }
+    ]
+  }
+}
+
+/** Extract text result from a Workers AI response (multiple possible shapes). */
+function extractCfAiResult(response: any): string {
+  return response.response
+    || response.choices?.[0]?.message?.content
+    || response.choices?.[0]?.text
+    || response.content
+    || response.text
+    || ''
 }
 
 export async function convertPromptHandler(
@@ -351,21 +417,16 @@ export async function convertPromptHandler(
 
       try {
         if (image) {
-          // Vision path: route image through worker proxy, send to multimodal model
-          const vision = buildVisionMessages(tags, image, workerHost)
-          const response = await env.AI.run(vision.model, { messages: vision.messages }) as any
-          return jsonResponse({ result: response.response || response.choices?.[0]?.message?.content || '' }, 200, rlHeaders)
+          // Vision path: analyze image with Gemma 4, then feed to text model
+          const imageDesc = await analyzeImageForPrompt(tags, image, workerHost, env.AI)
+          const textMsg = buildTextMessagesWithVision(tags || '', imageDesc, customModel)
+          const response = await env.AI.run(textMsg.model, { messages: textMsg.messages }) as any
+          return jsonResponse({ result: extractCfAiResult(response) }, 200, rlHeaders)
         } else {
           // Text path
           const textMsg = buildTextMessages(tags!, customModel)
           const response = await env.AI.run(textMsg.model, { messages: textMsg.messages }) as any
-          // Try all known response shapes
-          const result = response.response
-            || response.choices?.[0]?.message?.content
-            || response.choices?.[0]?.text
-            || response.content
-            || response.text
-            || ''
+          const result = extractCfAiResult(response)
           if (!result) {
             console.error('Empty AI response:', JSON.stringify(response).slice(0, 500))
           }
@@ -385,16 +446,27 @@ export async function convertPromptHandler(
 
     // ── OpenAI ──
     if (provider === 'openai') {
-      if (image) return errorResponse('Image to prompt conversion is currently only supported with Cloudflare AI', 400)
-      const userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+      let messages: any[]
+      if (image) {
+        // Native vision: user's key, OpenAI downloads the image
+        const imgUrl = isExternalUrl(image) ? proxyImageUrl(image, workerHost) : image
+        messages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: [
+            { type: 'text', text: buildNativeVisionUserContent(tags, image) },
+            { type: 'image_url', image_url: { url: imgUrl } }
+          ]}
+        ]
+      } else {
+        messages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string) }
+        ]
+      }
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: customModel || 'gpt-5.4-mini',
-          messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userMessage }],
-          temperature: 0.7
-        })
+        body: JSON.stringify({ model: customModel || 'gpt-5.4-mini', messages, temperature: 0.7 })
       })
       if (!res.ok) {
         const error = await res.json() as any;
@@ -412,11 +484,24 @@ export async function convertPromptHandler(
 
     // ── Gemini ──
     if (provider === 'gemini') {
-      if (image) return errorResponse('Image to prompt conversion is currently only supported with Cloudflare AI', 400)
-      const userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${customModel || 'gemini-3.5-flash'}:generateContent`, {
+      if (!apiKey) {
+        return errorResponse('Gemini API key required. Provide your own key in ⚙️ Settings.', 400)
+      }
+
+      let userMessage: string
+      if (image) {
+        // Gemini fileData.fileUri doesn't accept external URLs — use Gemma 4 vision pipeline
+        if (!env.AI) return errorResponse('AI service temporarily unavailable', 503)
+        const imageDesc = await analyzeImageForPrompt(tags, image, workerHost, env.AI)
+        userMessage = buildEnrichedUserMessage(imageDesc, tags as string)
+      } else {
+        userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+      }
+
+      const modelName = customModel || 'gemini-3.5-flash'
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey as string },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
           systemInstruction: {
             parts: [{ text: SYSTEM_PROMPT }]
@@ -442,8 +527,17 @@ export async function convertPromptHandler(
 
     // ── Claude (Anthropic) ──
     if (provider === 'claude') {
-      if (image) return errorResponse('Image to prompt conversion is currently only supported with Cloudflare AI', 400)
-      const userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+      let claudeContent: any
+      if (image) {
+        // Native vision: user's key, Claude downloads the image
+        const imgUrl = isExternalUrl(image) ? proxyImageUrl(image, workerHost) : image
+        claudeContent = [
+          { type: 'text', text: buildNativeVisionUserContent(tags, image) },
+          { type: 'image', source: { type: 'url', url: imgUrl } }
+        ]
+      } else {
+        claudeContent = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+      }
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -452,10 +546,9 @@ export async function convertPromptHandler(
           'anthropic-version': '2024-06-01',
         },
         body: JSON.stringify({
-          // Correct Anthropic model ID format: family-version (e.g. claude-sonnet-4-6)
           model: customModel || 'claude-sonnet-4-6',
           system: SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: userMessage }],
+          messages: [{ role: 'user', content: claudeContent }],
           temperature: 0.7, max_tokens: 1024
         })
       })
@@ -477,8 +570,14 @@ export async function convertPromptHandler(
 
     // ── DeepSeek ──
     if (provider === 'deepseek') {
-      if (image) return errorResponse('Image to prompt conversion is currently only supported with Cloudflare AI', 400)
-      const userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+      let userMessage: string
+      if (image) {
+        if (!env.AI) return errorResponse('AI service temporarily unavailable', 503)
+        const imageDesc = await analyzeImageForPrompt(tags, image, workerHost, env.AI)
+        userMessage = buildEnrichedUserMessage(imageDesc, tags as string)
+      } else {
+        userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+      }
       const res = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -504,21 +603,34 @@ export async function convertPromptHandler(
 
     // ── OpenRouter ──
     if (provider === 'openrouter') {
-      if (image) return errorResponse('Image to prompt conversion is currently only supported with Cloudflare AI', 400)
-      const userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+      let messages: any[]
+      if (image) {
+        // Native vision: user's key, OpenRouter passes through to underlying model
+        const imgUrl = isExternalUrl(image) ? proxyImageUrl(image, workerHost) : image
+        messages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: [
+            { type: 'text', text: buildNativeVisionUserContent(tags, image) },
+            { type: 'image_url', image_url: { url: imgUrl } }
+          ]}
+        ]
+      } else {
+        messages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string) }
+        ]
+      }
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
-          // OpenRouter requires these headers for attribution and routing
           'HTTP-Referer': 'https://booru-prompt-gallery.pages.dev',
           'X-Title': 'Booru Prompt Gallery',
         },
         body: JSON.stringify({
           model: customModel || 'google/gemini-3.5-flash',
-          messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userMessage }],
-          temperature: 0.7
+          messages, temperature: 0.7
         })
       })
       if (!res.ok) {
