@@ -356,14 +356,16 @@ export function PromptGallery() {
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
   const [aiConvertTags, setAiConvertTags] = useState("")
+  const [aiConvertImage, setAiConvertImage] = useState<string | undefined>(undefined)
 
   // Handle sending tags to convert and auto-enable mode
-  const handleSendToConvert = useCallback((tagsToSend: string) => {
+  const handleSendToConvert = useCallback((tagsToSend: string, imageUrl?: string) => {
     // Disable merge mode if active
     if (mergeMode.isMergeMode) {
       mergeMode.disableMergeMode()
     }
     setAiConvertTags(tagsToSend)
+    setAiConvertImage(imageUrl)
     setIsAiConvertMode(true)
   }, [mergeMode])
 
@@ -2605,6 +2607,7 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
       <AiConvertStickyFooter
         isOpen={isAiConvertMode}
         tags={aiConvertTags}
+        image={aiConvertImage}
         onExit={() => setIsAiConvertMode(false)}
       />
 
