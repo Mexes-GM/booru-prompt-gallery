@@ -133,6 +133,7 @@ import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 
 import { useMergeMode } from "@/hooks/use-merge-mode"
 import { MergeStickyFooter } from "./merge-sticky-footer"
+import { AiConvertStickyFooter } from "./ai-convert-sticky-footer"
 import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { SaveFavoriteButton } from "./save-favorite-button"
@@ -351,6 +352,37 @@ export function PromptGallery() {
 
   // Merge Mode Hook
   const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags)
+
+  // Natural Language AI Mode State
+  const [isAiConvertMode, setIsAiConvertMode] = useState(false)
+  const [aiConvertTags, setAiConvertTags] = useState("")
+
+  // Handle sending tags to convert and auto-enable mode
+  const handleSendToConvert = useCallback((tagsToSend: string) => {
+    // Disable merge mode if active
+    if (mergeMode.isMergeMode) {
+      mergeMode.disableMergeMode()
+    }
+    setAiConvertTags(tagsToSend)
+    setIsAiConvertMode(true)
+  }, [mergeMode])
+
+  // Custom wrapper to enable/disable modes mutually exclusively
+  const toggleAiConvertMode = useCallback(() => {
+    setIsAiConvertMode(prev => {
+      const next = !prev
+      if (next && mergeMode.isMergeMode) {
+        mergeMode.disableMergeMode()
+      }
+      return next
+    })
+  }, [mergeMode])
+
+  // Wrapper for toggling merge mode to automatically disable AI mode
+  const handleToggleMergeMode = useCallback(() => {
+    setIsAiConvertMode(false)
+    mergeMode.toggleMergeMode()
+  }, [mergeMode])
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -779,8 +811,10 @@ export function PromptGallery() {
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
       onImageError={handleImageError}
+      isNaturalLanguageMode={isAiConvertMode}
+      onSendToConvert={handleSendToConvert}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, backgroundRemoveMode, randomBackgroundIncludeGradients, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, backgroundRemoveMode, randomBackgroundIncludeGradients, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1153,6 +1187,27 @@ export function PromptGallery() {
                     </div>
 <div className="space-y-0">
 {/* Newest first — reverse chronological order */}
+
+{/* Item 5: Convert to Natural Language */}
+<div className="border-l-4 border-pink-500 bg-pink-500/10 hover:bg-pink-500/15 transition-colors p-4 rounded-r-lg">
+<div className="flex items-start gap-3">
+<div className="flex-shrink-0 mt-0.5">
+<div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-500/20">
+<Sparkles className="h-4 w-4 text-pink-600 dark:text-pink-400" />
+</div>
+</div>
+<div className="flex-1">
+<div className="flex items-center gap-2 mb-2">
+<p className="text-sm font-semibold text-foreground leading-snug">Convert to Natural Language</p>
+<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-pink-500/15 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20">New</Badge>
+</div>
+<p className="text-xs text-muted-foreground leading-relaxed">
+You can now convert booru-style prompts into natural language prompts using Vision and LLM models. The recent release of Anima accelerated the development and implementation of this feature. Every user gets <strong>10 free requests per day</strong> to try the system with free-tier models that work decently well. If you want unlimited access, you can plug in your own API key to remove all limits. To get started, click the star button at the bottom-right of the page, or hover over any card and press the star icon next to favorites to send a prompt directly for conversion.
+</p>
+</div>
+</div>
+</div>
+<div className="h-px bg-border/60 mx-3" />
 
 {/* Item 2: Migration Planning */}
 <div className="border-l-4 border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 rounded-r-lg">
@@ -2481,12 +2536,28 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
           </footer>
         </main>
 
-        <div className={`fixed ${mergeMode.isMergeMode ? 'bottom-[220px] sm:bottom-[200px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none hidden'
+        <div className={`fixed ${mergeMode.isMergeMode ? 'bottom-[220px] sm:bottom-[200px]' : isAiConvertMode ? 'bottom-[200px] sm:bottom-[180px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none hidden'
           }`}>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
-                onClick={mergeMode.toggleMergeMode}
+                onClick={toggleAiConvertMode}
+                variant={isAiConvertMode ? "default" : "secondary"}
+                className={`rounded-full shadow-lg h-10 w-10 p-0 ${isAiConvertMode ? "" : "bg-background/80 backdrop-blur border"}`}
+                aria-label={isAiConvertMode ? "Disable AI Mode" : "Enable AI Mode"}
+              >
+                <Sparkles className="h-5 w-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {isAiConvertMode ? "Disable AI Mode" : "Enable AI Mode"}
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={handleToggleMergeMode}
                 variant={mergeMode.isMergeMode ? "default" : "secondary"}
                 className={`rounded-full shadow-lg h-10 w-10 p-0 ${mergeMode.isMergeMode ? "" : "bg-background/80 backdrop-blur border"}`}
                 aria-label={mergeMode.isMergeMode ? "Disable Merge Mode" : "Enable Merge Mode"}
@@ -2522,7 +2593,7 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
         mergedPromptSegments={mergeMode.mergedPromptSegments}
         onRemovePost={mergeMode.removePost}
         onClearAll={mergeMode.clearAll}
-        onExit={mergeMode.toggleMergeMode}
+        onExit={handleToggleMergeMode}
         onCopy={(text) => copyToClipboard(text, 0, true)}
         onRemoveTag={mergeMode.excludeTag}
         mergeModeType={mergeMode.mergeModeType}
@@ -2530,6 +2601,11 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
         onRandomize={() => mergeMode.setRandomSelection(finalPosts)}
         randomSettings={mergeMode.randomSettings}
         setRandomSettings={mergeMode.setRandomSettings}
+      />
+      <AiConvertStickyFooter
+        isOpen={isAiConvertMode}
+        tags={aiConvertTags}
+        onExit={() => setIsAiConvertMode(false)}
       />
 
       <GlobalWeightsModal

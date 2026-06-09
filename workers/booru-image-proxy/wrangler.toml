@@ -3,7 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-06-07"
 
 [vars]
-APP_VERSION = "9.4.0"
+APP_VERSION = "9.5.0"
 
 # Secrets set via `wrangler secret put`:
 # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,

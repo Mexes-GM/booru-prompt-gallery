@@ -4,16 +4,29 @@ import { getRedis } from '../lib/redis'
 
 
 const ALLOWED_DOMAINS = [
+  // Gelbooru
   'gelbooru.com',
   'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com',
+  // Danbooru
   'danbooru.donmai.us',
   'cdn.donmai.us',
+  // Aibooru
+  'aibooru.online',
+  'cdn.aibooru.download',
+  // Rule34
+  'rule34.xxx',
+  'api.rule34.xxx',
+  // E621 / E926
+  'e621.net',
+  'static1.e621.net',
+  'e926.net',
 ]
 
 const ALLOWED_ORIGINS = [
   'https://booru-prompt-gallery.com',
   'https://www.booru-prompt-gallery.com',
   'https://booru-prompt-gallery.netlify.app',
+  'https://booru-prompt-gallery.vercel.app',
   'http://localhost:3000',
 ]
 

@@ -34,7 +34,7 @@ import {
 import { PROVIDER_POST_URLS } from "@/lib/constants"
 import { getDanbooruProxyUrl, getGelbooruProxyUrl } from "@/lib/proxy-url"
 import { cleanPrompt } from "@/lib/cleanPrompt"
-import { type BackgroundMode } from "@/lib/background-detector"
+import { type BackgroundMode, type BackgroundRemoveMode } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
 import { classifyTags, TagCategory, ClassifiedTags } from "@/lib/tag-classifier"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
@@ -50,7 +50,6 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { SaveFavoriteButton } from "./save-favorite-button"
 import { SaveArtistButton } from "./save-artist-button"
-import { ConvertPromptDialog } from "./convert-prompt-dialog"
 import { FavoriteFolder } from "@/hooks/use-booru-favorites"
 import { trackExternalLink } from "@/lib/analytics"
 import { toast } from "@/hooks/use-toast"
@@ -149,7 +148,7 @@ interface MasonryItemProps {
     backgroundMode?: BackgroundMode
     simpleBackgroundReplacementTags?: string
     randomBackgroundPatterns?: boolean
-    backgroundRemoveMode?: string
+    backgroundRemoveMode?: BackgroundRemoveMode
     randomBackgroundIncludeGradients?: boolean
     tagOverrides: Record<string, string>
     copiedId: number | null
@@ -161,6 +160,8 @@ interface MasonryItemProps {
     onGlobalWeightChange?: (tag: string, weight: number) => void
     onSearch?: (tag: string) => void
     onImageError?: () => void
+    isNaturalLanguageMode?: boolean
+    onSendToConvert?: (tags: string) => void
 }
 
 // Memoized MasonryItem to prevent unnecessary re-renders
@@ -207,13 +208,14 @@ export const MasonryItem = memo(function MasonryItem({
     onGlobalWeightChange,
     onSearch,
     onImageError,
+    isNaturalLanguageMode = false,
+    onSendToConvert,
 }: MasonryItemProps) {
     const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
     const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
 
     // State to hold modified prompt from user interaction
     const [modifiedContent, setModifiedContent] = useState<string | null>(null)
-    const [isConvertDialogOpen, setIsConvertDialogOpen] = useState(false)
 
     const [imageError, setImageError] = useState(false)
     const [retryKey, setRetryKey] = useState(0)
@@ -680,12 +682,13 @@ export const MasonryItem = memo(function MasonryItem({
                                     onClick={(e) => {
                                         e.preventDefault()
                                         e.stopPropagation()
-                                        setIsConvertDialogOpen(true)
+                                        onSendToConvert?.(modifiedContent ?? displayContent)
                                     }}
                                     aria-label="Convert to Natural Language"
                                 >
                                     <Sparkles
-                                        className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} text-blue-400`}
+                                        className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} text-primary`}
+                                        aria-hidden="true"
                                     />
                                 </Button>
                             </TooltipTrigger>
@@ -727,35 +730,48 @@ export const MasonryItem = memo(function MasonryItem({
                     </div>
 
                     <div className="flex button-group items-stretch isolate">
-                        <Button
-                            onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
-                            className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
-                            variant={copiedId === post.id ? "default" : "outline"}
-                            disabled={!displayContent}
-                            aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
-                        >
-                            {copiedId === post.id ? (
-                                <>
-                                    <Check className={`${getIconClass()} mr-1`} />
-                                    {effectiveScale === "small" ? "OK" : "Copied!"}
-                                </>
-                            ) : (
-                                <>
-                                    <Copy className={`${getIconClass()} mr-1`} />
-                                {effectiveScale === "small" ? "Copy" : (isPreviouslyCopied ? "Copy Again" : "Copy")}
-                                </>
-                            )}
-                        </Button>
+                        {isNaturalLanguageMode ? (
+                            <Button
+                                onClick={() => onSendToConvert?.(modifiedContent ?? displayContent)}
+                                className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
+                                variant="default"
+                                disabled={!displayContent}
+                                aria-label="Convert tags to Natural Language"
+                            >
+                                <Sparkles className={`${getIconClass()} mr-1.5 text-primary-foreground`} />
+                                Convert
+                            </Button>
+                        ) : (
+                            <Button
+                                onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
+                                className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
+                                variant={copiedId === post.id ? "default" : "outline"}
+                                disabled={!displayContent}
+                                aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
+                            >
+                                {copiedId === post.id ? (
+                                    <>
+                                        <Check className={`${getIconClass()} mr-1`} />
+                                        {effectiveScale === "small" ? "OK" : "Copied!"}
+                                    </>
+                                ) : (
+                                    <>
+                                        <Copy className={`${getIconClass()} mr-1`} />
+                                    {effectiveScale === "small" ? "Copy" : (isPreviouslyCopied ? "Copy Again" : "Copy")}
+                                    </>
+                                )}
+                            </Button>
+                        )}
 
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button
-                                    variant={copiedId === post.id ? "default" : "outline"}
+                                    variant={isNaturalLanguageMode ? "outline" : (copiedId === post.id ? "default" : "outline")}
                                     className="px-2 focus-ring h-auto rounded-l-none"
                                     disabled={!displayContent}
                                     aria-label="Copy options"
                                 >
-                                    <ChevronDown className="h-4 w-4" />
+                                    <ChevronDown className="h-4 w-4" aria-hidden="true" />
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -969,12 +985,12 @@ export const MasonryItem = memo(function MasonryItem({
                                             onClick={(e) => {
                                                 e.preventDefault()
                                                 e.stopPropagation()
-                                                setIsConvertDialogOpen(true)
+                                                onSendToConvert?.(modifiedContent ?? displayContent)
                                             }}
                                             className="focus-ring h-8 w-8"
                                             aria-label="Convert to Natural Language"
                                         >
-                                            <Sparkles className="h-4 w-4 text-blue-400" />
+                                            <Sparkles className="h-4 w-4 text-primary" />
                                         </Button>
                                     </TooltipTrigger>
                                     <TooltipContent>
@@ -1012,25 +1028,38 @@ export const MasonryItem = memo(function MasonryItem({
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-2">
-                            <Button
-                                onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
-                                variant={copiedId === post.id ? "default" : "outline"}
-                                disabled={!displayContent}
-                                className="focus-ring flex-1 sm:flex-none"
-                                aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
-                            >
-                                {copiedId === post.id ? (
-                                    <>
-                                        <Check className="w-4 h-4 mr-2" />
-                                        Copied!
-                                    </>
-                                ) : (
-                                    <>
-                                        <Copy className="w-4 h-4 mr-2" />
-                                        {isPreviouslyCopied ? "Copy Again" : "Copy Prompt"}
-                                    </>
-                                )}
-                            </Button>
+                            {isNaturalLanguageMode ? (
+                                <Button
+                                    onClick={() => onSendToConvert?.(modifiedContent ?? displayContent)}
+                                    variant="default"
+                                    disabled={!displayContent}
+                                    className="focus-ring flex-1 sm:flex-none"
+                                    aria-label="Convert tags to Natural Language"
+                                >
+                                    <Sparkles className="w-4 h-4 mr-2 text-primary-foreground" />
+                                    Convert
+                                </Button>
+                            ) : (
+                                <Button
+                                    onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
+                                    variant={copiedId === post.id ? "default" : "outline"}
+                                    disabled={!displayContent}
+                                    className="focus-ring flex-1 sm:flex-none"
+                                    aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
+                                >
+                                    {copiedId === post.id ? (
+                                        <>
+                                            <Check className="w-4 h-4 mr-2" />
+                                            Copied!
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Copy className="w-4 h-4 mr-2" />
+                                            {isPreviouslyCopied ? "Copy Again" : "Copy Prompt"}
+                                        </>
+                                    )}
+                                </Button>
+                            )}
 
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -1109,24 +1138,15 @@ export const MasonryItem = memo(function MasonryItem({
         </Card>
     )}
 
-    return (
-        <>
-            {renderCard()}
-            <ConvertPromptDialog
-                open={isConvertDialogOpen}
-                onOpenChange={setIsConvertDialogOpen}
-                tags={modifiedContent ?? displayContent ?? ""}
-            />
-        </>
-    )
+    return renderCard()
 }, arePropsEqual)
 
 // Custom comparison function for React.memo to prevent deep unnecessary re-renders.
 // Specifically targets the expensive tagOverrides and globalWeights objects.
 function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
+    if (prev.isNaturalLanguageMode !== next.isNaturalLanguageMode) return false
     if (prev.post.id !== next.post.id) return false
     if (prev.post.tag_string !== next.post.tag_string) return false
-    if (prev.post.tag_string_meta !== next.post.tag_string_meta) return false
     if (prev.width !== next.width) return false
     if (prev.height !== next.height) return false
     if (prev.index !== next.index) return false

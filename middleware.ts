@@ -95,6 +95,9 @@ export async function middleware(request: NextRequest) {
  font-src 'self';
  connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://vitals.vercel-insights.com https://*.ingest.us.sentry.io https://netlify-cdp.netlify.app https://*.workers.dev;
  frame-src 'self' https://vercel.live;
+ object-src 'none';
+ base-uri 'self';
+ form-action 'self';
  `.replace(/\s+/g, ' ').trim()
 
   response.headers.set('Content-Security-Policy', csp)

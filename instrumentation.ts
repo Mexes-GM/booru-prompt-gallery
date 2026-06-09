@@ -16,7 +16,7 @@ export const onRequestError = sentryConfigured
   ? async (err: Error, request: Request, context: unknown) => {
       try {
         const Sentry = await import('@sentry/nextjs')
-        Sentry.captureRequestError(err, request, context as number)
+        Sentry.captureRequestError(err, request as any, context as any)
       } catch {}
     }
   : undefined

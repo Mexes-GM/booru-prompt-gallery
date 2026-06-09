@@ -16,6 +16,12 @@ Booru Prompt Gallery takes posts from digital art websites (Danbooru, Gelbooru, 
 
 Instead of manually copying tags from a booru post and cleaning them by hand, you search for a character or concept, browse the results, and copy a clean prompt in one click.
 
+### Screenshots
+
+![Main panel controls](main_panel_control_preview.jpeg)
+
+![Prompt cards with categorized tags](demo_prompt_cards_preview.jpeg)
+
 ---
 
 ## Features
@@ -95,25 +101,32 @@ Instead of manually copying tags from a booru post and cleaning them by hand, yo
 git clone https://github.com/Mexes-GM/booru-prompt-gallery.git
 cd booru-prompt-gallery
 npm install
-cp .env.example .env
-# Edit .env with your API keys
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). That's it — no `.env` file needed.
 
-## Environment Variables
+> **You don't need to configure anything for local use.** The app fetches directly from public booru APIs (Danbooru, AIBooru, etc.) from your browser. Search, browse, copy prompts, and save favorites (stored in your browser's localStorage) all work out of the box with zero setup.
 
-See [`.env.example`](.env.example) for the full list. At minimum:
+## Environment Variables (production deployment only)
 
-| Variable | Purpose |
-|----------|---------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role (admin operations) |
-| `NEXT_PUBLIC_IMAGE_PROXY_URL` | Cloudflare Worker for image proxying |
-| `DANBOORU_USERNAME` | Danbooru account (for API auth) |
-| `DANBOORU_API_KEY` | Danbooru API key |
+All environment variables are **optional for local development**. They are only needed when deploying to production (Vercel, Netlify) to enable multi-user features.
+
+See [`.env.example`](.env.example) for the full list. Here's what each one does and what happens without it:
+
+| Variable | Purpose | What happens without it |
+|----------|---------|------------------------|
+| `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Multi-device favorites sync + auth | Favorites save to localStorage (anonymous mode); admin panel disabled |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side admin operations | Admin panel disabled; graceful no-op fallback |
+| `NEXT_PUBLIC_IMAGE_PROXY_URL` | Cloudflare Worker for image proxying and API routes | Uses same-origin `/api/*` routes — works fine locally |
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Server-side rate limiting | In-memory fallback (production); disabled entirely in dev mode |
+| `NEXT_PUBLIC_SENTRY_DSN` + `SENTRY_AUTH_TOKEN` | Error tracking | Disabled — Sentry only activates when `NODE_ENV=production` |
+| `DANBOORU_USERNAME` + `DANBOORU_API_KEY` | Higher Danbooru rate limits (server-side) | Client fetches directly from Danbooru's public API — works without keys |
+| `OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY` | AI-powered tag classification | Manual tag classification still works |
+| `DISCORD_FEEDBACK_WEBHOOK_URL` | Feedback form submissions | Feedback form silently disabled |
+| `ADMIN_PASSWORD` | Admin panel access | Admin panel inaccessible (irrelevant for local use) |
+
+**Bottom line**: `npm install && npm run dev` is all you need.
 
 ## Project Structure
 

@@ -8,7 +8,7 @@ import { feedbackHandler } from './routes/feedback'
 import { healthHandler } from './routes/health'
 import { versionHandler } from './routes/version'
 import { convertPromptHandler } from './routes/convert-prompt'
-import { corsHeaders } from './utils'
+import { corsHeaders, getCorsHeaders } from './utils'
 import { imageProxyHandler } from './routes/image-proxy'
 import { trendsHandler } from './routes/trends'
 
@@ -29,24 +29,28 @@ router.get('/api/trends', trendsHandler)
 // Image proxy — legacy path (already deployed, used by NEXT_PUBLIC_IMAGE_PROXY_URL)
 router.get('/', imageProxyHandler)
 
-// OPTIONS preflight
-router.options('*', () => new Response(null, { status: 204, headers: corsHeaders }))
+// OPTIONS preflight — use dynamic CORS based on request origin
+router.options('*', (request: Request) => new Response(null, {
+  status: 204,
+  headers: getCorsHeaders(request.headers.get('Origin')),
+}))
 
 // 404
-router.all('*', () => new Response(JSON.stringify({ error: 'Not found' }), {
+router.all('*', (request: Request) => new Response(JSON.stringify({ error: 'Not found' }), {
   status: 404,
-  headers: { 'Content-Type': 'application/json', ...corsHeaders },
+  headers: { 'Content-Type': 'application/json', ...getCorsHeaders(request.headers.get('Origin')) },
 }))
 
 export default {
   async fetch(request: Request, env: Record<string, string | undefined>, ctx: ExecutionContext): Promise<Response> {
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders })
+      return new Response(null, { status: 204, headers: getCorsHeaders(request.headers.get('Origin')) })
     }
     const response = await router.fetch(request, env, ctx)
     const headers = new Headers(response.headers)
-    for (const [k, v] of Object.entries(corsHeaders)) {
-      if (!headers.has(k)) headers.set(k, v)
+    const requestCorsHeaders = getCorsHeaders(request.headers.get('Origin'))
+    for (const [k, v] of Object.entries(requestCorsHeaders)) {
+      headers.set(k, v)
     }
     return new Response(response.body, { status: response.status, headers })
   },
