@@ -34,7 +34,7 @@ import {
 import { PROVIDER_POST_URLS } from "@/lib/constants"
 import { getDanbooruProxyUrl, getGelbooruProxyUrl } from "@/lib/proxy-url"
 import { cleanPrompt } from "@/lib/cleanPrompt"
-import { type BackgroundMode, type BackgroundRemoveMode } from "@/lib/background-detector"
+import { type BackgroundMode } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
 import { classifyTags, TagCategory, ClassifiedTags } from "@/lib/tag-classifier"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
@@ -148,7 +148,7 @@ interface MasonryItemProps {
     backgroundMode?: BackgroundMode
     simpleBackgroundReplacementTags?: string
     randomBackgroundPatterns?: boolean
-    backgroundRemoveMode?: BackgroundRemoveMode
+
     randomBackgroundIncludeGradients?: boolean
     detailedBackgroundsList?: string[][]
     tagOverrides: Record<string, string>
@@ -197,7 +197,7 @@ export const MasonryItem = memo(function MasonryItem({
     backgroundMode,
     simpleBackgroundReplacementTags,
     randomBackgroundPatterns = false,
-    backgroundRemoveMode,
+
     randomBackgroundIncludeGradients = true,
     detailedBackgroundsList,
     tagOverrides,
@@ -259,10 +259,9 @@ export const MasonryItem = memo(function MasonryItem({
 
     // Shared background options for all cleanPrompt calls
     const bgOptions = useMemo(() => ({
-        backgroundRemoveMode,
         randomBackgroundIncludeGradients,
         detailedBackgroundsList,
-    }), [backgroundRemoveMode, randomBackgroundIncludeGradients, detailedBackgroundsList])
+    }), [randomBackgroundIncludeGradients, detailedBackgroundsList])
 
     // Generate pure content WITHOUT added tags for category copying/classification
     const pureContent = useMemo(() => {
@@ -1169,7 +1168,6 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.backgroundMode !== next.backgroundMode) return false
     if (prev.simpleBackgroundReplacementTags !== next.simpleBackgroundReplacementTags) return false
     if (prev.randomBackgroundPatterns !== next.randomBackgroundPatterns) return false
-    if (prev.backgroundRemoveMode !== next.backgroundRemoveMode) return false
     if (prev.randomBackgroundIncludeGradients !== next.randomBackgroundIncludeGradients) return false
     if (prev.isGlobalWeightsEnabled !== next.isGlobalWeightsEnabled) return false
     if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false

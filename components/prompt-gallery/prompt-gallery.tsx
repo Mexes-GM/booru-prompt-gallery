@@ -72,7 +72,7 @@ import { userPreferences, STORAGE_KEYS, type HistoryItem, type TagPreset } from 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
-import { type BackgroundMode, type BackgroundRemoveMode } from "@/lib/background-detector"
+import { type BackgroundMode } from "@/lib/background-detector"
 import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -280,7 +280,6 @@ export function PromptGallery() {
     STORAGE_KEYS.RANDOM_BACKGROUND_PATTERNS
   )
 
-  const [backgroundRemoveMode, setBackgroundRemoveMode] = useState<BackgroundRemoveMode>('all')
 
   const [randomBackgroundIncludeGradients, setRandomBackgroundIncludeGradients] = useState(true)
 
@@ -806,7 +805,7 @@ export function PromptGallery() {
       backgroundMode={deferredBackgroundMode}
       simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
       randomBackgroundPatterns={randomBackgroundPatterns}
-      backgroundRemoveMode={backgroundRemoveMode}
+
       randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
       detailedBackgroundsList={detailedBackgroundsList}
       tagOverrides={tagOverrides}
@@ -826,7 +825,7 @@ export function PromptGallery() {
       isNaturalLanguageMode={isAiConvertMode}
       onSendToConvert={handleSendToConvert}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, backgroundRemoveMode, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1177,105 +1176,108 @@ export function PromptGallery() {
                 {isAnnouncementsOpen && (
                 <Card className="mt-4 glass-effect overflow-hidden min-w-[280px] mx-auto">
                   <CardContent className="p-3.5">
-                    <div className="relative flex items-center justify-center gap-2 mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10">
-                          <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    <div className="relative flex items-center justify-between mb-4 px-1">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+                          <Sparkles className="h-4 w-4 text-primary" />
                         </div>
-                        <h3 className="text-sm font-semibold text-foreground tracking-tight">Update Notes: v{versionInfo.version}</h3>
+                        <h3 className="text-base font-semibold text-foreground tracking-tight">Update Notes: v{versionInfo.version}</h3>
                       </div>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={() => {
                           setIsAnnouncementsOpen(false)
                           localStorage.setItem('announcements_state', JSON.stringify({ collapsed: true, version: versionInfo.version }))
                         }}
-                        className="absolute right-0 h-7 w-7 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                        className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
                         aria-label="Dismiss update notes"
                       >
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
-<div className="space-y-0">
-{/* Newest first — reverse chronological order */}
+                    
+                    <div className="space-y-3">
+                      {/* Item 6: Detailed Random Backgrounds */}
+                      <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+                              <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Detailed Random Backgrounds</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              Added a new <strong>Detailed Random</strong> background mode. Instead of simple colors or basic patterns, this option applies complete pre-defined environmental tags (like <em>"outdoors, beach, ocean landscape, day"</em>) to your prompts. You can select it from the Backgrounds dropdown menu to quickly test different scenery while keeping your character's pose and clothing intact. (Thanks to "darklnbot003" for the presets)
+                            </p>
+                          </div>
+                        </div>
+                      </div>
 
-{/* Item 5: Convert to Natural Language */}
-<div className="border-l-4 border-pink-500 bg-pink-500/10 hover:bg-pink-500/15 transition-colors p-4 rounded-r-lg">
-<div className="flex items-start gap-3">
-<div className="flex-shrink-0 mt-0.5">
-<div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-500/20">
-<Sparkles className="h-4 w-4 text-pink-600 dark:text-pink-400" />
-</div>
-</div>
-<div className="flex-1">
-<div className="flex items-center gap-2 mb-2">
-<p className="text-sm font-semibold text-foreground leading-snug">Convert to Natural Language</p>
-<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-pink-500/15 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20">New</Badge>
-</div>
-<p className="text-xs text-muted-foreground leading-relaxed">
-You can now convert booru-style prompts into natural language prompts using Vision and LLM models. The recent release of Anima accelerated the development and implementation of this feature. Every user gets <strong>10 free requests per day</strong> to try the system with free-tier models that work decently well. If you want unlimited access, you can plug in your own API key to remove all limits. To get started, click the star button at the bottom-right of the page, or hover over any card and press the star icon next to favorites to send a prompt directly for conversion.
-</p>
-</div>
-</div>
-</div>
-<div className="h-px bg-border/60 mx-3" />
+                      {/* Item 5: Convert to Natural Language */}
+                      <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+                              <BrainCircuit className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Convert to Natural Language</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              You can now convert booru-style prompts into natural language prompts using Vision and LLM models. The recent release of Anima accelerated the development and implementation of this feature. Every user gets <strong>10 free requests per day</strong> to try the system with free-tier models that work decently well. If you want unlimited access, you can plug in your own API key to remove all limits. To get started, click the star button at the bottom-right of the page, or hover over any card and press the star icon next to favorites to send a prompt directly for conversion.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
 
-{/* Item 2: Migration Planning */}
-<div className="border-l-4 border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 rounded-r-lg">
-<div className="flex items-start gap-3">
-<div className="flex-shrink-0 mt-0.5">
-<div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20">
-<AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-</div>
-</div>
-<div className="flex-1">
-<div className="flex items-center gap-2 mb-2">
-<p className="text-sm font-semibold text-foreground leading-snug">Migration Planning</p>
-<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">Important</Badge>
-</div>
-<p className="text-xs text-muted-foreground leading-relaxed">
-The app has grown quite a bit, and I&apos;m glad many people have found it useful! However, the free hosting plans are starting to fall short and Vercel (the main link) is constantly hitting its usage limits. I&apos;m running some tests and experimenting with changes to see if things improve — a full migration to Netlify might happen if needed, but nothing is set in stone yet. I wanted to give you a heads up in advance so you know there&apos;s an alternative link available just in case.
-</p>
-</div>
-</div>
-</div>
-<div className="h-px bg-border/60 mx-3" />
+                      {/* Item 2: Migration Planning */}
+                      <div className="border-l-4 border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20">
+                              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Migration Planning</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 rounded-md">Important</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              The app has grown quite a bit, and I&apos;m glad many people have found it useful! However, the free hosting plans are starting to fall short and Vercel (the main link) is constantly hitting its usage limits. I&apos;m running some tests and experimenting with changes to see if things improve — a full migration to Netlify might happen if needed, but nothing is set in stone yet. I wanted to give you a heads up in advance so you know there&apos;s an alternative link available just in case.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
 
-{/* Item 4: Total Tag Count */}
-<div className="border-l-2 border-purple-500 bg-purple-500/5 hover:bg-purple-500/10 transition-colors p-3">
-<div className="flex items-center justify-center gap-2 mb-1.5">
-<p className="text-xs font-semibold text-foreground leading-snug">Total Tag Count Badge</p>
-<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-purple-500/15 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20">Feature</Badge>
-</div>
-<p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-Added a new badge on the bottom-right of each card showing the total number of tags. This helps quickly identify prompt complexity at a glance.
-</p>
-</div>
-<div className="h-px bg-border/60 mx-3" />
+                      {/* Item 1: Welcome to Open Source */}
+                      <div className="border-l-4 border-blue-500 bg-blue-500/10 hover:bg-blue-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20">
+                              <Github className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Welcome to Open Source!</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 rounded-md">Info</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              I&apos;ve cleaned up and modified the project to make it fully open source. This means the complete code is now available for anyone to download, explore, and run on their own computer. Whether you want to use it as-is, customize it for your own needs, or even contribute improvements, everything is now out in the open.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
 
-{/* Item 1: Welcome to Open Source */}
-<div className="border-l-2 border-green-500 bg-green-500/5 hover:bg-green-500/10 transition-colors p-3">
-<div className="flex items-center justify-center gap-2 mb-1.5">
-<p className="text-xs font-semibold text-foreground leading-snug">Welcome to Open Source!</p>
-<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/20">New</Badge>
-</div>
-<p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-I&apos;ve cleaned up and modified the project to make it fully open source. This means the complete code is now available for anyone to download, explore, and run on their own computer. Whether you want to use it as-is, customize it for your own needs, or even contribute improvements, everything is now out in the open.
-</p>
-</div>
-<div className="h-px bg-border/60 mx-3" />
-
-{/* Item 3: Meta Tag Leakage Fix */}
-<div className="border-l-2 border-blue-500 bg-blue-500/5 hover:bg-blue-500/10 transition-colors p-3">
-<div className="flex items-center justify-center gap-2 mb-1.5">
-<p className="text-xs font-semibold text-foreground leading-snug">Meta Tag Leakage Fix</p>
-<Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20">Fix</Badge>
-</div>
-<p className="text-[11px] text-muted-foreground leading-relaxed text-center">
-Fixed an issue where commentary tags were leaking into cleaned prompts. The tag cleaner now properly filters out meta commentary tags so your prompts stay clean and accurate.
-</p>
-</div>
                     </div>
                   </CardContent>
                 </Card>
@@ -2159,33 +2161,8 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
                                     </Select>
                                   </div>
                                 </div>
-                                <AnimatePresence>
-                                  {backgroundMode === 'remove_all' && (
-                                    <motion.div
-                                      initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
-                                      exit={{ height: 0, opacity: 0 }}
-                                      transition={{ duration: 0.2, ease: "easeInOut" }}
-                                      className="overflow-hidden"
-                                    >
-                                      <div className="pt-3 pl-0 sm:pl-[3.25rem] flex flex-col gap-3">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="text-xs font-medium text-foreground">Scope</span>
-                                          <Select value={backgroundRemoveMode} onValueChange={(val: BackgroundRemoveMode) => setBackgroundRemoveMode(val)}>
-                                            <SelectTrigger className="h-7 text-[11px] w-[130px] bg-background">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="all">Everything</SelectItem>
-                                              <SelectItem value="simple_only">Simple Only</SelectItem>
-                                              <SelectItem value="detailed_only">Detailed Only</SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                  {backgroundMode === 'force_simple' && (
+                                  <AnimatePresence>
+                                    {backgroundMode === 'force_simple' && (
                                     <motion.div
                                       initial={{ height: 0, opacity: 0 }}
                                       animate={{ height: "auto", opacity: 1 }}

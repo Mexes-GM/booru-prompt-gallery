@@ -83,7 +83,7 @@ export const DETAILED_BG_KEYWORDS = [
 ];
 
 // ─── New: Background Remove Granularity ────────────────────────────────────
-export type BackgroundRemoveMode = 'all' | 'simple_only' | 'detailed_only';
+
 
 export interface BackgroundAnalysis {
   type: 'simple' | 'detailed' | 'mixed' | 'unknown';
@@ -198,7 +198,6 @@ export function processBackgroundTags(
   replacementTags: string = "simple background, white background",
   tagOverrides?: Record<string, string>,
   randomOptions?: RandomBackgroundOptions,
-  removeMode: BackgroundRemoveMode = 'all',
   detailedBackgroundsList?: string[][],
 ): string[] {
   if (mode === 'keep') return tags;
@@ -211,23 +210,7 @@ export function processBackgroundTags(
   // Filter out background tags based on granularity
   let newTags: string[];
   
-  if (mode === 'remove_all') {
-    // Apply granularity filtering
-    switch (removeMode) {
-      case 'simple_only':
-        newTags = tags.filter(tag => !isSimpleBgTag(tag));
-        break;
-      case 'detailed_only':
-        newTags = tags.filter(tag => !isDetailedBgTag(tag));
-        break;
-      case 'all':
-      default:
-        newTags = tags.filter(tag => !analysis.backgroundTags.includes(tag));
-        // Also filter scenery-classified tags for full removal
-        newTags = newTags.filter(tag => classifyTag(tag, tagOverrides) !== 'scenery');
-        break;
-    }
-  } else if (mode === 'force_simple' || mode === 'random' || mode === 'detailed_random') {
+  if (mode === 'remove_all' || mode === 'force_simple' || mode === 'random' || mode === 'detailed_random') {
     // Full removal + scenery filter
     newTags = tags.filter(tag => !analysis.backgroundTags.includes(tag));
     newTags = newTags.filter(tag => classifyTag(tag, tagOverrides) !== 'scenery');
