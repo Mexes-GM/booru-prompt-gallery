@@ -4,6 +4,31 @@ import { updateSession } from '@/lib/supabase/middleware'
 import { getRateLimit } from '@/lib/rate-limit'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
+/** Apply common security headers to non-API responses. */
+function applySecurityHeaders(response: NextResponse): void {
+  response.headers.set('X-DNS-Prefetch-Control', 'on')
+  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  response.headers.set('X-Content-Type-Options', 'nosniff')
+  response.headers.set('X-Frame-Options', 'DENY')
+  response.headers.set('X-XSS-Protection', '1; mode=block')
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+
+  const csp = `
+ default-src 'self';
+ script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live https://netlify-cdp.netlify.app;
+ style-src 'self' 'unsafe-inline';
+ img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://*.donmai.us https://*.ko-fi.com https://gelbooru.com https://*.gelbooru.com https://*.workers.dev;
+ font-src 'self';
+ connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://vitals.vercel-insights.com https://*.ingest.us.sentry.io https://netlify-cdp.netlify.app https://*.workers.dev;
+ frame-src 'self' https://vercel.live;
+ object-src 'none';
+ base-uri 'self';
+ form-action 'self';
+ `.replace(/\s+/g, ' ').trim()
+
+  response.headers.set('Content-Security-Policy', csp)
+}
+
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl
   const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
@@ -51,6 +76,22 @@ export async function middleware(request: NextRequest) {
   }
 
   // --- Non-API Routes: Full Supabase auth path ---
+  //
+  // Skip the Supabase round-trip when there are no auth cookies at all.
+  // Supabase cookies are named `sb-<project-ref>-auth-token` (two cookies:
+  // one for access token, one for refresh). If neither exists, getUser()
+  // would return null immediately — we can skip the call entirely.
+  const hasAuthCookie = request.cookies.getAll().some(
+    c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
+  )
+
+  // Admin routes always need auth, so never skip
+  if (!hasAuthCookie && !url.pathname.startsWith('/admin')) {
+    const response = NextResponse.next()
+    applySecurityHeaders(response)
+    return response
+  }
+
   const { response, user } = await updateSession(request)
 
   // Admin route protection with role verification
@@ -79,28 +120,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Security headers for non-API routes
-  response.headers.set('X-DNS-Prefetch-Control', 'on')
-  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
-  response.headers.set('X-XSS-Protection', '1; mode=block')
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-
- // CSP
- const csp = `
- default-src 'self';
- script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live https://netlify-cdp.netlify.app;
- style-src 'self' 'unsafe-inline';
- img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://*.donmai.us https://*.ko-fi.com https://gelbooru.com https://*.gelbooru.com https://*.workers.dev;
- font-src 'self';
- connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://vitals.vercel-insights.com https://*.ingest.us.sentry.io https://netlify-cdp.netlify.app https://*.workers.dev;
- frame-src 'self' https://vercel.live;
- object-src 'none';
- base-uri 'self';
- form-action 'self';
- `.replace(/\s+/g, ' ').trim()
-
-  response.headers.set('Content-Security-Policy', csp)
+  applySecurityHeaders(response)
 
   return response
 }
