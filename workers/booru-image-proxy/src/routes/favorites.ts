@@ -61,7 +61,7 @@ export async function favoritesHandler(
 
       const userKey = `ratelimit:danbooru:${clientIp}`
       const userCount = await redis.incr(userKey)
-      if (userCount === 1) await redis.expire(userKey, 60)
+      await redis.expire(userKey, 60)
       if (userCount > 30) {
         return errorResponse(
           'Too many requests. Please wait before loading favorites.',
@@ -70,9 +70,9 @@ export async function favoritesHandler(
         )
       }
 
-      const globalKey = 'ratelimit:danbooru:global'
+      const globalKey = 'ratelimit:danbooru:global:favorites'
       const globalCount = await redis.incr(globalKey)
-      if (globalCount === 1) await redis.expire(globalKey, 60)
+      await redis.expire(globalKey, 60)
       if (globalCount > 100) {
         return errorResponse(
           'Danbooru requests are temporarily throttled. Please wait a moment.',

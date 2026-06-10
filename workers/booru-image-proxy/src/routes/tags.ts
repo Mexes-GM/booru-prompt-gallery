@@ -16,7 +16,7 @@ async function checkRateLimit(redis: Redis | null, clientIp: string): Promise<bo
   if (!redis) return true
   const key = `ratelimit:tags:${clientIp}`
   const count = await redis.incr(key)
-  if (count === 1) await redis.expire(key, 60)
+  await redis.expire(key, 60)
   return count <= 60
 }
 

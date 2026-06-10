@@ -116,7 +116,7 @@ export async function imageProxyHandler(
   if (redis) {
     const key = `ratelimit:imageproxy:${clientId}`
     const count = await redis.incr(key)
-    if (count === 1) await redis.expire(key, 10)
+    await redis.expire(key, 10)
     
     remaining = Math.max(0, RATE_LIMIT_MAX - count)
     

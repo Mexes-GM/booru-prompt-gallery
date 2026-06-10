@@ -13,7 +13,11 @@ export async function coalesce<T>(
   const cacheKey = `coalesce:cache:${key}`
 
   const cached = await redis.get(cacheKey)
-  if (cached) return JSON.parse(cached) as T
+  if (cached) {
+    console.log(JSON.stringify({ layer: 'worker', event: 'cache_hit', key: cacheKey.substring(0, 100), timestamp: Date.now() }))
+    return JSON.parse(cached) as T
+  }
+  console.log(JSON.stringify({ layer: 'worker', event: 'cache_miss', key: cacheKey.substring(0, 100), timestamp: Date.now() }))
 
   const acquired = await redis.set(lockKey, '1', { nx: true, ex: 10 })
   if (acquired) {

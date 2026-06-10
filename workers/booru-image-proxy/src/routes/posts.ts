@@ -33,7 +33,7 @@ export async function postsHandler(
     // Per-user: sliding window, 90 req/60s (matching Next.js route: 15/10s)
     const userKey = `ratelimit:danbooru:${clientIp}`
     const userCount = await redis.incr(userKey)
-    if (userCount === 1) await redis.expire(userKey, 60)
+    await redis.expire(userKey, 60)
     if (userCount > 90) {
       return errorResponse(
         'Too many requests. Please wait before loading more posts.',
@@ -47,9 +47,9 @@ export async function postsHandler(
     }
 
     // Global rate limit: 480 req/60s (matching Next.js route: 8/1s)
-    const globalKey = 'ratelimit:danbooru:global'
+    const globalKey = 'ratelimit:danbooru:global:posts'
     const globalCount = await redis.incr(globalKey)
-    if (globalCount === 1) await redis.expire(globalKey, 60)
+    await redis.expire(globalKey, 60)
     if (globalCount > 480) {
       return errorResponse(
         'Danbooru requests are temporarily throttled. Please wait a moment.',
