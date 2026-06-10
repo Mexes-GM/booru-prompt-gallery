@@ -186,6 +186,15 @@ export function PromptGallery() {
   // Sync preferences with cloud
   usePreferencesSync()
 
+  const [detailedBackgroundsList, setDetailedBackgroundsList] = useState<string[][]>([])
+
+  useEffect(() => {
+    fetch('/detailed-backgrounds.json')
+      .then(res => res.json())
+      .then(data => setDetailedBackgroundsList(data.map((item: any) => item.scenery)))
+      .catch(err => console.error("Failed to load detailed backgrounds:", err))
+  }, [])
+
   // 2. Local UI State & Persistence
   const [viewMode, setViewMode] = usePersistentState<"grid" | "list">(
     "grid",
@@ -799,6 +808,7 @@ export function PromptGallery() {
       randomBackgroundPatterns={randomBackgroundPatterns}
       backgroundRemoveMode={backgroundRemoveMode}
       randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
+      detailedBackgroundsList={detailedBackgroundsList}
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       setTeachModalData={setTeachModalData}
@@ -816,7 +826,7 @@ export function PromptGallery() {
       isNaturalLanguageMode={isAiConvertMode}
       onSendToConvert={handleSendToConvert}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, backgroundRemoveMode, randomBackgroundIncludeGradients, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, backgroundRemoveMode, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -2143,7 +2153,8 @@ Fixed an issue where commentary tags were leaking into cleaned prompts. The tag 
                                         <SelectItem value="keep">Keep Original</SelectItem>
                                         <SelectItem value="remove_all">Remove All</SelectItem>
                                         <SelectItem value="force_simple">Replace</SelectItem>
-                                        <SelectItem value="random">Random</SelectItem>
+                                        <SelectItem value="random">Simple Random</SelectItem>
+                                        <SelectItem value="detailed_random">Detailed Random</SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </div>

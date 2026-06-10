@@ -150,6 +150,7 @@ interface MasonryItemProps {
     randomBackgroundPatterns?: boolean
     backgroundRemoveMode?: BackgroundRemoveMode
     randomBackgroundIncludeGradients?: boolean
+    detailedBackgroundsList?: string[][]
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
@@ -198,6 +199,7 @@ export const MasonryItem = memo(function MasonryItem({
     randomBackgroundPatterns = false,
     backgroundRemoveMode,
     randomBackgroundIncludeGradients = true,
+    detailedBackgroundsList,
     tagOverrides,
     copiedId,
     isPreviouslyCopied,
@@ -259,7 +261,8 @@ export const MasonryItem = memo(function MasonryItem({
     const bgOptions = useMemo(() => ({
         backgroundRemoveMode,
         randomBackgroundIncludeGradients,
-    }), [backgroundRemoveMode, randomBackgroundIncludeGradients])
+        detailedBackgroundsList,
+    }), [backgroundRemoveMode, randomBackgroundIncludeGradients, detailedBackgroundsList])
 
     // Generate pure content WITHOUT added tags for category copying/classification
     const pureContent = useMemo(() => {

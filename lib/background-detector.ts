@@ -1,4 +1,4 @@
-export type BackgroundMode = 'keep' | 'remove_all' | 'force_simple' | 'random';
+export type BackgroundMode = 'keep' | 'remove_all' | 'force_simple' | 'random' | 'detailed_random';
 
 import { classifyTag } from "./tag-classifier";
 import { BACKGROUND_DICTIONARY } from "./background-dictionary";
@@ -199,13 +199,14 @@ export function processBackgroundTags(
   tagOverrides?: Record<string, string>,
   randomOptions?: RandomBackgroundOptions,
   removeMode: BackgroundRemoveMode = 'all',
+  detailedBackgroundsList?: string[][],
 ): string[] {
   if (mode === 'keep') return tags;
 
   const analysis = analyzeBackground(tags);
 
   // Early return if no background tags detected AND mode isn't force_simple/random
-  if (analysis.backgroundTags.length === 0 && mode !== 'force_simple' && mode !== 'remove_all' && mode !== 'random') return tags;
+  if (analysis.backgroundTags.length === 0 && !['force_simple', 'remove_all', 'random', 'detailed_random'].includes(mode)) return tags;
 
   // Filter out background tags based on granularity
   let newTags: string[];
@@ -226,7 +227,7 @@ export function processBackgroundTags(
         newTags = newTags.filter(tag => classifyTag(tag, tagOverrides) !== 'scenery');
         break;
     }
-  } else if (mode === 'force_simple' || mode === 'random') {
+  } else if (mode === 'force_simple' || mode === 'random' || mode === 'detailed_random') {
     // Full removal + scenery filter
     newTags = tags.filter(tag => !analysis.backgroundTags.includes(tag));
     newTags = newTags.filter(tag => classifyTag(tag, tagOverrides) !== 'scenery');
@@ -238,6 +239,16 @@ export function processBackgroundTags(
   if (mode === 'force_simple') {
     const replTags = replacementTags.split(',').map(t => t.trim()).filter(Boolean);
     replTags.forEach(rt => {
+      if (!newTags.some(t => t.toLowerCase() === rt.toLowerCase())) {
+        newTags.push(rt);
+      }
+    });
+  }
+
+  // Detailed random mode: generate unique detailed background
+  if (mode === 'detailed_random' && detailedBackgroundsList && detailedBackgroundsList.length > 0) {
+    const pickedTags = detailedBackgroundsList[Math.floor(Math.random() * detailedBackgroundsList.length)];
+    pickedTags.forEach(rt => {
       if (!newTags.some(t => t.toLowerCase() === rt.toLowerCase())) {
         newTags.push(rt);
       }

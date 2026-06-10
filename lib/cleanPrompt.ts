@@ -40,6 +40,7 @@ export interface CleanPromptOptions {
   randomBackgroundPatterns?: boolean
   backgroundRemoveMode?: BackgroundRemoveMode
   randomBackgroundIncludeGradients?: boolean
+  detailedBackgroundsList?: string[][]
 }
 
 // --------------- Utilities ---------------
@@ -768,7 +769,8 @@ export function cleanPrompt(
         patternsEnabled: options.randomBackgroundPatterns,
         includeGradients: options.randomBackgroundIncludeGradients,
       },
-      options.backgroundRemoveMode || 'all'
+      options.backgroundRemoveMode || 'all',
+      options.detailedBackgroundsList
     )
   }
 
