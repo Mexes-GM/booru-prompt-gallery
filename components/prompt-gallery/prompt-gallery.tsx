@@ -1212,7 +1212,7 @@ export function PromptGallery() {
                               <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New</Badge>
                             </div>
                             <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              Added a new <strong>Detailed Random</strong> background mode. Instead of simple colors or basic patterns, this option applies complete pre-defined environmental tags (like <em>"outdoors, beach, ocean landscape, day"</em>) to your prompts. You can select it from the Backgrounds dropdown menu to quickly test different scenery while keeping your character's pose and clothing intact. (Thanks to "darklnbot003" for the presets)
+                              Added a new <strong>Detailed Random</strong> background mode. Instead of simple colors or basic patterns, this option applies complete pre-defined environmental tags (like <em>&quot;outdoors, beach, ocean landscape, day&quot;</em>) to your prompts. You can select it from the Backgrounds dropdown menu to quickly test different scenery while keeping your character&apos;s pose and clothing intact. (Thanks to &quot;darklnbot003&quot; for the presets)
                             </p>
                           </div>
                         </div>
