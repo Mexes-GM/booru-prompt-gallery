@@ -8,8 +8,7 @@ import type { Redis } from '../lib/redis'
 async function checkRateLimit(redis: Redis | null, clientIp: string): Promise<boolean> {
   if (!redis) return true
   const key = `ratelimit:booru-tags:${clientIp}`
-  const count = await redis.incr(key)
-  await redis.expire(key, 60)
+  const count = await redis.incrWithExpire(key, 60)
   return count <= 30 // 30 req/min — this route hits external APIs
 }
 

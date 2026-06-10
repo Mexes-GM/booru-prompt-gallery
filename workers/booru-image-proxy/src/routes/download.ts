@@ -1,6 +1,6 @@
 import { Env } from '../types'
 import { Redis, getRedis } from '../lib/redis'
-import { isCircuitOpen, getRetryAfter } from '../lib/circuit-breaker'
+import { checkCircuitOpen } from '../lib/circuit-breaker'
 import { PROVIDER_REFERERS, USER_AGENT, getDanbooruUserAgent } from '../lib/constants'
 import { errorResponse, getClientIp } from '../utils'
 
@@ -47,8 +47,7 @@ export async function downloadHandler(
     const clientIp = getClientIp(request)
 
     const userKey = `ratelimit:danbooru:${clientIp}`
-    const userCount = await redis.incr(userKey)
-    await redis.expire(userKey, 60)
+    const userCount = await redis.incrWithExpire(userKey, 60)
     if (userCount > 30) {
       return errorResponse(
         'Too many downloads. Please wait before downloading another image.',
@@ -58,8 +57,7 @@ export async function downloadHandler(
     }
 
     const globalKey = 'ratelimit:danbooru:global:download'
-    const globalCount = await redis.incr(globalKey)
-    await redis.expire(globalKey, 60)
+    const globalCount = await redis.incrWithExpire(globalKey, 60)
     if (globalCount > 100) {
       return errorResponse(
         'Danbooru requests are temporarily throttled. Please wait a moment.',
@@ -68,13 +66,12 @@ export async function downloadHandler(
       )
     }
 
-    const open = await isCircuitOpen(redis, 'danbooru-api')
-    if (open) {
-      const retryAfter = await getRetryAfter(redis, 'danbooru-api')
+    const circuit = await checkCircuitOpen(redis, 'danbooru-api')
+    if (circuit.open) {
       return errorResponse(
         'Danbooru is saturated. Please wait before downloading.',
         429,
-        { 'Retry-After': String(retryAfter), 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        { 'Retry-After': String(circuit.retryAfter), 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
       )
     }
   }
