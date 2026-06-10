@@ -46,10 +46,10 @@ function createRatelimiters(env: Env) {
   const redis = new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN })
   return {
     // Free tier: 15 req/min burst + 10 req/day overall budget
-    freeMinute: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(15,  '1 m'), prefix: 'rl:ai:free:min' }),
-    freeDaily:  new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(10,  '24 h'), prefix: 'rl:ai:free:day' }),
+    freeMinute: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(15,  '1 m'), prefix: 'rl:ai:free:min', analytics: false }),
+    freeDaily:  new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(10,  '24 h'), prefix: 'rl:ai:free:day', analytics: false }),
     // Paid tier (own API key): only per-minute protection
-    paidMinute: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60,  '1 m'), prefix: 'rl:ai:paid:min' }),
+    paidMinute: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60,  '1 m'), prefix: 'rl:ai:paid:min', analytics: false }),
   }
 }
 

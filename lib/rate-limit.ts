@@ -132,7 +132,7 @@ export function getRateLimit(): SafeRatelimit | null {
   const upstash = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(10, "10 s"),
-    analytics: true,
+    analytics: false,
     prefix: "@upstash/ratelimit",
   })
 
@@ -151,7 +151,7 @@ export function getAuthRateLimit(): SafeRatelimit | null {
   const upstash = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(5, "15 m"),
-    analytics: true,
+    analytics: false,
     prefix: "@upstash/ratelimit/auth",
   })
 
@@ -170,7 +170,7 @@ export function getMagicLinkRateLimit(): SafeRatelimit | null {
   const upstash = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(3, "10 m"),
-    analytics: true,
+    analytics: false,
     prefix: "@upstash/ratelimit/magiclink",
   })
 
@@ -193,7 +193,7 @@ export function getDanbooruApiRateLimit(): SafeRatelimit | null {
   const upstash = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(15, "10 s"),
-    analytics: true,
+    analytics: false,
     prefix: "@upstash/ratelimit/danbooru-api",
   })
 
@@ -216,7 +216,7 @@ export function getDanbooruGlobalRateLimit(): SafeRatelimit | null {
   const upstash = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(8, "1 s"),
-    analytics: true,
+    analytics: false,
     prefix: "@upstash/ratelimit/danbooru-global",
   })
 

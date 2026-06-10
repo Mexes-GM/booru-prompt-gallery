@@ -1,7 +1,7 @@
 import { Env } from '../types'
 import { BooruFactory } from '../lib/booru/factory'
 import { Redis, getRedis } from '../lib/redis'
-import { isCircuitOpen, recordSuccess, recordFailure, getRetryAfter } from '../lib/circuit-breaker'
+import { checkCircuitOpen, recordSuccess, recordFailure } from '../lib/circuit-breaker'
 import { coalesce } from '../lib/coalesce'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
 import { getSupabase } from '../lib/supabase'
@@ -32,8 +32,7 @@ export async function postsHandler(
 
     // Per-user: sliding window, 90 req/60s (matching Next.js route: 15/10s)
     const userKey = `ratelimit:danbooru:${clientIp}`
-    const userCount = await redis.incr(userKey)
-    if (userCount === 1) await redis.expire(userKey, 60)
+    const userCount = await redis.incrWithExpire(userKey, 60)
     if (userCount > 90) {
       return errorResponse(
         'Too many requests. Please wait before loading more posts.',
@@ -47,9 +46,8 @@ export async function postsHandler(
     }
 
     // Global rate limit: 480 req/60s (matching Next.js route: 8/1s)
-    const globalKey = 'ratelimit:danbooru:global'
-    const globalCount = await redis.incr(globalKey)
-    if (globalCount === 1) await redis.expire(globalKey, 60)
+    const globalKey = 'ratelimit:danbooru:global:posts'
+    const globalCount = await redis.incrWithExpire(globalKey, 60)
     if (globalCount > 480) {
       return errorResponse(
         'Danbooru requests are temporarily throttled. Please wait a moment.',
@@ -61,14 +59,13 @@ export async function postsHandler(
 
   // Circuit breaker
   if (providerType === 'danbooru' && redis) {
-    const open = await isCircuitOpen(redis, 'danbooru-api')
-    if (open) {
-      const retryAfter = await getRetryAfter(redis, 'danbooru-api')
+    const circuit = await checkCircuitOpen(redis, 'danbooru-api')
+    if (circuit.open) {
       return errorResponse(
         'Danbooru is saturated. Please wait before retrying.',
         429,
         {
-          'Retry-After': String(retryAfter),
+          'Retry-After': String(circuit.retryAfter),
           'Cache-Control': 'no-store',
           'CDN-Cache-Control': 'no-store',
         }

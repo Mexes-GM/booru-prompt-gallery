@@ -37,6 +37,7 @@ export interface Redis {
   set(key: string, value: string, opts?: { ex?: number; nx?: boolean }): Promise<boolean>
   del(key: string): Promise<void>
   incr(key: string): Promise<number>
+  incrWithExpire(key: string, expireSeconds: number): Promise<number>
   expire(key: string, seconds: number): Promise<void>
   eval(script: string, keys: string[], args: string[]): Promise<unknown>
 }
@@ -74,6 +75,19 @@ class MemoryRedis implements Redis {
     }
     const num = (parseInt(entry.value) || 0) + 1
     entry.value = String(num)
+    return num
+  }
+
+  async incrWithExpire(key: string, expireSeconds: number): Promise<number> {
+    const entry = memoryStore.get(key)
+    const now = Date.now()
+    if (!entry || now > entry.expiresAt) {
+      memoryStore.set(key, { value: '1', expiresAt: now + expireSeconds * 1000 })
+      return 1
+    }
+    const num = (parseInt(entry.value) || 0) + 1
+    entry.value = String(num)
+    entry.expiresAt = now + expireSeconds * 1000
     return num
   }
 
@@ -120,6 +134,13 @@ class UpstashRedis implements Redis {
     if (!resp.ok) return 0
     const data = await resp.json() as any
     return data.result || 0
+  }
+
+  async incrWithExpire(key: string, expireSeconds: number): Promise<number> {
+    // Atomic INCR + EXPIRE via Lua — 1 Redis command instead of 2
+    const script = 'redis.call("INCR", KEYS[1]) redis.call("EXPIRE", KEYS[1], ARGV[1]) return redis.call("GET", KEYS[1])'
+    const result = await this.eval(script, [key], [String(expireSeconds)])
+    return parseInt(String(result ?? '0')) || 0
   }
 
   async expire(key: string, seconds: number): Promise<void> {

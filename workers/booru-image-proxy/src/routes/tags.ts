@@ -15,8 +15,7 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000
 async function checkRateLimit(redis: Redis | null, clientIp: string): Promise<boolean> {
   if (!redis) return true
   const key = `ratelimit:tags:${clientIp}`
-  const count = await redis.incr(key)
-  if (count === 1) await redis.expire(key, 60)
+  const count = await redis.incrWithExpire(key, 60)
   return count <= 60
 }
 
