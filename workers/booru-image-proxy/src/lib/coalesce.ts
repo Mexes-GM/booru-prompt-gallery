@@ -39,12 +39,15 @@ export async function coalesce<T>(
 
   // ── Loser path: wait for winner via lightweight notify-key polling ─────
   //
-  // Instead of polling the heavy cacheKey (up to ~80KB JSON × 8 iterations
-  // = 640KB transferred), we poll a lightweight notifyKey ("1" = 4 bytes).
-  // After the signal appears, we fetch the cached data in ONE get.
+  // Instead of polling the heavy cacheKey (up to ~80KB per GET), we poll a
+  // lightweight notifyKey ("1" = 4 bytes). After the signal appears, we
+  // fetch the cached data in ONE get.
   //
-  // 8 iterations × 300ms = 2.4s window. Most booru APIs respond in <1s.
-  for (let i = 0; i < 8; i++) {
+  // 17 iterations × 300ms = 5.1s window — matches the old 5s coalesce
+  // timeout. Danbooru sometimes takes 3-5s under load; a shorter window
+  // causes losers to fall through to direct fetch, creating a thundering
+  // herd that further degrades the API.
+  for (let i = 0; i < 17; i++) {
     await sleep(300)
     const signal = await redis.get(notifyKey)
     if (signal) {
