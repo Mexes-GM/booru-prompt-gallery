@@ -264,10 +264,10 @@ export const userPreferences = {
   setCardScale: (scale: 'small' | 'medium' | 'large') =>
     storage.set(STORAGE_KEYS.CARD_SCALE, scale),
 
-  getBackgroundMode: (): 'keep' | 'remove_all' | 'force_simple' | 'random' =>
+  getBackgroundMode: (): 'keep' | 'remove_all' | 'force_simple' | 'random' | 'detailed_random' =>
     storage.get(STORAGE_KEYS.BACKGROUND_MODE, 'keep'),
 
-  setBackgroundMode: (mode: 'keep' | 'remove_all' | 'force_simple' | 'random') =>
+  setBackgroundMode: (mode: 'keep' | 'remove_all' | 'force_simple' | 'random' | 'detailed_random') =>
     storage.set(STORAGE_KEYS.BACKGROUND_MODE, mode),
 
   getRandomBackgroundPatterns: (): boolean =>

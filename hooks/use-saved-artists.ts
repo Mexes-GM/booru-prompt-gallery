@@ -6,6 +6,10 @@ import { toast } from "@/hooks/use-toast"
 
 export type { SavedArtist }
 
+// Module-level flag: prevents repeated migration attempts within the same session.
+// Once migration runs (success or no data), we skip it for the rest of the page lifetime.
+let _migrationCompleted = false
+
 interface DbSavedArtistRow {
   provider: string
   artist_tag: string
@@ -63,9 +67,12 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
 
   // One-time migration of local → cloud when a user signs in and has local artists
   const migrateLocalToCloud = useCallback(async () => {
-    if (!user) return
+    if (!user || _migrationCompleted) return
     const local = userPreferences.getSavedArtists()
-    if (local.length === 0) return
+    if (local.length === 0) {
+      _migrationCompleted = true
+      return
+    }
 
     const rows = local.map((a) => ({
       user_id: user.id,
@@ -84,6 +91,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
     } else {
       console.error("[useSavedArtists] migration error:", error)
     }
+    _migrationCompleted = true
   }, [user, supabase])
 
   const refresh = useCallback(async () => {
