@@ -1,7 +1,7 @@
 
 import useSWRInfinite from 'swr/infinite'
 import useSWR, { mutate } from 'swr'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useApiStatus } from '@/hooks/use-api-status'
 import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
 import { prefetchTagCounts } from '@/hooks/use-tag-counts'
