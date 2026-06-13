@@ -59,9 +59,12 @@ export async function favoritesHandler(
     if (hasDanbooru && redis) {
       const clientIp = getClientIp(request)
 
-      const userKey = `ratelimit:danbooru:${clientIp}`
+      // Separate key from posts/download routes — browsing shouldn't
+      // consume the favorites budget. 60 req/60s gives enough headroom
+      // for 445 favorites (23 batches) without colliding with search.
+      const userKey = `ratelimit:danbooru:fav:${clientIp}`
       const userCount = await redis.incrWithExpire(userKey, 60)
-      if (userCount > 30) {
+      if (userCount > 60) {
         return errorResponse(
           'Too many requests. Please wait before loading favorites.',
           429,

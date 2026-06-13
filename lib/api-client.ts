@@ -833,6 +833,9 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
   // runs on every render. The guard ensures we only seed once per cache key.
   const cachedPostsRef = useRef<Map<string, BooruPost>>(new Map())
   const lastSeededKeyRef = useRef<string | null>(null)
+  // Holds latest progress values so the SWR fetcher can flush them
+  // without calling setState on every batch (reduces re-render pressure).
+  const progressRef = useRef({ loaded: 0, total: 0 })
 
   if (cacheKey) {
     if (lastSeededKeyRef.current !== cacheKey) {
@@ -883,22 +886,51 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
       let lastProgressUpdate = 0
       const PROGRESS_THROTTLE_MS = 3000
 
+      // Sync the persistent ref with current total
+      progressRef.current.total = favorites.length
+
       const addProgress = (count: number) => {
         loadedCount += count
         const displayed = Math.min(loadedCount, favorites.length)
-        setProgress({ loaded: displayed, total: favorites.length })
-        
-        // Push partial results to SWR cache so UI updates progressively
         const now = Date.now()
-        if (cacheKey && (now - lastProgressUpdate > PROGRESS_THROTTLE_MS || loadedCount >= favorites.length)) {
+        const shouldFlush = now - lastProgressUpdate > PROGRESS_THROTTLE_MS || loadedCount >= favorites.length
+
+        // Always keep the ref fresh so the final flush has the correct value
+        progressRef.current = { loaded: displayed, total: favorites.length }
+
+        if (shouldFlush) {
           lastProgressUpdate = now
-          mutate(cacheKey, getSortedPosts(favorites, accumulated), { revalidate: false })
+          // Batch setProgress + mutate into one render cycle
+          setProgress({ loaded: displayed, total: favorites.length })
+          if (cacheKey) {
+            mutate(cacheKey, getSortedPosts(favorites, accumulated), { revalidate: false })
+          }
         }
       }
 
       // Report cached posts as already loaded
       if (loadedCount > 0) {
         setProgress({ loaded: loadedCount, total: favorites.length })
+      }
+
+      // Helper: fetch with retry on 429 (rate limit) — exponential backoff
+      const fetchWithRetry = async (url: string, body: object, maxRetries = 2): Promise<Response> => {
+        let lastStatus = 0
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (res.ok || res.status !== 429) return res
+          // 429 — wait and retry with exponential backoff
+          lastStatus = res.status
+          const retryAfter = parseInt(res.headers.get('Retry-After') || '2', 10)
+          const delay = Math.max(retryAfter * 1000, 1000 * Math.pow(2, attempt))
+          console.warn(`[useFavoritePosts] Rate limited (429), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+          await new Promise(r => setTimeout(r, delay))
+        }
+        return new Response(null, { status: lastStatus })
       }
 
       try {
@@ -914,28 +946,37 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
 
         // Track parallel operations so we can await them before final return
         const parallelTasks: Promise<void>[] = []
+        let rateLimitHits = 0
 
         // 1. Non-Danbooru server favorites — fire and forget, updates progress when done
         if (otherServerFavs.length > 0) {
-          const task = fetch(apiUrl('/api/favorites'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ favorites: otherServerFavs }),
-          }).then(async (response) => {
-            const responseTime = Date.now() - startTime
-            if (!response.ok) {
-              reportError(new Error(`Error ${response.status}: Error al cargar favoritos`))
-              return
+          const task = (async () => {
+            try {
+              const res = await fetchWithRetry(apiUrl('/api/favorites'), { favorites: otherServerFavs })
+              const responseTime = Date.now() - startTime
+              if (!res.ok) {
+                if (res.status === 429) rateLimitHits++
+                reportError(new Error(`Error ${res.status}: Failed to load favorites`))
+                addProgress(otherServerFavs.length) // still report attempted
+                return
+              }
+              if (responseTime > 10000) {
+                reportSlowResponse(responseTime)
+              }
+              const posts: any[] = await res.json()
+              let loaded = 0
+              posts.forEach((p: any) => {
+                if (p && p.id) {
+                  accumulated.set(`${p._provider}:${p.id}`, p)
+                  loaded++
+                }
+              })
+              addProgress(loaded)
+            } catch (err) {
+              console.warn("[useFavoritePosts] Other server favs fetch error:", err)
+              addProgress(otherServerFavs.length)
             }
-            if (responseTime > 10000) {
-              reportSlowResponse(responseTime)
-            }
-            const posts: any[] = await response.json()
-            posts.forEach((p: any) => accumulated.set(`${p._provider}:${p.id}`, p))
-            addProgress(otherServerFavs.length)
-          }).catch(err => {
-            console.warn("[useFavoritePosts] Other server favs fetch error:", err)
-          })
+          })()
           parallelTasks.push(task)
         }
 
@@ -980,20 +1021,26 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
 
           for (let i = 0; i < batches.length; i++) {
             try {
-              const res = await fetch(apiUrl('/api/favorites'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ favorites: batches[i] }),
-              })
+              const res = await fetchWithRetry(apiUrl('/api/favorites'), { favorites: batches[i] })
               if (res.ok) {
                 const posts: any[] = await res.json()
-                posts.forEach((p: any) => accumulated.set(`${p._provider}:${p.id}`, p))
+                let loaded = 0
+                posts.forEach((p: any) => {
+                  if (p && p.id) {
+                    accumulated.set(`${p._provider}:${p.id}`, p)
+                    loaded++
+                  }
+                })
+                addProgress(loaded)
+              } else {
+                if (res.status === 429) rateLimitHits++
+                // Report attempted but not loaded — progress bar still advances
+                addProgress(batches[i].length)
               }
             } catch (err) {
               console.warn(`[useFavoritePosts] Danbooru batch ${i} fetch error:`, err)
+              addProgress(batches[i].length)
             }
-            // Report progress: this batch's favorites have been attempted
-            addProgress(batches[i].length)
 
             // Delay between Danbooru batches (skip after last)
             if (i < batches.length - 1) {
@@ -1004,6 +1051,11 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
 
         // Wait for parallel tasks to settle before returning final sorted list
         await Promise.allSettled(parallelTasks)
+
+        // Log rate-limit hits for observability
+        if (rateLimitHits > 0) {
+          console.warn(`[useFavoritePosts] ${rateLimitHits} batch(es) hit rate limit (429)`)
+        }
 
         const finalPosts = getSortedPosts(favorites, accumulated)
         // Persist to localStorage cache for instant loads on next visit
