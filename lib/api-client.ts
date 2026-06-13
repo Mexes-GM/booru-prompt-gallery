@@ -808,15 +808,22 @@ function getMergedCachedFavorites(favorites: FavoriteItem[]): BooruPost[] {
 }
 
 export function useFavoritePosts(favorites: FavoriteItem[]) {
-  const shouldFetch = favorites.length > 0
-  const cacheKey = getFavoritesCacheKey(favorites)
+  const INITIAL_LOAD = 40
+  const PAGE_SIZE = 40
+
+  const [visibleCount, setVisibleCount] = useState(INITIAL_LOAD)
+  // Only fetch favorites within the visible window — avoids 23-batch burst
+  // for 445 favorites. Load More fetches the next page on demand.
+  const effectiveFavorites = favorites.slice(0, Math.min(visibleCount, favorites.length))
+  const shouldFetch = effectiveFavorites.length > 0
+  const cacheKey = getFavoritesCacheKey(effectiveFavorites)
   const { reportError, reportSlowResponse } = useApiStatus()
-  const [progress, setProgress] = useState({ loaded: 0, total: favorites.length })
+  const [progress, setProgress] = useState({ loaded: 0, total: effectiveFavorites.length })
 
   // Keep total in sync when favorites list changes (e.g., after fetchFavorites loads)
   useEffect(() => {
-    setProgress(prev => ({ ...prev, total: favorites.length }))
-  }, [favorites.length])
+    setProgress(prev => ({ ...prev, total: effectiveFavorites.length }))
+  }, [effectiveFavorites.length])
 
   // ── Stale-while-revalidate with cache merge ──
   // Must run SYNCHRONOUSLY during render (before useSWR) so SWR finds
@@ -846,7 +853,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         cachedPostsRef.current = new Map(exactCached.map(p => [`${p._provider}:${p.id}`, p]))
       } else {
         // Cache miss on exact key — try merging from old cache entries
-        const mergedPosts = getMergedCachedFavorites(favorites)
+        const mergedPosts = getMergedCachedFavorites(effectiveFavorites)
         if (mergedPosts.length > 0) {
           mutate(cacheKey, mergedPosts, { revalidate: false })
           cachedPostsRef.current = new Map(mergedPosts.map(p => [`${p._provider}:${p.id}`, p]))
@@ -880,37 +887,37 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
       const accumulated = new Map(cachedPostsRef.current)
       let loadedCount = accumulated.size
 
-      // Only fetch favorites that aren't already in cache
-      const toFetch = favorites.filter(f => !accumulated.has(`${f.provider}:${f.id}`))
+      // Only fetch favorites that aren't already in cache, within visible window
+      const toFetch = effectiveFavorites.filter(f => !accumulated.has(`${f.provider}:${f.id}`))
 
       let lastProgressUpdate = 0
       const PROGRESS_THROTTLE_MS = 3000
 
       // Sync the persistent ref with current total
-      progressRef.current.total = favorites.length
+      progressRef.current.total = effectiveFavorites.length
 
       const addProgress = (count: number) => {
         loadedCount += count
-        const displayed = Math.min(loadedCount, favorites.length)
+        const displayed = Math.min(loadedCount, effectiveFavorites.length)
         const now = Date.now()
-        const shouldFlush = now - lastProgressUpdate > PROGRESS_THROTTLE_MS || loadedCount >= favorites.length
+        const shouldFlush = now - lastProgressUpdate > PROGRESS_THROTTLE_MS || loadedCount >= effectiveFavorites.length
 
         // Always keep the ref fresh so the final flush has the correct value
-        progressRef.current = { loaded: displayed, total: favorites.length }
+        progressRef.current = { loaded: displayed, total: effectiveFavorites.length }
 
         if (shouldFlush) {
           lastProgressUpdate = now
           // Batch setProgress + mutate into one render cycle
-          setProgress({ loaded: displayed, total: favorites.length })
+          setProgress({ loaded: displayed, total: effectiveFavorites.length })
           if (cacheKey) {
-            mutate(cacheKey, getSortedPosts(favorites, accumulated), { revalidate: false })
+            mutate(cacheKey, getSortedPosts(effectiveFavorites, accumulated), { revalidate: false })
           }
         }
       }
 
       // Report cached posts as already loaded
       if (loadedCount > 0) {
-        setProgress({ loaded: loadedCount, total: favorites.length })
+        setProgress({ loaded: loadedCount, total: effectiveFavorites.length })
       }
 
       // Helper: fetch with retry on 429 (rate limit) — exponential backoff
@@ -1057,7 +1064,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
           console.warn(`[useFavoritePosts] ${rateLimitHits} batch(es) hit rate limit (429)`)
         }
 
-        const finalPosts = getSortedPosts(favorites, accumulated)
+        const finalPosts = getSortedPosts(effectiveFavorites, accumulated)
         // Persist to localStorage cache for instant loads on next visit
         if (cacheKey) setCachedFavorites(cacheKey, finalPosts)
         return finalPosts
@@ -1077,6 +1084,10 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
     }
   )
 
+  const loadMore = useCallback(() => {
+    setVisibleCount(prev => Math.min(prev + PAGE_SIZE, favorites.length))
+  }, [favorites.length])
+
   return {
     data: data?.length || 0,
     posts: data || [],
@@ -1085,6 +1096,8 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
     isValidating,
     mutate: boundMutate,
     progress,
+    loadMore,
+    hasMore: visibleCount < favorites.length,
   }
 }
 

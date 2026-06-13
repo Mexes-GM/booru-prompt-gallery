@@ -52,6 +52,8 @@ export interface UseBooruFavoritesReturn {
   isFavorite: (provider: string, id: number) => boolean
   favoriteItems: FavoriteItem[]
   isLoading: boolean
+  loadMoreFavorites: () => void
+  hasMoreFavorites: boolean
 }
 
 interface LocalStorageV2 {
@@ -845,6 +847,8 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     isLoading: favoritesLoading,
     isValidating: isRefreshing,
     progress: favoritesProgress,
+    loadMore: loadMoreFavorites,
+    hasMore: hasMoreFavorites,
   } = useFavoritePosts(favoriteItems)
 
   // Keep ref in sync so the stable toggleFavorite always sees the latest posts
@@ -867,6 +871,8 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
     syncFavorites,
     isFavorite,
     favoriteItems,
-    isLoading: favoritesLoading
+    isLoading: favoritesLoading,
+    loadMoreFavorites,
+    hasMoreFavorites,
   }
 }

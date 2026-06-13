@@ -2414,6 +2414,35 @@ export function PromptGallery() {
             )
           )}
 
+          {/* Favorites Load More — paginated, not infinite scroll */}
+          {favs.showFavorites && favs.hasMoreFavorites && filteredPosts.length > 0 && (
+            <div className="text-center pb-8">
+              <p className="text-sm text-muted-foreground mb-2">
+                Showing {filteredPosts.length} of {favs.favorites.size} favorites
+              </p>
+              <Button
+                onClick={favs.loadMoreFavorites}
+                variant="outline"
+                className="gap-2"
+                disabled={favs.isLoading || favs.isRefreshing}
+              >
+                {favs.isLoading || favs.isRefreshing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    Load More
+                    <span className="text-xs text-muted-foreground">
+                      ({favs.favorites.size - favs.favoritesProgress.total} remaining)
+                    </span>
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
           {/* Load More / States */}
           {filteredPosts.length > 0 && !favs.showFavorites && activeFavoriteFolder !== 'artists' && (
             <div className="text-center pb-8">
