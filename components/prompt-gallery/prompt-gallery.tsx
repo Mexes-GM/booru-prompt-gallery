@@ -134,6 +134,7 @@ import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 import { useMergeMode } from "@/hooks/use-merge-mode"
 import { MergeStickyFooter } from "./merge-sticky-footer"
 import { AiConvertStickyFooter } from "./ai-convert-sticky-footer"
+import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { SaveFavoriteButton } from "./save-favorite-button"
@@ -465,7 +466,7 @@ export function PromptGallery() {
   // Scroll tracking
   useEffect(() => {
     const handleScroll = () => setShowBackToTop(window.scrollY > 400)
-    window.addEventListener('scroll', handleScroll)
+    window.addEventListener('scroll', handleScroll, { passive: true })
 
     const start = Date.now()
     safeTrack('app_open', {
@@ -2576,6 +2577,43 @@ export function PromptGallery() {
         />
       )}
       < TeachWelcomeModal triggerOpen={showWelcomeModal} onOpenChange={setShowWelcomeModal} />
+      <StickyMiniControlPanel
+        isVisible={showBackToTop}
+        addInput={addInput}
+        setAddInput={setAddInput}
+        includeCharacters={includeCharacters}
+        setIncludeCharacters={setIncludeCharacters}
+        optimizeTags={optimizeTags}
+        setOptimizeTags={setOptimizeTags}
+        smartTagExclusion={smartTagExclusion}
+        setSmartTagExclusion={setSmartTagExclusion}
+        backgroundMode={backgroundMode}
+        setBackgroundMode={setBackgroundMode}
+        simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
+        setSimpleBackgroundReplacementTags={setSimpleBackgroundReplacementTags}
+        randomBackgroundPatterns={randomBackgroundPatterns}
+        setRandomBackgroundPatterns={setRandomBackgroundPatterns}
+        randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
+        setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
+        isMergeMode={mergeMode.isMergeMode}
+        mergeModeType={mergeMode.mergeModeType}
+        isAiConvertMode={isAiConvertMode}
+        onToggleAiConvertMode={toggleAiConvertMode}
+        onToggleMergeMode={() => {
+          if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'merge') {
+            mergeMode.disableMergeMode()
+          } else {
+            mergeMode.enableMergeMode()
+          }
+        }}
+        onToggleVariationMode={() => {
+          if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'variations') {
+            mergeMode.disableMergeMode()
+          } else {
+            mergeMode.enableVariationMode()
+          }
+        }}
+      />
       <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}

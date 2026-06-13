@@ -33,6 +33,19 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl
   const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
 
+  // --- Vercel Pause Override ---
+  // If the app is paused on Vercel to save limits, block all routes except the root.
+  // Static assets are already excluded by the matcher, so they load fine for the curtain.
+  // This effectively stops any API calls, Supabase connections, and compute usage.
+  if (process.env.VERCEL === "1") {
+    if (url.pathname !== '/') {
+      return NextResponse.json(
+        { error: 'Vercel deployment is paused due to usage limits. Please use the Netlify mirror.' },
+        { status: 503 }
+      )
+    }
+  }
+
   // --- Auth callback recovery ---
   // Supabase magic links sometimes redirect to /?code=... instead of /auth/callback?code=...
   // (when emailRedirectTo isn't in the Supabase whitelist). Redirect to the proper callback.

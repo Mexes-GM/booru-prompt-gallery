@@ -175,7 +175,7 @@ export default function RootLayout({
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
             {children}
             <Toaster />
-            <Analytics />
+            {process.env.VERCEL !== "1" && <Analytics />}
           </ThemeProvider>
         </ErrorBoundary>
       </body>
