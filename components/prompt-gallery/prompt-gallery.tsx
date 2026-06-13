@@ -2493,7 +2493,9 @@ export function PromptGallery() {
           )}
 
           {/* Loading / Empty States */}
-          {((search.isLoading && filteredPosts.length === 0 && !favs.showFavorites) || (favs.showFavorites && (favs.isLoading || favs.isRefreshing) && activeFavoriteFolder !== 'artists')) && (
+          {/* Show progress bar only on initial load (no posts visible yet).
+              During Load More, the button handles its own loading state. */}
+          {((search.isLoading && filteredPosts.length === 0 && !favs.showFavorites) || (favs.showFavorites && (favs.isLoading || favs.isRefreshing) && filteredPosts.length === 0 && activeFavoriteFolder !== 'artists')) && (
             <div className="text-center py-12">
               {favs.showFavorites && favs.favoritesProgress.total > 0 ? (
                 <>
@@ -2519,11 +2521,6 @@ export function PromptGallery() {
                       </span>
                     )}
                   </p>
-                  {favs.favoritesProgress.total > 20 && (
-                    <p className="text-xs text-muted-foreground/60 mt-1">
-                      Danbooru rate limiting in effect, loading progressively...
-                    </p>
-                  )}
                 </>
               ) : (
                 <>
