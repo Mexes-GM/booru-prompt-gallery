@@ -166,6 +166,7 @@ function isSafeImageUrl(url: string): boolean {
     const ALLOWED_DOMAINS = [
       'gelbooru.com',
       'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com',
+      'img4.gelbooru.com', 'img5.gelbooru.com',
       'danbooru.donmai.us',
       'cdn.donmai.us',
       'aibooru.online',

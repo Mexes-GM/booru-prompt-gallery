@@ -108,7 +108,7 @@ export const userPreferences = {
     storage.set(STORAGE_KEYS.PROMPT_OPTIONS, options),
 
   getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru' =>
-    storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'danbooru'),
+    storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'gelbooru'),
 
   setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru') =>
     storage.set(STORAGE_KEYS.BOORU_PROVIDER, provider),

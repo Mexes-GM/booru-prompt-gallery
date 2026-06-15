@@ -7,6 +7,7 @@ const ALLOWED_DOMAINS = [
   // Gelbooru
   'gelbooru.com',
   'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com',
+  'img4.gelbooru.com', 'img5.gelbooru.com',
   // Danbooru
   'danbooru.donmai.us',
   'cdn.donmai.us',
@@ -67,10 +68,11 @@ export async function imageProxyHandler(
   const origin = request.headers.get('Origin') || ''
   const referer = request.headers.get('Referer') || ''
   const isAllowed = isOriginAllowed(origin, referer)
+  const isDirect = !origin && !referer
 
   const allowedOrigin = origin && isAllowed ? origin : ALLOWED_ORIGINS[0]
 
-  if (!isAllowed) {
+  if (!isAllowed && !isDirect) {
     return new Response(JSON.stringify({ error: 'Unauthorized origin' }), {
       status: 403,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },

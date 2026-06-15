@@ -1303,7 +1303,7 @@ export function PromptGallery() {
                             key={p}
                             type="button"
                             variant="ghost"
-                            disabled={p === 'e621'}
+                            disabled={p === 'e621' || p === 'danbooru'}
                             onClick={() => {
                               search.setBooruProvider(p)
                               if (favs.showFavorites) {

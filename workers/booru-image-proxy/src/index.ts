@@ -11,6 +11,7 @@ import { convertPromptHandler } from './routes/convert-prompt'
 import { corsHeaders, getCorsHeaders } from './utils'
 import { imageProxyHandler } from './routes/image-proxy'
 import { trendsHandler } from './routes/trends'
+import { securityTxtHandler, robotsTxtHandler } from './routes/security-txt'
 
 const router = AutoRouter()
 
@@ -25,6 +26,9 @@ router.get('/api/health', healthHandler)
 router.get('/api/version', versionHandler)
 router.post('/api/llm/convert', convertPromptHandler)
 router.get('/api/trends', trendsHandler)
+
+// Security
+router.get('/security.txt', securityTxtHandler)
 
 // Image proxy — legacy path (already deployed, used by NEXT_PUBLIC_IMAGE_PROXY_URL)
 router.get('/', imageProxyHandler)
@@ -43,6 +47,11 @@ router.all('*', (request: Request) => new Response(JSON.stringify({ error: 'Not 
 
 export default {
   async fetch(request: Request, env: Record<string, string | undefined>, ctx: ExecutionContext): Promise<Response> {
+    // Handle security.txt before router (itty-router doesn't match /.well-known/ paths)
+    const url = new URL(request.url)
+    if (url.pathname === '/.well-known/security.txt') {
+      return securityTxtHandler()
+    }
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: getCorsHeaders(request.headers.get('Origin')) })
     }

@@ -9,7 +9,7 @@ const ALLOWED_DOMAINS = [
   'aibooru.online', 'cdn.aibooru.download', 'aibooru.download',
   'rule34.xxx', 'api-cdn.rule34.xxx', 'us.rule34.xxx', 'wimg.rule34.xxx',
   'e621.net', 'static1.e621.net',
-  'gelbooru.com',
+  'gelbooru.com', 'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com', 'img4.gelbooru.com', 'img5.gelbooru.com',
 ]
 
 export async function downloadHandler(
