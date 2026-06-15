@@ -45,7 +45,9 @@ function isOriginAllowed(origin: string, referer: string): boolean {
   return check(origin) || check(referer)
 }
 
-const RATE_LIMIT_MAX = 60
+const RATE_LIMIT_MAX = 15
+const GLOBAL_RATE_LIMIT_MAX = 600
+const GLOBAL_RATE_WINDOW = 60
 
 function getClientId(request: Request): string {
   const ip = request.headers.get('cf-connecting-ip') || 'unknown'
@@ -65,11 +67,10 @@ export async function imageProxyHandler(
   const origin = request.headers.get('Origin') || ''
   const referer = request.headers.get('Referer') || ''
   const isAllowed = isOriginAllowed(origin, referer)
-  const isDirect = !origin && !referer
 
   const allowedOrigin = origin && isAllowed ? origin : ALLOWED_ORIGINS[0]
 
-  if (!isAllowed && !isDirect) {
+  if (!isAllowed) {
     return new Response(JSON.stringify({ error: 'Unauthorized origin' }), {
       status: 403,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
@@ -114,6 +115,26 @@ export async function imageProxyHandler(
   let reset = Date.now() + 10000
 
   if (redis) {
+    // Global rate limit — protects against aggregate abuse across IPs
+    const globalKey = 'ratelimit:imageproxy:global'
+    const globalCount = await redis.incrWithExpire(globalKey, GLOBAL_RATE_WINDOW)
+    if (globalCount > GLOBAL_RATE_LIMIT_MAX) {
+      return new Response(JSON.stringify({
+        error: 'Image proxy is temporarily under heavy load. Please try again in a moment.',
+        retryAfter: GLOBAL_RATE_WINDOW,
+      }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Retry-After': String(GLOBAL_RATE_WINDOW),
+          'X-RateLimit-Limit': String(GLOBAL_RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': '0',
+        },
+      })
+    }
+
+    // Per-IP rate limit
     const key = `ratelimit:imageproxy:${clientId}`
     const count = await redis.incrWithExpire(key, 10)
     
