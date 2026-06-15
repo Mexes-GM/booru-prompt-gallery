@@ -42,6 +42,8 @@ import {
   Globe,
   ArrowRight,
   Github,
+  Pin,
+  Ban,
 } from "lucide-react"
 
 import dynamic from "next/dynamic"
@@ -1199,6 +1201,46 @@ export function PromptGallery() {
                     </div>
                     
                     <div className="space-y-3">
+                      {/* Sticky Mini Panel */}
+                      <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+                              <Pin className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Sticky Mini Panel</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New Feature</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              A mini control panel now sticks to the viewport as you scroll, so you can change settings without having to scroll all the way back to the top. Tags to add, merge mode, AI convert, and quick actions.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Danbooru Temporarily Disabled */}
+                      <div className="border-l-4 border-red-500 bg-red-500/10 hover:bg-red-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/20">
+                              <Ban className="h-4 w-4 text-red-600 dark:text-red-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Danbooru Temporarily Disabled</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/20 rounded-md">Announcement</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              Danbooru has been temporarily disabled due to recent abuse. It appears they have blocked access for now. Hopefully it will be unblocked within a few hours — if not, it may stay disabled for a while. Other providers remain fully available.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Item 6: Detailed Random Backgrounds */}
                       <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
                         <div className="flex items-start gap-3">
