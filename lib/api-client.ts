@@ -230,6 +230,43 @@ const transformAibooruPost = (post: unknown): BooruPost => {
   }
 }
 
+// Helper to transform raw E621 posts to BooruPost (direct client fetch — CORS *, no auth)
+// ponytail: minimal mapping, only fields the gallery uses. Add more when needed.
+const transformE621Post = (post: unknown): BooruPost => {
+  if (!post || typeof post !== 'object') {
+    throw new Error('Invalid post data from E621')
+  }
+  const p = post as Record<string, unknown>
+  const file = (p.file as Record<string, unknown>) || {}
+  const sample = (p.sample as Record<string, unknown>) || {}
+  const preview = (p.preview as Record<string, unknown>) || {}
+  const tags = (p.tags as Record<string, string[]>) || {}
+  const score = (p.score as Record<string, number>) || {}
+
+  // Collect content tags (exclude meta/invalid categories)
+  const contentCategories = ['general', 'species', 'character', 'copyright', 'artist', 'lore']
+  const allTags: string[] = []
+  contentCategories.forEach(cat => {
+    if (tags[cat]) allTags.push(...tags[cat])
+  })
+
+  return {
+    id: (p.id as number) || 0,
+    file_url: (file.url as string) || '',
+    large_file_url: (sample.url as string) || (file.url as string) || '',
+    preview_file_url: (preview.url as string) || (file.url as string) || '',
+    tag_string: allTags.join(' '),
+    tag_string_artist: (tags.artist || []).join(' '),
+    tag_string_character: (tags.character || []).join(' '),
+    tag_string_copyright: (tags.copyright || []).join(' '),
+    rating: (p.rating as string) || 'q',
+    score: score.total ?? 0,
+    width: (file.width as number) || 0,
+    height: (file.height as number) || 0,
+    _provider: 'e621',
+  }
+}
+
 // Helper to transform raw Danbooru posts to BooruPost (for direct client fetches bypassing the Worker)
 const transformDanbooruPost = (post: unknown): BooruPost => {
   if (!post || typeof post !== 'object') {
@@ -318,7 +355,7 @@ const fetcher = async (url: string) => {
         const data = await res.json()
 
         let resultPosts = data
-        let identifiedProvider: 'danbooru' | 'aibooru' | null = null
+        let identifiedProvider: 'danbooru' | 'aibooru' | 'e621' | null = null
 
         if (isDirectAibooru) {
           identifiedProvider = 'aibooru'
@@ -348,6 +385,21 @@ const fetcher = async (url: string) => {
                 !post.file_url?.match(/\.(mp4|webm|avi|mov|mkv)$/i)
               )
               .map(transformDanbooruPost)
+          } else {
+            resultPosts = []
+          }
+        } else if (url.includes('e621.net')) {
+          // Direct E621 API response — { posts: [...] } format
+          // ponytail: direct client fetch, no server enrichment. Tags come pre-categorized from E621.
+          identifiedProvider = 'e621'
+          const posts = (data as { posts?: unknown[] })?.posts
+          if (Array.isArray(posts)) {
+            resultPosts = posts
+              .filter(post =>
+                post && (post as Record<string, unknown>).id &&
+                ((post as Record<string, unknown>).file as Record<string, unknown>)?.url
+              )
+              .map(transformE621Post)
           } else {
             resultPosts = []
           }
@@ -674,6 +726,24 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         return buildDirectDanbooruUrl(query, String(effectivePage), order, randomSeed, pageIndex)
       }
 
+      // E621: direct client fetch — CORS *, no auth required.
+      // Each user's browser has its own IP, eliminating shared rate-limit contention.
+      // ponytail: direct URL, no transform needed (handled by fetcher).
+      if (provider === 'e621') {
+        const isRandom = order === 'random' || /order:random|random:\d+/i.test(tags)
+        const effectivePage = isRandom ? "1" : (pageIndex + 1).toString()
+        const params = new URLSearchParams({
+          limit: "60",
+          page: effectivePage,
+          tags: query,
+          _client: 'Boorugallery/9.2',
+        })
+        if (isRandom) {
+          params.append("seed", `${randomSeed}_${pageIndex}`)
+        }
+        return `https://e621.net/posts.json?${params.toString()}`
+      }
+
       // Other providers — route through the Worker API
       const apiEndpoint = '/api/posts'
 
@@ -945,7 +1015,8 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         if (toFetch.length === 0) return getSortedPosts(favorites, accumulated)
 
         const aibooruFavs = toFetch.filter(f => f.provider === 'aibooru')
-        const serverFavs = toFetch.filter(f => f.provider !== 'aibooru')
+        const e621Favs = toFetch.filter(f => f.provider === 'e621')
+        const serverFavs = toFetch.filter(f => f.provider !== 'aibooru' && f.provider !== 'e621')
 
         // Separate Danbooru (needs sequential rate-limited batching) from others
         const danbooruFavs = serverFavs.filter(f => f.provider === 'danbooru')
@@ -1019,7 +1090,41 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
           parallelTasks.push(task)
         }
 
-        // 3. Danbooru — sequential batches with 1.1s delay (respects rate limit)
+        // 3. E621 — direct client fetch, parallel with everything
+        // ponytail: same pattern as Aibooru. E621 CORS *, no auth needed.
+        if (e621Favs.length > 0) {
+          const task = (async () => {
+            try {
+              const e621Ids = e621Favs.map(f => f.id).join(',')
+              const params = new URLSearchParams({
+                limit: "500",
+                tags: `id:${e621Ids}`,
+                _client: 'Boorugallery/9.2',
+              })
+              const res = await fetch(`https://e621.net/posts.json?${params.toString()}`)
+              if (res.ok) {
+                const data = await res.json()
+                const posts = data?.posts
+                if (Array.isArray(posts)) {
+                  posts
+                    .filter((post: any) => post && post.id)
+                    .forEach((post: any) => {
+                      accumulated.set(`e621:${post.id}`, {
+                        ...transformE621Post(post),
+                        _provider: 'e621' as const
+                      } as BooruPost)
+                    })
+                }
+              }
+            } catch (err) {
+              console.warn("[useFavoritePosts] E621 client fetch error:", err)
+            }
+            addProgress(e621Favs.length)
+          })()
+          parallelTasks.push(task)
+        }
+
+        // 4. Danbooru — sequential batches with 1.1s delay (respects rate limit)
         if (danbooruFavs.length > 0) {
           const batches: FavoriteItem[][] = []
           for (let i = 0; i < danbooruFavs.length; i += BATCH_SIZE) {

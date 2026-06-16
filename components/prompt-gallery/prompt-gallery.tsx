@@ -75,7 +75,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Slider } from "@/components/ui/slider"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
 import { type BackgroundMode } from "@/lib/background-detector"
-import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
@@ -611,21 +610,19 @@ export function PromptGallery() {
       const filename = `${itemProvider}_${post.id}.${extension}`
 
       // Providers that need a proxy due to CORS/referrer restrictions.
-      // Rule34/e621/Gelbooru/Aibooru: use Vercel download proxy (they block cross-origin)
-      const needsVercelProxy = imageUrl.includes('rule34.xxx') ||
-        imageUrl.includes('e621.net') ||
-        imageUrl.includes('gelbooru.com') ||
-        imageUrl.includes('aibooru')
-      const isDanbooru = imageUrl.includes('donmai.us')
+      // ponytail: Danbooru CDN blocks cross-origin browser requests (Cloudflare WAF
+      // triggers on sec-fetch-site: cross-site without Referer). Gelbooru has explicit
+      // anti-hotlink. Rule34 is auth-walled. E621 and Aibooru work direct.
+      const needsVercelProxy = imageUrl.includes('donmai.us') ||
+        imageUrl.includes('rule34.xxx') ||
+        imageUrl.includes('gelbooru.com')
 
       let fetchUrl: string
       if (needsVercelProxy) {
         fetchUrl = apiUrl(`/api/download?url=${encodeURIComponent(imageUrl)}`)
-      } else if (isDanbooru) {
-        // Use Cloudflare Worker (free egress) when available, fallback to Vercel
-        const proxyUrl = getDanbooruProxyUrl(imageUrl)
-        fetchUrl = proxyUrl !== imageUrl ? proxyUrl : `/api/download?url=${encodeURIComponent(imageUrl)}`
       } else {
+        // Direct fetch — Danbooru/Aibooru/E621 CDNs are permissive, no Referer needed.
+        // ponytail: one less proxy hop. Add when: if a provider adds CORS restrictions.
         fetchUrl = imageUrl
       }
 
@@ -1221,26 +1218,6 @@ export function PromptGallery() {
                         </div>
                       </div>
 
-                      {/* Danbooru Temporarily Disabled */}
-                      <div className="border-l-4 border-red-500 bg-red-500/10 hover:bg-red-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/20">
-                              <Ban className="h-4 w-4 text-red-600 dark:text-red-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Danbooru Temporarily Disabled</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-red-500/15 text-red-600 dark:text-red-400 hover:bg-red-500/20 rounded-md">Announcement</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              Danbooru has been temporarily disabled due to recent abuse. It appears they have blocked access for now. Hopefully it will be unblocked within a few hours — if not, it may stay disabled for a while. Other providers remain fully available.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
                       {/* Item 6: Detailed Random Backgrounds */}
                       <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
                         <div className="flex items-start gap-3">
@@ -1345,7 +1322,6 @@ export function PromptGallery() {
                             key={p}
                             type="button"
                             variant="ghost"
-                            disabled={p === 'e621' || p === 'danbooru'}
                             onClick={() => {
                               search.setBooruProvider(p)
                               if (favs.showFavorites) {

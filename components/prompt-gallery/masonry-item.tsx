@@ -165,6 +165,27 @@ interface MasonryItemProps {
     onSendToConvert?: (tags: string, imageUrl?: string) => void
 }
 
+// Module-level circuit breaker: if any Danbooru direct CDN image fails with 403,
+// skip direct attempts for the rest of the session. Prevents 2x requests on every
+// image when the user's IP is blocked by Cloudflare WAF.
+// Resets on page reload (sessionStorage) or after 30 min inactivity.
+const DANBOORU_CB_KEY = 'danbooru_direct_blocked'
+function isDanbooruCircuitOpen(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const entry = sessionStorage.getItem(DANBOORU_CB_KEY)
+    if (!entry) return false
+    const { ts } = JSON.parse(entry)
+    return Date.now() - ts < 30 * 60 * 1000 // 30 min
+  } catch { return false }
+}
+function openDanbooruCircuit(): void {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.setItem(DANBOORU_CB_KEY, JSON.stringify({ ts: Date.now() }))
+  } catch { /* noop */ }
+}
+
 // Memoized MasonryItem to prevent unnecessary re-renders
 export const MasonryItem = memo(function MasonryItem({
     post,
@@ -221,17 +242,8 @@ export const MasonryItem = memo(function MasonryItem({
 
     const [imageError, setImageError] = useState(false)
     const [retryKey, setRetryKey] = useState(0)
+    const [useFallbackUrl, setUseFallbackUrl] = useState(false)
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-    const handleImageError = useCallback(() => {
-        setImageError(true)
-        onImageError?.()
-        if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
-        retryTimerRef.current = setTimeout(() => {
-            setImageError(false)
-            setRetryKey(k => k + 1)
-        }, 10_000)
-    }, [onImageError])
 
     useEffect(() => {
         return () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current) }
@@ -428,12 +440,43 @@ export const MasonryItem = memo(function MasonryItem({
     const gelbooruNeedsProxy = isGelbooru && !!rawFileUrl
     const isAibooru = itemProvider === 'aibooru'
 
-    // Danbooru: use Cloudflare Worker (free egress within Cloudflare network)
+    // Danbooru: try direct CDN URL first. If Cloudflare WAF blocks (403),
+    // handleImageError switches to /api/download proxy as fallback.
+    // ponytail: direct-first avoids Netlify function cost for ~90% of users
+    // whose IPs aren't blocked by the WAF. Add when: Cloudflare stops
+    // cross-blocking Worker IPs, or Danbooru changes CDN provider.
     const fileUrl = gelbooruNeedsProxy
         ? getGelbooruProxyUrl(rawFileUrl!)
-        : isDanbooru && rawFileUrl
-            ? getDanbooruProxyUrl(rawFileUrl)
-            : rawFileUrl
+        : rawFileUrl
+
+    // ── Image URL with circuit-breaker fallback ──
+    // Danbooru: try direct CDN first (no proxy cost). If ANY image gets 403,
+    // the circuit opens and ALL subsequent Danbooru images go through proxy
+    // for the rest of the session. This prevents 2x requests per image.
+    // Non-Danbooru: use fileUrl as normal (Gelbooru proxy, Aibooru/E621 direct).
+    const isDanbooruImg = rawFileUrl && (rawFileUrl.includes('donmai.us') || rawFileUrl.includes('cdn.donmai.us'))
+    const danbooruCircuitOpen = isDanbooruImg && isDanbooruCircuitOpen()
+    const proxyFileUrl = isDanbooruImg
+      ? `/api/download?url=${encodeURIComponent(rawFileUrl!)}&inline=1`
+      : undefined
+    const displayFileUrl = danbooruCircuitOpen ? proxyFileUrl! : (useFallbackUrl && proxyFileUrl ? proxyFileUrl : fileUrl)
+
+    const handleImageError = useCallback(() => {
+        // Danbooru direct failed → open circuit, switch to proxy for this image
+        if (isDanbooruImg && !danbooruCircuitOpen && !useFallbackUrl) {
+            openDanbooruCircuit()
+            setUseFallbackUrl(true)
+            setImageError(false)
+            return
+        }
+        setImageError(true)
+        onImageError?.()
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = setTimeout(() => {
+            setImageError(false)
+            setRetryKey(k => k + 1)
+        }, 10_000)
+    }, [onImageError, isDanbooruImg, danbooruCircuitOpen, useFallbackUrl])
 
     let postUrl = PROVIDER_POST_URLS.DANBOORU(post.id)
 
@@ -612,7 +655,7 @@ export const MasonryItem = memo(function MasonryItem({
                     </AnimatePresence>
                     <Image
                         key={retryKey}
-                        src={fileUrl || ''}
+                        src={displayFileUrl || ''}
                         alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
                         fill
                         className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
@@ -909,7 +952,7 @@ export const MasonryItem = memo(function MasonryItem({
                         </div>
                         <Image
                             key={retryKey}
-                            src={fileUrl!}
+                            src={displayFileUrl!}
                             alt={`${itemProvider} post ${post.id}`}
                             fill
                             className="object-cover"

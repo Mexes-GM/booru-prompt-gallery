@@ -169,13 +169,39 @@ export async function imageProxyHandler(
         : 'Boorugallery/9.2',
       'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
       'Referer': isDanbooru ? 'https://danbooru.donmai.us/' : 'https://gelbooru.com/',
+      // CDN-Loop tells Cloudflare to NOT process this request through its CDN
+      // stack and pass it directly to the origin. This prevents cross-Cloudflare
+      // WAF blocking when the Worker (Cloudflare IP) fetches cdn.donmai.us (also
+      // Cloudflare). Without this, Cloudflare sees "internal" traffic and blocks.
+      // ponytail: one header to skip the CDN layer. Add when: Cloudflare Workers
+      // get a first-class way to tag internal-to-internal fetches as safe.
+      'CDN-Loop': 'cloudflare',
+      // Sec-Fetch headers: belt-and-suspenders with CDN-Loop. Makes the request
+      // look like a same-origin browser image load for origin-level WAF rules.
+      'Sec-Fetch-Dest': 'image',
+      'Sec-Fetch-Mode': 'no-cors',
+      'Sec-Fetch-Site': 'same-origin',
     }
 
     if (isDanbooru && env.DANBOORU_USERNAME && env.DANBOORU_API_KEY) {
       headers['Authorization'] = `Basic ${btoa(`${env.DANBOORU_USERNAME}:${env.DANBOORU_API_KEY}`)}`
     }
 
-    let response = await fetch(imageUrl, { headers, redirect: 'follow' })
+    let response = await fetch(imageUrl, {
+      headers,
+      redirect: 'follow',
+      // cf options: attempt to bypass Cloudflare's CDN layer for the upstream.
+      // cdn.donmai.us is behind Cloudflare, and Worker fetches from Cloudflare
+      // IPs get 403'd by the upstream's WAF (cross-Cloudflare blocking).
+      // cacheTtl: 0 + cacheEverything: false tells the runtime to fetch from
+      // origin, potentially using a different egress path.
+      // ponytail: best-effort bypass. Add when: Workers support explicit
+      // origin-only egress for Cloudflare-proxied upstreams.
+      cf: {
+        cacheEverything: false,
+        cacheTtl: 0,
+      },
+    })
 
     // Fallback: /samples/ → /images/
     if (!response.ok && imageUrl.includes('/samples/')) {

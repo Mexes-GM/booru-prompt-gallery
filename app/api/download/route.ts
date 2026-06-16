@@ -14,6 +14,7 @@ function getClientIp(request: NextRequest): string {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const imageUrl = searchParams.get('url')
+  const isInline = searchParams.get('inline') === '1'
 
   if (!imageUrl) {
     return NextResponse.json({ error: 'Missing image URL' }, { status: 400 })
@@ -167,7 +168,10 @@ export async function GET(request: NextRequest) {
 
     const headers = new Headers()
     headers.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream')
-    headers.set('Content-Disposition', `attachment; filename="${filename}"`)
+    // ponytail: inline mode for <img> display vs attachment for downloads.
+    if (!isInline) {
+      headers.set('Content-Disposition', `attachment; filename="${filename}"`)
+    }
 	headers.set('Cache-Control', 'public, max-age=31536000, immutable')
 	headers.set('CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
 			headers.set('Netlify-CDN-Cache-Control', 'public, s-maxage=31536000, immutable')
