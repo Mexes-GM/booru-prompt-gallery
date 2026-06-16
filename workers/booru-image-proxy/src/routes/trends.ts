@@ -1,6 +1,8 @@
 import { Env } from '../types'
 import { BooruFactory } from '../lib/booru/factory'
 import { getSupabase } from '../lib/supabase'
+import { getRedis } from '../lib/redis'
+import { errorResponse, getClientIp } from '../utils'
 import { corsHeaders } from '../utils'
 
 const TABLE = 'trend_cache'
@@ -17,6 +19,21 @@ export async function trendsHandler(
   env: Env,
   ctx: ExecutionContext
 ): Promise<Response> {
+  // ponytail: per-IP rate limit — 10 req/min. Trends hits Danbooru 20+ times;
+  // without a limit it's a DoS vector for both Supabase and Danbooru.
+  const redis = getRedis(env)
+  if (redis) {
+    const clientIp = getClientIp(request)
+    const count = await redis.incrWithExpire(`ratelimit:trends:${clientIp}`, 60)
+    if (count > 10) {
+      return errorResponse('Too many trends requests', 429, {
+        'Retry-After': '30',
+        'Cache-Control': 'no-store',
+        'CDN-Cache-Control': 'no-store',
+      })
+    }
+  }
+
   try {
     const supabase = getSupabase(env)
 

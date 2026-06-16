@@ -5,6 +5,7 @@ const ALLOWED_ORIGINS = [
   'https://booru-prompt-gallery.netlify.app',
   'https://booru-prompt-gallery.vercel.app',
   'http://localhost:3000',
+  'http://localhost:3001',
 ]
 
 // Security headers applied to all responses
@@ -19,7 +20,7 @@ export function getCorsHeaders(origin: string | null): Record<string, string> {
   // Check if origin is allowed
   const isAllowed = origin && (ALLOWED_ORIGINS.some(allowed => {
     try { return new URL(allowed).origin === new URL(origin).origin } catch { return false }
-  }) || origin.endsWith('.vercel.app') || origin.endsWith('.netlify.app'))
+  }) || origin.endsWith('.vercel.app') || origin.endsWith('.netlify.app') || origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:'))
 
   const allowOrigin = isAllowed && origin ? origin : ALLOWED_ORIGINS[0]
 

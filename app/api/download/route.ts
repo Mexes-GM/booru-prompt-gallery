@@ -45,52 +45,51 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'URL domain not allowed' }, { status: 403 })
   }
 
-  // Rate limit check for Danbooru downloads
-  if (isDanbooru) {
-    const ratelimit = getDanbooruApiRateLimit()
-    if (ratelimit) {
-      const clientIp = getClientIp(request)
-      const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
+  // Rate limit check — applies to ALL providers hitting external APIs
+  const ratelimit = getDanbooruApiRateLimit()
+  if (ratelimit) {
+    const clientIp = getClientIp(request)
+    const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
 
-	if (!success) {
-			return NextResponse.json(
-				{ error: 'Too many downloads. Please wait before downloading another image.' },
-				{
-					status: 429,
-					headers: {
-						'Cache-Control': 'no-store',
-						'CDN-Cache-Control': 'no-store',
-						'Netlify-CDN-Cache-Control': 'no-store',
-						'Vercel-CDN-Cache-Control': 'no-store',
-						'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
-						'X-RateLimit-Limit': String(limit),
-						'X-RateLimit-Remaining': String(remaining),
-						'X-RateLimit-Reset': String(reset),
-					},
-				}
-			)
-		}
+    if (!success) {
+      return NextResponse.json(
+        { error: 'Too many downloads. Please wait before downloading another image.' },
+        {
+          status: 429,
+          headers: {
+            'Cache-Control': 'no-store',
+            'CDN-Cache-Control': 'no-store',
+            'Netlify-CDN-Cache-Control': 'no-store',
+            'Vercel-CDN-Cache-Control': 'no-store',
+            'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
+            'X-RateLimit-Limit': String(limit),
+            'X-RateLimit-Remaining': String(remaining),
+            'X-RateLimit-Reset': String(reset),
+          },
+        }
+      )
     }
+  }
 
-    // Global rate limit — caps total outbound Danbooru requests from ALL users
+  // Global rate limit + circuit breaker — Danbooru only
+  if (isDanbooru) {
     const globalLimit = getDanbooruGlobalRateLimit()
     if (globalLimit) {
       const { success } = await globalLimit.limit('danbooru-outbound')
       if (!success) {
-			return NextResponse.json(
-				{ error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-				{ status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
-			)
+        return NextResponse.json(
+          { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+          { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
+        )
       }
     }
 
-    // Circuit breaker check
     if (await isCircuitOpenShared('danbooru-api')) {
       const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
-		return NextResponse.json(
-			{ error: 'Danbooru is saturated. Please wait before downloading.', retryAfter },
-			{ status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': String(retryAfter) } }
-		)
+      return NextResponse.json(
+        { error: 'Danbooru is saturated. Please wait before downloading.', retryAfter },
+        { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': String(retryAfter) } }
+      )
     }
   }
 

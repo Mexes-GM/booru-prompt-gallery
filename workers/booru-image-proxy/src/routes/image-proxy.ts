@@ -29,6 +29,7 @@ const ALLOWED_ORIGINS = [
   'https://booru-prompt-gallery.netlify.app',
   'https://booru-prompt-gallery.vercel.app',
   'http://localhost:3000',
+  'http://localhost:3001',
 ]
 
 function isOriginAllowed(origin: string, referer: string): boolean {
@@ -41,7 +42,7 @@ function isOriginAllowed(origin: string, referer: string): boolean {
     if (!host) return false
     return ALLOWED_ORIGINS.some(allowed => {
       try { return new URL(allowed).hostname === host } catch { return false }
-    }) || host.endsWith('.vercel.app') || host.endsWith('.netlify.app')
+    }) || host.endsWith('.vercel.app') || host.endsWith('.netlify.app') || host.startsWith('localhost')
   }
   return check(origin) || check(referer)
 }
@@ -64,25 +65,28 @@ export async function imageProxyHandler(
   const url = new URL(request.url)
   const imageUrl = url.searchParams.get('url')
 
-  // Origin validation
-  const origin = request.headers.get('Origin') || ''
-  const referer = request.headers.get('Referer') || ''
-  const isAllowed = isOriginAllowed(origin, referer)
-  const isDirect = !origin && !referer
-
-  const allowedOrigin = origin && isAllowed ? origin : ALLOWED_ORIGINS[0]
-
-  if (!isAllowed && !isDirect) {
-    return new Response(JSON.stringify({ error: 'Unauthorized origin' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
-    })
-  }
-
-  // No url param = not an image proxy request (could be root health check)
+  // No url param = health check (always allowed, no origin check needed)
   if (!imageUrl) {
     return new Response(JSON.stringify({ status: 'ok', worker: 'booru-image-proxy' }), {
       status: 200,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    })
+  }
+
+  // ponytail: Sec-Fetch-Dest: image replaces the old isDirect bypass.
+  // <img> tags with referrerPolicy="no-referrer" (used by the gallery frontend)
+  // don't send Origin or Referer, but browsers ALWAYS send Sec-Fetch-Dest.
+  // This header cannot be spoofed by fetch()/XHR — only real browser image loads.
+  const origin = request.headers.get('Origin') || ''
+  const referer = request.headers.get('Referer') || ''
+  const secFetchDest = request.headers.get('Sec-Fetch-Dest') || ''
+  const isBrowserImg = secFetchDest === 'image'
+  const isAllowed = isOriginAllowed(origin, referer) || isBrowserImg
+  const allowedOrigin = origin && isOriginAllowed(origin, referer) ? origin : ALLOWED_ORIGINS[0]
+
+  if (!isAllowed) {
+    return new Response(JSON.stringify({ error: 'Unauthorized origin' }), {
+      status: 403,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
     })
   }

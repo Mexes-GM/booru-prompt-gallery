@@ -26,14 +26,17 @@ export async function postsHandler(
   const cacheKey = `${providerType}-${tags}-${page}-${order}${seed ? `-${seed}` : ''}`
   const cacheDuration = 600
 
-  // Rate limiting (Danbooru only — use Upstash Ratelimit via Redis primitive)
-  if (providerType === 'danbooru' && redis) {
+  // Rate limiting — applies to ALL providers that hit external APIs.
+  // Danbooru has extra global limits; other providers get per-IP only.
+  if (redis) {
     const clientIp = getClientIp(request)
 
-    // Per-user: sliding window, 90 req/60s (matching Next.js route: 15/10s)
-    const userKey = `ratelimit:danbooru:${clientIp}`
+    // Per-IP: 90 req/60s for Danbooru, 60 req/60s for others
+    const isDanbooru = providerType === 'danbooru'
+    const perIpMax = isDanbooru ? 90 : 60
+    const userKey = `ratelimit:booru:${clientIp}`
     const userCount = await redis.incrWithExpire(userKey, 60)
-    if (userCount > 90) {
+    if (userCount > perIpMax) {
       return errorResponse(
         'Too many requests. Please wait before loading more posts.',
         429,
@@ -45,19 +48,21 @@ export async function postsHandler(
       )
     }
 
-    // Global rate limit: 480 req/60s (matching Next.js route: 8/1s)
-    const globalKey = 'ratelimit:danbooru:global:posts'
-    const globalCount = await redis.incrWithExpire(globalKey, 60)
-    if (globalCount > 480) {
-      return errorResponse(
-        'Danbooru requests are temporarily throttled. Please wait a moment.',
-        429,
-        { 'Retry-After': '2', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
-      )
+    // Danbooru-specific global limit (protects shared CF egress IP)
+    if (isDanbooru) {
+      const globalKey = 'ratelimit:danbooru:global:posts'
+      const globalCount = await redis.incrWithExpire(globalKey, 60)
+      if (globalCount > 480) {
+        return errorResponse(
+          'Danbooru requests are temporarily throttled. Please wait a moment.',
+          429,
+          { 'Retry-After': '2', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        )
+      }
     }
   }
 
-  // Circuit breaker
+  // Circuit breaker — Danbooru only (most sensitive to overload)
   if (providerType === 'danbooru' && redis) {
     const circuit = await checkCircuitOpen(redis, 'danbooru-api')
     if (circuit.open) {

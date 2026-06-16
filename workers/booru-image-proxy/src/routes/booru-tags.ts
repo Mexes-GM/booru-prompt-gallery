@@ -1,6 +1,7 @@
 import { Env } from '../types'
 import { getSupabase } from '../lib/supabase'
 import { getRedis } from '../lib/redis'
+import { checkCircuitOpen } from '../lib/circuit-breaker'
 import { PROVIDER_URLS, getDanbooruUserAgent } from '../lib/constants'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
 import type { Redis } from '../lib/redis'
@@ -54,6 +55,23 @@ export async function booruTagsHandler(
 
   if (provider !== 'danbooru' && provider !== 'aibooru') {
     return jsonResponse({}, 200)
+  }
+
+  // ponytail: circuit breaker for Danbooru — fail fast instead of waiting for timeout.
+  // Aibooru doesn't need one (lower traffic, less likely to be saturated).
+  if (provider === 'danbooru' && redis) {
+    const circuit = await checkCircuitOpen(redis, 'danbooru-api')
+    if (circuit.open) {
+      return errorResponse(
+        'Danbooru is saturated. Please wait before searching tags.',
+        429,
+        {
+          'Retry-After': String(circuit.retryAfter),
+          'Cache-Control': 'no-store',
+          'CDN-Cache-Control': 'no-store',
+        }
+      )
+    }
   }
 
   const requestedTags = tagsParam

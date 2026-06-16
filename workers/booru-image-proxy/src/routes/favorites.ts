@@ -55,16 +55,14 @@ export async function favoritesHandler(
     const redis = getRedis(env)
     const hasDanbooru = !!groups['danbooru']
 
-    // Rate limit + circuit breaker for Danbooru
-    if (hasDanbooru && redis) {
+    // Rate limit + circuit breaker — applies to ALL providers hitting external APIs
+    if (redis) {
       const clientIp = getClientIp(request)
 
-      // Separate key from posts/download routes — browsing shouldn't
-      // consume the favorites budget. 60 req/60s gives enough headroom
-      // for 445 favorites (23 batches) without colliding with search.
-      const userKey = `ratelimit:danbooru:fav:${clientIp}`
+      const perIpMax = hasDanbooru ? 60 : 30
+      const userKey = `ratelimit:booru:fav:${clientIp}`
       const userCount = await redis.incrWithExpire(userKey, 60)
-      if (userCount > 60) {
+      if (userCount > perIpMax) {
         return errorResponse(
           'Too many requests. Please wait before loading favorites.',
           429,
@@ -72,23 +70,28 @@ export async function favoritesHandler(
         )
       }
 
-      const globalKey = 'ratelimit:danbooru:global:favorites'
-      const globalCount = await redis.incrWithExpire(globalKey, 60)
-      if (globalCount > 100) {
-        return errorResponse(
-          'Danbooru requests are temporarily throttled. Please wait a moment.',
-          429,
-          { 'Retry-After': '2' }
-        )
+      // Danbooru-specific global limit
+      if (hasDanbooru) {
+        const globalKey = 'ratelimit:danbooru:global:favorites'
+        const globalCount = await redis.incrWithExpire(globalKey, 60)
+        if (globalCount > 100) {
+          return errorResponse(
+            'Danbooru requests are temporarily throttled. Please wait a moment.',
+            429,
+            { 'Retry-After': '2' }
+          )
+        }
       }
 
-      const circuit = await checkCircuitOpen(redis, 'danbooru-api')
-      if (circuit.open) {
-        return errorResponse(
-          'Danbooru is saturated. Please wait before retrying.',
-          429,
-          { 'Retry-After': String(circuit.retryAfter) }
-        )
+      if (hasDanbooru) {
+        const circuit = await checkCircuitOpen(redis, 'danbooru-api')
+        if (circuit.open) {
+          return errorResponse(
+            'Danbooru is saturated. Please wait before retrying.',
+            429,
+            { 'Retry-After': String(circuit.retryAfter) }
+          )
+        }
       }
     }
 

@@ -42,13 +42,13 @@ export async function downloadHandler(
 
   const redis = getRedis(env)
 
-  // Rate limit + circuit breaker for Danbooru
-  if (isDanbooru && redis) {
+  // Rate limit + circuit breaker — applies to ALL providers hitting external APIs
+  if (redis) {
     const clientIp = getClientIp(request)
-
-    const userKey = `ratelimit:danbooru:${clientIp}`
+    const perIpMax = isDanbooru ? 30 : 20
+    const userKey = `ratelimit:booru:${clientIp}`
     const userCount = await redis.incrWithExpire(userKey, 60)
-    if (userCount > 30) {
+    if (userCount > perIpMax) {
       return errorResponse(
         'Too many downloads. Please wait before downloading another image.',
         429,
@@ -56,23 +56,28 @@ export async function downloadHandler(
       )
     }
 
-    const globalKey = 'ratelimit:danbooru:global:download'
-    const globalCount = await redis.incrWithExpire(globalKey, 60)
-    if (globalCount > 100) {
-      return errorResponse(
-        'Danbooru requests are temporarily throttled. Please wait a moment.',
-        429,
-        { 'Retry-After': '2', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
-      )
+    // Danbooru-specific global limit
+    if (isDanbooru) {
+      const globalKey = 'ratelimit:danbooru:global:download'
+      const globalCount = await redis.incrWithExpire(globalKey, 60)
+      if (globalCount > 100) {
+        return errorResponse(
+          'Danbooru requests are temporarily throttled. Please wait a moment.',
+          429,
+          { 'Retry-After': '2', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        )
+      }
     }
 
-    const circuit = await checkCircuitOpen(redis, 'danbooru-api')
-    if (circuit.open) {
-      return errorResponse(
-        'Danbooru is saturated. Please wait before downloading.',
-        429,
-        { 'Retry-After': String(circuit.retryAfter), 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
-      )
+    if (isDanbooru) {
+      const circuit = await checkCircuitOpen(redis, 'danbooru-api')
+      if (circuit.open) {
+        return errorResponse(
+          'Danbooru is saturated. Please wait before downloading.',
+          429,
+          { 'Retry-After': String(circuit.retryAfter), 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        )
+      }
     }
   }
 
