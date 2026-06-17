@@ -655,6 +655,7 @@ export const MasonryItem = memo(function MasonryItem({
                     </AnimatePresence>
                     {/* ponytail: plain <img> — images.unoptimized is true globally, no Next.js optimization to lose.
                         Upgrade path: if server-side image resizing becomes needed, wrap in a custom component. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                         key={retryKey}
                         src={displayFileUrl || ''}
@@ -951,6 +952,7 @@ export const MasonryItem = memo(function MasonryItem({
                             />
                         </div>
                         {/* ponytail: plain <img> — see grid-view comment above */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                             key={retryKey}
                             src={displayFileUrl!}

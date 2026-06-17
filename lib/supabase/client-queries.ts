@@ -30,7 +30,7 @@ export async function searchTags(query: string): Promise<TagResult[]> {
     if (error) throw error
     if (!data) return []
 
-    const results: TagResult[] = data.map(tag => ({
+    const results: TagResult[] = data.map((tag: { name: string; category: string | number }) => ({
       name: tag.name,
       postCount: 0,
       category: Number(tag.category) || 0,
@@ -84,7 +84,7 @@ export async function getAllTagOverridesClient(): Promise<Record<string, string>
       }
 
       if (data && data.length > 0) {
-        data.forEach(tag => {
+        data.forEach((tag: { name: string; category: string }) => {
           overrides[tag.name] = tag.category
         })
 
