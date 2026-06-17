@@ -50,6 +50,11 @@ const APPEARANCE_KEYWORDS = [
   "heterochromia", "ahoge", "twintails", "ponytail", "braid", "buns"
 ];
 
+// Precompiled regexes — compiled once at module load, not per tag.
+const POSE_REGEXES = POSE_KEYWORDS.map(k => new RegExp(`\\b${k}\\b`));
+const SCENERY_REGEXES = SCENERY_KEYWORDS.map(k => new RegExp(`\\b${k}\\b`));
+const APPEARANCE_REGEXES = APPEARANCE_KEYWORDS.map(k => new RegExp(`\\b${k}\\b`));
+
 export function classifyTag(tag: string, overrides?: Record<string, string>): TagCategory {
   const lowerWithSpaces = tag.toLowerCase().replace(/_/g, " ");
 
@@ -87,27 +92,23 @@ export function classifyTag(tag: string, overrides?: Record<string, string>): Ta
   const words = subjectForMatching.split(" ");
   const lastWord = words[words.length - 1];
 
-  const hasKeyword = (keywords: string[], text: string) => {
-    return keywords.some(k => new RegExp(`\\b${k}\\b`).test(text));
-  };
-
   // Clothing
   if (CLOTHING_SUFFIXES.some(suffix => subjectForMatching.endsWith(suffix) || subjectForMatching.includes(` ${suffix}`))) {
     return 'clothing';
   }
 
   // Pose (often verbs or positions)
-  if (hasKeyword(POSE_KEYWORDS, subjectForMatching)) {
+  if (POSE_REGEXES.some(r => r.test(subjectForMatching))) {
     return 'pose';
   }
 
   // Scenery
-  if (hasKeyword(SCENERY_KEYWORDS, subjectForMatching) || subjectForMatching.endsWith(" background")) {
+  if (SCENERY_REGEXES.some(r => r.test(subjectForMatching)) || subjectForMatching.endsWith(" background")) {
     return 'scenery';
   }
 
   // Appearance
-  if (hasKeyword(APPEARANCE_KEYWORDS, subjectForMatching) || lastWord === "hair" || lastWord === "eyes") {
+  if (APPEARANCE_REGEXES.some(r => r.test(subjectForMatching)) || lastWord === "hair" || lastWord === "eyes") {
     return 'appearance';
   }
 

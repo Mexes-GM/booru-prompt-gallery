@@ -3,6 +3,7 @@ import { BooruFactory } from '../lib/booru/factory'
 import { Redis, getRedis } from '../lib/redis'
 import { checkCircuitOpen, recordSuccess, recordFailure } from '../lib/circuit-breaker'
 import { coalesce } from '../lib/coalesce'
+import { MERGED_RATELIMIT_SCRIPT } from '../lib/constants'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
 import { getSupabase } from '../lib/supabase'
 
@@ -30,33 +31,47 @@ export async function postsHandler(
   // Danbooru has extra global limits; other providers get per-IP only.
   if (redis) {
     const clientIp = getClientIp(request)
-
-    // Per-IP: 90 req/60s for Danbooru, 60 req/60s for others
     const isDanbooru = providerType === 'danbooru'
-    const perIpMax = isDanbooru ? 90 : 60
-    const userKey = `ratelimit:booru:${clientIp}`
-    const userCount = await redis.incrWithExpire(userKey, 60)
-    if (userCount > perIpMax) {
-      return errorResponse(
-        'Too many requests. Please wait before loading more posts.',
-        429,
-        {
-          'Retry-After': '10',
-          'Cache-Control': 'no-store',
-          'CDN-Cache-Control': 'no-store',
-        }
-      )
-    }
 
-    // Danbooru-specific global limit (protects shared CF egress IP)
     if (isDanbooru) {
+      // Single EVAL: atomically INCR+EXPIRE both per-IP and global keys
+      const userKey = `ratelimit:booru:${clientIp}`
       const globalKey = 'ratelimit:danbooru:global:posts'
-      const globalCount = await redis.incrWithExpire(globalKey, 60)
+      const result = await redis.eval(MERGED_RATELIMIT_SCRIPT, [userKey, globalKey], ['60']) as number[]
+      const userCount = result?.[0] ?? 0
+      const globalCount = result?.[1] ?? 0
+
+      if (userCount > 90) {
+        return errorResponse(
+          'Too many requests. Please wait before loading more posts.',
+          429,
+          {
+            'Retry-After': '10',
+            'Cache-Control': 'no-store',
+            'CDN-Cache-Control': 'no-store',
+          }
+        )
+      }
+
       if (globalCount > 480) {
         return errorResponse(
           'Danbooru requests are temporarily throttled. Please wait a moment.',
           429,
           { 'Retry-After': '2', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        )
+      }
+    } else {
+      const userKey = `ratelimit:booru:${clientIp}`
+      const userCount = await redis.incrWithExpire(userKey, 60)
+      if (userCount > 60) {
+        return errorResponse(
+          'Too many requests. Please wait before loading more posts.',
+          429,
+          {
+            'Retry-After': '10',
+            'Cache-Control': 'no-store',
+            'CDN-Cache-Control': 'no-store',
+          }
         )
       }
     }

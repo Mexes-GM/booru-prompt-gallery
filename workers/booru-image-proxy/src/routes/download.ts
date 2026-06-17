@@ -1,7 +1,7 @@
 import { Env } from '../types'
 import { Redis, getRedis } from '../lib/redis'
 import { checkCircuitOpen } from '../lib/circuit-breaker'
-import { PROVIDER_REFERERS, USER_AGENT, getDanbooruUserAgent } from '../lib/constants'
+import { PROVIDER_REFERERS, USER_AGENT, getDanbooruUserAgent, MERGED_RATELIMIT_SCRIPT } from '../lib/constants'
 import { errorResponse, getClientIp } from '../utils'
 
 const ALLOWED_DOMAINS = [
@@ -45,26 +45,38 @@ export async function downloadHandler(
   // Rate limit + circuit breaker — applies to ALL providers hitting external APIs
   if (redis) {
     const clientIp = getClientIp(request)
-    const perIpMax = isDanbooru ? 30 : 20
-    const userKey = `ratelimit:booru:${clientIp}`
-    const userCount = await redis.incrWithExpire(userKey, 60)
-    if (userCount > perIpMax) {
-      return errorResponse(
-        'Too many downloads. Please wait before downloading another image.',
-        429,
-        { 'Retry-After': '10', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
-      )
-    }
 
-    // Danbooru-specific global limit
     if (isDanbooru) {
+      // Single EVAL: atomically INCR+EXPIRE both per-IP and global keys
+      const userKey = `ratelimit:booru:${clientIp}`
       const globalKey = 'ratelimit:danbooru:global:download'
-      const globalCount = await redis.incrWithExpire(globalKey, 60)
+      const result = await redis.eval(MERGED_RATELIMIT_SCRIPT, [userKey, globalKey], ['60']) as number[]
+      const userCount = result?.[0] ?? 0
+      const globalCount = result?.[1] ?? 0
+
+      if (userCount > 30) {
+        return errorResponse(
+          'Too many downloads. Please wait before downloading another image.',
+          429,
+          { 'Retry-After': '10', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        )
+      }
+
       if (globalCount > 100) {
         return errorResponse(
           'Danbooru requests are temporarily throttled. Please wait a moment.',
           429,
           { 'Retry-After': '2', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        )
+      }
+    } else {
+      const userKey = `ratelimit:booru:${clientIp}`
+      const userCount = await redis.incrWithExpire(userKey, 60)
+      if (userCount > 20) {
+        return errorResponse(
+          'Too many downloads. Please wait before downloading another image.',
+          429,
+          { 'Retry-After': '10', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
         )
       }
     }

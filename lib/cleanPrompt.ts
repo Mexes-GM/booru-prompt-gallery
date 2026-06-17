@@ -623,27 +623,43 @@ function combineSharedNounTags(original: string[]): string[] {
 }
 
 function removeRedundantByInclusion(tagList: string[]): string[] {
-  const toRemove = new Set<number>()
-  const wordsCache = tagList.map((t) => t.split(" "))
-  for (let i = 0; i < tagList.length; i++) {
-    if (toRemove.has(i)) continue
-    for (let j = 0; j < tagList.length; j++) {
-      if (i === j) continue
-      const ai = tagList[i]
-      const aj = tagList[j]
-      if (ai === aj) continue
-      if (!aj.includes(ai)) continue
-      const wi = wordsCache[i]
-      const wj = wordsCache[j]
-      const allIn = wi.every((w) => wj.includes(w))
-      if (allIn) {
-        toRemove.add(i)
-        break
-      }
+  // Sort longest tags first so potential parents are processed before children
+  const items = tagList.map((t) => {
+    const words = t.split(" ").map(w => w.trim()).filter(Boolean);
+    return {
+      tag: t,
+      words,
+      wordsSet: new Set(words)
+    };
+  });
+  items.sort((a, b) => b.tag.length - a.tag.length);
+
+  const keptSet = new Set<string>();
+  const keptList: typeof items = [];
+
+  for (const item of items) {
+    if (keptSet.has(item.tag)) continue;
+
+    // Check if the current item is fully covered by any already kept parent tag
+    const isCovered = keptList.some(parent => {
+      // Pre-filter: parent tag must contain the child tag as a substring
+      // This is a fast character-level check and ensures contiguous/semantic relation
+      if (!parent.tag.includes(item.tag)) return false;
+
+      // Word-level check: every word in child must be a word in parent
+      return item.words.every(w => parent.wordsSet.has(w));
+    });
+
+    if (!isCovered) {
+      keptSet.add(item.tag);
+      keptList.push(item);
     }
   }
-  return tagList.filter((_, idx) => !toRemove.has(idx))
+
+  // Preserve original relative order of the tags
+  return tagList.filter(t => keptSet.has(t));
 }
+
 
 // --------------- Main API ---------------
 export function cleanPrompt(

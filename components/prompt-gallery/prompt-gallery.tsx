@@ -158,6 +158,111 @@ import { useTagCounts } from "@/hooks/use-tag-counts"
 
 type CardScale = "small" | "medium" | "large"
 
+interface SmoothFilterSliderProps {
+  min: number
+  max: number
+  step?: number
+  value: string
+  onChange: (value: string) => void
+  onCommit: (value: string) => void
+  disabled?: boolean
+  labelPrefix: string
+  tooltipTitle: string
+  tooltipDescription: string
+  tooltipVisual?: React.ReactNode
+  inputId: string
+  isInputValid: boolean
+  maxInput?: number
+  ariaLabel: string
+  dotColor?: string
+}
+
+function SmoothFilterSlider({
+  min,
+  max,
+  step = 1,
+  value,
+  onChange,
+  onCommit,
+  disabled = false,
+  labelPrefix,
+  tooltipTitle,
+  tooltipDescription,
+  tooltipVisual,
+  inputId,
+  isInputValid,
+  maxInput = 1000000,
+  ariaLabel,
+  dotColor,
+}: SmoothFilterSliderProps) {
+  const [localValue, setLocalValue] = useState(value)
+
+  // Keep local value in sync with external value changes
+  useEffect(() => {
+    setLocalValue(value)
+  }, [value])
+
+  const handleSliderChange = useCallback((val: number[]) => {
+    setLocalValue(val[0].toString())
+  }, [])
+
+  const handleSliderCommit = useCallback((val: number[]) => {
+    const stringVal = val[0].toString()
+    onChange(stringVal)
+    onCommit(stringVal)
+  }, [onChange, onCommit])
+
+  const handleInputChange = useCallback((newVal: string) => {
+    setLocalValue(newVal)
+    onChange(newVal)
+  }, [onChange])
+
+  const handleInputBlur = useCallback(() => {
+    onCommit(localValue)
+  }, [onCommit, localValue])
+
+  return (
+    <div className="space-y-2">
+      <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+        {dotColor && <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></span>}
+        <InfoTooltip
+          title={tooltipTitle}
+          description={tooltipDescription}
+          visual={tooltipVisual}
+        >
+          {labelPrefix} ({`>=`} {localValue})
+        </InfoTooltip>
+      </label>
+      <div className="flex items-center">
+        <Slider
+          min={min}
+          max={max}
+          step={step}
+          value={[parseInt(localValue) || min]}
+          onValueChange={handleSliderChange}
+          onValueCommit={handleSliderCommit}
+          disabled={disabled}
+          className={`flex-1 ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+          aria-label={ariaLabel}
+        />
+        <DebouncedInput
+          id={inputId}
+          type="number"
+          min={min}
+          max={maxInput}
+          value={localValue}
+          onChange={handleInputChange}
+          debounceTime={500}
+          onBlur={handleInputBlur}
+          disabled={disabled}
+          className={`h-8 w-16 text-xs text-center bg-background/50 ${!isInputValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+          aria-label={`${ariaLabel} input`}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function PromptGallery() {
   // 1. Core Logic Hooks
   const search = useBooruSearch()
@@ -363,6 +468,13 @@ export function PromptGallery() {
   // Merge Mode Hook
   const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags)
 
+  // Extract stable mergeMode pieces to avoid dependency churn
+  const mergeModeIsMergeMode = mergeMode.isMergeMode
+  const mergeModeDisableMergeMode = mergeMode.disableMergeMode
+  const mergeModeToggleMergeMode = mergeMode.toggleMergeMode
+  const mergeModeSelectedPosts = mergeMode.selectedPosts
+  const mergeModeTogglePostPart = mergeMode.togglePostPart
+
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
   const [aiConvertTags, setAiConvertTags] = useState("")
@@ -371,30 +483,30 @@ export function PromptGallery() {
   // Handle sending tags to convert and auto-enable mode
   const handleSendToConvert = useCallback((tagsToSend: string, imageUrl?: string) => {
     // Disable merge mode if active
-    if (mergeMode.isMergeMode) {
-      mergeMode.disableMergeMode()
+    if (mergeModeIsMergeMode) {
+      mergeModeDisableMergeMode()
     }
     setAiConvertTags(tagsToSend)
     setAiConvertImage(imageUrl)
     setIsAiConvertMode(true)
-  }, [mergeMode])
+  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode])
 
   // Custom wrapper to enable/disable modes mutually exclusively
   const toggleAiConvertMode = useCallback(() => {
     setIsAiConvertMode(prev => {
       const next = !prev
-      if (next && mergeMode.isMergeMode) {
-        mergeMode.disableMergeMode()
+      if (next && mergeModeIsMergeMode) {
+        mergeModeDisableMergeMode()
       }
       return next
     })
-  }, [mergeMode])
+  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode])
 
   // Wrapper for toggling merge mode to automatically disable AI mode
   const handleToggleMergeMode = useCallback(() => {
     setIsAiConvertMode(false)
-    mergeMode.toggleMergeMode()
-  }, [mergeMode])
+    mergeModeToggleMergeMode()
+  }, [mergeModeToggleMergeMode])
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -811,10 +923,10 @@ export function PromptGallery() {
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       setTeachModalData={setTeachModalData}
-      isMergeMode={mergeMode.isMergeMode}
-      isSelected={mergeMode.selectedPosts.has(post.id)}
-      selectedParts={mergeMode.selectedPosts.get(post.id)?.parts}
-      onTogglePart={mergeMode.togglePostPart}
+      isMergeMode={mergeModeIsMergeMode}
+      isSelected={mergeModeSelectedPosts.has(post.id)}
+      selectedParts={mergeModeSelectedPosts.get(post.id)?.parts}
+      onTogglePart={mergeModeTogglePostPart}
       onMergeSelect={() => { }}
       onSkipAnimation={() => setCopiedId(null)}
       globalWeights={globalWeights}
@@ -825,7 +937,7 @@ export function PromptGallery() {
       isNaturalLanguageMode={isAiConvertMode}
       onSendToConvert={handleSendToConvert}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeMode, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1806,101 +1918,61 @@ export function PromptGallery() {
                                 )}
                               </div>
                             </div>
-                            <div className="space-y-2">
-                              <label htmlFor="tag-count" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                                <span className={`w-1.5 h-1.5 rounded-full ${isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}`}></span>
-                                <InfoTooltip
-                                  title="Minimum Tag Count"
-                                  description="This option ensures that only prompts with more than a certain amount of tags appear. The higher the number, the more detailed prompts you get; recommended around 20-30."
-                                  visual={
-                                    <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
-                                      <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
-                                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                                          <span className="text-muted-foreground font-medium min-w-[70px]">Config:</span>
-                                          <span className="bg-blue-500/10 text-blue-500 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">{">"} 20 Tags</span>
-                                        </div>
-                                      </div>
-                                      
-                                      <div className="flex flex-col gap-2 mt-1 px-1">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2 bg-primary/5 rounded border border-border gap-2">
-                                          <span className="text-foreground line-clamp-1 flex-1">1girl, solo, short hair...</span>
-                                          <Badge variant="destructive" className="shrink-0 whitespace-nowrap">15 Tags (Hidden)</Badge>
-                                        </div>
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2 bg-primary/10 rounded border border-primary/20 gap-2">
-                                          <span className="text-foreground line-clamp-1 flex-1 font-medium">1girl, solo, detailed face, green eyes...</span>
-                                          <Badge className="bg-blue-500 hover:bg-blue-500 text-white shrink-0 whitespace-nowrap">42 Tags (Visible)</Badge>
-                                        </div>
-                                      </div>
+                            <SmoothFilterSlider
+                              min={5}
+                              max={100}
+                              step={1}
+                              value={search.tagCountFilter}
+                              onChange={search.setTagCountFilter}
+                              onCommit={search.setAppliedTagCountFilter}
+                              disabled={!isTagCountSupported}
+                              labelPrefix="Minimum Tag Count"
+                              tooltipTitle="Minimum Tag Count"
+                              tooltipDescription="This option ensures that only prompts with more than a certain amount of tags appear. The higher the number, the more detailed prompts you get; recommended around 20-30."
+                              tooltipVisual={
+                                <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
+                                  <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                                      <span className="text-muted-foreground font-medium min-w-[70px]">Config:</span>
+                                      <span className="bg-blue-500/10 text-blue-500 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">{">"} 20 Tags</span>
                                     </div>
-                                  }
-                                >
-                                  Minimum Tag Count ({`>=`} {search.tagCountFilter})
-                                </InfoTooltip>
-                              </label>
-                              <div className="flex items-center">
-                                <Slider
-                                  min={5}
-                                  max={100}
-                                  step={1}
-                                  value={[parseInt(search.tagCountFilter) || 5]}
-                                  onValueChange={(val) => search.setTagCountFilter(val[0].toString())}
-                                  onValueCommit={(val) => search.setAppliedTagCountFilter(val[0].toString())}
-                                  disabled={!isTagCountSupported}
-                                  className={`flex-1 ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
-                                  aria-label="Minimum tag count"
-                                />
-                                <DebouncedInput
-                                  id="tag-count"
-                                  type="number"
-                                  min={5}
-                                  max={1000}
-                                  value={search.tagCountFilter}
-                                  onChange={search.setTagCountFilter}
-                                  debounceTime={500}
-                                  onBlur={() => search.setAppliedTagCountFilter(search.tagCountFilter)}
-                                  disabled={!isTagCountSupported}
-                                  className={`h-8 w-16 text-xs text-center bg-background/50 ${!isTagCountValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${!isTagCountSupported ? "opacity-50 cursor-not-allowed" : ""}`}
-                                  aria-label="Minimum tag count input"
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <label htmlFor="character-count" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                <InfoTooltip
-                                  title="Minimum Character Post Count"
-                                  description="This option ensures that only posts containing characters with a minimum amount of booru posts appear. Useful for filtering out obscure characters."
-                                >
-                                  Minimum Character Post Count ({`>=`} {search.characterCountFilter})
-                                </InfoTooltip>
-                              </label>
-                              <div className="flex items-center">
-                                <Slider
-                                  min={0}
-                                  max={10000}
-                                  step={100}
-                                  value={[parseInt(search.characterCountFilter) || 0]}
-                                  onValueChange={(val) => search.setCharacterCountFilter(val[0].toString())}
-                                  onValueCommit={(val) => search.setAppliedCharacterCountFilter(val[0].toString())}
-                                  disabled={!includeCharacters}
-                                  className={`flex-1 ${!includeCharacters ? "opacity-50 cursor-not-allowed" : ""}`}
-                                  aria-label="Minimum character post count"
-                                />
-                                <DebouncedInput
-                                  id="character-count"
-                                  type="number"
-                                  min={0}
-                                  max={1000000}
-                                  value={search.characterCountFilter}
-                                  onChange={search.setCharacterCountFilter}
-                                  debounceTime={500}
-                                  onBlur={() => search.setAppliedCharacterCountFilter(search.characterCountFilter)}
-                                  disabled={!includeCharacters}
-                                  className={`h-8 w-16 text-xs text-center bg-background/50 ${(!search.characterCountFilter || !/^\d+$/.test(search.characterCountFilter)) ? "border-red-500 focus-visible:ring-red-500" : ""} ${!includeCharacters ? "opacity-50 cursor-not-allowed" : ""}`}
-                                  aria-label="Minimum character post count input"
-                                />
-                              </div>
-                            </div>
+                                  </div>
+                                  
+                                  <div className="flex flex-col gap-2 mt-1 px-1">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2 bg-primary/5 rounded border border-border gap-2">
+                                      <span className="text-foreground line-clamp-1 flex-1">1girl, solo, short hair...</span>
+                                      <Badge variant="destructive" className="shrink-0 whitespace-nowrap">15 Tags (Hidden)</Badge>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2 bg-primary/10 rounded border border-primary/20 gap-2">
+                                      <span className="text-foreground line-clamp-1 flex-1 font-medium">1girl, solo, detailed face, green eyes...</span>
+                                      <Badge className="bg-blue-500 hover:bg-blue-500 text-white shrink-0 whitespace-nowrap">42 Tags (Visible)</Badge>
+                                    </div>
+                                  </div>
+                                </div>
+                              }
+                              inputId="tag-count"
+                              isInputValid={isTagCountValid}
+                              maxInput={1000}
+                              ariaLabel="Minimum tag count"
+                              dotColor={isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}
+                            />
+                            <SmoothFilterSlider
+                              min={0}
+                              max={10000}
+                              step={100}
+                              value={search.characterCountFilter}
+                              onChange={search.setCharacterCountFilter}
+                              onCommit={search.setAppliedCharacterCountFilter}
+                              disabled={!includeCharacters}
+                              labelPrefix="Minimum Character Post Count"
+                              tooltipTitle="Minimum Character Post Count"
+                              tooltipDescription="This option ensures that only posts containing characters with a minimum amount of booru posts appear. Useful for filtering out obscure characters."
+                              inputId="character-count"
+                              isInputValid={!!search.characterCountFilter && /^\d+$/.test(search.characterCountFilter)}
+                              maxInput={1000000}
+                              ariaLabel="Minimum character post count"
+                              dotColor={includeCharacters ? "bg-blue-500" : "bg-gray-400"}
+                            />
                           </div>
 
                           {/* Options & Switches */}

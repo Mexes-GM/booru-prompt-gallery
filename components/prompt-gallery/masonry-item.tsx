@@ -22,7 +22,6 @@ import {
     Tag,
     Sparkles
 } from "lucide-react"
-import Image from "next/image"
 import {
     BooruPost,
     isAibooruPost,
@@ -34,7 +33,7 @@ import {
 import { PROVIDER_POST_URLS } from "@/lib/constants"
 import { getDanbooruProxyUrl, getGelbooruProxyUrl } from "@/lib/proxy-url"
 import { cleanPrompt } from "@/lib/cleanPrompt"
-import { type BackgroundMode } from "@/lib/background-detector"
+import { type BackgroundMode, processBackgroundTags } from "@/lib/background-detector"
 import { applyWeights, extractWeights } from "@/lib/weight-utils"
 import { classifyTags, TagCategory, ClassifiedTags } from "@/lib/tag-classifier"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
@@ -269,30 +268,38 @@ export const MasonryItem = memo(function MasonryItem({
         aiPrompt = removeQualityTagsUtil(aiPrompt)
     }
 
-    // Shared background options for all cleanPrompt calls
-    const bgOptions = useMemo(() => ({
-        randomBackgroundIncludeGradients,
-        detailedBackgroundsList,
-    }), [randomBackgroundIncludeGradients, detailedBackgroundsList])
-
-    // Generate pure content WITHOUT added tags for category copying/classification
-    const pureContent = useMemo(() => {
+    // ponytail: compute cleanPrompt once with common options, derive variants.
+    // pureContent = shared + bg processing. baseContent = shared + addedTags + bg processing.
+    // teachContent stays separate (different optimizeTags: false pipeline).
+    const sharedCleaned = useMemo(() => {
+        const sharedOpts = {
+            includeCharacters, includeCopyrights: false, optimizeTags,
+            exclude: excludeList, addedTags: [] as string[], tagOverrides,
+            backgroundMode: 'keep' as BackgroundMode, simpleBackgroundReplacementTags,
+            escapeOutput: false, metaTags: post.tag_string_meta,
+        }
         return aiPrompt
-            ? cleanPrompt(
-                aiPrompt,
-                "",
-                "",
-                "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, ...bgOptions, metaTags: post.tag_string_meta },
-            )
-            : cleanPrompt(
-                post.tag_string,
-                post.tag_string_artist,
-                post.tag_string_character,
-                post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: [], tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, ...bgOptions, metaTags: post.tag_string_meta },
-            )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, bgOptions])
+            ? cleanPrompt(aiPrompt, "", "", "", sharedOpts)
+            : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, sharedOpts)
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, simpleBackgroundReplacementTags])
+
+    // ---- Background processing helper (applied on top of sharedCleaned) ----
+    const applyBackground = useCallback((content: string) => {
+        if (!content) return content
+        if (backgroundMode === 'keep' || backgroundMode === undefined) return content
+        const tags = content.split(',').map(t => t.trim())
+        const processed = processBackgroundTags(
+            tags, backgroundMode, simpleBackgroundReplacementTags, tagOverrides,
+            { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients },
+            detailedBackgroundsList,
+        )
+        return processed.join(', ')
+    }, [backgroundMode, simpleBackgroundReplacementTags, tagOverrides, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList])
+
+    // ---- Derived outputs ----
+
+    // pureContent: sharedCleaned + background processing, no added tags (for classification/copying)
+    const pureContent = useMemo(() => applyBackground(sharedCleaned), [sharedCleaned, applyBackground])
 
     const conflictResolution = useMemo(() => {
         if (!pureContent || addList.length === 0 || !smartTagExclusion) return { validTags: addList, conflictingTags: [] };
@@ -300,24 +307,21 @@ export const MasonryItem = memo(function MasonryItem({
         return resolveTagConflicts(baseTags, addList);
     }, [pureContent, addList, smartTagExclusion])
 
-    // Use AI prompt if available, but still pass through cleanPrompt to remove meta/unwanted tags
+    // baseContent: full cleanPrompt with conflict-resolved addedTags.
+    // Must go through cleanPrompt so addedTags get normalized, exclusion-filtered,
+    // and deduplicated against the rest of the output.
     const baseContent = useMemo(() => {
+        const opts = {
+            includeCharacters, includeCopyrights: false, optimizeTags,
+            exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides,
+            backgroundMode, simpleBackgroundReplacementTags,
+            randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
+            metaTags: post.tag_string_meta,
+        }
         return aiPrompt
-            ? cleanPrompt(
-                aiPrompt,
-                "",
-                "",
-                "",
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, ...bgOptions, metaTags: post.tag_string_meta },
-            )
-            : cleanPrompt(
-                post.tag_string,
-                post.tag_string_artist,
-                post.tag_string_character,
-                post.tag_string_copyright,
-                { includeCharacters, includeCopyrights: false, optimizeTags, exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, ...bgOptions, metaTags: post.tag_string_meta },
-            )
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, bgOptions])
+            ? cleanPrompt(aiPrompt, "", "", "", opts)
+            : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, opts)
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList])
 
     const displayContent = useMemo(() => {
         if (isGlobalWeightsEnabled && baseContent) {
@@ -339,34 +343,39 @@ export const MasonryItem = memo(function MasonryItem({
         setModifiedContent(null)
     }, [baseContent])
 
-    // Create a raw (unoptimized) version for Teach modal classification
-    const teachContent = useMemo(() => aiPrompt
-        ? cleanPrompt(
-            aiPrompt,
-            "",
-            "",
-            "",
-            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, backgroundMode: 'keep', simpleBackgroundReplacementTags, escapeOutput: false, metaTags: post.tag_string_meta },
-        )
-        : cleanPrompt(
-            post.tag_string,
-            post.tag_string_artist,
-            post.tag_string_character,
-            post.tag_string_copyright,
-            { includeCharacters, includeCopyrights: false, optimizeTags: false, exclude: excludeList, tagOverrides, backgroundMode: 'keep', simpleBackgroundReplacementTags, escapeOutput: false, metaTags: post.tag_string_meta },
-        ), [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags])
-
-    // Pre-classify tags for the dropdown counts (USING PUR DISPLAY CONTENT)
-    // This ensures that "added tags" don't inflate the category counts
-    const tagsForClassification = useMemo(() => pureDisplayContent ? pureDisplayContent.split(',').map(t => t.trim()) : [], [pureDisplayContent])
-
-    const teachTagsForClassification = useMemo(() => teachContent ? teachContent.split(',').map(t => t.trim()) : [], [teachContent])
-
-    const totalTagsCount = useMemo(() => tagsForClassification.filter(t => t.length > 0).length, [tagsForClassification])
-
     // Prepare character tags
     const characterTagsArray = useMemo(() => (post.tag_string_character ? post.tag_string_character.split(' ') : [])
         .map(t => t.replace(/_/g, ' ').toLowerCase().replace(/\(/g, "\\(").replace(/\)/g, "\\)")), [post.tag_string_character])
+
+    // Lazy: only computed when the Teach modal opens (rare).
+    // Combines teachContent → teachTagsForClassification → classifiedTeachTags
+    // into a single on-demand pipeline instead of 3 eager useMemos.
+    const getClassifiedTeachTags = useCallback(() => {
+        const raw = aiPrompt
+            ? cleanPrompt(aiPrompt, "", "", "", {
+                includeCharacters, includeCopyrights: false, optimizeTags: false,
+                exclude: excludeList, tagOverrides,
+                backgroundMode: 'keep', simpleBackgroundReplacementTags,
+                escapeOutput: false, metaTags: post.tag_string_meta,
+            })
+            : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, {
+                includeCharacters, includeCopyrights: false, optimizeTags: false,
+                exclude: excludeList, tagOverrides,
+                backgroundMode: 'keep', simpleBackgroundReplacementTags,
+                escapeOutput: false, metaTags: post.tag_string_meta,
+            })
+        const teachTags = raw ? raw.split(',').map(t => t.trim()) : []
+        const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim()
+        const charTagsSet = new Set(characterTagsArray.map(normalizeForMatch))
+        const filteredTags = teachTags.filter(t => !charTagsSet.has(normalizeForMatch(t)))
+        return classifyTags(filteredTags, tagOverrides, [])
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags, characterTagsArray])
+
+    // Pre-classify tags for the dropdown counts (USING PURE DISPLAY CONTENT)
+    // This ensures that "added tags" don't inflate the category counts
+    const tagsForClassification = useMemo(() => pureDisplayContent ? pureDisplayContent.split(',').map(t => t.trim()) : [], [pureDisplayContent])
+
+    const totalTagsCount = useMemo(() => tagsForClassification.filter(t => t.length > 0).length, [tagsForClassification])
 
     const tagCountIndicator = useMemo(() => {
         if (!tagCounts || characterTagsArray.length === 0) return null;
@@ -397,15 +406,6 @@ export const MasonryItem = memo(function MasonryItem({
         const allTagsForClassification = Array.from(new Set([...characterTagsArray, ...tagsForClassification]))
         return classifyTags(allTagsForClassification, tagOverrides, characterTagsArray)
     }, [characterTagsArray, tagsForClassification, tagOverrides])
-
-    const classifiedTeachTags = useMemo(() => {
-        // Filter out character tags for the Teach modal
-        const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim();
-        const charTagsSet = new Set(characterTagsArray.map(normalizeForMatch))
-        const filteredTags = teachTagsForClassification.filter(t => !charTagsSet.has(normalizeForMatch(t)))
-
-        return classifyTags(filteredTags, tagOverrides, [])
-    }, [characterTagsArray, teachTagsForClassification, tagOverrides])
 
     const copyCategory = async (category: TagCategory) => {
         if (!pureDisplayContent) return
@@ -653,17 +653,17 @@ export const MasonryItem = memo(function MasonryItem({
                             </motion.div>
                         )}
                     </AnimatePresence>
-                    <Image
+                    {/* ponytail: plain <img> — images.unoptimized is true globally, no Next.js optimization to lose.
+                        Upgrade path: if server-side image resizing becomes needed, wrap in a custom component. */}
+                    <img
                         key={retryKey}
                         src={displayFileUrl || ''}
                         alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
-                        fill
-                        className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
+                        className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw"
-                        priority={index < 8}
+                        loading={index < 8 ? "eager" : "lazy"}
                         fetchPriority={index < 8 ? "high" : "low"}
                         decoding={index < 8 ? "sync" : "async"}
-                        unoptimized={!!rawFileUrl}
                         referrerPolicy={isAibooru ? undefined : "no-referrer"}
                         onError={handleImageError}
                         onLoad={() => setImageError(false)}
@@ -854,7 +854,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 <DropdownMenuItem
                                     onSelect={(e) => {
                                         e.preventDefault()
-                                        setTeachModalData({ open: true, tags: classifiedTeachTags })
+                                        setTeachModalData({ open: true, tags: getClassifiedTeachTags() })
                                     }}
                                 >
                                     <GraduationCap className="mr-2 h-4 w-4" />
@@ -950,19 +950,18 @@ export const MasonryItem = memo(function MasonryItem({
                                 size="sm"
                             />
                         </div>
-                        <Image
+                        {/* ponytail: plain <img> — see grid-view comment above */}
+                        <img
                             key={retryKey}
                             src={displayFileUrl!}
                             alt={`${itemProvider} post ${post.id}`}
-                            fill
-                            className="object-cover"
+                            className="absolute inset-0 w-full h-full object-cover"
                             sizes="128px"
                             loading="lazy"
                             decoding="async"
-                            unoptimized={!!rawFileUrl}
                             referrerPolicy={isAibooru ? undefined : "no-referrer"}
                             onError={handleImageError}
-                            onLoadingComplete={() => setImageError(false)}
+                            onLoad={() => setImageError(false)}
                         />
                         {imageError && (
                             <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
@@ -1152,7 +1151,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     <DropdownMenuItem
                                         onSelect={(e) => {
                                             e.preventDefault()
-                                            setTeachModalData({ open: true, tags: classifiedTeachTags })
+                                            setTeachModalData({ open: true, tags: getClassifiedTeachTags() })
                                         }}
                                     >
                                         <GraduationCap className="mr-2 h-4 w-4" />

@@ -3,6 +3,7 @@ import { BooruPost, SearchOptions } from '../types'
 import { PROVIDER_URLS, PROVIDER_REFERERS, USER_AGENT } from '../../constants'
 import type { ProviderEnv } from '../factory'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { logger } from '../../../logger'
 
 interface Rule34PostResponse {
   id: string | number
@@ -67,7 +68,9 @@ export class Rule34Provider extends BaseBooruProvider {
         Origin: PROVIDER_REFERERS.RULE34.replace(/\/$/, ''),
       })
     } catch (e) {
-      console.error('[Rule34] fetch failed:', e)
+      logger.warn('rule34_fetch_error', {
+        error: e instanceof Error ? e.message : String(e),
+      })
       return []
     }
 

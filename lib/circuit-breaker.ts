@@ -126,11 +126,7 @@ export function getCircuitRetryAfter(key: string): number {
 // state via Redis so ALL instances stop simultaneously.
 // ---------------------------------------------------------------------------
 
-import { Redis } from "@upstash/redis"
-
-const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-  ? Redis.fromEnv()
-  : null
+import { redis } from "./redis"
 
 const CIRCUIT_REDIS_PREFIX = "circuit:"
 

@@ -54,7 +54,7 @@ Sentry.init({
   sendDefaultPii: false,
 
   // Only capture errors in production
-  enabled: process.env.NODE_ENV === "production",
+  enabled: process.env.NODE_ENV === "production" && Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN),
 
   // Filter out noisy errors from browser extensions, translators, and known non-actionable sources
   ignoreErrors: [

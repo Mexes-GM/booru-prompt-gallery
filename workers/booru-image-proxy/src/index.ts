@@ -12,6 +12,7 @@ import { corsHeaders, getCorsHeaders } from './utils'
 import { imageProxyHandler } from './routes/image-proxy'
 import { trendsHandler } from './routes/trends'
 import { securityTxtHandler, robotsTxtHandler } from './routes/security-txt'
+import { logger } from './logger'
 
 const router = AutoRouter()
 
@@ -55,8 +56,27 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: getCorsHeaders(request.headers.get('Origin')) })
     }
+
+    const startMs = Date.now()
+    const requestId = request.headers.get('x-request-id') ?? undefined
+    const log = requestId ? logger.child({ requestId }) : logger
+
     const response = await router.fetch(request, env, ctx)
+    const durationMs = Date.now() - startMs
+
+    // Structured request log (RED: Rate/Errors/Duration)
+    const statusClass = Math.floor(response.status / 100) + 'xx'
+    const logFields = { path: url.pathname, method: request.method, status: response.status, statusClass, durationMs }
+    if (response.status >= 500) {
+      log.error('request', logFields)
+    } else if (response.status >= 400) {
+      log.warn('request', logFields)
+    } else {
+      log.info('request', logFields)
+    }
+
     const headers = new Headers(response.headers)
+    if (requestId) headers.set('x-request-id', requestId)
     const requestCorsHeaders = getCorsHeaders(request.headers.get('Origin'))
     for (const [k, v] of Object.entries(requestCorsHeaders)) {
       headers.set(k, v)

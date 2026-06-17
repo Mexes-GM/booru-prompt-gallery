@@ -3,6 +3,7 @@ import { BooruFactory } from '../lib/booru/factory'
 import { BooruPost } from '../lib/booru/types'
 import { Redis, getRedis } from '../lib/redis'
 import { checkCircuitOpen } from '../lib/circuit-breaker'
+import { MERGED_RATELIMIT_SCRIPT } from '../lib/constants'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
 import { sleep } from '../utils'
 
@@ -59,26 +60,37 @@ export async function favoritesHandler(
     if (redis) {
       const clientIp = getClientIp(request)
 
-      const perIpMax = hasDanbooru ? 60 : 30
-      const userKey = `ratelimit:booru:fav:${clientIp}`
-      const userCount = await redis.incrWithExpire(userKey, 60)
-      if (userCount > perIpMax) {
-        return errorResponse(
-          'Too many requests. Please wait before loading favorites.',
-          429,
-          { 'Retry-After': '10' }
-        )
-      }
-
-      // Danbooru-specific global limit
       if (hasDanbooru) {
+        // Single EVAL: atomically INCR+EXPIRE both per-IP and global keys
+        const userKey = `ratelimit:booru:fav:${clientIp}`
         const globalKey = 'ratelimit:danbooru:global:favorites'
-        const globalCount = await redis.incrWithExpire(globalKey, 60)
+        const result = await redis.eval(MERGED_RATELIMIT_SCRIPT, [userKey, globalKey], ['60']) as number[]
+        const userCount = result?.[0] ?? 0
+        const globalCount = result?.[1] ?? 0
+
+        if (userCount > 60) {
+          return errorResponse(
+            'Too many requests. Please wait before loading favorites.',
+            429,
+            { 'Retry-After': '10' }
+          )
+        }
+
         if (globalCount > 100) {
           return errorResponse(
             'Danbooru requests are temporarily throttled. Please wait a moment.',
             429,
             { 'Retry-After': '2' }
+          )
+        }
+      } else {
+        const userKey = `ratelimit:booru:fav:${clientIp}`
+        const userCount = await redis.incrWithExpire(userKey, 60)
+        if (userCount > 30) {
+          return errorResponse(
+            'Too many requests. Please wait before loading favorites.',
+            429,
+            { 'Retry-After': '10' }
           )
         }
       }

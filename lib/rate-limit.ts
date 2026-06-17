@@ -1,9 +1,5 @@
 import { Ratelimit } from "@upstash/ratelimit"
-import { Redis } from "@upstash/redis"
-
-const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-  ? Redis.fromEnv()
-  : null
+import { redis } from "./redis"
 
 // ---------------------------------------------------------------------------
 // In-memory fallback rate limiter

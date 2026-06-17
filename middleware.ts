@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { getRateLimit } from '@/lib/rate-limit'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { generateRequestId } from '@/lib/logger'
 
 /** Apply common security headers to non-API responses. */
 function applySecurityHeaders(response: NextResponse): void {
@@ -29,9 +30,21 @@ function applySecurityHeaders(response: NextResponse): void {
   response.headers.set('Content-Security-Policy', csp)
 }
 
+/**
+ * Stamp a response with the correlation request ID and return it.
+ * Every response must pass through this so x-request-id is always present.
+ */
+function withRequestId(response: NextResponse, requestId: string): NextResponse {
+  response.headers.set('x-request-id', requestId)
+  return response
+}
+
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl
   const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
+
+  // --- Request ID: generate or propagate ---
+  const requestId = request.headers.get('x-request-id') ?? generateRequestId()
 
   // --- Vercel Pause Override ---
   // If the app is paused on Vercel to save limits, block all routes except the root.
@@ -39,10 +52,10 @@ export async function middleware(request: NextRequest) {
   // This effectively stops any API calls, Supabase connections, and compute usage.
   if (process.env.VERCEL === "1") {
     if (url.pathname !== '/') {
-      return NextResponse.json(
+      return withRequestId(NextResponse.json(
         { error: 'Vercel deployment is paused due to usage limits. Please use the Netlify mirror.' },
         { status: 503 }
-      )
+      ), requestId)
     }
   }
 
@@ -56,7 +69,7 @@ export async function middleware(request: NextRequest) {
     // Preserve the "next" param if present
     const next = url.searchParams.get('next')
     if (next) callbackUrl.searchParams.set('next', next)
-    return NextResponse.redirect(callbackUrl)
+    return withRequestId(NextResponse.redirect(callbackUrl), requestId)
   }
 
   // --- API Routes: Lightweight path (NO Supabase auth) ---
@@ -71,10 +84,10 @@ export async function middleware(request: NextRequest) {
       if (rateLimit) {
         const { success, remaining } = await rateLimit.limit(ip)
         if (!success) {
-          return NextResponse.json(
+          return withRequestId(NextResponse.json(
             { error: 'Too many requests' },
             { status: 429, headers: { 'X-RateLimit-Remaining': remaining.toString() } }
-          )
+          ), requestId)
         }
       }
     }
@@ -85,7 +98,7 @@ export async function middleware(request: NextRequest) {
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
-    return response
+    return withRequestId(response, requestId)
   }
 
   // --- Non-API Routes: Full Supabase auth path ---
@@ -102,7 +115,7 @@ export async function middleware(request: NextRequest) {
   if (!hasAuthCookie && !url.pathname.startsWith('/admin')) {
     const response = NextResponse.next()
     applySecurityHeaders(response)
-    return response
+    return withRequestId(response, requestId)
   }
 
   const { response, user } = await updateSession(request)
@@ -111,12 +124,12 @@ export async function middleware(request: NextRequest) {
   if (url.pathname.startsWith('/admin')) {
     if (url.pathname === '/admin/login') {
       if (user) {
-        return NextResponse.redirect(new URL('/admin', request.url))
+        return withRequestId(NextResponse.redirect(new URL('/admin', request.url)), requestId)
       }
     } else {
       if (!user) {
         const loginUrl = new URL('/admin/login', request.url)
-        return NextResponse.redirect(loginUrl)
+        return withRequestId(NextResponse.redirect(loginUrl), requestId)
       }
       
       // Verify admin role
@@ -127,7 +140,7 @@ export async function middleware(request: NextRequest) {
         .single()
       
       if (!profile || profile.role !== 'admin') {
-        return NextResponse.redirect(new URL('/', request.url))
+        return withRequestId(NextResponse.redirect(new URL('/', request.url)), requestId)
       }
     }
   }
@@ -135,7 +148,7 @@ export async function middleware(request: NextRequest) {
   // Security headers for non-API routes
   applySecurityHeaders(response)
 
-  return response
+  return withRequestId(response, requestId)
 }
 
 export const config = {

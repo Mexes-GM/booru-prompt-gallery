@@ -2,6 +2,7 @@ import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions, TrendItem } from '../types'
 import { PROVIDER_URLS } from '../../constants'
 import type { ProviderEnv } from '../factory'
+import { logger } from '../../../logger'
 
 interface DanbooruPost {
   id: number
@@ -202,7 +203,9 @@ export class DanbooruProvider extends BaseBooruProvider {
       return [...finalChars, ...finalCopies].sort((a, b) => b.count - a.count)
 
     } catch (error) {
-      console.error("Error in getTrending:", error)
+      logger.warn('danbooru_trending_error', {
+        error: error instanceof Error ? error.message : String(error),
+      })
       return []
     }
   }

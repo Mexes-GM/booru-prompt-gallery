@@ -1,6 +1,7 @@
 import { BooruPost, SearchOptions } from './types'
 import { getDanbooruUserAgent, USER_AGENT } from '../constants'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { logger } from '../../logger'
 
 interface TagCategoryRow {
   name: string
@@ -145,7 +146,9 @@ export abstract class BaseBooruProvider {
         }
       })
     } catch (e) {
-      console.error('Error enriching posts with categories:', e)
+      logger.warn('booru_enrich_error', {
+        error: e instanceof Error ? e.message : String(e),
+      })
       return posts
     }
   }

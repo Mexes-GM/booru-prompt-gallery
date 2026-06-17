@@ -1,6 +1,7 @@
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
 import { PROVIDER_URLS, USER_AGENT } from '../../constants'
+import { logger } from '../../../logger'
 
 interface E621FileData {
   url?: string
@@ -84,7 +85,9 @@ export class E621Provider extends BaseBooruProvider {
 
       return this.filterValidPosts(mappedPosts)
     } catch (error) {
-      console.error('[E621] fetch error:', error)
+      logger.warn('e621_fetch_error', {
+        error: error instanceof Error ? error.message : String(error),
+      })
       throw error
     }
   }

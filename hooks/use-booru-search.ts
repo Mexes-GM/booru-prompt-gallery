@@ -11,6 +11,20 @@ import {
 } from '@/lib/analytics'
 import { useToast } from "@/hooks/use-toast"
 
+function shallowEqual(objA: any, objB: any): boolean {
+  if (Object.is(objA, objB)) return true;
+  if (typeof objA !== 'object' || objA === null || typeof objB !== 'object' || objB === null) return false;
+  const keysA = Object.keys(objA);
+  const keysB = Object.keys(objB);
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i++) {
+    const key = keysA[i];
+    if (!Object.prototype.hasOwnProperty.call(objB, key) || !Object.is(objA[key], objB[key])) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export function useBooruSearch() {
   const [searchTags, setSearchTagsState] = useState(() => {
@@ -242,7 +256,7 @@ export function useBooruSearch() {
   const lastSearchKeyRef = useRef<string>('')
 
   // Create a stable key for the current search parameters
-  const currentSearchKey = `${booruProvider}-${debouncedSearchTags}-${ratingFilter}-${order}-${randomSeed}`
+  const currentSearchKey = `${booruProvider}-${debouncedSearchTags}-${ratingFilter}-${order}-${randomSeed}-${appliedTagCountFilter}-${appliedCharacterCountFilter}`
 
   const allPosts = useMemo(() => {
     if (!pages) return []
@@ -268,11 +282,10 @@ export function useBooruSearch() {
       const post = flatPosts[i]
 
       if (idToIndex.has(post.id)) {
-        // Update existing post to get latest data (like score)
-        // This keeps the exact same position in the array
+        // Update existing post if any property changed (like scores)
         const index = idToIndex.get(post.id)!
-        // Only update if the object is actually different to avoid unnecessary re-renders
-        if (JSON.stringify(newStablePosts[index]) !== JSON.stringify(post)) {
+        const existing = newStablePosts[index]
+        if (!shallowEqual(existing, post)) {
           newStablePosts[index] = post
           hasChanges = true
         }

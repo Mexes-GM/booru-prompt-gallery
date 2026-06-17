@@ -76,6 +76,7 @@ copilot-instructions.md
 .windsurf/
 skills/
 docs/
+plans/
 
 # Sentry Config File
 .env.sentry-build-plugin

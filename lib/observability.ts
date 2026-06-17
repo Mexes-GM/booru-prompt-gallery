@@ -1,7 +1,7 @@
 /**
- * Structured JSON logging for observability.
+ * Observability helpers — thin wrappers around the structured Logger.
  *
- * Each log line is a JSON object that can be consumed by log aggregation
+ * Each function emits a JSON log line that can be consumed by log aggregation
  * tools (Vercel Logs, Cloudflare Logpush, etc.).
  *
  * Events tracked:
@@ -9,35 +9,57 @@
  * - Cache hit/miss
  * - Circuit breaker transitions (logged in circuit-breaker.ts)
  * - API request latency
+ *
+ * On-call questions these logs answer:
+ *   Q2 (circuit breaker): Filter event=opened|half-open|closed|reopened, layer=circuit-breaker
+ *   Q3 (slow endpoints): Filter event=request, group by endpoint, inspect durationMs
+ *   Q4 (Upstash down): Filter event=upstash_fallback, layer=rate-limit
  */
 
-interface LogEntry {
-  layer: "client" | "api" | "worker" | "rate-limit" | "circuit-breaker"
-  event: string
-  [key: string]: unknown
-}
+import { rootLogger, type Logger } from "./logger"
 
-function emit(entry: LogEntry): void {
-  console.log(JSON.stringify({ ...entry, timestamp: Date.now() }))
-}
+// Re-export for consumers that want the full Logger API
+export { Logger, rootLogger, generateRequestId } from "./logger"
+export type { LogEntry, LogLevel } from "./logger"
+
+const log = rootLogger.child({ module: "observability" })
 
 // Rate limit hits
-export function logRateLimitHit(layer: LogEntry["layer"], details: Record<string, unknown> = {}): void {
-  emit({ layer, event: "rate_limit_hit", ...details })
+export function logRateLimitHit(
+  layer: string,
+  details: Record<string, unknown> = {}
+): void {
+  log.warn("rate_limit_hit", { layer, ...details })
 }
 
 // Cache operations
-export function logCacheHit(layer: "worker" | "api", url?: string): void {
-  emit({ layer, event: "cache_hit", url: url?.substring(0, 100) })
+export function logCacheHit(
+  layer: "worker" | "api",
+  url?: string
+): void {
+  log.debug("cache_hit", { layer, url: url?.substring(0, 100) })
 }
 
-export function logCacheMiss(layer: "worker" | "api", url?: string): void {
-  emit({ layer, event: "cache_miss", url: url?.substring(0, 100) })
+export function logCacheMiss(
+  layer: "worker" | "api",
+  url?: string
+): void {
+  log.debug("cache_miss", { layer, url: url?.substring(0, 100) })
 }
 
-// API request latency
-export function logRequestLatency(endpoint: string, durationMs: number, status: number): void {
-  emit({ layer: "api", event: "request", endpoint, durationMs, status })
+// API request latency (RED: Duration)
+export function logRequestLatency(
+  endpoint: string,
+  durationMs: number,
+  status: number
+): void {
+  const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info"
+  log[level]("request", {
+    layer: "api",
+    endpoint,
+    durationMs: Math.round(durationMs),
+    status,
+  })
 }
 
 // Rate limit state snapshot (periodic)
@@ -49,5 +71,5 @@ export function maybeLogSnapshot(
   const now = Date.now()
   if (now - lastSnapshotTime < 60_000) return
   lastSnapshotTime = now
-  emit({ layer, event: "rate_limit_snapshot", ...stats })
+  log.info("rate_limit_snapshot", { layer, ...stats })
 }

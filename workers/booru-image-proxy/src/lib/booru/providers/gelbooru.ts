@@ -3,6 +3,7 @@ import { BooruPost, SearchOptions } from '../types'
 import { PROVIDER_URLS, PROVIDER_REFERERS } from '../../constants'
 import type { ProviderEnv } from '../factory'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { logger } from '../../../logger'
 
 interface GelbooruPostResponse {
   id: string | number
@@ -72,7 +73,9 @@ export class GelbooruProvider extends BaseBooruProvider {
         { Referer: PROVIDER_REFERERS.GELBOORU }
       )
     } catch (e) {
-      console.error('[Gelbooru] fetch failed:', e)
+      logger.warn('gelbooru_fetch_error', {
+        error: e instanceof Error ? e.message : String(e),
+      })
       return []
     }
 
