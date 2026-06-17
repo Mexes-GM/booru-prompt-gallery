@@ -409,6 +409,8 @@ export function PromptGallery() {
   const [showSettings, setShowSettings] = useState(true)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
+  const [showStickyPanel, setShowStickyPanel] = useState(false)
+  const controlPanelRef = useRef<HTMLDivElement>(null)
 
   // Folder Delete State
   const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
@@ -597,6 +599,26 @@ export function PromptGallery() {
       document.removeEventListener('visibilitychange', onVisibility)
       trackTimeOnPage(start)
       if (cleanupScroll) cleanupScroll()
+    }
+  }, [])
+
+  // Intersection Observer for Main Control Panel to show Sticky Mini Panel
+  useEffect(() => {
+    const element = controlPanelRef.current
+    if (!element) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // Show only if the control panel's top has gone above the viewport top
+        // and it is not intersecting.
+        setShowStickyPanel(!entry.isIntersecting && entry.boundingClientRect.top < 0)
+      },
+      { threshold: 0 }
+    )
+
+    observer.observe(element)
+    return () => {
+      observer.disconnect()
     }
   }, [])
 
@@ -1417,7 +1439,7 @@ export function PromptGallery() {
               </div>
             </div>
 
-            <Card className="glass-effect">
+            <Card ref={controlPanelRef} className="glass-effect">
               <CardContent className="p-4 sm:p-6">
                 <form onSubmit={search.handleSearch} className="space-y-6">
 
@@ -2694,7 +2716,7 @@ export function PromptGallery() {
       )}
       < TeachWelcomeModal triggerOpen={showWelcomeModal} onOpenChange={setShowWelcomeModal} />
       <StickyMiniControlPanel
-        isVisible={showBackToTop}
+        isVisible={showStickyPanel}
         addInput={addInput}
         setAddInput={setAddInput}
         includeCharacters={includeCharacters}
