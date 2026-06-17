@@ -69,6 +69,7 @@ export const STORAGE_KEYS = {
   SIMPLE_BACKGROUND_REPLACEMENT_TAGS: 'simple-background-replacement-tags',
   SMART_TAG_EXCLUSION: 'smart-tag-exclusion',
   RANDOM_BACKGROUND_PATTERNS: 'random-background-patterns',
+  RANDOM_BACKGROUND_INCLUDE_GRADIENTS: 'random-background-include-gradients',
 
   // Search and filter preferences
   SEARCH_TAGS: 'search-tags',
@@ -275,6 +276,12 @@ export const userPreferences = {
 
   setRandomBackgroundPatterns: (enabled: boolean) =>
     storage.set(STORAGE_KEYS.RANDOM_BACKGROUND_PATTERNS, enabled),
+
+  getRandomBackgroundIncludeGradients: (): boolean =>
+    storage.get(STORAGE_KEYS.RANDOM_BACKGROUND_INCLUDE_GRADIENTS, true),
+
+  setRandomBackgroundIncludeGradients: (enabled: boolean) =>
+    storage.set(STORAGE_KEYS.RANDOM_BACKGROUND_INCLUDE_GRADIENTS, enabled),
 
   getSimpleBackgroundReplacementTags: (): string =>
     storage.get(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, 'simple background, white background'),

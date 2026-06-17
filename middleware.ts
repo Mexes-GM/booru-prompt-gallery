@@ -6,13 +6,19 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateRequestId } from '@/lib/logger'
 
 /** Apply common security headers to non-API responses. */
-function applySecurityHeaders(response: NextResponse): void {
+function applySecurityHeaders(response: NextResponse, isExtensionRoute = false): void {
   response.headers.set('X-DNS-Prefetch-Control', 'on')
   response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
   response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
+  if (!isExtensionRoute) {
+    response.headers.set('X-Frame-Options', 'DENY')
+  }
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+
+  const frameAncestors = isExtensionRoute
+    ? "frame-ancestors 'self' chrome-extension://* moz-extension://*;"
+    : ""
 
   const csp = `
  default-src 'self';
@@ -22,6 +28,7 @@ function applySecurityHeaders(response: NextResponse): void {
  font-src 'self';
  connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://vitals.vercel-insights.com https://*.ingest.us.sentry.io https://netlify-cdp.netlify.app https://*.workers.dev;
  frame-src 'self' https://vercel.live;
+ ${frameAncestors}
  object-src 'none';
  base-uri 'self';
  form-action 'self';
@@ -114,7 +121,7 @@ export async function middleware(request: NextRequest) {
   // Admin routes always need auth, so never skip
   if (!hasAuthCookie && !url.pathname.startsWith('/admin')) {
     const response = NextResponse.next()
-    applySecurityHeaders(response)
+    applySecurityHeaders(response, url.pathname === '/extension')
     return withRequestId(response, requestId)
   }
 
@@ -146,7 +153,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Security headers for non-API routes
-  applySecurityHeaders(response)
+  applySecurityHeaders(response, url.pathname === '/extension')
 
   return withRequestId(response, requestId)
 }

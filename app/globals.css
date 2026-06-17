@@ -260,6 +260,13 @@ html {
   overflow-anchor: none;
 }
 
+/* Extension sidebar mode — runs inside an <iframe>.
+ * Disable html-level forced scroll so the internal flex layout controls scroll. */
+html.extension-mode {
+  overflow-y: hidden !important;
+  scrollbar-gutter: auto !important;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

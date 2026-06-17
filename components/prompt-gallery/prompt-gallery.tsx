@@ -878,11 +878,10 @@ export function PromptGallery() {
         for (const tag of charTags) {
           const count = tagCounts[tag]
           if (count === undefined) {
-            // Count not loaded yet — give benefit of the doubt, keep the post.
-            // This prevents posts from appearing/disappearing as tag counts
-            // resolve asynchronously in batches.
-            hasValidCount = true
-            break
+            // Count not loaded yet — be strict: don't pass through unknown tags
+            // when the user has explicitly set a threshold. The filter will
+            // re-run once tagCounts updates (tagCounts is now in deps).
+            continue
           } else if (count >= minCharPostCount) {
             hasValidCount = true
             break
@@ -897,10 +896,7 @@ export function PromptGallery() {
       const fileUrl = post.large_file_url || post.file_url
       return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist, includeCharacters, search.appliedCharacterCountFilter])
-  // NOTE: tagCounts intentionally NOT in deps — prevents progressive re-filtering
-  // as tag counts resolve. Unknown counts are treated as passing (optimistic).
+  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts])
 
   // Constant empty array reference for memoization
   const EMPTY_ARRAY = useRef<string[]>([]).current
