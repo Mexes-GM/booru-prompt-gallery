@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { PlaceholdersAndVanishInput } from "@/components/ui/placeholders-and-vanish-input"
-import { searchTags, TagResult } from "@/app/actions/tag-search"
+import { searchTags, TagResult } from "@/lib/supabase/client-queries"
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
 

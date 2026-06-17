@@ -48,8 +48,10 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
   const [isLoading, setIsLoading] = useState(true)
   const [loaded, setLoaded] = useState(false)
 
+  const userId = user?.id
+
   const loadFromSupabase = useCallback(async () => {
-    if (!user) return [] as SavedArtist[]
+    if (!userId) return [] as SavedArtist[]
     const { data, error } = await supabase
       .from("saved_artists")
       .select("provider, artist_tag, thumbnail_url, thumbnail_post_id, created_at")
@@ -59,7 +61,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       return []
     }
     return (data || []).map((r: DbSavedArtistRow) => rowToArtist(r))
-  }, [user, supabase])
+  }, [userId, supabase])
 
   const loadFromLocal = useCallback((): SavedArtist[] => {
     return userPreferences.getSavedArtists()
@@ -67,7 +69,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
 
   // One-time migration of local → cloud when a user signs in and has local artists
   const migrateLocalToCloud = useCallback(async () => {
-    if (!user || _migrationCompleted) return
+    if (!userId || _migrationCompleted) return
     const local = userPreferences.getSavedArtists()
     if (local.length === 0) {
       _migrationCompleted = true
@@ -75,7 +77,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
     }
 
     const rows = local.map((a) => ({
-      user_id: user.id,
+      user_id: userId,
       provider: a.provider,
       artist_tag: a.artistTag,
       thumbnail_url: a.thumbnailUrl,
@@ -92,12 +94,12 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       console.error("[useSavedArtists] migration error:", error)
     }
     _migrationCompleted = true
-  }, [user, supabase])
+  }, [userId, supabase])
 
   const refresh = useCallback(async () => {
     setIsLoading(true)
     try {
-      if (user) {
+      if (userId) {
         await migrateLocalToCloud()
         const cloud = await loadFromSupabase()
         setSavedArtists(cloud)
@@ -108,7 +110,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [user, loadFromSupabase, loadFromLocal, migrateLocalToCloud])
+  }, [userId, loadFromSupabase, loadFromLocal, migrateLocalToCloud])
 
   useEffect(() => {
     if (userLoading) return
@@ -116,7 +118,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
     ;(async () => {
       setIsLoading(true)
       try {
-        if (user) {
+        if (userId) {
           await migrateLocalToCloud()
           const cloud = await loadFromSupabase()
           if (isMounted) setSavedArtists(cloud)
@@ -133,7 +135,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
     return () => {
       isMounted = false
     }
-  }, [user?.id, userLoading, loadFromSupabase, loadFromLocal, migrateLocalToCloud])
+  }, [userId, userLoading, loadFromSupabase, loadFromLocal, migrateLocalToCloud])
 
   const isSaved = useCallback(
     (provider: string, artistTag: string) => {
@@ -151,10 +153,10 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       const newArtist: SavedArtist = { ...artist, timestamp: Date.now() }
       setSavedArtists((prev) => [newArtist, ...prev])
 
-      if (user) {
+      if (userId) {
         const { error } = await supabase.from("saved_artists").upsert(
           {
-            user_id: user.id,
+            user_id: userId,
             provider: artist.provider,
             artist_tag: artist.artistTag,
             thumbnail_url: artist.thumbnailUrl,
@@ -177,7 +179,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
 
       toast({ title: "Artist saved", description: artist.artistTag })
     },
-    [user, supabase, isSaved],
+    [userId, supabase, isSaved],
   )
 
   const removeArtist = useCallback(
@@ -186,11 +188,11 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       const before = savedArtists
       setSavedArtists((prev) => prev.filter((a) => buildKey(a.provider, a.artistTag) !== key))
 
-      if (user) {
+      if (userId) {
         const { error } = await supabase
           .from("saved_artists")
           .delete()
-          .match({ user_id: user.id, provider, artist_tag: artistTag })
+          .match({ user_id: userId, provider, artist_tag: artistTag })
         if (error) {
           console.error("[useSavedArtists] remove error:", error)
           toast({ title: "Error removing artist", description: error.message, variant: "destructive" })
@@ -204,14 +206,14 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
 
       toast({ title: "Artist removed", description: artistTag })
     },
-    [user, supabase, savedArtists],
+    [userId, supabase, savedArtists],
   )
 
   const clearAll = useCallback(async () => {
     const before = savedArtists
     setSavedArtists([])
-    if (user) {
-      const { error } = await supabase.from("saved_artists").delete().eq("user_id", user.id)
+    if (userId) {
+      const { error } = await supabase.from("saved_artists").delete().eq("user_id", userId)
       if (error) {
         setSavedArtists(before)
         toast({ title: "Error clearing artists", description: error.message, variant: "destructive" })
@@ -221,7 +223,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       userPreferences.clearSavedArtists()
     }
     toast({ title: "All artists removed" })
-  }, [user, supabase, savedArtists])
+  }, [userId, supabase, savedArtists])
 
   return {
     savedArtists,

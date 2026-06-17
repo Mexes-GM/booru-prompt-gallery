@@ -47,7 +47,7 @@ import {
 } from "lucide-react"
 
 import dynamic from "next/dynamic"
-import { getAllTagOverrides } from "@/app/actions/tags"
+import { getCachedTagOverrides } from "@/lib/supabase/client-queries"
 
 const TeachModal = dynamic(() => import("@/components/teach-modal").then(m => m.TeachModal))
 const TeachWelcomeModal = dynamic(() => import("@/components/teach-welcome-modal").then(m => m.TeachWelcomeModal))
@@ -523,7 +523,7 @@ export function PromptGallery() {
 
   const refreshOverrides = useCallback(async () => {
     try {
-      const overrides = await getAllTagOverrides()
+      const overrides = await getCachedTagOverrides()
       setTagOverrides(overrides)
     } catch (error) {
       console.error("Failed to refresh tag overrides:", error)
