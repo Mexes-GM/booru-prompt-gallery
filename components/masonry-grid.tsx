@@ -56,7 +56,7 @@ const MasonryItem = React.memo(({
     >
       <div
         className="masonry-item-inner"
-        style={isInitial ? { animationDelay: `${staggerIndex * 30}ms` } : { opacity: 1, transform: "scale(1)" }}
+        style={isInitial ? { animationDelay: `${staggerIndex * 30}ms` } : undefined}
       >
         {renderItem(pos.item, pos.width, pos.height, pos.index)}
       </div>
