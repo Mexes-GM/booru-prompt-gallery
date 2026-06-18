@@ -63,7 +63,7 @@ function updateQueueUI() {
 
   // Badge
   if (count > 0) {
-    queueBadge.textContent = `${count} en cola`;
+    queueBadge.textContent = `${count} queued`;
     queueBadge.style.display = "inline-flex";
   } else {
     queueBadge.style.display = "none";
@@ -75,13 +75,13 @@ function updateQueueUI() {
   // Status dot + text
   if (isProcessing) {
     queueStatusDot.className = "queue-dot generating";
-    queueStatusText.textContent = "Generando…";
+    queueStatusText.textContent = "Generating...";
   } else if (count > 0) {
     queueStatusDot.className = "queue-dot queued";
-    queueStatusText.textContent = "En espera";
+    queueStatusText.textContent = "Queued";
   } else {
     queueStatusDot.className = "queue-dot idle";
-    queueStatusText.textContent = "Listo";
+    queueStatusText.textContent = "Ready";
   }
 
   // Show/hide bar

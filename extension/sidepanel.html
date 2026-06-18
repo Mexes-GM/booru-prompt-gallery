@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -163,6 +163,51 @@
       background-color: transparent;
       min-height: 0; /* allow flex shrink */
     }
+
+    /* ── Light Mode Themes ────────────────────────────────── */
+    @media (prefers-color-scheme: light) {
+      html, body {
+        background-color: #ffffff;
+        color: #09090b;
+      }
+      .config-bar {
+        background-color: #f4f4f5;
+        border-bottom: 1px solid #e4e4e7;
+      }
+      .config-bar span {
+        color: #71717a;
+      }
+      .btn {
+        background-color: #e4e4e7;
+        border: 1px solid #d4d4d8;
+        color: #27272a;
+      }
+      .btn:hover {
+        background-color: #d4d4d8;
+        color: #09090b;
+      }
+      .btn.active {
+        background-color: #2563eb;
+        border-color: #3b82f6;
+        color: #fff;
+      }
+      #queue-bar {
+        background-color: #fafafa;
+        border-bottom: 1px solid #e4e4e7;
+      }
+      #queue-status-text {
+        color: #71717a;
+      }
+      #queue-clear-btn {
+        border: 1px solid #d4d4d8;
+        color: #71717a;
+      }
+      #queue-clear-btn:hover {
+        border-color: #ef4444;
+        color: #ef4444;
+        background-color: #fee2e2;
+      }
+    }
   </style>
 </head>
 <body>
@@ -170,20 +215,20 @@
 
     <!-- Dev/Prod environment switcher -->
     <div class="config-bar">
-      <span>Entorno:</span>
+      <span>Environment:</span>
       <div class="btn-group">
         <button id="btn-local" class="btn active" data-url="http://localhost:3000/extension">Local (Dev)</button>
-        <button id="btn-prod" class="btn" data-url="https://booru-prompt-gallery.netlify.app/extension">Producción</button>
+        <button id="btn-prod" class="btn" data-url="https://booru-prompt-gallery.netlify.app/extension">Production</button>
       </div>
     </div>
 
     <!-- Queue Status Bar (hidden by default, shown when queue is active) -->
     <div id="queue-bar">
       <span id="queue-status-dot" class="queue-dot idle"></span>
-      <span id="queue-status-text">Listo</span>
-      <span id="queue-badge">0 en cola</span>
+      <span id="queue-status-text">Ready</span>
+      <span id="queue-badge">0 queued</span>
       <span class="queue-spacer"></span>
-      <button id="queue-clear-btn" title="Limpiar cola de prompts">✕ Limpiar</button>
+      <button id="queue-clear-btn" title="Clear prompt queue">✕ Clear</button>
     </div>
 
     <!-- The actual hosted app iframe -->

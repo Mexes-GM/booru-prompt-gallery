@@ -24,6 +24,7 @@ interface BlacklistManagerProps {
   onAdd: (tag: string) => void
   onRemove: (tag: string) => void
   onReset: () => void
+  className?: string
 }
 
 // --- Animation Variants ---
@@ -57,7 +58,7 @@ const badgeVariants: Variants = {
   exit: { opacity: 0, scale: 0.8, transition: { duration: 0.15 } }
 }
 
-export function BlacklistManager({ blacklist, onAdd, onRemove, onReset }: BlacklistManagerProps) {
+export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, className }: BlacklistManagerProps) {
   const [inputValue, setInputValue] = useState("")
   const [isOpen, setIsOpen] = useState(false)
 
@@ -86,7 +87,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset }: Blackl
           <DialogTrigger asChild>
             <Button
               variant="outline"
-              className="h-11 rounded-none relative z-10 px-2 sm:px-3 bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className={cn("h-11 rounded-none relative z-10 px-2 sm:px-3 bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground", className)}
             >
               <Tag className="w-3.5 h-3.5 sm:mr-1.5" />
               <span className="hidden sm:inline text-xs font-medium">Blacklist</span>

@@ -99,6 +99,8 @@ function PocketCard({
   onSearch,
   onUsedPrompt,
   queueLength,
+  isGlobalWeightsEnabled,
+  onGlobalWeightChange,
 }: {
   post: BooruPost
   getCleanedPrompt: (post: BooruPost) => string
@@ -113,6 +115,8 @@ function PocketCard({
   onUsedPrompt: (prompt: string, postId: number, thumbnailUrl?: string) => void
   /** Number of items currently in the sidepanel queue (0 = idle) */
   queueLength: number
+  isGlobalWeightsEnabled: boolean
+  onGlobalWeightChange?: (tag: string, weight: number) => void
 }) {
   const [copied, setCopied] = useState(false)
   /** 'idle' | 'queued' (amber, waiting for TensorArt) | 'sent' (green, injected) */
@@ -260,6 +264,7 @@ function PocketCard({
             onUpdate={setModifiedContent}
             globalWeights={globalWeights}
             onSearch={onSearch}
+            onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
           />
         </div>
 
@@ -547,19 +552,19 @@ export default function ExtensionClient() {
     setPresets(newPresets)
     setPresetName("")
     setIsPresetDialogOpen(false)
-    toast({ title: "Preset guardado", description: "El preset se ha guardado correctamente." })
+    toast({ title: "Preset saved", description: "The preset has been successfully saved." })
   }
 
   const loadPreset = (preset: TagPreset) => {
     setAddInput(preset.content)
-    toast({ title: "Preset cargado", description: `Cargado: ${preset.name}` })
+    toast({ title: "Preset loaded", description: `Loaded: ${preset.name}` })
   }
 
   const deletePreset = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     const newPresets = userPreferences.removeAddTagsPreset(id)
     setPresets(newPresets)
-    toast({ title: "Preset eliminado", description: "El preset se ha eliminado." })
+    toast({ title: "Preset deleted", description: "The preset has been removed." })
   }
 
   // History State
@@ -606,7 +611,7 @@ export default function ExtensionClient() {
   const handleClearGlobalWeights = useCallback(() => {
     setGlobalWeights({})
     setIsGlobalWeightsModalOpen(false)
-    toast({ title: "Pesos restablecidos", description: "Todos los pesos se han eliminado." })
+    toast({ title: "Weights reset", description: "All weights have been cleared." })
   }, [setGlobalWeights, toast])
 
   const toggleGlobalWeights = (enabled: boolean) => {
@@ -834,7 +839,7 @@ export default function ExtensionClient() {
 
         {/* Search Input, Blacklist, NSFW and buttons */}
         <div className="flex flex-col gap-2 w-full">
-          <div className="flex w-full items-center gap-1">
+          <div className="flex w-full items-center">
             <div className="relative flex-1 group">
               <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-4 h-4 text-muted-foreground pointer-events-none z-20">
                 <Search className="h-3.5 w-3.5" />
@@ -851,7 +856,7 @@ export default function ExtensionClient() {
                   type="button"
                   onClick={search.clearSearch}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-0.5 z-20"
-                  aria-label="Limpiar búsqueda"
+                  aria-label="Clear search"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -860,14 +865,13 @@ export default function ExtensionClient() {
             
             {/* Blacklist Manager */}
             {search.isClient && (
-              <div className="shrink-0 h-8">
-                <BlacklistManager
-                  blacklist={blacklist}
-                  onAdd={addTag}
-                  onRemove={removeTag}
-                  onReset={resetBlacklist}
-                />
-              </div>
+              <BlacklistManager
+                blacklist={blacklist}
+                onAdd={addTag}
+                onRemove={removeTag}
+                onReset={resetBlacklist}
+                className="h-8 text-[11px] px-2"
+              />
             )}
 
             {/* NSFW Toggle */}
@@ -901,7 +905,7 @@ export default function ExtensionClient() {
                 variant={search.isShuffle ? "default" : "outline"}
                 onClick={search.toggleShuffle}
                 className="h-8 w-8 p-0 shadow-sm"
-                title={search.isShuffle ? "Desactivar shuffle" : "Activar shuffle"}
+                title={search.isShuffle ? "Disable shuffle" : "Enable shuffle"}
               >
                 <Shuffle className="w-3.5 h-3.5" />
               </Button>
@@ -911,24 +915,24 @@ export default function ExtensionClient() {
                 onClick={search.refresh}
                 disabled={search.isValidating}
                 className="h-8 w-8 p-0 shadow-sm"
-                title="Refrescar resultados"
+                title="Refresh results"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${search.isValidating ? "animate-spin text-primary" : ""}`} />
               </Button>
               <Sheet>
                 <SheetTrigger asChild>
-                  <Button type="button" variant="outline" className="h-8 w-8 p-0 shadow-sm" title="Historial">
+                  <Button type="button" variant="outline" className="h-8 w-8 p-0 shadow-sm" title="History">
                     <History className="w-3.5 h-3.5" />
                   </Button>
                 </SheetTrigger>
                 <SheetContent className="w-full sm:w-[400px]">
                   <SheetHeader>
-                    <SheetTitle className="text-sm font-bold">Historial de Prompts</SheetTitle>
-                    <SheetDescription className="text-xs">Prompts recientemente copiados o enviados.</SheetDescription>
+                    <SheetTitle className="text-sm font-bold">Prompt History</SheetTitle>
+                    <SheetDescription className="text-xs">Recently copied or sent prompts.</SheetDescription>
                   </SheetHeader>
                   <div className="mt-4 overflow-y-auto max-h-[calc(100vh-120px)] pr-1 space-y-3">
                     {history.length === 0 ? (
-                      <p className="text-center text-xs text-muted-foreground py-8">Historial vacío</p>
+                      <p className="text-center text-xs text-muted-foreground py-8">History is empty</p>
                     ) : (
                       <>
                         {history.map((item) => (
@@ -971,10 +975,10 @@ export default function ExtensionClient() {
                                 className="h-7 text-xs px-2"
                                 onClick={() => {
                                   navigator.clipboard.writeText(item.content)
-                                  toast({ title: "Copiado", description: "Prompt copiado al portapapeles." })
+                                  toast({ title: "Copied", description: "Prompt copied to clipboard." })
                                 }}
                               >
-                                <Copy className="h-3 w-3 mr-1" /> Copiar
+                                <Copy className="h-3 w-3 mr-1" /> Copy
                               </Button>
                               <Button
                                 size="sm"
@@ -982,10 +986,10 @@ export default function ExtensionClient() {
                                 className="h-7 text-xs px-2"
                                 onClick={() => {
                                   window.parent.postMessage({ type: "INJECT_PROMPT", prompt: item.content }, "*")
-                                  toast({ title: "Enviado", description: "Prompt inyectado en el generador." })
+                                  toast({ title: "Sent", description: "Prompt injected into generator." })
                                 }}
                               >
-                                <Send className="h-3 w-3 mr-1" /> Enviar
+                                <Send className="h-3 w-3 mr-1" /> Send
                               </Button>
                             </div>
                           </div>
@@ -999,7 +1003,7 @@ export default function ExtensionClient() {
                             setHistory([])
                           }}
                         >
-                          Limpiar Historial
+                          Clear History
                         </Button>
                       </>
                     )}
@@ -1015,10 +1019,10 @@ export default function ExtensionClient() {
               className={`h-8 px-2.5 gap-1.5 shadow-sm text-xs font-semibold ${
                 showSettings ? "bg-primary/10 text-primary border-primary/30" : "text-muted-foreground hover:text-foreground hover:bg-muted bg-background"
               }`}
-              title="Ajustes rápidos"
+              title="Quick settings"
             >
               <Settings size={14} className={showSettings ? "text-primary animate-pulse" : ""} />
-              <span>Ajustes</span>
+              <span>Settings</span>
             </Button>
           </div>
         </div>
@@ -1028,14 +1032,14 @@ export default function ExtensionClient() {
           <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
             <div className="p-3 bg-muted/20 border border-border/50 rounded-lg flex flex-col gap-3.5">
               <h2 className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground/80 flex items-center gap-1 select-none">
-                <Sliders size={10} /> Ajustes del Prompt
+                <Sliders size={10} /> Prompt Settings
               </h2>
 
-              {/* Tags a Añadir */}
+              {/* Tags to Add */}
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="add-tags-input" className="text-xs font-semibold">Tags a Añadir</Label>
-                  <span className="text-[9px] text-muted-foreground">(Solo prompt final)</span>
+                  <Label htmlFor="add-tags-input" className="text-xs font-semibold">Tags to Add</Label>
+                  <span className="text-[9px] text-muted-foreground">(Only final prompt)</span>
                 </div>
                 <div className="flex h-8 w-full items-center rounded-md border border-input bg-background/50 pl-2 pr-1 text-xs shadow-sm focus-within:ring-1 focus-within:ring-ring">
                   <DebouncedHTMLInput
@@ -1062,53 +1066,53 @@ export default function ExtensionClient() {
                     
                     <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
                       <DialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" title="Guardar Preset">
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" title="Save Preset">
                           <Save className="h-3 w-3" />
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-[350px]">
                         <DialogHeader>
-                          <DialogTitle className="text-sm font-bold">Guardar Preset</DialogTitle>
+                          <DialogTitle className="text-sm font-bold">Save Preset</DialogTitle>
                           <DialogDescription className="text-xs">
-                            Introduce un nombre para guardar esta lista de tags.
+                            Enter a name to save this list of tags.
                           </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-3 py-2 text-xs">
                           <div className="space-y-1">
-                            <Label className="text-xs font-medium">Nombre del Preset</Label>
+                            <Label className="text-xs font-medium">Preset Name</Label>
                             <Input
                               value={presetName}
                               onChange={(e) => setPresetName(e.target.value)}
-                              placeholder="Mi preset increíble"
+                              placeholder="My awesome preset"
                               className="h-8 text-xs"
                             />
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs font-medium">Tags</Label>
                             <div className="p-2 bg-muted rounded text-[10px] font-mono break-all max-h-20 overflow-y-auto">
-                              {addInput || <span className="text-muted-foreground italic">Ningún tag introducido</span>}
+                              {addInput || <span className="text-muted-foreground italic">No tags entered</span>}
                             </div>
                           </div>
                         </div>
                         <DialogFooter className="flex-row gap-1 justify-end">
-                          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setIsPresetDialogOpen(false)}>Cancelar</Button>
-                          <Button size="sm" className="h-8 text-xs" onClick={savePreset} disabled={!presetName.trim() || !addInput.trim()}>Guardar</Button>
+                          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setIsPresetDialogOpen(false)}>Cancel</Button>
+                          <Button size="sm" className="h-8 text-xs" onClick={savePreset} disabled={!presetName.trim() || !addInput.trim()}>Save</Button>
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6.w-4 text-muted-foreground hover:text-foreground" title="Ver Presets">
+                        <Button variant="ghost" size="icon" className="h-6.w-4 text-muted-foreground hover:text-foreground" title="View Presets">
                           <ChevronDown className="h-3 w-3" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-[180px] text-xs">
-                        <DropdownMenuLabel className="text-[10px]">Presets Guardados</DropdownMenuLabel>
+                        <DropdownMenuLabel className="text-[10px]">Saved Presets</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         {presets.length === 0 ? (
                           <div className="p-2 text-center text-muted-foreground text-[10px]">
-                            Sin presets guardados
+                            No saved presets
                           </div>
                         ) : (
                           presets.map(preset => (
@@ -1131,11 +1135,11 @@ export default function ExtensionClient() {
                 </div>
               </div>
 
-              {/* Tags a Excluir */}
+              {/* Tags to Exclude */}
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="exclude-tags-input" className="text-xs font-semibold">Tags a Excluir</Label>
-                  <span className="text-[9px] text-muted-foreground">(Solo prompt final)</span>
+                  <Label htmlFor="exclude-tags-input" className="text-xs font-semibold">Tags to Exclude</Label>
+                  <span className="text-[9px] text-muted-foreground">(Only final prompt)</span>
                 </div>
                 <div className="relative">
                   <DebouncedInput
@@ -1168,13 +1172,13 @@ export default function ExtensionClient() {
                   onChange={search.setTagCountFilter}
                   onCommit={search.setAppliedTagCountFilter}
                   disabled={!isTagCountSupported}
-                  labelPrefix="Mínimo de Tags"
-                  tooltipTitle="Cantidad Mínima de Tags"
-                  tooltipDescription="Muestra únicamente prompts que tengan al menos esta cantidad de tags. Recomendado entre 20 y 30 para prompts detallados."
+                  labelPrefix="Minimum Tags"
+                  tooltipTitle="Minimum Tag Count"
+                  tooltipDescription="Only shows prompts that have at least this number of tags. Recommended between 20 and 30 for detailed prompts."
                   inputId="tag-count"
                   isInputValid={isTagCountValid}
                   maxInput={1000}
-                  ariaLabel="Mínimo de tags"
+                  ariaLabel="Minimum tags"
                   dotColor={isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}
                 />
 
@@ -1186,13 +1190,13 @@ export default function ExtensionClient() {
                   onChange={search.setCharacterCountFilter}
                   onCommit={search.setAppliedCharacterCountFilter}
                   disabled={!includeCharacters}
-                  labelPrefix="Mínimo de Posts del Personaje"
-                  tooltipTitle="Mínimo de Posts de Personaje"
-                  tooltipDescription="Filtra las imágenes para incluir solo personajes con más posts acumulados en la base de datos de booru, evitando personajes muy oscuros."
+                  labelPrefix="Minimum Character Posts"
+                  tooltipTitle="Minimum Character Posts"
+                  tooltipDescription="Filters images to only include characters with more posts accumulated in the booru database, avoiding obscure characters."
                   inputId="character-count"
                   isInputValid={!!search.characterCountFilter && /^\d+$/.test(search.characterCountFilter)}
                   maxInput={1000000}
-                  ariaLabel="Posts mínimos del personaje"
+                  ariaLabel="Minimum character posts"
                   dotColor={includeCharacters ? "bg-blue-500" : "bg-gray-400"}
                 />
               </div>
@@ -1200,7 +1204,7 @@ export default function ExtensionClient() {
               {/* Switches Grid */}
               <div className="flex flex-col gap-1 border-t pt-2">
                 <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                  <Label htmlFor="include-characters" className="text-xs select-none cursor-pointer flex-1">Incluir Personajes</Label>
+                  <Label htmlFor="include-characters" className="text-xs select-none cursor-pointer flex-1">Include Characters</Label>
                   <Switch id="include-characters" checked={includeCharacters} onCheckedChange={setIncludeCharacters} className="scale-75 origin-right" />
                 </div>
                 <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
@@ -1218,11 +1222,11 @@ export default function ExtensionClient() {
                 {search.booruProvider === "aibooru" && (
                   <>
                     <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                      <Label htmlFor="remove-lora" className="text-xs select-none cursor-pointer flex-1">Eliminar tags LoRa</Label>
+                      <Label htmlFor="remove-lora" className="text-xs select-none cursor-pointer flex-1">Remove LoRa tags</Label>
                       <Switch id="remove-lora" checked={search.removeLoRaTags} onCheckedChange={search.setRemoveLoRaTags} className="scale-75 origin-right" />
                     </div>
                     <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                      <Label htmlFor="remove-quality" className="text-xs select-none cursor-pointer flex-1">Eliminar tags Calidad</Label>
+                      <Label htmlFor="remove-quality" className="text-xs select-none cursor-pointer flex-1">Remove Quality tags</Label>
                       <Switch id="remove-quality" checked={search.removeQualityTags} onCheckedChange={search.setRemoveQualityTags} className="scale-75 origin-right" />
                     </div>
                   </>
@@ -1231,11 +1235,11 @@ export default function ExtensionClient() {
                 <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
                   <div className="flex flex-col gap-0.5 flex-1">
                     <Label htmlFor="global-weights-toggle" className="text-xs select-none cursor-pointer">Global Tag Weights</Label>
-                    <span className="text-[9px] text-muted-foreground leading-none">Aplicar pesos en todas las tarjetas</span>
+                    <span className="text-[9px] text-muted-foreground leading-none">Apply weights across all cards</span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Switch id="global-weights-toggle" checked={isGlobalWeightsEnabled} onCheckedChange={toggleGlobalWeights} className="scale-75 origin-right" />
-                    <Button variant="outline" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setIsGlobalWeightsModalOpen(true)}>Gestionar</Button>
+                    <Button variant="outline" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setIsGlobalWeightsModalOpen(true)}>Manage</Button>
                   </div>
                 </div>
               </div>
@@ -1245,10 +1249,10 @@ export default function ExtensionClient() {
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-1">
-                      <Label htmlFor="background-handling-select" className="text-xs font-semibold cursor-pointer">Opciones de Fondo</Label>
+                      <Label htmlFor="background-handling-select" className="text-xs font-semibold cursor-pointer">Background Options</Label>
                       <Badge variant="default" className="text-[8px] py-0 px-1 !rounded h-3.5 select-none shrink-0">Beta</Badge>
                     </div>
-                    <span className="text-[9px] text-muted-foreground leading-tight">Modificar tags del escenario</span>
+                    <span className="text-[9px] text-muted-foreground leading-tight">Modify background/scene tags</span>
                   </div>
                   <Select
                     value={backgroundMode}
@@ -1261,10 +1265,10 @@ export default function ExtensionClient() {
                     </SelectTrigger>
                     <SelectContent className="text-xs">
                       <SelectItem value="keep">Original</SelectItem>
-                      <SelectItem value="remove_all">Eliminar Todo</SelectItem>
-                      <SelectItem value="force_simple">Reemplazar</SelectItem>
-                      <SelectItem value="random">Aleatorio Simple</SelectItem>
-                      <SelectItem value="detailed_random">Aleatorio Detallado</SelectItem>
+                      <SelectItem value="remove_all">Remove All</SelectItem>
+                      <SelectItem value="force_simple">Replace</SelectItem>
+                      <SelectItem value="random">Simple Random</SelectItem>
+                      <SelectItem value="detailed_random">Detailed Random</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1284,7 +1288,7 @@ export default function ExtensionClient() {
                           value={simpleBackgroundReplacementTags}
                           onChange={setSimpleBackgroundReplacementTags}
                           debounceTime={400}
-                          placeholder="ej: white background, simple background"
+                          placeholder="e.g., white background, simple background"
                           className="h-7 text-xs bg-background flex-1"
                         />
                       </div>
@@ -1302,7 +1306,7 @@ export default function ExtensionClient() {
                       <div className="pt-2 flex flex-col gap-1.5 pl-3">
                         <div className="flex items-center justify-between">
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-[11px] font-medium">Incluir Patrones</span>
+                            <span className="text-[11px] font-medium">Include Patterns</span>
                             <span className="text-[9px] text-muted-foreground leading-none">Stripes, dots, etc.</span>
                           </div>
                           <Switch
@@ -1313,8 +1317,8 @@ export default function ExtensionClient() {
                         </div>
                         <div className="flex items-center justify-between">
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-[11px] font-medium">Incluir Degradados</span>
-                            <span className="text-[9px] text-muted-foreground leading-none">Degradados y dos colores</span>
+                            <span className="text-[11px] font-medium">Include Gradients</span>
+                            <span className="text-[9px] text-muted-foreground leading-none">Gradients and two-tone colors</span>
                           </div>
                           <Switch
                             checked={randomBackgroundIncludeGradients}
@@ -1340,9 +1344,9 @@ export default function ExtensionClient() {
           </div>
         ) : search.isEmpty ? (
           <div className="flex flex-col h-48 w-full items-center justify-center text-center gap-2">
-            <p className="text-xs text-muted-foreground font-medium">No se encontraron resultados</p>
+            <p className="text-xs text-muted-foreground font-medium">No results found</p>
             <Button size="sm" variant="outline" onClick={search.clearSearch} className="h-7 text-[10px]">
-              Limpiar búsqueda
+              Clear search
             </Button>
           </div>
         ) : (
@@ -1369,6 +1373,8 @@ export default function ExtensionClient() {
                   onSearch={search.setSearchTags}
                   onUsedPrompt={handleUsedPrompt}
                   queueLength={queueLength}
+                  isGlobalWeightsEnabled={isGlobalWeightsEnabled}
+                  onGlobalWeightChange={handleGlobalWeightChange}
                 />
               )}
             />
