@@ -88,3 +88,7 @@ backup_2026-04-05T06-01-15.sql
 tags.json
 skills-lock.json
 test.env*
+
+# Local test files & Audits
+test_gelbooru.json
+audit_*.md
