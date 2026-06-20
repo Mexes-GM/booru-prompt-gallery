@@ -665,7 +665,8 @@ export default function ExtensionClient() {
       const tags = sharedCleaned.split(',').map(t => t.trim())
       const processed = processBackgroundTags(
         tags, backgroundMode, simpleBackgroundReplacementTags, {},
-        { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients }
+        { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients },
+        detailedBackgroundsList
       )
       pureContent = processed.join(', ')
     }
@@ -685,6 +686,8 @@ export default function ExtensionClient() {
           backgroundMode,
           simpleBackgroundReplacementTags,
           randomBackgroundPatterns,
+          randomBackgroundIncludeGradients,
+          detailedBackgroundsList,
           metaTags: post.tag_string_meta,
         })
       : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, {
@@ -696,6 +699,8 @@ export default function ExtensionClient() {
           backgroundMode,
           simpleBackgroundReplacementTags,
           randomBackgroundPatterns,
+          randomBackgroundIncludeGradients,
+          detailedBackgroundsList,
           metaTags: post.tag_string_meta,
         })
 
@@ -716,6 +721,7 @@ export default function ExtensionClient() {
     simpleBackgroundReplacementTags,
     randomBackgroundPatterns,
     randomBackgroundIncludeGradients,
+    detailedBackgroundsList,
     addInput,
     isGlobalWeightsEnabled,
     globalWeights

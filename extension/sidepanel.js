@@ -114,7 +114,7 @@ queueClearBtn.addEventListener("click", () => {
  *   true  = button became free
  *   false = timed out
  */
-function waitForGenerateButtonFree(tabId) {
+function waitForGenerateButtonFree(tabId, frameId) {
   return new Promise((resolve) => {
     const deadline = Date.now() + GENERATE_TIMEOUT_MS;
 
@@ -129,9 +129,16 @@ function waitForGenerateButtonFree(tabId) {
         return;
       }
 
+      const target = { tabId };
+      if (typeof frameId === "number") {
+        target.frameIds = [frameId];
+      } else {
+        target.allFrames = false;
+      }
+
       chrome.scripting.executeScript(
         {
-          target: { tabId, allFrames: false },
+          target,
           func: () => {
             // Selector patterns for TensorArt / TensorHub / A1111 generate buttons
             const btn =
@@ -281,8 +288,18 @@ function injectPromptToTab(tabId, promptText) {
           resolve({ success: false });
           return;
         }
-        const result = results?.[0]?.result;
-        resolve(result || { success: false });
+        
+        // Find a successful injection result in any frame
+        const successfulFrame = results?.find(r => r.result && r.result.success);
+        if (successfulFrame) {
+          resolve({ 
+            success: true, 
+            hasButton: successfulFrame.result.hasButton,
+            frameId: successfulFrame.frameId 
+          });
+        } else {
+          resolve({ success: false });
+        }
       }
     );
   });
@@ -332,7 +349,7 @@ async function processNext() {
 
     // If we found a Generate button and clicked it, wait for it to free up
     if (injectResult.hasButton) {
-      const freed = await waitForGenerateButtonFree(tabId);
+      const freed = await waitForGenerateButtonFree(tabId, injectResult.frameId);
       if (!freed) {
         console.warn("[Queue] Generate button did not free up within timeout, moving on.");
       }
