@@ -181,17 +181,20 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
             .from('favorite_folders')
             .select('id, name, icon')
             .order('created_at', { ascending: true })
+            .limit(10000)
           if (foldersErr) console.error("Folders fetch error:", foldersErr)
 
           const { data: dbFavorites, error: favsErr } = await supabase
             .from('favorites')
             .select('provider, post_id')
             .order('created_at', { ascending: false })
+            .limit(10000)
           if (favsErr) console.error("Favorites fetch error:", favsErr)
 
           const { data: dbFolderItems, error: itemsErr } = await supabase
             .from('favorite_folder_items')
             .select('provider, post_id, folder_id')
+            .limit(10000)
           if (itemsErr) console.error("Items fetch error:", itemsErr)
 
           Sentry.addBreadcrumb({
@@ -375,9 +378,9 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
               if (migrated) {
                 // Re-fetch from DB strictly after migration to ensure local state has everything 
                 // plus any existing cloud data that wasn't local.
-                const { data: refreshedFolders } = await supabase.from('favorite_folders').select('id, name, icon').order('created_at', { ascending: true })
-                const { data: refreshedFavs } = await supabase.from('favorites').select('provider, post_id').order('created_at', { ascending: false })
-                const { data: refreshedFolderItems } = await supabase.from('favorite_folder_items').select('provider, post_id, folder_id')
+                const { data: refreshedFolders } = await supabase.from('favorite_folders').select('id, name, icon').order('created_at', { ascending: true }).limit(10000)
+                const { data: refreshedFavs } = await supabase.from('favorites').select('provider, post_id').order('created_at', { ascending: false }).limit(10000)
+                const { data: refreshedFolderItems } = await supabase.from('favorite_folder_items').select('provider, post_id, folder_id').limit(10000)
 
                 if (refreshedFolders) {
                   loadedFolders.length = 0
@@ -550,17 +553,20 @@ export function useBooruFavorites(booruProvider: BooruProvider): UseBooruFavorit
         .from('favorite_folders')
         .select('id, name, icon')
         .order('created_at', { ascending: true })
+        .limit(10000)
       if (foldersErr) console.error("Folders fetch error:", foldersErr)
 
       const { data: dbFavorites, error: favsErr } = await supabase
         .from('favorites')
         .select('provider, post_id')
         .order('created_at', { ascending: false })
+        .limit(10000)
       if (favsErr) console.error("Favorites fetch error:", favsErr)
 
       const { data: dbFolderItems, error: itemsErr } = await supabase
         .from('favorite_folder_items')
         .select('provider, post_id, folder_id')
+        .limit(10000)
       if (itemsErr) console.error("Items fetch error:", itemsErr)
 
       const loadedFolders: FavoriteFolder[] = dbFolders || []

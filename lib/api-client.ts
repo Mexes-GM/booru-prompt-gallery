@@ -811,7 +811,8 @@ const MAX_CACHE_SIZE = 2_000_000 // 2MB per entry
 function getCachedFavorites(key: string): BooruPost[] | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = localStorage.getItem(FAV_CACHE_PREFIX + key)
+    const allKeys = Object.keys(localStorage).filter(k => k.startsWith(FAV_CACHE_PREFIX) && k.endsWith(key))
+    const raw = allKeys.length > 0 ? localStorage.getItem(allKeys[0]) : null
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed) && parsed.length > 0) return parsed as BooruPost[]
@@ -824,10 +825,11 @@ function setCachedFavorites(key: string, data: BooruPost[]): void {
   try {
     const serialized = JSON.stringify(data)
     if (serialized.length > MAX_CACHE_SIZE) return // too large, skip
-    localStorage.setItem(FAV_CACHE_PREFIX + key, serialized)
+    localStorage.setItem(`${FAV_CACHE_PREFIX}${Date.now()}_${key}`, serialized)
     // Prune old entries, keep only the most recent MAX_CACHE_ENTRIES
     const allKeys = Object.keys(localStorage)
       .filter(k => k.startsWith(FAV_CACHE_PREFIX))
+      .sort()
     if (allKeys.length > MAX_CACHE_ENTRIES) {
       // Remove oldest entries (first in alphabetical = oldest timestamp prefix)
       const toRemove = allKeys.slice(0, allKeys.length - MAX_CACHE_ENTRIES)
