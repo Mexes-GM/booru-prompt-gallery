@@ -827,8 +827,9 @@ export function cleanPrompt(
   }
 
   const shouldEscape = options?.escapeOutput !== false
+  const addedTagsSet = new Set(addedTagsProcessed)
 
   return Array.from(allFinal)
-    .map((t) => (shouldEscape ? escapeParentheses(t) : t))
+    .map((t) => (shouldEscape && !addedTagsSet.has(t) ? escapeParentheses(t) : t))
     .join(", ")
 }
