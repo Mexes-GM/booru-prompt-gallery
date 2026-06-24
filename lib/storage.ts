@@ -56,6 +56,7 @@ export const STORAGE_KEYS = {
   ADD_TAGS_PRESETS: 'add-tags-presets',
   MINIMUM_TAG_COUNT: 'minimum-tag-count',
   MINIMUM_CHARACTER_COUNT: 'minimum-character-count',
+  CHARACTER_COUNT_RANGE: 'character-count-range',
   BLACKLIST: 'blacklist',
   GLOBAL_WEIGHTS: 'global-weights',
   GLOBAL_WEIGHTS_ENABLED: 'global-weights-enabled',
@@ -76,7 +77,9 @@ export const STORAGE_KEYS = {
   IS_SHUFFLE: 'is-shuffle',
   HAS_PROMPT_FILTER: 'has-prompt-filter',
   // Saved Artists (local fallback when not authenticated)
-  SAVED_ARTISTS: 'booru-saved-artists'
+  SAVED_ARTISTS: 'booru-saved-artists',
+
+  SHOW_CATEGORY_BADGES: 'booru_gallery_show_category_badges'
 } as const
 
 export interface HistoryItem {
@@ -166,6 +169,15 @@ export const userPreferences = {
 
   setMinimumCharacterCount: (count: string) =>
     storage.set(STORAGE_KEYS.MINIMUM_CHARACTER_COUNT, count),
+
+  getCharacterCountRange: (): [number, number] => {
+    const raw = storage.get(STORAGE_KEYS.CHARACTER_COUNT_RANGE, "0_10000")
+    const [min, max] = raw.split('_').map(Number)
+    return [min || 0, max || 10000]
+  },
+
+  setCharacterCountRange: (range: [number, number]) =>
+    storage.set(STORAGE_KEYS.CHARACTER_COUNT_RANGE, `${range[0]}_${range[1]}`),
 
   getOrder: (): 'popular' | 'recent' | 'random' =>
     storage.get(STORAGE_KEYS.ORDER, 'popular'),
@@ -341,7 +353,13 @@ export const userPreferences = {
   },
 
   clearSavedArtists: () =>
-    storage.remove(STORAGE_KEYS.SAVED_ARTISTS)
+    storage.remove(STORAGE_KEYS.SAVED_ARTISTS),
+
+  getShowCategoryTagBadges: (): boolean =>
+    storage.get(STORAGE_KEYS.SHOW_CATEGORY_BADGES, true),
+
+  setShowCategoryTagBadges: (val: boolean) =>
+    storage.set(STORAGE_KEYS.SHOW_CATEGORY_BADGES, val)
 }
 
 export interface SavedArtist {

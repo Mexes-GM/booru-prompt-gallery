@@ -162,6 +162,7 @@ interface MasonryItemProps {
     onImageError?: () => void
     isNaturalLanguageMode?: boolean
     onSendToConvert?: (tags: string, imageUrl?: string) => void
+    showCategoryTagBadges?: boolean
 }
 
 // Module-level circuit breaker: if any Danbooru direct CDN image fails with 403,
@@ -232,6 +233,7 @@ export const MasonryItem = memo(function MasonryItem({
     onImageError,
     isNaturalLanguageMode = false,
     onSendToConvert,
+    showCategoryTagBadges = true,
 }: MasonryItemProps) {
     const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
     const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
@@ -690,20 +692,80 @@ export const MasonryItem = memo(function MasonryItem({
                         </Tooltip>
                     )}
 
-                    {/* Total Tag Count Indicator */}
-                    {totalTagsCount > 0 && (
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help z-10">
-                                    <Tag className="w-3.5 h-3.5 opacity-70" />
-                                    {totalTagsCount}
-                                </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="text-xs">
-                                Total Tags
-                            </TooltipContent>
-                        </Tooltip>
-                    )}
+                    <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1 z-10">
+                        {/* Category Tag Count Badges */}
+                        {showCategoryTagBadges && effectiveScale !== 'small' && (
+                            <div className="flex flex-col items-end gap-1">
+                                {classifiedTags.appearance.length > 0 && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                <Smile className="w-2.5 h-2.5 opacity-70" />
+                                                {classifiedTags.appearance.length}
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">
+                                            {classifiedTags.appearance.length} appearance tags
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
+                                {classifiedTags.clothing.length > 0 && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                <Shirt className="w-2.5 h-2.5 opacity-70" />
+                                                {classifiedTags.clothing.length}
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">
+                                            {classifiedTags.clothing.length} outfit tags
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
+                                {classifiedTags.pose.length > 0 && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                <User className="w-2.5 h-2.5 opacity-70" />
+                                                {classifiedTags.pose.length}
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">
+                                            {classifiedTags.pose.length} pose tags
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
+                                {classifiedTags.scenery.length > 0 && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                <Mountain className="w-2.5 h-2.5 opacity-70" />
+                                                {classifiedTags.scenery.length}
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">
+                                            {classifiedTags.scenery.length} scene tags
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Total Tag Count Indicator */}
+                        {totalTagsCount > 0 && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help">
+                                        <Tag className="w-3.5 h-3.5 opacity-70" />
+                                        {totalTagsCount}
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                    Total Tags
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+                    </div>
 
                     {/* Overlay actions */}
                     <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
@@ -986,20 +1048,80 @@ export const MasonryItem = memo(function MasonryItem({
                             </Tooltip>
                         )}
 
-                        {/* Total Tag Count Indicator */}
-                        {totalTagsCount > 0 && (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help z-10">
-                                        <Tag className="w-3 h-3 opacity-70" />
-                                        {totalTagsCount}
-                                    </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="text-xs">
-                                    Total Tags
-                                </TooltipContent>
-                            </Tooltip>
-                        )}
+                        <div className="absolute bottom-1 right-1 flex flex-col items-end gap-1 z-10">
+                            {/* Category Tag Count Badges */}
+                            {showCategoryTagBadges && effectiveScale !== 'small' && (
+                                <div className="flex flex-col items-end gap-1">
+                                    {classifiedTags.appearance.length > 0 && (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                    <Smile className="w-2.5 h-2.5 opacity-70" />
+                                                    {classifiedTags.appearance.length}
+                                                </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="text-xs">
+                                                {classifiedTags.appearance.length} appearance tags
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    )}
+                                    {classifiedTags.clothing.length > 0 && (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                    <Shirt className="w-2.5 h-2.5 opacity-70" />
+                                                    {classifiedTags.clothing.length}
+                                                </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="text-xs">
+                                                {classifiedTags.clothing.length} outfit tags
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    )}
+                                    {classifiedTags.pose.length > 0 && (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                    <User className="w-2.5 h-2.5 opacity-70" />
+                                                    {classifiedTags.pose.length}
+                                                </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="text-xs">
+                                                {classifiedTags.pose.length} pose tags
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    )}
+                                    {classifiedTags.scenery.length > 0 && (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                    <Mountain className="w-2.5 h-2.5 opacity-70" />
+                                                    {classifiedTags.scenery.length}
+                                                </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="text-xs">
+                                                {classifiedTags.scenery.length} scene tags
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Total Tag Count Indicator */}
+                            {totalTagsCount > 0 && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help">
+                                            <Tag className="w-3 h-3 opacity-70" />
+                                            {totalTagsCount}
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="text-xs">
+                                        Total Tags
+                                    </TooltipContent>
+                                </Tooltip>
+                            )}
+                        </div>
                     </div>
 
                     <div className="flex-1 space-y-3">
@@ -1215,6 +1337,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.randomBackgroundIncludeGradients !== next.randomBackgroundIncludeGradients) return false
     if (prev.isGlobalWeightsEnabled !== next.isGlobalWeightsEnabled) return false
     if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false
+    if (prev.showCategoryTagBadges !== next.showCategoryTagBadges) return false
 
     if (prev.folders !== next.folders) return false
     if (prev.currentFolderIds.length !== next.currentFolderIds.length || 

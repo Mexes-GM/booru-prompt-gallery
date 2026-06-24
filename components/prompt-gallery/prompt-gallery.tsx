@@ -46,6 +46,8 @@ import {
   Github,
   Pin,
   Ban,
+  Tag,
+  Wrench,
 } from "lucide-react"
 
 import dynamic from "next/dynamic"
@@ -395,7 +397,7 @@ function UnavailablePostsNotice({
               <div className="space-y-1">
                 <AlertTitle className="text-destructive font-medium mb-0">Missing Favorites</AlertTitle>
                 <AlertDescription className="text-muted-foreground text-xs leading-relaxed">
-                  <strong className="text-foreground">{unavailableKeys.length}</strong> posts couldn't be loaded from the original booru server. They might be temporarily down or deleted by the author.
+                  <strong className="text-foreground">{unavailableKeys.length}</strong> posts couldn&apos;t be loaded from the original booru server. They might be temporarily down or deleted by the author.
                 </AlertDescription>
               </div>
             </div>
@@ -579,6 +581,8 @@ export function PromptGallery() {
 
   const setSmartTagExclusion = (val: boolean) =>
     setPromptOptions(prev => ({ ...prev, smartTagExclusion: val }))
+
+  const [showCategoryTagBadges, setShowCategoryTagBadges] = useState(true)
 
   const [backgroundMode, setBackgroundMode] = usePersistentState<BackgroundMode>(
     "keep",
@@ -1247,8 +1251,9 @@ export function PromptGallery() {
       onImageError={handleImageError}
       isNaturalLanguageMode={isAiConvertMode}
       onSendToConvert={handleSendToConvert}
+      showCategoryTagBadges={showCategoryTagBadges}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1621,6 +1626,66 @@ export function PromptGallery() {
                     </div>
                     
                     <div className="space-y-3">
+                      {/* Category Tag Count Badges */}
+                      <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+                              <Tag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Category Tag Badges</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              Small badges on each card now count tags by category (appearance, clothing, pose, etc).
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Fix: Teach Modal */}
+                      <div className="border-l-4 border-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/20">
+                              <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Teach Modal Fix</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-md">Fix</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              Fixed an issue with the teach modal that caused the page to reload when opening it.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Fix: Favorites Refactor */}
+                      <div className="border-l-4 border-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/15 transition-colors p-4 rounded-r-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-0.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/20">
+                              <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <p className="text-sm font-semibold text-foreground leading-snug">Favorites System Refactor</p>
+                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-md">Fix</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
+                              Refactored the favorites system to address several recurring issues, along with making adjustments to favorites management to improve stability.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Migration Planning */}
                       <div className="border-l-4 border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 rounded-r-xl">
                         <div className="flex items-start gap-3">
@@ -2364,6 +2429,7 @@ export function PromptGallery() {
                                   </div>
                                 </>
                               )}
+
 
                               <div className="sm:col-span-2 flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50">
                                 <div className="flex flex-col gap-0.5 flex-1 sm:flex-none">

@@ -127,6 +127,14 @@ export function useBooruSearch() {
     STORAGE_KEYS.MINIMUM_CHARACTER_COUNT
   )
 
+  const [characterCountRange, _setCharacterCountRange] = usePersistentState<[number, number]>(
+    [0, 10000],
+    userPreferences.getCharacterCountRange,
+    userPreferences.setCharacterCountRange,
+    "characterCountRange",
+    STORAGE_KEYS.CHARACTER_COUNT_RANGE
+  )
+
   const userInteractionRef = useRef(false)
 
   const setTagCountFilter = useCallback((value: string | ((prev: string) => string)) => {
@@ -139,8 +147,14 @@ export function useBooruSearch() {
     _setCharacterCountFilter(value)
   }, [_setCharacterCountFilter])
 
+  const setCharacterCountRange = useCallback((value: [number, number] | ((prev: [number, number]) => [number, number])) => {
+    userInteractionRef.current = true
+    _setCharacterCountRange(value)
+  }, [_setCharacterCountRange])
+
   const [appliedTagCountFilter, setAppliedTagCountFilter] = useState("5")
   const [appliedCharacterCountFilter, setAppliedCharacterCountFilter] = useState("0")
+  const [appliedCharacterCountRange, setAppliedCharacterCountRange] = useState<[number, number]>([0, 10000])
   const [isClient, setIsClient] = useState(false)
 
   // Sync applied filter with persistent state on load (when no user interaction has occurred)
@@ -148,8 +162,9 @@ export function useBooruSearch() {
     if (!userInteractionRef.current) {
       setAppliedTagCountFilter(tagCountFilter)
       setAppliedCharacterCountFilter(characterCountFilter)
+      setAppliedCharacterCountRange(characterCountRange)
     }
-  }, [tagCountFilter, characterCountFilter])
+  }, [tagCountFilter, characterCountFilter, characterCountRange])
 
  // Loading states
  const [loadMoreError, setLoadMoreError] = useState(false)
@@ -488,6 +503,8 @@ export function useBooruSearch() {
     appliedTagCountFilter, setAppliedTagCountFilter,
     characterCountFilter, setCharacterCountFilter,
     appliedCharacterCountFilter, setAppliedCharacterCountFilter,
+    characterCountRange, setCharacterCountRange,
+    appliedCharacterCountRange, setAppliedCharacterCountRange,
     isClient,
 
     pages,
