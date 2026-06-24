@@ -1621,67 +1621,7 @@ export function PromptGallery() {
                     </div>
                     
                     <div className="space-y-3">
-                      {/* Sticky Mini Panel */}
-                      <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
-                              <Pin className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Sticky Mini Panel</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New Feature</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              A mini control panel now sticks to the viewport as you scroll, so you can change settings without having to scroll all the way back to the top. Tags to add, merge mode, AI convert, and quick actions.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Item 6: Detailed Random Backgrounds */}
-                      <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
-                              <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Detailed Random Backgrounds</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              Added a new <strong>Detailed Random</strong> background mode. Instead of simple colors or basic patterns, this option applies complete pre-defined environmental tags (like <em>&quot;outdoors, beach, ocean landscape, day&quot;</em>) to your prompts. You can select it from the Backgrounds dropdown menu to quickly test different scenery while keeping your character&apos;s pose and clothing intact. (Thanks to &quot;darklnbot003&quot; for the presets)
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Item 5: Convert to Natural Language */}
-                      <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
-                              <BrainCircuit className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Convert to Natural Language</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              You can now convert booru-style prompts into natural language prompts using Vision and LLM models. The recent release of Anima accelerated the development and implementation of this feature. Every user gets <strong>10 free requests per day</strong> to try the system with free-tier models that work decently well. If you want unlimited access, you can plug in your own API key to remove all limits. To get started, click the star button at the bottom-right of the page, or hover over any card and press the star icon next to favorites to send a prompt directly for conversion.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Item 2: Migration Planning */}
+                      {/* Migration Planning */}
                       <div className="border-l-4 border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 rounded-r-xl">
                         <div className="flex items-start gap-3">
                           <div className="flex-shrink-0 mt-0.5">
@@ -1701,7 +1641,7 @@ export function PromptGallery() {
                         </div>
                       </div>
 
-                      {/* Item 1: Welcome to Open Source */}
+                      {/* Welcome to Open Source */}
                       <div className="border-l-4 border-blue-500 bg-blue-500/10 hover:bg-blue-500/15 transition-colors p-4 rounded-r-xl">
                         <div className="flex items-start gap-3">
                           <div className="flex-shrink-0 mt-0.5">
