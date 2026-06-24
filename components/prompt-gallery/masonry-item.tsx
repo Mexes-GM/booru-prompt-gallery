@@ -251,7 +251,7 @@ export const MasonryItem = memo(function MasonryItem({
     const itemProvider = post._provider || booruProvider
 
     const handleToggleFavorite = (folderId: string | null | undefined) => {
-        toggleFavorite(post.id, itemProvider, folderId)
+        toggleFavorite(post.id, itemProvider, folderId, post)
     }
 
     // Check if this is an Aibooru post with prompt

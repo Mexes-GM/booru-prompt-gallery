@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import {
   Copy,
@@ -24,6 +24,8 @@ import {
   ZoomIn,
   ZoomOut,
   AlertTriangle,
+  AlertCircle,
+  CheckCircle,
   X,
   ChevronUp,
   Shield,
@@ -49,15 +51,15 @@ import {
 import dynamic from "next/dynamic"
 import { getCachedTagOverrides } from "@/lib/supabase/client-queries"
 
-const TeachModal = dynamic(() => import("@/components/teach-modal").then(m => m.TeachModal))
-const TeachWelcomeModal = dynamic(() => import("@/components/teach-welcome-modal").then(m => m.TeachWelcomeModal))
-const TrendSheet = dynamic(() => import("@/components/trends/trend-sheet").then(m => m.TrendSheet))
-const ReversePromptParserModal = dynamic(() => import("@/components/prompt-gallery/reverse-prompt-parser-modal").then(m => m.ReversePromptParserModal))
-const GlobalWeightsModal = dynamic(() => import("@/components/prompt-gallery/global-weights-modal").then(m => m.GlobalWeightsModal))
-const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog))
+const TeachModal = dynamic(() => import("@/components/teach-modal").then(m => m.TeachModal), { ssr: false, loading: () => null })
+const TeachWelcomeModal = dynamic(() => import("@/components/teach-welcome-modal").then(m => m.TeachWelcomeModal), { ssr: false, loading: () => null })
+const TrendSheet = dynamic(() => import("@/components/trends/trend-sheet").then(m => m.TrendSheet), { ssr: false, loading: () => null })
+const ReversePromptParserModal = dynamic(() => import("@/components/prompt-gallery/reverse-prompt-parser-modal").then(m => m.ReversePromptParserModal), { ssr: false, loading: () => null })
+const GlobalWeightsModal = dynamic(() => import("@/components/prompt-gallery/global-weights-modal").then(m => m.GlobalWeightsModal), { ssr: false, loading: () => null })
+const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
 
 import { VersionDisplay } from "@/components/version-display"
-import versionInfo from "@/version.json"
+import pkg from "@/package.json"
 import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -263,11 +265,229 @@ function SmoothFilterSlider({
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// UnavailablePostsNotice
+// Shows AFTER the folderMismatch detection confirms posts are not in favoritePosts
+// post-fetch. Has a two-step flow to avoid false positives from code bugs:
+//   Step 1 — neutral notice + "Check availability" button (no destructive action yet)
+//   Step 2 — actively re-queries /api/favorites for the missing post IDs. Only posts
+//             that return empty/404 from the booru are marked as confirmed-deleted and
+//             shown with a "Remove" button. Posts that DO load on re-check are silently
+//             dropped from the list (they were a loading bug, not a deletion).
+// ─────────────────────────────────────────────────────────────────────────────
+type VerificationState =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'done'; confirmed: string[]; recovered: number }
+
+function UnavailablePostsNotice({
+  unavailableKeys,
+  activeFolderId,
+  toggleFavorite,
+  injectRecoveredPosts,
+}: {
+  unavailableKeys: string[]
+  activeFolderId: string | null
+  toggleFavorite: (id: number, provider?: string) => Promise<void>
+  injectRecoveredPosts: (posts: BooruPost[]) => Promise<void>
+}) {
+  const [state, setState] = useState<VerificationState>({ phase: 'idle' })
+  const [removing, setRemoving] = useState(false)
+
+  // Reset ONLY when the user navigates to a different folder.
+  // Do NOT reset based on unavailableKeys, otherwise a successful recovery
+  // shrinking the list will instantly reset the UI back to the 'idle' Check button.
+  useEffect(() => {
+    setState({ phase: 'idle' })
+  }, [activeFolderId])
+
+  const handleCheck = async () => {
+    setState({ phase: 'checking' })
+
+    // Group unavailable keys by provider for a batched re-fetch
+    const byProvider: Record<string, number[]> = {}
+    for (const key of unavailableKeys) {
+      const colonIdx = key.indexOf(':')
+      if (colonIdx === -1) continue
+      const provider = key.slice(0, colonIdx)
+      const id = parseInt(key.slice(colonIdx + 1), 10)
+      if (isNaN(id)) continue
+      ;(byProvider[provider] ??= []).push(id)
+    }
+
+    // Re-query /api/favorites for each provider batch
+    const foundIds = new Set<string>()
+    const recoveredPosts: BooruPost[] = []
+    
+    try {
+      const entries = Object.entries(byProvider)
+      await Promise.allSettled(
+        entries.map(async ([provider, ids]) => {
+          try {
+            const res = await fetch('/api/favorites', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ favorites: ids.map(id => ({ id, provider })) }),
+            })
+            if (!res.ok) return
+            const posts: BooruPost[] = await res.json()
+            for (const p of posts) {
+              if (p?.id) {
+                foundIds.add(`${provider}:${p.id}`)
+                recoveredPosts.push(p)
+              }
+            }
+          } catch {
+            // Network error on re-check — treat as inconclusive (don't mark as deleted)
+            for (const id of ids) foundIds.add(`${provider}:${id}`)
+          }
+        })
+      )
+    } catch {
+      // Complete failure — treat all as inconclusive, show no delete buttons
+      setState({ phase: 'done', confirmed: [], recovered: unavailableKeys.length })
+      return
+    }
+
+    // Posts that are STILL not found after the active re-check → confirmed deleted
+    const confirmed = unavailableKeys.filter(k => !foundIds.has(k))
+    const recoveredCount = unavailableKeys.length - confirmed.length
+
+    if (recoveredPosts.length > 0) {
+      await injectRecoveredPosts(recoveredPosts)
+    }
+
+    setState({ phase: 'done', confirmed, recovered: recoveredCount })
+  }
+
+  const handleRemove = async () => {
+    if (state.phase !== 'done') return
+    setRemoving(true)
+    
+    // Run removals in parallel so React batches the optimistic updates
+    // into a single render, preventing the Masonry Grid from jumping
+    // upwards multiple times during the process.
+    await Promise.all(state.confirmed.map(key => {
+      const colonIdx = key.indexOf(':')
+      if (colonIdx === -1) return Promise.resolve()
+      const provider = key.slice(0, colonIdx)
+      const id = parseInt(key.slice(colonIdx + 1), 10)
+      if (isNaN(id)) return Promise.resolve()
+      return toggleFavorite(id, provider)
+    }))
+    
+    setRemoving(false)
+  }
+
+  // Define a stable container class with a min-height to prevent layout jumps
+  // when swapping between states (checking, done, removing).
+  return (
+    <div className="mb-6 flex justify-center w-full px-4 animate-in fade-in slide-in-from-top-4 duration-500">
+      <Alert variant="destructive" className="max-w-2xl bg-destructive/5 border-destructive/20 shadow-sm relative overflow-hidden transition-all duration-300">
+        <div className="absolute top-0 left-0 w-1 h-full bg-destructive/50" />
+        
+        {state.phase === 'idle' && (
+          <div className="flex flex-col sm:flex-row items-center gap-4 py-1">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="bg-destructive/10 p-2 rounded-full">
+                <AlertCircle className="h-5 w-5 text-destructive" />
+              </div>
+              <div className="space-y-1">
+                <AlertTitle className="text-destructive font-medium mb-0">Missing Favorites</AlertTitle>
+                <AlertDescription className="text-muted-foreground text-xs leading-relaxed">
+                  <strong className="text-foreground">{unavailableKeys.length}</strong> posts couldn't be loaded from the original booru server. They might be temporarily down or deleted by the author.
+                </AlertDescription>
+              </div>
+            </div>
+            <Button 
+              onClick={handleCheck} 
+              variant="outline" 
+              size="sm"
+              className="w-full sm:w-auto shrink-0 border-destructive/20 hover:bg-destructive/10 hover:text-destructive transition-colors"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              Check availability
+            </Button>
+          </div>
+        )}
+
+        {state.phase === 'checking' && (
+          <div className="flex items-center gap-4 py-2">
+            <Loader2 className="h-5 w-5 text-destructive animate-spin shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle className="text-destructive font-medium mb-0">Verifying on booru...</AlertTitle>
+              <AlertDescription className="text-muted-foreground text-xs">
+                Querying the original server to see if the posts still exist. This might take a few seconds due to rate limits.
+              </AlertDescription>
+            </div>
+          </div>
+        )}
+
+        {state.phase === 'done' && (
+          <div className="flex flex-col gap-3 py-1 animate-in fade-in duration-300">
+            {state.recovered > 0 && (
+              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 p-2 rounded-md border border-emerald-200 dark:border-emerald-500/20">
+                <CheckCircle className="h-4 w-4 shrink-0" />
+                <span className="text-sm font-medium">
+                  Success! {state.recovered} {state.recovered === 1 ? 'post was' : 'posts were'} recovered and permanently restored to your gallery.
+                </span>
+              </div>
+            )}
+            
+            {state.confirmed.length > 0 ? (
+              <div className="flex flex-col sm:flex-row items-center gap-4 mt-1">
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="bg-destructive/10 p-2 rounded-full shrink-0">
+                    <Trash2 className="h-5 w-5 text-destructive" />
+                  </div>
+                  <div className="space-y-1">
+                    <AlertTitle className="text-destructive font-medium mb-0">Posts Deleted</AlertTitle>
+                    <AlertDescription className="text-muted-foreground text-xs">
+                      <strong className="text-foreground">{state.confirmed.length}</strong> posts have been permanently removed from the booru source and cannot be recovered.
+                    </AlertDescription>
+                  </div>
+                </div>
+                
+                <Button 
+                  onClick={handleRemove} 
+                  disabled={removing} 
+                  variant="destructive"
+                  size="sm"
+                  className="w-full sm:w-auto shrink-0 shadow-sm"
+                >
+                  {removing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Removing...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Remove from gallery
+                    </>
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 text-muted-foreground py-2">
+                <CheckCircle className="h-5 w-5" />
+                <span className="text-sm">All posts are available. The grid will update shortly.</span>
+              </div>
+            )}
+          </div>
+        )}
+      </Alert>
+    </div>
+  )
+}
+
 export function PromptGallery() {
   // 1. Core Logic Hooks
   const search = useBooruSearch()
   const { blacklist, addTag, removeTag, resetBlacklist } = useBlacklist()
-  const favs = useBooruFavorites(search.booruProvider)
+  // Folder filter state ('artists' is a reserved virtual folder for saved artists)
+  const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null | 'all' | 'artists'>('all')
+  const favs = useBooruFavorites(search.booruProvider, activeFavoriteFolder)
   const savedArtists = useSavedArtists()
   const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
@@ -322,8 +542,7 @@ export function PromptGallery() {
   // Slider state needs to stay in sync with persisted cardScale
   const [scaleValue, setScaleValue] = useState([2])
 
-  // Folder filter state ('artists' is a reserved virtual folder for saved artists)
-  const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null | 'all' | 'artists'>('all')
+
 
   // Reset folder filter when exiting favorites view so it doesn't linger and hide
   // the search grid (e.g. 'artists' tab would suppress masonry render on exit).
@@ -455,11 +674,11 @@ export function PromptGallery() {
     try {
       const raw = localStorage.getItem('announcements_state')
       const parsed = raw ? JSON.parse(raw) : null
-      if (parsed && parsed.version === versionInfo.version) {
+      if (parsed && parsed.version === pkg.version) {
         setIsAnnouncementsOpen(!parsed.collapsed)
       } else {
         setIsAnnouncementsOpen(true)
-        localStorage.setItem('announcements_state', JSON.stringify({ collapsed: false, version: versionInfo.version }))
+        localStorage.setItem('announcements_state', JSON.stringify({ collapsed: false, version: pkg.version }))
       }
     } catch {
       setIsAnnouncementsOpen(true)
@@ -833,24 +1052,27 @@ export function PromptGallery() {
     let source = search.allPosts
     if (favs.showFavorites) {
       source = favs.favoritePosts || []
-      if (activeFavoriteFolder !== 'all') {
-        if (activeFavoriteFolder === 'artists') return []
-        source = source.filter(post => {
-          const itemProvider = post._provider || search.booruProvider
-          const uniqueKey = `${itemProvider}:${post.id}`
-          const postFolderIds = favs.favoriteFolderMap[uniqueKey] || []
-
-          if (activeFavoriteFolder === null) {
-            // Uncategorized mode: show items that belong to no folders
-            return postFolderIds.length === 0
-          }
-
-          return postFolderIds.includes(activeFavoriteFolder)
-        })
-      }
     }
 
+    // Visual-only folder filter — applied at render, not in the hook.
+    // useFavoritePosts always receives ALL favorites so SWR cache stays stable.
+    const filterByFolder =
+      favs.showFavorites &&
+      activeFavoriteFolder !== "all" &&
+      activeFavoriteFolder !== "artists"
+
     return source.filter(post => {
+      // Folder filter (render-level, not in hook)
+      if (filterByFolder) {
+        const key = `${(post._provider || search.booruProvider).toLowerCase()}:${post.id}`
+        const postFolders = favs.favoriteFolderMap[key] || []
+        if (activeFavoriteFolder === null) {
+          if (postFolders.length !== 0) return false
+        } else {
+          if (!postFolders.includes(activeFavoriteFolder)) return false
+        }
+      }
+
       // Blacklist filter
       if (post.tag_string) {
         const postTags = post.tag_string.split(' ')
@@ -864,42 +1086,113 @@ export function PromptGallery() {
       const minCharPostCount = (includeCharacters && parseInt(search.appliedCharacterCountFilter)) || 0
       if (minCharPostCount > 0) {
         if (!post.tag_string_character) {
-          // If NO posts in the current source have character tags, it means the backend
-          // doesn't support them (e.g. Gelbooru without Supabase). Don't filter everything out.
-          const providerSupportsCharacters = source.some(p => !!p.tag_string_character)
-          if (!providerSupportsCharacters) return true
-          
-          return false // If the filter is active, it must have a character tag
-        }
-        
-        const charTags = post.tag_string_character.split(' ').filter(Boolean)
-        let hasValidCount = false
-        
-        for (const tag of charTags) {
-          const count = tagCounts[tag]
-          if (count === undefined) {
-            // Count not loaded yet — be strict: don't pass through unknown tags
-            // when the user has explicitly set a threshold. The filter will
-            // re-run once tagCounts updates (tagCounts is now in deps).
-            continue
-          } else if (count >= minCharPostCount) {
-            hasValidCount = true
-            break
+          const postProvider = post._provider || search.booruProvider
+          if (postProvider === 'gelbooru' || postProvider === 'rule34') {
+             // pass
+          } else {
+             return false
           }
-        }
-        
-        if (!hasValidCount) {
-          return false
+        } else {
+          const charTags = post.tag_string_character.split(' ').filter(Boolean)
+          let hasValidCount = false
+          
+          for (const tag of charTags) {
+            const count = tagCounts[tag]
+            if (count === undefined) {
+              continue
+            } else if (count >= minCharPostCount) {
+              hasValidCount = true
+              break
+            }
+          }
+          
+          if (!hasValidCount) {
+            return false
+          }
         }
       }
 
+      if (favs.showFavorites) return true
       const fileUrl = post.large_file_url || post.file_url
-      return fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
+      const match = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
+      return !!match
     })
-  }, [favs.showFavorites, favs.favoritePosts, favs.favoriteFolderMap, search.allPosts, activeFavoriteFolder, search.booruProvider, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts])
+  }, [favs.showFavorites, favs.favoritePosts, search.allPosts, search.booruProvider, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts, activeFavoriteFolder, favs.favoriteFolderMap])
 
   // Constant empty array reference for memoization
   const EMPTY_ARRAY = useRef<string[]>([]).current
+
+  const initialFetchDoneRef = useRef(false)
+
+  const folderMismatch = useMemo(() => {
+    const empty = { loading: 0, unavailable: 0, unavailableKeys: [] as string[] }
+    if (!favs.showFavorites || activeFavoriteFolder === 'artists') {
+      return empty
+    }
+
+    // ── Step 1: expected keys for this folder ──
+    let expectedKeys: string[]
+    if (activeFavoriteFolder === 'all') {
+      expectedKeys = favs.favoriteItems.map(fi => `${fi.provider}:${fi.id}`)
+    } else {
+      expectedKeys = Object.entries(favs.favoriteFolderMap)
+        .filter(([_, ids]) =>
+          activeFavoriteFolder === null ? ids.length === 0 : ids.includes(activeFavoriteFolder as string)
+        )
+        .map(([key]) => key)
+    }
+
+    if (expectedKeys.length === 0) return empty
+
+    // ── Step 2: build loaded key set using favoriteItems as canonical provider source ──
+    // We do NOT use post._provider here because it can be stale (from old SWR cache
+    // or wrongly persisted Supabase cache). favoriteItems is derived directly from
+    // core.favorites (the Set populated from the DB), so provider is always correct.
+    //
+    // Cross-reference: a post is "loaded" if its numeric id appears in favoritePosts
+    // AND favoriteItems contains a matching (provider, id) pair for a key in folderMap.
+    const loadedPostIdSet = new Set((favs.favoritePosts || []).map(p => p.id))
+
+    // Build a Set of "provider:id" keys we KNOW are loaded, using canonical providers
+    const loadedCanonicalKeys = new Set(
+      favs.favoriteItems
+        .filter(fi => loadedPostIdSet.has(fi.id))
+        .map(fi => `${fi.provider}:${fi.id}`)
+    )
+
+    const missingKeys = expectedKeys.filter(k => !loadedCanonicalKeys.has(k))
+
+    if (missingKeys.length === 0) return empty
+
+    // ── Step 3: only flag as "unavailable" when the fetch is genuinely complete ──
+    // Guard against all three false positive scenarios:
+    //   FP-1 (_provider mismatch): eliminated above by using favoriteItems keys
+    //   FP-2 (addProgress counts errors as loaded): isValidating catches in-flight fetchers
+    //   FP-3 (isLoading=false while fallbackData active): isValidating is true during fetch
+    //
+    // A post is only "unavailable" if:
+    //   - The favorites system has finished its initial load
+    //   - The post count reporting says everything was attempted
+    const progressComplete =
+      favs.favoritesProgress.total > 0 &&
+      favs.favoritesProgress.loaded >= favs.favoritesProgress.total
+
+    if (progressComplete && favs.favoritesLoaded) {
+      initialFetchDoneRef.current = true
+    }
+
+    const fetchDone = initialFetchDoneRef.current
+
+    return {
+      loading: fetchDone ? 0 : missingKeys.length,
+      unavailable: fetchDone ? missingKeys.length : 0,
+      unavailableKeys: fetchDone ? missingKeys : [],
+    }
+  }, [
+    favs.showFavorites, favs.favoriteFolderMap, favs.favoritePosts, favs.favoriteItems,
+    favs.favoritesProgress, favs.isLoading, favs.isRefreshing, favs.favoritesLoaded,
+    activeFavoriteFolder,
+  ])
 
   const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number, index: number) => {
     const itemProvider = post._provider || search.booruProvider
@@ -1311,14 +1604,14 @@ export function PromptGallery() {
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
                           <Sparkles className="h-4 w-4 text-primary" />
                         </div>
-                        <h3 className="text-base font-semibold text-foreground tracking-tight">Update Notes: v{versionInfo.version}</h3>
+                        <h3 className="text-base font-semibold text-foreground tracking-tight">Update Notes: v{pkg.version}</h3>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => {
                           setIsAnnouncementsOpen(false)
-                          localStorage.setItem('announcements_state', JSON.stringify({ collapsed: true, version: versionInfo.version }))
+                          localStorage.setItem('announcements_state', JSON.stringify({ collapsed: true, version: pkg.version }))
                         }}
                         className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
                         aria-label="Dismiss update notes"
@@ -2373,20 +2666,13 @@ export function PromptGallery() {
                   <div className="flex w-max space-x-2 px-2">
                     <LayoutGroup id="favoritesTabs">
                       {(() => {
-                        // Calculate counts based on *loaded* posts to ensure consistency with the grid
-                        const loadedPosts = favs.favoritePosts || [];
-                        
-                        // Helper to get folder IDs for a post
-                        const getPostFolders = (post: any) => {
-                          const key = `${post._provider || post.provider}:${post.id}`;
-                          return favs.favoriteFolderMap[key] || [];
-                        };
+                        // Calculate counts from core state (source of truth), NOT from loaded posts
+                        const folderMap = favs.favoriteFolderMap || {};
+                        const folderEntries = Object.entries(folderMap);
 
-                        const allCount = loadedPosts.length;
+                        const allCount = favs.favorites.size;
                         
-                        const uncategorizedCount = loadedPosts.filter(post => {
-                            return getPostFolders(post).length === 0;
-                        }).length;
+                        const uncategorizedCount = folderEntries.filter(([_, ids]) => ids.length === 0).length;
 
                         return [
                           { id: 'all', name: 'All Favorites', count: allCount, icon: null, isArtists: false },
@@ -2397,7 +2683,7 @@ export function PromptGallery() {
                           ...favs.folders.map(f => ({
                             id: f.id as string | null | 'all' | 'artists',
                             name: f.name,
-                            count: loadedPosts.filter(post => getPostFolders(post).includes(f.id)).length,
+                            count: folderEntries.filter(([_, ids]) => ids.includes(f.id)).length,
                             icon: f.icon,
                             isArtists: false,
                           }))
@@ -2500,6 +2786,21 @@ export function PromptGallery() {
             </div>
           )}
 
+          {folderMismatch.loading > 0 && (
+            <p className="text-sm text-muted-foreground text-center py-2 animate-pulse">
+              Loading {folderMismatch.loading} more {folderMismatch.loading === 1 ? 'post' : 'posts'}…
+            </p>
+          )}
+
+          {folderMismatch.unavailable > 0 && (
+            <UnavailablePostsNotice
+              unavailableKeys={folderMismatch.unavailableKeys}
+              activeFolderId={activeFavoriteFolder === 'all' ? 'all' : activeFavoriteFolder}
+              toggleFavorite={favs.toggleFavorite}
+              injectRecoveredPosts={favs.injectRecoveredPosts}
+            />
+          )}
+
           {filteredPosts.length > 0 && activeFavoriteFolder !== 'artists' && (
             viewMode === "grid" ? (
               <div className="mb-8 min-h-[500px]">
@@ -2520,35 +2821,6 @@ export function PromptGallery() {
                 })}
               </div>
             )
-          )}
-
-          {/* Favorites Load More — paginated, not infinite scroll */}
-          {favs.showFavorites && favs.hasMoreFavorites && filteredPosts.length > 0 && (
-            <div className="text-center pb-8">
-              <p className="text-sm text-muted-foreground mb-2">
-                Showing {filteredPosts.length} of {favs.favorites.size} favorites
-              </p>
-              <Button
-                onClick={favs.loadMoreFavorites}
-                variant="outline"
-                className="gap-2"
-                disabled={favs.isLoading || favs.isRefreshing}
-              >
-                {favs.isLoading || favs.isRefreshing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading...
-                  </>
-                ) : (
-                  <>
-                    Load More
-                    <span className="text-xs text-muted-foreground">
-                      ({favs.favorites.size - favs.favoritesProgress.total} remaining)
-                    </span>
-                  </>
-                )}
-              </Button>
-            </div>
           )}
 
           {/* Load More / States */}
@@ -2639,7 +2911,29 @@ export function PromptGallery() {
             </div>
           )}
 
-          {!search.isLoading && (!favs.isLoading && !favs.isRefreshing) && filteredPosts.length === 0 && activeFavoriteFolder !== 'artists' && (
+          {/* Favorites error states */}
+          {favs.showFavorites && filteredPosts.length === 0 && activeFavoriteFolder !== 'artists' && !favs.isLoading && !favs.isRefreshing && (favs.favoritesError || favs.postsError) && (
+            <div className="text-center py-12 px-4">
+              <AlertTriangle className="w-10 h-10 mx-auto text-amber-500 mb-3" />
+              {favs.favoritesError ? (
+                <>
+                  <p className="text-lg font-medium mb-1">Could not load favorites from cloud</p>
+                  <p className="text-sm text-muted-foreground mb-4">Check your connection and try again.</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-medium mb-1">Failed to load favorites</p>
+                  <p className="text-sm text-muted-foreground mb-4">The post data could not be retrieved. Please try again.</p>
+                </>
+              )}
+              <Button onClick={favs.retryLoadFavorites} variant="outline" className="gap-2">
+                <RefreshCw className="w-4 h-4" />
+                Retry
+              </Button>
+            </div>
+          )}
+
+          {!search.isLoading && (!favs.isLoading && !favs.isRefreshing) && filteredPosts.length === 0 && activeFavoriteFolder !== 'artists' && !favs.favoritesError && !favs.postsError && (
             <>
               {favs.showFavorites ? (
                 <div className="text-center py-12 px-4">

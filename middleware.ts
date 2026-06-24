@@ -53,14 +53,15 @@ export async function middleware(request: NextRequest) {
   // --- Request ID: generate or propagate ---
   const requestId = request.headers.get('x-request-id') ?? generateRequestId()
 
-  // --- Vercel Pause Override ---
-  // If the app is paused on Vercel to save limits, block all routes except the root.
-  // Static assets are already excluded by the matcher, so they load fine for the curtain.
-  // This effectively stops any API calls, Supabase connections, and compute usage.
-  if (process.env.VERCEL === "1") {
+  // --- Maintenance Mode Curtain ---
+  // When MAINTENANCE_MODE=1, block all non-root routes (API, admin, etc.).
+  // The root page serves a static curtain (force-static, no serverless invocation).
+  // Static assets are excluded by the matcher, so the curtain renders cleanly.
+  // This stops API calls, Supabase connections, and admin access during migrations.
+  if (process.env.MAINTENANCE_MODE === "1") {
     if (url.pathname !== '/') {
       return withRequestId(NextResponse.json(
-        { error: 'Vercel deployment is paused due to usage limits. Please use the Netlify mirror.' },
+        { error: 'The app is temporarily offline for maintenance. Please check back in a few minutes.' },
         { status: 503 }
       ), requestId)
     }

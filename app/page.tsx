@@ -12,8 +12,9 @@ export const metadata: Metadata = {
 }
 
 export default function DanbooruPromptGenerator() {
-  // Pause the Vercel deployment by serving a static curtain instead of the app.
-  if (process.env.VERCEL === "1") {
+  // Maintenance mode curtain — set MAINTENANCE_MODE=1 to take the app offline.
+  // Blocks all non-root routes via middleware, serves this static page on /.
+  if (process.env.MAINTENANCE_MODE === "1") {
     return <VercelPauseCurtain />
   }
 

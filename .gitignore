@@ -92,3 +92,7 @@ test.env*
 # Local test files & Audits
 test_gelbooru.json
 audit_*.md
+
+# Project-specific
+backups/
+scripts/
