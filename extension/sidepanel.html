@@ -99,6 +99,10 @@
       background-color: #3b82f6; /* blue */
       animation: pulse-blue 1s ease-in-out infinite;
     }
+    .queue-dot.waiting {
+      background-color: #f97316; /* orange */
+      animation: pulse-orange 1.2s ease-in-out infinite;
+    }
 
     @keyframes pulse-amber {
       0%, 100% { opacity: 1; }
@@ -107,6 +111,10 @@
     @keyframes pulse-blue {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.5; transform: scale(1.25); }
+    }
+    @keyframes pulse-orange {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(1.15); }
     }
 
     #queue-status-text {
@@ -152,6 +160,27 @@
       border-color: #ef4444;
       color: #f87171;
       background-color: #450a0a30;
+    }
+
+    #queue-target-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: transparent;
+      border: 1px solid #3f3f46;
+      color: #71717a;
+      padding: 1px 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 8.5px;
+      font-family: inherit;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    #queue-target-btn:hover {
+      border-color: #22c55e;
+      color: #4ade80;
+      background-color: #052e1630;
     }
 
     /* ── iframe ────────────────────────────────────────────── */
@@ -207,6 +236,15 @@
         color: #ef4444;
         background-color: #fee2e2;
       }
+      #queue-target-btn {
+        border: 1px solid #d4d4d8;
+        color: #71717a;
+      }
+      #queue-target-btn:hover {
+        border-color: #22c55e;
+        color: #16a34a;
+        background-color: #dcfce7;
+      }
     }
   </style>
 </head>
@@ -228,6 +266,7 @@
       <span id="queue-status-text">Ready</span>
       <span id="queue-badge">0 queued</span>
       <span class="queue-spacer"></span>
+      <button id="queue-target-btn" title="Select target textarea on page">🎯 Target</button>
       <button id="queue-clear-btn" title="Clear prompt queue">✕ Clear</button>
     </div>
 
