@@ -697,15 +697,30 @@ async function processNext() {
   isProcessing = true;
   updateQueueUI();
 
-  // Get the active tab of the current window (where the side panel is attached)
-  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-    let activeTab = tabs[0];
+  // Get the target generation tab — prefer finding it directly, regardless of which tab is active.
+  // This allows the queue to keep running even if the user switches to another tab.
+  // Supported platforms: SeaArt, TensorArt, TensorHub, Yodayo
+  const PLATFORM_DOMAINS = ["seaart.ai", "tensor.art", "tensorhub.net", "yodayo.com"];
+  const WORKFLOW_PATHS = ["/workflow", "/canvas", "/comfyui", "/generate"];
 
-    // If for some reason we don't have a valid tab, try finding any SeaArt tab
-    if (!activeTab || !activeTab.url || activeTab.url.startsWith("chrome://") || activeTab.url.startsWith("devtools://") || activeTab.url.startsWith("chrome-extension://")) {
-       const seaArtTabs = await chrome.tabs.query({ url: "*://*.seaart.ai/*" });
-       if (seaArtTabs.length > 0) activeTab = seaArtTabs[0];
+  chrome.tabs.query({ currentWindow: true }, async (allTabs) => {
+    let activeTab = null;
+
+    // 1. First, look for a workflow/canvas page on any supported platform
+    if (!activeTab) {
+      activeTab = allTabs.find(t =>
+        t.url && PLATFORM_DOMAINS.some(d => t.url.includes(d)) &&
+        WORKFLOW_PATHS.some(p => t.url.includes(p))
+      );
     }
+    // 2. Fallback: any tab on a supported platform
+    if (!activeTab) {
+      activeTab = allTabs.find(t =>
+        t.url && PLATFORM_DOMAINS.some(d => t.url.includes(d))
+      );
+    }
+    // 3. Last resort: the currently active tab (for self-hosted tools like A1111/WebUI)
+    if (!activeTab) activeTab = allTabs.find(t => t.active);
 
     if (
       !activeTab ||
@@ -715,10 +730,9 @@ async function processNext() {
       activeTab.url.startsWith("devtools://") ||
       activeTab.url.startsWith("chrome-extension://")
     ) {
-      console.warn("[Queue] No valid active tab found, pausing queue.");
+      console.warn("[Queue] No valid tab found, pausing queue.");
       isProcessing = false;
       updateQueueUI();
-      // DO NOT DISCARD the prompt. Just stop processing until they go back to SeaArt.
       return;
     }
 
