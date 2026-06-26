@@ -6,11 +6,16 @@
   "permissions": [
     "sidePanel",
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage"
   ],
   "host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "*://*.seaart.ai/*",
+    "*://*.tensor.art/*",
+    "*://*.tensorhub.net/*",
+    "*://*.yodayo.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "background": {
     "service_worker": "background.js"

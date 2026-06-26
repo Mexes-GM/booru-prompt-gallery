@@ -68,6 +68,7 @@ copilot-instructions.md
 .cursor/
 .gemini/
 .hermes/
+.hermes.md
 .kiro/
 .playwright-mcp/
 .qwen/
@@ -96,3 +97,4 @@ audit_*.md
 # Project-specific
 backups/
 scripts/
+srtsource/

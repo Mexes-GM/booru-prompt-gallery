@@ -22,9 +22,9 @@ export const SCALE_CONFIG = {
   large: { minColumnWidth: 280, footerHeight: 180 },
 }
 
-const SCROLL_BUCKET_SIZE = 400
-const OVERSCAN_MOBILE = 300
-const OVERSCAN_DESKTOP = 600
+const SCROLL_BUCKET_SIZE = 250
+const OVERSCAN_MOBILE = 800
+const OVERSCAN_DESKTOP = 1200
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value)

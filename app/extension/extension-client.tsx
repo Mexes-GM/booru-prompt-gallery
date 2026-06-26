@@ -3,12 +3,15 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useBooruSearch } from "@/hooks/use-booru-search"
 import { usePersistentState } from "@/hooks/use-persistent-state"
+import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { userPreferences, STORAGE_KEYS, type TagPreset, type HistoryItem } from "@/lib/storage"
+import { onSettingsChange } from "@/lib/settings-bridge"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import { getGelbooruProxyUrl } from "@/lib/proxy-url"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { processBackgroundTags, BackgroundMode } from "@/lib/background-detector"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
+import { classifyTags } from "@/lib/tag-classifier"
 import { applyWeights } from "@/lib/weight-utils"
 import { removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil, BooruPost, BooruProvider } from "@/lib/api-client"
 import { Card } from "@/components/ui/card"
@@ -26,8 +29,6 @@ import {
   Send,
   Check,
   ChevronDown,
-  ChevronUp,
-  Sparkles,
   Sliders,
   Shield,
   Search,
@@ -38,14 +39,18 @@ import {
   History,
   Trash2,
   Save,
-  Globe,
-  ArrowRight,
   CornerDownRight,
-  AlertTriangle,
+  Smile,
+  User,
+  Shirt,
+  Mountain,
+  ImageOff,
+  HelpCircle,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useTagCounts } from "@/hooks/use-tag-counts"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
+import { ExtensionTour } from "@/components/extension-tour"
 
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
@@ -85,6 +90,22 @@ import { useToast } from "@/hooks/use-toast"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ThemeProvider } from "@/components/theme-provider"
 
+// Pinned target origin for postMessage to the parent window (extension host).
+const TARGET_ORIGIN = "https://tensor.art"
+// Origins allowed to send messages into this iframe.
+const ALLOWED_ORIGINS = ["https://tensor.art", "https://seaart.ai"]
+
+interface QueueStatus {
+  length: number
+  isProcessing: boolean
+  isWaitingForSlot: boolean
+  isPausedForVisibility: boolean
+  isPausedForError: boolean
+  activeTasks: number
+  limit: number
+  platform: string
+}
+
 // Styled PocketCard that mirrors the original MasonryItem's layout and style in miniature
 function PocketCard({
   post,
@@ -101,6 +122,7 @@ function PocketCard({
   queueLength,
   isGlobalWeightsEnabled,
   onGlobalWeightChange,
+  isPreviouslyCopied,
 }: {
   post: BooruPost
   getCleanedPrompt: (post: BooruPost) => string
@@ -112,11 +134,11 @@ function PocketCard({
   tagCounts: Record<string, number>
   globalWeights: Record<string, number>
   onSearch: (tag: string) => void
-  onUsedPrompt: (prompt: string, postId: number, thumbnailUrl?: string) => void
-  /** Number of items currently in the sidepanel queue (0 = idle) */
+  onUsedPrompt: (prompt: string, postId: number, url?: string) => void
   queueLength: number
   isGlobalWeightsEnabled: boolean
   onGlobalWeightChange?: (tag: string, weight: number) => void
+  isPreviouslyCopied?: boolean
 }) {
   const [copied, setCopied] = useState(false)
   /** 'idle' | 'queued' (amber, waiting for TensorArt) | 'sent' (green, injected) */
@@ -124,13 +146,13 @@ function PocketCard({
   const [useFallbackUrl, setUseFallbackUrl] = useState(false)
   const [modifiedContent, setModifiedContent] = useState<string | null>(null)
 
-  const prompt = useMemo(() => getCleanedPrompt(post), [post, getCleanedPrompt])
+  const cleanedPrompt = useMemo(() => getCleanedPrompt(post), [post, getCleanedPrompt])
 
   useEffect(() => {
     setModifiedContent(null)
-  }, [prompt])
+  }, [cleanedPrompt])
 
-  const displayPrompt = modifiedContent ?? prompt
+  const displayPrompt = modifiedContent ?? cleanedPrompt
 
   // footerHeight must match card-content-* CSS classes including padding.
   // card-content-medium: p-3 (12px top+bottom = 24px) + space-y-2 (8px gap) +
@@ -158,7 +180,7 @@ function PocketCard({
       console.warn("Clipboard copy in iframe failed:", err)
     }
     // Enqueue in sidepanel.js — sidepanel will process it when TensorArt is free
-    window.parent.postMessage({ type: "INJECT_PROMPT", prompt: displayPrompt }, "*")
+    window.parent.postMessage({ type: "INJECT_PROMPT", prompt: displayPrompt }, TARGET_ORIGIN)
     // Show 'queued' (amber) immediately; it will clear after 4 s or when queue empties
     setSendState("queued")
     onUsedPrompt(displayPrompt, post.id, post.preview_file_url || post.file_url)
@@ -222,19 +244,49 @@ function PocketCard({
       return Intl.NumberFormat('en', { notation: 'compact' }).format(maxCount);
   }, [tagCounts, characterTagsArray]);
 
+  const classifiedTags = useMemo(() => {
+    const allTagsForClassification = Array.from(new Set([...characterTagsArray, ...tagsForClassification]))
+    return classifyTags(allTagsForClassification, {}, characterTagsArray)
+  }, [characterTagsArray, tagsForClassification])
+
   return (
     <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300">
       {/* 1. Image viewport matching original layout */}
       <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={displayImageUrl}
-          alt={`Booru post ${post.id}`}
-          className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
-          loading="lazy"
-          referrerPolicy={isAibooru ? undefined : "no-referrer"}
-          onError={handleImageError}
-        />
+        {isPreviouslyCopied && (
+            <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-green-500/40 shadow-sm"
+                >
+                    <motion.div
+                       animate={{ scale: [1, 1.2, 1] }}
+                       transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
+                    >
+                        <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
+                    </motion.div>
+                </motion.div>
+            </div>
+        )}
+        {!displayImageUrl ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-muted">
+            <ImageOff className="w-8 h-8 text-muted-foreground/50" />
+          </div>
+        ) : (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={displayImageUrl}
+              alt={`Booru post ${post.id}`}
+              className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
+              loading="lazy"
+              referrerPolicy={isAibooru ? undefined : "no-referrer"}
+              onError={handleImageError}
+            />
+          </>
+        )}
 
         {/* Character Tag Count Indicator */}
         {tagCountIndicator && (
@@ -244,13 +296,41 @@ function PocketCard({
           </div>
         )}
 
-        {/* Total Tag Count Indicator */}
-        {totalTagsCount > 0 && (
-          <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm z-10 select-none">
-            <Tag className="w-3.5 h-3.5 opacity-70" />
-            {totalTagsCount}
+        <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1 z-10">
+          <div className="flex flex-col items-end gap-1">
+            {classifiedTags.appearance.length > 0 && (
+                <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm select-none">
+                    <Smile className="w-2.5 h-2.5 opacity-70" />
+                    {classifiedTags.appearance.length}
+                </div>
+            )}
+            {classifiedTags.clothing.length > 0 && (
+                <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm select-none">
+                    <Shirt className="w-2.5 h-2.5 opacity-70" />
+                    {classifiedTags.clothing.length}
+                </div>
+            )}
+            {classifiedTags.pose.length > 0 && (
+                <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm select-none">
+                    <User className="w-2.5 h-2.5 opacity-70" />
+                    {classifiedTags.pose.length}
+                </div>
+            )}
+            {classifiedTags.scenery.length > 0 && (
+                <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm select-none">
+                    <Mountain className="w-2.5 h-2.5 opacity-70" />
+                    {classifiedTags.scenery.length}
+                </div>
+            )}
           </div>
-        )}
+          {/* Total Tag Count Indicator */}
+          {totalTagsCount > 0 && (
+            <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm select-none">
+              <Tag className="w-3.5 h-3.5 opacity-70" />
+              {totalTagsCount}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 2. Card Content Panel (prompt container) matching original app */}
@@ -260,7 +340,7 @@ function PocketCard({
       >
         <div className="bg-muted/50 rounded-lg overflow-hidden prompt-container">
           <InteractivePrompt
-            initialPrompt={prompt}
+            initialPrompt={cleanedPrompt}
             onUpdate={setModifiedContent}
             globalWeights={globalWeights}
             onSearch={onSearch}
@@ -272,13 +352,15 @@ function PocketCard({
         <div className="flex button-group items-stretch isolate w-full mt-2">
           <Button
             onClick={handleCopy}
-            variant={copied ? "default" : "outline"}
-            className="flex-1 focus-ring rounded-r-none border-r-0 text-xs px-2 py-1.5 h-8 font-semibold whitespace-nowrap overflow-hidden"
+            variant={copied || isPreviouslyCopied ? "default" : "outline"}
+            className={`flex-none w-9 focus-ring rounded-r-none border-r-0 px-0 h-8 flex items-center justify-center transition-colors ${
+              isPreviouslyCopied && !copied ? "bg-muted text-muted-foreground hover:bg-muted/80" : ""
+            }`}
+            title="Copy Prompt"
             disabled={!displayPrompt}
           >
-            <Check className={`w-3.5 h-3.5 shrink-0 ${copied ? "" : "hidden"}`} />
-            <Copy className={`w-3.5 h-3.5 shrink-0 ${copied ? "hidden" : ""}`} />
-            <span className="ml-1 truncate">{copied ? "Copied!" : "Copy"}</span>
+            <Check className={`w-4 h-4 shrink-0 ${copied || isPreviouslyCopied ? "" : "hidden"}`} />
+            <Copy className={`w-4 h-4 shrink-0 ${copied || isPreviouslyCopied ? "hidden" : ""}`} />
           </Button>
           <Button
             onClick={handleSend}
@@ -287,7 +369,7 @@ function PocketCard({
               : sendState === "queued" ? "outline"
               : "outline"
             }
-            className={`flex-1 focus-ring rounded-l-none text-xs px-2 py-1.5 h-8 font-semibold whitespace-nowrap overflow-hidden transition-colors ${
+            className={`pocket-card-send-btn flex-1 focus-ring rounded-l-none text-xs px-2 py-1.5 h-8 font-semibold whitespace-nowrap overflow-hidden transition-colors ${
               sendState === "queued"
                 ? "border-amber-500/60 text-amber-500 hover:bg-amber-500/10"
                 : sendState === "sent"
@@ -420,12 +502,40 @@ function SmoothFilterSlider({
 export default function ExtensionClient() {
   const mainScrollRef = useRef<HTMLElement>(null)
   const search = useBooruSearch()
+  usePreferencesSync()
   const [showSettings, setShowSettings] = useState(false)
+  const [tourRun, setTourRun] = useState(false)
   const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
 
   // Queue status received from sidepanel.js via postMessage
-  const [queueLength, setQueueLength] = useState(0)
+  const [queueStatus, setQueueStatus] = useState<QueueStatus>({
+    length: 0,
+    isProcessing: false,
+    isWaitingForSlot: false,
+    isPausedForVisibility: false,
+    isPausedForError: false,
+    activeTasks: 0,
+    limit: 5,
+    platform: "Unknown"
+  })
+  
+  const [isTargeting, setIsTargeting] = useState(false)
+  
+  // Reset targeting state if user clicks outside the panel (e.g. they clicked the target on the page)
+  useEffect(() => {
+    if (!isTargeting) return
+    const handleBlur = () => setIsTargeting(false)
+    window.addEventListener("blur", handleBlur)
+    
+    // Safety timeout in case blur doesn't fire as expected
+    const timer = setTimeout(() => setIsTargeting(false), 8000)
+    
+    return () => {
+      window.removeEventListener("blur", handleBlur)
+      clearTimeout(timer)
+    }
+  }, [isTargeting])
 
   // Apply extension-mode class to <html> to neutralize the forced html-level
   // overflow-y:scroll from globals.css (which causes a phantom scrollbar in iframe)
@@ -439,11 +549,28 @@ export default function ExtensionClient() {
   // Listen for queue status updates from the parent sidepanel.js
   useEffect(() => {
     function handleQueueStatus(event: MessageEvent) {
+      if (event.source !== window.parent) return;
+      if (!ALLOWED_ORIGINS.includes(event.origin)) return;
       if (event.data && event.data.type === "QUEUE_STATUS") {
-        setQueueLength(event.data.queueLength ?? 0)
+        setQueueStatus({
+          length: event.data.queueLength ?? 0,
+          isProcessing: event.data.isProcessing ?? false,
+          isWaitingForSlot: event.data.isWaitingForSlot ?? false,
+          isPausedForVisibility: event.data.isPausedForVisibility ?? false,
+          isPausedForError: event.data.isPausedForError ?? false,
+          activeTasks: event.data.currentActiveTasks ?? 0,
+          limit: event.data.seaArtLimit ?? 5,
+          platform: event.data.platform ?? "Unknown"
+        })
       }
     }
     window.addEventListener("message", handleQueueStatus)
+    
+    // Request initial state in case the iframe reloaded while parent stayed alive
+    if (typeof window !== "undefined") {
+      window.parent.postMessage({ type: "REQUEST_QUEUE_STATUS" }, TARGET_ORIGIN)
+    }
+    
     return () => window.removeEventListener("message", handleQueueStatus)
   }, [])
 
@@ -576,19 +703,46 @@ export default function ExtensionClient() {
     }
   }, [search.isClient])
 
-  const handleUsedPrompt = useCallback((promptText: string, postId: number, thumbnailUrl?: string) => {
-    userPreferences.addToHistory({ content: promptText, postId, thumbnailUrl })
-    setHistory(userPreferences.getHistory())
+  // Listen for preset/history changes from web app/other tabs via BroadcastChannel
+  useEffect(() => {
+    return onSettingsChange((key) => {
+      if (key === STORAGE_KEYS.ADD_TAGS_PRESETS) {
+        setPresets(userPreferences.getAddTagsPresets())
+      } else if (key === STORAGE_KEYS.HISTORY) {
+        setHistory(userPreferences.getHistory())
+      }
+    })
   }, [])
+
+  const handleUsedPrompt = useCallback((promptText: string, postId: number, thumbnailUrl?: string) => {
+    const newHistory = userPreferences.addToHistory({ content: promptText, postId, thumbnailUrl })
+    setHistory(newHistory)
+  }, [])
+
+  const previouslyCopiedPostIds = useMemo(() => {
+    return new Set(history.map(item => item.postId).filter((id): id is number => id !== undefined))
+  }, [history])
 
   // Detailed background list
   const [detailedBackgroundsList, setDetailedBackgroundsList] = useState<string[][]>([])
 
   useEffect(() => {
-    fetch('/detailed-backgrounds.json')
+    const controller = new AbortController()
+    fetch('/detailed-backgrounds.json', { signal: controller.signal })
       .then(res => res.json())
-      .then(data => setDetailedBackgroundsList(data.map((item: any) => item.scenery)))
-      .catch(err => console.error("Failed to load detailed backgrounds:", err))
+      .then(data => {
+        if (!Array.isArray(data)) throw new Error('Invalid format')
+        setDetailedBackgroundsList(data.map((item: any) => {
+          if (!item.scenery || !Array.isArray(item.scenery)) return []
+          return item.scenery
+        }))
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error("Failed to load detailed backgrounds:", err)
+        }
+      })
+    return () => controller.abort()
   }, [])
 
   // Global weight handlers
@@ -636,77 +790,56 @@ export default function ExtensionClient() {
       if (search.removeQualityTags) aiPrompt = removeQualityTagsUtil(aiPrompt)
     }
 
-    const sharedCleaned = aiPrompt
+    const baseOpts = {
+      includeCharacters,
+      includeCopyrights: false,
+      optimizeTags,
+      exclude: excludeList,
+      metaTags: post.tag_string_meta,
+    }
+
+    // Single cleanPrompt pass; background/weights are applied afterwards on the cleaned array.
+    const cleaned = aiPrompt
       ? cleanPrompt(aiPrompt, "", "", "", {
-          includeCharacters,
-          includeCopyrights: false,
-          optimizeTags,
-          exclude: excludeList,
+          ...baseOpts,
           addedTags: [],
           backgroundMode: 'keep',
           simpleBackgroundReplacementTags,
           escapeOutput: false,
-          metaTags: post.tag_string_meta,
         })
       : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, {
-          includeCharacters,
-          includeCopyrights: false,
-          optimizeTags,
-          exclude: excludeList,
+          ...baseOpts,
           addedTags: [],
           backgroundMode: 'keep',
           simpleBackgroundReplacementTags,
           escapeOutput: false,
-          metaTags: post.tag_string_meta,
         })
 
-    let pureContent = sharedCleaned
-    if (sharedCleaned && backgroundMode !== 'keep') {
-      const tags = sharedCleaned.split(',').map(t => t.trim())
+    // Post-process: background
+    let content = cleaned
+    if (cleaned && backgroundMode !== 'keep') {
+      const tags = cleaned.split(',').map(t => t.trim())
       const processed = processBackgroundTags(
         tags, backgroundMode, simpleBackgroundReplacementTags, {},
         { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients },
         detailedBackgroundsList
       )
-      pureContent = processed.join(', ')
+      content = processed.join(', ')
     }
 
+    // Resolve conflicts between the cleaned content and the added tags
     const addList = addInput ? addInput.split(',').map(t => t.trim()).filter(Boolean) : []
-    const conflictResolution = (pureContent && addList.length > 0 && smartTagExclusion)
-      ? resolveTagConflicts(pureContent.split(',').map(t => t.trim()), addList)
+    const conflictResolution = (content && addList.length > 0 && smartTagExclusion)
+      ? resolveTagConflicts(content.split(',').map(t => t.trim()), addList)
       : { validTags: addList }
 
-    const baseContent = aiPrompt
-      ? cleanPrompt(aiPrompt, "", "", "", {
-          includeCharacters,
-          includeCopyrights: false,
-          optimizeTags,
-          exclude: excludeList,
-          addedTags: conflictResolution.validTags,
-          backgroundMode,
-          simpleBackgroundReplacementTags,
-          randomBackgroundPatterns,
-          randomBackgroundIncludeGradients,
-          detailedBackgroundsList,
-          metaTags: post.tag_string_meta,
-        })
-      : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, {
-          includeCharacters,
-          includeCopyrights: false,
-          optimizeTags,
-          exclude: excludeList,
-          addedTags: conflictResolution.validTags,
-          backgroundMode,
-          simpleBackgroundReplacementTags,
-          randomBackgroundPatterns,
-          randomBackgroundIncludeGradients,
-          detailedBackgroundsList,
-          metaTags: post.tag_string_meta,
-        })
+    // Build final prompt: cleaned content + valid added tags
+    const finalTags = [...content.split(',').map(t => t.trim()).filter(Boolean), ...conflictResolution.validTags]
+    let finalPrompt = finalTags.join(', ')
 
-    let finalPrompt = baseContent
-    if (isGlobalWeightsEnabled && baseContent) {
-      finalPrompt = applyWeights(baseContent, globalWeights)
+    // Apply global weights
+    if (isGlobalWeightsEnabled && finalPrompt) {
+      finalPrompt = applyWeights(finalPrompt, globalWeights)
     }
 
     return finalPrompt
@@ -731,12 +864,13 @@ export default function ExtensionClient() {
   const filteredPosts = useMemo(() => {
     if (!search.isClient) return []
     const source = search.allPosts
+    const normalizedBlacklist = blacklist.map(tag => tag.replace(/\s+/g, '_'))
+    const providerSupportsCharacters = source.some(p => !!p.tag_string_character)
 
     return source.filter(post => {
       // 1. Blacklist filter
       if (blacklist.length > 0) {
         const postTags = (post.tag_string || '').split(' ')
-        const normalizedBlacklist = blacklist.map(tag => tag.replace(/\s+/g, '_'))
         if (normalizedBlacklist.some(black => postTags.includes(black))) return false
       }
 
@@ -744,7 +878,6 @@ export default function ExtensionClient() {
       const minCharPostCount = (includeCharacters && parseInt(search.appliedCharacterCountFilter)) || 0
       if (minCharPostCount > 0) {
         if (!post.tag_string_character) {
-          const providerSupportsCharacters = source.some(p => !!p.tag_string_character)
           if (!providerSupportsCharacters) return true
           return false
         }
@@ -991,7 +1124,7 @@ export default function ExtensionClient() {
                                 variant="default"
                                 className="h-7 text-xs px-2"
                                 onClick={() => {
-                                  window.parent.postMessage({ type: "INJECT_PROMPT", prompt: item.content }, "*")
+                                  window.parent.postMessage({ type: "INJECT_PROMPT", prompt: item.content }, TARGET_ORIGIN)
                                   toast({ title: "Sent", description: "Prompt injected into generator." })
                                 }}
                               >
@@ -1019,6 +1152,7 @@ export default function ExtensionClient() {
             </div>
             
             <Button
+              id="extension-settings-btn"
               type="button"
               variant="outline"
               onClick={() => setShowSettings(!showSettings)}
@@ -1029,6 +1163,15 @@ export default function ExtensionClient() {
             >
               <Settings size={14} className={showSettings ? "text-primary animate-pulse" : ""} />
               <span>Settings</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTourRun(true)}
+              className="h-8 w-8 p-0 shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted bg-background"
+              title="Show guided tour"
+            >
+              <HelpCircle size={14} />
             </Button>
           </div>
         </div>
@@ -1109,7 +1252,7 @@ export default function ExtensionClient() {
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6.w-4 text-muted-foreground hover:text-foreground" title="View Presets">
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" title="View Presets">
                           <ChevronDown className="h-3 w-3" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -1262,7 +1405,7 @@ export default function ExtensionClient() {
                   </div>
                   <Select
                     value={backgroundMode}
-                    onValueChange={(val: any) => {
+                    onValueChange={(val: BackgroundMode) => {
                       setBackgroundMode(val)
                     }}
                   >
@@ -1343,7 +1486,7 @@ export default function ExtensionClient() {
       </Card>
 
       {/* Results Grid - Uses actual virtualized MasonryGrid */}
-      <main ref={mainScrollRef as React.RefObject<HTMLElement>} className="flex-1 overflow-y-auto relative">
+      <main ref={mainScrollRef as React.RefObject<HTMLElement>} className="flex-1 overflow-y-auto relative scrollbar-none">
         {search.isLoading ? (
           <div className="flex h-48 w-full items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -1378,9 +1521,10 @@ export default function ExtensionClient() {
                   globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                   onSearch={search.setSearchTags}
                   onUsedPrompt={handleUsedPrompt}
-                  queueLength={queueLength}
+                  queueLength={queueStatus.length}
                   isGlobalWeightsEnabled={isGlobalWeightsEnabled}
                   onGlobalWeightChange={handleGlobalWeightChange}
+                  isPreviouslyCopied={previouslyCopiedPostIds.has(post.id)}
                 />
               )}
             />
@@ -1399,6 +1543,94 @@ export default function ExtensionClient() {
         )}
       </main>
 
+      {/* Floating Queue Badge native to React App */}
+      <div className="fixed bottom-6 right-1/2 translate-x-1/2 flex flex-col items-center gap-1.5 z-50 pointer-events-none w-max max-w-[95vw]">
+        {/* Target Info Pill */}
+        <AnimatePresence>
+          {queueStatus.platform !== "Unknown" && (
+            <motion.div 
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 5 }}
+              className="bg-secondary/90 border border-border backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-secondary-foreground pointer-events-auto shadow-sm"
+            >
+              Target: <span className="font-semibold ml-1">{queueStatus.platform}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        {/* Main Queue Bar */}
+        <Card className="flex items-center justify-center gap-2.5 px-3.5 py-1.5 rounded-full text-xs shadow-lg pointer-events-auto whitespace-nowrap bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-border">
+          {/* Status Indicator */}
+          <div className="flex items-center gap-1.5" title="Queue Status">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${
+              queueStatus.isPausedForError ? "bg-red-500 animate-pulse" :
+              queueStatus.isPausedForVisibility ? "bg-red-500 animate-pulse" :
+              queueStatus.isWaitingForSlot ? "bg-orange-500 animate-pulse" :
+              queueStatus.isProcessing ? "bg-blue-500 animate-pulse" :
+              queueStatus.length > 0 ? "bg-amber-500 animate-pulse" : 
+              "bg-green-500"
+            }`} />
+            <span className="text-foreground font-semibold shrink-0">
+              {queueStatus.isPausedForError ? "Error: Paused" :
+               queueStatus.isPausedForVisibility ? "Paused (Tab hidden)" :
+               queueStatus.isWaitingForSlot ? `Waiting (${queueStatus.limit ? `${queueStatus.activeTasks}/${queueStatus.limit}` : `${queueStatus.activeTasks} active`})` :
+               queueStatus.isProcessing ? "Generating..." :
+               queueStatus.length > 0 ? "Queued" : 
+               "Ready"}
+            </span>
+          </div>
+
+          {/* Queue Count Badge */}
+          {queueStatus.length > 0 && (
+            <Badge variant="default" className="px-1.5 py-[1px] h-5 rounded-full text-[10px] font-semibold shrink-0">
+              {queueStatus.length} queued
+            </Badge>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-1.5 ml-1">
+            <Button
+              id="extension-target-btn"
+              variant="outline" 
+              size="sm"
+              title="Select target textarea on page"
+              onClick={() => {
+                setIsTargeting(true)
+                window.parent.postMessage({ type: "QUEUE_ACTION", action: "target" }, TARGET_ORIGIN)
+              }}
+              className={`h-6 px-2.5 rounded-full text-[11px] gap-1 transition-all duration-300 ${
+                isTargeting 
+                  ? "bg-blue-500/20 text-blue-400 border-blue-500/50 animate-pulse pointer-events-none"
+                  : "bg-transparent hover:bg-green-500/10 hover:text-green-600 hover:border-green-500/50"
+              }`}
+            >
+              {isTargeting ? (
+                <>
+                  <span className="text-[10px] animate-bounce">🎯</span> Select field...
+                </>
+              ) : (
+                <>
+                  <span className="text-[10px]">🎯</span> Target
+                </>
+              )}
+            </Button>
+            
+            {queueStatus.length > 0 && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                title="Clear prompt queue"
+                onClick={() => window.parent.postMessage({ type: "QUEUE_ACTION", action: "clear" }, TARGET_ORIGIN)}
+                className="h-6 px-2.5 rounded-full text-[11px] gap-1 bg-transparent hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
+              >
+                <X className="w-3 h-3" /> Clear
+              </Button>
+            )}
+          </div>
+        </Card>
+      </div>
+
       <GlobalWeightsModal
         open={isGlobalWeightsModalOpen}
         onOpenChange={setIsGlobalWeightsModalOpen}
@@ -1407,6 +1639,8 @@ export default function ExtensionClient() {
         onClearWeights={handleClearGlobalWeights}
         onSaveWeight={handleGlobalWeightChange}
       />
+
+      <ExtensionTour externalRun={tourRun} />
     </div>
     </TooltipProvider>
     </ThemeProvider>

@@ -1,6 +1,7 @@
 // Utility functions for localStorage persistence
 import { DEFAULT_BLACKLIST } from '@/lib/constants'
 import { generateId } from '@/lib/utils/id-generator'
+import { broadcastSettingChange } from '@/lib/settings-bridge'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -25,6 +26,8 @@ export const storage = {
       localStorage.setItem(key, JSON.stringify(value))
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(STORAGE_EVENT_NAME, { detail: { key, value } }))
+        // Also broadcast for cross-context sync (web app ↔ extension iframe)
+        broadcastSettingChange(key, value)
       }
     } catch (error) {
       console.warn(`Error writing to localStorage key "${key}":`, error)
@@ -220,6 +223,7 @@ export const userPreferences = {
     // Add to beginning, limit to last 100 items
     const newHistory = [newItem, ...history].slice(0, 100)
     storage.set(STORAGE_KEYS.HISTORY, newHistory)
+    return newHistory
   },
 
   clearHistory: () =>

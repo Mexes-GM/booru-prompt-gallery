@@ -175,6 +175,14 @@ const nextConfig = {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()',
           },
+          {
+            key: 'Content-Security-Policy',
+            value: 'frame-ancestors https://tensor.art https://seaart.ai',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'ALLOW-FROM https://tensor.art',
+          },
         ],
       },
     ]

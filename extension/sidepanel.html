@@ -66,18 +66,57 @@
       font-weight: 600;
     }
 
-    /* ── Queue Status Bar ──────────────────────────────────── */
+    /* ── Queue Floating Badge ──────────────────────────────────── */
+    #queue-container {
+      position: fixed;
+      bottom: 24px;
+      right: 50%;
+      transform: translateX(50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      z-index: 1000;
+      pointer-events: none;
+      width: max-content;
+      max-width: 95vw;
+    }
+
+    #target-info-pill {
+      display: none;
+      background-color: rgba(24, 24, 27, 0.95); /* zinc-900 */
+      border: 1px solid #27272a; /* zinc-800 */
+      backdrop-filter: blur(12px);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #a1a1aa; /* zinc-400 */
+      pointer-events: auto;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    
+    #target-info-platform {
+      color: #fafafa;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+
     #queue-bar {
       display: none; /* shown via JS when queue is active */
       align-items: center;
-      gap: 6px;
-      background-color: #0f0f11;
-      border-bottom: 1px solid #27272a;
-      padding: 3px 10px;
-      font-size: 9.5px;
-      height: 24px;
-      flex-shrink: 0;
-      overflow: hidden;
+      gap: 10px;
+      background-color: rgba(24, 24, 27, 0.95); /* zinc-900 */
+      backdrop-filter: blur(12px);
+      border: 1px solid #3f3f46; /* zinc-700 */
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 12px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
+      pointer-events: auto;
+      white-space: nowrap;
     }
 
     /* Animated status dot */
@@ -116,10 +155,18 @@
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.35; transform: scale(1.15); }
     }
+    .queue-dot.error {
+      background-color: #ef4444; /* red */
+      animation: pulse-red 0.8s ease-in-out infinite;
+    }
+    @keyframes pulse-red {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(1.3); }
+    }
 
     #queue-status-text {
-      color: #a1a1aa;
-      font-weight: 500;
+      color: #e4e4e7; /* zinc-200 */
+      font-weight: 600;
       flex-shrink: 0;
     }
 
@@ -136,54 +183,51 @@
       flex-shrink: 0;
     }
 
-    /* Spacer to push clear btn right */
-    .queue-spacer {
-      flex: 1;
-    }
-
     #queue-clear-btn {
       display: none;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
       background: transparent;
       border: 1px solid #3f3f46;
-      color: #71717a;
-      padding: 1px 5px;
-      border-radius: 4px;
+      color: #a1a1aa;
+      padding: 3px 10px;
+      border-radius: 9999px;
       cursor: pointer;
-      font-size: 8.5px;
+      font-size: 11px;
+      font-weight: 500;
       font-family: inherit;
       transition: all 0.15s;
       flex-shrink: 0;
     }
     #queue-clear-btn:hover {
       border-color: #ef4444;
-      color: #f87171;
-      background-color: #450a0a30;
+      color: #fca5a5;
+      background-color: rgba(239, 68, 68, 0.1);
     }
 
     #queue-target-btn {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
       background: transparent;
       border: 1px solid #3f3f46;
-      color: #71717a;
-      padding: 1px 5px;
-      border-radius: 4px;
+      color: #a1a1aa;
+      padding: 3px 10px;
+      border-radius: 9999px;
       cursor: pointer;
-      font-size: 8.5px;
+      font-size: 11px;
+      font-weight: 500;
       font-family: inherit;
       transition: all 0.15s;
       flex-shrink: 0;
     }
     #queue-target-btn:hover {
       border-color: #22c55e;
-      color: #4ade80;
-      background-color: #052e1630;
+      color: #86efac;
+      background-color: rgba(34, 197, 94, 0.1);
     }
 
-    /* ── iframe ────────────────────────────────────────────── */
+    /* ── Light Mode Themes ────────────────────────────────── */
     iframe {
       flex: 1;
       width: 100%;
@@ -260,14 +304,18 @@
       </div>
     </div>
 
-    <!-- Queue Status Bar (hidden by default, shown when queue is active) -->
-    <div id="queue-bar">
-      <span id="queue-status-dot" class="queue-dot idle"></span>
-      <span id="queue-status-text">Ready</span>
-      <span id="queue-badge">0 queued</span>
-      <span class="queue-spacer"></span>
-      <button id="queue-target-btn" title="Select target textarea on page">🎯 Target</button>
-      <button id="queue-clear-btn" title="Clear prompt queue">✕ Clear</button>
+    <!-- Queue Floating Badge (Now rendered inside React app, hidden here) -->
+    <div id="queue-container" style="display: none !important;">
+      <div id="target-info-pill">
+        Target: <span id="target-info-platform">Unknown</span>
+      </div>
+      <div id="queue-bar">
+        <span id="queue-status-dot" class="queue-dot idle"></span>
+        <span id="queue-status-text">Ready</span>
+        <span id="queue-badge">0 queued</span>
+        <button id="queue-target-btn" title="Select target textarea on page">🎯 Target</button>
+        <button id="queue-clear-btn" title="Clear prompt queue">✕ Clear</button>
+      </div>
     </div>
 
     <!-- The actual hosted app iframe -->

@@ -75,6 +75,7 @@ import {
 } from "@/lib/api-client"
 
 import { userPreferences, STORAGE_KEYS, type HistoryItem, type TagPreset } from "@/lib/storage"
+import { onSettingsChange } from "@/lib/settings-bridge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
@@ -611,7 +612,13 @@ export function PromptGallery() {
   )
 
 
-  const [randomBackgroundIncludeGradients, setRandomBackgroundIncludeGradients] = useState(true)
+  const [randomBackgroundIncludeGradients, setRandomBackgroundIncludeGradients] = usePersistentState(
+    true,
+    userPreferences.getRandomBackgroundIncludeGradients,
+    userPreferences.setRandomBackgroundIncludeGradients,
+    "randomBackgroundIncludeGradients",
+    STORAGE_KEYS.RANDOM_BACKGROUND_INCLUDE_GRADIENTS
+  )
 
   const [excludeInput, setExcludeInput] = usePersistentState(
     "",
@@ -656,8 +663,14 @@ export function PromptGallery() {
   const debouncedAddInput = useDebounce(addInput, 500)
   const debouncedExcludeInput = useDebounce(excludeInput, 500)
 
-  // Global Weights State
-  const [globalWeights, setGlobalWeights] = useState<Record<string, number>>({})
+  // Global Weights State — syncs across tabs/extension via localStorage
+  const [globalWeights, setGlobalWeights] = usePersistentState<Record<string, number>>(
+    {},
+    userPreferences.getGlobalWeights,
+    userPreferences.setGlobalWeights,
+    "globalWeights",
+    STORAGE_KEYS.GLOBAL_WEIGHTS
+  )
 
   const [isGlobalWeightsEnabled, setIsGlobalWeightsEnabled] = usePersistentState(
     false,
@@ -668,7 +681,6 @@ export function PromptGallery() {
   )
 
   const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
-  const [weightsLoaded, setWeightsLoaded] = useState(false)
   const [isReverseParserModalOpen, setIsReverseParserModalOpen] = useState(false)
 
   // Announcements Panel state: auto-expand on new version
@@ -768,21 +780,23 @@ export function PromptGallery() {
     }
   }, [search.isClient])
 
-  // Load global weights separately
-  useEffect(() => {
-    if (search.isClient) {
-      setGlobalWeights(userPreferences.getGlobalWeights())
-      // isGlobalWeightsEnabled loaded via hook
-      setWeightsLoaded(true)
-    }
-  }, [search.isClient])
-
   useEffect(() => {
     if (search.isClient) {
       setHistory(userPreferences.getHistory())
       // Logic for old storage keys or manual loading removed - now handled by usePersistentState
     }
   }, [search.isClient])
+
+  // Listen for preset/history changes from extension/other tabs via BroadcastChannel
+  useEffect(() => {
+    return onSettingsChange((key) => {
+      if (key === STORAGE_KEYS.ADD_TAGS_PRESETS) {
+        setPresets(userPreferences.getAddTagsPresets())
+      } else if (key === STORAGE_KEYS.HISTORY) {
+        setHistory(userPreferences.getHistory())
+      }
+    })
+  }, [])
 
   // Scale effect - Slider drives persistence
   useEffect(() => {
@@ -874,13 +888,13 @@ export function PromptGallery() {
       next[key] = weight
       return next
     })
-  }, [])
+  }, [setGlobalWeights])
 
   const handleClearGlobalWeights = useCallback(() => {
     setGlobalWeights({})
     setIsGlobalWeightsModalOpen(false)
     toast({ title: "Weights cleared", description: "All global tag weights have been reset." })
-  }, [toast])
+  }, [toast, setGlobalWeights])
 
   const handleRemoveGlobalWeight = useCallback((tag: string) => {
     setGlobalWeights(prev => {
@@ -888,7 +902,7 @@ export function PromptGallery() {
       delete next[tag] // tag from modal is already key
       return next
     })
-  }, [])
+  }, [setGlobalWeights])
 
   const toggleGlobalWeights = (enabled: boolean) => {
     setIsGlobalWeightsEnabled(enabled)
@@ -900,13 +914,6 @@ export function PromptGallery() {
     setIsReverseParserModalOpen(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [search])
-
-  // Persist Global Weights state changes
-  useEffect(() => {
-    if (search.isClient && weightsLoaded) {
-      userPreferences.setGlobalWeights(globalWeights)
-    }
-  }, [globalWeights, search.isClient, weightsLoaded])
 
   // Tag Search Handler (from MasonryItem)
   const handleTagSearch = useCallback((tag: string) => {

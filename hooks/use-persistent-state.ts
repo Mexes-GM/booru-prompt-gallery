@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, Dispatch, SetStateAction } from 'react'
 import { STORAGE_EVENT_NAME } from '@/lib/storage'
+import { onSettingsChange } from '@/lib/settings-bridge'
 
 /**
  * Syncs React state with localStorage via typed getter/setter pairs.
@@ -128,8 +129,46 @@ export function usePersistentState<T>(
       }
     }
 
+    const handleNativeStorageChange = (e: StorageEvent) => {
+      if (e.key !== storageKey) return
+      if (isWritingRef.current) return
+
+      try {
+        const newValue = getter()
+        const newJson = JSON.stringify(newValue)
+        if (newJson !== lastJsonRef.current) {
+          lastJsonRef.current = newJson
+          setStateRaw(newValue)
+        }
+      } catch {
+        // Ignore malformed storage data
+      }
+    }
+
     window.addEventListener(STORAGE_EVENT_NAME, handleStorageChange)
-    return () => window.removeEventListener(STORAGE_EVENT_NAME, handleStorageChange)
+    window.addEventListener('storage', handleNativeStorageChange)
+
+    // Also listen via BroadcastChannel for cross-context sync (web app ↔ extension)
+    const unsubBC = onSettingsChange((key) => {
+      if (key !== storageKey) return
+      if (isWritingRef.current) return
+      try {
+        const newValue = getter()
+        const newJson = JSON.stringify(newValue)
+        if (newJson !== lastJsonRef.current) {
+          lastJsonRef.current = newJson
+          setStateRaw(newValue)
+        }
+      } catch {
+        // Ignore malformed storage data
+      }
+    })
+
+    return () => {
+      window.removeEventListener(STORAGE_EVENT_NAME, handleStorageChange)
+      window.removeEventListener('storage', handleNativeStorageChange)
+      unsubBC()
+    }
   }, [storageKey, getter])
 
   return [state, setState]
