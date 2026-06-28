@@ -14,6 +14,74 @@ const CACHE_HEADERS = {
   'Content-Type': 'application/json'
 }
 
+/**
+ * Refresh the trends cache unconditionally — used by the scheduled (cron)
+ * handler to keep `trend_cache` warm so users never pay the cold-fetch latency
+ * and Danbooru is hit on a predictable schedule instead of on user demand.
+ *
+ * Safe to call from `scheduled()`; it ignores the per-IP rate limiter (there is
+ * no client IP) and does not hold the HTTP fetch-lock semantics.
+ */
+export async function refreshTrendsCache(env: Env): Promise<void> {
+  const supabase = getSupabase(env)
+  if (!supabase) {
+    console.warn('[trends:cron] Supabase not configured, skipping refresh')
+    return
+  }
+
+  const provider = BooruFactory.getProvider('danbooru')
+  if (!provider.getTrending) {
+    console.warn('[trends:cron] Provider does not support trending')
+    return
+  }
+
+  let trends
+  try {
+    trends = await provider.getTrending(env as any)
+  } catch (err) {
+    console.error('[trends:cron] Failed to fetch from Danbooru:', err)
+    return
+  }
+
+  if (!trends || (Array.isArray(trends) && trends.length === 0)) {
+    console.warn('[trends:cron] Empty trends payload, not overwriting cache')
+    return
+  }
+
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+
+  try {
+    const { data: existing } = await supabase
+      .from(TABLE)
+      .select('id')
+      .limit(1)
+      .single()
+
+    if (existing?.id) {
+      await supabase
+        .from(TABLE)
+        .update({
+          data: trends,
+          fetched_at: now.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          fetching_since: null,
+        })
+        .eq('id', existing.id)
+    } else {
+      await supabase.from(TABLE).insert({
+        data: trends,
+        fetched_at: now.toISOString(),
+        expires_at: expiresAt.toISOString(),
+        fetching_since: null,
+      })
+    }
+    console.log('[trends:cron] Cache refreshed successfully')
+  } catch (err) {
+    console.error('[trends:cron] Failed to write cache:', err)
+  }
+}
+
 export async function trendsHandler(
   request: Request,
   env: Env,

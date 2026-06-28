@@ -1,4 +1,4 @@
-import pkg from '../../../package.json'
+import pkg from '../../package.json'
 import { jsonResponse } from '../utils'
 
 export function versionHandler(): Response {

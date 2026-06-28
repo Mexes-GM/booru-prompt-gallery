@@ -2,6 +2,12 @@ name = "booru-image-proxy"
 main = "src/index.ts"
 compatibility_date = "2025-06-07"
 
+# Cron Triggers (free on the Workers free plan).
+# Refreshes the trends cache every 6 hours so users never hit a cold fetch.
+# Adjust the schedule as needed: https://developers.cloudflare.com/workers/configuration/cron-triggers/
+[triggers]
+crons = ["0 */6 * * *"]
+
 [vars]
 APP_VERSION = "9.5.0"
 
@@ -9,7 +15,8 @@ APP_VERSION = "9.5.0"
 # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
 # UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
 # DANBOORU_USERNAME, DANBOORU_API_KEY,
-# DISCORD_FEEDBACK_WEBHOOK_URL
+# DISCORD_FEEDBACK_WEBHOOK_URL,
+# TURNSTILE_SECRET_KEY
 
 [observability]
 enabled = true

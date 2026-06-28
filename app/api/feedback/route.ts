@@ -2,6 +2,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { createClient } from "@supabase/supabase-js"
+import { verifyTurnstile } from "@/lib/turnstile"
 
 // Validation Schema
 // Hardened Validation Schema
@@ -11,6 +12,7 @@ const feedbackSchema = z.object({
     contact_info: z.string().max(100).optional().nullable(), // Limit length
     metadata: z.record(z.string(), z.any()).optional().default({}),
     honeypot: z.string().optional(), // Honeypot field
+    turnstile_token: z.string().max(2048).optional(), // Cloudflare Turnstile token
 })
 
 const RATE_LIMIT_WINDOW = 60 * 60 * 1000 // 1 hour
@@ -39,6 +41,15 @@ export async function POST(req: NextRequest) {
         // 1. Rate Limiting (Database based - simple)
         const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || "unknown"
         const userAgent = req.headers.get("user-agent") || "unknown"
+
+        // 0.5 Cloudflare Turnstile verification (no-op when not configured)
+        const turnstile = await verifyTurnstile(result.data.turnstile_token, ip)
+        if (!turnstile.ok) {
+            return NextResponse.json(
+                { error: "Verification failed. Please try again." },
+                { status: 403 }
+            )
+        }
 
         // Skip rate limit for localhost/development if needed, but better to test it.
 

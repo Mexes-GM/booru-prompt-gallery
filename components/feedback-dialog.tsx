@@ -29,6 +29,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { usePathname } from "next/navigation"
+import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
 
 // --- Animation Variants ---
 const containerVariants: any = {
@@ -127,12 +128,25 @@ export function FeedbackDialog() {
     const [type, setType] = useState<string>("bug")
     const [content, setContent] = useState("")
     const [contact, setContact] = useState("")
+    const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
     const { toast } = useToast()
     const pathname = usePathname()
+
+    const turnstileRequired = isTurnstileEnabled()
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!content.trim()) return
+
+        // If Turnstile is configured, require a solved token before submitting.
+        if (turnstileRequired && !turnstileToken) {
+            toast({
+                title: "Verification needed",
+                description: "Please complete the verification challenge first.",
+                variant: "destructive",
+            })
+            return
+        }
 
         setLoading(true)
         try {
@@ -144,6 +158,7 @@ export function FeedbackDialog() {
                     content,
                     contact_info: contact,
                     honeypot: "",
+                    turnstile_token: turnstileToken ?? undefined,
                     metadata: {
                         user_agent: navigator.userAgent,
                         pathname: pathname,
@@ -154,7 +169,7 @@ export function FeedbackDialog() {
 
             if (!response.ok) {
                 const data = await response.json()
-                throw new Error(data.message || "Failed to submit")
+                throw new Error(data.message || data.error || "Failed to submit")
             }
 
             setSuccess(true)
@@ -166,6 +181,7 @@ export function FeedbackDialog() {
                     setContent("")
                     setContact("")
                     setType("bug")
+                    setTurnstileToken(null)
                 }, 300)
             }, 2500)
 
@@ -315,11 +331,18 @@ export function FeedbackDialog() {
                                     />
                                 </motion.div>
 
+                                {/* Cloudflare Turnstile — only renders when configured */}
+                                {turnstileRequired && (
+                                    <motion.div variants={itemVariants} className="flex justify-center">
+                                        <Turnstile onVerify={setTurnstileToken} />
+                                    </motion.div>
+                                )}
+
                                 {/* Footer */}
                                 <motion.div variants={itemVariants} className="pt-2">
                                     <Button
                                         type="submit"
-                                        disabled={loading}
+                                        disabled={loading || (turnstileRequired && !turnstileToken)}
                                         className="w-full h-11 text-base shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5"
                                     >
                                         {loading ? (

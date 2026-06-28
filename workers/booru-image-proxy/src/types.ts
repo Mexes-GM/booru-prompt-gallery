@@ -12,6 +12,7 @@ export interface Env {
   RULE34_API_KEY?: string
   RULE34_USER_ID?: string
   DISCORD_FEEDBACK_WEBHOOK_URL?: string
+  TURNSTILE_SECRET_KEY?: string
   APP_VERSION?: string
   AI?: Ai
 }

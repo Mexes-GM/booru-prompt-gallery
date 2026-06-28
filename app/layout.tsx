@@ -4,8 +4,10 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
-// Vercel Analytics — only renders on Vercel deployments (no-op on Netlify/other hosts)
+// Vercel Analytics — only collects data on Vercel deployments.
 import { Analytics } from '@vercel/analytics/next'
+// Cloudflare Web Analytics — privacy-friendly, works on Netlify and any host.
+import { CloudflareAnalytics } from '@/components/analytics/cloudflare-analytics'
 import ErrorBoundary from '@/components/error-boundary'
 
 const inter = Inter({
@@ -175,7 +177,10 @@ export default function RootLayout({
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
             {children}
             <Toaster />
-            {process.env.VERCEL !== "1" && <Analytics />}
+            {/* Vercel Analytics only reports data on Vercel; render it only there. */}
+            {process.env.VERCEL === "1" && <Analytics />}
+            {/* Cloudflare Web Analytics covers Netlify (and any other host). */}
+            <CloudflareAnalytics />
           </ThemeProvider>
         </ErrorBoundary>
       </body>

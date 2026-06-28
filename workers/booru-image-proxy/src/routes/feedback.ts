@@ -9,10 +9,45 @@ const feedbackSchema = z.object({
   contact_info: z.string().max(100).optional().nullable(),
   metadata: z.record(z.string(), z.any()).optional().default({}),
   honeypot: z.string().optional(),
+  turnstile_token: z.string().max(2048).optional(),
 })
 
 const RATE_LIMIT_WINDOW = 60 * 60 * 1000
 const MAX_REQUESTS = 3
+
+const TURNSTILE_SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+
+/**
+ * Verify a Turnstile token. No-op (returns true) when TURNSTILE_SECRET_KEY is
+ * not configured, so the feature can be enabled later without breaking clients.
+ */
+async function verifyTurnstile(
+  env: Env,
+  token: string | undefined,
+  remoteIp: string
+): Promise<boolean> {
+  const secret = env.TURNSTILE_SECRET_KEY
+  if (!secret) return true // not configured → skip
+  if (!token) return false
+
+  try {
+    const body = new URLSearchParams()
+    body.set('secret', secret)
+    body.set('response', token)
+    if (remoteIp && remoteIp !== 'anonymous') body.set('remoteip', remoteIp)
+
+    const res = await fetch(TURNSTILE_SITEVERIFY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    })
+    const data = (await res.json()) as { success: boolean }
+    return data.success === true
+  } catch (err) {
+    console.error('[feedback] Turnstile verify failed:', err)
+    return false // fail closed when enabled
+  }
+}
 
 export async function feedbackHandler(
   request: Request,
@@ -44,6 +79,12 @@ export async function feedbackHandler(
     // Rate limiting
     const ip = getClientIp(request)
     const userAgent = request.headers.get('user-agent') || 'unknown'
+
+    // Cloudflare Turnstile verification (no-op when not configured)
+    const turnstileOk = await verifyTurnstile(env, result.data.turnstile_token, ip)
+    if (!turnstileOk) {
+      return jsonResponse({ error: 'Verification failed. Please try again.' }, 403)
+    }
 
     if (ip !== 'unknown' && ip !== '127.0.0.1') {
       const { count, error } = await supabase

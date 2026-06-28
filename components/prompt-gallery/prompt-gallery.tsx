@@ -48,6 +48,7 @@ import {
   Ban,
   Tag,
   Wrench,
+  Activity,
 } from "lucide-react"
 
 import dynamic from "next/dynamic"
@@ -1463,6 +1464,17 @@ export function PromptGallery() {
                       <a href="/privacy" className="cursor-pointer w-full flex items-center">
                         <Shield className="mr-2 h-4 w-4" />
                         <span>Privacy Policy</span>
+                      </a>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <a
+                        href="https://stats.uptimerobot.com/YcL3JPgshk"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="cursor-pointer w-full flex items-center"
+                      >
+                        <Activity className="mr-2 h-4 w-4" />
+                        <span>Service Status</span>
                       </a>
                     </DropdownMenuItem>
                   </DropdownMenuContent>

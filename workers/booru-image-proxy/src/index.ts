@@ -11,8 +11,10 @@ import { convertPromptHandler } from './routes/convert-prompt'
 import { corsHeaders, getCorsHeaders } from './utils'
 import { imageProxyHandler } from './routes/image-proxy'
 import { trendsHandler } from './routes/trends'
+import { refreshTrendsCache } from './routes/trends'
 import { securityTxtHandler, robotsTxtHandler } from './routes/security-txt'
 import { logger } from './logger'
+import { Env } from './types'
 
 const router = AutoRouter()
 
@@ -47,6 +49,18 @@ router.all('*', (request: Request) => new Response(JSON.stringify({ error: 'Not 
 }))
 
 export default {
+  // Cron Triggers — see [triggers] in wrangler.toml. Keeps the trends cache
+  // warm so users never trigger a cold Danbooru fetch and the external API is
+  // hit on a predictable schedule.
+  async scheduled(
+    event: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<void> {
+    logger.info('scheduled', { cron: event.cron, scheduledTime: event.scheduledTime })
+    ctx.waitUntil(refreshTrendsCache(env))
+  },
+
   async fetch(request: Request, env: Record<string, string | undefined>, ctx: ExecutionContext): Promise<Response> {
     // Handle security.txt before router (itty-router doesn't match /.well-known/ paths)
     const url = new URL(request.url)
