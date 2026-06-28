@@ -1,14 +1,50 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Environment switching logic
 // ─────────────────────────────────────────────────────────────────────────────
+const PROD_URL = "https://booru-prompt-gallery.netlify.app/extension";
+const DEV_URL = "http://localhost:3000/extension";
+
 const btnLocal = document.getElementById("btn-local");
 const btnProd = document.getElementById("btn-prod");
 const appFrame = document.getElementById("app-frame");
+const configBar = document.getElementById("config-bar");
 
 const LOCAL_STORAGE_KEY = "booru_sidebar_env";
 
+// Restore the last theme the app reported (if any) before the iframe loads, so
+// the wrapper chrome doesn't flash the OS theme when it differs from the user's
+// manual in-app choice. Falls back to prefers-color-scheme until the app reports.
+try {
+  const savedTheme = localStorage.getItem("booru_sidebar_theme");
+  if (savedTheme === "light" || savedTheme === "dark") {
+    document.documentElement.setAttribute("data-theme", savedTheme);
+  }
+} catch (_) {}
+
+// Unpacked / developer extensions have no `update_url` in their manifest, while
+// Web Store installs do. We use that to auto-detect a developer environment so
+// the dev gets localhost + the env switcher automatically, while end users get
+// production with the switcher hidden. The localStorage flag is an extra manual
+// override (e.g. to force dev tooling on a packaged build).
+function isUnpackedExtension() {
+  try {
+    return !("update_url" in chrome.runtime.getManifest());
+  } catch (_) {
+    return false;
+  }
+}
+const DEV_MODE = isUnpackedExtension() || localStorage.getItem("booru_sidebar_devmode") === "1";
+
+// Verbose debug logging is dev-only so packaged (Web Store) installs stay quiet.
+// Warnings and errors still use console.warn/console.error directly — those
+// signal real problems worth surfacing in any environment.
+function dlog(...args) {
+  if (DEV_MODE) console.log(...args);
+}
+
 function setEnvironment(url) {
   appFrame.src = url;
+  if (!btnLocal || !btnProd) return;
   if (url.includes("localhost")) {
     btnLocal.classList.add("active");
     btnProd.classList.remove("active");
@@ -18,21 +54,26 @@ function setEnvironment(url) {
   }
 }
 
-// Load saved environment on startup
-const savedEnvUrl = localStorage.getItem(LOCAL_STORAGE_KEY) || "http://localhost:3000/extension";
-setEnvironment(savedEnvUrl);
+if (DEV_MODE) {
+  // Reveal the environment switcher and restore the last-used environment.
+  if (configBar) configBar.hidden = false;
+  setEnvironment(localStorage.getItem(LOCAL_STORAGE_KEY) || DEV_URL);
 
-btnLocal.addEventListener("click", () => {
-  const url = btnLocal.getAttribute("data-url");
-  localStorage.setItem(LOCAL_STORAGE_KEY, url);
-  setEnvironment(url);
-});
+  btnLocal?.addEventListener("click", () => {
+    const url = btnLocal.getAttribute("data-url");
+    localStorage.setItem(LOCAL_STORAGE_KEY, url);
+    setEnvironment(url);
+  });
 
-btnProd.addEventListener("click", () => {
-  const url = btnProd.getAttribute("data-url");
-  localStorage.setItem(LOCAL_STORAGE_KEY, url);
-  setEnvironment(url);
-});
+  btnProd?.addEventListener("click", () => {
+    const url = btnProd.getAttribute("data-url");
+    localStorage.setItem(LOCAL_STORAGE_KEY, url);
+    setEnvironment(url);
+  });
+} else {
+  // End users always load production.
+  setEnvironment(PROD_URL);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Queue State
@@ -45,6 +86,7 @@ let isPausedForVisibility = false; // True when target tab is hidden
 let currentActiveTasks = 0;   // Last known active task count
 let seaArtLimit = 5;          // Default to 5 (Standard plan). Auto-updated if upgrade modal reveals a different number.
 let currentPlatform = "Unknown";
+let autoDownloadEnabled = false; // Auto-download images with metadata when generation completes (SeaArt only)
 
 // ── Safety: duplicate / stuck-prompt detection ──────────────────────────────
 let lastGeneratedPrompt = null;     // Track the last prompt that was successfully sent to Generate
@@ -90,7 +132,7 @@ function restoreQueue() {
         const saved = result[QUEUE_STORAGE_KEY];
         if (Array.isArray(saved) && saved.length > 0) {
           promptQueue.push(...saved);
-          console.log(`[Queue] Restored ${saved.length} prompts from storage.`);
+          dlog(`[Queue] Restored ${saved.length} prompts from storage.`);
           updateQueueUI();
         }
         resolve();
@@ -105,52 +147,11 @@ function restoreQueue() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Queue Status UI helpers
 // ─────────────────────────────────────────────────────────────────────────────
-const queueStatusDot  = document.getElementById("queue-status-dot");
-const queueStatusText = document.getElementById("queue-status-text");
-const queueBadge      = document.getElementById("queue-badge");
-const queueTargetBtn  = document.getElementById("queue-target-btn");
-const queueClearBtn   = document.getElementById("queue-clear-btn");
-const queueBar        = document.getElementById("queue-bar");
-
+// NOTE: The visible queue UI (status pill, target/clear buttons, badge) is
+// rendered entirely by the React iframe. This sidepanel owns only the queue
+// *logic* and pushes state to the iframe via postMessage.
 function updateQueueUI() {
   const count = promptQueue.length;
-
-  // Badge
-  if (count > 0) {
-    queueBadge.textContent = `${count} queued`;
-    queueBadge.style.display = "inline-flex";
-  } else {
-    queueBadge.style.display = "none";
-  }
-
-  // Clear button & Target button
-  queueClearBtn.style.display = count > 0 ? "inline-flex" : "none";
-  queueTargetBtn.style.display = "inline-flex";
-
-  // Status dot + text
-  if (isPausedForError) {
-    queueStatusDot.className = "queue-dot error";
-    queueStatusText.textContent = "⚠ Error: Same prompt detected — paused";
-  } else if (isPausedForVisibility) {
-    queueStatusDot.className = "queue-dot idle"; // or paused class if you have one
-    queueStatusText.textContent = "Paused (Tab Hidden)";
-  } else if (isWaitingForSlot) {
-    queueStatusDot.className = "queue-dot waiting";
-    const limitStr = seaArtLimit ? `${currentActiveTasks}/${seaArtLimit}` : `${currentActiveTasks} active`;
-    queueStatusText.textContent = `Waiting for slot (${limitStr})`;
-  } else if (isProcessing) {
-    queueStatusDot.className = "queue-dot generating";
-    queueStatusText.textContent = "Generating...";
-  } else if (count > 0) {
-    queueStatusDot.className = "queue-dot queued";
-    queueStatusText.textContent = "Queued";
-  } else {
-    queueStatusDot.className = "queue-dot idle";
-    queueStatusText.textContent = "Ready";
-  }
-
-  // Show/hide bar
-  queueBar.style.display = "flex"; // Always show so Target is accessible
 
   // Notify the iframe about queue state
   notifyIframe({ queueLength: count, isProcessing, isWaitingForSlot, isPausedForVisibility, isPausedForError, currentActiveTasks, seaArtLimit, platform: currentPlatform });
@@ -158,8 +159,10 @@ function updateQueueUI() {
 
 function notifyIframe(payload) {
   try {
-    const _to=(function(){try{return new URL(appFrame.src).origin;}catch(_){return "*";}})();
-    appFrame.contentWindow.postMessage({ type: "QUEUE_STATUS", ...payload }, _to);
+    // Post with "*" — the React app verifies event.source === window.parent.
+    // Using a pinned origin fails because the iframe (localhost / netlify) and
+    // this sidepanel (chrome-extension://) have different origins.
+    appFrame.contentWindow.postMessage({ type: "QUEUE_STATUS", ...payload, autoDownloadEnabled }, "*");
   } catch (_) {
     // iframe may not be ready yet
   }
@@ -170,123 +173,341 @@ window.addEventListener("message", (e) => {
   if (e.source !== appFrame.contentWindow) return;
   try { if (e.origin !== new URL(appFrame.src).origin) return; } catch (_) { return; }
   if (e.data && e.data.type === "QUEUE_ACTION") {
-    if (e.data.action === "target") queueTargetBtn.click();
-    if (e.data.action === "clear") queueClearBtn.click();
+    if (e.data.action === "target") startTargeting();
+    if (e.data.action === "clear") clearQueue();
+    if (e.data.action === "set_auto_download") {
+      autoDownloadEnabled = !!e.data.value;
+      if (autoDownloadEnabled) startAutoDownloadObserver();
+      else stopAutoDownloadObserver();
+    }
   }
   // React app asking for initial state on mount
   if (e.data && e.data.type === "REQUEST_QUEUE_STATUS") {
     updateQueueUI();
   }
+  // App reports its resolved theme ("dark" | "light") so the native wrapper
+  // (body background + dev config bar) matches the app even when the user
+  // overrides the OS preference via the in-app theme toggle.
+  if (e.data && e.data.type === "THEME_CHANGE") {
+    const t = e.data.theme === "light" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", t);
+    try { localStorage.setItem("booru_sidebar_theme", t); } catch (_) {}
+  }
 });
 
-// Target button handler
-queueTargetBtn.addEventListener("click", () => {
-  chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    if (!activeTab || !activeTab.id) return;
+// ─────────────────────────────────────────────────────────────────────────────
+// TARGET SYSTEM (refactored) — select the prompt input on the generation page
+// ─────────────────────────────────────────────────────────────────────────────
+// Flow:
+//   1. User clicks Target → startTargeting()
+//   2. We locate the generation tab and inject an instrumented "arming" script
+//      into all frames. The script discovers candidate inputs, attaches hover +
+//      click listeners, and reports diagnostics back via chrome.runtime.sendMessage.
+//   3. When the user clicks an input, the injected script marks it with
+//      `.booru-target-textarea` and reports phase:"selected" back here.
+//   4. We relay every phase to the iframe via TARGET_STATUS so the React UI can
+//      show real feedback (arming / waiting / selected / none / error).
+// ─────────────────────────────────────────────────────────────────────────────
 
-    // Update target info pill
-    const url = activeTab.url || "";
-    let platform = "Unknown";
-    if (url.includes("seaart.ai")) platform = "SeaArt";
-    else if (url.includes("tensor.art")) platform = "TensorArt";
-    else if (url.includes("tensorhub.net")) platform = "TensorHub";
-    else if (url.includes("yodayo.com")) platform = "Yodayo";
-    else if (url) {
-      try { platform = new URL(url).hostname.replace('www.', ''); } catch(e) {}
+const TARGET_TIMEOUT_MS = 30000; // Auto-cancel selection mode after 30s of no click
+let targetingActive = false;
+let targetingTabId = null;
+let targetingTimeoutId = null;
+
+/** Relay targeting status to the React iframe + log it. */
+function sendTargetStatus(state, detail) {
+  try {
+    // "*" — React verifies event.source === window.parent (origins differ:
+    // iframe is localhost/netlify, this sidepanel is chrome-extension://).
+    appFrame.contentWindow.postMessage({ type: "TARGET_STATUS", state, detail: detail || null }, "*");
+  } catch (_) { /* iframe not ready */ }
+  dlog(`[Target] ▶ state="${state}"`, detail || "");
+}
+
+/** Resolve the generation tab + platform name from the current window's tabs. */
+function resolveTargetTab(allTabs) {
+  const PLATFORM_DOMAINS = ["seaart.ai", "tensor.art", "tensorhub.net", "yodayo.com"];
+  const isLocalUi = (u) => u && (u.includes("127.0.0.1") || u.includes("localhost") || u.includes("gradio.live"));
+
+  let tab =
+    allTabs.find(t => t.active && t.url && (PLATFORM_DOMAINS.some(d => t.url.includes(d)) || isLocalUi(t.url))) ||
+    allTabs.find(t => t.url && PLATFORM_DOMAINS.some(d => t.url.includes(d))) ||
+    allTabs.find(t => t.active && t.url && !t.url.startsWith("chrome") && !t.url.startsWith("devtools"));
+
+  if (!tab) return { tab: null, platform: "Unknown" };
+
+  const url = tab.url || "";
+  let platform = "Unknown";
+  if (url.includes("seaart.ai")) platform = "SeaArt";
+  else if (url.includes("tensor.art")) platform = "TensorArt";
+  else if (url.includes("tensorhub.net")) platform = "TensorHub";
+  else if (url.includes("yodayo.com")) platform = "Yodayo";
+  else if (isLocalUi(url)) platform = "Local";
+  else { try { platform = new URL(url).hostname.replace("www.", ""); } catch (e) {} }
+
+  return { tab, platform };
+}
+
+/** Stop selection mode: clear timeout + tell the page to remove listeners. */
+function stopTargeting(reason) {
+  if (targetingTimeoutId) { clearTimeout(targetingTimeoutId); targetingTimeoutId = null; }
+  const wasActive = targetingActive;
+  targetingActive = false;
+  if (wasActive && targetingTabId != null) {
+    chrome.scripting.executeScript({
+      target: { tabId: targetingTabId, allFrames: true },
+      func: () => { if (window.__booruTargetCleanup) { try { window.__booruTargetCleanup(); } catch (e) {} } }
+    }).catch(() => {});
+  }
+  dlog(`[Target] ■ stopped (${reason || "manual"})`);
+}
+
+/** The function injected into every frame to arm selection mode. */
+function armTargetingInPage() {
+  const LOG = (...a) => dlog("%c[BooruTarget]", "color:#3b82f6;font-weight:bold", ...a);
+
+  // Tear down any prior session in this frame
+  if (window.__booruTargetCleanup) { try { window.__booruTargetCleanup(); } catch (e) {} }
+
+  // Inject highlight styles once
+  const styleId = "booru-target-style";
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      .booru-selectable-target {
+        outline: 3px solid #3b82f6 !important;
+        outline-offset: 1px !important;
+        background-color: rgba(59,130,246,0.12) !important;
+      }
+      .booru-target-textarea {
+        outline: 2px solid #22c55e !important;
+        outline-offset: 1px !important;
+      }
+      html.booru-targeting-cursor, html.booru-targeting-cursor * {
+        cursor: crosshair !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const safeSend = (payload) => {
+    try { chrome.runtime.sendMessage(payload); } catch (e) { LOG("sendMessage failed", e); }
+  };
+
+  const SELECTOR = "textarea, [contenteditable='true'], [contenteditable='']";
+
+  // Resolve the targetable input from a click/hover event using the full
+  // composed path (pierces shadow DOM) with an elementFromPoint fallback.
+  const resolveFromEvent = (e) => {
+    const path = (e.composedPath && e.composedPath()) || [];
+    for (const node of path) {
+      if (node && node.nodeType === 1 && node.matches && node.matches(SELECTOR)) return node;
     }
+    // Fallback: hit-test at the pointer coordinates
+    let el = document.elementFromPoint(e.clientX, e.clientY);
+    if (el) {
+      if (el.matches && el.matches(SELECTOR)) return el;
+      const inner = el.querySelector && el.querySelector(SELECTOR);
+      if (inner) return inner;
+      const up = el.closest && el.closest(SELECTOR);
+      if (up) return up;
+      // SeaArt: clicking the .dom-widget wrapper → find its textarea
+      const widget = el.closest && el.closest(".dom-widget");
+      if (widget) { const ta = widget.querySelector("textarea, [contenteditable]"); if (ta) return ta; }
+    }
+    return null;
+  };
+
+  let lastHighlighted = null;
+  const clearHighlight = () => {
+    if (lastHighlighted) { lastHighlighted.classList.remove("booru-selectable-target"); lastHighlighted = null; }
+  };
+
+  const onMove = (e) => {
+    const input = resolveFromEvent(e);
+    if (input === lastHighlighted) return;
+    clearHighlight();
+    if (input) { input.classList.add("booru-selectable-target"); lastHighlighted = input; }
+  };
+
+  const onClickCapture = (e) => {
+    const input = resolveFromEvent(e);
+    if (!input) return; // clicked elsewhere — stay armed, let the page handle it
+
+    // Intercept this click so the page doesn't act on it
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+
+    document.querySelectorAll(".booru-target-textarea").forEach(el => el.classList.remove("booru-target-textarea"));
+    input.classList.add("booru-target-textarea");
+    clearHighlight();
+    cleanup();
+
+    const info = {
+      tag: input.tagName,
+      className: typeof input.className === "string" ? input.className.slice(0, 80) : "",
+      placeholder: input.getAttribute ? (input.getAttribute("placeholder") || "") : "",
+      frameUrl: location.href.slice(0, 120)
+    };
+    LOG("selected", info);
+    safeSend({ type: "TARGET_RESULT", phase: "selected", info });
+  };
+
+  function cleanup() {
+    document.removeEventListener("click", onClickCapture, true);
+    document.removeEventListener("mousemove", onMove, true);
+    document.documentElement.classList.remove("booru-targeting-cursor");
+    clearHighlight();
+    window.__booruTargetCleanup = null;
+  }
+
+  // Capture-phase listeners on the document — robust against overlays,
+  // shadow DOM, scaled wrappers, and framework event handling.
+  document.addEventListener("click", onClickCapture, true);
+  document.addEventListener("mousemove", onMove, true);
+  document.documentElement.classList.add("booru-targeting-cursor");
+  window.__booruTargetCleanup = cleanup;
+
+  // Diagnostics: how many inputs exist in this frame (visible-ish)
+  const allInputs = Array.from(document.querySelectorAll(SELECTOR)).filter(el => {
+    const cs = window.getComputedStyle(el);
+    return cs.display !== "none" && cs.visibility !== "hidden";
+  });
+  const diag = {
+    frameUrl: location.href.slice(0, 120),
+    isTop: window === window.top,
+    counts: {
+      textareas: document.querySelectorAll("textarea").length,
+      editables: document.querySelectorAll("[contenteditable]").length,
+      comfyWidgets: document.querySelectorAll(".comfy-multiline-input").length,
+      candidates: allInputs.length
+    }
+  };
+  LOG("armed (delegated capture)", diag);
+  safeSend({ type: "TARGET_RESULT", phase: "armed", diag });
+  return diag;
+}
+
+/** Entry point: begin selection mode. */
+function startTargeting() {
+  chrome.tabs.query({ currentWindow: true }, (allTabs) => {
+    const { tab, platform } = resolveTargetTab(allTabs);
+
+    if (!tab || !tab.id || (tab.url && (tab.url.startsWith("chrome://") || tab.url.startsWith("devtools://")))) {
+      console.warn("[Target] ✗ No valid generation tab found", allTabs.map(t => t.url));
+      sendTargetStatus("error", { reason: "no_tab", message: "No generation tab found. Open SeaArt/TensorArt and try again." });
+      return;
+    }
+
     currentPlatform = platform;
+    targetingTabId = tab.id;
+    targetingActive = true;
+
     document.getElementById("target-info-platform").textContent = platform;
     document.getElementById("target-info-pill").style.display = "block";
-    updateQueueUI(); // Notify iframe
+    updateQueueUI();
 
-    chrome.scripting.executeScript({
-      target: { tabId: activeTab.id, allFrames: true },
-      func: () => {
-        const styleId = "booru-target-style";
-        if (!document.getElementById(styleId)) {
-          const style = document.createElement("style");
-          style.id = styleId;
-          style.textContent = `
-            .booru-selectable-textarea {
-              outline: 2px dashed #3b82f6 !important;
-              cursor: crosshair !important;
-            }
-            .booru-selectable-textarea:hover {
-              outline: 3px solid #3b82f6 !important;
-              background-color: rgba(59, 130, 246, 0.1) !important;
-            }
-          `;
-          document.head.appendChild(style);
+    dlog(`[Target] ◆ arming on tab ${tab.id} (${platform}) — ${tab.url}`);
+    sendTargetStatus("arming", { platform });
+
+    chrome.scripting.executeScript(
+      { target: { tabId: tab.id, allFrames: true }, func: armTargetingInPage },
+      (results) => {
+        if (chrome.runtime.lastError) {
+          console.error("[Target] ✗ injection error:", chrome.runtime.lastError.message);
+          targetingActive = false;
+          sendTargetStatus("error", { reason: "injection_failed", message: chrome.runtime.lastError.message });
+          return;
         }
 
-        const textareas = document.querySelectorAll("textarea");
-        if (textareas.length === 0) {
-          // Instead of alerting (which pops up on every frame without a textarea),
-          // we silently return. If no frames have textareas, nothing will happen.
-          return { count: 0 };
+        // Aggregate diagnostics across all frames
+        let totalCandidates = 0;
+        const frames = [];
+        for (const r of (results || [])) {
+          const d = r.result;
+          if (d && d.counts) {
+            totalCandidates += d.counts.candidates || 0;
+            frames.push({ frame: r.frameId, ...d.counts, isTop: d.isTop });
+          }
         }
+        dlog(`[Target] ◆ armed across ${results?.length || 0} frame(s), ${totalCandidates} candidate input(s):`, frames);
 
-        function onMouseOver(e) {
-          e.target.classList.add("booru-selectable-textarea");
-        }
-        function onMouseOut(e) {
-          e.target.classList.remove("booru-selectable-textarea");
-        }
-        function onClick(e) {
-          e.preventDefault();
-          e.stopPropagation();
-
-          // Clear previous target
-          document.querySelectorAll(".booru-target-textarea").forEach(el => el.classList.remove("booru-target-textarea"));
-
-          // Set new target
-          e.target.classList.add("booru-target-textarea");
-
-          // Clean up
-          textareas.forEach(t => {
-            t.classList.remove("booru-selectable-textarea");
-            t.removeEventListener("mouseover", onMouseOver);
-            t.removeEventListener("mouseout", onMouseOut);
-            t.removeEventListener("click", onClick, true);
+        if (totalCandidates === 0) {
+          targetingActive = false;
+          sendTargetStatus("none", {
+            message: "No prompt fields found on this page. Make sure the prompt node is visible, then retry.",
+            frames
           });
-
-          // Visual confirmation
-          const originalOutline = e.target.style.outline;
-          e.target.style.outline = "3px solid #22c55e";
-          setTimeout(() => {
-            e.target.style.outline = originalOutline;
-          }, 1000);
+          return;
         }
 
-        textareas.forEach(t => {
-          t.addEventListener("mouseover", onMouseOver);
-          t.addEventListener("mouseout", onMouseOut);
-          t.addEventListener("click", onClick, true);
-        });
+        // Selection is now armed — wait for the user to click an input.
+        sendTargetStatus("waiting", { candidates: totalCandidates, platform });
 
-        return { count: textareas.length };
+        // ── Redundant detection: poll the page for the .booru-target-textarea
+        // marker, in case the runtime.sendMessage from the injected script does
+        // not reach this side panel reliably. Whichever path fires first wins;
+        // stopTargeting() is idempotent.
+        const pollStart = Date.now();
+        const pollId = setInterval(() => {
+          if (!targetingActive) { clearInterval(pollId); return; }
+          if (Date.now() - pollStart > TARGET_TIMEOUT_MS) { clearInterval(pollId); return; }
+          chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            func: () => {
+              const el = document.querySelector(".booru-target-textarea");
+              if (!el) return null;
+              return {
+                tag: el.tagName,
+                className: typeof el.className === "string" ? el.className.slice(0, 80) : "",
+                placeholder: el.getAttribute ? (el.getAttribute("placeholder") || "") : ""
+              };
+            }
+          }, (pollResults) => {
+            if (chrome.runtime.lastError || !targetingActive) return;
+            const hit = (pollResults || []).map(r => r.result).find(Boolean);
+            if (hit) {
+              clearInterval(pollId);
+              dlog("[Target] ◆ selection detected via polling fallback:", hit);
+              stopTargeting("selected-poll");
+              sendTargetStatus("selected", hit);
+            }
+          });
+        }, 700);
+
+        // Auto-cancel after timeout
+        if (targetingTimeoutId) clearTimeout(targetingTimeoutId);
+        targetingTimeoutId = setTimeout(() => {
+          clearInterval(pollId);
+          if (targetingActive) {
+            stopTargeting("timeout");
+            sendTargetStatus("cancelled", { reason: "timeout" });
+          }
+        }, TARGET_TIMEOUT_MS);
       }
-    }, (results) => {
-      if (chrome.runtime.lastError) {
-        console.error("Targeting error:", chrome.runtime.lastError);
-        return;
-      }
-      
-      const foundTextareas = results.some(r => r.result && r.result.count > 0);
-      if (!foundTextareas) {
-        // We only want to alert once if we are sure no frames have textareas
-        chrome.scripting.executeScript({
-          target: { tabId: activeTab.id },
-          func: () => alert("No textareas found on this page. If this is a canvas-based tool without textareas, targeting may not work.")
-        });
-      }
-    });
+    );
   });
+}
+
+// Listen for results sent back from the injected page script
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (!msg || msg.type !== "TARGET_RESULT") return;
+  if (msg.phase === "selected") {
+    stopTargeting("selected");
+    sendTargetStatus("selected", msg.info || null);
+  }
+  // phase:"armed" is per-frame diagnostics; aggregation happens in the
+  // executeScript callback, so we just log here for debugging.
+  else if (msg.phase === "armed") {
+    dlog("[Target]   ↳ frame armed:", msg.diag);
+  }
 });
 
-// Clear button handler
-queueClearBtn.addEventListener("click", () => {
+// Clear the prompt queue + reset safety state. Triggered by the React iframe
+// via the QUEUE_ACTION "clear" message.
+function clearQueue() {
   promptQueue.length = 0;
   // Reset safety state
   isPausedForError = false;
@@ -295,7 +516,7 @@ queueClearBtn.addEventListener("click", () => {
   lastGeneratedPrompt = null;
   persistQueue();
   updateQueueUI();
-});
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core: wait for the Generate action to be confirmed or rejected by SeaArt
@@ -540,7 +761,7 @@ function waitForGenerateButtonFree(tabId, frameId) {
 
           // ── Immediate resolve: "Task submitted successfully" (TensorArt) ──
           if (anyTaskSucceeded) {
-            console.log(`[Queue] Task submitted successfully (fast-track resolve).`);
+            dlog(`[Queue] Task submitted successfully (fast-track resolve).`);
             resolve({ status: "free" });
             return;
           }
@@ -569,7 +790,7 @@ function waitForGenerateButtonFree(tabId, frameId) {
           // SeaArt accepts tasks beyond the displayed limit (internal queue).
           // Only the upgrade modal (anyHitLimit) or "task creation failed" are real blocks.
           if (seaArtLimit && maxTasks >= seaArtLimit) {
-            console.log(`[Queue] Active tasks at capacity (${maxTasks}/${seaArtLimit}) but no modal — generation was accepted.`);
+            dlog(`[Queue] Active tasks at capacity (${maxTasks}/${seaArtLimit}) but no modal — generation was accepted.`);
           }
           if (!buttonFound || !buttonBusy) {
             resolve({ status: "free" });
@@ -748,7 +969,7 @@ function injectPromptToTab(tabId, promptText) {
         // Find a successful injection result in any frame
         const successfulFrame = results?.find(r => r.result && r.result.success);
         if (successfulFrame) {
-          console.log(`[Queue] ✓ Prompt injected. Previous: "${successfulFrame.result.previousValue}..." → New: "${successfulFrame.result.injectedValue}..."`);
+          dlog(`[Queue] ✓ Prompt injected. Previous: "${successfulFrame.result.previousValue}..." → New: "${successfulFrame.result.injectedValue}..."`);
           resolve({ 
             success: true, 
             hasButton: successfulFrame.result.hasButton,
@@ -894,7 +1115,7 @@ async function waitUntilSystemReady(tabId) {
         // Pause queue if the tab is hidden
         if (isHidden) {
           if (!isPausedForVisibility) {
-            console.log("[SeaArt Queue] Tab is hidden. Pausing queue to prevent lost prompts.");
+            dlog("[SeaArt Queue] Tab is hidden. Pausing queue to prevent lost prompts.");
             isPausedForVisibility = true;
             isWaitingForSlot = false;
             updateQueueUI();
@@ -912,7 +1133,7 @@ async function waitUntilSystemReady(tabId) {
         }
 
         currentActiveTasks = effectiveTasks;
-        console.log(`[SeaArt Queue] Active tasks: ${effectiveTasks}/${seaArtLimit}`);
+        dlog(`[SeaArt Queue] Active tasks: ${effectiveTasks}/${seaArtLimit}`);
 
         if (effectiveTasks < seaArtLimit) {
           // Slot available!
@@ -928,6 +1149,299 @@ async function waitUntilSystemReady(tabId) {
       });
     }
     check();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-Download: a single persistent MutationObserver in the SeaArt page detects
+// every newly-rendered generated image and downloads it with metadata. This is
+// the same detection approach as the SeaArt metadata content script (watch the
+// DOM for `.c-history-img .media-attachments-img`), so it is instant and works
+// for any number of images completing in any order.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** URLs already downloaded this session (dedupe across observer notifications). */
+const autoDLDownloaded = new Set();
+
+/**
+ * Installed into the SeaArt page. Marks all currently-visible generated images
+ * as "seen" (so we don't re-download history), then watches for new ones and
+ * reports each loaded image back via chrome.runtime.sendMessage. Idempotent.
+ */
+function installAutoDownloadObserverInPage() {
+  if (window.__booruAutoDLActive) return { status: "already-active", seen: window.__booruAutoDLSeen?.size || 0 };
+  window.__booruAutoDLActive = true;
+  window.__booruAutoDLSeen = window.__booruAutoDLSeen || new Set();
+
+  const LOG = (...a) => dlog("%c[AutoDL]", "color:#a855f7;font-weight:bold", ...a);
+
+  const getPrompt = (img) => {
+    const item = img.closest(".c-workflow-history-item");
+    const el = item && item.querySelector(".c-text-content");
+    return el ? el.textContent.trim() : "";
+  };
+
+  const report = (img) => {
+    const src = img.currentSrc || img.src || img.getAttribute("src") || "";
+    if (!src || !/^https?:/.test(src) || src.startsWith("data:") || src.startsWith("blob:")) return;
+    if (img.naturalWidth <= 1) return; // not a real decoded image yet
+    if (window.__booruAutoDLSeen.has(src)) return;
+    window.__booruAutoDLSeen.add(src);
+    const prompt = getPrompt(img);
+    LOG("new image →", src.slice(0, 80), "| prompt:", prompt.slice(0, 50));
+    try { chrome.runtime.sendMessage({ type: "AUTODL_NEW_IMAGE", src, prompt }); } catch (e) { LOG("send failed", e); }
+  };
+
+  const handleImg = (img) => {
+    if (img.complete && img.naturalWidth > 1) report(img);
+    else img.addEventListener("load", () => report(img), { once: true });
+  };
+
+  // Seed: mark every existing generated image as seen so we only grab NEW ones.
+  document.querySelectorAll(".c-history-img .media-attachments-img").forEach(img => {
+    const src = img.currentSrc || img.src || img.getAttribute("src") || "";
+    if (src && /^https?:/.test(src)) window.__booruAutoDLSeen.add(src);
+  });
+
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type === "attributes" && m.target.matches && m.target.matches(".media-attachments-img")) {
+        handleImg(m.target);
+        continue;
+      }
+      for (const node of m.addedNodes) {
+        if (!node || node.nodeType !== 1) continue;
+        if (node.matches && node.matches(".media-attachments-img")) handleImg(node);
+        if (node.querySelectorAll) node.querySelectorAll(".c-history-img .media-attachments-img").forEach(handleImg);
+      }
+    }
+  });
+  observer.observe(document.body, {
+    childList: true, subtree: true, attributes: true, attributeFilter: ["src"]
+  });
+  window.__booruAutoDLObserver = observer;
+
+  LOG(`observer installed (seeded ${window.__booruAutoDLSeen.size} existing image(s))`);
+  return { status: "installed", seen: window.__booruAutoDLSeen.size };
+}
+
+/** Removes the observer from the SeaArt page. */
+function uninstallAutoDownloadObserverInPage() {
+  if (window.__booruAutoDLObserver) { try { window.__booruAutoDLObserver.disconnect(); } catch (e) {} }
+  window.__booruAutoDLObserver = null;
+  window.__booruAutoDLActive = false;
+  return { status: "removed" };
+}
+
+/** Find the SeaArt tab id in the current window. */
+function findSeaArtTab() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ currentWindow: true }, (tabs) => {
+      const t = tabs.find(t => t.url && t.url.includes("seaart.ai"));
+      resolve(t || null);
+    });
+  });
+}
+
+/** Start auto-download: install the page observer on the SeaArt tab. */
+async function startAutoDownloadObserver() {
+  const tab = await findSeaArtTab();
+  if (!tab || !tab.id) {
+    console.warn("[AutoDL] No SeaArt tab found — observer not installed");
+    return;
+  }
+  currentPlatform = "SeaArt"; // we have a confirmed SeaArt tab
+  chrome.scripting.executeScript(
+    { target: { tabId: tab.id, allFrames: false }, func: installAutoDownloadObserverInPage },
+    (res) => {
+      if (chrome.runtime.lastError) { console.warn("[AutoDL] install error:", chrome.runtime.lastError.message); return; }
+      dlog("[AutoDL] observer:", res?.[0]?.result);
+    }
+  );
+}
+
+/** Stop auto-download: remove the page observer. */
+async function stopAutoDownloadObserver() {
+  const tab = await findSeaArtTab();
+  if (!tab || !tab.id) return;
+  chrome.scripting.executeScript(
+    { target: { tabId: tab.id, allFrames: false }, func: uninstallAutoDownloadObserverInPage }
+  ).catch(() => {});
+}
+
+// Receive new-image notifications from the page observer and download them.
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (!msg || msg.type !== "AUTODL_NEW_IMAGE") return;
+  if (!autoDownloadEnabled) return;
+  // Trust the sender tab: the observer only runs on SeaArt pages.
+  const tabId = sender.tab?.id;
+  const fromSeaArt = sender.tab?.url?.includes("seaart.ai");
+  if (!tabId || !fromSeaArt) return;
+  if (!msg.src || autoDLDownloaded.has(msg.src)) return;
+  autoDLDownloaded.add(msg.src);
+  dlog("[AutoDL] downloading:", msg.src.slice(0, 80));
+  triggerAutoDownload(tabId, msg.src, msg.prompt || "");
+});
+
+
+/**
+ * Downloads a completed SeaArt image with embedded EXIF/PNG metadata.
+ * Reuses the same pipeline as the SeaArt metadata extension's content.js,
+ * but executed via scripting.executeScript so we don't need a separate extension.
+ */
+async function triggerAutoDownload(tabId, imageUrl, prompt) {
+  if (!autoDownloadEnabled || currentPlatform !== "SeaArt") return;
+
+  // Step 1: Get full-res URL via background (background.js already handles this)
+  let downloadUrl = imageUrl;
+  try {
+    const urlResponse = await chrome.runtime.sendMessage({
+      action: "getFullResUrl",
+      imageUrl
+    });
+    if (urlResponse?.success && urlResponse.url) downloadUrl = urlResponse.url;
+  } catch (e) {
+    console.warn("[AutoDL] Could not get full-res URL, using original:", e);
+  }
+
+  // Step 2: Fetch image bytes via background (bypasses CORS)
+  let imageBase64, mimeType;
+  try {
+    const fetchResponse = await chrome.runtime.sendMessage({
+      action: "fetchImage",
+      imageUrl: downloadUrl
+    });
+    if (!fetchResponse?.success) throw new Error(fetchResponse?.error || "fetch failed");
+    imageBase64 = fetchResponse.base64;
+    mimeType = fetchResponse.mimeType || "";
+  } catch (e) {
+    console.error("[AutoDL] Failed to fetch image:", e);
+    return;
+  }
+
+  // Step 3: Process and download via scripting.executeScript in the SeaArt tab
+  chrome.scripting.executeScript({
+    target: { tabId, allFrames: false },
+    func: async (base64, mime, promptText) => {
+      // ── PNG metadata injection (same logic as SeaArt metadata content.js) ──
+
+      function crc32(data) {
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < data.length; i++) {
+          crc ^= data[i];
+          for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+      }
+
+      function createTextChunk(keyword, text) {
+        const kBytes = new TextEncoder().encode(keyword);
+        const tBytes = new TextEncoder().encode(text);
+        const dataLen = kBytes.length + 1 + tBytes.length;
+        const chunk = new Uint8Array(4 + 4 + dataLen + 4);
+        let o = 0;
+        chunk[o++] = (dataLen >> 24) & 0xFF; chunk[o++] = (dataLen >> 16) & 0xFF;
+        chunk[o++] = (dataLen >> 8) & 0xFF;  chunk[o++] = dataLen & 0xFF;
+        chunk[o++] = 0x74; chunk[o++] = 0x45; chunk[o++] = 0x58; chunk[o++] = 0x74; // tEXt
+        chunk.set(kBytes, o); o += kBytes.length;
+        chunk[o++] = 0;
+        chunk.set(tBytes, o); o += tBytes.length;
+        const crc = crc32(chunk.subarray(4, o));
+        chunk[o++] = (crc >> 24) & 0xFF; chunk[o++] = (crc >> 16) & 0xFF;
+        chunk[o++] = (crc >> 8) & 0xFF;  chunk[o++] = crc & 0xFF;
+        return chunk;
+      }
+
+      function injectPngChunks(b64, generationData, workflow) {
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+        const IHDR_END = 33; // 8-byte sig + 4+4+13+4 IHDR
+        const chunks = [
+          createTextChunk("generation_data", JSON.stringify(generationData)),
+          createTextChunk("prompt", JSON.stringify(workflow))
+        ];
+        const extra = chunks.reduce((s, c) => s + c.length, 0);
+        const result = new Uint8Array(bytes.length + extra);
+        result.set(bytes.subarray(0, IHDR_END), 0);
+        let offset = IHDR_END;
+        for (const c of chunks) { result.set(c, offset); offset += c.length; }
+        result.set(bytes.subarray(IHDR_END), offset);
+
+        const CHUNK = 0x8000;
+        let out = "";
+        for (let i = 0; i < result.length; i += CHUNK)
+          out += String.fromCharCode.apply(null, result.subarray(i, i + CHUNK));
+        return btoa(out);
+      }
+
+      async function blobToBase64(blob) {
+        return new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onloadend = () => res(r.result.split(",")[1]);
+          r.onerror = rej;
+          r.readAsDataURL(blob);
+        });
+      }
+
+      async function loadImage(url) {
+        return new Promise((res, rej) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => res(img);
+          img.onerror = rej;
+          img.src = url;
+        });
+      }
+
+      // Build generation_data metadata
+      const generationData = {
+        prompt: promptText, negativePrompt: "",
+        width: 1024, height: 1024, imageCount: 1,
+        samplerName: "Euler a", steps: 30, cfgScale: 4, seed: "-1",
+        clipSkip: 2, sdVae: "Automatic", etaNoiseSeedDelta: 31337
+      };
+
+      // Minimal ComfyUI workflow carrying the prompt
+      const workflow = {
+        "10051": { class_type: "CLIPTextEncode", inputs: { text: promptText } }
+      };
+
+      // Convert base64 to PNG via canvas (handles both PNG and JPEG input)
+      const dataUrl = "data:" + mime + ";base64," + base64;
+      const img = await loadImage(dataUrl);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      const pngBlob = await new Promise(r => canvas.toBlob(r, "image/png"));
+      const pngB64 = await blobToBase64(pngBlob);
+
+      const finalB64 = injectPngChunks(pngB64, generationData, workflow);
+
+      // Download
+      const byteChars = atob(finalB64);
+      const byteArrays = [];
+      for (let i = 0; i < byteChars.length; i += 512) {
+        const sl = byteChars.slice(i, i + 512);
+        byteArrays.push(new Uint8Array([...sl].map(c => c.charCodeAt(0))));
+      }
+      const blob = new Blob(byteArrays, { type: "image/png" });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const now = new Date();
+      const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}-${String(now.getHours()).padStart(2,"0")}-${String(now.getMinutes()).padStart(2,"0")}-${String(now.getSeconds()).padStart(2,"0")}`;
+      const slug = promptText.toLowerCase().replace(/[^a-z0-9]/g,"").substring(0,10);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `SA-${ts}-${slug}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    },
+    args: [imageBase64, mimeType, prompt || ""]
   });
 }
 
@@ -999,7 +1513,7 @@ async function processNext() {
           const { isHidden } = await countActiveTasks(tabId);
           if (isHidden) {
             if (!isPausedForVisibility) {
-              console.log("[SeaArt Queue] Tab is hidden. Pausing queue before injection.");
+              dlog("[SeaArt Queue] Tab is hidden. Pausing queue before injection.");
               isPausedForVisibility = true;
               updateQueueUI();
             }
@@ -1034,7 +1548,7 @@ async function processNext() {
     }
 
     if (seaArtLimit && preCheck.activeTasks >= seaArtLimit) {
-      console.log(`[SeaArt Queue] Pre-flight: at limit (${preCheck.activeTasks}/${seaArtLimit}). Waiting for slot...`);
+      dlog(`[SeaArt Queue] Pre-flight: at limit (${preCheck.activeTasks}/${seaArtLimit}). Waiting for slot...`);
       isWaitingForSlot = true;
       // Keep isProcessing = true to prevent re-entry during the wait
       updateQueueUI();
@@ -1073,6 +1587,12 @@ async function processNext() {
       consecutiveSamePrompt = 0;
     }
 
+    // Ensure the auto-download observer is running on the SeaArt page (idempotent;
+    // re-installs it if the page was reloaded since it was first enabled).
+    if (autoDownloadEnabled && currentPlatform === "SeaArt") {
+      startAutoDownloadObserver();
+    }
+
     // Inject the prompt and click Generate
     const injectResult = await injectPromptToTab(tabId, promptText);
 
@@ -1102,7 +1622,7 @@ async function processNext() {
       updateQueueUI();
       // Exponential backoff: 2s, 4s, 8s
       const backoffMs = 2000 * Math.pow(2, currentPromptRetries - 1);
-      console.log(`[Queue] Retrying in ${backoffMs}ms...`);
+      dlog(`[Queue] Retrying in ${backoffMs}ms...`);
       setTimeout(processNext, backoffMs);
       return;
     }
@@ -1118,7 +1638,7 @@ async function processNext() {
       if (waitResult?.status === "limit_reached") {
         // Smart queue detector: if we hit the limit modal, we know for a fact the queue is full.
         // Update our internal understanding of the limit.
-        console.log("[SeaArt Queue] Hit paywall/upgrade modal! Recalibrating queue knowledge.");
+        dlog("[SeaArt Queue] Hit paywall/upgrade modal! Recalibrating queue knowledge.");
         if (waitResult.detectedLimit) {
           seaArtLimit = waitResult.detectedLimit;
         } else if (!seaArtLimit) {
@@ -1138,13 +1658,13 @@ async function processNext() {
         updateQueueUI();
 
         // Wait for a genuine slot to open
-        console.log(`[SeaArt Queue] Waiting for slot before retrying prompt (no re-queue)...`);
+        dlog(`[SeaArt Queue] Waiting for slot before retrying prompt (no re-queue)...`);
         await waitUntilSystemReady(tabId);
         isWaitingForSlot = false;
         updateQueueUI();
 
         // Retry the same prompt directly (not through processNext/queue)
-        console.log(`[SeaArt Queue] Retrying blocked prompt: "${promptText.substring(0, 60)}..."`);
+        dlog(`[SeaArt Queue] Retrying blocked prompt: "${promptText.substring(0, 60)}..."`);
         const retryResult = await injectPromptToTab(tabId, promptText);
         
         if (!retryResult.success) {
@@ -1214,7 +1734,7 @@ window.addEventListener("message", (event) => {
 
     // If queue was paused for error, resume it (user is actively adding prompts)
     if (isPausedForError) {
-      console.log("[Queue] Resuming from error pause — user added new prompt.");
+      dlog("[Queue] Resuming from error pause — user added new prompt.");
       isPausedForError = false;
       consecutiveSamePrompt = 0;
     }
@@ -1239,7 +1759,7 @@ restoreQueue().then(() => {
   updateQueueUI();
   // If there are restored prompts, kick off processing
   if (promptQueue.length > 0) {
-    console.log(`[Queue] Starting processing for ${promptQueue.length} restored prompts.`);
+    dlog(`[Queue] Starting processing for ${promptQueue.length} restored prompts.`);
     processNext();
   }
 });

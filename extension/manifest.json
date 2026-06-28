@@ -14,6 +14,8 @@
     "*://*.tensor.art/*",
     "*://*.tensorhub.net/*",
     "*://*.yodayo.com/*",
+    "https://image.cdn2.seaart.me/*",
+    "https://static.cdn.seaart.me/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],

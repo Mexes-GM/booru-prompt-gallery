@@ -41,6 +41,9 @@ export const storage = {
       localStorage.removeItem(key)
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(STORAGE_EVENT_NAME, { detail: { key, value: null } }))
+        // Also broadcast for cross-context sync (web app ↔ extension iframe) so
+        // deletions (e.g. clearHistory) propagate just like writes do.
+        broadcastSettingChange(key, null)
       }
     } catch (error) {
       console.warn(`Error removing localStorage key "${key}":`, error)

@@ -10,13 +10,67 @@
       margin: 0;
       padding: 0;
     }
+    /* ── Theme tokens ───────────────────────────────────────────────────────
+       Values mirror the app design tokens in globals.css so the native wrapper
+       feels like the same app, not a different shell. Resolution order:
+         1. :root defaults → DARK (matches app default on dark OS)
+         2. @media (prefers-color-scheme: light) → LIGHT first-paint fallback
+         3. :root[data-theme="dark|light"] → EXPLICIT override pushed by the app
+            via postMessage (THEME_CHANGE). Attribute selectors out-specify the
+            bare :root rules above, so a manual in-app theme choice always wins. */
+    :root {
+      --w-bg: #20283C;        /* --background 222 30% 18% */
+      --w-fg: #E6EBF0;        /* --foreground 210 25% 92% */
+      --w-bar-bg: #283248;    /* --card 222 28% 22% */
+      --w-border: #434C60;    /* --border 222 18% 32% */
+      --w-muted-fg: #C2C9D6;  /* --muted-foreground 214 18% 80% */
+      --w-btn-bg: #353F54;    /* --secondary 222 22% 28% */
+      --w-btn-fg: #E6EBF0;
+      --w-btn-hover-bg: #434C60;
+      --w-btn-hover-fg: #ffffff;
+      --w-accent: #7E5BD6;    /* --primary (dark) 265 60% 63% */
+      --w-accent-border: #9A7DE0;
+    }
+    /* First-paint fallback before the app reports its resolved theme. */
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --w-bg: #F6F9FB;        /* --background 210 25% 98% */
+        --w-fg: #0F172A;        /* --foreground 222 47% 11% */
+        --w-bar-bg: #E9EDF2;    /* --secondary 220 14% 92% */
+        --w-border: #CCD5E0;    /* --border 215 22% 85% */
+        --w-muted-fg: #5B6472;  /* --muted-foreground 220 9% 40% */
+        --w-btn-bg: #E9EDF2;
+        --w-btn-fg: #1E293B;    /* --secondary-foreground 222 47% 17% */
+        --w-btn-hover-bg: #DCE2EB;
+        --w-btn-hover-fg: #0F172A;
+        --w-accent: #7842D7;    /* --primary (light) 262 65% 55% */
+        --w-accent-border: #946CE0;
+      }
+    }
+    /* Explicit overrides from the app (win over OS preference). */
+    :root[data-theme="dark"] {
+      --w-bg: #20283C; --w-fg: #E6EBF0; --w-bar-bg: #283248; --w-border: #434C60;
+      --w-muted-fg: #C2C9D6; --w-btn-bg: #353F54; --w-btn-fg: #E6EBF0;
+      --w-btn-hover-bg: #434C60; --w-btn-hover-fg: #ffffff;
+      --w-accent: #7E5BD6; --w-accent-border: #9A7DE0;
+    }
+    :root[data-theme="light"] {
+      --w-bg: #F6F9FB; --w-fg: #0F172A; --w-bar-bg: #E9EDF2; --w-border: #CCD5E0;
+      --w-muted-fg: #5B6472; --w-btn-bg: #E9EDF2; --w-btn-fg: #1E293B;
+      --w-btn-hover-bg: #DCE2EB; --w-btn-hover-fg: #0F172A;
+      --w-accent: #7842D7; --w-accent-border: #946CE0;
+    }
+
     html, body {
       width: 100%;
       height: 100%;
       overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: #09090b;
-      color: #fafafa;
+      background-color: var(--w-bg);
+      color: var(--w-fg);
+      /* Smooth the wrapper recolor when the app reports a theme change. */
+      transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+                  color 150ms cubic-bezier(0.4, 0, 0.2, 1);
     }
     .container {
       display: flex;
@@ -25,209 +79,51 @@
       height: 100%;
     }
 
-    /* ── Dev/Prod Switcher Bar ─────────────────────────────── */
+    /* ── Dev/Prod Switcher Bar (dev-only; hidden for end users) ────────────── */
     .config-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background-color: #18181b;
-      border-bottom: 1px solid #27272a;
+      background-color: var(--w-bar-bg);
+      border-bottom: 1px solid var(--w-border);
       padding: 4px 10px;
       font-size: 10px;
       height: 28px;
       flex-shrink: 0;
     }
+    .config-bar[hidden] {
+      display: none;
+    }
     .config-bar span {
       font-weight: 500;
-      color: #a1a1aa;
+      color: var(--w-muted-fg);
     }
     .btn-group {
       display: flex;
       gap: 5px;
     }
     .btn {
-      background-color: #27272a;
-      border: 1px solid #3f3f46;
-      color: #e4e4e7;
+      background-color: var(--w-btn-bg);
+      border: 1px solid var(--w-border);
+      color: var(--w-btn-fg);
       padding: 2px 6px;
-      border-radius: 4px;
+      border-radius: 6px; /* match app radius scale (sm) */
       cursor: pointer;
       font-size: 9px;
       transition: all 0.2s;
     }
     .btn:hover {
-      background-color: #3f3f46;
-      color: #fff;
+      background-color: var(--w-btn-hover-bg);
+      color: var(--w-btn-hover-fg);
     }
     .btn.active {
-      background-color: #3b82f6;
-      border-color: #60a5fa;
+      background-color: var(--w-accent);
+      border-color: var(--w-accent-border);
       color: #fff;
       font-weight: 600;
     }
 
-    /* ── Queue Floating Badge ──────────────────────────────────── */
-    #queue-container {
-      position: fixed;
-      bottom: 24px;
-      right: 50%;
-      transform: translateX(50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      z-index: 1000;
-      pointer-events: none;
-      width: max-content;
-      max-width: 95vw;
-    }
-
-    #target-info-pill {
-      display: none;
-      background-color: rgba(24, 24, 27, 0.95); /* zinc-900 */
-      border: 1px solid #27272a; /* zinc-800 */
-      backdrop-filter: blur(12px);
-      padding: 4px 12px;
-      border-radius: 9999px;
-      font-size: 11px;
-      font-weight: 500;
-      color: #a1a1aa; /* zinc-400 */
-      pointer-events: auto;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
-      transition: all 0.2s;
-      white-space: nowrap;
-    }
-    
-    #target-info-platform {
-      color: #fafafa;
-      font-weight: 600;
-      margin-left: 4px;
-    }
-
-    #queue-bar {
-      display: none; /* shown via JS when queue is active */
-      align-items: center;
-      gap: 10px;
-      background-color: rgba(24, 24, 27, 0.95); /* zinc-900 */
-      backdrop-filter: blur(12px);
-      border: 1px solid #3f3f46; /* zinc-700 */
-      padding: 6px 14px;
-      border-radius: 9999px;
-      font-size: 12px;
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
-      pointer-events: auto;
-      white-space: nowrap;
-    }
-
-    /* Animated status dot */
-    .queue-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      transition: background-color 0.3s;
-    }
-    .queue-dot.idle {
-      background-color: #22c55e; /* green */
-    }
-    .queue-dot.queued {
-      background-color: #f59e0b; /* amber */
-      animation: pulse-amber 1.5s ease-in-out infinite;
-    }
-    .queue-dot.generating {
-      background-color: #3b82f6; /* blue */
-      animation: pulse-blue 1s ease-in-out infinite;
-    }
-    .queue-dot.waiting {
-      background-color: #f97316; /* orange */
-      animation: pulse-orange 1.2s ease-in-out infinite;
-    }
-
-    @keyframes pulse-amber {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-    @keyframes pulse-blue {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.25); }
-    }
-    @keyframes pulse-orange {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.35; transform: scale(1.15); }
-    }
-    .queue-dot.error {
-      background-color: #ef4444; /* red */
-      animation: pulse-red 0.8s ease-in-out infinite;
-    }
-    @keyframes pulse-red {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.3; transform: scale(1.3); }
-    }
-
-    #queue-status-text {
-      color: #e4e4e7; /* zinc-200 */
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    #queue-badge {
-      display: none;
-      align-items: center;
-      gap: 3px;
-      background-color: #1d4ed8;
-      color: #bfdbfe;
-      padding: 1px 5px;
-      border-radius: 9999px;
-      font-size: 8.5px;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    #queue-clear-btn {
-      display: none;
-      align-items: center;
-      gap: 4px;
-      background: transparent;
-      border: 1px solid #3f3f46;
-      color: #a1a1aa;
-      padding: 3px 10px;
-      border-radius: 9999px;
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 500;
-      font-family: inherit;
-      transition: all 0.15s;
-      flex-shrink: 0;
-    }
-    #queue-clear-btn:hover {
-      border-color: #ef4444;
-      color: #fca5a5;
-      background-color: rgba(239, 68, 68, 0.1);
-    }
-
-    #queue-target-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      background: transparent;
-      border: 1px solid #3f3f46;
-      color: #a1a1aa;
-      padding: 3px 10px;
-      border-radius: 9999px;
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 500;
-      font-family: inherit;
-      transition: all 0.15s;
-      flex-shrink: 0;
-    }
-    #queue-target-btn:hover {
-      border-color: #22c55e;
-      color: #86efac;
-      background-color: rgba(34, 197, 94, 0.1);
-    }
-
-    /* ── Light Mode Themes ────────────────────────────────── */
+    /* ── App iframe ────────────────────────────────────────────────────────── */
     iframe {
       flex: 1;
       width: 100%;
@@ -236,67 +132,14 @@
       background-color: transparent;
       min-height: 0; /* allow flex shrink */
     }
-
-    /* ── Light Mode Themes ────────────────────────────────── */
-    @media (prefers-color-scheme: light) {
-      html, body {
-        background-color: #ffffff;
-        color: #09090b;
-      }
-      .config-bar {
-        background-color: #f4f4f5;
-        border-bottom: 1px solid #e4e4e7;
-      }
-      .config-bar span {
-        color: #71717a;
-      }
-      .btn {
-        background-color: #e4e4e7;
-        border: 1px solid #d4d4d8;
-        color: #27272a;
-      }
-      .btn:hover {
-        background-color: #d4d4d8;
-        color: #09090b;
-      }
-      .btn.active {
-        background-color: #2563eb;
-        border-color: #3b82f6;
-        color: #fff;
-      }
-      #queue-bar {
-        background-color: #fafafa;
-        border-bottom: 1px solid #e4e4e7;
-      }
-      #queue-status-text {
-        color: #71717a;
-      }
-      #queue-clear-btn {
-        border: 1px solid #d4d4d8;
-        color: #71717a;
-      }
-      #queue-clear-btn:hover {
-        border-color: #ef4444;
-        color: #ef4444;
-        background-color: #fee2e2;
-      }
-      #queue-target-btn {
-        border: 1px solid #d4d4d8;
-        color: #71717a;
-      }
-      #queue-target-btn:hover {
-        border-color: #22c55e;
-        color: #16a34a;
-        background-color: #dcfce7;
-      }
-    }
   </style>
 </head>
 <body>
   <div class="container">
 
-    <!-- Dev/Prod environment switcher -->
-    <div class="config-bar">
+    <!-- Dev/Prod environment switcher. Hidden for end users; revealed by
+         sidepanel.js only when localStorage "booru_sidebar_devmode" === "1". -->
+    <div id="config-bar" class="config-bar" hidden>
       <span>Environment:</span>
       <div class="btn-group">
         <button id="btn-local" class="btn active" data-url="http://localhost:3000/extension">Local (Dev)</button>
@@ -304,22 +147,10 @@
       </div>
     </div>
 
-    <!-- Queue Floating Badge (Now rendered inside React app, hidden here) -->
-    <div id="queue-container" style="display: none !important;">
-      <div id="target-info-pill">
-        Target: <span id="target-info-platform">Unknown</span>
-      </div>
-      <div id="queue-bar">
-        <span id="queue-status-dot" class="queue-dot idle"></span>
-        <span id="queue-status-text">Ready</span>
-        <span id="queue-badge">0 queued</span>
-        <button id="queue-target-btn" title="Select target textarea on page">🎯 Target</button>
-        <button id="queue-clear-btn" title="Clear prompt queue">✕ Clear</button>
-      </div>
-    </div>
-
-    <!-- The actual hosted app iframe -->
-    <iframe id="app-frame" src="http://localhost:3000/extension" allow="clipboard-write"></iframe>
+    <!-- The actual hosted app iframe. Defaults to production; sidepanel.js swaps
+         to localhost only when dev mode is enabled. The queue / target UI is
+         rendered inside this React app, not by the host page. -->
+    <iframe id="app-frame" src="https://booru-prompt-gallery.netlify.app/extension" allow="clipboard-write"></iframe>
 
   </div>
   <script src="sidepanel.js"></script>

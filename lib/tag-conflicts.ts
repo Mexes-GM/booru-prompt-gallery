@@ -564,7 +564,7 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
     exceptions: {}
   },
   "tall": {
-    blocks: ["short", "loli", "shota", "chibi", "petite", "tiny"],
+    blocks: ["short", "chibi", "petite", "tiny"],
     exceptions: {}
   },
   "short": {
@@ -573,14 +573,6 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
   },
   "chibi": {
     blocks: ["tall", "mature_female", "mature_male", "muscular", "curvy", "giant", "giantess"],
-    exceptions: {}
-  },
-  "loli": {
-    blocks: ["tall", "mature_female", "adult", "giantess", "milf"],
-    exceptions: {}
-  },
-  "shota": {
-    blocks: ["tall", "mature_male", "adult", "giant", "old_man"],
     exceptions: {}
   },
   "muscular": {

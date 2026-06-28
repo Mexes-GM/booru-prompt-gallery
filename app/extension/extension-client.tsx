@@ -46,6 +46,8 @@ import {
   Mountain,
   ImageOff,
   HelpCircle,
+  Crosshair,
+  MousePointerClick,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useTagCounts } from "@/hooks/use-tag-counts"
@@ -89,11 +91,45 @@ import { useBlacklist } from "@/hooks/use-blacklist"
 import { useToast } from "@/hooks/use-toast"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ThemeProvider } from "@/components/theme-provider"
+import { useTheme } from "next-themes"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 
-// Pinned target origin for postMessage to the parent window (extension host).
-const TARGET_ORIGIN = "https://tensor.art"
-// Origins allowed to send messages into this iframe.
+// The sidepanel host is a chrome-extension page, whose origin is dynamic
+// (chrome-extension://<id>). We therefore post to the parent with "*" and rely
+// on the parent verifying our origin. Messages received from the parent are
+// trusted when they originate from window.parent AND from a chrome-extension://
+// origin (the sidepanel) or one of the known web hosts.
+const TARGET_ORIGIN = "*"
+// Origins allowed to send messages into this iframe (web hosts; the extension
+// sidepanel's chrome-extension:// origin is accepted dynamically below).
 const ALLOWED_ORIGINS = ["https://tensor.art", "https://seaart.ai"]
+
+/** True when a message genuinely comes from our embedding parent (the sidepanel). */
+function isTrustedParentMessage(event: MessageEvent): boolean {
+  if (event.source !== window.parent) return false
+  if (typeof event.origin !== "string") return false
+  return event.origin.startsWith("chrome-extension://") || ALLOWED_ORIGINS.includes(event.origin)
+}
+
+/**
+ * Broadcasts the app's resolved theme ("dark" | "light") to the native sidepanel
+ * wrapper so its chrome (body background + dev config bar) matches the app — even
+ * when the user overrides the OS preference via the in-app ThemeToggle. Must be
+ * rendered INSIDE <ThemeProvider> so next-themes context is available.
+ */
+function ThemeSync() {
+  const { resolvedTheme } = useTheme()
+  useEffect(() => {
+    if (resolvedTheme !== "dark" && resolvedTheme !== "light") return
+    try {
+      window.parent?.postMessage({ type: "THEME_CHANGE", theme: resolvedTheme }, TARGET_ORIGIN)
+    } catch {
+      /* not embedded / parent unavailable */
+    }
+  }, [resolvedTheme])
+  return null
+}
 
 interface QueueStatus {
   length: number
@@ -123,6 +159,8 @@ function PocketCard({
   isGlobalWeightsEnabled,
   onGlobalWeightChange,
   isPreviouslyCopied,
+  hasTarget,
+  onNoTarget,
 }: {
   post: BooruPost
   getCleanedPrompt: (post: BooruPost) => string
@@ -139,6 +177,8 @@ function PocketCard({
   isGlobalWeightsEnabled: boolean
   onGlobalWeightChange?: (tag: string, weight: number) => void
   isPreviouslyCopied?: boolean
+  hasTarget?: boolean
+  onNoTarget?: () => void
 }) {
   const [copied, setCopied] = useState(false)
   /** 'idle' | 'queued' (amber, waiting for TensorArt) | 'sent' (green, injected) */
@@ -181,6 +221,11 @@ function PocketCard({
     }
     // Enqueue in sidepanel.js — sidepanel will process it when TensorArt is free
     window.parent.postMessage({ type: "INJECT_PROMPT", prompt: displayPrompt }, TARGET_ORIGIN)
+    // If the user hasn't picked a destination field yet, the prompt will sit in
+    // the queue with nowhere to go — guide them to set a target first.
+    if (!hasTarget) {
+      onNoTarget?.()
+    }
     // Show 'queued' (amber) immediately; it will clear after 4 s or when queue empties
     setSendState("queued")
     onUsedPrompt(displayPrompt, post.id, post.preview_file_url || post.file_url)
@@ -259,13 +304,13 @@ function PocketCard({
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-green-500/40 shadow-sm"
+                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-accent/50 shadow-sm"
                 >
                     <motion.div
                        animate={{ scale: [1, 1.2, 1] }}
                        transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
                     >
-                        <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
+                        <Check className="w-3.5 h-3.5 text-accent" strokeWidth={3} />
                     </motion.div>
                 </motion.div>
             </div>
@@ -352,9 +397,13 @@ function PocketCard({
         <div className="flex button-group items-stretch isolate w-full mt-2">
           <Button
             onClick={handleCopy}
-            variant={copied || isPreviouslyCopied ? "default" : "outline"}
+            variant="outline"
             className={`flex-none w-9 focus-ring rounded-r-none border-r-0 px-0 h-8 flex items-center justify-center transition-colors ${
-              isPreviouslyCopied && !copied ? "bg-muted text-muted-foreground hover:bg-muted/80" : ""
+              copied
+                ? "bg-accent text-accent-foreground border-accent hover:bg-accent/90"
+                : isPreviouslyCopied
+                ? "bg-muted text-muted-foreground hover:bg-muted/80"
+                : ""
             }`}
             title="Copy Prompt"
             disabled={!displayPrompt}
@@ -364,16 +413,12 @@ function PocketCard({
           </Button>
           <Button
             onClick={handleSend}
-            variant={
-              sendState === "sent" ? "default"
-              : sendState === "queued" ? "outline"
-              : "outline"
-            }
+            variant="outline"
             className={`pocket-card-send-btn flex-1 focus-ring rounded-l-none text-xs px-2 py-1.5 h-8 font-semibold whitespace-nowrap overflow-hidden transition-colors ${
               sendState === "queued"
                 ? "border-amber-500/60 text-amber-500 hover:bg-amber-500/10"
                 : sendState === "sent"
-                ? ""
+                ? "bg-accent text-accent-foreground border-accent hover:bg-accent/90"
                 : ""
             }`}
             disabled={!displayPrompt}
@@ -519,23 +564,99 @@ export default function ExtensionClient() {
     limit: 5,
     platform: "Unknown"
   })
+  const [autoDownload, setAutoDownload] = useState(false)
   
-  const [isTargeting, setIsTargeting] = useState(false)
-  
-  // Reset targeting state if user clicks outside the panel (e.g. they clicked the target on the page)
+  // Targeting state machine, driven by TARGET_STATUS messages from sidepanel.js
+  // "idle" | "arming" | "waiting" | "selected" | "none" | "error" | "cancelled"
+  const [targetState, setTargetState] = useState<string>("idle")
+  const isTargeting = targetState === "arming" || targetState === "waiting"
+  // True once the user has successfully picked a destination field this session.
+  // Used to guide first-time users through the Target → Send flow.
+  const [hasTargetSet, setHasTargetSet] = useState(false)
+
+  // Responsive column count for the masonry grid, based on the panel width.
+  // Chrome side panels are resizable, so we adapt instead of forcing 2 columns.
+  const [gridCols, setGridCols] = useState(2)
   useEffect(() => {
-    if (!isTargeting) return
-    const handleBlur = () => setIsTargeting(false)
-    window.addEventListener("blur", handleBlur)
-    
-    // Safety timeout in case blur doesn't fire as expected
-    const timer = setTimeout(() => setIsTargeting(false), 8000)
-    
-    return () => {
-      window.removeEventListener("blur", handleBlur)
-      clearTimeout(timer)
+    const el = mainScrollRef.current
+    if (!el) return
+    const compute = () => {
+      const w = el.clientWidth
+      // Baseline is 2 columns (matches the main web app); only widen to 3 when
+      // the panel is clearly large. Never drop to 1 — a single column makes the
+      // image fill the card and pushes the prompt/buttons off-screen.
+      if (w <= 0) return
+      setGridCols(w > 620 ? 3 : 2)
     }
-  }, [isTargeting])
+    compute()
+    const ro = new ResizeObserver(compute)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [search.isClient])
+
+  const guideToTarget = useCallback(() => {
+    toast({
+      title: "Pick a target field first",
+      description: "Click \"Target\", then click the prompt box on your image generator page so prompts know where to go.",
+    })
+  }, [toast])
+
+  // Listen for targeting status updates from the parent sidepanel.js
+  useEffect(() => {
+    function handleTargetStatus(event: MessageEvent) {
+      if (!isTrustedParentMessage(event)) return
+      if (!event.data || event.data.type !== "TARGET_STATUS") return
+
+      const { state, detail } = event.data
+      setTargetState(state)
+      console.log(`[Target UI] state="${state}"`, detail || "")
+
+      switch (state) {
+        case "arming":
+          break
+        case "waiting":
+          toast({
+            title: "🎯 Click the prompt field",
+            description: `${detail?.candidates ?? 0} field(s) detected on ${detail?.platform ?? "the page"}. Click the one to fill.`,
+          })
+          break
+        case "selected":
+          setHasTargetSet(true)
+          toast({
+            title: "✓ Target set",
+            description: detail?.placeholder
+              ? `Selected <${(detail.tag || "input").toLowerCase()}> "${detail.placeholder}"`
+              : `Selected <${(detail?.tag || "input").toLowerCase()}>. Prompts will be sent here.`,
+          })
+          // Reset to idle shortly after so the button returns to normal
+          setTimeout(() => setTargetState("idle"), 1500)
+          break
+        case "none":
+          toast({
+            variant: "destructive",
+            title: "No prompt field found",
+            description: detail?.message || "Make sure the prompt node is visible on the page, then retry.",
+          })
+          setTimeout(() => setTargetState("idle"), 2500)
+          break
+        case "error":
+          toast({
+            variant: "destructive",
+            title: "Targeting failed",
+            description: detail?.message || "Could not start targeting. Open the generation page and retry.",
+          })
+          setTimeout(() => setTargetState("idle"), 2500)
+          break
+        case "cancelled":
+          setTimeout(() => setTargetState("idle"), 500)
+          break
+        default:
+          break
+      }
+    }
+    window.addEventListener("message", handleTargetStatus)
+    return () => window.removeEventListener("message", handleTargetStatus)
+  }, [toast])
 
   // Apply extension-mode class to <html> to neutralize the forced html-level
   // overflow-y:scroll from globals.css (which causes a phantom scrollbar in iframe)
@@ -549,8 +670,7 @@ export default function ExtensionClient() {
   // Listen for queue status updates from the parent sidepanel.js
   useEffect(() => {
     function handleQueueStatus(event: MessageEvent) {
-      if (event.source !== window.parent) return;
-      if (!ALLOWED_ORIGINS.includes(event.origin)) return;
+      if (!isTrustedParentMessage(event)) return
       if (event.data && event.data.type === "QUEUE_STATUS") {
         setQueueStatus({
           length: event.data.queueLength ?? 0,
@@ -562,6 +682,9 @@ export default function ExtensionClient() {
           limit: event.data.seaArtLimit ?? 5,
           platform: event.data.platform ?? "Unknown"
         })
+        if (typeof event.data.autoDownloadEnabled === "boolean") {
+          setAutoDownload(event.data.autoDownloadEnabled)
+        }
       }
     }
     window.addEventListener("message", handleQueueStatus)
@@ -833,8 +956,9 @@ export default function ExtensionClient() {
       ? resolveTagConflicts(content.split(',').map(t => t.trim()), addList)
       : { validTags: addList }
 
-    // Build final prompt: cleaned content + valid added tags
-    const finalTags = [...content.split(',').map(t => t.trim()).filter(Boolean), ...conflictResolution.validTags]
+    // Build final prompt: valid added tags FIRST (matches the main web app's
+    // cleanPrompt, which places user-added tags at the beginning), then content.
+    const finalTags = [...conflictResolution.validTags, ...content.split(',').map(t => t.trim()).filter(Boolean)]
     let finalPrompt = finalTags.join(', ')
 
     // Apply global weights
@@ -909,6 +1033,7 @@ export default function ExtensionClient() {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeSync />
     <TooltipProvider>
       <div className="h-screen bg-background text-foreground flex flex-col p-3 gap-3 overflow-hidden">
       {/* Pocket Header - Replicates Main App Header Style */}
@@ -918,13 +1043,16 @@ export default function ExtensionClient() {
             Booru Prompt Gallery
           </h1>
           <div className="flex items-center gap-1.5">
-            <Badge variant="secondary" className="text-[9px] font-medium bg-muted text-muted-foreground border-0 px-1 py-0 h-fit select-none">
+            <Badge variant="secondary" className="text-[10px] font-medium bg-muted text-muted-foreground border-0 px-1 py-0 h-fit select-none">
               By Mexes
             </Badge>
-            <Badge variant="outline" className="text-[9px] font-bold bg-primary/10 text-primary border-primary/20 px-1 py-0.5 h-fit select-none font-mono">
+            <Badge variant="outline" className="text-[10px] font-bold bg-primary/10 text-primary border-primary/20 px-1 py-0.5 h-fit select-none font-mono">
               Pocket
             </Badge>
           </div>
+        </div>
+        <div className="flex items-center shrink-0">
+          <ThemeToggle />
         </div>
       </header>
 
@@ -1045,6 +1173,7 @@ export default function ExtensionClient() {
                 onClick={search.toggleShuffle}
                 className="h-8 w-8 p-0 shadow-sm"
                 title={search.isShuffle ? "Disable shuffle" : "Enable shuffle"}
+                aria-label={search.isShuffle ? "Disable shuffle" : "Enable shuffle"}
               >
                 <Shuffle className="w-3.5 h-3.5" />
               </Button>
@@ -1055,12 +1184,13 @@ export default function ExtensionClient() {
                 disabled={search.isValidating}
                 className="h-8 w-8 p-0 shadow-sm"
                 title="Refresh results"
+                aria-label="Refresh results"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${search.isValidating ? "animate-spin text-primary" : ""}`} />
               </Button>
               <Sheet>
                 <SheetTrigger asChild>
-                  <Button type="button" variant="outline" className="h-8 w-8 p-0 shadow-sm" title="History">
+                  <Button type="button" variant="outline" className="h-8 w-8 p-0 shadow-sm" title="History" aria-label="Open prompt history">
                     <History className="w-3.5 h-3.5" />
                   </Button>
                 </SheetTrigger>
@@ -1170,6 +1300,7 @@ export default function ExtensionClient() {
               onClick={() => setTourRun(true)}
               className="h-8 w-8 p-0 shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted bg-background"
               title="Show guided tour"
+              aria-label="Show guided tour"
             >
               <HelpCircle size={14} />
             </Button>
@@ -1179,7 +1310,7 @@ export default function ExtensionClient() {
         {/* Collapsible Settings Panel */}
         <Collapsible open={showSettings} onOpenChange={setShowSettings}>
           <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-            <div className="p-3 bg-muted/20 border border-border/50 rounded-lg flex flex-col gap-3.5">
+            <div className="p-3 bg-muted/20 border border-border/50 rounded-lg flex flex-col gap-3.5 max-h-[45vh] overflow-y-auto scrollbar-none">
               <h2 className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground/80 flex items-center gap-1 select-none">
                 <Sliders size={10} /> Prompt Settings
               </h2>
@@ -1188,7 +1319,7 @@ export default function ExtensionClient() {
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="add-tags-input" className="text-xs font-semibold">Tags to Add</Label>
-                  <span className="text-[9px] text-muted-foreground">(Only final prompt)</span>
+                  <span className="text-[10px] text-muted-foreground">(Only final prompt)</span>
                 </div>
                 <div className="flex h-8 w-full items-center rounded-md border border-input bg-background/50 pl-2 pr-1 text-xs shadow-sm focus-within:ring-1 focus-within:ring-ring">
                   <DebouncedHTMLInput
@@ -1288,7 +1419,7 @@ export default function ExtensionClient() {
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="exclude-tags-input" className="text-xs font-semibold">Tags to Exclude</Label>
-                  <span className="text-[9px] text-muted-foreground">(Only final prompt)</span>
+                  <span className="text-[10px] text-muted-foreground">(Only final prompt)</span>
                 </div>
                 <div className="relative">
                   <DebouncedInput
@@ -1384,7 +1515,7 @@ export default function ExtensionClient() {
                 <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
                   <div className="flex flex-col gap-0.5 flex-1">
                     <Label htmlFor="global-weights-toggle" className="text-xs select-none cursor-pointer">Global Tag Weights</Label>
-                    <span className="text-[9px] text-muted-foreground leading-none">Apply weights across all cards</span>
+                    <span className="text-[10px] text-muted-foreground leading-none">Apply weights across all cards</span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Switch id="global-weights-toggle" checked={isGlobalWeightsEnabled} onCheckedChange={toggleGlobalWeights} className="scale-75 origin-right" />
@@ -1401,7 +1532,7 @@ export default function ExtensionClient() {
                       <Label htmlFor="background-handling-select" className="text-xs font-semibold cursor-pointer">Background Options</Label>
                       <Badge variant="default" className="text-[8px] py-0 px-1 !rounded h-3.5 select-none shrink-0">Beta</Badge>
                     </div>
-                    <span className="text-[9px] text-muted-foreground leading-tight">Modify background/scene tags</span>
+                    <span className="text-[10px] text-muted-foreground leading-tight">Modify background/scene tags</span>
                   </div>
                   <Select
                     value={backgroundMode}
@@ -1456,7 +1587,7 @@ export default function ExtensionClient() {
                         <div className="flex items-center justify-between">
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[11px] font-medium">Include Patterns</span>
-                            <span className="text-[9px] text-muted-foreground leading-none">Stripes, dots, etc.</span>
+                            <span className="text-[10px] text-muted-foreground leading-none">Stripes, dots, etc.</span>
                           </div>
                           <Switch
                             checked={randomBackgroundPatterns}
@@ -1467,7 +1598,7 @@ export default function ExtensionClient() {
                         <div className="flex items-center justify-between">
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[11px] font-medium">Include Gradients</span>
-                            <span className="text-[9px] text-muted-foreground leading-none">Gradients and two-tone colors</span>
+                            <span className="text-[10px] text-muted-foreground leading-none">Gradients and two-tone colors</span>
                           </div>
                           <Switch
                             checked={randomBackgroundIncludeGradients}
@@ -1480,20 +1611,44 @@ export default function ExtensionClient() {
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* Auto-Downloading */}
+              <div className="flex flex-col gap-1 border-t pt-2">
+                <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+                  <div className="flex flex-col gap-0.5 flex-1">
+                    <Label htmlFor="auto-download" className="text-xs select-none cursor-pointer">Auto-Downloading</Label>
+                    <span className="text-[10px] text-muted-foreground leading-none">
+                      {queueStatus.platform === "SeaArt"
+                        ? "Download images with metadata when generation completes"
+                        : "Only available on SeaArt"}
+                    </span>
+                  </div>
+                  <Switch
+                    id="auto-download"
+                    checked={autoDownload}
+                    disabled={queueStatus.platform !== "SeaArt" && queueStatus.platform !== "Unknown"}
+                    onCheckedChange={(val) => {
+                      setAutoDownload(val)
+                      window.parent.postMessage({ type: "QUEUE_ACTION", action: "set_auto_download", value: val }, TARGET_ORIGIN)
+                    }}
+                    className="scale-75 origin-right"
+                  />
+                </div>
+              </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
       </Card>
 
       {/* Results Grid - Uses actual virtualized MasonryGrid */}
-      <main ref={mainScrollRef as React.RefObject<HTMLElement>} className="flex-1 overflow-y-auto relative scrollbar-none">
+      <main ref={mainScrollRef as React.RefObject<HTMLElement>} className="flex-1 overflow-y-auto relative scrollbar-none pb-20">
         {search.isLoading ? (
           <div className="flex h-48 w-full items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         ) : search.isEmpty ? (
-          <div className="flex flex-col h-48 w-full items-center justify-center text-center gap-2">
-            <p className="text-xs text-muted-foreground font-medium">No results found</p>
+          <div className="flex flex-col w-full items-center justify-center text-center gap-3 pt-2">
+            <NoResultsState className="py-4 px-0" />
             <Button size="sm" variant="outline" onClick={search.clearSearch} className="h-7 text-[10px]">
               Clear search
             </Button>
@@ -1502,7 +1657,7 @@ export default function ExtensionClient() {
           <>
             <MasonryGrid
               items={filteredPosts}
-              forceColumns={2}
+              forceColumns={gridCols}
               gap={12}
               scale="medium" // Corresponds to footerHeight = 152px
               footerHeightOverride={152}
@@ -1525,6 +1680,8 @@ export default function ExtensionClient() {
                   isGlobalWeightsEnabled={isGlobalWeightsEnabled}
                   onGlobalWeightChange={handleGlobalWeightChange}
                   isPreviouslyCopied={previouslyCopiedPostIds.has(post.id)}
+                  hasTarget={hasTargetSet}
+                  onNoTarget={guideToTarget}
                 />
               )}
             />
@@ -1595,23 +1752,34 @@ export default function ExtensionClient() {
               variant="outline" 
               size="sm"
               title="Select target textarea on page"
+              aria-label="Select the target prompt field on the generator page"
               onClick={() => {
-                setIsTargeting(true)
+                setTargetState("arming")
                 window.parent.postMessage({ type: "QUEUE_ACTION", action: "target" }, TARGET_ORIGIN)
               }}
               className={`h-6 px-2.5 rounded-full text-[11px] gap-1 transition-all duration-300 ${
                 isTargeting 
                   ? "bg-blue-500/20 text-blue-400 border-blue-500/50 animate-pulse pointer-events-none"
+                  : targetState === "selected"
+                  ? "bg-green-500/20 text-green-500 border-green-500/50"
                   : "bg-transparent hover:bg-green-500/10 hover:text-green-600 hover:border-green-500/50"
               }`}
             >
-              {isTargeting ? (
+              {targetState === "arming" ? (
                 <>
-                  <span className="text-[10px] animate-bounce">🎯</span> Select field...
+                  <Loader2 className="w-3 h-3 animate-spin" /> Detecting...
+                </>
+              ) : targetState === "waiting" ? (
+                <>
+                  <MousePointerClick className="w-3 h-3 animate-bounce" /> Click field...
+                </>
+              ) : targetState === "selected" ? (
+                <>
+                  <Check className="w-3 h-3" /> Target set
                 </>
               ) : (
                 <>
-                  <span className="text-[10px]">🎯</span> Target
+                  <Crosshair className="w-3 h-3" /> Target
                 </>
               )}
             </Button>
@@ -1621,6 +1789,7 @@ export default function ExtensionClient() {
                 variant="outline" 
                 size="sm"
                 title="Clear prompt queue"
+                aria-label="Clear the prompt queue"
                 onClick={() => window.parent.postMessage({ type: "QUEUE_ACTION", action: "clear" }, TARGET_ORIGIN)}
                 className="h-6 px-2.5 rounded-full text-[11px] gap-1 bg-transparent hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
               >
