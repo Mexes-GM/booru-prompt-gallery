@@ -262,7 +262,7 @@ const MergeStickyFooterComponent = ({
                     <div className="p-3 sm:p-4 flex flex-col gap-3 sm:gap-4">
 
                         {/* Header / Controls */}
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2">
                                 <span className="font-bold text-sm sm:text-base">
                                     {mergeModeType === 'merge' ? 'Merge Prompt' : 'Variations Mode'}

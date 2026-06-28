@@ -95,7 +95,7 @@ export const TrendSheet = memo(function TrendSheet({ onSelectTag }: TrendSheetPr
             <Button
               type="button"
               variant="secondary"
-              className="h-9 px-3 bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
+              className="h-11 sm:h-9 px-3 bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
             >
               <Flame className="h-4 w-4 mr-2" />
               <span className="text-xs font-medium">Trending</span>
@@ -181,7 +181,19 @@ export const TrendSheet = memo(function TrendSheet({ onSelectTag }: TrendSheetPr
                         exit={{ opacity: 0, x: -10 }}
                         transition={{ duration: 0.3, ease: "easeOut" }}
                       >
-                        {filteredTrends.length > 0 && renderGrid(filteredTrends)}
+                        {filteredTrends.length > 0 ? (
+                          renderGrid(filteredTrends)
+                        ) : (
+                          <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
+                            <Flame className="h-10 w-10 opacity-30" />
+                            <p className="font-medium">
+                              No trending {activeTab === "character" ? "characters" : "series"} right now
+                            </p>
+                            <p className="text-sm max-w-xs">
+                              Trends refresh periodically from Danbooru. Check back again a bit later.
+                            </p>
+                          </div>
+                        )}
                       </motion.div>
                     </AnimatePresence>
                   </div>

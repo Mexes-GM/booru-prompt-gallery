@@ -217,6 +217,9 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
   const currentWeight = tag.weight
   const showWeight = currentWeight !== 1.0
   const currentText = showWeight ? `(${tag.text}:${currentWeight})` : tag.text
+  // Display-only: unescape booru parens/brackets (e.g. "\(alien stage\)" -> "(alien stage)").
+  // The copied/committed value keeps the escapes (currentText / tag.text) for correct prompt syntax.
+  const displayText = currentText.replace(/\\([()[\]])/g, "$1")
 
   const isModified = currentWeight !== 1.0
   const isHeavy = currentWeight > 1.0
@@ -278,7 +281,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
           title={isGlobal ? "Global weight applied · Right-click to copy" : "Right-click to copy"}
           aria-label={isGlobal ? `Edit weight for ${tag.text} (Global). Right-click to copy.` : `Edit weight for ${tag.text}. Right-click to copy.`}
         >
-          {currentText}
+          {displayText}
           {isGlobal && (
             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full shadow-sm" />
           )}

@@ -1484,11 +1484,11 @@ export function PromptGallery() {
           </div>
         </header>
 
-        <main id="main-content" className="container mx-auto px-4 py-8">
+        <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
-          <div className="w-full max-w-6xl mx-auto mb-8 space-y-6">
+          <div className="w-full max-w-6xl mx-auto mb-4 sm:mb-8 space-y-4 sm:space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
+              <h2 className="text-xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
               <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
                 Generate prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 image collections.
                 Extract and format tags from posts or access AI-generated prompts directly,
@@ -1496,7 +1496,7 @@ export function PromptGallery() {
               </p>
 
               {/* Social Links Section */}
-              <div className="pt-4 space-y-3">
+              <div className="pt-2 sm:pt-4 space-y-3">
                 <p className="text-muted-foreground text-sm">
                   More of my work here
                 </p>
@@ -1754,16 +1754,22 @@ export function PromptGallery() {
 
             <Card ref={controlPanelRef} className="glass-effect">
               <CardContent className="p-4 sm:p-6">
-                <form onSubmit={search.handleSearch} className="space-y-6">
+                <form onSubmit={(e) => {
+                  search.handleSearch(e)
+                  // On mobile the control panel is tall; bring results into view after searching.
+                  if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                    setTimeout(() => {
+                      document.getElementById('results-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }, 150)
+                  }
+                }} className="space-y-6">
 
                   {/* Top Bar: Provider Selection & Quick Actions */}
                   <div className="flex flex-col lg:flex-row gap-8 justify-start items-start lg:items-center">
                     {/* API Provider Selector */}
                     <div className="flex flex-col gap-1.5 w-full lg:w-auto">
                       <span className="text-xs font-medium text-muted-foreground ml-1">API Provider</span>
-                      <div className="bg-muted/50 p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto"
-                        style={{ WebkitOverflowScrolling: 'touch' }}
-                      >
+                      <div className="bg-muted/50 p-1 rounded-lg flex flex-wrap sm:flex-nowrap gap-1 w-full sm:w-auto">
                         {(['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621'] as const).map(p => (
                           <Button
                             key={p}
@@ -1776,7 +1782,7 @@ export function PromptGallery() {
                               }
                               trackProviderChange(p)
                             }}
-                            className={`relative h-8 text-sm px-3 sm:px-4 min-w-fit flex-1 sm:flex-none whitespace-nowrap ${!favs.showFavorites && search.booruProvider === p ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
+                            className={`relative h-11 sm:h-8 text-sm px-3 sm:px-4 min-w-fit flex-1 sm:flex-none whitespace-nowrap ${!favs.showFavorites && search.booruProvider === p ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
                           >
                             {!favs.showFavorites && search.booruProvider === p && (
                               <motion.div
@@ -1806,14 +1812,17 @@ export function PromptGallery() {
                           <Button
                             asChild
                             variant="secondary"
-                            className={`h-9 px-3 gap-1 transition-colors duration-200 cursor-pointer ${favs.showFavorites
+                            className={`h-11 sm:h-9 px-3 gap-1 transition-colors duration-200 cursor-pointer ${favs.showFavorites
                               ? "bg-red-200 text-red-800 hover:bg-red-300 dark:bg-red-800 dark:text-red-100 dark:hover:bg-red-700 shadow-inner"
                               : "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
                               }`}
                           >
                             <motion.button
                               type="button"
-                              onClick={favs.toggleShowFavorites}
+                              onClick={() => {
+                                if (mergeMode.isMergeMode) mergeMode.disableMergeMode()
+                                favs.toggleShowFavorites()
+                              }}
                               whileHover={{ scale: 1.02 }}
                               whileTap={{ scale: 0.95 }}
                             >
@@ -1858,11 +1867,12 @@ export function PromptGallery() {
                               if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'merge') {
                                 mergeMode.disableMergeMode()
                               } else {
+                                if (favs.showFavorites) favs.toggleShowFavorites()
                                 mergeMode.enableMergeMode()
                               }
                             }}
                             variant="secondary"
-                            className={`h-9 px-3 gap-1 transition-colors duration-200 ${mergeMode.isMergeMode && mergeMode.mergeModeType === 'merge'
+                            className={`h-11 sm:h-9 px-3 gap-1 transition-colors duration-200 ${mergeMode.isMergeMode && mergeMode.mergeModeType === 'merge'
                               ? "bg-blue-200 text-blue-800 hover:bg-blue-300 dark:bg-blue-800 dark:text-blue-100 dark:hover:bg-blue-700"
                               : "bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
                               }`}
@@ -1897,11 +1907,12 @@ export function PromptGallery() {
                               if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'variations') {
                                   mergeMode.disableMergeMode()
                               } else {
+                                  if (favs.showFavorites) favs.toggleShowFavorites()
                                   mergeMode.enableVariationMode()
                               }
                             }}
                             variant="secondary"
-                            className={`h-9 px-3 gap-1 transition-colors duration-200 ${mergeMode.isMergeMode && mergeMode.mergeModeType === 'variations'
+                            className={`h-11 sm:h-9 px-3 gap-1 transition-colors duration-200 ${mergeMode.isMergeMode && mergeMode.mergeModeType === 'variations'
                               ? "bg-indigo-200 text-indigo-800 hover:bg-indigo-300 dark:bg-indigo-800 dark:text-indigo-100 dark:hover:bg-indigo-700"
                               : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40"
                               }`}
@@ -1921,7 +1932,7 @@ export function PromptGallery() {
                             type="button"
                             onClick={() => setIsReverseParserModalOpen(true)}
                             variant="secondary"
-                            className="h-9 px-3 gap-1 transition-colors duration-200 bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:hover:bg-purple-900/40"
+                            className="h-11 sm:h-9 px-3 gap-1 transition-colors duration-200 bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:hover:bg-purple-900/40"
                             aria-label="Open Reverse Prompt Parser"
                           >
                             <Sparkles className="w-4 h-4 fill-current" />
@@ -2828,7 +2839,7 @@ export function PromptGallery() {
 
           {filteredPosts.length > 0 && activeFavoriteFolder !== 'artists' && (
             viewMode === "grid" ? (
-              <div className="mb-8 min-h-[500px]">
+              <div id="results-anchor" className="mb-8 min-h-[500px] scroll-mt-20">
                 <MasonryGrid
                   items={filteredPosts}
                   scale={effectiveScale}

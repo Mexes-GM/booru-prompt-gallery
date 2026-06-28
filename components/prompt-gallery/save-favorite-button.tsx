@@ -141,7 +141,8 @@ export function SaveFavoriteButton({
                     className="w-56 p-0 rounded-xl shadow-xl overflow-hidden"
                     align="end"
                     sideOffset={8}
-                    avoidCollisions={false}
+                    collisionPadding={8}
+                    avoidCollisions={true}
                     hideWhenDetached={true}
                     onClick={(e) => e.stopPropagation()}
                 >
