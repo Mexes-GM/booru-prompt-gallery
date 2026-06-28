@@ -141,6 +141,12 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
   }, [scrollContainerRef])
 
   // ResizeObserver separado para cambios de container
+  // Mantiene el ancho actual en un ref para comparar dentro del callback sin
+  // re-suscribir el observer en cada cambio de ancho (evita churn de
+  // disconnect/observe en cada resize, p. ej. la toolbar dinámica de iOS).
+  const containerWidthRef = useRef(containerWidth)
+  useEffect(() => { containerWidthRef.current = containerWidth }, [containerWidth])
+
   useEffect(() => {
     if (!containerRef.current) return
 
@@ -155,7 +161,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
           const newWidth = Math.round(entry.contentRect.width)
           // Ignorar cambios menores a 20px (como la aparición de la barra de desplazamiento de Windows que suele ser de ~17px)
           // Esto previene que el grid se reorganice completamente y las tarjetas salten de columna
-          if (Math.abs(newWidth - containerWidth) > 20) {
+          if (Math.abs(newWidth - containerWidthRef.current) > 20) {
             setContainerWidth(newWidth)
           }
         }
@@ -167,7 +173,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
       observer.disconnect()
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [containerWidth])
+  }, [])
 
   // Detectar si es carga inicial (primeros items)
   useEffect(() => {

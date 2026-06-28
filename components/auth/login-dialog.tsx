@@ -45,9 +45,17 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
       if (error) throw error
       setIsSuccess(true)
     } catch (error) {
-      Sentry.captureException(error, {
-        tags: { context: "magic_link_login" }
-      })
+      const msg = error instanceof Error ? error.message : ""
+      // The "For security purposes, you can only request this after N seconds"
+      // rate-limit is an expected, user-facing condition — surface it via toast
+      // but don't report it to Sentry (was a recurring non-actionable issue).
+      const isExpectedRateLimit =
+        /for security purposes|only request this after|rate limit|too many/i.test(msg)
+      if (!isExpectedRateLimit) {
+        Sentry.captureException(error, {
+          tags: { context: "magic_link_login" }
+        })
+      }
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Something went wrong",

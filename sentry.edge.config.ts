@@ -39,7 +39,8 @@ function scrubSensitiveData(url: string | undefined): string | undefined {
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  release: process.env.NEXT_PUBLIC_APP_VERSION,
+  // Coerce "" to undefined so the withSentryConfig-injected release is used.
+  release: process.env.NEXT_PUBLIC_APP_VERSION || undefined,
 
   // Sample only 10% of traces to stay within free tier
   tracesSampleRate: 0.1,
@@ -59,8 +60,31 @@ Sentry.init({
     "Load failed",
     "Failed to fetch",
     "Request failed with status code 0",
+    // Expected, user-caused auth outcomes (non-actionable) — parity with server
+    "PKCE code verifier not found",
+    "code verifier",
+    "Email link is invalid or has expired",
+    "invalid flow state",
+    "For security purposes, you can only request this after",
+    "both auth code and code verifier should be non-empty",
   ],
   beforeSend(event) {
+    // Drop expected, non-actionable auth events (parity with server config).
+    const msg = (
+      event.message ||
+      event.exception?.values?.[0]?.value ||
+      ""
+    ).toLowerCase()
+    if (
+      msg.includes("pkce") ||
+      msg.includes("code verifier") ||
+      msg.includes("email link is invalid or has expired") ||
+      msg.includes("invalid flow state") ||
+      msg.includes("for security purposes") ||
+      msg.includes("only request this after")
+    ) {
+      return null
+    }
     // Scrub sensitive data from URLs
     if (event.request?.url) {
       event.request.url = scrubSensitiveData(event.request.url);

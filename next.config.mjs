@@ -1,5 +1,24 @@
+// ── Unified release identifier ──────────────────────────────────────────────
+// Source maps are uploaded by withSentryConfig under this release name, and the
+// SAME value is injected into the runtime bundle (via `env` below) so that
+// Sentry.init({ release }) reports events tagged with the identical release.
+// Previously runtime used an (empty) NEXT_PUBLIC_APP_VERSION while uploads used
+// the git SHA → mismatch → events arrived with an empty release and source maps
+// were never applied (minified stack traces). Resolving them to one value fixes it.
+const RELEASE =
+  process.env.NEXT_PUBLIC_APP_VERSION ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||   // Vercel
+  process.env.COMMIT_REF ||              // Netlify
+  process.env.CF_PAGES_COMMIT_SHA ||     // Cloudflare Pages
+  undefined
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Expose the resolved release to the client/server/edge runtimes so that the
+  // Sentry.init() calls tag events with the same release used for map upload.
+  env: {
+    NEXT_PUBLIC_APP_VERSION: RELEASE ?? '',
+  },
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
   },
@@ -202,6 +221,11 @@ if (sentryConfigured) {
     config = withSentryConfig(nextConfig, {
       org: 'boorupromptgallery',
       project: 'sentry-fulvous-anchor',
+
+      // Pin the upload release to the SAME identifier the runtime reports
+      // (see RELEASE above). Falls back to Sentry's git auto-detection when
+      // RELEASE is undefined (e.g. local production builds).
+      ...(RELEASE ? { release: { name: RELEASE } } : {}),
 
       // Only print logs for uploading source maps in CI
       silent: !process.env.CI,

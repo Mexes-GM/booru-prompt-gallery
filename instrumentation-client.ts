@@ -39,7 +39,9 @@ function scrubSensitiveData(url: string | undefined): string | undefined {
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  release: process.env.NEXT_PUBLIC_APP_VERSION,
+  // Empty string would override the release auto-injected by withSentryConfig
+  // and detach events from their uploaded source maps — coerce "" to undefined.
+  release: process.env.NEXT_PUBLIC_APP_VERSION || undefined,
 
   // Sample only 10% of traces to stay within free tier (5K events/month)
   tracesSampleRate: 0.1,
