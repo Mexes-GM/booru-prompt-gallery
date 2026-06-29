@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
+import { AnnouncementsCarousel } from "@/components/prompt-gallery/announcements-carousel"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
@@ -46,8 +47,6 @@ import {
   Github,
   Pin,
   Ban,
-  Tag,
-  Wrench,
   Activity,
 } from "lucide-react"
 
@@ -61,7 +60,6 @@ const ReversePromptParserModal = dynamic(() => import("@/components/prompt-galle
 const GlobalWeightsModal = dynamic(() => import("@/components/prompt-gallery/global-weights-modal").then(m => m.GlobalWeightsModal), { ssr: false, loading: () => null })
 const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
 
-import { VersionDisplay } from "@/components/version-display"
 import pkg from "@/package.json"
 import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -684,6 +682,9 @@ export function PromptGallery() {
   const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
   const [isReverseParserModalOpen, setIsReverseParserModalOpen] = useState(false)
 
+  // Prompt Generation Options: collapsible on mobile only (always expanded on desktop)
+  const [isPromptOptionsExpanded, setIsPromptOptionsExpanded] = useState(false)
+
   // Announcements Panel state: auto-expand on new version
   const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(true)
 
@@ -1293,55 +1294,6 @@ export function PromptGallery() {
                     <Badge variant="secondary" className="text-[10px] sm:text-xs font-medium bg-muted text-muted-foreground border-0 px-1.5 py-0 sm:px-2 sm:py-1 h-fit">
                       By Mexes
                     </Badge>
-                    <button
-                      onClick={() => setShowWelcomeModal(true)}
-                      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full scale-90 sm:scale-100 origin-left"
-                      title="Show Teach System Info"
-                      aria-label="Show system information and version"
-                    >
-                      <VersionDisplay />
-                    </button>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="sm:hidden text-xs h-7 px-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label="More options"
-                        >
-                          <Sparkles className="h-3 w-3 text-amber-500" />
-                          More
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-48">
-                        <DropdownMenuItem onClick={() => setShowWelcomeModal(true)}>
-                          <Sparkles className="mr-2 h-4 w-4 text-amber-500" />
-                          What&apos;s New
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <a href={SOCIAL_URLS.CIVITAI_ARTICLE} target="_blank" rel="noopener noreferrer">
-                            <ScrollText className="mr-2 h-4 w-4 text-blue-500" />
-                            Changelog
-                          </a>
-                        </DropdownMenuItem>
-                        {viewMode === "grid" && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel>Card Size</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={decreaseScale} disabled={scaleValue[0] === 1}>
-                              <ZoomOut className="mr-2 h-4 w-4" />
-                              Smaller
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={increaseScale} disabled={scaleValue[0] === 3}>
-                              <ZoomIn className="mr-2 h-4 w-4" />
-                              Larger
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1415,28 +1367,32 @@ export function PromptGallery() {
                   </div>
                 )}
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        const next = viewMode === 'grid' ? 'list' : 'grid'
-                        setViewMode(next)
-                        trackViewMode(next)
-                      }}
-                      className="focus-ring"
-                      aria-label={`Switch to ${viewMode === "grid" ? "list" : "grid"} view`}
-                    >
-                      {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid3X3 className="h-4 w-4" />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Switch to {viewMode === "grid" ? "list" : "grid"} view</TooltipContent>
-                </Tooltip>
+                <span className="hidden md:inline-flex">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const next = viewMode === 'grid' ? 'list' : 'grid'
+                          setViewMode(next)
+                          trackViewMode(next)
+                        }}
+                        className="focus-ring"
+                        aria-label={`Switch to ${viewMode === "grid" ? "list" : "grid"} view`}
+                      >
+                        {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid3X3 className="h-4 w-4" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Switch to {viewMode === "grid" ? "list" : "grid"} view</TooltipContent>
+                  </Tooltip>
+                </span>
 
 
 
-                <ThemeToggle />
+                <span className="hidden md:inline-flex">
+                  <ThemeToggle />
+                </span>
 
                 <UserNav />
 
@@ -1444,14 +1400,41 @@ export function PromptGallery() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="focus-ring" aria-label="Help and information">
+                        <Button variant="ghost" size="sm" className="focus-ring gap-1.5 px-2" aria-label="More options and information">
                           <AlertTriangle className="h-4 w-4 rotate-180" />
+                          More
                         </Button>
                       </DropdownMenuTrigger>
                     </TooltipTrigger>
                     <TooltipContent>Help & Info</TooltipContent>
                   </Tooltip>
                   <DropdownMenuContent align="end" className="glass-effect">
+                    {/* Merged from the former mobile "More" button to free up header space (mobile only) */}
+                    <DropdownMenuItem onClick={() => setShowWelcomeModal(true)} className="sm:hidden">
+                      <Sparkles className="mr-2 h-4 w-4 text-amber-500" />
+                      <span>What&apos;s New</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className="sm:hidden">
+                      <a href={SOCIAL_URLS.CIVITAI_ARTICLE} target="_blank" rel="noopener noreferrer">
+                        <ScrollText className="mr-2 h-4 w-4 text-blue-500" />
+                        <span>Changelog</span>
+                      </a>
+                    </DropdownMenuItem>
+                    {viewMode === "grid" && (
+                      <>
+                        <DropdownMenuSeparator className="sm:hidden" />
+                        <DropdownMenuLabel className="sm:hidden">Card Size</DropdownMenuLabel>
+                        <DropdownMenuItem onClick={decreaseScale} disabled={scaleValue[0] === 1} className="sm:hidden">
+                          <ZoomOut className="mr-2 h-4 w-4" />
+                          <span>Smaller</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={increaseScale} disabled={scaleValue[0] === 3} className="sm:hidden">
+                          <ZoomIn className="mr-2 h-4 w-4" />
+                          <span>Larger</span>
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    <DropdownMenuSeparator className="sm:hidden" />
                     <DropdownMenuLabel>Information</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
@@ -1621,133 +1604,10 @@ export function PromptGallery() {
 
                 {/* Announcements Panel */}
                 {isAnnouncementsOpen && (
-                <Card className="mt-4 glass-effect overflow-hidden min-w-[280px] mx-auto">
-                  <CardContent className="p-3.5">
-                    <div className="relative flex items-center justify-between mb-4 px-1">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-                          <Sparkles className="h-4 w-4 text-primary" />
-                        </div>
-                        <h3 className="text-base font-semibold text-foreground tracking-tight">Update Notes: v{pkg.version}</h3>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setIsAnnouncementsOpen(false)
-                          localStorage.setItem('announcements_state', JSON.stringify({ collapsed: true, version: pkg.version }))
-                        }}
-                        className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                        aria-label="Dismiss update notes"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      {/* Category Tag Count Badges */}
-                      <div className="border-l-4 border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
-                              <Tag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Category Tag Badges</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-md">New</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              Small badges on each card now count tags by category (appearance, clothing, pose, etc).
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Fix: Teach Modal */}
-                      <div className="border-l-4 border-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/20">
-                              <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Teach Modal Fix</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-md">Fix</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              Fixed an issue with the teach modal that caused the page to reload when opening it.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Fix: Favorites Refactor */}
-                      <div className="border-l-4 border-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/20">
-                              <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Favorites System Refactor</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-md">Fix</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              Refactored the favorites system to address several recurring issues, along with making adjustments to favorites management to improve stability.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Migration Planning */}
-                      <div className="border-l-4 border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20">
-                              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Migration Planning</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 rounded-md">Important</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              The app has grown quite a bit, and I&apos;m glad many people have found it useful! However, the free hosting plans are starting to fall short and Vercel (the main link) is constantly hitting its usage limits. I&apos;m running some tests and experimenting with changes to see if things improve — a full migration to Netlify might happen if needed, but nothing is set in stone yet. I wanted to give you a heads up in advance so you know there&apos;s an alternative link available just in case.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Welcome to Open Source */}
-                      <div className="border-l-4 border-blue-500 bg-blue-500/10 hover:bg-blue-500/15 transition-colors p-4 rounded-r-xl">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20">
-                              <Github className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <p className="text-sm font-semibold text-foreground leading-snug">Welcome to Open Source!</p>
-                              <Badge className="text-[10px] px-1.5 py-0 h-4 font-medium border-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 rounded-md">Info</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed text-left w-full">
-                              I&apos;ve cleaned up and modified the project to make it fully open source. This means the complete code is now available for anyone to download, explore, and run on their own computer. Whether you want to use it as-is, customize it for your own needs, or even contribute improvements, everything is now out in the open.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-                  </CardContent>
-                </Card>
+                  <AnnouncementsCarousel
+                    version={pkg.version}
+                    onDismiss={() => { setIsAnnouncementsOpen(false); localStorage.setItem('announcements_state', JSON.stringify({ collapsed: true, version: pkg.version })) }}
+                  />
                 )}
               </div>
             </div>
@@ -2101,7 +1961,7 @@ export function PromptGallery() {
                   <Collapsible open={showSettings} onOpenChange={setShowSettings}>
                     <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
                       <div className="bg-muted/30 border rounded-xl p-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-8">
+                        <div className="grid grid-cols-1 gap-4">
                           {/* Tags Management */}
                           <div className="space-y-4">
                             <div className="space-y-2">
@@ -2320,13 +2180,34 @@ export function PromptGallery() {
                               dotColor={includeCharacters ? "bg-blue-500" : "bg-gray-400"}
                             />
                           </div>
+                        </div>
+                      </div>
 
-                          {/* Options & Switches */}
-                          <div className="space-y-4">
-                            <span className="text-xs font-medium text-muted-foreground block">
-                              {search.booruProvider === 'aibooru' ? 'Aibooru Options' : 'Prompt Generation Options'}
-                            </span>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Prompt Generation Options — its own card, one container further out */}
+                      <div className="space-y-4 mt-4 rounded-xl border border-border/60 bg-muted/30 p-4">
+                        <button
+                          type="button"
+                          onClick={() => setIsPromptOptionsExpanded((v) => !v)}
+                          aria-expanded={isPromptOptionsExpanded}
+                          className="w-full flex items-center justify-between gap-2 sm:cursor-default sm:pointer-events-none"
+                        >
+                          <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                            <Settings className="h-4 w-4 text-primary" />
+                            {search.booruProvider === 'aibooru' ? 'Aibooru Options' : 'Prompt Generation Options'}
+                          </span>
+                              <ChevronDown
+                                className={cn(
+                                  "w-4 h-4 shrink-0 transition-transform duration-200 sm:hidden",
+                                  isPromptOptionsExpanded && "rotate-180"
+                                )}
+                              />
+                            </button>
+                            <div
+                              className={cn(
+                                "grid grid-cols-1 sm:grid-cols-2 gap-3",
+                                !isPromptOptionsExpanded && "hidden sm:grid"
+                              )}
+                            >
                               {search.booruProvider !== 'aibooru' ? (
                                 <>
                                   <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
@@ -2646,8 +2527,6 @@ export function PromptGallery() {
                                 </AnimatePresence>
                               </div>
                             </div>
-                          </div>
-                        </div>
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
