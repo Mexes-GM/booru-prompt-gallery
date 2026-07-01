@@ -12,8 +12,6 @@ import {
   ChevronRight,
   Tag,
   Wrench,
-  AlertTriangle,
-  Github,
 } from "lucide-react"
 
 type AnnouncementItem = {
@@ -32,11 +30,10 @@ const COLORS = {
 } as const
 
 const ITEMS: AnnouncementItem[] = [
+  { color: 'emerald', icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Smarter Tag Exclusion', badge: 'Improved', body: 'Added new conflict cases and improved the Smart Tag Exclusion logic, so prompts come out cleaner and more consistent.' },
   { color: 'emerald', icon: <Tag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Category Tag Badges', badge: 'New', body: 'Small badges on each card now count tags by category (appearance, clothing, pose, etc).' },
   { color: 'indigo', icon: <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />, title: 'Teach Modal Fix', badge: 'Fix', body: 'Fixed an issue with the teach modal that caused the page to reload when opening it.' },
   { color: 'indigo', icon: <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />, title: 'Favorites System Refactor', badge: 'Fix', body: 'Refactored the favorites system to address several recurring issues, along with making adjustments to favorites management to improve stability.' },
-  { color: 'amber', icon: <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />, title: 'Migration Planning', badge: 'Important', body: "The app has grown quite a bit, and I'm glad many people have found it useful! However, the free hosting plans are starting to fall short and Vercel (the main link) is constantly hitting its usage limits. I'm running some tests and experimenting with changes to see if things improve — a full migration to Netlify might happen if needed, but nothing is set in stone yet. I wanted to give you a heads up in advance so you know there's an alternative link available just in case." },
-  { color: 'blue', icon: <Github className="h-4 w-4 text-blue-600 dark:text-blue-400" />, title: 'Welcome to Open Source!', badge: 'Info', body: "I've cleaned up and modified the project to make it fully open source. This means the complete code is now available for anyone to download, explore, and run on their own computer. Whether you want to use it as-is, customize it for your own needs, or even contribute improvements, everything is now out in the open." },
 ]
 
 interface AnnouncementsCarouselProps {

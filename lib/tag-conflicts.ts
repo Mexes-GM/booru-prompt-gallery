@@ -981,6 +981,448 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
   "blood": {
     blocks: ["clean", "pristine", "immaculate", "peaceful", "sparkling", "pure"],
     exceptions: {}
+  },
+
+  // === EYE COLOR (NEW — mutually exclusive, allow heterochromia/multicolored) ===
+  "blue_eyes": {
+    blocks: ["red_eyes", "green_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes", "white_eyes", "aqua_eyes"],
+    exceptions: {
+      "heterochromia": ["red_eyes", "green_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes"],
+      "multicolored_eyes": ["red_eyes", "green_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes"]
+    }
+  },
+  "red_eyes": {
+    blocks: ["blue_eyes", "green_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes", "white_eyes", "aqua_eyes"],
+    exceptions: {
+      "heterochromia": ["blue_eyes", "green_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes"],
+      "multicolored_eyes": ["blue_eyes", "green_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes"]
+    }
+  },
+  "green_eyes": {
+    blocks: ["blue_eyes", "red_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes", "white_eyes", "aqua_eyes"],
+    exceptions: {
+      "heterochromia": ["blue_eyes", "red_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes"],
+      "multicolored_eyes": ["blue_eyes", "red_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "yellow_eyes"]
+    }
+  },
+  "brown_eyes": {
+    blocks: ["blue_eyes", "red_eyes", "green_eyes", "purple_eyes", "pink_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes", "white_eyes", "aqua_eyes"],
+    exceptions: {
+      "heterochromia": ["blue_eyes", "red_eyes", "green_eyes", "purple_eyes", "pink_eyes", "yellow_eyes", "orange_eyes"],
+      "multicolored_eyes": ["blue_eyes", "red_eyes", "green_eyes", "purple_eyes"]
+    }
+  },
+  "purple_eyes": {
+    blocks: ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "pink_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes", "white_eyes", "aqua_eyes"],
+    exceptions: {
+      "heterochromia": ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "pink_eyes", "yellow_eyes"],
+      "multicolored_eyes": ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "pink_eyes"]
+    }
+  },
+  "yellow_eyes": {
+    blocks: ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes", "white_eyes", "aqua_eyes"],
+    exceptions: {
+      "heterochromia": ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "purple_eyes", "pink_eyes", "orange_eyes"],
+      "multicolored_eyes": ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "purple_eyes"]
+    }
+  },
+  "pink_eyes": {
+    blocks: ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "purple_eyes", "yellow_eyes", "orange_eyes", "black_eyes", "grey_eyes", "gray_eyes", "white_eyes", "aqua_eyes"],
+    exceptions: {
+      "heterochromia": ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "purple_eyes", "yellow_eyes"],
+      "multicolored_eyes": ["blue_eyes", "red_eyes", "green_eyes", "brown_eyes", "purple_eyes"]
+    }
+  },
+
+  // === HAIR COLOR — EXPANDED (NEW — completes the palette started with blonde/black/white) ===
+  "brown_hair": {
+    blocks: ["blonde_hair", "black_hair", "white_hair", "silver_hair", "grey_hair", "gray_hair", "red_hair", "blue_hair", "pink_hair", "purple_hair", "green_hair", "orange_hair", "aqua_hair"],
+    exceptions: {
+      "two-tone_hair": ["blonde_hair", "black_hair", "white_hair", "red_hair", "pink_hair"],
+      "multicolored_hair": ["blonde_hair", "black_hair", "white_hair", "red_hair", "pink_hair", "blue_hair"],
+      "streaked_hair": ["blonde_hair", "black_hair", "white_hair", "red_hair", "pink_hair", "blue_hair"],
+      "gradient_hair": ["blonde_hair", "black_hair", "white_hair", "red_hair", "pink_hair"]
+    }
+  },
+  "red_hair": {
+    blocks: ["blonde_hair", "black_hair", "brown_hair", "white_hair", "silver_hair", "grey_hair", "gray_hair", "blue_hair", "pink_hair", "purple_hair", "green_hair", "orange_hair", "aqua_hair"],
+    exceptions: {
+      "two-tone_hair": ["blonde_hair", "black_hair", "white_hair", "brown_hair", "pink_hair"],
+      "multicolored_hair": ["blonde_hair", "black_hair", "white_hair", "brown_hair", "pink_hair", "blue_hair"],
+      "streaked_hair": ["blonde_hair", "black_hair", "white_hair", "brown_hair", "pink_hair", "blue_hair"],
+      "gradient_hair": ["blonde_hair", "black_hair", "white_hair", "orange_hair"]
+    }
+  },
+  "blue_hair": {
+    blocks: ["blonde_hair", "black_hair", "brown_hair", "white_hair", "silver_hair", "grey_hair", "gray_hair", "red_hair", "pink_hair", "purple_hair", "green_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["blonde_hair", "black_hair", "white_hair", "purple_hair", "pink_hair"],
+      "multicolored_hair": ["blonde_hair", "black_hair", "white_hair", "purple_hair", "pink_hair", "green_hair"],
+      "streaked_hair": ["blonde_hair", "black_hair", "white_hair", "purple_hair", "pink_hair"],
+      "gradient_hair": ["white_hair", "purple_hair", "green_hair", "aqua_hair"]
+    }
+  },
+  "pink_hair": {
+    blocks: ["blonde_hair", "black_hair", "brown_hair", "white_hair", "silver_hair", "grey_hair", "gray_hair", "red_hair", "blue_hair", "purple_hair", "green_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["blonde_hair", "black_hair", "white_hair", "purple_hair", "blue_hair"],
+      "multicolored_hair": ["blonde_hair", "black_hair", "white_hair", "purple_hair", "blue_hair"],
+      "streaked_hair": ["blonde_hair", "black_hair", "white_hair", "purple_hair", "blue_hair"],
+      "gradient_hair": ["white_hair", "purple_hair", "blue_hair"]
+    }
+  },
+  "purple_hair": {
+    blocks: ["blonde_hair", "black_hair", "brown_hair", "white_hair", "silver_hair", "grey_hair", "gray_hair", "red_hair", "blue_hair", "pink_hair", "green_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["blonde_hair", "black_hair", "white_hair", "pink_hair", "blue_hair"],
+      "multicolored_hair": ["blonde_hair", "black_hair", "white_hair", "pink_hair", "blue_hair"],
+      "streaked_hair": ["blonde_hair", "black_hair", "white_hair", "pink_hair", "blue_hair"],
+      "gradient_hair": ["white_hair", "pink_hair", "blue_hair"]
+    }
+  },
+  "green_hair": {
+    blocks: ["blonde_hair", "black_hair", "brown_hair", "white_hair", "silver_hair", "grey_hair", "gray_hair", "red_hair", "blue_hair", "pink_hair", "purple_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["blonde_hair", "black_hair", "white_hair", "blue_hair"],
+      "multicolored_hair": ["blonde_hair", "black_hair", "white_hair", "blue_hair", "aqua_hair"],
+      "streaked_hair": ["blonde_hair", "black_hair", "white_hair", "blue_hair"],
+      "gradient_hair": ["white_hair", "blue_hair", "aqua_hair"]
+    }
+  },
+  "orange_hair": {
+    blocks: ["blonde_hair", "black_hair", "brown_hair", "white_hair", "silver_hair", "grey_hair", "gray_hair", "blue_hair", "pink_hair", "purple_hair", "green_hair"],
+    exceptions: {
+      "two-tone_hair": ["blonde_hair", "black_hair", "white_hair", "red_hair"],
+      "multicolored_hair": ["blonde_hair", "black_hair", "white_hair", "red_hair"],
+      "streaked_hair": ["blonde_hair", "black_hair", "white_hair", "red_hair"],
+      "gradient_hair": ["blonde_hair", "white_hair", "red_hair"]
+    }
+  },
+  "silver_hair": {
+    blocks: ["blonde_hair", "black_hair", "brown_hair", "red_hair", "blue_hair", "pink_hair", "purple_hair", "green_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["black_hair", "blue_hair", "purple_hair", "pink_hair"],
+      "multicolored_hair": ["black_hair", "blue_hair", "purple_hair", "pink_hair"],
+      "streaked_hair": ["black_hair", "blue_hair", "purple_hair", "pink_hair"],
+      "gradient_hair": ["blue_hair", "purple_hair", "pink_hair"]
+    }
+  },
+  "grey_hair": {
+    blocks: ["blonde_hair", "black_hair", "brown_hair", "red_hair", "blue_hair", "pink_hair", "purple_hair", "green_hair", "orange_hair"],
+    exceptions: {
+      "two-tone_hair": ["black_hair", "blue_hair", "purple_hair", "pink_hair"],
+      "multicolored_hair": ["black_hair", "blue_hair", "purple_hair", "pink_hair"],
+      "streaked_hair": ["black_hair", "blue_hair", "purple_hair", "pink_hair"]
+    }
+  },
+
+  // === AGE & MATURITY (NEW — physically incompatible body/age descriptors) ===
+  "loli": {
+    blocks: ["large_breasts", "huge_breasts", "gigantic_breasts", "medium_breasts", "milf", "mature_female", "tall", "muscular", "curvy", "voluptuous", "old", "aged_up", "pregnant", "wide_hips"],
+    exceptions: {}
+  },
+  "child": {
+    blocks: ["large_breasts", "huge_breasts", "gigantic_breasts", "medium_breasts", "milf", "mature_female", "tall", "muscular", "curvy", "voluptuous", "old", "aged_up", "pregnant", "wide_hips", "cleavage"],
+    exceptions: {}
+  },
+  "mature_female": {
+    blocks: ["loli", "child", "toddler", "flat_chest", "chibi", "aged_down", "petite", "young_child"],
+    exceptions: {}
+  },
+  "milf": {
+    blocks: ["loli", "child", "toddler", "flat_chest", "chibi", "aged_down", "young_child"],
+    exceptions: {}
+  },
+  "old": {
+    blocks: ["loli", "child", "toddler", "teenage", "young", "youthful", "aged_down", "smooth_skin", "chibi"],
+    exceptions: {}
+  },
+  "toddler": {
+    blocks: ["tall", "large_breasts", "medium_breasts", "muscular", "curvy", "mature_female", "milf", "old", "aged_up"],
+    exceptions: {}
+  },
+
+  // === FACIAL HAIR (NEW) ===
+  "beard": {
+    blocks: ["clean_shaven", "smooth_face"],
+    exceptions: {}
+  },
+  "mustache": {
+    blocks: ["clean_shaven", "smooth_face"],
+    exceptions: {}
+  },
+  "goatee": {
+    blocks: ["clean_shaven", "smooth_face", "full_beard"],
+    exceptions: {}
+  },
+  "clean_shaven": {
+    blocks: ["beard", "mustache", "goatee", "stubble", "facial_hair", "sideburns"],
+    exceptions: {}
+  },
+
+  // === SEASON (NEW) ===
+  "summer": {
+    blocks: ["winter", "snow", "winter_clothes", "autumn_leaves", "falling_leaves", "scarf", "heavy_coat", "mittens"],
+    exceptions: {}
+  },
+  "winter": {
+    blocks: ["summer", "beach", "bikini", "swimsuit", "tropical", "sunflower", "cherry_blossoms"],
+    exceptions: {}
+  },
+  "spring": {
+    blocks: ["winter", "snow", "autumn_leaves", "falling_leaves", "winter_clothes"],
+    exceptions: {}
+  },
+  "autumn": {
+    blocks: ["spring", "summer", "cherry_blossoms", "snow", "swimsuit", "bikini"],
+    exceptions: {}
+  },
+
+  // === ART STYLE / MEDIUM — EXPANDED (NEW) ===
+  "watercolor": {
+    blocks: ["3d", "photorealistic", "realistic", "pixel_art", "cel_shading"],
+    exceptions: {}
+  },
+  "cel_shading": {
+    blocks: ["3d", "photorealistic", "realistic", "watercolor", "oil_painting"],
+    exceptions: {}
+  },
+  "anime_style": {
+    blocks: ["photorealistic", "realistic", "3d", "oil_painting"],
+    exceptions: {}
+  },
+  "2d": {
+    blocks: ["3d", "realistic", "photorealistic"],
+    exceptions: {}
+  },
+  "oil_painting": {
+    blocks: ["pixel_art", "3d", "cel_shading", "flat_color", "anime_style"],
+    exceptions: {}
+  },
+  "photorealistic": {
+    blocks: ["anime_style", "cel_shading", "sketch", "lineart", "pixel_art", "chibi", "2d", "watercolor", "comic"],
+    exceptions: {}
+  },
+
+  // === EXPRESSIONS — EXPANDED (NEW) ===
+  "serious": {
+    blocks: ["laughing", "grinning", "silly", "meme", "goofy"],
+    exceptions: {}
+  },
+  "expressionless": {
+    blocks: ["smile", "laughing", "crying", "angry", "surprised", "grinning", "screaming", "yelling", "blush", "pouting"],
+    exceptions: {}
+  },
+  "smirk": {
+    blocks: ["frowning", "crying", "sad", "screaming", "pouting", "scared"],
+    exceptions: {}
+  },
+  "pouting": {
+    blocks: ["smile", "laughing", "grinning", "smirk"],
+    exceptions: {}
+  },
+  "grin": {
+    blocks: ["frowning", "sad", "crying", "serious", "expressionless"],
+    exceptions: {}
+  },
+  "bored": {
+    blocks: ["excited", "surprised", "laughing", "screaming", "grinning"],
+    exceptions: {}
+  },
+
+  // === FOOTWEAR — EXPANDED (NEW) ===
+  "sandals": {
+    blocks: ["boots", "sneakers", "high_heels", "loafers", "barefoot"],
+    exceptions: {}
+  },
+  "sneakers": {
+    blocks: ["high_heels", "boots", "sandals", "loafers", "barefoot"],
+    exceptions: {}
+  },
+  "loafers": {
+    blocks: ["sneakers", "sandals", "boots", "high_heels", "barefoot"],
+    exceptions: {}
+  },
+
+  // === SPECIES — EXPANDED (NEW) ===
+  "mermaid": {
+    blocks: ["legs", "feet", "barefoot", "shoes", "boots", "sneakers", "pants", "skirt", "thighs", "knees", "standing", "walking", "running", "kneeling"],
+    exceptions: {}
+  },
+  "elf": {
+    blocks: ["round_ears", "human_ears"],
+    exceptions: {}
+  },
+  "human": {
+    blocks: ["robot", "mecha", "android", "monster", "no_humans"],
+    exceptions: {}
+  },
+
+  // === BREASTS — MEDIUM (NEW, completes the size scale) ===
+  "medium_breasts": {
+    blocks: ["flat_chest", "huge_breasts", "gigantic_breasts", "pettanko", "micro_breasts"],
+    exceptions: {}
+  },
+
+  // === POSTURE — GROUND STATES (NEW) ===
+  "on_back": {
+    blocks: ["standing", "sitting", "walking", "running", "kneeling", "squatting", "on_stomach", "on_side", "jumping", "seiza", "crouching"],
+    exceptions: {}
+  },
+  "on_stomach": {
+    blocks: ["standing", "sitting", "walking", "running", "kneeling", "squatting", "on_back", "on_side", "jumping", "seiza", "crouching"],
+    exceptions: {}
+  },
+  "on_side": {
+    blocks: ["standing", "sitting", "walking", "running", "kneeling", "on_back", "on_stomach", "jumping", "seiza"],
+    exceptions: {}
+  },
+  "seiza": {
+    blocks: ["standing", "walking", "running", "lying_down", "jumping", "on_back", "on_stomach", "on_side", "squatting", "crawling"],
+    exceptions: {}
+  },
+  "all_fours": {
+    blocks: ["standing", "sitting", "lying_down", "walking", "running", "jumping", "seiza", "floating"],
+    exceptions: {}
+  },
+  "spread_legs": {
+    blocks: ["crossed_legs", "knees_together", "legs_together", "closed_legs", "feet_together"],
+    exceptions: {}
+  },
+
+  // === ANIMAL TAILS — EXPANDED (NEW) ===
+  "dog_tail": {
+    blocks: ["cat_tail", "fox_tail", "wolf_tail", "bunny_tail", "no_tail"],
+    exceptions: {
+      "multiple_tails": ["cat_tail", "fox_tail", "wolf_tail", "bunny_tail"]
+    }
+  },
+  "fox_tail": {
+    blocks: ["cat_tail", "dog_tail", "wolf_tail", "bunny_tail", "no_tail"],
+    exceptions: {
+      "multiple_tails": ["cat_tail", "dog_tail", "wolf_tail", "bunny_tail"]
+    }
+  },
+
+  // === ENVIRONMENT — EXPANDED (NEW) ===
+  "forest": {
+    blocks: ["indoors", "cityscape", "desert", "space", "underwater", "room", "bedroom", "classroom"],
+    exceptions: {}
+  },
+  "desert": {
+    blocks: ["snow", "ocean", "forest", "rain", "underwater", "indoors", "beach"],
+    exceptions: {}
+  },
+  "cityscape": {
+    blocks: ["forest", "nature", "underwater", "cave", "indoors", "desert"],
+    exceptions: {
+      "window": ["indoors"]
+    }
+  },
+  "classroom": {
+    blocks: ["outdoors", "forest", "beach", "sky", "cityscape", "nature"],
+    exceptions: {
+      "window": ["sky", "cityscape", "outdoors"]
+    }
+  },
+  "bedroom": {
+    blocks: ["outdoors", "forest", "beach", "classroom", "sky", "cityscape", "nature"],
+    exceptions: {
+      "window": ["sky", "cityscape", "outdoors"]
+    }
+  },
+
+  // === PREGNANCY (NEW) ===
+  "pregnant": {
+    blocks: ["flat_stomach", "toned_stomach", "loli", "child", "toddler", "abs"],
+    exceptions: {}
+  },
+
+  // === SYMMETRY PASS: BOTTOMS (NEW — reciprocal triggers so a conflict is caught
+  //     regardless of whether the garment is in the base prompt or being added) ===
+  "pants": {
+    blocks: ["skirt", "dress", "shorts", "jeans", "nude", "naked", "bottomless", "bikini_bottom", "leggings"],
+    exceptions: {}
+  },
+  "shorts": {
+    blocks: ["skirt", "dress", "pants", "jeans", "nude", "naked", "bottomless", "long_skirt"],
+    exceptions: {}
+  },
+  "jeans": {
+    blocks: ["skirt", "dress", "shorts", "pants", "nude", "naked", "bottomless", "leggings"],
+    exceptions: {}
+  },
+  "leggings": {
+    blocks: ["bare_legs", "barefoot", "nude", "naked", "bottomless", "jeans", "pants", "shorts"],
+    exceptions: {}
+  },
+  "thighhighs": {
+    blocks: ["bare_legs", "barefoot", "pantyhose", "tights", "pants", "jeans"],
+    exceptions: {
+      "toeless_legwear": ["barefoot"]
+    }
+  },
+
+  // === SYMMETRY PASS: TOPS (NEW — reciprocal triggers) ===
+  "shirt": {
+    blocks: ["nude", "naked", "topless", "bare_chest", "dress", "bikini_top"],
+    exceptions: {
+      "open_shirt": ["bare_chest", "topless"],
+      "open_clothes": ["bare_chest"]
+    }
+  },
+  "t-shirt": {
+    blocks: ["nude", "naked", "topless", "collared_shirt", "dress", "bare_shoulders", "long_sleeves", "tank_top"],
+    exceptions: {}
+  },
+  "sweater": {
+    blocks: ["nude", "naked", "topless", "tank_top", "bare_shoulders", "bare_arms", "bikini", "short_sleeves"],
+    exceptions: {
+      "off-shoulder_sweater": ["bare_shoulders"],
+      "sleeveless_sweater": ["bare_arms", "bare_shoulders"]
+    }
+  },
+  "hoodie": {
+    blocks: ["nude", "naked", "topless", "tank_top", "bare_shoulders", "dress", "bikini"],
+    exceptions: {}
+  },
+  "tank_top": {
+    blocks: ["long_sleeves", "sweater", "hoodie", "nude", "naked", "topless", "collared_shirt", "dress"],
+    exceptions: {}
+  },
+  "shoes": {
+    blocks: ["barefoot", "bare_feet"],
+    exceptions: {}
+  },
+
+  // === SYMMETRY PASS: HIGH CHARACTER COUNT (NEW — completes the count family) ===
+  "4girls": {
+    blocks: ["solo", "1girl", "2girls", "3girls", "5girls", "6+girls"],
+    exceptions: {}
+  },
+  "5girls": {
+    blocks: ["solo", "1girl", "2girls", "3girls", "4girls", "6+girls"],
+    exceptions: {}
+  },
+  "6+girls": {
+    blocks: ["solo", "1girl", "2girls", "3girls", "4girls", "5girls"],
+    exceptions: {}
+  },
+  "3boys": {
+    blocks: ["solo", "1boy", "2boys", "4boys", "5boys", "6+boys"],
+    exceptions: {}
+  },
+  "4boys": {
+    blocks: ["solo", "1boy", "2boys", "3boys", "5boys", "6+boys"],
+    exceptions: {}
+  },
+  "5boys": {
+    blocks: ["solo", "1boy", "2boys", "3boys", "4boys", "6+boys"],
+    exceptions: {}
+  },
+  "6+boys": {
+    blocks: ["solo", "1boy", "2boys", "3boys", "4boys", "5boys"],
+    exceptions: {}
   }
 }
 
@@ -1063,6 +1505,28 @@ export interface ConflictResolution {
   const FACIAL_FEATURES = ["lips", "nose", "eyes", "mouth", "teeth", "tongue", "eyelashes", "makeup"];
   const GLOBAL_ENVIRONMENT_TAGS = ["day", "night", "sunset", "twilight", "indoors", "outdoors", "monochrome", "sketch", "pixel_art", "3d", "realistic", "white_background"];
 
+  // Layering / superposition indicators. When any of these is present in the base prompt,
+  // apparent garment-vs-garment contradictions are intentional (e.g. a skirt worn over pants),
+  // so they are unblocked globally rather than requiring a per-rule exception on every clothing rule.
+  const LAYERING_TRIGGERS = new Set([
+    "layered clothing",
+    "skirt over pants", "pants under skirt",
+    "skirt over shorts", "shorts under skirt",
+    "shorts over leggings", "shorts over pantyhose",
+    "thighhighs over pantyhose",
+    "dress over pants", "shirt under sweater", "shirt under dress"
+  ].map(t => normalize(t)));
+
+  // Garments that can legitimately be layered on top of one another (tops, bottoms, legwear).
+  // Deliberately EXCLUDES footwear (you never wear two pairs of shoes) and any nudity/exposure or
+  // anatomy tags, so layering can never unblock e.g. nude+shirt or high_heels+sneakers.
+  const LAYERABLE_TAGS = new Set([
+    "skirt", "miniskirt", "long skirt", "pants", "shorts", "jeans", "leggings",
+    "thighhighs", "kneehighs", "socks", "pantyhose", "tights", "stockings",
+    "shirt", "t-shirt", "collared shirt", "sweater", "hoodie", "tank top", "camisole",
+    "dress", "jacket", "coat", "vest", "cardigan", "blouse"
+  ].map(t => normalize(t)));
+
   // Precomputed once at module load instead of re-allocating a 180-entry array
   // on every added-tag iteration inside resolveTagConflicts (hot path per card).
   const TAG_CONFLICT_ENTRIES = Object.entries(TAG_CONFLICTS);
@@ -1096,6 +1560,9 @@ export interface ConflictResolution {
       t.includes("looking at viewer") ||
       t.includes("face")
     );
+
+    // Global Context: Is the outfit intentionally layered? (unblocks garment-vs-garment conflicts)
+    const hasLayering = baseTagsArray.some(t => LAYERING_TRIGGERS.has(t));
   
     for (let i = 0; i < normalizedAdded.length; i++) {
       const originalAddedTag = addedTags[i];
@@ -1126,6 +1593,16 @@ export interface ConflictResolution {
           // GLOBAL EXCEPTION 2: Face indicators unblock facial anatomy against posture blocks
           if (!unblocked && POSTURE_TRIGGERS.includes(trigger)) {
             if (hasFaceIndicators && FACIAL_FEATURES.some(f => isRelatedTag(f, added))) {
+              unblocked = true;
+            }
+          }
+
+          // GLOBAL EXCEPTION 3: Intentional layering unblocks garment-vs-garment conflicts only.
+          // Both the trigger and the added tag must be layerable garments (tops/bottoms/legwear).
+          // Footwear, nudity, anatomy and scenery are never in LAYERABLE_TAGS, so those conflicts
+          // stay blocked (e.g. nude+shirt, high_heels+sneakers remain contradictions).
+          if (!unblocked && hasLayering) {
+            if (LAYERABLE_TAGS.has(normalize(trigger)) && LAYERABLE_TAGS.has(added)) {
               unblocked = true;
             }
           }
