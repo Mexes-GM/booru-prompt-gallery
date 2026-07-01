@@ -224,7 +224,10 @@ export async function imageProxyHandler(
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400, immutable',
+        // Booru thumbnails are content-addressed (hashed filenames) and never
+        // change, so cache aggressively. Browser TTL was 1 day (flagged by
+        // Lighthouse as an inefficient cache lifetime); bumped to 30 days.
+        'Cache-Control': 'public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=86400, immutable',
         'Access-Control-Allow-Origin': allowedOrigin,
         'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
         'X-RateLimit-Remaining': String(remaining),

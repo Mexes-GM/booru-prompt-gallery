@@ -12,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -84,25 +83,25 @@ export const TrendSheet = memo(function TrendSheet({ onSelectTag }: TrendSheetPr
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        <div className="inline-block">
-          <InfoTooltip
-            hideIcon
-            side="bottom"
-            title="Trending Today"
-            description="Discover what's currently popular on Danbooru today. Explore the top trending characters and franchises from the last 24 hours to find new inspiration for your generations."
-          >
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-11 sm:h-9 px-3 bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
-            >
-              <Flame className="h-4 w-4 mr-2" />
-              <span className="text-xs font-medium">Trending</span>
-            </Button>
-          </InfoTooltip>
-        </div>
-      </DialogTrigger>
+      {/* a11y: controlled Dialog opened via onClick instead of DialogTrigger
+          asChild wrapping a <div> (which received aria-haspopup/type=button on a
+          non-interactive element — aria-allowed-attr failure). */}
+      <InfoTooltip
+        hideIcon
+        side="bottom"
+        title="Trending Today"
+        description="Discover what's currently popular on Danbooru today. Explore the top trending characters and franchises from the last 24 hours to find new inspiration for your generations."
+      >
+        <Button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          variant="secondary"
+          className="h-11 sm:h-9 px-3 bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
+        >
+          <Flame className="h-4 w-4 mr-2" />
+          <span className="text-xs font-medium">Trending</span>
+        </Button>
+      </InfoTooltip>
       <DialogContent className="max-w-4xl h-[90vh] sm:h-[80vh] flex flex-col p-0 gap-0 bg-background/95 backdrop-blur-md overflow-hidden duration-500 ease-in-out">
         <motion.div
           initial={{ opacity: 0, y: 10 }}

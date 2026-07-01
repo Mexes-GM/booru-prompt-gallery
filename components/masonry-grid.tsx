@@ -30,9 +30,17 @@ function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value)
 
   useEffect(() => {
+    if (debouncedValue === value) return
+    // Apply the first meaningful value immediately so the grid lays out on the
+    // first paint (avoids a blank/flashing frame); debounce only later churn
+    // such as resize or the iOS dynamic toolbar.
+    if (!debouncedValue) {
+      setDebouncedValue(value)
+      return
+    }
     const handler = setTimeout(() => setDebouncedValue(value), delay)
     return () => clearTimeout(handler)
-  }, [value, delay])
+  }, [value, delay, debouncedValue])
 
   return debouncedValue
 }
@@ -50,6 +58,7 @@ const MasonryItem = React.memo(({
   return (
     <div
       className={`absolute${isInitial ? " masonry-item-enter" : ""}`}
+      role="listitem"
       style={{
         width: pos.width,
         height: pos.height,
@@ -87,6 +96,19 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
   // Trackear si los items acaban de montar (para animación inicial)
   const prevItemsLengthRef = useRef(0)
   const [showInitialAnimation, setShowInitialAnimation] = useState(true)
+  // Índice desde el cual los items recién agregados (scroll infinito) deben animar su entrada
+  const [appendAnimFrom, setAppendAnimFrom] = useState<number | null>(null)
+
+  // Medir el ancho del contenedor de forma SÍNCRONA antes del primer paint.
+  // Evita el flash en móvil donde el grid se pintaba con el ancho de fallback
+  // (1200px) o vacío durante un frame antes de que el efecto post-paint lo
+  // corrigiera.
+  React.useLayoutEffect(() => {
+    if (containerRef.current) {
+      const w = containerRef.current.clientWidth
+      if (w > 0) setContainerWidth(w)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -175,15 +197,26 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
     }
   }, [])
 
-  // Detectar si es carga inicial (primeros items)
+  // Detectar carga inicial vs. items agregados por scroll infinito
   useEffect(() => {
-    if (items.length > 0 && prevItemsLengthRef.current === 0) {
+    const prev = prevItemsLengthRef.current
+
+    if (items.length > 0 && prev === 0) {
+      // Carga inicial: animación de entrada de todo el primer lote
       setShowInitialAnimation(true)
-      // Deshabilitar animación inicial después de 600ms
       const timer = setTimeout(() => setShowInitialAnimation(false), 600)
       prevItemsLengthRef.current = items.length
       return () => clearTimeout(timer)
     }
+
+    if (items.length > prev && prev > 0) {
+      // Scroll infinito: animar solo los items recién agregados (index >= prev)
+      setAppendAnimFrom(prev)
+      const timer = setTimeout(() => setAppendAnimFrom(null), 600)
+      prevItemsLengthRef.current = items.length
+      return () => clearTimeout(timer)
+    }
+
     prevItemsLengthRef.current = items.length
   }, [items.length])
 
@@ -199,6 +232,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
   //   'reset'  — anything else → full recompute + scroll anchoring
   const layoutCacheRef = useRef<{
     positions: PositionEntry[]
+    columns: PositionEntry[][]
     columnHeights: number[]
     columnCount: number
     columnWidth: number
@@ -211,6 +245,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
     totalHeight: number
   }>({
     positions: [],
+    columns: [],
     columnHeights: [],
     columnCount: 0,
     columnWidth: 0,
@@ -233,7 +268,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
 
   // Calcular layout del masonry (incremental cuando es posible)
   const layout = useMemo(() => {
-    if (debouncedContainerWidth === 0) return { positions: [] as PositionEntry[], totalHeight: 0 }
+    if (debouncedContainerWidth === 0) return { positions: [] as PositionEntry[], columns: [] as PositionEntry[][], totalHeight: 0 }
 
     const config = SCALE_CONFIG[scale]
 
@@ -289,8 +324,10 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
       }
     }
 
-    // Helper to lay out a single item into the shortest column
-    const layoutItem = (item: BooruPost, index: number, colHeights: number[]): PositionEntry => {
+    // Helper to lay out a single item into the shortest column.
+    // Also appends the position to its column bucket (cols) so visibleItems
+    // can binary-search per column instead of scanning all positions.
+    const layoutItem = (item: BooruPost, index: number, colHeights: number[], cols: PositionEntry[][]): PositionEntry => {
       const minHeight = Math.min(...colHeights)
       const columnIndex = colHeights.indexOf(minHeight)
 
@@ -312,24 +349,27 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
       }
 
       colHeights[columnIndex] += itemHeight + gap
+      cols[columnIndex].push(pos)
       return pos
     }
 
     let positions: PositionEntry[]
     let columnHeights: number[]
+    let columns: PositionEntry[][]
 
     if (cacheStrategy === 'same') {
       // Exact same items + same params → return cached layout as-is (zero work)
-      return { positions: cache.positions, totalHeight: cache.totalHeight }
+      return { positions: cache.positions, columns: cache.columns, totalHeight: cache.totalHeight }
 
     } else if (cacheStrategy === 'append') {
       // Items were appended (infinite scroll) — reuse cached positions, only layout new items.
       // Existing cards keep their exact (x, y) coordinates.
       positions = [...cache.positions]
       columnHeights = [...cache.columnHeights]
+      columns = cache.columns.map(col => [...col])
 
       for (let i = cache.itemIds.length; i < items.length; i++) {
-        positions.push(layoutItem(items[i], i, columnHeights))
+        positions.push(layoutItem(items[i], i, columnHeights, columns))
       }
 
     } else {
@@ -358,9 +398,10 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
 
       columnHeights = new Array(columnCount).fill(0)
       positions = []
+      columns = Array.from({ length: columnCount }, () => [] as PositionEntry[])
 
       for (let i = 0; i < items.length; i++) {
-        positions.push(layoutItem(items[i], i, columnHeights))
+        positions.push(layoutItem(items[i], i, columnHeights, columns))
       }
     }
 
@@ -368,6 +409,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
 
     // Update cache for next render
     cache.positions = positions
+    cache.columns = columns
     cache.columnHeights = columnHeights
     cache.columnCount = columnCount
     cache.columnWidth = columnWidth
@@ -379,7 +421,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
     cache.footerHeightOverride = footerHeightOverride
     cache.totalHeight = totalHeight
 
-    return { positions, totalHeight }
+    return { positions, columns, totalHeight }
   }, [items, debouncedContainerWidth, scale, gap, isMobile, forceColumns, footerHeightOverride])
 
   // Scroll anchoring: restore scroll position after a full recompute.
@@ -413,9 +455,14 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout])
 
-  // Virtualización: solo renderizar ítems en viewport + overscan
-  // Usa scrollTopRef (sin causar re-render) para el cálculo, pero depende de scrollBucket
-  // para activar el recálculo de visibleItems
+  // Virtualización: solo renderizar ítems en viewport + overscan.
+  // Antes se filtraba O(n) sobre TODAS las posiciones en cada bucket de scroll.
+  // Ahora se aprovecha que dentro de cada columna los items están en orden
+  // ascendente de `y` y NO se solapan, por lo que tanto `y` como `y + height`
+  // son monótonos crecientes. Esto permite un binary search por columna para
+  // encontrar el primer item visible, y luego iterar hasta salir del viewport.
+  // Coste: O(C·log n + V) en lugar de O(n) por scroll (C = nº columnas,
+  // V = items visibles). Depende de `layout` para recalcular al cambiar layout.
   const visibleItems = useMemo(() => {
     if (!containerRef.current || layout.positions.length === 0) return layout.positions
 
@@ -427,24 +474,42 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
     const renderTop = Math.max(0, scrollTop - containerTop - overscan)
     const renderBottom = scrollTop - containerTop + windowHeight + overscan
 
-    return layout.positions.filter((pos) => {
-      return pos.y + pos.height > renderTop && pos.y < renderBottom
-    })
+    const result: PositionEntry[] = []
+    for (const col of layout.columns) {
+      // Binary search: primer índice cuyo borde inferior (y + height) supera renderTop.
+      // (y + height) es monótono creciente dentro de la columna.
+      let lo = 0
+      let hi = col.length
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (col[mid].y + col[mid].height > renderTop) hi = mid
+        else lo = mid + 1
+      }
+      // Iterar hacia adelante mientras el item empiece antes del fondo del viewport.
+      for (let i = lo; i < col.length; i++) {
+        const pos = col[i]
+        if (pos.y >= renderBottom) break
+        result.push(pos)
+      }
+    }
+    return result
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout.positions, scrollBucket, windowHeight, isMobile])
+  }, [layout.columns, scrollBucket, windowHeight, isMobile])
 
   return (
     <div
       ref={containerRef}
       className="relative w-full"
       style={{ height: layout.totalHeight }}
+      role="list"
+      aria-label={`${items.length} results`}
     >
       {visibleItems.map((pos) => (
         <MasonryItem
           key={`${(pos.item as any)._provider || (pos.item as any).provider || "post"}-${pos.item.id}`}
           pos={pos}
           renderItem={renderItem}
-          isInitial={showInitialAnimation}
+          isInitial={showInitialAnimation || (appendAnimFrom !== null && pos.index >= appendAnimFrom)}
         />
       ))}
     </div>

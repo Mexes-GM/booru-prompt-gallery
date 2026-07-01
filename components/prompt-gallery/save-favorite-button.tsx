@@ -95,7 +95,7 @@ export function SaveFavoriteButton({
                 variant="secondary"
                 className={`rounded-none rounded-l-full h-8 px-2.5 transition-all ${isFavorited
                     ? "bg-red-500 text-white hover:bg-red-600"
-                    : "bg-background/80 hover:bg-background/95 backdrop-blur-md text-muted-foreground hover:text-foreground"
+                    : "bg-background/80 hover:bg-background/95 text-muted-foreground hover:text-foreground"
                     }`}
                 onClick={(e) => {
                     e.stopPropagation()
@@ -122,7 +122,7 @@ export function SaveFavoriteButton({
                         variant="secondary"
                         className={`rounded-none rounded-r-full h-8 px-1.5 border-l transition-all flex items-center justify-center ${isFavorited
                             ? "bg-red-500 text-white hover:bg-red-600 border-red-600"
-                            : "bg-background/80 hover:bg-background/95 backdrop-blur-md text-muted-foreground hover:text-foreground border-border/50"
+                            : "bg-background/80 hover:bg-background/95 text-muted-foreground hover:text-foreground border-border/50"
                             }`}
                         onClick={(e) => {
                             e.stopPropagation()

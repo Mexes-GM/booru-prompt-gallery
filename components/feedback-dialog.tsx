@@ -12,7 +12,6 @@ import {
     DialogDescription,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -204,25 +203,29 @@ export function FeedbackDialog() {
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <div className="inline-block">
-                    <InfoTooltip
-                        hideIcon
-                        side="bottom"
-                        title="Feedback & Suggestions"
-                        description="Help us improve! Found a bug? Have an idea for a cool new feature? Or just want to share your thoughts? Drop your comments here and contribute to the app's development."
-                    >
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            className="gap-1 h-9 px-4 transition-all bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
-                        >
-                            <MessageSquarePlus className="h-4 w-4" />
-                            <span className="hidden sm:inline font-medium">Feedback</span>
-                        </Button>
-                    </InfoTooltip>
-                </div>
-            </DialogTrigger>
+            {/* a11y: the Dialog is controlled (open/setOpen), so the button opens
+                it via onClick instead of DialogTrigger asChild wrapping a <div>.
+                That previous wrapper received aria-haspopup/type=button on a
+                non-interactive div (aria-allowed-attr failure) and the icon-only
+                button had no name on mobile (button-name failure). */}
+            <InfoTooltip
+                hideIcon
+                side="bottom"
+                title="Feedback & Suggestions"
+                description="Help us improve! Found a bug? Have an idea for a cool new feature? Or just want to share your thoughts? Drop your comments here and contribute to the app's development."
+            >
+                <Button
+                    type="button"
+                    onClick={() => setOpen(true)}
+                    aria-label="Feedback"
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1 h-9 px-4 transition-all bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+                >
+                    <MessageSquarePlus className="h-4 w-4" />
+                    <span className="hidden sm:inline font-medium">Feedback</span>
+                </Button>
+            </InfoTooltip>
             <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden gap-0 border-0 shadow-2xl">
                 <AnimatePresence mode="wait">
                     {success ? (

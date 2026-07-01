@@ -133,12 +133,15 @@ import { cn } from "@/lib/utils"
 import { MasonryItem } from "./masonry-item"
 import { ArtistGrid } from "./artist-card"
 import { useBlacklist } from "@/hooks/use-blacklist"
-import { BlacklistManager } from "@/components/prompt-gallery/blacklist-manager"
+// Code-split (perf plan P2b): heavy, conditionally-shown features are loaded
+// as separate chunks so they don't inflate the initial PromptGallery bundle
+// that gates first render / LCP. They render null until their chunk arrives.
+const BlacklistManager = dynamic(() => import("@/components/prompt-gallery/blacklist-manager").then(m => m.BlacklistManager), { ssr: false, loading: () => null })
 import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 
 import { useMergeMode } from "@/hooks/use-merge-mode"
-import { MergeStickyFooter } from "./merge-sticky-footer"
-import { AiConvertStickyFooter } from "./ai-convert-sticky-footer"
+const MergeStickyFooter = dynamic(() => import("./merge-sticky-footer").then(m => m.MergeStickyFooter), { ssr: false, loading: () => null })
+const AiConvertStickyFooter = dynamic(() => import("./ai-convert-sticky-footer").then(m => m.AiConvertStickyFooter), { ssr: false, loading: () => null })
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
@@ -516,13 +519,7 @@ export function PromptGallery() {
   usePreferencesSync()
 
   const [detailedBackgroundsList, setDetailedBackgroundsList] = useState<string[][]>([])
-
-  useEffect(() => {
-    fetch('/detailed-backgrounds.json')
-      .then(res => res.json())
-      .then(data => setDetailedBackgroundsList(data.map((item: any) => item.scenery)))
-      .catch(err => console.error("Failed to load detailed backgrounds:", err))
-  }, [])
+  const detailedBackgroundsLoadedRef = useRef(false)
 
   // 2. Local UI State & Persistence
   const [viewMode, setViewMode] = usePersistentState<"grid" | "list">(
@@ -592,6 +589,23 @@ export function PromptGallery() {
     STORAGE_KEYS.BACKGROUND_MODE
   )
   const deferredBackgroundMode = useDeferredValue(backgroundMode)
+
+  // Lazy-load the 188KB detailed-backgrounds.json only when the user actually
+  // switches to the "random" background mode (the only consumer of the scenery
+  // list). Previously this was fetched + parsed + mapped on EVERY mount, even
+  // for users who never touch Random backgrounds. Idempotent via a ref.
+  useEffect(() => {
+    if (backgroundMode !== 'random') return
+    if (detailedBackgroundsLoadedRef.current) return
+    detailedBackgroundsLoadedRef.current = true
+    fetch('/detailed-backgrounds.json')
+      .then(res => res.json())
+      .then(data => setDetailedBackgroundsList(data.map((item: any) => item.scenery)))
+      .catch(err => {
+        detailedBackgroundsLoadedRef.current = false // allow retry after a failure
+        console.error("Failed to load detailed backgrounds:", err)
+      })
+  }, [backgroundMode])
 
   const [simpleBackgroundReplacementTags, setSimpleBackgroundReplacementTags] = usePersistentState(
     "simple background, white background",
@@ -1203,7 +1217,7 @@ export function PromptGallery() {
     }
   }, [
     favs.showFavorites, favs.favoriteFolderMap, favs.favoritePosts, favs.favoriteItems,
-    favs.favoritesProgress, favs.isLoading, favs.isRefreshing, favs.favoritesLoaded,
+    favs.favoritesProgress, favs.favoritesLoaded,
     activeFavoriteFolder,
   ])
 
@@ -1287,7 +1301,7 @@ export function PromptGallery() {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2 sm:space-x-4">
                 <div className="flex items-center gap-2 sm:gap-3">
-                  <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent leading-tight sm:leading-normal">
+                  <h1 className="text-lg sm:text-2xl font-bold text-foreground leading-tight sm:leading-normal">
                     Booru<span className="hidden sm:inline"> </span><br className="sm:hidden" />Prompt Gallery
                   </h1>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-0.5 sm:gap-3">
@@ -1496,7 +1510,7 @@ export function PromptGallery() {
                         aria-label="Visit Mexes on CivitAI"
                       >
                         <Image
-                          src="https://www.google.com/s2/favicons?domain=civitai.com&sz=32"
+                          src="https://www.google.com/s2/favicons?domain=civitai.com&sz=64"
                           alt="CivitAI"
                           width={24}
                           height={24}
@@ -1519,7 +1533,7 @@ export function PromptGallery() {
                         aria-label="Visit Mexes on Tensor.Art"
                       >
                         <Image
-                          src="https://www.google.com/s2/favicons?domain=tensor.art&sz=32"
+                          src="https://www.google.com/s2/favicons?domain=tensor.art&sz=64"
                           alt="Tensor.Art"
                           width={24}
                           height={24}
@@ -1542,7 +1556,7 @@ export function PromptGallery() {
                         aria-label="Visit Mexes on SeaArt AI"
                       >
                         <Image
-                          src="https://www.google.com/s2/favicons?domain=seaart.ai&sz=32"
+                          src="https://www.google.com/s2/favicons?domain=seaart.ai&sz=64"
                           alt="SeaArt AI"
                           width={24}
                           height={24}
@@ -1563,10 +1577,9 @@ export function PromptGallery() {
                     rel="noopener noreferrer"
                     onClick={() => trackExternalLink(SOCIAL_URLS.KO_FI, 'support')}
                     className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
-                    aria-label="Support me on Ko-fi"
                   >
                     <Image
-                      src="https://www.google.com/s2/favicons?domain=ko-fi.com&sz=32"
+                      src="https://www.google.com/s2/favicons?domain=ko-fi.com&sz=64"
                       alt="Ko-fi"
                       width={16}
                       height={16}
@@ -1582,7 +1595,6 @@ export function PromptGallery() {
                     rel="noopener noreferrer"
                     onClick={() => trackExternalLink(SOCIAL_URLS.GITHUB, 'github')}
                     className="inline-flex items-center px-4 py-2 bg-gray-800 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
-                    aria-label="View source code on GitHub"
                   >
                     <Github className="w-4 h-4 mr-2" />
                     View on GitHub
@@ -1595,7 +1607,6 @@ export function PromptGallery() {
                     rel="noopener noreferrer"
                     onClick={() => trackExternalLink(SOCIAL_URLS.NETLIFY, 'netlify')}
                     className="inline-flex items-center px-4 py-2 bg-teal-600 hover:bg-teal-500 dark:bg-teal-700 dark:hover:bg-teal-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
-                    aria-label="Open alternative version hosted on Netlify"
                   >
                     <Globe className="w-4 h-4 mr-2" />
                     Netlify Mirror
@@ -1793,7 +1804,6 @@ export function PromptGallery() {
                             onClick={() => setIsReverseParserModalOpen(true)}
                             variant="secondary"
                             className="h-11 sm:h-9 px-3 gap-1 transition-colors duration-200 bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:hover:bg-purple-900/40"
-                            aria-label="Open Reverse Prompt Parser"
                           >
                             <Sparkles className="w-4 h-4 fill-current" />
                             <span className="text-xs font-medium">Import</span>
@@ -2049,7 +2059,7 @@ export function PromptGallery() {
 
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-7 w-5 min-w-[1.25rem] text-muted-foreground hover:text-foreground rounded-l-none" title="Select Preset" aria-label="Select a saved tags preset">
+                                        <Button variant="ghost" size="icon" className="h-7 w-6 min-w-[1.5rem] text-muted-foreground hover:text-foreground rounded-l-none" title="Select Preset" aria-label="Select a saved tags preset">
                                           <ChevronDown className="h-3.5 w-3.5" />
                                         </Button>
                                       </DropdownMenuTrigger>

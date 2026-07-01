@@ -1063,6 +1063,10 @@ export interface ConflictResolution {
   const FACIAL_FEATURES = ["lips", "nose", "eyes", "mouth", "teeth", "tongue", "eyelashes", "makeup"];
   const GLOBAL_ENVIRONMENT_TAGS = ["day", "night", "sunset", "twilight", "indoors", "outdoors", "monochrome", "sketch", "pixel_art", "3d", "realistic", "white_background"];
 
+  // Precomputed once at module load instead of re-allocating a 180-entry array
+  // on every added-tag iteration inside resolveTagConflicts (hot path per card).
+  const TAG_CONFLICT_ENTRIES = Object.entries(TAG_CONFLICTS);
+
   export function resolveTagConflicts(baseTags: string[], addedTags: string[]): ConflictResolution {
     const validTags: string[] = [];
     const conflictingTags: {tag: string, reason: string}[] = [];
@@ -1106,7 +1110,7 @@ export interface ConflictResolution {
         continue;
       }
   
-      for (const [trigger, rule] of Object.entries(TAG_CONFLICTS)) {
+      for (const [trigger, rule] of TAG_CONFLICT_ENTRIES) {
         if (normalizedBase.has(trigger) || normalizedBase.has(normalize(trigger))) {
           const blocksAdded = rule.blocks.some(blocked => isRelatedTag(blocked, added));
           

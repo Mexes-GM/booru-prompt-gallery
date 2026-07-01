@@ -370,8 +370,28 @@ function armTargetingInPage() {
   document.documentElement.classList.add("booru-targeting-cursor");
   window.__booruTargetCleanup = cleanup;
 
+  // Helper to find elements recursively, including traversing open shadow roots
+  const querySelectorAllDeep = (selector, root = document) => {
+    const list = [];
+    const find = (node) => {
+      if (!node) return;
+      if (node.querySelectorAll) {
+        const matches = node.querySelectorAll(selector);
+        for (const m of matches) {
+          if (!list.includes(m)) list.push(m);
+        }
+      }
+      if (node.shadowRoot) find(node.shadowRoot);
+      if (node.children) {
+        for (const child of node.children) find(child);
+      }
+    };
+    find(root);
+    return list;
+  };
+
   // Diagnostics: how many inputs exist in this frame (visible-ish)
-  const allInputs = Array.from(document.querySelectorAll(SELECTOR)).filter(el => {
+  const allInputs = querySelectorAllDeep(SELECTOR).filter(el => {
     const cs = window.getComputedStyle(el);
     return cs.display !== "none" && cs.visibility !== "hidden";
   });
@@ -379,9 +399,9 @@ function armTargetingInPage() {
     frameUrl: location.href.slice(0, 120),
     isTop: window === window.top,
     counts: {
-      textareas: document.querySelectorAll("textarea").length,
-      editables: document.querySelectorAll("[contenteditable]").length,
-      comfyWidgets: document.querySelectorAll(".comfy-multiline-input").length,
+      textareas: querySelectorAllDeep("textarea").length,
+      editables: querySelectorAllDeep("[contenteditable]").length,
+      comfyWidgets: querySelectorAllDeep(".comfy-multiline-input").length,
       candidates: allInputs.length
     }
   };
@@ -405,8 +425,10 @@ function startTargeting() {
     targetingTabId = tab.id;
     targetingActive = true;
 
-    document.getElementById("target-info-platform").textContent = platform;
-    document.getElementById("target-info-pill").style.display = "block";
+    const platformEl = document.getElementById("target-info-platform");
+    if (platformEl) platformEl.textContent = platform;
+    const pillEl = document.getElementById("target-info-pill");
+    if (pillEl) pillEl.style.display = "block";
     updateQueueUI();
 
     dlog(`[Target] ◆ arming on tab ${tab.id} (${platform}) — ${tab.url}`);
@@ -435,12 +457,7 @@ function startTargeting() {
         dlog(`[Target] ◆ armed across ${results?.length || 0} frame(s), ${totalCandidates} candidate input(s):`, frames);
 
         if (totalCandidates === 0) {
-          targetingActive = false;
-          sendTargetStatus("none", {
-            message: "No prompt fields found on this page. Make sure the prompt node is visible, then retry.",
-            frames
-          });
-          return;
+          dlog(`[Target] ⚠ No candidate inputs pre-detected. Keeping selection mode armed as fallback.`);
         }
 
         // Selection is now armed — wait for the user to click an input.

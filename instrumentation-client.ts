@@ -141,4 +141,15 @@ Sentry.init({
   },
 });
 
+// Web Vitals debug instrumentation (perf plan P0). Flag-gated so it ships zero
+// bytes to production unless NEXT_PUBLIC_PERF_DEBUG=1. Surfaces LCP element, CLS
+// culprit nodes, and INP targets to the console (and window.__perfDebug()).
+if (process.env.NEXT_PUBLIC_PERF_DEBUG === "1") {
+  import("@/lib/web-vitals-debug")
+    .then((m) => m.initWebVitalsDebug())
+    .catch(() => {
+      /* non-fatal: debug instrumentation is best-effort */
+    });
+}
+
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

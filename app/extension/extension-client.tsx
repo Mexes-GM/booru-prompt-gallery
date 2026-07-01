@@ -1039,7 +1039,7 @@ export default function ExtensionClient() {
       {/* Pocket Header - Replicates Main App Header Style */}
       <header className="w-full shrink-0 border-b glass-effect py-2.5 px-3 flex items-center justify-between rounded-lg">
         <div className="flex items-center space-x-2">
-          <h1 className="text-sm font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent leading-none">
+          <h1 className="text-sm font-bold text-foreground leading-none">
             Booru Prompt Gallery
           </h1>
           <div className="flex items-center gap-1.5">

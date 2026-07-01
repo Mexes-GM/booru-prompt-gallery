@@ -1,5 +1,5 @@
 import { useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -57,6 +57,7 @@ import { SCALE_CONFIG } from "@/components/masonry-grid"
 const PARTICLES = Array.from({ length: 12 })
 
 const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
+    const prefersReducedMotion = useReducedMotion()
     return (
         <motion.div
             initial={{ opacity: 0 }}
@@ -78,7 +79,7 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
             }}
         >
             <div className="relative flex flex-col items-center justify-center pointer-events-none">
-                {PARTICLES.map((_, i) => (
+                {!prefersReducedMotion && PARTICLES.map((_, i) => (
                     <motion.div
                         key={i}
                         initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
@@ -94,18 +95,18 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
                 ))}
 
                 <motion.div
-                    initial={{ scale: 0, rotate: -45 }}
+                    initial={prefersReducedMotion ? { scale: 1, rotate: 0 } : { scale: 0, rotate: -45 }}
                     animate={{ scale: 1, rotate: 0 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 20 }}
                     className="bg-gradient-to-br from-green-400 to-green-600 rounded-full p-4 shadow-[0_0_20px_rgba(74,222,128,0.4)] relative z-10"
                 >
                     <Check className="h-8 w-8 text-white stroke-[3px]" />
                 </motion.div>
 
                 <motion.span
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { delay: 0.1 }}
                     className="mt-3 text-white font-bold tracking-widest text-sm uppercase drop-shadow-lg"
                 >
                     Copied
@@ -235,6 +236,7 @@ export const MasonryItem = memo(function MasonryItem({
     onSendToConvert,
     showCategoryTagBadges = true,
 }: MasonryItemProps) {
+    const prefersReducedMotion = useReducedMotion()
     const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
     const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
 
@@ -531,10 +533,10 @@ export const MasonryItem = memo(function MasonryItem({
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-green-500/40 shadow-sm"
+                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-green-500/40 shadow-sm"
                             >
                                 <motion.div
-                                   animate={{ scale: [1, 1.2, 1] }}
+                                   animate={prefersReducedMotion ? undefined : { scale: [1, 1.2, 1] }}
                                    transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
                                 >
                                     <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
@@ -548,10 +550,10 @@ export const MasonryItem = memo(function MasonryItem({
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-blue-500/40 shadow-sm"
+                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm"
                             >
                                 <motion.div
-                                   animate={{ rotate: [0, 10, -10, 0] }}
+                                   animate={prefersReducedMotion ? undefined : { rotate: [0, 10, -10, 0] }}
                                    transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
                                 >
                                     <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
@@ -570,12 +572,12 @@ export const MasonryItem = memo(function MasonryItem({
                                     stiffness: 400,
                                     damping: 30
                                 }}
-                                className={`absolute inset-0 z-20 flex flex-col justify-end p-2 transition-colors ${isSelected ? 'bg-black/20 backdrop-blur-[1px]' : 'bg-transparent'}`}
+                                className={`absolute inset-0 z-20 flex flex-col justify-end p-2 transition-colors ${isSelected ? 'bg-black/20' : 'bg-transparent'}`}
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 {/* Inline Selection Bar */}
                                 <motion.div
-                                    className="flex items-center justify-between w-full max-w-[220px] mx-auto bg-background/85 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl p-1.5 gap-1.5 ring-1 ring-black/5"
+                                    className="flex items-center justify-between w-full max-w-[220px] mx-auto bg-background/85 border border-white/10 shadow-2xl rounded-2xl p-1.5 gap-1.5 ring-1 ring-black/5"
                                     initial={{ scale: 0.9, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 25 }}
@@ -681,7 +683,7 @@ export const MasonryItem = memo(function MasonryItem({
                     {tagCountIndicator && includeCharacters && (
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help z-10">
+                                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help z-10">
                                     <Users className="w-3.5 h-3.5 opacity-70" />
                                     {tagCountIndicator}
                                 </div>
@@ -699,7 +701,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 {classifiedTags.appearance.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
                                                 <Smile className="w-2.5 h-2.5 opacity-70" />
                                                 {classifiedTags.appearance.length}
                                             </div>
@@ -712,7 +714,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 {classifiedTags.clothing.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
                                                 <Shirt className="w-2.5 h-2.5 opacity-70" />
                                                 {classifiedTags.clothing.length}
                                             </div>
@@ -725,7 +727,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 {classifiedTags.pose.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
                                                 <User className="w-2.5 h-2.5 opacity-70" />
                                                 {classifiedTags.pose.length}
                                             </div>
@@ -738,7 +740,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 {classifiedTags.scenery.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
                                                 <Mountain className="w-2.5 h-2.5 opacity-70" />
                                                 {classifiedTags.scenery.length}
                                             </div>
@@ -755,7 +757,7 @@ export const MasonryItem = memo(function MasonryItem({
                         {totalTagsCount > 0 && (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help">
+                                    <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help">
                                         <Tag className="w-3.5 h-3.5 opacity-70" />
                                         {totalTagsCount}
                                     </div>
@@ -786,7 +788,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 <Button
                                     size="icon"
                                     variant="secondary"
-                                    className={`glass-effect ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
+                                    className={`bg-background/80 border border-border/50 ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
                                     onClick={(e) => {
                                         e.preventDefault()
                                         e.stopPropagation()
@@ -809,7 +811,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 <Button
                                     size="icon"
                                     variant="secondary"
-                                    className={`glass-effect ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
+                                    className={`bg-background/80 border border-border/50 ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
                                     onClick={() => downloadImage(post)}
                                     aria-label="Download image"
                                 >
@@ -971,10 +973,10 @@ export const MasonryItem = memo(function MasonryItem({
                                     initial={{ opacity: 0, scale: 0.8 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-green-500/40 shadow-sm"
+                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-green-500/40 shadow-sm"
                                 >
                                     <motion.div
-                                       animate={{ scale: [1, 1.2, 1] }}
+                                       animate={prefersReducedMotion ? undefined : { scale: [1, 1.2, 1] }}
                                        transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
                                     >
                                         <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
@@ -988,10 +990,10 @@ export const MasonryItem = memo(function MasonryItem({
                                     initial={{ opacity: 0, scale: 0.8 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 backdrop-blur-md border border-blue-500/40 shadow-sm"
+                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm"
                                 >
                                     <motion.div
-                                       animate={{ rotate: [0, 10, -10, 0] }}
+                                       animate={prefersReducedMotion ? undefined : { rotate: [0, 10, -10, 0] }}
                                        transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
                                     >
                                         <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
@@ -1018,7 +1020,7 @@ export const MasonryItem = memo(function MasonryItem({
                         <img
                             key={retryKey}
                             src={displayFileUrl!}
-                            alt={`${itemProvider} post ${post.id}`}
+                            alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
                             className="absolute inset-0 w-full h-full object-cover"
                             sizes="128px"
                             loading="lazy"
@@ -1037,7 +1039,7 @@ export const MasonryItem = memo(function MasonryItem({
                         {tagCountIndicator && includeCharacters && (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help z-10">
+                                    <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help z-10">
                                         <Users className="w-3 h-3 opacity-70" />
                                         {tagCountIndicator}
                                     </div>
@@ -1055,7 +1057,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     {classifiedTags.appearance.length > 0 && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
                                                     <Smile className="w-2.5 h-2.5 opacity-70" />
                                                     {classifiedTags.appearance.length}
                                                 </div>
@@ -1068,7 +1070,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     {classifiedTags.clothing.length > 0 && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
                                                     <Shirt className="w-2.5 h-2.5 opacity-70" />
                                                     {classifiedTags.clothing.length}
                                                 </div>
@@ -1081,7 +1083,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     {classifiedTags.pose.length > 0 && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
                                                     <User className="w-2.5 h-2.5 opacity-70" />
                                                     {classifiedTags.pose.length}
                                                 </div>
@@ -1094,7 +1096,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     {classifiedTags.scenery.length > 0 && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 backdrop-blur-sm shadow-sm cursor-help">
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
                                                     <Mountain className="w-2.5 h-2.5 opacity-70" />
                                                     {classifiedTags.scenery.length}
                                                 </div>
@@ -1111,7 +1113,7 @@ export const MasonryItem = memo(function MasonryItem({
                             {totalTagsCount > 0 && (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
-                                        <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm cursor-help">
+                                        <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help">
                                             <Tag className="w-3 h-3 opacity-70" />
                                             {totalTagsCount}
                                         </div>

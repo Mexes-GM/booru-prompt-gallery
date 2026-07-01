@@ -95,9 +95,7 @@
   }
 
   .gradient-text {
-    background-image: linear-gradient(to right, hsl(var(--primary)), hsl(var(--primary) / 0.6));
-    background-clip: text;
-    color: transparent;
+    color: hsl(var(--foreground));
   }
 
   /* Image container with 2:3 aspect ratio */
@@ -342,8 +340,20 @@ html.extension-mode {
   color: hsl(var(--muted-foreground));
 }
 
-/* Smooth theme transitions */
-* {
+/* Smooth transitions — scoped to interactive elements only.
+ * A whole-DOM `* { transition }` forces style recalculation across every node
+ * on hover/scroll (jank with hundreds of cards). Theme switching does not rely
+ * on this: ThemeProvider uses disableTransitionOnChange. */
+a,
+button,
+[role="button"],
+[role="tab"],
+[role="menuitem"],
+input,
+select,
+textarea,
+.card-hover,
+[data-radix-collection-item] {
   transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
@@ -409,6 +419,25 @@ nav,
     transform: scale(0.98);
     transition: transform 0.1s ease;
   }
+}
+
+/* Minimum 44px touch targets on coarse pointers (Apple HIG / Material 48dp).
+ * Desktop keeps the compact height; only touch devices get the larger hit area. */
+@media (pointer: coarse) {
+  .card-content-small .button-group button,
+  .card-content-medium .button-group button {
+    min-height: 44px;
+  }
+  button,
+  [role="button"],
+  a[role="button"] {
+    touch-action: manipulation;
+  }
+}
+
+/* Tabular figures for data-heavy numeric fields (counters, min-tags, weights). */
+input[type="number"] {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Safe area padding for fixed elements on notched devices */
