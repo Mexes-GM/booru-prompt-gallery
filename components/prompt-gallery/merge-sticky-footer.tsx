@@ -456,7 +456,7 @@ const MergeStickyFooterComponent = ({
                                         </motion.div>
                                     </div>
                                 </Button>
-                                <Button variant="ghost" size="icon" onClick={onExit} className="h-8 w-8 rounded-full hover:bg-muted">
+                                <Button variant="ghost" size="icon" onClick={onExit} className="h-8 w-8 rounded-full hover:bg-muted" aria-label="Exit merge mode">
                                     <X className="w-4 h-4" />
                                 </Button>
                             </div>

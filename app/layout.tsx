@@ -1,6 +1,6 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
-import { Inter } from "next/font/google"
+import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
@@ -10,10 +10,20 @@ import { Analytics } from '@vercel/analytics/next'
 import { CloudflareAnalytics } from '@/components/analytics/cloudflare-analytics'
 import ErrorBoundary from '@/components/error-boundary'
 
-const inter = Inter({
+// Neutral, technical sans with character (anti-slop, not "toon"). Exposed as a
+// CSS variable so Tailwind's `font-sans` (= var(--font-sans)) picks it up.
+const fontSans = Geist({
   subsets: ["latin"],
   display: 'swap',
   preload: true,
+  variable: '--font-sans',
+})
+
+// Monospace for data-heavy numeric fields; wired to Tailwind's `font-mono`.
+const fontMono = Geist_Mono({
+  subsets: ["latin"],
+  display: 'swap',
+  variable: '--font-mono',
 })
 
 // Base URL: set NEXT_PUBLIC_APP_URL in your deployment environment (Vercel or Netlify).
@@ -128,8 +138,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: dark)', color: '#000000' },
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#212936' },
+    { media: '(prefers-color-scheme: light)', color: '#f6f9fb' },
   ],
 }
 
@@ -159,7 +169,7 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className} suppressHydrationWarning>
+      <body className={`${fontSans.variable} ${fontMono.variable} font-sans`} suppressHydrationWarning>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 z-50 bg-background px-4 py-2 border rounded shadow-md">
           Skip to content
         </a>

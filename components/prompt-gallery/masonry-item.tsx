@@ -525,7 +525,7 @@ export const MasonryItem = memo(function MasonryItem({
         const imageHeight = height - footerHeight
 
         return (
-            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300">
+            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300 border-transparent shadow-none">
                 <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
                     {isPreviouslyCopied && (
                         <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
@@ -701,7 +701,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 {classifiedTags.appearance.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
                                                 <Smile className="w-2.5 h-2.5 opacity-70" />
                                                 {classifiedTags.appearance.length}
                                             </div>
@@ -714,7 +714,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 {classifiedTags.clothing.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
                                                 <Shirt className="w-2.5 h-2.5 opacity-70" />
                                                 {classifiedTags.clothing.length}
                                             </div>
@@ -727,7 +727,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 {classifiedTags.pose.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
                                                 <User className="w-2.5 h-2.5 opacity-70" />
                                                 {classifiedTags.pose.length}
                                             </div>
@@ -740,7 +740,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 {classifiedTags.scenery.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
+                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
                                                 <Mountain className="w-2.5 h-2.5 opacity-70" />
                                                 {classifiedTags.scenery.length}
                                             </div>
@@ -757,7 +757,7 @@ export const MasonryItem = memo(function MasonryItem({
                         {totalTagsCount > 0 && (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help">
+                                    <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tabular-nums tracking-wide flex items-center gap-1 shadow-sm cursor-help">
                                         <Tag className="w-3.5 h-3.5 opacity-70" />
                                         {totalTagsCount}
                                     </div>
@@ -890,28 +890,28 @@ export const MasonryItem = memo(function MasonryItem({
                                 <DropdownMenuItem onClick={() => copyCategory('scenery')}>
                                     <Mountain className="mr-2 h-4 w-4" />
                                     <span className="flex-1">Scenery</span>
-                                    <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                    <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
                                         {classifiedTags.scenery.length}
                                     </span>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => copyCategory('pose')}>
                                     <User className="mr-2 h-4 w-4" />
                                     <span className="flex-1">Pose</span>
-                                    <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                    <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
                                         {classifiedTags.pose.length}
                                     </span>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => copyCategory('clothing')}>
                                     <Shirt className="mr-2 h-4 w-4" />
                                     <span className="flex-1">Clothing</span>
-                                    <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                    <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
                                         {classifiedTags.clothing.length}
                                     </span>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => copyCategory('appearance')}>
                                     <Smile className="mr-2 h-4 w-4" />
                                     <span className="flex-1">Appearance</span>
-                                    <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                    <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
                                         {classifiedTags.appearance.length}
                                     </span>
                                 </DropdownMenuItem>
@@ -960,7 +960,7 @@ export const MasonryItem = memo(function MasonryItem({
 
     // List View
     return (
-        <Card className="overflow-hidden card-hover relative transition-all duration-300">
+        <Card className="overflow-hidden card-hover relative transition-all duration-300 border-transparent shadow-none">
             <CardContent className="p-4 sm:p-6">
                 <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                     <div
@@ -1057,7 +1057,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     {classifiedTags.appearance.length > 0 && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
                                                     <Smile className="w-2.5 h-2.5 opacity-70" />
                                                     {classifiedTags.appearance.length}
                                                 </div>
@@ -1070,7 +1070,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     {classifiedTags.clothing.length > 0 && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
                                                     <Shirt className="w-2.5 h-2.5 opacity-70" />
                                                     {classifiedTags.clothing.length}
                                                 </div>
@@ -1083,7 +1083,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     {classifiedTags.pose.length > 0 && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
                                                     <User className="w-2.5 h-2.5 opacity-70" />
                                                     {classifiedTags.pose.length}
                                                 </div>
@@ -1096,7 +1096,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     {classifiedTags.scenery.length > 0 && (
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium flex items-center gap-0.5 shadow-sm cursor-help">
+                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
                                                     <Mountain className="w-2.5 h-2.5 opacity-70" />
                                                     {classifiedTags.scenery.length}
                                                 </div>
@@ -1248,28 +1248,28 @@ export const MasonryItem = memo(function MasonryItem({
                                     <DropdownMenuItem onClick={() => copyCategory('scenery')}>
                                         <Mountain className="mr-2 h-4 w-4" />
                                         <span className="flex-1">Scenery</span>
-                                        <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                        <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
                                             {classifiedTags.scenery.length}
                                         </span>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => copyCategory('pose')}>
                                         <User className="mr-2 h-4 w-4" />
                                         <span className="flex-1">Pose</span>
-                                        <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                        <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
                                             {classifiedTags.pose.length}
                                         </span>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => copyCategory('clothing')}>
                                         <Shirt className="mr-2 h-4 w-4" />
                                         <span className="flex-1">Clothing</span>
-                                        <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                        <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
                                             {classifiedTags.clothing.length}
                                         </span>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => copyCategory('appearance')}>
                                         <Smile className="mr-2 h-4 w-4" />
                                         <span className="flex-1">Appearance</span>
-                                        <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
+                                        <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
                                             {classifiedTags.appearance.length}
                                         </span>
                                     </DropdownMenuItem>

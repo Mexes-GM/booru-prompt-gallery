@@ -11,19 +11,19 @@
   --card-foreground: 222 47% 11%;
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
-  --primary: 262 65% 55%; /* Violeta accesible */
+  --primary: 262 48% 54%; /* Violeta desaturado (<80% sat) — menos "AI neon", mantiene identidad */
   --primary-foreground: 0 0% 100%; /* Blanco, contraste > 4.5:1 */
   --secondary: 220 14% 92%; /* Gris suave */
   --secondary-foreground: 222 47% 17%;
   --muted: 220 15% 90%;
   --muted-foreground: 220 9% 40%; /* Contraste > 4.5 sobre fondo muted */
-  --accent: 173 70% 38%; /* Verde azulado – contrastado */
-  --accent-foreground: 0 0% 100%;
+  --accent: 220 14% 90%; /* Acento neutro — hovers de ghost/outline en gris (un solo acento cromático) */
+  --accent-foreground: 222 47% 17%;
   --destructive: 0 72% 50%; /* Rojo accesible */
   --destructive-foreground: 0 0% 100%;
   --border: 215 22% 85%;
   --input: 215 22% 85%;
-  --ring: 262 65% 55%;
+  --ring: 262 48% 54%;
   --radius: 0.75rem;
   /* Paleta de gráficos con diferenciación de tono y luminosidad suficiente */
   --chart-1: 262 65% 55%;
@@ -41,19 +41,19 @@
   --card-foreground: 210 25% 92%;
   --popover: 222 28% 22%;
   --popover-foreground: 210 25% 92%;
-  --primary: 265 60% 63%; /* Un poco más luminoso para sombreado oscuro */
+  --primary: 265 50% 64%; /* Violeta desaturado para dark (menos neon) */
   --primary-foreground: 0 0% 100%;
   --secondary: 222 22% 28%;
   --secondary-foreground: 210 25% 92%;
   --muted: 222 20% 30%;
   --muted-foreground: 214 18% 80%;
-  --accent: 173 65% 40%;
-  --accent-foreground: 0 0% 100%;
+  --accent: 222 22% 30%; /* Acento neutro para hovers en dark (un solo acento cromático) */
+  --accent-foreground: 210 25% 92%;
   --destructive: 0 65% 50%;
   --destructive-foreground: 0 0% 100%;
   --border: 222 18% 32%;
   --input: 222 18% 32%;
-  --ring: 265 60% 63%;
+  --ring: 265 50% 64%;
   --chart-1: 265 60% 63%;
   --chart-2: 173 60% 46%;
   --chart-3: 31 85% 58%;
