@@ -469,108 +469,12 @@ const fetcher = async (url: string) => {
 
 
 
-// Function to process user input tags for Danbooru API
-// Danbooru API allows 2 tags total. When using order:rank or order:random, we limit to 1 user tag. When not using order, we allow 2 user tags.
-const processTagsForAPI = (tags: string, order: string = 'popular', extraTagsCount: number = 0): string => {
-  if (!tags.trim()) return ''
-
-  // Split by commas and process each tag
-  const rawTags = tags
-    .split(',')
-    .map(tag => tag.trim())
-    .filter(tag => tag.length > 0)
-
-  const metaTagPatterns = [
-    /^tagcount:/i,
-    /^rating:/i,
-    /^order:/i,
-    /^sort:/i,
-    /^limit:/i,
-    /^status:/i,
-    /^user:/i,
-    /^approver:/i,
-    /^id:/i,
-    /^width:/i,
-    /^height:/i,
-    /^mpixels:/i,
-    /^score:/i,
-    /^favcount:/i,
-    /^date:/i,
-    /^source:/i,
-    /^pool:/i,
-    /^parent:/i,
-    /^md5:/i,
-    /^filetype:/i,
-    /^random:/i,
-  ]
-
-  const normalTags: string[] = []
-  const metaTags: string[] = []
-
-  rawTags.forEach(tag => {
-    // Check if it matches any meta tag pattern
-    if (metaTagPatterns.some(pattern => pattern.test(tag))) {
-      metaTags.push(tag.replace(/\s+/g, '_'))
-    } else {
-      normalTags.push(tag.replace(/\s+/g, '_'))
-    }
-  })
-
-  // Check if any meta tag is an order tag
-  const hasOrderTag = metaTags.some(tag => /^order:/i.test(tag) || /^random:/i.test(tag))
-
-  // For recent posts (no order tag), allow 2 user tags. For popular/random posts (with order tag), limit to 1 user tag
-  // We also subtract any extra tags (like tagcount) from the limit
-  const baseMaxTags = (order === 'recent' && !hasOrderTag) ? 2 : 1
-  const maxTags = Math.max(0, baseMaxTags - extraTagsCount)
-
-  const allowedNormalTags = normalTags.slice(0, maxTags)
-
-  return [...allowedNormalTags, ...metaTags].join(' ')
-}
-
-// Function to check if user entered multiple tags and if it's allowed
-export const hasMultipleTags = (tags: string, order: string = 'popular', extraTagsCount: number = 0): boolean => {
-  if (!tags.trim()) return false
-
-  const rawTags = tags
-    .split(',')
-    .map(tag => tag.trim())
-    .filter(tag => tag.length > 0)
-
-  const metaTagPatterns = [
-    /^tagcount:/i,
-    /^rating:/i,
-    /^order:/i,
-    /^sort:/i,
-    /^limit:/i,
-    /^status:/i,
-    /^user:/i,
-    /^approver:/i,
-    /^id:/i,
-    /^width:/i,
-    /^height:/i,
-    /^mpixels:/i,
-    /^score:/i,
-    /^favcount:/i,
-    /^date:/i,
-    /^source:/i,
-    /^pool:/i,
-    /^parent:/i,
-    /^md5:/i,
-    /^filetype:/i,
-    /^random:/i,
-  ]
-
-  const normalTags = rawTags.filter(tag => !metaTagPatterns.some(pattern => pattern.test(tag)))
-  const hasOrderTag = rawTags.some(tag => /^order:/i.test(tag) || /^random:/i.test(tag))
-  const tagCount = normalTags.length
-
-  const baseMaxTags = (order === 'recent' && !hasOrderTag) ? 2 : 1
-  const maxTags = Math.max(0, baseMaxTags - extraTagsCount)
-
-  return tagCount > maxTags
-}
+// Per-provider fixed tag search limits, exclusion/order/rating counting rules, and the
+// hasMultipleTags/processTagsForAPI/getProviderTagLimit helpers now live in a dependency-free
+// module (lib/booru/tag-limits.ts) so they can be unit-tested without pulling in React/Next.
+// See that file for the full empirical/documentation rationale behind each provider's limit.
+export { hasMultipleTags, getProviderTagLimit, isTagCountSupportedProvider } from './booru/tag-limits'
+import { processTagsForAPI, mapRatingForProvider, isTagCountSupportedProvider } from './booru/tag-limits'
 
 // Function to check if user entered more than 2 search terms total
 export const hasMoreThanTwoTerms = (tags: string): boolean => {
@@ -584,46 +488,10 @@ export const hasMoreThanTwoTerms = (tags: string): boolean => {
   return tagCount > 2
 }
 
-// Function to get the final query tags that will be sent to Danbooru API
-export const getFinalQueryTags = (userTags: string, ratingFilter: string, order: string, tagCountFilter?: string, provider: BooruProvider = 'danbooru'): string[] => {
-  const tags: string[] = []
-
-  // Add rating filter if not 'all'
-  if (ratingFilter && ratingFilter !== 'all') {
-    tags.push(ratingFilter)
-  }
-
-  // Add tag count filter if present and supported (only Danbooru)
-  if (tagCountFilter && provider === 'danbooru') {
-    // Use ">="  operator to include the exact value and above
-    tags.push(`tagcount:>=${tagCountFilter.replace(/\D/g, '')}`)
-  }
-
-  // Add order tag if popular or random
-  if (order === 'popular') {
-    tags.push('order:rank')
-  } else if (order === 'random') {
-    // For random, we use random:N instead of order:random for better performance
-    tags.push('random:60')
-  }
-
-  // Calculate extra tags count (rating + tagcount)
-  // Note: order tags don't count towards the limit in the same way — being conservative here.
-  // Actually, order:rank counts as 1. rating:x counts as 1. tagcount:x counts as 1.
-  // processTagsForAPI handles the limit for *user entered* tags.
-  // We need to pass how many *system* tags we are adding that eat into the limit.
-  // Danbooru free limit is 2 tags.
-  // Metatags like tagcount and rating do not count towards the 2-tag limit.
-  const extraTagsCount = 0
-
-  // Add processed user tags
-  const processedUserTags = processTagsForAPI(userTags, order, extraTagsCount)
-  if (processedUserTags) {
-    tags.push(...processedUserTags.split(' '))
-  }
-
-  return tags
-}
+// getFinalQueryTags also lives in lib/booru/tag-limits.ts (pure, unit-tested) and is
+// re-exported here for backwards compatibility with existing imports.
+export { getFinalQueryTags, getFinalQueryTagsWithMeta, detectMisusedMetatags } from './booru/tag-limits'
+export type { QueryTagMeta, FinalQueryTagsResult, MisusedMetatagWarning } from './booru/tag-limits'
 
 const DANBOORU_ONLY_FIELDS = 'id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,image_width,image_height'
 
@@ -661,18 +529,19 @@ function buildDirectDanbooruUrl(
 }
 
 export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string) => {
-  // E621 uses rating:safe instead of rating:general
-  const effectiveRating = (provider === 'e621' && ratingFilter === 'rating:general')
-    ? 'rating:safe'
-    : ratingFilter
+  // Provider-specific rating vocabulary mapping (e.g. e621 has no "general" tier —
+  // see lib/booru/tag-limits.ts for the full empirical rationale).
+  const effectiveRating = mapRatingForProvider(ratingFilter, provider)
 
   const ratingPart = effectiveRating && effectiveRating !== 'all' ? `${effectiveRating} ` : ''
-  // Apply tag count filter for Danbooru and E621
-  // Using >= operator to include the exact value and above (minimum tag count = exact value or more)
-  const tagCountPart = (tagCountFilter && (provider === 'danbooru' || provider === 'e621')) ? `tagcount:>=${tagCountFilter.replace(/\D/g, '')} ` : ''
+  // Tag count filter: supported (confirmed empirically) on Danbooru, Aibooru and e621 —
+  // NOT on Gelbooru/Rule34. See lib/booru/tag-limits.ts for the full rationale.
+  const tagCountPart = (tagCountFilter && isTagCountSupportedProvider(provider)) ? `tagcount:>=${tagCountFilter.replace(/\D/g, '')} ` : ''
 
-  const extraTagsCount = 0
-  const processedTags = processTagsForAPI(tags, order, extraTagsCount)
+  // order:rank / random:N are appended to the query later (below, per-provider) and are
+  // confirmed to consume one slot of the provider's tag limit — same as a normal tag.
+  const systemOrderTagCount = (order === 'popular' || order === 'random') ? 1 : 0
+  const processedTags = processTagsForAPI(tags, provider, systemOrderTagCount)
 
   const query = processedTags ? `${ratingPart}${tagCountPart}${processedTags}` : `${ratingPart}${tagCountPart}`.trim()
   const encodedQuery = encodeURIComponent(query)

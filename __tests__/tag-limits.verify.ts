@@ -10,7 +10,7 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/tag-limits.verify.ts
  */
-import { hasMultipleTags, getFinalQueryTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider } from '../lib/booru/tag-limits'
+import { hasMultipleTags, getFinalQueryTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags } from '../lib/booru/tag-limits'
 
 let passed = 0
 let failed = 0
@@ -177,6 +177,77 @@ assert(!gelbooruWithTagcount.tags.some(t => /^tagcount:/.test(t.value)), 'Gelboo
 
 const rule34WithTagcount = getFinalQueryTagsWithMeta('', 'all', 'recent', '20', 'rule34')
 assert(!rule34WithTagcount.tags.some(t => /^tagcount:/.test(t.value)), 'Rule34: tagcount filter is never applied (unsupported)')
+
+// ── detectMisusedMetatags: warns advanced users who type raw metatags by hand ──
+// Only triggers on tags present in the raw user input string — never on tags the app itself
+// generates (order:rank from the sort dropdown, rating:general from the toggle, etc).
+
+// order: typed on Gelbooru/Rule34 — unrecognized, suggest sort:
+const gelOrderWarn = detectMisusedMetatags('1girl, order:score', 'gelbooru')
+assert(gelOrderWarn.length === 1 && gelOrderWarn[0].tag === 'order:score', 'Gelbooru: order:score is flagged')
+assert(gelOrderWarn[0].suggestion === 'sort:score', 'Gelbooru: order:score suggests sort:score')
+
+const r34OrderWarn = detectMisusedMetatags('1girl, order:score', 'rule34')
+assert(r34OrderWarn.length === 1 && r34OrderWarn[0].suggestion === 'sort:score', 'Rule34: order:score suggests sort:score')
+
+// random:N typed on Gelbooru/Rule34 — unrecognized, suggest sort:random
+const gelRandomWarn = detectMisusedMetatags('1girl, random:50', 'gelbooru')
+assert(gelRandomWarn.length === 1 && gelRandomWarn[0].suggestion === 'sort:random', 'Gelbooru: random:50 suggests sort:random')
+
+// sort: typed on Danbooru/Aibooru/e621 — unrecognized there, suggest order:
+const dbSortWarn = detectMisusedMetatags('1girl, sort:score', 'danbooru')
+assert(dbSortWarn.length === 1 && dbSortWarn[0].suggestion === 'order:score', 'Danbooru: sort:score suggests order:score')
+
+const aibooruSortWarn = detectMisusedMetatags('1girl, sort:score', 'aibooru')
+assert(aibooruSortWarn.length === 1 && aibooruSortWarn[0].suggestion === 'order:score', 'Aibooru: sort:score suggests order:score')
+
+const e621SortWarn = detectMisusedMetatags('1girl, sort:score', 'e621')
+assert(e621SortWarn.length === 1 && e621SortWarn[0].suggestion === 'order:score', 'e621: sort:score suggests order:score')
+
+const dbSortRandomWarn = detectMisusedMetatags('1girl, sort:random', 'danbooru')
+assert(dbSortRandomWarn.length === 1 && dbSortRandomWarn[0].suggestion === 'random:N', 'Danbooru: sort:random suggests random:N (special case)')
+
+// tagcount: typed on Gelbooru/Rule34 — no equivalent exists, warns without a suggestion
+const gelTagcountWarn = detectMisusedMetatags('1girl, tagcount:>=20', 'gelbooru')
+assert(gelTagcountWarn.length === 1 && gelTagcountWarn[0].tag === 'tagcount:>=20', 'Gelbooru: tagcount:>=20 is flagged')
+assert(gelTagcountWarn[0].suggestion === undefined, 'Gelbooru: tagcount: warning has no suggestion (no equivalent exists)')
+
+const r34TagcountWarn = detectMisusedMetatags('1girl, tagcount:>=20', 'rule34')
+assert(r34TagcountWarn.length === 1, 'Rule34: tagcount:>=20 is flagged')
+
+// tagcount: typed on Danbooru/Aibooru/e621 — supported, never flagged
+const dbTagcountOk = detectMisusedMetatags('1girl, tagcount:>=20', 'danbooru')
+assert(dbTagcountOk.length === 0, 'Danbooru: tagcount:>=20 is never flagged (supported)')
+
+// rating:general typed on e621 — silently ignored there, suggest rating:safe
+const e621RatingGeneralWarn = detectMisusedMetatags('1girl, rating:general', 'e621')
+assert(e621RatingGeneralWarn.length === 1 && e621RatingGeneralWarn[0].suggestion === 'rating:safe', 'e621: rating:general suggests rating:safe')
+
+// rating:general typed on Danbooru/Aibooru/Gelbooru/Rule34 — valid everywhere, never flagged
+;(['danbooru', 'aibooru', 'gelbooru', 'rule34'] as const).forEach(p => {
+  const warn = detectMisusedMetatags('1girl, rating:general', p)
+  assert(warn.length === 0, `${p}: rating:general is never flagged (valid there)`)
+})
+
+// rating:safe typed on Danbooru/Aibooru — technically valid but means "sensitive", not "general"
+const dbRatingSafeWarn = detectMisusedMetatags('1girl, rating:safe', 'danbooru')
+assert(dbRatingSafeWarn.length === 1 && dbRatingSafeWarn[0].suggestion === 'rating:general', 'Danbooru: rating:safe warns and suggests rating:general')
+
+const aibooruRatingSafeWarn = detectMisusedMetatags('1girl, rating:safe', 'aibooru')
+assert(aibooruRatingSafeWarn.length === 1, 'Aibooru: rating:safe warns')
+
+// rating:safe typed on e621/Gelbooru/Rule34 — correct/expected there, never flagged
+;(['e621', 'gelbooru', 'rule34'] as const).forEach(p => {
+  const warn = detectMisusedMetatags('1girl, rating:safe', p)
+  assert(warn.length === 0, `${p}: rating:safe is never flagged (correct there)`)
+})
+
+// Normal tags and free filters never trigger any warning, on any provider.
+const noWarnings = detectMisusedMetatags('1girl, solo, blue_eyes, -nude', 'gelbooru')
+assert(noWarnings.length === 0, 'Normal tags + exclusion never trigger a warning')
+
+// Empty input never triggers a warning.
+assert(detectMisusedMetatags('', 'gelbooru').length === 0, 'Empty input never triggers a warning')
 
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

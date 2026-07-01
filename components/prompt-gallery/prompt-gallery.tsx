@@ -71,7 +71,7 @@ import Image from "next/image"
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion"
 import { renderIcon } from "@/components/prompt-gallery/save-favorite-button"
 import {
-  hasMultipleTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, BooruPost, BooruProvider, isAibooruPost, apiUrl,
+  hasMultipleTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags, BooruPost, BooruProvider, isAibooruPost, apiUrl,
 } from "@/lib/api-client"
 import { favKey } from "@/lib/favorites-logic"
 
@@ -131,6 +131,7 @@ import { MasonryGrid } from "@/components/masonry-grid"
 import { useBooruSearch } from "@/hooks/use-booru-search"
 import { useBooruFavorites } from "@/hooks/use-booru-favorites"
 import { useSavedArtists } from "@/hooks/use-saved-artists"
+import { useDetailedBackgrounds } from "@/hooks/use-detailed-backgrounds"
 import { cn } from "@/lib/utils"
 import { MasonryItem } from "./masonry-item"
 import { ArtistGrid } from "./artist-card"
@@ -520,9 +521,6 @@ export function PromptGallery() {
   // Sync preferences with cloud
   usePreferencesSync()
 
-  const [detailedBackgroundsList, setDetailedBackgroundsList] = useState<string[][]>([])
-  const detailedBackgroundsLoadedRef = useRef(false)
-
   // 2. Local UI State & Persistence
   const [viewMode, setViewMode] = usePersistentState<"grid" | "list">(
     "grid",
@@ -592,22 +590,10 @@ export function PromptGallery() {
   )
   const deferredBackgroundMode = useDeferredValue(backgroundMode)
 
-  // Lazy-load the 188KB detailed-backgrounds.json only when the user actually
-  // switches to the "random" background mode (the only consumer of the scenery
-  // list). Previously this was fetched + parsed + mapped on EVERY mount, even
-  // for users who never touch Random backgrounds. Idempotent via a ref.
-  useEffect(() => {
-    if (backgroundMode !== 'random') return
-    if (detailedBackgroundsLoadedRef.current) return
-    detailedBackgroundsLoadedRef.current = true
-    fetch('/detailed-backgrounds.json')
-      .then(res => res.json())
-      .then(data => setDetailedBackgroundsList(data.map((item: any) => item.scenery)))
-      .catch(err => {
-        detailedBackgroundsLoadedRef.current = false // allow retry after a failure
-        console.error("Failed to load detailed backgrounds:", err)
-      })
-  }, [backgroundMode])
+  // Lazy-load the detailed-backgrounds.json scenery dataset only when the user
+  // actually selects "Detailed Random" (its only consumer). Shared hook keeps
+  // the fetch/validation identical to the extension client.
+  const detailedBackgroundsList = useDetailedBackgrounds(backgroundMode === 'detailed_random')
 
   const [simpleBackgroundReplacementTags, setSimpleBackgroundReplacementTags] = usePersistentState(
     "simple background, white background",
@@ -788,6 +774,9 @@ export function PromptGallery() {
   }, [cardScale, isMobile])
 
   const isTagCountValid = !search.tagCountFilter || /^\d+$/.test(search.tagCountFilter)
+  // Disabled for Gelbooru/Rule34: confirmed empirically that they have no tagcount: metatag
+  // (or any equivalent). A client-side post-fetch filter would be possible but was deliberately
+  // not implemented — see the TAGCOUNT_SUPPORTED_PROVIDERS comment in lib/booru/tag-limits.ts.
   const isTagCountSupported = isTagCountSupportedProvider(search.booruProvider)
 
   // --- Side Effects ---
@@ -2666,6 +2655,23 @@ export function PromptGallery() {
                         </AlertDescription>
                       </Alert>
                     )}
+
+                    {/* Warns advanced users who type raw metatags (rating:/order:/sort:/tagcount:)
+                        by hand when those metatags are invalid, unsupported, or misleading on the
+                        currently selected provider. Never triggers from tags the app itself
+                        generates (the rating toggle, sort dropdown, tag-count slider already
+                        handle per-provider syntax correctly) — only from what's typed manually. */}
+                    {detectMisusedMetatags(search.searchTags, search.booruProvider).map((warning, index) => (
+                      <Alert key={index} className="py-2 border-amber-300/60 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-900/20">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <AlertDescription className="text-xs text-amber-800 dark:text-amber-300">
+                          <span className="font-mono font-medium">{warning.tag}</span>: {warning.message}
+                          {warning.suggestion && (
+                            <> Try <span className="font-mono font-medium">{warning.suggestion}</span> instead.</>
+                          )}
+                        </AlertDescription>
+                      </Alert>
+                    ))}
                   </div>
                 </form>
               </CardContent>
