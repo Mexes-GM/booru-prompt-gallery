@@ -12,7 +12,7 @@ const COLOR_MAP: Record<string, { h: number; s: number; v: number }> = {
   indigo: { h: 275, s: 100, v: 100 },
   violet: { h: 285, s: 100, v: 100 },
   purple: { h: 300, s: 100, v: 100 },
-  magenta: { h: 300, s: 100, v: 100 },
+  magenta: { h: 315, s: 100, v: 100 },
   pink: { h: 330, s: 50, v: 100 },
   brown: { h: 30, s: 100, v: 50 },
   white: { h: 0, s: 0, v: 100 },

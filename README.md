@@ -61,9 +61,12 @@ Instead of manually copying tags from a booru post and cleaning them by hand, yo
 ### 🖼️ Background Options
 
 - **Keep Original** — Leave background tags as-is.
-- **Remove All** — Strip all background tags.
-- **Replace** — Remove backgrounds, inject custom replacement tags.
-- **Random** — Generate unique coherent background colors per card based on dominant colors in the image.
+- **Remove All** — Strip all background tags (simple colors + detailed scenery).
+- **Replace** — Remove backgrounds, inject your own custom replacement tags.
+- **Simple Random** — Generate a unique, coherent simple background per card (color/gradient/pattern) derived from the image's dominant colors via color theory.
+- **Detailed Random** — Swap the background for a full scenery set (e.g. `indoors, night, window`) sampled from a curated dataset.
+
+> Random modes are **seeded per card** (by post id), so each card gets a stable background that stays consistent between the on-card preview and every copy action.
 
 ### ⚡ Quick Actions
 
@@ -152,7 +155,7 @@ __tests__/         → Test suite
 | `npm run dev` | Start dev server |
 | `npm run build` | Production build |
 | `npm run lint` | Run linter |
-| `node __tests__/run-tests.cjs` | Run all tests |
+| `npx ts-node --project __tests__/tsconfig.json __tests__/<name>.verify.ts` | Run a test suite (e.g. `background-options.verify.ts`) |
 
 ## Architecture
 

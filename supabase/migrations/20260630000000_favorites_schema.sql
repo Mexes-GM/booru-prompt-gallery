@@ -178,9 +178,15 @@ drop policy if exists "favorites_owner_delete" on public.favorites;
 create policy "favorites_owner_delete" on public.favorites
   for delete using (auth.uid() = user_id);
 
+-- SECURITY FIX (post-incident, 2026-07-01): esta policy debe aplicar SOLO al
+-- service_role. Sin `to service_role`, Postgres la evalúa para PUBLIC (anon +
+-- authenticated también), y al combinarse con OR junto a favorites_owner_select
+-- (auth.uid() = user_id OR true), el resultado es `true` siempre — es decir,
+-- CUALQUIER usuario autenticado podía leer/escribir las filas de TODOS los
+-- usuarios. Este fue el bug que causó la fuga de favoritos entre cuentas.
 drop policy if exists "favorites_service_all" on public.favorites;
 create policy "favorites_service_all" on public.favorites
-  for all using (true) with check (true);
+  for all to service_role using (true) with check (true);
 
 -- favorite_folders
 drop policy if exists "favorite_folders_owner_select" on public.favorite_folders;
@@ -199,9 +205,11 @@ drop policy if exists "favorite_folders_owner_delete" on public.favorite_folders
 create policy "favorite_folders_owner_delete" on public.favorite_folders
   for delete using (auth.uid() = user_id);
 
+-- SECURITY FIX (post-incident, 2026-07-01): ver nota en favorites_service_all
+-- arriba — mismo bug, mismo fix (restringir a service_role).
 drop policy if exists "favorite_folders_service_all" on public.favorite_folders;
 create policy "favorite_folders_service_all" on public.favorite_folders
-  for all using (true) with check (true);
+  for all to service_role using (true) with check (true);
 
 -- booru_posts_cache: cache compartido, restringido a usuarios autenticados
 -- (select/insert/update), más un bypass total para el service role.
@@ -217,9 +225,14 @@ drop policy if exists "bpc_update" on public.booru_posts_cache;
 create policy "bpc_update" on public.booru_posts_cache
   for update using (auth.role() = 'authenticated');
 
+-- SECURITY FIX (post-incident, 2026-07-01): ver nota en favorites_service_all
+-- arriba. booru_posts_cache no tiene user_id (es cache compartido), así que
+-- aquí el bypass sin `to service_role` no filtraba datos de otros usuarios,
+-- pero sí permitía a cualquier anon/authenticated escribir libremente
+-- ignorando la restricción `auth.role() = 'authenticated'` de bpc_insert/update.
 drop policy if exists "bpc_service_all" on public.booru_posts_cache;
 create policy "bpc_service_all" on public.booru_posts_cache
-  for all using (true) with check (true);
+  for all to service_role using (true) with check (true);
 
 -- ============================================================================
 -- (Opcional) Limpieza de policies duplicadas detectadas en producción

@@ -1119,17 +1119,23 @@ export function PromptGallery() {
       // Character count filter
       const minCharPostCount = (includeCharacters && parseInt(search.appliedCharacterCountFilter)) || 0
       if (minCharPostCount > 0) {
-        if (!post.tag_string_character) {
-          const postProvider = post._provider || search.booruProvider
-          if (postProvider === 'gelbooru' || postProvider === 'rule34') {
-             // pass
-          } else {
-             return false
+        // The "Minimum Character Post Count" filter needs per-tag booru post counts,
+        // which are only available for Danbooru/Aibooru (fetchBatchTagCounts / the
+        // /api/booru/tags route). For every other provider (e621, gelbooru, rule34)
+        // `tagCounts` is always empty, so evaluating the filter there would drop EVERY
+        // post — that was the e621 "only 1-3 results" bug. Treat the filter as a no-op
+        // (pass-through) on providers without count support instead of silently
+        // filtering everything out.
+        const postProvider = post._provider || search.booruProvider
+        const supportsCharCounts = postProvider === 'danbooru' || postProvider === 'aibooru'
+
+        if (supportsCharCounts) {
+          if (!post.tag_string_character) {
+            return false
           }
-        } else {
           const charTags = post.tag_string_character.split(' ').filter(Boolean)
           let hasValidCount = false
-          
+
           for (const tag of charTags) {
             const count = tagCounts[tag]
             if (count === undefined) {
@@ -1139,11 +1145,12 @@ export function PromptGallery() {
               break
             }
           }
-          
+
           if (!hasValidCount) {
             return false
           }
         }
+        // else: provider has no per-tag counts — skip this filter entirely.
       }
 
       if (favs.showFavorites) return true

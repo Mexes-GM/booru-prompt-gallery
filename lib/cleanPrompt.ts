@@ -41,6 +41,7 @@ export interface CleanPromptOptions {
 
   randomBackgroundIncludeGradients?: boolean
   detailedBackgroundsList?: string[][]
+  backgroundSeed?: number
 }
 
 // --------------- Utilities ---------------
@@ -876,7 +877,8 @@ export function cleanPrompt(
         patternsEnabled: options.randomBackgroundPatterns,
         includeGradients: options.randomBackgroundIncludeGradients,
       },
-      options.detailedBackgroundsList
+      options.detailedBackgroundsList,
+      options.backgroundSeed
     )
   }
 

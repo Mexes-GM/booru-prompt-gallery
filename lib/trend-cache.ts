@@ -108,17 +108,33 @@ export async function tryAcquireTrendFetchLock(): Promise<boolean> {
 
 /**
  * Write fresh trends to the Supabase cache and release the fetch lock.
+ *
+ * An empty result is NOT persisted with the normal 24h TTL — that would
+ * poison the cache for a full day whenever getTrending() swallows an error
+ * and returns []. Instead, we just release the lock (leaving expires_at as
+ * whatever it already was, i.e. still expired) so the next request retries
+ * the Danbooru fetch instead of being stuck behind a day of empty results.
  */
 export async function setCachedTrends(trends: TrendItem[]): Promise<void> {
     try {
-        const now = new Date()
-        const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-
         const { data: existing } = await supabaseAdmin
             .from(TABLE)
             .select('id')
             .limit(1)
             .single()
+
+        if (!trends || trends.length === 0) {
+            if (existing) {
+                await supabaseAdmin
+                    .from(TABLE)
+                    .update({ fetching_since: null })
+                    .eq('id', existing.id)
+            }
+            return
+        }
+
+        const now = new Date()
+        const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
 
         if (existing) {
             await supabaseAdmin

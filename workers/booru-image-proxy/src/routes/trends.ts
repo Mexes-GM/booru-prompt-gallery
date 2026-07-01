@@ -226,34 +226,49 @@ export async function trendsHandler(
       )
     }
 
-    // 4. Store in Supabase cache (background)
+    const gotTrends = Array.isArray(trends) && trends.length > 0
+
+    // 4. Store in Supabase cache (background) — only persist non-empty results
+    // with the long 24h TTL. An empty/failed fetch just releases the lock so
+    // the NEXT request retries against Danbooru instead of being stuck behind
+    // a 24h cache of `[]` (this previously poisoned the cache for a full day
+    // whenever getTrending() swallowed an error and returned []).
     if (supabase) {
       ctx.waitUntil(
         (async () => {
           try {
             const now = new Date()
-            const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
 
-            if (existingId) {
+            if (gotTrends) {
+              const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+              if (existingId) {
+                await supabase
+                  .from(TABLE)
+                  .update({
+                    data: trends,
+                    fetched_at: now.toISOString(),
+                    expires_at: expiresAt.toISOString(),
+                    fetching_since: null, // release lock
+                  })
+                  .eq('id', existingId)
+              } else {
+                // Fallback: just insert a new fresh row if we somehow lost the ID
+                await supabase
+                  .from(TABLE)
+                  .insert({
+                    data: trends,
+                    fetched_at: now.toISOString(),
+                    expires_at: expiresAt.toISOString(),
+                    fetching_since: null,
+                  })
+              }
+            } else if (existingId) {
+              // Empty result — just release the lock, keep expires_at as-is
+              // (already expired, so the next request will retry the fetch).
               await supabase
                 .from(TABLE)
-                .update({
-                  data: trends,
-                  fetched_at: now.toISOString(),
-                  expires_at: expiresAt.toISOString(),
-                  fetching_since: null, // release lock
-                })
+                .update({ fetching_since: null })
                 .eq('id', existingId)
-            } else {
-              // Fallback: just insert a new fresh row if we somehow lost the ID
-              await supabase
-                .from(TABLE)
-                .insert({
-                  data: trends,
-                  fetched_at: now.toISOString(),
-                  expires_at: expiresAt.toISOString(),
-                  fetching_since: null,
-                })
             }
           } catch (error) {
             console.error('[trends] Failed to write cache:', error)
@@ -262,7 +277,12 @@ export async function trendsHandler(
       )
     }
 
-    return new Response(JSON.stringify(trends), { status: 200, headers: CACHE_HEADERS })
+    // Don't let the CDN cache an empty result for 24h — allow a quick retry.
+    const responseHeaders = gotTrends
+      ? CACHE_HEADERS
+      : { ...corsHeaders, 'Cache-Control': 'no-store', 'Content-Type': 'application/json' }
+
+    return new Response(JSON.stringify(trends), { status: 200, headers: responseHeaders })
   } catch (error) {
     console.error('Trend API Error:', error)
     return new Response(

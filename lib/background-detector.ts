@@ -2,7 +2,7 @@ export type BackgroundMode = 'keep' | 'remove_all' | 'force_simple' | 'random' |
 
 import { classifyTag } from "./tag-classifier";
 import { BACKGROUND_DICTIONARY } from "./background-dictionary";
-import { extractColorsFromTags, getDominantColor, getCoherentBackgroundColors, getRandomElement } from "./color-theory";
+import { extractColorsFromTags, getDominantColor, getCoherentBackgroundColors, getRandomElement, seededRandom } from "./color-theory";
 
 // ─── Expanded Background Tag Detection ──────────────────────────────────────
 
@@ -169,8 +169,11 @@ const COOL_GRADIENT_COMBOS: [string, string][] = [
   ["cream", "beige"], ["cream", "brown"], ["grey", "blue"],
 ];
 
-function generateGradientBackground(dominantColor: string | null): string[] | null {
-  if (Math.random() > 0.25) return null;
+function generateGradientBackground(
+  dominantColor: string | null,
+  rng: () => number = Math.random,
+): string[] | null {
+  if (rng() > 0.25) return null;
 
   let combo: [string, string];
 
@@ -179,15 +182,15 @@ function generateGradientBackground(dominantColor: string | null): string[] | nu
       ([a, b]) => a === dominantColor || b === dominantColor
     );
     if (matching.length > 0) {
-      combo = matching[Math.floor(Math.random() * matching.length)];
+      combo = matching[Math.floor(rng() * matching.length)];
     } else {
-      combo = COOL_GRADIENT_COMBOS[Math.floor(Math.random() * COOL_GRADIENT_COMBOS.length)];
+      combo = COOL_GRADIENT_COMBOS[Math.floor(rng() * COOL_GRADIENT_COMBOS.length)];
     }
   } else {
-    combo = COOL_GRADIENT_COMBOS[Math.floor(Math.random() * COOL_GRADIENT_COMBOS.length)];
+    combo = COOL_GRADIENT_COMBOS[Math.floor(rng() * COOL_GRADIENT_COMBOS.length)];
   }
 
-  const style = Math.random() > 0.5 ? "gradient background" : "two-tone background";
+  const style = rng() > 0.5 ? "gradient background" : "two-tone background";
   return [`${combo[0]} background`, `${combo[1]} background`, style];
 }
 
@@ -199,8 +202,15 @@ export function processBackgroundTags(
   tagOverrides?: Record<string, string>,
   randomOptions?: RandomBackgroundOptions,
   detailedBackgroundsList?: string[][],
+  seed?: number,
 ): string[] {
   if (mode === 'keep') return tags;
+
+  // Deterministic RNG when a seed is provided (e.g. post.id) so that the same
+  // card always yields the same random background, and so that independent
+  // callers (pure vs. display pipelines) produce IDENTICAL output. Falls back
+  // to Math.random when no seed is given.
+  const rng: () => number = seed !== undefined ? seededRandom(seed) : Math.random;
 
   const analysis = analyzeBackground(tags);
 
@@ -230,7 +240,7 @@ export function processBackgroundTags(
 
   // Detailed random mode: generate unique detailed background
   if (mode === 'detailed_random' && detailedBackgroundsList && detailedBackgroundsList.length > 0) {
-    const pickedTags = detailedBackgroundsList[Math.floor(Math.random() * detailedBackgroundsList.length)];
+    const pickedTags = detailedBackgroundsList[Math.floor(rng() * detailedBackgroundsList.length)];
     pickedTags.forEach(rt => {
       if (!newTags.some(t => t.toLowerCase() === rt.toLowerCase())) {
         newTags.push(rt);
@@ -248,7 +258,7 @@ export function processBackgroundTags(
     const coherentColors = getCoherentBackgroundColors(dominantColor);
     
     // Pick a random coherent color
-    const pickedColor = getRandomElement(coherentColors);
+    const pickedColor = getRandomElement(coherentColors, rng);
     
     // Base background tag
     if (pickedColor) {
@@ -259,18 +269,18 @@ export function processBackgroundTags(
 
     // 2. Gradient check
     if (randomOptions?.includeGradients !== false) {
-      const gradient = generateGradientBackground(dominantColor);
+      const gradient = generateGradientBackground(dominantColor, rng);
       if (gradient) {
         generatedTags.push(...gradient);
       }
     }
 
     // 3. Pattern or medium
-    if (randomOptions?.patternsEnabled && Math.random() > 0.5) {
-      const pattern = getRandomElement(BACKGROUND_DICTIONARY.patterns);
+    if (randomOptions?.patternsEnabled && rng() > 0.5) {
+      const pattern = getRandomElement(BACKGROUND_DICTIONARY.patterns, rng);
       if (pattern) generatedTags.push(pattern);
-    } else if (Math.random() > 0.3) {
-      const medium = getRandomElement(BACKGROUND_DICTIONARY.mediums);
+    } else if (rng() > 0.3) {
+      const medium = getRandomElement(BACKGROUND_DICTIONARY.mediums, rng);
       if (medium) generatedTags.push(medium);
     }
 

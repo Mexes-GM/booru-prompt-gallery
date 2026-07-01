@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useBooruSearch } from "@/hooks/use-booru-search"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePreferencesSync } from "@/hooks/use-preferences-sync"
+import { useDetailedBackgrounds } from "@/hooks/use-detailed-backgrounds"
 import { userPreferences, STORAGE_KEYS, type TagPreset, type HistoryItem } from "@/lib/storage"
 import { onSettingsChange } from "@/lib/settings-bridge"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
@@ -846,27 +847,8 @@ export default function ExtensionClient() {
     return new Set(history.map(item => item.postId).filter((id): id is number => id !== undefined))
   }, [history])
 
-  // Detailed background list
-  const [detailedBackgroundsList, setDetailedBackgroundsList] = useState<string[][]>([])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    fetch('/detailed-backgrounds.json', { signal: controller.signal })
-      .then(res => res.json())
-      .then(data => {
-        if (!Array.isArray(data)) throw new Error('Invalid format')
-        setDetailedBackgroundsList(data.map((item: any) => {
-          if (!item.scenery || !Array.isArray(item.scenery)) return []
-          return item.scenery
-        }))
-      })
-      .catch(err => {
-        if (err.name !== 'AbortError') {
-          console.error("Failed to load detailed backgrounds:", err)
-        }
-      })
-    return () => controller.abort()
-  }, [])
+  // Detailed background list (loaded only when Detailed Random is selected)
+  const detailedBackgroundsList = useDetailedBackgrounds(backgroundMode === 'detailed_random')
 
   // Global weight handlers
   const handleGlobalWeightChange = useCallback((tag: string, weight: number) => {
@@ -945,7 +927,7 @@ export default function ExtensionClient() {
       const processed = processBackgroundTags(
         tags, backgroundMode, simpleBackgroundReplacementTags, {},
         { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients },
-        detailedBackgroundsList
+        detailedBackgroundsList, post.id
       )
       content = processed.join(', ')
     }
@@ -1001,23 +983,33 @@ export default function ExtensionClient() {
       // 2. Character count filter
       const minCharPostCount = (includeCharacters && parseInt(search.appliedCharacterCountFilter)) || 0
       if (minCharPostCount > 0) {
-        if (!post.tag_string_character) {
-          if (!providerSupportsCharacters) return true
-          return false
+        // Per-tag booru post counts are only available for Danbooru/Aibooru. On any
+        // other provider (e621, gelbooru, rule34) `tagCounts` is always empty, so
+        // running this filter there would drop EVERY post. Skip it (pass-through)
+        // for providers without count support instead of filtering everything out.
+        const postProvider = post._provider || search.booruProvider
+        const supportsCharCounts = postProvider === 'danbooru' || postProvider === 'aibooru'
+
+        if (supportsCharCounts) {
+          if (!post.tag_string_character) {
+            if (!providerSupportsCharacters) return true
+            return false
+          }
+          const charTags = post.tag_string_character.split(' ').filter(Boolean)
+          let hasValidCount = false
+          for (const tag of charTags) {
+            const count = tagCounts[tag]
+            if (count === undefined) continue
+            if (count >= minCharPostCount) { hasValidCount = true; break }
+          }
+          if (!hasValidCount) return false
         }
-        const charTags = post.tag_string_character.split(' ').filter(Boolean)
-        let hasValidCount = false
-        for (const tag of charTags) {
-          const count = tagCounts[tag]
-          if (count === undefined) continue
-          if (count >= minCharPostCount) { hasValidCount = true; break }
-        }
-        if (!hasValidCount) return false
+        // else: provider has no per-tag counts — skip this filter entirely.
       }
 
       return true
     })
-  }, [search.isClient, search.allPosts, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts])
+  }, [search.isClient, search.allPosts, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts, search.booruProvider])
 
   const isRule34 = search.booruProvider === "rule34"
   const isTagCountSupported = search.booruProvider === 'danbooru' || search.booruProvider === 'gelbooru' || search.booruProvider === 'rule34'

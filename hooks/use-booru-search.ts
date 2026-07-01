@@ -439,7 +439,22 @@ export function useBooruSearch() {
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | undefined;
 
-    if (lastLoadAttempt > 0 && !isLoadingMore) {
+    // Gate: only evaluate completion once the requested page has actually been
+    // fetched. After loadMore() calls setSize(size+1), there is a render window
+    // where `lastLoadAttempt` is already set but SWR hasn't flipped `isValidating`
+    // to true yet (so isLoadingMore is still false) AND the new page hasn't landed
+    // (so allPosts hasn't grown). Without this gate the effect would run in that
+    // window, see currentDedupedCount === lastLoadAttempt, and wrongly conclude
+    // "no more results" — permanently halting pagination. This was most visible on
+    // e621 (direct client fetch, no effective prefetch warming) where the fetch
+    // window is widest. `pages.length >= size` is true only after SWR has stored
+    // the page for the requested size (even an empty one, which isReachingEnd then
+    // handles), so we never judge completion mid-fetch.
+    // NOTE: an `error` bypasses the gate — a failed fetch never grows `pages`, so
+    // error handling must not be blocked by requestedPageFetched.
+    const requestedPageFetched = !!pages && pages.length >= size
+
+    if (lastLoadAttempt > 0 && !isLoadingMore && (error || requestedPageFetched)) {
       const currentDedupedCount = allPosts.length
 
       if (error) {
@@ -487,7 +502,7 @@ export function useBooruSearch() {
     return () => {
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [allPosts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast])
+  }, [allPosts.length, isLoadingMore, lastLoadAttempt, isReachingEnd, error, toast, pages, size])
 
   return {
     searchTags, setSearchTags,

@@ -295,10 +295,10 @@ export const MasonryItem = memo(function MasonryItem({
         const processed = processBackgroundTags(
             tags, backgroundMode, simpleBackgroundReplacementTags, tagOverrides,
             { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients },
-            detailedBackgroundsList,
+            detailedBackgroundsList, post.id,
         )
         return processed.join(', ')
-    }, [backgroundMode, simpleBackgroundReplacementTags, tagOverrides, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList])
+    }, [backgroundMode, simpleBackgroundReplacementTags, tagOverrides, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, post.id])
 
     // ---- Derived outputs ----
 
@@ -320,12 +320,13 @@ export const MasonryItem = memo(function MasonryItem({
             exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides,
             backgroundMode, simpleBackgroundReplacementTags,
             randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
+            backgroundSeed: post.id,
             metaTags: post.tag_string_meta,
         }
         return aiPrompt
             ? cleanPrompt(aiPrompt, "", "", "", opts)
             : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, opts)
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList])
+    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, post.id, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList])
 
     const displayContent = useMemo(() => {
         if (isGlobalWeightsEnabled && baseContent) {
@@ -525,7 +526,7 @@ export const MasonryItem = memo(function MasonryItem({
         const imageHeight = height - footerHeight
 
         return (
-            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300 border-transparent shadow-none">
+            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300 border-0 shadow-none">
                 <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
                     {isPreviouslyCopied && (
                         <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
@@ -827,8 +828,8 @@ export const MasonryItem = memo(function MasonryItem({
                     </div>
                 </div>
 
-                <div className={getCardContentClass()} style={{ height: footerHeight }}>
-                    <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container">
+                <div className={`${getCardContentClass()} flex flex-col`} style={{ height: footerHeight }}>
+                    <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container min-h-0">
                         <InteractivePrompt
                             initialPrompt={displayContent}
                             onUpdate={setModifiedContent}
@@ -839,7 +840,7 @@ export const MasonryItem = memo(function MasonryItem({
                         />
                     </div>
 
-                    <div className="flex button-group items-stretch isolate">
+                    <div className="flex button-group items-stretch isolate shrink-0">
                         {isNaturalLanguageMode ? (
                             <Button
                                 onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url)}
