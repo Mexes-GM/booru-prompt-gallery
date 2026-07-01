@@ -114,27 +114,41 @@ const GRACE_PERIOD_MS = 800;
 // Queue Persistence (chrome.storage.local)
 // ─────────────────────────────────────────────────────────────────────────────
 const QUEUE_STORAGE_KEY = "booru_prompt_queue";
+const AUTODL_STORAGE_KEY = "booru_auto_download_enabled";
 
-/** Save the current promptQueue to chrome.storage.local */
+/** Save the current promptQueue and autoDownload settings to chrome.storage.local */
 function persistQueue() {
   try {
-    chrome.storage.local.set({ [QUEUE_STORAGE_KEY]: [...promptQueue] });
+    chrome.storage.local.set({ 
+      [QUEUE_STORAGE_KEY]: [...promptQueue],
+      [AUTODL_STORAGE_KEY]: autoDownloadEnabled
+    });
   } catch (e) {
     console.warn("[Queue] Failed to persist queue:", e);
   }
 }
 
-/** Restore promptQueue from chrome.storage.local on startup */
+/** Restore promptQueue and autoDownload settings from chrome.storage.local on startup */
 function restoreQueue() {
   return new Promise((resolve) => {
     try {
-      chrome.storage.local.get([QUEUE_STORAGE_KEY], (result) => {
+      chrome.storage.local.get([QUEUE_STORAGE_KEY, AUTODL_STORAGE_KEY], (result) => {
         const saved = result[QUEUE_STORAGE_KEY];
         if (Array.isArray(saved) && saved.length > 0) {
           promptQueue.push(...saved);
           dlog(`[Queue] Restored ${saved.length} prompts from storage.`);
-          updateQueueUI();
         }
+        
+        const savedAutoDL = result[AUTODL_STORAGE_KEY];
+        if (typeof savedAutoDL === "boolean") {
+          autoDownloadEnabled = savedAutoDL;
+          dlog(`[Queue] Restored autoDownloadEnabled: ${autoDownloadEnabled}`);
+          if (autoDownloadEnabled) {
+            startAutoDownloadObserver();
+          }
+        }
+
+        updateQueueUI();
         resolve();
       });
     } catch (e) {
@@ -177,6 +191,7 @@ window.addEventListener("message", (e) => {
     if (e.data.action === "clear") clearQueue();
     if (e.data.action === "set_auto_download") {
       autoDownloadEnabled = !!e.data.value;
+      persistQueue();
       if (autoDownloadEnabled) startAutoDownloadObserver();
       else stopAutoDownloadObserver();
     }
@@ -264,7 +279,7 @@ function stopTargeting(reason) {
 
 /** The function injected into every frame to arm selection mode. */
 function armTargetingInPage() {
-  const LOG = (...a) => dlog("%c[BooruTarget]", "color:#3b82f6;font-weight:bold", ...a);
+  const LOG = (...a) => console.log("%c[BooruTarget]", "color:#3b82f6;font-weight:bold", ...a);
 
   // Tear down any prior session in this frame
   if (window.__booruTargetCleanup) { try { window.__booruTargetCleanup(); } catch (e) {} }
@@ -572,10 +587,33 @@ function waitForGenerateButtonFree(tabId, frameId) {
         {
           target: { tabId, allFrames: true },
           func: () => {
+            const querySelectorAllDeep = (selector, root = document) => {
+              const list = [];
+              const find = (node) => {
+                if (!node) return;
+                if (node.querySelectorAll) {
+                  const matches = node.querySelectorAll(selector);
+                  for (const m of matches) {
+                    if (!list.includes(m)) list.push(m);
+                  }
+                }
+                if (node.shadowRoot) find(node.shadowRoot);
+                if (node.children) {
+                  for (const child of node.children) find(child);
+                }
+              };
+              find(root);
+              return list;
+            };
+            const querySelectorDeep = (selector, root = document) => {
+              const list = querySelectorAllDeep(selector, root);
+              return list.length > 0 ? list[0] : null;
+            };
+
             // ── 1. Count active tasks (SeaArt & TensorArt) ────────────────
-            let activeTasks = document.querySelectorAll(".message-process-loading-span").length;
+            let activeTasks = querySelectorAllDeep(".message-process-loading-span").length;
             if (activeTasks === 0) {
-              const historyItems = document.querySelectorAll(".c-workflow-history-item");
+              const historyItems = querySelectorAllDeep(".c-workflow-history-item");
               for (const item of historyItems) {
                 const t = item.textContent?.trim() || "";
                 if (
@@ -590,7 +628,7 @@ function waitForGenerateButtonFree(tabId, frameId) {
             }
             
             // TensorArt active tasks (look for "Generating", "Queued" in h2 elements)
-            const tensorTasks = Array.from(document.querySelectorAll("h2")).filter(el => {
+            const tensorTasks = querySelectorAllDeep("h2").filter(el => {
               // Ignore hidden elements (e.g. mobile versions of the sidebar)
               if (el.offsetParent === null) return false;
               const style = window.getComputedStyle(el);
@@ -601,6 +639,7 @@ function waitForGenerateButtonFree(tabId, frameId) {
             });
             activeTasks += tensorTasks.length;
             if (activeTasks === 0) {
+              // Deep text nodes walk fallback
               const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
               let node;
               while (node = walker.nextNode()) {
@@ -610,13 +649,13 @@ function waitForGenerateButtonFree(tabId, frameId) {
             }
 
             // ── 2. Check for the Upgrade / paywall / queue limit modals ──────────────────
-            const upgradeModalBtn = document.querySelector(".user-upgrade-close");
-            const businessModal = document.querySelector(
+            const upgradeModalBtn = querySelectorDeep(".user-upgrade-close");
+            const businessModal = querySelectorDeep(
               ".business-modal-backdrop, .user-upgrade, .hy-business-dialog"
             );
             
             // TensorArt Queue Full Modal
-            const tensorModal = document.querySelector(".n-dialog");
+            const tensorModal = querySelectorDeep(".n-dialog");
             let isTensorQueueFull = false;
             let tensorCloseBtn = null;
             if (tensorModal) {
@@ -633,15 +672,8 @@ function waitForGenerateButtonFree(tabId, frameId) {
             if (upgradeModalBtn || businessModal || isTensorQueueFull) {
               hitLimit = true;
 
-              // Parse the concurrent task limit from the modal text (SeaArt)
-              // e.g. "create 10 tasks simultaneously"
-              const modalEl = businessModal || upgradeModalBtn?.closest(".user-upgrade") ||
-                              document.querySelector(".el-overlay-dialog");
-              if (modalEl) {
-                const mText = modalEl.textContent || "";
-                const match = mText.match(/(\d+)\s*tasks\s*simultaneously/i);
-                if (match) detectedLimit = parseInt(match[1], 10);
-              }
+              // Instead of parsing VIP text, the limit is the number of active tasks that triggered the modal
+              detectedLimit = activeTasks || null;
 
               // Close the modal
               try {
@@ -659,7 +691,7 @@ function waitForGenerateButtonFree(tabId, frameId) {
             // ── 3. Check for "task creation failed" error notification ─────
             let taskFailed = false;
             // SeaArt shows a top banner / notification when creation fails
-            const errorEls = document.querySelectorAll(
+            const errorEls = querySelectorAllDeep(
               ".el-notification, .el-message, .el-message--error, " +
               "[class*='notification'], [class*='message-error'], " +
               ".el-notification__content, [class*='error-tip']"
@@ -681,24 +713,24 @@ function waitForGenerateButtonFree(tabId, frameId) {
             let taskSucceeded = false;
             let globalBusy = false;
 
-            if (document.querySelector(".n-message__icon--success-type") || 
-                Array.from(document.querySelectorAll(".n-message, .n-message__content")).some(el => (el.textContent || "").includes("successfully"))) {
+            if (querySelectorDeep(".n-message__icon--success-type") || 
+                querySelectorAllDeep(".n-message, .n-message__content").some(el => (el.textContent || "").includes("successfully"))) {
               taskSucceeded = true;
             }
 
-            if (document.querySelector(".n-spin-body, .__spin-dark-njtao5-m, .n-base-loading")) {
+            if (querySelectorDeep(".n-spin-body, .__spin-dark-njtao5-m, .n-base-loading")) {
               globalBusy = true;
             }
 
             // ── 4. Check Generate button state ────────────────────────────
             const btn =
-              document.querySelector('button[data-gtm-event="Complete Generation Image"]') ||
-              document.querySelector('button[data-gtm-event*="Generation"]') ||
-              document.querySelector("#txt2img_generate") ||
-              document.querySelector(".work-flow-bottom-btn-main-text") ||
-              document.querySelector(".work-flow-bottom-btn") ||
+              querySelectorDeep('button[data-gtm-event="Complete Generation Image"]') ||
+              querySelectorDeep('button[data-gtm-event*="Generation"]') ||
+              querySelectorDeep("#txt2img_generate") ||
+              querySelectorDeep(".work-flow-bottom-btn-main-text") ||
+              querySelectorDeep(".work-flow-bottom-btn") ||
               (() => {
-                const buttons = Array.from(document.querySelectorAll("button"));
+                const buttons = querySelectorAllDeep("button");
                 return buttons.find((b) => {
                   const text = b.textContent?.trim().toLowerCase();
                   return (
@@ -1017,14 +1049,37 @@ function countActiveTasks(tabId) {
     chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
       func: () => {
+        const querySelectorAllDeep = (selector, root = document) => {
+          const list = [];
+          const find = (node) => {
+            if (!node) return;
+            if (node.querySelectorAll) {
+              const matches = node.querySelectorAll(selector);
+              for (const m of matches) {
+                if (!list.includes(m)) list.push(m);
+              }
+            }
+            if (node.shadowRoot) find(node.shadowRoot);
+            if (node.children) {
+              for (const child of node.children) find(child);
+            }
+          };
+          find(root);
+          return list;
+        };
+        const querySelectorDeep = (selector, root = document) => {
+          const list = querySelectorAllDeep(selector, root);
+          return list.length > 0 ? list[0] : null;
+        };
+
         // Count items in the history sidebar that are actively running
         // These are the history items that show the loading spinner animation
-        const loadingSpans = document.querySelectorAll(".message-process-loading-span");
+        const loadingSpans = querySelectorAllDeep(".message-process-loading-span");
         let active = loadingSpans.length;
 
         // Also check for text-based indicators in case the spinner class changes
         if (active === 0) {
-          const historyItems = document.querySelectorAll(".c-workflow-history-item");
+          const historyItems = querySelectorAllDeep(".c-workflow-history-item");
           for (const item of historyItems) {
             const text = item.textContent?.trim() || "";
             if (
@@ -1039,7 +1094,7 @@ function countActiveTasks(tabId) {
         }
 
         // TensorArt specific active task detection (using h2 elements as seen in TensorArt DOM)
-        const tensorTasks = Array.from(document.querySelectorAll("h2")).filter(el => {
+        const tensorTasks = querySelectorAllDeep("h2").filter(el => {
           // Ignore hidden elements (e.g. mobile versions of the sidebar)
           if (el.offsetParent === null) return false;
           const style = window.getComputedStyle(el);
@@ -1064,15 +1119,10 @@ function countActiveTasks(tabId) {
 
         // Check for upgrade modal and extract limit info if present
         let detectedLimit = null;
-        const upgradeModal = document.querySelector(".user-upgrade, .hy-business-dialog, .business-modal-backdrop");
+        const upgradeModal = querySelectorDeep(".user-upgrade, .hy-business-dialog, .business-modal-backdrop");
         if (upgradeModal) {
-          // The modal tells us the limit. Try to parse it.
-          const modalText = upgradeModal.textContent || "";
-          // e.g. "Upgrade to Professional Plan SVIP to create 10 tasks simultaneously"
-          const match = modalText.match(/(\d+)\s*tasks\s*simultaneously/i);
-          if (match) {
-            detectedLimit = parseInt(match[1], 10);
-          }
+          // Instead of parsing VIP text, the limit is the number of active tasks that triggered the modal
+          detectedLimit = active || null;
 
           // Close the modal so it doesn't block future interactions
           try {
@@ -1186,16 +1236,47 @@ const autoDLDownloaded = new Set();
  * reports each loaded image back via chrome.runtime.sendMessage. Idempotent.
  */
 function installAutoDownloadObserverInPage() {
-  if (window.__booruAutoDLActive) return { status: "already-active", seen: window.__booruAutoDLSeen?.size || 0 };
+  // Disconnect any existing observer/interval to refresh the extension context
+  if (window.__booruAutoDLObserver) { try { window.__booruAutoDLObserver.disconnect(); } catch (e) {} }
+  if (window.__booruAutoDLInterval) { try { clearInterval(window.__booruAutoDLInterval); } catch (e) {} }
+  window.__booruAutoDLObserver = null;
+  window.__booruAutoDLInterval = null;
+
   window.__booruAutoDLActive = true;
   window.__booruAutoDLSeen = window.__booruAutoDLSeen || new Set();
 
-  const LOG = (...a) => dlog("%c[AutoDL]", "color:#a855f7;font-weight:bold", ...a);
+  const LOG = (...a) => console.log("%c[AutoDL]", "color:#a855f7;font-weight:bold", ...a);
+
+  // Helper to find elements recursively, including traversing open shadow roots
+  const querySelectorAllDeep = (selector, root = document) => {
+    const list = [];
+    const find = (node) => {
+      if (!node) return;
+      if (node.querySelectorAll) {
+        const matches = node.querySelectorAll(selector);
+        for (const m of matches) {
+          if (!list.includes(m)) list.push(m);
+        }
+      }
+      if (node.shadowRoot) find(node.shadowRoot);
+      if (node.children) {
+        for (const child of node.children) find(child);
+      }
+    };
+    find(root);
+    return list;
+  };
 
   const getPrompt = (img) => {
-    const item = img.closest(".c-workflow-history-item");
-    const el = item && item.querySelector(".c-text-content");
-    return el ? el.textContent.trim() : "";
+    let node = img;
+    while (node) {
+      if (node.matches && node.matches(".c-workflow-history-item")) {
+        const el = querySelectorAllDeep(".c-text-content", node)[0];
+        return el ? el.textContent.trim() : "";
+      }
+      node = node.parentNode || node.host;
+    }
+    return "";
   };
 
   const report = (img) => {
@@ -1215,7 +1296,8 @@ function installAutoDownloadObserverInPage() {
   };
 
   // Seed: mark every existing generated image as seen so we only grab NEW ones.
-  document.querySelectorAll(".c-history-img .media-attachments-img").forEach(img => {
+  const seedSelector = ".c-history-img .media-attachments-img, .media-attachments-img, .c-workflow-history-item img";
+  querySelectorAllDeep(seedSelector).forEach(img => {
     const src = img.currentSrc || img.src || img.getAttribute("src") || "";
     if (src && /^https?:/.test(src)) window.__booruAutoDLSeen.add(src);
   });
@@ -1229,7 +1311,9 @@ function installAutoDownloadObserverInPage() {
       for (const node of m.addedNodes) {
         if (!node || node.nodeType !== 1) continue;
         if (node.matches && node.matches(".media-attachments-img")) handleImg(node);
-        if (node.querySelectorAll) node.querySelectorAll(".c-history-img .media-attachments-img").forEach(handleImg);
+        if (node.querySelectorAll) {
+          node.querySelectorAll(".c-history-img .media-attachments-img").forEach(handleImg);
+        }
       }
     }
   });
@@ -1238,14 +1322,26 @@ function installAutoDownloadObserverInPage() {
   });
   window.__booruAutoDLObserver = observer;
 
-  LOG(`observer installed (seeded ${window.__booruAutoDLSeen.size} existing image(s))`);
+  // Primary Shadow DOM polling scanner (run every 1.5s to cover web component history elements)
+  const scan = () => {
+    const images = querySelectorAllDeep(".media-attachments-img, .c-history-img img, .c-workflow-history-item img");
+    images.forEach(handleImg);
+  };
+  
+  scan();
+  const intervalId = setInterval(scan, 1500);
+  window.__booruAutoDLInterval = intervalId;
+
+  LOG(`observer installed (seeded ${window.__booruAutoDLSeen.size} existing image(s) + Shadow DOM polling)`);
   return { status: "installed", seen: window.__booruAutoDLSeen.size };
 }
 
 /** Removes the observer from the SeaArt page. */
 function uninstallAutoDownloadObserverInPage() {
   if (window.__booruAutoDLObserver) { try { window.__booruAutoDLObserver.disconnect(); } catch (e) {} }
+  if (window.__booruAutoDLInterval) { try { clearInterval(window.__booruAutoDLInterval); } catch (e) {} }
   window.__booruAutoDLObserver = null;
+  window.__booruAutoDLInterval = null;
   window.__booruAutoDLActive = false;
   return { status: "removed" };
 }
@@ -1459,6 +1555,8 @@ async function triggerAutoDownload(tabId, imageUrl, prompt) {
       setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
     },
     args: [imageBase64, mimeType, prompt || ""]
+  }).catch((e) => {
+    console.error("[AutoDL] Script execution inside webpage failed:", e);
   });
 }
 
@@ -1584,6 +1682,15 @@ async function processNext() {
     // Now safely pull from queue
     const promptText = promptQueue.shift();
     persistQueue(); // ← Save queue state after removing item
+
+    if (!promptText || typeof promptText !== "string" || promptText.trim() === "") {
+      console.warn("[Queue] Invalid or empty prompt pulled from queue, skipping:", promptText);
+      isProcessing = false;
+      isWaitingForSlot = false;
+      updateQueueUI();
+      processNext();
+      return;
+    }
 
     // ── SAFETY: Stuck-on-same-prompt detection ───────────────────────────
     // If we're about to generate the exact same prompt as the last one,
