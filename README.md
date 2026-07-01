@@ -39,7 +39,7 @@ Instead of manually copying tags from a booru post and cleaning them by hand, yo
 - **Tag extraction** — Removes irrelevant metadata, artist tags, rating tags, and redundant information.
 - **Smart Tag Exclusion** — 180+ rules that prevent contradictory tags (e.g., a character seen "from behind" won't have "lips" or "cleavage").
 - **Category filtering** — Tags are categorized into: **Appearance, Clothing, Pose, Background, Character**. Copy only the categories you need.
-- **Smart tag combination** — Merges redundant tags: "hair, long hair, white hair" → "white long hair".
+- **Smart tag combination** — Merges redundant tags: "hair, long hair, white hair" → "long white hair".
 - **Tag removal** — Remove persistent unwanted tags from all prompts (e.g., "solo", "realistic").
 - **Minimum tag count** — Only show prompts with enough detail (recommended: 20-30 tags).
 

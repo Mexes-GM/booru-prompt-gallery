@@ -94,8 +94,32 @@ function withNormalizedVariants(list: string[]): Set<string> {
 
 export function parseTagList(input: string): string[] {
   if (!input) return []
-  const parts = input.includes(",") ? input.split(",") : input.trim().split(/\s+/)
-  return parts.map((t) => t.trim()).filter(Boolean)
+  const trimmed = input.trim()
+  if (!trimmed) return []
+
+  // La coma es el separador canónico de los prompts ya limpiados (y del aiPrompt /
+  // CSV). Priorizarla hace que la salida de cleanPrompt sea segura de re-parsear.
+  if (trimmed.includes(",")) {
+    return trimmed.split(",").map((t) => t.trim()).filter(Boolean)
+  }
+
+  // Sin comas: los tag_string crudos del booru vienen separados por espacios y
+  // codifican los tags multi-palabra con guiones bajos ("1girl long_hair blue_eyes"),
+  // por lo que cada token separado por espacio es un tag completo.
+  if (trimmed.includes("_")) {
+    return trimmed.split(/\s+/).map((t) => t.trim()).filter(Boolean)
+  }
+
+  // Sin comas y sin guiones bajos: es prácticamente imposible que un tag_string
+  // crudo (siempre rico en tags multi-palabra) no tenga guiones bajos, así que esta
+  // forma corresponde a un único tag ya limpiado y multi-palabra (p. ej. "long white
+  // hair"). Tratarlo como UN solo tag garantiza la idempotencia de cleanPrompt en
+  // lugar de explotarlo en palabras sueltas ("hair, long, white").
+  if (trimmed.includes(" ")) {
+    return [trimmed]
+  }
+
+  return [trimmed]
 }
 
 // --------------- Domain Sets ---------------
@@ -515,7 +539,24 @@ function optimizeTags(tags: string[]): string[] {
     working = working.filter((t) => !BREAST_SIZES_SET.has(t) || t === bestBreast)
   }
 
-  // 2) Dedupe hair length (keep first)
+  // 2) Mantener solo el largo de pelo más específico (jerarquía, igual que pechos).
+  //    Evita contradicciones como "short hair" + "long hair" que luego se
+  //    fusionarían en un tag sin sentido ("short long hair").
+  const hairHierarchy = [
+    "absurdly long hair",
+    "very long hair",
+    "long hair",
+    "medium hair",
+    "short hair",
+    "very short hair",
+    "bald",
+  ].map(normalize)
+  const presentHair = hairHierarchy.filter((h) => working.includes(h))
+  if (presentHair.length > 1) {
+    const bestHair = presentHair[0]
+    working = working.filter((t) => !HAIR_LENGTHS_SET.has(t) || t === bestHair)
+  }
+  // Dedupe de duplicados exactos de largo de pelo restantes (keep first)
   const seenHair = new Set<string>()
   working = working.filter((t) => {
     if (!HAIR_LENGTHS_SET.has(t)) return true
@@ -543,6 +584,38 @@ function optimizeTags(tags: string[]): string[] {
 
   return working
 }
+
+// Adjetivos que en realidad son verbos/interacciones (gerundios). Un tag como
+// "grabbing shirt" describe una acción, no una prenda, por lo que NO debe
+// fusionarse como si "grabbing" fuera un adjetivo descriptivo.
+const ACTION_VERB_ADJECTIVES = new Set(
+  [
+    "grabbing", "holding", "pulling", "lifting", "adjusting", "removing",
+    "gripping", "clutching", "tugging", "untying", "unbuttoning", "unzipping",
+    "unfastening", "hiking", "raising", "fixing", "touching", "hugging",
+    "wearing", "showing", "covering", "opening", "closing", "wringing",
+  ].map(normalize),
+)
+
+// Familias de adjetivos mutuamente excluyentes. Si un grupo de tags con el mismo
+// sustantivo contiene dos adjetivos de la misma familia (p. ej. "long" y "short"),
+// combinarlos produce contradicciones ("long short skirt"), así que se omite la fusión.
+const EXCLUSIVE_ADJ_FAMILIES: string[][] = [
+  ["long", "short", "medium", "micro", "mini", "maxi"],
+  ["torn", "intact"],
+  ["open", "closed", "unbuttoned", "buttoned"],
+  ["wet", "dry"],
+  ["sleeveless", "long-sleeved", "short-sleeved"],
+]
+const ADJ_FAMILY_MAP: Record<string, number> = (() => {
+  const map: Record<string, number> = {}
+  EXCLUSIVE_ADJ_FAMILIES.forEach((family, familyId) => {
+    family.forEach((adj) => {
+      map[normalize(adj)] = familyId
+    })
+  })
+  return map
+})()
 
 function combineSharedNounTags(original: string[]): string[] {
   const MERGE_NOUNS = new Set(
@@ -589,6 +662,8 @@ function combineSharedNounTags(original: string[]): string[] {
     if (parts.length !== 2) return
     const [adj, noun] = parts
     if (!MERGE_NOUNS.has(normalize(noun))) return
+    // No fusionar tags de acción/interacción ("grabbing shirt", "holding hat", ...)
+    if (ACTION_VERB_ADJECTIVES.has(normalize(adj))) return
 
     if (!groups[noun]) groups[noun] = { indices: [], adjectives: [] }
     groups[noun].indices.push(idx)
@@ -600,6 +675,18 @@ function combineSharedNounTags(original: string[]): string[] {
 
   Object.entries(groups).forEach(([noun, info]) => {
     if (info.indices.length <= 1) return
+
+    // No combinar si hay adjetivos mutuamente excluyentes (p. ej. long + short).
+    const seenFamilies = new Set<number>()
+    const hasConflict = info.adjectives.some((adj) => {
+      const familyId = ADJ_FAMILY_MAP[normalize(adj)]
+      if (familyId === undefined) return false
+      if (seenFamilies.has(familyId)) return true
+      seenFamilies.add(familyId)
+      return false
+    })
+    if (hasConflict) return
+
     const combined = `${info.adjectives.join(" ")} ${noun}`.trim()
     const alreadyExists = original.some((t) => t === combined)
     if (alreadyExists) {

@@ -31,6 +31,7 @@ const COLORS = {
 
 const ITEMS: AnnouncementItem[] = [
   { color: 'emerald', icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Smarter Tag Exclusion', badge: 'Improved', body: 'Added new conflict cases and improved the Smart Tag Exclusion logic, so prompts come out cleaner and more consistent.' },
+  { color: 'emerald', icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Smarter Tag Combination', badge: 'Improved', body: 'Improved the Smart Tag Combination logic so it handles tricky cases better and avoids odd or contradictory tag mixes.' },
   { color: 'emerald', icon: <Tag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Category Tag Badges', badge: 'New', body: 'Small badges on each card now count tags by category (appearance, clothing, pose, etc).' },
   { color: 'indigo', icon: <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />, title: 'Teach Modal Fix', badge: 'Fix', body: 'Fixed an issue with the teach modal that caused the page to reload when opening it.' },
   { color: 'indigo', icon: <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />, title: 'Favorites System Refactor', badge: 'Fix', body: 'Refactored the favorites system to address several recurring issues, along with making adjustments to favorites management to improve stability.' },

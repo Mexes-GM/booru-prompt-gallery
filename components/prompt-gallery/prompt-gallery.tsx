@@ -26,6 +26,7 @@ import {
   ZoomOut,
   AlertTriangle,
   AlertCircle,
+  Infinity as InfinityIcon,
   CheckCircle,
   X,
   ChevronUp,
@@ -70,7 +71,7 @@ import Image from "next/image"
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion"
 import { renderIcon } from "@/components/prompt-gallery/save-favorite-button"
 import {
-  hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, apiUrl,
+  hasMultipleTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, BooruPost, BooruProvider, isAibooruPost, apiUrl,
 } from "@/lib/api-client"
 import { favKey } from "@/lib/favorites-logic"
 
@@ -787,7 +788,7 @@ export function PromptGallery() {
   }, [cardScale, isMobile])
 
   const isTagCountValid = !search.tagCountFilter || /^\d+$/.test(search.tagCountFilter)
-  const isTagCountSupported = search.booruProvider === 'danbooru' || search.booruProvider === 'e621'
+  const isTagCountSupported = isTagCountSupportedProvider(search.booruProvider)
 
   // --- Side Effects ---
 
@@ -2278,7 +2279,7 @@ export function PromptGallery() {
                                   <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
                                     <InfoTooltip
                                       title="Smart Tag Combination"
-                                      description="If the prompt has, for example, 'hair, long hair, white hair', this function combines them into a single tag: 'white long hair'. Useful to avoid redundancy and not saturate the tokenizer."
+                                      description="If the prompt has, for example, 'hair, long hair, white hair', this function combines them into a single tag: 'long white hair'. Useful to avoid redundancy and not saturate the tokenizer."
                                       visual={
                                         <div className="w-full flex flex-col gap-2 p-1">
                                           <div className="flex justify-between items-center text-[10px] text-muted-foreground w-full px-1">
@@ -2288,7 +2289,7 @@ export function PromptGallery() {
                                           <div className="flex justify-between items-center gap-2 w-full">
                                             <span className="bg-muted text-muted-foreground px-2 py-1 rounded text-[10px] whitespace-nowrap">hair, long hair, white hair</span>
                                             <span className="text-muted-foreground">→</span>
-                                            <span className="bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded text-[10px] whitespace-nowrap">white long hair</span>
+                                            <span className="bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded text-[10px] whitespace-nowrap">long white hair</span>
                                           </div>
                                         </div>
                                       }
@@ -2563,28 +2564,105 @@ export function PromptGallery() {
                   {/* Status & Alerts */}
                   <div className="space-y-2">
                     {/* Active Query Display */}
-                    {getFinalQueryTags(search.searchTags, search.ratingFilter, search.order, search.appliedTagCountFilter, search.booruProvider).length > 0 && (
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/80 bg-muted/30 p-2 rounded-md border border-border/30">
-                        <span className="font-medium">Active Query:</span>
-                        {getFinalQueryTags(search.searchTags, search.ratingFilter, search.order, search.appliedTagCountFilter, search.booruProvider).map((tag, index) => (
-                          <Badge key={index} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 font-mono">
-                            {tag}
-                          </Badge>
-                        ))}
-                        {search.booruProvider === "aibooru" && search.searchTags.includes("has:prompt") && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 text-green-600 border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400">
-                            has:prompt
-                          </Badge>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const queryMeta = getFinalQueryTagsWithMeta(search.searchTags, search.ratingFilter, search.order, search.appliedTagCountFilter, search.booruProvider)
+                      const hasPromptTag = search.booruProvider === "aibooru" && search.searchTags.includes("has:prompt")
+                      if (queryMeta.tags.length === 0 && !hasPromptTag) return null
+
+                      const isUnlimited = queryMeta.slotLimit === Infinity
+                      const isAtLimit = !isUnlimited && queryMeta.slotsUsed >= queryMeta.slotLimit
+                      const providerLabel = search.booruProvider.charAt(0).toUpperCase() + search.booruProvider.slice(1)
+
+                      return (
+                        <div className="flex flex-col gap-2 text-xs text-foreground/80 bg-muted/30 p-2 rounded-md border border-border/30">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium">Active Query:</span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className={cn(
+                                  "flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 rounded-full border cursor-help",
+                                  isUnlimited
+                                    ? "border-sky-300/60 bg-sky-50 text-sky-700 dark:border-sky-800/60 dark:bg-sky-900/20 dark:text-sky-400"
+                                    : isAtLimit
+                                      ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
+                                      : "border-border/50 bg-background/60 text-muted-foreground"
+                                )}>
+                                  {isUnlimited ? (
+                                    <>
+                                      <InfinityIcon className="h-3 w-3" />
+                                      {queryMeta.slotsUsed} tag{queryMeta.slotsUsed === 1 ? '' : 's'} used
+                                    </>
+                                  ) : (
+                                    `${queryMeta.slotsUsed}/${queryMeta.slotLimit} tags used`
+                                  )}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[260px] text-xs">
+                                {isUnlimited
+                                  ? `${providerLabel} has no documented tag limit — add as many tags as you like.`
+                                  : `${providerLabel} allows ${queryMeta.slotLimit} tag${queryMeta.slotLimit === 1 ? '' : 's'} per search. Filters like rating and tag count don't count against this limit, but order/random and every plain or excluded (-tag) tag do.`}
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+
+                          <div className="h-1.5 w-full rounded-full bg-border/40 overflow-hidden">
+                            {isUnlimited ? (
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-sky-400/70 via-sky-400/30 to-transparent bg-[length:200%_100%] animate-[shimmer_2.5s_linear_infinite]"
+                                style={{ width: '100%' }}
+                              />
+                            ) : (
+                              <div
+                                className={cn(
+                                  "h-full rounded-full transition-all",
+                                  isAtLimit ? "bg-amber-500" : "bg-primary/70"
+                                )}
+                                style={{ width: `${Math.min(100, (queryMeta.slotsUsed / queryMeta.slotLimit) * 100)}%` }}
+                              />
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {queryMeta.tags.map((tag, index) => (
+                              <Tooltip key={index}>
+                                <TooltipTrigger asChild>
+                                  <Badge
+                                    variant="secondary"
+                                    className={cn(
+                                      "text-[10px] px-1.5 py-0 h-5 font-mono cursor-help",
+                                      tag.dropped && "opacity-50 line-through border border-destructive/40 text-destructive/80 bg-destructive/5",
+                                      !tag.dropped && tag.countsTowardsLimit && (isUnlimited ? "border border-sky-300/40" : "border border-primary/30"),
+                                      !tag.dropped && !tag.countsTowardsLimit && "border border-emerald-300/50 text-emerald-700 bg-emerald-50 dark:border-emerald-800/50 dark:text-emerald-400 dark:bg-emerald-900/20"
+                                    )}
+                                  >
+                                    {tag.value}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                  {tag.dropped
+                                    ? `Dropped — ${providerLabel}'s ${queryMeta.slotLimit}-tag limit was already reached.`
+                                    : tag.countsTowardsLimit
+                                      ? isUnlimited ? "Counted, but this provider has no tag limit" : "Counts towards the tag limit"
+                                      : "Free — doesn't count towards the tag limit"}
+                                </TooltipContent>
+                              </Tooltip>
+                            ))}
+                            {hasPromptTag && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 text-green-600 border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400">
+                                has:prompt
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     {/* Simplified status display logic */}
-                    {search.booruProvider === 'danbooru' && hasMultipleTags(search.searchTags, search.order, 0) && (
+                    {hasMultipleTags(search.searchTags, search.booruProvider, 0) && (
                       <Alert variant="destructive" className="py-2">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertDescription className="text-xs">
-                          Danbooru API limit: Only first 2 user tags will be used.
+                          {search.booruProvider.charAt(0).toUpperCase() + search.booruProvider.slice(1)} API limit: Only first {getProviderTagLimit(search.booruProvider)} user tag{getProviderTagLimit(search.booruProvider) === 1 ? '' : 's'} will be used.
                         </AlertDescription>
                       </Alert>
                     )}
