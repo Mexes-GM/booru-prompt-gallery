@@ -72,6 +72,7 @@ import { renderIcon } from "@/components/prompt-gallery/save-favorite-button"
 import {
   hasMultipleTags, getFinalQueryTags, BooruPost, BooruProvider, isAibooruPost, apiUrl,
 } from "@/lib/api-client"
+import { favKey } from "@/lib/favorites-logic"
 
 import { userPreferences, STORAGE_KEYS, type HistoryItem, type TagPreset } from "@/lib/storage"
 import { onSettingsChange } from "@/lib/settings-bridge"
@@ -696,8 +697,24 @@ export function PromptGallery() {
   const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
   const [isReverseParserModalOpen, setIsReverseParserModalOpen] = useState(false)
 
-  // Prompt Generation Options: collapsible on mobile only (always expanded on desktop)
-  const [isPromptOptionsExpanded, setIsPromptOptionsExpanded] = useState(false)
+  // Prompt Generation Options: collapsible on mobile only (always expanded on
+  // desktop, where it lives in the right column). Mobile choice persisted.
+  const [isPromptOptionsExpanded, setIsPromptOptionsExpanded] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return localStorage.getItem('prompt_options_expanded') === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('prompt_options_expanded', String(isPromptOptionsExpanded))
+    } catch {
+      // Storage may be unavailable (private mode); non-fatal.
+    }
+  }, [isPromptOptionsExpanded])
 
   // Announcements Panel state: auto-expand on new version
   const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(true)
@@ -1091,7 +1108,7 @@ export function PromptGallery() {
     return source.filter(post => {
       // Folder filter (render-level, not in hook)
       if (filterByFolder) {
-        const key = `${(post._provider || search.booruProvider).toLowerCase()}:${post.id}`
+        const key = favKey(post._provider || search.booruProvider, post.id)
         const postFolders = favs.favoriteFolderMap[key] || []
         if (activeFavoriteFolder === null) {
           if (postFolders.length !== 0) return false
@@ -1160,7 +1177,7 @@ export function PromptGallery() {
     // ── Step 1: expected keys for this folder ──
     let expectedKeys: string[]
     if (activeFavoriteFolder === 'all') {
-      expectedKeys = favs.favoriteItems.map(fi => `${fi.provider}:${fi.id}`)
+      expectedKeys = favs.favoriteItems.map(fi => favKey(fi.provider, fi.id))
     } else {
       expectedKeys = Object.entries(favs.favoriteFolderMap)
         .filter(([_, ids]) =>
@@ -1184,7 +1201,7 @@ export function PromptGallery() {
     const loadedCanonicalKeys = new Set(
       favs.favoriteItems
         .filter(fi => loadedPostIdSet.has(fi.id))
-        .map(fi => `${fi.provider}:${fi.id}`)
+        .map(fi => favKey(fi.provider, fi.id))
     )
 
     const missingKeys = expectedKeys.filter(k => !loadedCanonicalKeys.has(k))
@@ -1223,7 +1240,7 @@ export function PromptGallery() {
 
   const renderMasonryItem = useCallback((post: BooruPost, width: number, height: number, index: number) => {
     const itemProvider = post._provider || search.booruProvider
-    const uniqueKey = `${itemProvider}:${post.id}`
+    const uniqueKey = favKey(itemProvider, post.id)
     const isFavorited = favs.favorites.has(uniqueKey)
     const currentFolderIds = favs.favoriteFolderMap[uniqueKey] || EMPTY_ARRAY
     const isPreviouslyCopied = previouslyCopiedPostIds.has(post.id)
@@ -1970,6 +1987,7 @@ export function PromptGallery() {
                   {/* Advanced Filters & Options */}
                   <Collapsible open={showSettings} onOpenChange={setShowSettings}>
                     <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                       <div className="bg-muted/30 border rounded-xl p-4 space-y-4">
                         <div className="grid grid-cols-1 gap-4">
                           {/* Tags Management */}
@@ -2193,13 +2211,13 @@ export function PromptGallery() {
                         </div>
                       </div>
 
-                      {/* Prompt Generation Options — its own card, one container further out */}
-                      <div className="space-y-4 mt-4 rounded-xl border border-border/60 bg-muted/30 p-4">
+                      {/* Prompt Generation Options — right column of the 2-col panel */}
+                      <div className="space-y-4 rounded-xl border border-border/60 bg-muted/30 p-4">
                         <button
                           type="button"
                           onClick={() => setIsPromptOptionsExpanded((v) => !v)}
                           aria-expanded={isPromptOptionsExpanded}
-                          className="w-full flex items-center justify-between gap-2 sm:cursor-default sm:pointer-events-none"
+                          className="w-full flex items-center justify-between gap-2 cursor-pointer sm:cursor-default sm:pointer-events-none"
                         >
                           <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
                             <Settings className="h-4 w-4 text-primary" />
@@ -2537,6 +2555,7 @@ export function PromptGallery() {
                                 </AnimatePresence>
                               </div>
                             </div>
+                      </div>
                       </div>
                     </CollapsibleContent>
                   </Collapsible>

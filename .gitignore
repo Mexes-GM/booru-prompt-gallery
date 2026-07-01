@@ -98,3 +98,9 @@ audit_*.md
 backups/
 scripts/
 srtsource/
+
+# Local reference screenshots / mockups (not project assets)
+panelejemplo.png
+
+# Local schema exports (regenerate with `supabase db dump`, not versioned)
+supabase/schema.snapshot.sql

@@ -17,6 +17,12 @@ import { createClient } from "@/lib/supabase/client"
 import { useFavoritesCore, FavoriteFolder } from "@/hooks/use-favorites-core"
 import { useFavoritesSync } from "@/hooks/use-favorites-sync"
 import { booruPostToCacheRow } from "@/lib/cache-utils"
+import {
+  removeFolderFromFavorites,
+  buildFavoriteUpsertRow,
+  favoritesSetToItems,
+  favKey,
+} from "@/lib/favorites-logic"
 
 // Re-export FavoriteFolder from core (single source of truth)
 export type { FavoriteFolder }
@@ -78,11 +84,15 @@ export function useBooruFavorites(
     userId: user?.id,
     setFavorites: core.setFavorites,
     setFavoriteFolderMap: core.setFolderMap,
+    setFolders: core.setFolders,
   })
 
   // ── Auto-save localStorage for anonymous users ──
   useEffect(() => {
-    if (!user && core.loaded && typeof window !== "undefined") {
+    // F5: never persist when the load errored. On a parse failure the in-memory
+    // state is empty while localStorage still holds the (recoverable) data;
+    // writing empty over it would permanently wipe the user's favorites.
+    if (!user && core.loaded && !core.error && typeof window !== "undefined") {
       const timeoutId = setTimeout(() => {
         try {
           const state = { folders: core.folders, favorites: core.folderMap }
@@ -93,7 +103,7 @@ export function useBooruFavorites(
       }, 1000)
       return () => clearTimeout(timeoutId)
     }
-  }, [user, core.loaded, core.folders, core.folderMap])
+  }, [user, core.loaded, core.error, core.folders, core.folderMap])
 
   // ═══════════════════════════════════════════
   // Folder CRUD (adapted from useFavoriteFolders)
@@ -144,22 +154,55 @@ export function useBooruFavorites(
 
   const deleteFolder = useCallback(
     async (folderId: string) => {
-      const newFolders = core.folders.filter((f) => f.id !== folderId)
-      const newMap = { ...core.folderMap }
+      const prevFolders = core.folders
+      const prevMap = core.folderMap
 
-      // Remove this folder from all items' folder_ids arrays
-      for (const [key, val] of Object.entries(newMap)) {
-        if (val.includes(folderId)) {
-          newMap[key] = val.filter((id) => id !== folderId)
-        }
-      }
+      const newFolders = prevFolders.filter((f) => f.id !== folderId)
+      // Strip the folder id from every favorite that references it, and capture
+      // exactly which rows changed so we can persist the same edits to the DB.
+      const { newMap, affected } = removeFolderFromFavorites(prevMap, folderId)
 
+      // Optimistic local update
       core.setFolders(newFolders)
       core.setFolderMap(newMap)
 
       if (user) {
-        await supabase.from("favorite_folders").delete().match({ id: folderId })
-        // DB cascade / trigger handles cleanup of folder_ids references
+        try {
+          // A Postgres ON DELETE CASCADE cannot remove an element from a text[]
+          // column, so the orphaned folder id must be stripped from each row
+          // explicitly — otherwise the favorite keeps a dangling folder_ids entry
+          // and disappears from both "Uncategorized" and every folder view.
+          for (const { key, folderIds } of affected) {
+            const [provider, postIdStr] = key.split(":")
+            const postId = parseInt(postIdStr, 10)
+            if (!provider || isNaN(postId)) continue
+            const { error } = await supabase
+              .from("favorites")
+              .update({ folder_ids: folderIds })
+              .match({ user_id: user.id, provider, post_id: postId })
+            if (error) throw error
+          }
+
+          const { error: deleteErr } = await supabase
+            .from("favorite_folders")
+            .delete()
+            .match({ id: folderId })
+          if (deleteErr) throw deleteErr
+        } catch (e: any) {
+          Sentry.captureException(e, {
+            level: "warning",
+            tags: { context: "use-booru-favorites", action: "delete_folder" },
+          })
+          // Rollback local state so the UI matches the (unchanged) DB.
+          core.setFolders(prevFolders)
+          core.setFolderMap(prevMap)
+          toast({
+            title: "Error deleting category",
+            description: e?.message || "Failed to delete the category. Please try again.",
+            variant: "destructive",
+          })
+          return
+        }
       }
 
       toast({ title: "Category deleted", description: "Items moved to Uncategorized" })
@@ -174,7 +217,7 @@ export function useBooruFavorites(
   const toggleFavorite = useCallback(
     async (postId: number, providerOverride?: string, folderId?: string | null, postData?: BooruPost) => {
       const targetProvider = providerOverride || booruProvider
-      const uniqueKey = `${targetProvider}:${postId}`
+      const uniqueKey = favKey(targetProvider, postId)
       const currentFavorites = favoritesRef.current
       const currentFolderMap = favoriteFolderMapRef.current
       const currentFavoritePosts = favoritePostsRef.current
@@ -282,6 +325,7 @@ export function useBooruFavorites(
         }
       }
 
+      core.notifyLocalMutation()
       core.setFavorites(newFavorites)
       core.setFolderMap(newMap)
 
@@ -317,18 +361,19 @@ export function useBooruFavorites(
             if (error) throw error
           } else {
             const targetFolderIds = newMap[uniqueKey] || []
+            // F2: only stamp `position` when the favorite is newly created.
+            // For folder-only edits we omit it so the PostgREST upsert preserves
+            // the existing ordering instead of jumping the item to the top.
+            const row = buildFavoriteUpsertRow({
+              userId: user.id,
+              provider: targetProvider,
+              postId,
+              folderIds: targetFolderIds,
+              isNewFavorite: !isCurrentlyFavorited,
+            })
             const { error } = await supabase
               .from("favorites")
-              .upsert(
-                {
-                  user_id: user.id,
-                  provider: targetProvider,
-                  post_id: postId,
-                  folder_ids: targetFolderIds,
-                  position: Date.now() * -1,
-                },
-                { onConflict: "user_id,provider,post_id" },
-              )
+              .upsert(row, { onConflict: "user_id,provider,post_id" })
             if (error) throw error
           }
         } catch (dbError: any) {
@@ -343,23 +388,39 @@ export function useBooruFavorites(
           core.setFolderMap(currentFolderMap)
 
           if (isRemovingEntirely && currentFavoritePosts) {
-            const currentItems: FavoriteItem[] = Array.from(currentFavorites)
-              .map((key) => {
-                const [p, idStr] = key.split(":")
-                if (!idStr) return { provider: "danbooru" as BooruProvider, id: parseInt(key, 10) }
-                return { provider: p as BooruProvider, id: parseInt(idStr, 10) }
-              })
-              .filter((item) => !isNaN(item.id))
-            const currentCacheKey = getFavoritesCacheKey(currentItems)
+            const currentCacheKey = getFavoritesCacheKey(favoritesSetToItems(currentFavorites))
             if (currentCacheKey) {
               mutate(currentCacheKey, currentFavoritePosts, { revalidate: false })
             }
           }
+
+          // F3: on a failed ADD, revert the optimistic SWR cache mutation too.
+          // The add optimistically prepended the post to BOTH the new-set cache
+          // key and the current-set cache key; restore both to the pre-add list
+          // so a phantom post does not linger in the favorites grid.
+          if (isAddingNewFavorite && currentFavoritePosts) {
+            const newCacheKey = getFavoritesCacheKey(favoritesSetToItems(newFavorites))
+            const currentCacheKey = getFavoritesCacheKey(favoritesSetToItems(currentFavorites))
+            if (newCacheKey) mutate(newCacheKey, currentFavoritePosts, { revalidate: false })
+            if (currentCacheKey) mutate(currentCacheKey, currentFavoritePosts, { revalidate: false })
+          }
           return
+        }
+      } else {
+        // F4: anonymous users have no Supabase row, and the debounced auto-save
+        // effect may not fire before a fast tab close / navigation. Persist the
+        // new state to localStorage synchronously so the toggle is never lost.
+        if (typeof window !== "undefined") {
+          try {
+            const state = { folders: core.folders, favorites: newMap }
+            localStorage.setItem("booruFavoritesV3", JSON.stringify(state))
+          } catch (e) {
+            console.warn("Error saving favorites to localStorage:", e)
+          }
         }
       }
     },
-    [booruProvider, user, supabase, core.setFavorites, core.setFolderMap],
+    [booruProvider, user, supabase, core.folders, core.setFavorites, core.setFolderMap],
   )
 
   // ═══════════════════════════════════════════
@@ -377,14 +438,23 @@ export function useBooruFavorites(
   const clearFavorites = useCallback(async () => {
     core.setFavorites(new Set())
     core.setFolderMap({})
+    core.setFolders([]) // F10: "clear all" must also drop the folders
     if (user) {
       await supabase.from("favorites").delete().eq("user_id", user.id)
+      await supabase.from("favorite_folders").delete().eq("user_id", user.id)
+    } else if (typeof window !== "undefined") {
+      // F10/F4: persist the cleared state for anonymous users immediately.
+      try {
+        localStorage.setItem("booruFavoritesV3", JSON.stringify({ folders: [], favorites: {} }))
+      } catch (e) {
+        console.warn("Error clearing favorites in localStorage:", e)
+      }
     }
     toast({ title: "Favorites cleared", description: "All favorites have been removed" })
-  }, [user, supabase, core.setFavorites, core.setFolderMap])
+  }, [user, supabase, core.setFavorites, core.setFolderMap, core.setFolders])
 
   const isFavorite = useCallback(
-    (provider: string, id: number) => core.favorites.has(`${provider}:${id}`),
+    (provider: string, id: number) => core.favorites.has(favKey(provider, id)),
     [core.favorites],
   )
 

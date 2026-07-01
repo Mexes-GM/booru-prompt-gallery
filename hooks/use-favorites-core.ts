@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, type Dispatch, type SetStateAction } from "react"
 import { useUser } from "@/hooks/use-user"
 import { createClient } from "@/lib/supabase/client"
+import { favKey } from "@/lib/favorites-logic"
 import * as Sentry from "@sentry/nextjs"
 
 export interface FavoriteFolder {
@@ -32,9 +33,10 @@ export interface UseFavoritesCoreReturn {
   loaded: boolean
   error: string | null
   syncFavorites: () => Promise<void>
-  setFavorites: (favs: Set<string>) => void
-  setFolderMap: (map: Record<string, string[]>) => void
-  setFolders: (folders: FavoriteFolder[]) => void
+  setFavorites: Dispatch<SetStateAction<Set<string>>>
+  setFolderMap: Dispatch<SetStateAction<Record<string, string[]>>>
+  setFolders: Dispatch<SetStateAction<FavoriteFolder[]>>
+  notifyLocalMutation: () => void
 }
 
 export function useFavoritesCore(): UseFavoritesCoreReturn {
@@ -45,9 +47,20 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
   const [error, setError] = useState<string | null>(null)
 
   const syncVersionRef = useRef(0)
+  // F6: detect local toggles that race the initial load, so the DB snapshot does
+  // not silently revert a mutation that was in flight while the load ran.
+  const loadingRef = useRef(false)
+  const mutationDuringLoadRef = useRef(false)
 
   const { user, loading: userLoading } = useUser()
   const supabase = createClient()
+
+  // Called by the parent hook whenever it performs an optimistic local mutation.
+  // If the initial load is still running, we flag it so the load reconciles
+  // (re-syncs) instead of clobbering the user's in-flight change.
+  const notifyLocalMutation = useCallback(() => {
+    if (loadingRef.current) mutationDuringLoadRef.current = true
+  }, [])
 
   // Load favorites from Supabase (authenticated) or localStorage (anonymous)
   useEffect(() => {
@@ -57,6 +70,8 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
 
     async function loadFavorites() {
       setError(null)
+      loadingRef.current = true
+      mutationDuringLoadRef.current = false
 
       if (user) {
         // ── One-shot migration: localStorage → Supabase ──
@@ -162,6 +177,19 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
                 `Migration insert failed: ${insertErr.message}`,
                 { level: "warning", tags: { context: "use-favorites-core", action: "migrate_insert" } }
               )
+            } else {
+              // F11: migration to Supabase succeeded — remove the local copies so a
+              // future logout can't resurrect stale anonymous favorites.
+              try {
+                localStorage.removeItem("booruFavoritesV3")
+                localStorage.removeItem("booruFavoritesV2")
+                localStorage.removeItem("globalBooruFavorites")
+              } catch (e) {
+                Sentry.captureException(e, {
+                  level: "warning",
+                  tags: { context: "use-favorites-core", action: "migrate_cleanup_localstorage" },
+                })
+              }
             }
           } catch (e) {
             Sentry.captureException(e, {
@@ -241,6 +269,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
             .from("favorites")
             .select("provider, post_id, folder_ids")
             .order("position", { ascending: true, nullsLast: true })
+        .order("post_id", { ascending: true })
             .limit(10000)
 
           if (cancelled) return
@@ -255,7 +284,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
 
           if (dbFavorites) {
             dbFavorites.forEach((item: DbFavoriteRow) => {
-              const key = `${item.provider.toLowerCase()}:${item.post_id}`
+              const key = favKey(item.provider, item.post_id)
               newSet.add(key)
               newMap[key] = item.folder_ids || []
             })
@@ -265,11 +294,21 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
           setFavorites(newSet)
           setFolderMap(newMap)
           setLoaded(true)
+
+          // F6: if a local toggle happened while this load was running, the DB
+          // snapshot we just applied may have reverted it. Reconcile from the DB
+          // (the toggle also persisted there) so the final state is correct.
+          loadingRef.current = false
+          if (mutationDuringLoadRef.current) {
+            mutationDuringLoadRef.current = false
+            syncFavorites()
+          }
         } catch (e) {
           if (!cancelled) {
             setError(e instanceof Error ? e.message : "Failed to load favorites")
             setLoaded(true)
           }
+          loadingRef.current = false
         }
       } else {
         // Anonymous: load from localStorage
@@ -326,6 +365,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
           setFavorites(newSet)
           setFolderMap(newMap)
           setLoaded(true)
+          loadingRef.current = false
 
           if (shouldSave) {
             localStorage.setItem("booruFavoritesV3", JSON.stringify({ folders: newFolders, favorites: newMap }))
@@ -336,6 +376,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
             setError(e instanceof Error ? e.message : "Failed to load local favorites")
             setLoaded(true)
           }
+          loadingRef.current = false
         }
       }
     }
@@ -367,6 +408,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
         .from("favorites")
         .select("provider, post_id, folder_ids")
         .order("position", { ascending: true, nullsLast: true })
+        .order("post_id", { ascending: true })
         .limit(10000)
 
       if (syncVersionRef.current !== version) return
@@ -381,7 +423,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
 
       if (dbFavorites) {
         dbFavorites.forEach((item: DbFavoriteRow) => {
-          const key = `${item.provider.toLowerCase()}:${item.post_id}`
+          const key = favKey(item.provider, item.post_id)
           newSet.add(key)
           newMap[key] = item.folder_ids || []
         })
@@ -410,5 +452,6 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
     setFavorites,
     setFolderMap,
     setFolders,
+    notifyLocalMutation,
   }
 }
