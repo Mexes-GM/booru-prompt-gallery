@@ -4,7 +4,8 @@ import ExtensionClient from "./extension-client"
 export const dynamic = "force-static"
 
 export default function ExtensionPage() {
-  if (process.env.VERCEL === "1") {
+  // Maintenance mode curtain — set MAINTENANCE_MODE=1 to take the app offline.
+  if (process.env.MAINTENANCE_MODE === "1") {
     return <VercelPauseCurtain />
   }
 

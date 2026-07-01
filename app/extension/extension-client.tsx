@@ -1057,7 +1057,7 @@ export default function ExtensionClient() {
       </header>
 
       {/* Main control card with glass-effect */}
-      <Card className="glass-effect shadow-md rounded-xl p-3 border-none flex flex-col gap-3 shrink-0">
+      <Card className="relative z-20 glass-effect shadow-md rounded-xl p-3 border-none flex flex-col gap-3 shrink-0">
         {/* Provider Selector tab bar, copied from original UI */}
         <div className="flex flex-col gap-1 w-full">
           <span className="text-[10px] font-bold text-muted-foreground/85 ml-1 uppercase tracking-wider select-none">
@@ -1281,29 +1281,31 @@ export default function ExtensionClient() {
               </Sheet>
             </div>
             
-            <Button
-              id="extension-settings-btn"
-              type="button"
-              variant="outline"
-              onClick={() => setShowSettings(!showSettings)}
-              className={`h-8 px-2.5 gap-1.5 shadow-sm text-xs font-semibold ${
-                showSettings ? "bg-primary/10 text-primary border-primary/30" : "text-muted-foreground hover:text-foreground hover:bg-muted bg-background"
-              }`}
-              title="Quick settings"
-            >
-              <Settings size={14} className={showSettings ? "text-primary animate-pulse" : ""} />
-              <span>Settings</span>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setTourRun(true)}
-              className="h-8 w-8 p-0 shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted bg-background"
-              title="Show guided tour"
-              aria-label="Show guided tour"
-            >
-              <HelpCircle size={14} />
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                id="extension-settings-btn"
+                type="button"
+                variant="outline"
+                onClick={() => setShowSettings(!showSettings)}
+                className={`h-8 px-2.5 gap-1.5 shadow-sm text-xs font-semibold ${
+                  showSettings ? "bg-primary/10 text-primary border-primary/30" : "text-muted-foreground hover:text-foreground hover:bg-muted bg-background"
+                }`}
+                title="Quick settings"
+              >
+                <Settings size={14} className={showSettings ? "text-primary animate-pulse" : ""} />
+                <span>Settings</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTourRun(true)}
+                className="h-8 w-8 p-0 shadow-sm text-muted-foreground hover:text-foreground hover:bg-muted bg-background"
+                title="Show guided tour"
+                aria-label="Show guided tour"
+              >
+                <HelpCircle size={14} />
+              </Button>
+            </div>
           </div>
         </div>
 
