@@ -422,7 +422,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
     cache.totalHeight = totalHeight
 
     return { positions, columns, totalHeight }
-  }, [items, debouncedContainerWidth, scale, gap, isMobile, forceColumns, footerHeightOverride])
+  }, [items, debouncedContainerWidth, scale, gap, isMobile, forceColumns, footerHeightOverride, scrollContainerRef])
 
   // Scroll anchoring: restore scroll position after a full recompute.
   // useLayoutEffect runs synchronously before the browser paints, so the

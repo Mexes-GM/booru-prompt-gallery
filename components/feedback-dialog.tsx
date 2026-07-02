@@ -223,7 +223,7 @@ export function FeedbackDialog() {
                     className="gap-1 h-9 px-4 transition-all bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
                 >
                     <MessageSquarePlus className="h-4 w-4" />
-                    <span className="hidden sm:inline font-medium">Feedback</span>
+                    <span className="font-medium">Feedback</span>
                 </Button>
             </InfoTooltip>
             <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden gap-0 border-0 shadow-2xl">

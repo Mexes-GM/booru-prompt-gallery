@@ -99,6 +99,8 @@ export const SOCIAL_URLS = {
   KO_FI: 'https://ko-fi.com/mexes',
   GITHUB: 'https://github.com/Mexes-GM/booru-prompt-gallery',
   NETLIFY: 'https://booru-prompt-gallery.netlify.app',
+  // Primary Vercel deployment (default vercel.app domain — always resolvable).
+  VERCEL: 'https://booru-prompt-gallery.vercel.app',
 } as const
 
 // Site URL
