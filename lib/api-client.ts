@@ -1112,7 +1112,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
                   if (consecutive429Hits >= MAX_CONSECUTIVE_429 && !circuitBroken) {
                     circuitBroken = true
                     rateLimitCooldownUntilRef.current = Date.now() + CIRCUIT_COOLDOWN_MS
-                    reportError('Rate limit reached — pausing 30s. Some favorites may not load.')
+                    reportError(new Error('Rate limit reached — pausing 30s. Some favorites may not load.'))
                     console.warn(`[useFavoritePosts] Circuit breaker tripped after ${consecutive429Hits} consecutive 429s`)
                   }
                 } else {
@@ -1249,7 +1249,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
                     if (consecutive429Hits >= MAX_CONSECUTIVE_429 && !circuitBroken) {
                       circuitBroken = true
                       rateLimitCooldownUntilRef.current = Date.now() + CIRCUIT_COOLDOWN_MS
-                      reportError('Rate limit reached — pausing 30s. Some favorites may not load.')
+                      reportError(new Error('Rate limit reached — pausing 30s. Some favorites may not load.'))
                       console.warn(`[useFavoritePosts] Circuit breaker tripped after ${consecutive429Hits} consecutive 429s`)
                     }
                   } else {

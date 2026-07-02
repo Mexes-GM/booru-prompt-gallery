@@ -49,8 +49,9 @@ export function useFavoritesSync({
         filter: `user_id=eq.${userId}`,
       },
       (payload: RealtimePostgresChangesPayload<DbFavoritePayload>) => {
-        const provider = (payload.new || payload.old)?.provider
-        const post_id = (payload.new || payload.old)?.post_id
+        const row = (payload.new || payload.old) as Partial<DbFavoritePayload>
+        const provider = row?.provider
+        const post_id = row?.post_id
         if (!provider || post_id == null) return
 
         const key = favKey(provider, post_id)
@@ -152,14 +153,14 @@ export function useFavoritesSync({
       }
     )
 
-    channel.subscribe((status) => {
+    channel.subscribe((status: string) => {
       if (status === "CHANNEL_ERROR") {
         console.error("[useFavoritesSync] Realtime channel error")
       }
     })
 
     return () => {
-      supabase.removeChannel(channel).catch((err) => {
+      supabase.removeChannel(channel).catch((err: unknown) => {
         console.warn("[useFavoritesSync] Error removing channel:", err)
       })
     }

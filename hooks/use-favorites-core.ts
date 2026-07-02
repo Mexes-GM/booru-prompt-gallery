@@ -120,6 +120,8 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
               return // Nothing to migrate
             }
 
+            if (!user) return // narrow user for the upserts below
+
             // Step 1 — Migrate folders, building localId → SupabaseUUID map
             const folderIdMap: Record<string, string> = {}
             for (const folder of localFolders) {
