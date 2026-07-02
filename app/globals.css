@@ -80,7 +80,7 @@
   }
 
   .card-hover {
-    transition: all 300ms;
+    transition: transform 300ms, box-shadow 300ms;
   }
   .card-hover:hover {
     box-shadow: 0 10px 15px -3px hsl(var(--primary) / 0.05), 0 4px 6px -2px hsl(var(--primary) / 0.05);

@@ -1,7 +1,8 @@
 "use client"
 
 import React from "react"
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
+import { useLowMotion } from "@/hooks/use-low-motion"
 import { DebouncedInput } from "@/components/ui/debounced-input"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -68,7 +69,7 @@ export function StickyMiniControlPanel({
   onToggleAiConvertMode
 }: StickyMiniControlPanelProps) {
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
-  const shouldReduceMotion = useReducedMotion();
+  const lowMotion = useLowMotion();
 
   // Close popover when panel hides (before exit animation starts)
   React.useEffect(() => {
@@ -83,15 +84,15 @@ export function StickyMiniControlPanel({
     : 0;
 
   // ── spring config (respects reduced motion) ──────────────────────────
-  const springTransition = shouldReduceMotion
+  const springTransition = lowMotion
     ? { duration: 0.15 }
     : { type: "spring" as const, stiffness: 200, damping: 25, mass: 0.8 };
 
-  const enterAnim = shouldReduceMotion
+  const enterAnim = lowMotion
     ? { opacity: 0 }
     : { y: -100, opacity: 0, scale: 0.95 };
 
-  const exitAnim = shouldReduceMotion
+  const exitAnim = lowMotion
     ? { opacity: 0 }
     : { y: -100, opacity: 0, scale: 0.95 };
 
@@ -104,13 +105,13 @@ export function StickyMiniControlPanel({
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={exitAnim}
           transition={springTransition}
-          className="fixed top-6 left-0 right-0 mx-auto z-[60] w-[95%] max-w-4xl bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85 border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10"
+          className={`fixed top-6 left-0 right-0 mx-auto z-[60] w-[95%] max-w-4xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         >
           {/* Border Glow Effect */}
           <div className="absolute inset-0 z-[-1] overflow-hidden rounded-2xl pointer-events-none">
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-50" />
-            {!shouldReduceMotion ? (
+            {!lowMotion ? (
               <motion.div
                 animate={{
                   background: [

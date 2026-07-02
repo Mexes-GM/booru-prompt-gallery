@@ -1,5 +1,6 @@
 import { useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
+import { useLowMotion } from "@/hooks/use-low-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -57,7 +58,7 @@ import { SCALE_CONFIG } from "@/components/masonry-grid"
 const PARTICLES = Array.from({ length: 12 })
 
 const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
-    const prefersReducedMotion = useReducedMotion()
+    const lowMotion = useLowMotion()
     return (
         <motion.div
             initial={{ opacity: 0 }}
@@ -79,7 +80,7 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
             }}
         >
             <div className="relative flex flex-col items-center justify-center pointer-events-none">
-                {!prefersReducedMotion && PARTICLES.map((_, i) => (
+                {!lowMotion && PARTICLES.map((_, i) => (
                     <motion.div
                         key={i}
                         initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
@@ -95,18 +96,18 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
                 ))}
 
                 <motion.div
-                    initial={prefersReducedMotion ? { scale: 1, rotate: 0 } : { scale: 0, rotate: -45 }}
+                    initial={lowMotion ? { scale: 1, rotate: 0 } : { scale: 0, rotate: -45 }}
                     animate={{ scale: 1, rotate: 0 }}
-                    transition={prefersReducedMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 20 }}
+                    transition={lowMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 20 }}
                     className="bg-gradient-to-br from-green-400 to-green-600 rounded-full p-4 shadow-[0_0_20px_rgba(74,222,128,0.4)] relative z-10"
                 >
                     <Check className="h-8 w-8 text-white stroke-[3px]" />
                 </motion.div>
 
                 <motion.span
-                    initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+                    initial={lowMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={prefersReducedMotion ? { duration: 0 } : { delay: 0.1 }}
+                    transition={lowMotion ? { duration: 0 } : { delay: 0.1 }}
                     className="mt-3 text-white font-bold tracking-widest text-sm uppercase drop-shadow-lg"
                 >
                     Copied
@@ -236,7 +237,7 @@ export const MasonryItem = memo(function MasonryItem({
     onSendToConvert,
     showCategoryTagBadges = true,
 }: MasonryItemProps) {
-    const prefersReducedMotion = useReducedMotion()
+    const lowMotion = useLowMotion()
     const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
     const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
 
@@ -526,7 +527,7 @@ export const MasonryItem = memo(function MasonryItem({
         const imageHeight = height - footerHeight
 
         return (
-            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300 border-0 shadow-none">
+            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-colors duration-300 border-0 shadow-none">
                 <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
                     {isPreviouslyCopied && (
                         <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
@@ -537,7 +538,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-green-500/40 shadow-sm"
                             >
                                 <motion.div
-                                   animate={prefersReducedMotion ? undefined : { scale: [1, 1.2, 1] }}
+                                   animate={lowMotion ? undefined : { scale: [1, 1.2, 1] }}
                                    transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
                                 >
                                     <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
@@ -554,7 +555,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm"
                             >
                                 <motion.div
-                                   animate={prefersReducedMotion ? undefined : { rotate: [0, 10, -10, 0] }}
+                                   animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
                                    transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
                                 >
                                     <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
@@ -961,7 +962,7 @@ export const MasonryItem = memo(function MasonryItem({
 
     // List View
     return (
-        <Card className="overflow-hidden card-hover relative transition-all duration-300 border-transparent shadow-none">
+        <Card className="overflow-hidden card-hover relative transition-colors duration-300 border-transparent shadow-none">
             <CardContent className="p-4 sm:p-6">
                 <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                     <div
@@ -977,7 +978,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-green-500/40 shadow-sm"
                                 >
                                     <motion.div
-                                       animate={prefersReducedMotion ? undefined : { scale: [1, 1.2, 1] }}
+                                       animate={lowMotion ? undefined : { scale: [1, 1.2, 1] }}
                                        transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
                                     >
                                         <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
@@ -994,7 +995,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm"
                                 >
                                     <motion.div
-                                       animate={prefersReducedMotion ? undefined : { rotate: [0, 10, -10, 0] }}
+                                       animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
                                        transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
                                     >
                                         <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />

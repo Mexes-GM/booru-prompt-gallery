@@ -10,7 +10,8 @@ import { X, Copy, Check, Sparkles, Settings2, Loader2, RefreshCw, AlertCircle, H
 import { useLLMSettings, LLMProvider } from '@/hooks/use-llm-settings'
 import { apiUrl } from '@/lib/api-client'
 import { toast } from '@/hooks/use-toast'
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useLowMotion } from '@/hooks/use-low-motion'
 import { cn } from '@/lib/utils'
 import OpenAIMono from '@lobehub/icons/es/OpenAI/components/Mono'
 import AnthropicMono from '@lobehub/icons/es/Anthropic/components/Mono'
@@ -94,7 +95,7 @@ const AiConvertStickyFooterComponent = ({
   onExit
 }: AiConvertStickyFooterProps) => {
   const { settings, saveSettings, isLoaded } = useLLMSettings()
-  const shouldReduceMotion = useReducedMotion()
+  const shouldReduceMotion = useLowMotion()
 
   const [result, setResult] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -285,7 +286,7 @@ const AiConvertStickyFooterComponent = ({
             damping: 25,
             mass: 0.8
           }}
-          className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl bg-background/85 backdrop-blur-xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10"
+          className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 ${shouldReduceMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl"}`}
           style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         >
           {/* Border Glow Effect */}

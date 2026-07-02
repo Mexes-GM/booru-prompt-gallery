@@ -6,6 +6,7 @@ import { BooruPost } from '@/lib/booru/types'
 import { SelectedPostParts, MergeModeType, RandomSettings } from '@/hooks/use-merge-mode'
 import { TagCategory } from '@/lib/tag-classifier'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useLowMotion } from '@/hooks/use-low-motion'
 import Image from 'next/image'
 import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -154,6 +155,7 @@ const MergeStickyFooterComponent = ({
     setRandomSettings
 }: MergeStickyFooterProps) => {
 
+    const lowMotion = useLowMotion()
     const [isCopied, setIsCopied] = useState(false)
     const [isCleared, setIsCleared] = useState(false)
     const handleCopy = (text: string) => {
@@ -232,32 +234,34 @@ const MergeStickyFooterComponent = ({
             {isOpen && (
                 <motion.div
                     key="merge-footer"
-                    initial={{ y: 200, opacity: 0, scale: 0.95 }}
-                    animate={{ y: 0, opacity: 1, scale: 1 }}
-                    exit={{ y: 200, opacity: 0, scale: 0.95 }}
-                    transition={{
+                    initial={lowMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
+                    animate={lowMotion ? { opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
+                    exit={lowMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
+                    transition={lowMotion ? { duration: 0.15 } : {
                         type: "spring",
                         stiffness: 200,
                         damping: 25,
                         mass: 0.8
                     }}
-                    className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85 border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 sm:max-h-[400px] max-h-[320px]"
+                    className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 sm:max-h-[400px] max-h-[320px] ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
                     style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
                     {/* Border Glow Effect */}
                     <div className="absolute inset-0 z-[-1] overflow-hidden rounded-2xl pointer-events-none">
                         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-50" />
-                        <motion.div
-                            animate={{
-                                background: [
-                                    "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.1) 0%, transparent 50%)",
-                                    "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.15) 0%, transparent 70%)",
-                                    "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.1) 0%, transparent 50%)"
-                                ]
-                            }}
-                            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                            className="absolute inset-0"
-                        />
+                        {!lowMotion && (
+                            <motion.div
+                                animate={{
+                                    background: [
+                                        "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.1) 0%, transparent 50%)",
+                                        "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.15) 0%, transparent 70%)",
+                                        "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.1) 0%, transparent 50%)"
+                                    ]
+                                }}
+                                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                                className="absolute inset-0"
+                            />
+                        )}
                     </div>
                     <div className="p-3 sm:p-4 flex flex-col gap-3 sm:gap-4">
 
