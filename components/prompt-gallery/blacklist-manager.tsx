@@ -83,21 +83,26 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <Tooltip>
+        {/* Tooltip anchors to a span wrapper, NOT the same node as DialogTrigger.
+            Nesting two `asChild` triggers on one element composes 3 refs and triggers a
+            Radix setState-on-ref-detach loop (React #185). See SENTRY-FULVOUS-ANCHOR-7/S. */}
         <TooltipTrigger asChild>
-          <DialogTrigger asChild>
-            <Button
-              variant="outline"
-              className={cn("h-11 rounded-none relative z-10 px-2 sm:px-3 bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground", className)}
-            >
-              <Tag className="w-3.5 h-3.5 sm:mr-1.5" />
-              <span className="hidden sm:inline text-xs font-medium">Blacklist</span>
-              {blacklist.length > 0 && (
-                <span className="ml-1.5 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold px-1 h-4 min-w-[1rem] flex items-center justify-center rounded-full">
-                  {blacklist.length}
-                </span>
-              )}
-            </Button>
-          </DialogTrigger>
+          <span className="inline-flex">
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn("h-11 rounded-none relative z-10 px-2 sm:px-3 bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground", className)}
+              >
+                <Tag className="w-3.5 h-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline text-xs font-medium">Blacklist</span>
+                {blacklist.length > 0 && (
+                  <span className="ml-1.5 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold px-1 h-4 min-w-[1rem] flex items-center justify-center rounded-full">
+                    {blacklist.length}
+                  </span>
+                )}
+              </Button>
+            </DialogTrigger>
+          </span>
         </TooltipTrigger>
         <TooltipContent>Manage blacklisted tags</TooltipContent>
       </Tooltip>

@@ -53,6 +53,7 @@ import {
 
 import dynamic from "next/dynamic"
 import { getCachedTagOverrides } from "@/lib/supabase/client-queries"
+import { DeploymentStatusBadges, MirrorLink } from "@/components/prompt-gallery/deployment-status"
 
 const TeachModal = dynamic(() => import("@/components/teach-modal").then(m => m.TeachModal), { ssr: false, loading: () => null })
 const TeachWelcomeModal = dynamic(() => import("@/components/teach-welcome-modal").then(m => m.TeachWelcomeModal), { ssr: false, loading: () => null })
@@ -1425,17 +1426,16 @@ export function PromptGallery() {
                 <UserNav />
 
                 <DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="focus-ring gap-1.5 px-2" aria-label="More options and information">
-                          <AlertTriangle className="h-4 w-4 rotate-180" />
-                          More
-                        </Button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent>Help & Info</TooltipContent>
-                  </Tooltip>
+                  {/* No Tooltip wrapper here: nesting TooltipTrigger asChild + DropdownMenuTrigger asChild
+                      composes 3 refs onto one <button>, which triggers a setState-on-ref-detach loop in
+                      Radix (React error #185 "Maximum update depth exceeded"). See SENTRY-FULVOUS-ANCHOR-7.
+                      The button's visible "More" label + aria-label already convey the action. */}
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="focus-ring gap-1.5 px-2" aria-label="More options and information">
+                      <AlertTriangle className="h-4 w-4 rotate-180" />
+                      More
+                    </Button>
+                  </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="glass-effect">
                     {/* Merged from the former mobile "More" button to free up header space (mobile only) */}
                     <DropdownMenuItem onClick={() => setShowWelcomeModal(true)} className="sm:hidden">
@@ -1614,18 +1614,11 @@ export function PromptGallery() {
                     View on GitHub
                   </a>
 
-                  <a
-                    id="netlify-alt"
-                    href={SOCIAL_URLS.NETLIFY}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => trackExternalLink(SOCIAL_URLS.NETLIFY, 'netlify')}
-                    className="inline-flex items-center px-4 py-2 bg-teal-600 hover:bg-teal-500 dark:bg-teal-700 dark:hover:bg-teal-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
-                  >
-                    <Globe className="w-4 h-4 mr-2" />
-                    Netlify Mirror
-                  </a>
+                  <MirrorLink />
                 </div>
+
+                {/* Deployment status badges (Vercel / Netlify) */}
+                <DeploymentStatusBadges />
 
                 {/* Announcements Panel */}
                 {isAnnouncementsOpen && (
