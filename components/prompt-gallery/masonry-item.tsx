@@ -130,7 +130,7 @@ interface MasonryItemProps {
     isFavorited: boolean
     folders: FavoriteFolder[]
     currentFolderIds: string[]
-    toggleFavorite: (id: number, provider?: string, folderId?: string | null) => void
+    toggleFavorite: (id: number, provider?: string, folderId?: string | null, post?: BooruPost) => void
     createFolder: (name: string) => Promise<FavoriteFolder | null>
     isMergeMode: boolean
     isSelected: boolean
