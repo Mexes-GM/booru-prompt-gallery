@@ -262,6 +262,7 @@ export function useBooruSearch() {
    setLoadMoreError(false)
    setLastLoadAttempt(0)
    setCircuitOpen(false)
+   setSessionCapReached(false)
    loadMoreGuardRef.current = false
  }, [booruProvider, order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
 
@@ -363,6 +364,39 @@ export function useBooruSearch() {
 
   // --- Actions ---
 
+  // Client-side scroll rate limiter — proactive, not reactive.
+  //
+  // Every existing protection (Danbooru's own per-IP limit, our Redis-backed
+  // limiters for Gelbooru/Rule34) only reacts AFTER a request lands. Fast,
+  // sustained scrolling can fire many page loads before any of those kick in
+  // — worse in dev, where our own /api/posts limiter is intentionally
+  // disabled (NODE_ENV==='development'), and irrelevant for Danbooru/e621,
+  // which never touch /api/posts at all (direct browser→provider fetch).
+  // This runs in the browser, for every provider, in every environment —
+  // it doesn't depend on any backend deciding to reject us.
+  //
+  // A plain "minimum X ms between calls" throttle only spaces out individual
+  // calls — it doesn't bound total volume. A user who keeps the trigger
+  // re-firing at exactly that interval can still pull unlimited pages over
+  // time. This is a real sliding-window cap: at most MAX_LOADS_PER_WINDOW
+  // page loads within WINDOW_MS. Once hit, further loads are refused (with
+  // user-visible feedback) until the oldest load in the window expires.
+  const WINDOW_MS = 10_000
+  const MAX_LOADS_PER_WINDOW = 5
+  const loadTimestampsRef = useRef<number[]>([])
+  const throttleRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollLimitedRef = useRef(false)
+  const [scrollLimited, setScrollLimited] = useState(false)
+
+  // Hard per-session page cap (F5 — rate-limit-antiabuse plan). Bounds
+  // automated scroll-scraping: a bot that keeps the infinite-scroll trigger
+  // firing can otherwise pull unlimited pages. `size` is the SWR page count
+  // for the CURRENT search and resets to 1 on any new search/provider/filter
+  // change, so this cap is naturally per-search-session. A human effectively
+  // never reaches 100 pages (~3000 posts); when they do, a refresh continues.
+  const MAX_SESSION_PAGE_LOADS = 100
+  const [sessionCapReached, setSessionCapReached] = useState(false)
+
   const loadMore = useCallback(() => {
     // Synchronous guard: prevents re-entry from stale closures
     // (e.g. IntersectionObserver callback firing after React has
@@ -375,6 +409,55 @@ export function useBooruSearch() {
       return
     }
 
+    // Hard per-session cap (F5): refuse further auto/manual loads once the
+    // session has pulled MAX_SESSION_PAGE_LOADS pages. Bounds scroll-scraping
+    // without hurting humans (who effectively never reach it); a page refresh
+    // resets `size` and lets browsing continue.
+    if (size >= MAX_SESSION_PAGE_LOADS) {
+      if (!sessionCapReached) {
+        setSessionCapReached(true)
+        toast({
+          title: "Session Limit Reached",
+          description: `You've loaded ${MAX_SESSION_PAGE_LOADS} pages this session. Refresh the page to keep browsing.`,
+          variant: "default",
+        })
+      }
+      return
+    }
+
+    const now = Date.now()
+    // Drop timestamps outside the window before evaluating the cap.
+    loadTimestampsRef.current = loadTimestampsRef.current.filter(t => now - t < WINDOW_MS)
+
+    if (loadTimestampsRef.current.length >= MAX_LOADS_PER_WINDOW) {
+      // Cap hit: refuse this load and surface it to the user instead of
+      // silently queuing forever — sustained scrolling should visibly
+      // pause, not just get quietly delayed.
+      const wasAlreadyLimited = scrollLimitedRef.current
+      scrollLimitedRef.current = true
+      setScrollLimited(true)
+      if (!wasAlreadyLimited) {
+        toast({
+          title: "Scrolling Too Fast",
+          description: `Loading is paused for a few seconds to avoid overloading the provider. Please slow down.`,
+          variant: "default",
+        })
+      }
+      const oldest = loadTimestampsRef.current[0]
+      const retryIn = WINDOW_MS - (now - oldest) + 50
+      if (throttleRetryRef.current) clearTimeout(throttleRetryRef.current)
+      throttleRetryRef.current = setTimeout(() => {
+        throttleRetryRef.current = null
+        scrollLimitedRef.current = false
+        setScrollLimited(false)
+      }, retryIn)
+      return
+    }
+
+    scrollLimitedRef.current = false
+    setScrollLimited(false)
+    loadTimestampsRef.current.push(now)
+
     loadMoreGuardRef.current = true
     setLoadMoreError(false)
 
@@ -385,7 +468,15 @@ export function useBooruSearch() {
     const nextSize = size + 1
     setSize(nextSize)
     trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
-  }, [size, order, setSize, allPosts.length])
+  }, [size, order, setSize, allPosts.length, toast, sessionCapReached])
+
+  // Cancel any pending throttle retry on unmount to avoid calling a stale
+  // closure after the component is gone.
+  useEffect(() => {
+    return () => {
+      if (throttleRetryRef.current) clearTimeout(throttleRetryRef.current)
+    }
+  }, [])
 
   // Clear guard when SWR starts validating (confirms the load was accepted)
   useEffect(() => {
@@ -532,6 +623,8 @@ export function useBooruSearch() {
     noMoreResults,
  loadMoreError,
  circuitOpen,
+ scrollLimited,
+ sessionCapReached,
 
     loadMore,
     refresh,

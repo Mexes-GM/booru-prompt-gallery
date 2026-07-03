@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { smartFetch } from '@/lib/network/smart-fetch'
 import { PROVIDER_URLS, getDanbooruUserAgent } from '@/lib/constants'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
+import { getDanbooruApiRateLimit, getDanbooruCombinedLimit } from '@/lib/rate-limit'
 import { coalesce } from '@/lib/request-coalescer'
+import { resolveRateLimitUserId } from '@/lib/rate-limit-identity'
 
 // Vercel Edge Runtime for faster performance
 export const runtime = 'edge'
@@ -11,7 +12,7 @@ export const runtime = 'edge'
 // Very cacheable route
 export const revalidate = 3600 // 1 hour
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const provider = searchParams.get('provider') || 'danbooru'
@@ -74,29 +75,41 @@ export async function GET(request: Request) {
 
     // 3. If there are missing tags, fetch them from the external provider
     if (missingTags.length > 0) {
-      // Rate limit check before calling external API
-      const ratelimit = getDanbooruApiRateLimit()
-      if (ratelimit) {
-        const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
-        const { success } = await ratelimit.limit(clientIp)
+      const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
 
-        if (!success) {
-		return NextResponse.json(
-				{ error: 'Too many requests. Please wait before searching tags.' },
-				{ status: 429, headers: { 'Retry-After': '10', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
-			)
+      if (provider === 'danbooru') {
+        // Fase 2 (redis-optimization-plan.md): 1 Redis EVAL instead of 2
+        // separate rate-limit round-trips (per-IP + global).
+        // F4 (flag-gated): resolves authed:<userId> when ADAPTIVE_LIMITS is on
+        // and the request carries a valid Supabase session; otherwise null and
+        // the key/limit are identical to before.
+        const userId = await resolveRateLimitUserId(request)
+        const combined = await getDanbooruCombinedLimit(clientIp, userId)
+
+        if (combined.userCount > combined.userMax && !combined.degraded) {
+          return NextResponse.json(
+            { error: 'Too many requests. Please wait before searching tags.' },
+            { status: 429, headers: { 'Retry-After': '10', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
+          )
         }
-      }
 
-      // Global rate limit — caps total outbound Danbooru requests from ALL users
-      const globalLimit = getDanbooruGlobalRateLimit()
-      if (globalLimit) {
-        const { success } = await globalLimit.limit('danbooru-outbound')
-        if (!success) {
-		return NextResponse.json(
-					{ error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-					{ status: 429, headers: { 'Retry-After': '2', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
-				)
+        if (combined.globalCount > 8 && !combined.degraded) {
+          return NextResponse.json(
+            { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+            { status: 429, headers: { 'Retry-After': '2', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
+          )
+        }
+      } else {
+        // Aibooru: general per-IP limiter only (no shared circuit-breaker for this provider).
+        const ratelimit = getDanbooruApiRateLimit()
+        if (ratelimit) {
+          const { success } = await ratelimit.limit(clientIp)
+          if (!success) {
+            return NextResponse.json(
+              { error: 'Too many requests. Please wait before searching tags.' },
+              { status: 429, headers: { 'Retry-After': '10', 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store' } }
+            )
+          }
         }
       }
 

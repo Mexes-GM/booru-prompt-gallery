@@ -1,9 +1,12 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { BooruFactory } from '@/lib/booru/factory'
-import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
+import { getDanbooruApiRateLimit, getDanbooruCombinedLimit } from '@/lib/rate-limit'
 import { coalesce } from '@/lib/request-coalescer'
-import { isCircuitOpenShared, getCircuitRetryAfter } from '@/lib/circuit-breaker'
+import { getCircuitRetryAfter } from '@/lib/circuit-breaker'
+import { logRateLimitBlock } from '@/lib/observability'
+import { NEXT_LIMITS } from '@/lib/limits'
+import { resolveRateLimitUserId } from '@/lib/rate-limit-identity'
 
 export const runtime = 'nodejs'
 
@@ -21,39 +24,75 @@ export async function GET(request: NextRequest) {
 
  console.log(`[API /posts] page=${page}, order=${order}, provider=${providerType}, seed=${seed}, tags="${tags.slice(0,50)}", url=${request.nextUrl.toString().slice(0,150)}`)
 
-  // Rate limit check — applies to ALL providers that hit external APIs
-  const ratelimit = getDanbooruApiRateLimit()
-  if (ratelimit) {
+  // Fase 2 (redis-optimization-plan.md): for Danbooru, per-IP + global
+  // rate-limit + circuit-breaker state are fetched in a single Redis EVAL
+  // instead of 3 separate round-trips.
+  if (providerType === 'danbooru') {
     const clientIp = getClientIp(request)
-    const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
+    const userId = await resolveRateLimitUserId(request)
+    const combined = await getDanbooruCombinedLimit(clientIp, userId)
+    const keyType = userId ? 'authed' : 'anon'
 
-    if (!success) {
+    if (combined.userCount > combined.userMax && !combined.degraded) {
+      logRateLimitBlock({ surface: 'posts', keyType, scope: 'per-ip', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
       return NextResponse.json(
-        { error: 'Too many requests. Please wait before loading more posts.', retryAfter: Math.ceil((reset - Date.now()) / 1000) },
+        { error: 'Too many requests. Please wait before loading more posts.', retryAfter: 10 },
         {
           status: 429,
           headers: {
             'Cache-Control': 'no-store',
             'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
-            'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
-            'X-RateLimit-Limit': String(limit),
-            'X-RateLimit-Remaining': String(remaining),
-            'X-RateLimit-Reset': String(reset),
+            'Retry-After': '10',
           },
         }
       )
     }
-  }
 
-  // Global rate limit — Danbooru only (protects shared outbound IP)
-  if (providerType === 'danbooru') {
-    const globalLimit = getDanbooruGlobalRateLimit()
-    if (globalLimit) {
-      const { success } = await globalLimit.limit('danbooru-outbound')
+    if (combined.globalCount > NEXT_LIMITS.danbooruCombined.global.max && !combined.degraded) {
+      logRateLimitBlock({ surface: 'posts', keyType, scope: 'global', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
+      return NextResponse.json(
+        { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+        { status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
+      )
+    }
+
+    if (combined.circuitOpen) {
+      const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000) || 60
+      logRateLimitBlock({ surface: 'posts', keyType, scope: 'circuit', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
+      return NextResponse.json(
+        { error: 'Danbooru is saturated. Please wait before retrying.', retryAfter },
+        {
+          status: 429,
+          headers: {
+            'Cache-Control': 'no-store',
+            'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
+            'Retry-After': String(retryAfter),
+          },
+        }
+      )
+    }
+  } else {
+    // Non-Danbooru providers only need the general per-IP limiter.
+    const ratelimit = getDanbooruApiRateLimit()
+    if (ratelimit) {
+      const clientIp = getClientIp(request)
+      const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
+
       if (!success) {
+        logRateLimitBlock({ surface: 'posts', keyType: 'anon', scope: 'per-ip', origin: providerType, requestId: request.headers.get('x-request-id') ?? undefined })
         return NextResponse.json(
-          { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-          { status: 429, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
+          { error: 'Too many requests. Please wait before loading more posts.', retryAfter: Math.ceil((reset - Date.now()) / 1000) },
+          {
+            status: 429,
+            headers: {
+              'Cache-Control': 'no-store',
+              'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
+              'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
+              'X-RateLimit-Limit': String(limit),
+              'X-RateLimit-Remaining': String(remaining),
+              'X-RateLimit-Reset': String(reset),
+            },
+          }
         )
       }
     }
@@ -64,22 +103,6 @@ export async function GET(request: NextRequest) {
   // multiple distinct requests into a single coalesced/cached response.
   const cacheKey = `${providerType}-${tags}-${page}-${order}${seed ? `-${seed}` : ''}`
   const cacheDuration = 600
-
-  // Circuit breaker check — fail fast if Danbooru circuit is open
- if (providerType === 'danbooru' && await isCircuitOpenShared('danbooru-api')) {
- const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
- return NextResponse.json(
- { error: 'Danbooru is saturated. Please wait before retrying.', retryAfter },
- {
- status: 429,
- headers: {
- 'Cache-Control': 'no-store',
- 'Netlify-CDN-Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store',
- 'Retry-After': String(retryAfter),
- },
- }
- )
- }
 
   try {
     const provider = BooruFactory.getProvider(providerType)

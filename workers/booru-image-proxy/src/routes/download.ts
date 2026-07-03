@@ -3,6 +3,9 @@ import { Redis, getRedis } from '../lib/redis'
 import { checkCircuitOpen } from '../lib/circuit-breaker'
 import { PROVIDER_REFERERS, USER_AGENT, getDanbooruUserAgent, MERGED_RATELIMIT_SCRIPT } from '../lib/constants'
 import { errorResponse, getClientIp } from '../utils'
+import { isBlocked, markBlocked, clearBlocked } from '../lib/rate-limit-cache'
+import { logRateLimitBlock } from '../logger'
+import { WORKER_LIMITS } from '../lib/limits'
 
 const ALLOWED_DOMAINS = [
   'danbooru.donmai.us', 'cdn.donmai.us', 'donmai.us',
@@ -47,14 +50,11 @@ export async function downloadHandler(
     const clientIp = getClientIp(request)
 
     if (isDanbooru) {
-      // Single EVAL: atomically INCR+EXPIRE both per-IP and global keys
       const userKey = `ratelimit:booru:${clientIp}`
       const globalKey = 'ratelimit:danbooru:global:download'
-      const result = await redis.eval(MERGED_RATELIMIT_SCRIPT, [userKey, globalKey], ['60']) as number[]
-      const userCount = result?.[0] ?? 0
-      const globalCount = result?.[1] ?? 0
 
-      if (userCount > 30) {
+      // Fase 1: already-known-blocked IP — reject without touching Redis.
+      if (isBlocked(userKey)) {
         return errorResponse(
           'Too many downloads. Please wait before downloading another image.',
           429,
@@ -62,7 +62,24 @@ export async function downloadHandler(
         )
       }
 
-      if (globalCount > 100) {
+      // Single EVAL: atomically INCR+EXPIRE both per-IP and global keys
+      const result = await redis.eval(MERGED_RATELIMIT_SCRIPT, [userKey, globalKey], [String(WORKER_LIMITS.downloadDanbooru.perIp.windowS)]) as number[]
+      const userCount = result?.[0] ?? 0
+      const globalCount = result?.[1] ?? 0
+
+      if (userCount > WORKER_LIMITS.downloadDanbooru.perIp.max) {
+        markBlocked(userKey, WORKER_LIMITS.downloadDanbooru.perIp.windowS)
+        logRateLimitBlock(request, { surface: 'download', keyType: 'anon', scope: 'per-ip', origin: 'danbooru' })
+        return errorResponse(
+          'Too many downloads. Please wait before downloading another image.',
+          429,
+          { 'Retry-After': '10', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        )
+      }
+      clearBlocked(userKey)
+
+      if (globalCount > WORKER_LIMITS.downloadDanbooru.global.max) {
+        logRateLimitBlock(request, { surface: 'download', keyType: 'anon', scope: 'global', origin: 'danbooru' })
         return errorResponse(
           'Danbooru requests are temporarily throttled. Please wait a moment.',
           429,
@@ -71,19 +88,33 @@ export async function downloadHandler(
       }
     } else {
       const userKey = `ratelimit:booru:${clientIp}`
-      const userCount = await redis.incrWithExpire(userKey, 60)
-      if (userCount > 20) {
+
+      // Fase 1: already-known-blocked IP — reject without touching Redis.
+      if (isBlocked(userKey)) {
         return errorResponse(
           'Too many downloads. Please wait before downloading another image.',
           429,
           { 'Retry-After': '10', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
         )
       }
+
+      const userCount = await redis.incrWithExpire(userKey, WORKER_LIMITS.downloadOther.perIp.windowS)
+      if (userCount > WORKER_LIMITS.downloadOther.perIp.max) {
+        markBlocked(userKey, WORKER_LIMITS.downloadOther.perIp.windowS)
+        logRateLimitBlock(request, { surface: 'download', keyType: 'anon', scope: 'per-ip', origin: urlDomain })
+        return errorResponse(
+          'Too many downloads. Please wait before downloading another image.',
+          429,
+          { 'Retry-After': '10', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+        )
+      }
+      clearBlocked(userKey)
     }
 
     if (isDanbooru) {
       const circuit = await checkCircuitOpen(redis, 'danbooru-api')
       if (circuit.open) {
+        logRateLimitBlock(request, { surface: 'download', keyType: 'anon', scope: 'circuit', origin: 'danbooru' })
         return errorResponse(
           'Danbooru is saturated. Please wait before downloading.',
           429,

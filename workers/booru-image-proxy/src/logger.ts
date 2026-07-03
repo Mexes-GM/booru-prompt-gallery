@@ -105,3 +105,36 @@ export function reqLogger(request: Request, route: string): Logger {
   const requestId = request.headers.get("x-request-id") ?? undefined
   return logger.child({ route, requestId })
 }
+
+// ---------------------------------------------------------------------------
+// Standardized rate-limit block telemetry (F0 — rate-limit-antiabuse plan).
+// Mirror of lib/observability.ts logRateLimitBlock so worker rejections share
+// the same schema (surface / keyType / scope / origin) as the Next side.
+// ---------------------------------------------------------------------------
+export type RateLimitSurface =
+  | "posts"
+  | "image"
+  | "download"
+  | "tags"
+  | "trends"
+  | "ai"
+  | "auth"
+  | "feedback"
+  | "favorites"
+
+export interface RateLimitBlockFields {
+  surface: RateLimitSurface
+  keyType: "anon" | "authed"
+  scope: "per-ip" | "global" | "circuit" | "client"
+  origin?: string
+  [key: string]: unknown
+}
+
+/** Emit one structured `ratelimit_block` line for a 429 on a cost-bearing surface. */
+export function logRateLimitBlock(
+  request: Request,
+  fields: RateLimitBlockFields
+): void {
+  const requestId = request.headers.get("x-request-id") ?? undefined
+  logger.child({ component: "rate-limit", requestId }).warn("ratelimit_block", fields)
+}

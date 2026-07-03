@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { X, Copy, Check, Sparkles, Settings2, Loader2, RefreshCw, AlertCircle, History, Trash2 } from "lucide-react"
 import { useLLMSettings, LLMProvider } from '@/hooks/use-llm-settings'
 import { apiUrl } from '@/lib/api-client'
+import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
 import { toast } from '@/hooks/use-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
@@ -104,6 +105,10 @@ const AiConvertStickyFooterComponent = ({
   const [isCopied, setIsCopied] = useState(false)
   const [isPulseActive, setIsPulseActive] = useState(false)
   const [dailyRemaining, setDailyRemaining] = useState<number | null>(null)
+  // F2 (rate-limit-antiabuse): Turnstile token for the free AI tier. Stays null
+  // (and the widget renders nothing) until NEXT_PUBLIC_TURNSTILE_SITE_KEY is set,
+  // so this is a no-op today. Sent only for the free 'cloudflare' provider.
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
 
   // Controlled popover state so it closes on Save
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -202,6 +207,8 @@ const AiConvertStickyFooterComponent = ({
           apiKey: prov === 'cloudflare' ? undefined : key,
           model: model || undefined,
           image: image || undefined,
+          // Only the free 'cloudflare' tier is gated server-side (F2).
+          turnstile_token: prov === 'cloudflare' ? (turnstileToken || undefined) : undefined,
         }),
       })
 
@@ -307,6 +314,12 @@ const AiConvertStickyFooterComponent = ({
           )}
 
           <div className="p-3 sm:p-4 flex flex-col gap-3">
+            {/* F2: Turnstile for the free AI tier. Renders nothing until
+                NEXT_PUBLIC_TURNSTILE_SITE_KEY is set; kept in the DOM (sr-only)
+                so a token is produced non-interactively for the free provider. */}
+            {isTurnstileEnabled() && settings.provider === 'cloudflare' && (
+              <Turnstile onVerify={setTurnstileToken} className="sr-only" />
+            )}
             {/* Header controls */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

@@ -1,8 +1,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { PROVIDER_REFERERS, USER_AGENT, getDanbooruUserAgent } from '@/lib/constants'
-import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
-import { isCircuitOpenShared, getCircuitRetryAfter } from '@/lib/circuit-breaker'
+import { getDanbooruApiRateLimit, getDanbooruCombinedLimit } from '@/lib/rate-limit'
+import { logRateLimitBlock } from '@/lib/observability'
+import { NEXT_LIMITS } from '@/lib/limits'
+import { resolveRateLimitUserId } from '@/lib/rate-limit-identity'
 
 // Use Node.js runtime for better stability with outgoing requests
 export const runtime = 'nodejs'
@@ -46,13 +48,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'URL domain not allowed' }, { status: 403 })
   }
 
-  // Rate limit check — applies to ALL providers hitting external APIs
-  const ratelimit = getDanbooruApiRateLimit()
-  if (ratelimit) {
+  // Fase 2 (redis-optimization-plan.md): for Danbooru, per-IP + global
+  // rate-limit + circuit-breaker state are fetched in a single Redis EVAL
+  // instead of 3 separate round-trips.
+  if (isDanbooru) {
     const clientIp = getClientIp(request)
-    const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
+    const userId = await resolveRateLimitUserId(request)
+    const combined = await getDanbooruCombinedLimit(clientIp, userId)
+    const keyType = userId ? 'authed' : 'anon'
 
-    if (!success) {
+    if (combined.userCount > combined.userMax && !combined.degraded) {
+      logRateLimitBlock({ surface: 'download', keyType, scope: 'per-ip', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
       return NextResponse.json(
         { error: 'Too many downloads. Please wait before downloading another image.' },
         {
@@ -62,35 +68,53 @@ export async function GET(request: NextRequest) {
             'CDN-Cache-Control': 'no-store',
             'Netlify-CDN-Cache-Control': 'no-store',
             'Vercel-CDN-Cache-Control': 'no-store',
-            'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
-            'X-RateLimit-Limit': String(limit),
-            'X-RateLimit-Remaining': String(remaining),
-            'X-RateLimit-Reset': String(reset),
+            'Retry-After': '10',
           },
         }
       )
     }
-  }
 
-  // Global rate limit + circuit breaker — Danbooru only
-  if (isDanbooru) {
-    const globalLimit = getDanbooruGlobalRateLimit()
-    if (globalLimit) {
-      const { success } = await globalLimit.limit('danbooru-outbound')
-      if (!success) {
-        return NextResponse.json(
-          { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-          { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
-        )
-      }
+    if (combined.globalCount > NEXT_LIMITS.danbooruCombined.global.max && !combined.degraded) {
+      logRateLimitBlock({ surface: 'download', keyType, scope: 'global', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
+      return NextResponse.json(
+        { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+        { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
+      )
     }
 
-    if (await isCircuitOpenShared('danbooru-api')) {
-      const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
+    if (combined.circuitOpen) {
+      logRateLimitBlock({ surface: 'download', keyType, scope: 'circuit', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
       return NextResponse.json(
-        { error: 'Danbooru is saturated. Please wait before downloading.', retryAfter },
-        { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': String(retryAfter) } }
+        { error: 'Danbooru is saturated. Please wait before downloading.', retryAfter: 60 },
+        { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '60' } }
       )
+    }
+  } else {
+    // Non-Danbooru providers only need the general per-IP limiter.
+    const ratelimit = getDanbooruApiRateLimit()
+    if (ratelimit) {
+      const clientIp = getClientIp(request)
+      const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
+
+      if (!success) {
+        logRateLimitBlock({ surface: 'download', keyType: 'anon', scope: 'per-ip', origin: urlDomain, requestId: request.headers.get('x-request-id') ?? undefined })
+        return NextResponse.json(
+          { error: 'Too many downloads. Please wait before downloading another image.' },
+          {
+            status: 429,
+            headers: {
+              'Cache-Control': 'no-store',
+              'CDN-Cache-Control': 'no-store',
+              'Netlify-CDN-Cache-Control': 'no-store',
+              'Vercel-CDN-Cache-Control': 'no-store',
+              'Retry-After': String(Math.ceil((reset - Date.now()) / 1000)),
+              'X-RateLimit-Limit': String(limit),
+              'X-RateLimit-Remaining': String(remaining),
+              'X-RateLimit-Reset': String(reset),
+            },
+          }
+        )
+      }
     }
   }
 

@@ -16,7 +16,11 @@ APP_VERSION = "9.5.0"
 # UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
 # DANBOORU_USERNAME, DANBOORU_API_KEY,
 # DISCORD_FEEDBACK_WEBHOOK_URL,
-# TURNSTILE_SECRET_KEY
+# TURNSTILE_SECRET_KEY, TURNSTILE_AI_GATE,
+# SUPABASE_JWT_SECRET (F4: HS256 secret to verify Supabase access tokens
+#   locally — Dashboard → Settings → API → JWT Secret),
+# ADAPTIVE_LIMITS (F4 master flag, "1" to enable; default unset = off,
+#   behavior identical to before F4 existed)
 
 [observability]
 enabled = true

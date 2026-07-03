@@ -1,6 +1,10 @@
 // Image proxy — adapted from original workers/image-proxy/index.js
 // Handles Danbooru/Gelbooru image proxying with CF edge caching
 import { getRedis } from '../lib/redis'
+import { isBlocked, markBlocked, clearBlocked } from '../lib/rate-limit-cache'
+import { MERGED_RATELIMIT_SCRIPT_2TTL } from '../lib/constants'
+import { logRateLimitBlock } from '../logger'
+import { WORKER_LIMITS } from '../lib/limits'
 
 
 const ALLOWED_DOMAINS = [
@@ -47,9 +51,10 @@ function isOriginAllowed(origin: string, referer: string): boolean {
   return check(origin) || check(referer)
 }
 
-const RATE_LIMIT_MAX = 15
-const GLOBAL_RATE_LIMIT_MAX = 600
-const GLOBAL_RATE_WINDOW = 60
+const RATE_LIMIT_MAX = WORKER_LIMITS.image.perIp.max
+const GLOBAL_RATE_LIMIT_MAX = WORKER_LIMITS.image.global.max
+const GLOBAL_RATE_WINDOW = WORKER_LIMITS.image.global.windowS
+const PER_IP_RATE_WINDOW = WORKER_LIMITS.image.perIp.windowS
 
 function getClientId(request: Request): string {
   const ip = request.headers.get('cf-connecting-ip') || 'unknown'
@@ -117,14 +122,15 @@ export async function imageProxyHandler(
   // Rate limit (cache misses only)
   const clientId = getClientId(request)
   const redis = getRedis(env as any)
-  let remaining = RATE_LIMIT_MAX
+  let remaining: number = RATE_LIMIT_MAX
   let reset = Date.now() + 10000
 
   if (redis) {
-    // Global rate limit — protects against aggregate abuse across IPs
     const globalKey = 'ratelimit:imageproxy:global'
-    const globalCount = await redis.incrWithExpire(globalKey, GLOBAL_RATE_WINDOW)
-    if (globalCount > GLOBAL_RATE_LIMIT_MAX) {
+    const key = `ratelimit:imageproxy:${clientId}`
+
+    // Fase 1: already-known-blocked → reject without touching Redis at all.
+    if (isBlocked(globalKey)) {
       return new Response(JSON.stringify({
         error: 'Image proxy is temporarily under heavy load. Please try again in a moment.',
         retryAfter: GLOBAL_RATE_WINDOW,
@@ -139,14 +145,7 @@ export async function imageProxyHandler(
         },
       })
     }
-
-    // Per-IP rate limit
-    const key = `ratelimit:imageproxy:${clientId}`
-    const count = await redis.incrWithExpire(key, 10)
-    
-    remaining = Math.max(0, RATE_LIMIT_MAX - count)
-    
-    if (count > RATE_LIMIT_MAX) {
+    if (isBlocked(key)) {
       return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: 10 }), {
         status: 429,
         headers: {
@@ -158,6 +157,53 @@ export async function imageProxyHandler(
         },
       })
     }
+
+    // Fase 2: 1 eval instead of 2 incrWithExpire round-trips — independent
+    // TTLs (global=60s, per-IP=10s).
+    const result = await redis.eval(
+      MERGED_RATELIMIT_SCRIPT_2TTL,
+      [globalKey, key],
+      [String(GLOBAL_RATE_WINDOW), String(PER_IP_RATE_WINDOW)]
+    ) as number[]
+    const globalCount = result?.[0] ?? 0
+    const count = result?.[1] ?? 0
+
+    if (globalCount > GLOBAL_RATE_LIMIT_MAX) {
+      markBlocked(globalKey, GLOBAL_RATE_WINDOW)
+      logRateLimitBlock(request, { surface: 'image', keyType: 'anon', scope: 'global', origin: parsedUrl.hostname })
+      return new Response(JSON.stringify({
+        error: 'Image proxy is temporarily under heavy load. Please try again in a moment.',
+        retryAfter: GLOBAL_RATE_WINDOW,
+      }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Retry-After': String(GLOBAL_RATE_WINDOW),
+          'X-RateLimit-Limit': String(GLOBAL_RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': '0',
+        },
+      })
+    }
+    clearBlocked(globalKey)
+
+    remaining = Math.max(0, RATE_LIMIT_MAX - count)
+
+    if (count > RATE_LIMIT_MAX) {
+      markBlocked(key, PER_IP_RATE_WINDOW)
+      logRateLimitBlock(request, { surface: 'image', keyType: 'anon', scope: 'per-ip', origin: parsedUrl.hostname })
+      return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: 10 }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Retry-After': '10',
+          'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
+          'X-RateLimit-Remaining': '0',
+        },
+      })
+    }
+    clearBlocked(key)
   }
 
   try {

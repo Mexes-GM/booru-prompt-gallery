@@ -4,6 +4,7 @@ import { getSupabase } from '../lib/supabase'
 import { getRedis } from '../lib/redis'
 import { errorResponse, getClientIp } from '../utils'
 import { corsHeaders } from '../utils'
+import { isBlocked, markBlocked, clearBlocked } from '../lib/rate-limit-cache'
 
 const TABLE = 'trend_cache'
 const FETCH_LOCK_TTL_SECONDS = 180
@@ -92,14 +93,24 @@ export async function trendsHandler(
   const redis = getRedis(env)
   if (redis) {
     const clientIp = getClientIp(request)
-    const count = await redis.incrWithExpire(`ratelimit:trends:${clientIp}`, 60)
-    if (count > 10) {
+    const key = `ratelimit:trends:${clientIp}`
+    if (isBlocked(key)) {
       return errorResponse('Too many trends requests', 429, {
         'Retry-After': '30',
         'Cache-Control': 'no-store',
         'CDN-Cache-Control': 'no-store',
       })
     }
+    const count = await redis.incrWithExpire(key, 60)
+    if (count > 10) {
+      markBlocked(key, 60)
+      return errorResponse('Too many trends requests', 429, {
+        'Retry-After': '30',
+        'Cache-Control': 'no-store',
+        'CDN-Cache-Control': 'no-store',
+      })
+    }
+    clearBlocked(key)
   }
 
   try {

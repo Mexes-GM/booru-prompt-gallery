@@ -1,5 +1,6 @@
 import { Ratelimit } from "@upstash/ratelimit"
 import { redis } from "./redis"
+import { NEXT_LIMITS } from "./limits"
 
 // ---------------------------------------------------------------------------
 // In-memory fallback rate limiter
@@ -68,7 +69,6 @@ const fallbackGeneral = new InMemoryRatelimit(10, 10_000)
 const fallbackAuth = new InMemoryRatelimit(5, 900_000)
 const fallbackMagicLink = new InMemoryRatelimit(3, 600_000)
 const fallbackDanbooruApi = new InMemoryRatelimit(10, 10_000) // stricter than Redis 15/10s
-const fallbackDanbooruGlobal = new InMemoryRatelimit(5, 1_000) // 5 req/s per-instance fallback
 
 function logFallback(layer: string, reason: string): void {
   console.log(JSON.stringify({
@@ -81,6 +81,49 @@ function logFallback(layer: string, reason: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Short-circuit for already-blocked keys (Fase 1 — redis-optimization-plan.md)
+//
+// Upstash charges per command, even for rejected requests: a hammering IP
+// (incident: ~4,000 req/hour from one user) costs the same 1-2 commands per
+// request whether it's allowed or rejected. Once a key has been rejected by
+// Upstash, we remember it in memory until its reset time and short-circuit
+// all further checks locally — no Upstash call at all. This only ever makes
+// rejection cheaper; it never lets a request through that Upstash would have
+// blocked (fail-closed).
+//
+// Per-instance/isolate memory is best-effort (not shared across Vercel
+// function instances), but a hammering abuser keeps hitting the same warm
+// instance, so this captures the bulk of the amplification in practice.
+// ---------------------------------------------------------------------------
+
+const blockedUntil = new Map<string, number>()
+
+function isShortCircuited(key: string): RateLimitResult | null {
+  const reset = blockedUntil.get(key)
+  if (reset === undefined) return null
+  if (Date.now() >= reset) {
+    blockedUntil.delete(key)
+    return null
+  }
+  return { success: false, limit: 0, remaining: 0, reset }
+}
+
+function rememberIfBlocked(key: string, result: RateLimitResult): void {
+  if (!result.success) {
+    blockedUntil.set(key, result.reset)
+  } else {
+    blockedUntil.delete(key)
+  }
+}
+
+function cleanupBlocked(): void {
+  const now = Date.now()
+  for (const [key, reset] of blockedUntil) {
+    if (now >= reset) blockedUntil.delete(key)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Rate limiter factory with automatic Upstash → in-memory fallback
 // ---------------------------------------------------------------------------
 
@@ -90,6 +133,10 @@ async function safeLimit(
   key: string,
   label: string
 ): Promise<RateLimitResult> {
+  // Fase 1: reject already-known-blocked keys without touching Upstash.
+  const shortCircuited = isShortCircuited(key)
+  if (shortCircuited) return shortCircuited
+
   if (!upstashLimiter) {
     // Development mode or no Redis configured — use in-memory directly
     return fallbackLimiter.limit(key)
@@ -97,7 +144,9 @@ async function safeLimit(
 
   try {
     const result = await upstashLimiter.limit(key)
+    rememberIfBlocked(key, result)
     fallbackLimiter.cleanup()
+    cleanupBlocked()
     return result
   } catch (err: unknown) {
     const reason = err instanceof Error ? err.message : String(err)
@@ -188,7 +237,7 @@ export function getDanbooruApiRateLimit(): SafeRatelimit | null {
 
   const upstash = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(15, "10 s"),
+    limiter: Ratelimit.slidingWindow(NEXT_LIMITS.danbooruApi.max, `${NEXT_LIMITS.danbooruApi.windowS} s`),
     analytics: false,
     prefix: "@upstash/ratelimit/danbooru-api",
   })
@@ -202,21 +251,96 @@ export function getDanbooruApiRateLimit(): SafeRatelimit | null {
 // Danbooru enforces 10 req/s per IP. All Vercel functions share the same
 // outbound IP, so we must cap total throughput regardless of user count.
 // Call with a fixed key like "danbooru-outbound" (NOT per-user IP).
-export function getDanbooruGlobalRateLimit(): SafeRatelimit | null {
-  if (process.env.NODE_ENV === 'development') return null
+//
+// Superseded by getDanbooruCombinedLimit() below (Fase 2 —
+// redis-optimization-plan.md), which folds this check into the same EVAL as
+// the per-IP limit and circuit-breaker read. Removed to avoid dead code.
 
-  if (!redis) {
-    return { limit: (key: string) => Promise.resolve(fallbackDanbooruGlobal.limit(key)) }
+// ---------------------------------------------------------------------------
+// Merged Danbooru check — Fase 2 (redis-optimization-plan.md)
+//
+// /api/posts, /api/download and /api/favorites each made 3 separate Redis
+// round-trips per request: per-IP rate-limit, global rate-limit, and a GET
+// for the shared circuit-breaker state. This combines all three into a
+// single EVAL (fixed-window INCR+EXPIRE for both counters + GET for the
+// circuit key), cutting Redis commands ~66% on this hot path.
+//
+// Trade-off: fixed window instead of the sliding window `@upstash/ratelimit`
+// used before. Slightly burstier at window boundaries, but same order-of-
+// magnitude protection, and it's the same fixed-window approach already used
+// by the Cloudflare Worker (MERGED_RATELIMIT_SCRIPT).
+// ---------------------------------------------------------------------------
+
+const MERGED_DANBOORU_SCRIPT = `
+  local user = redis.call('INCR', KEYS[1])
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+  local global = redis.call('INCR', KEYS[2])
+  redis.call('EXPIRE', KEYS[2], ARGV[2])
+  local circuit = redis.call('GET', KEYS[3])
+  return {user, global, circuit or false}
+`
+
+export interface DanbooruCombinedResult {
+  userCount: number
+  globalCount: number
+  circuitOpen: boolean
+  /** true when this result came from the in-memory fallback (Redis unavailable/dev) */
+  degraded: boolean
+  /** Effective per-key limit for this request (scaled up for authed users). */
+  userMax: number
+}
+
+const fallbackDanbooruUser = new InMemoryRatelimit(NEXT_LIMITS.danbooruCombined.perIp.max, NEXT_LIMITS.danbooruCombined.perIp.windowS * 1000)
+const combinedBlockKeyPrefix = 'danbooru-combined:'
+
+/**
+ * Single Redis round-trip for the Danbooru hot path: per-IP window (10s),
+ * global window (1s), and shared circuit-breaker state, all in one EVAL.
+ * Falls back to local in-memory limiting if Redis is unavailable/dev mode.
+ */
+export async function getDanbooruCombinedLimit(clientIp: string, userId?: string | null): Promise<DanbooruCombinedResult> {
+  // F4 (flag-gated, default off): an authenticated user is keyed by user id and
+  // gets `authedMultiplier`× the per-IP allowance. When userId is null (flag off
+  // or anonymous), the key and limit are IDENTICAL to the pre-F4 behavior.
+  const authed = Boolean(userId)
+  const userMax = authed
+    ? NEXT_LIMITS.danbooruCombined.perIp.max * NEXT_LIMITS.danbooruCombined.authedMultiplier
+    : NEXT_LIMITS.danbooruCombined.perIp.max
+  const userKey = authed
+    ? `${combinedBlockKeyPrefix}user:authed:${userId}`
+    : `${combinedBlockKeyPrefix}user:${clientIp}`
+
+  if (process.env.NODE_ENV === 'development' || !redis) {
+    const result = fallbackDanbooruUser.limit(userKey)
+    return { userCount: result.success ? 0 : 999, globalCount: 0, circuitOpen: false, degraded: true, userMax }
   }
 
-  const upstash = new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(8, "1 s"),
-    analytics: false,
-    prefix: "@upstash/ratelimit/danbooru-global",
-  })
+  // Fase 1: already-known-blocked key — skip Redis entirely.
+  if (isShortCircuited(userKey)) {
+    return { userCount: 9999, globalCount: 0, circuitOpen: false, degraded: false, userMax }
+  }
 
-  return {
-    limit: (key: string) => safeLimit(upstash, fallbackDanbooruGlobal, key, 'danbooru-global'),
+  try {
+    const result = await redis.eval(
+      MERGED_DANBOORU_SCRIPT,
+      [userKey, 'danbooru-combined:global', 'circuit:danbooru-api'],
+      [String(NEXT_LIMITS.danbooruCombined.perIp.windowS), String(NEXT_LIMITS.danbooruCombined.global.windowS)]
+    ) as [number, number, string | false]
+
+    const [userCount, globalCount, circuitVal] = result
+    const blocked = userCount > userMax || globalCount > NEXT_LIMITS.danbooruCombined.global.max
+    rememberIfBlocked(userKey, {
+      success: !blocked,
+      limit: userMax,
+      remaining: Math.max(0, userMax - userCount),
+      reset: Date.now() + NEXT_LIMITS.danbooruCombined.perIp.windowS * 1000,
+    })
+
+    return { userCount, globalCount, circuitOpen: circuitVal === 'open', degraded: false, userMax }
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err)
+    logFallback('danbooru-combined', reason)
+    const result = fallbackDanbooruUser.limit(userKey)
+    return { userCount: result.success ? 0 : 999, globalCount: 0, circuitOpen: false, degraded: true, userMax }
   }
 }

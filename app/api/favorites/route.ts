@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BooruFactory } from '@/lib/booru/factory'
 import { BooruPost } from '@/lib/booru/types'
-import { getDanbooruApiRateLimit, getDanbooruGlobalRateLimit } from '@/lib/rate-limit'
-import { isCircuitOpenShared, getCircuitRetryAfter } from '@/lib/circuit-breaker'
+import { getDanbooruCombinedLimit } from '@/lib/rate-limit'
 
 export const runtime = 'edge'
 
@@ -73,37 +72,29 @@ export async function POST(request: NextRequest) {
     // --- Rate limit and circuit breaker check for Danbooru ---
     const hasDanbooru = !!groups['danbooru']
     if (hasDanbooru) {
-      // Per-user rate limit
-      const ratelimit = getDanbooruApiRateLimit()
-      if (ratelimit) {
-        const clientIp = getClientIp(request)
-        const { success } = await ratelimit.limit(clientIp)
-        if (!success) {
-          return NextResponse.json(
-            { error: 'Too many requests. Please wait before loading favorites.' },
-            { status: 429, headers: { 'Retry-After': '10' } }
-          )
-        }
-      }
+      // Fase 2 (redis-optimization-plan.md): 1 Redis EVAL instead of 3
+      // separate checks (per-IP + global + circuit-breaker GET).
+      const clientIp = getClientIp(request)
+      const combined = await getDanbooruCombinedLimit(clientIp)
 
-      // Global rate limit
-      const globalLimit = getDanbooruGlobalRateLimit()
-      if (globalLimit) {
-        const { success } = await globalLimit.limit('danbooru-outbound')
-        if (!success) {
-          return NextResponse.json(
-            { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
-            { status: 429, headers: { 'Retry-After': '2' } }
-          )
-        }
-      }
-
-      // Shared circuit breaker
-      if (await isCircuitOpenShared('danbooru-api')) {
-        const retryAfter = Math.ceil(getCircuitRetryAfter('danbooru-api') / 1000)
+      if (combined.userCount > 15 && !combined.degraded) {
         return NextResponse.json(
-          { error: 'Danbooru is saturated. Please wait before retrying.', retryAfter },
-          { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+          { error: 'Too many requests. Please wait before loading favorites.' },
+          { status: 429, headers: { 'Retry-After': '10' } }
+        )
+      }
+
+      if (combined.globalCount > 8 && !combined.degraded) {
+        return NextResponse.json(
+          { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+          { status: 429, headers: { 'Retry-After': '2' } }
+        )
+      }
+
+      if (combined.circuitOpen) {
+        return NextResponse.json(
+          { error: 'Danbooru is saturated. Please wait before retrying.', retryAfter: 60 },
+          { status: 429, headers: { 'Retry-After': '60' } }
         )
       }
     }

@@ -32,6 +32,43 @@ export function logRateLimitHit(
   log.warn("rate_limit_hit", { layer, ...details })
 }
 
+// ---------------------------------------------------------------------------
+// Standardized rate-limit block telemetry (F0 — rate-limit-antiabuse plan).
+//
+// Every rejection (429) on a cost-bearing surface emits ONE structured line
+// with a stable schema so blocks can be graphed by surface / identity / origin
+// without parsing free-text messages. Answers: "which surface is shedding the
+// most load, for anon vs authed users, and against which upstream origin?".
+// ---------------------------------------------------------------------------
+export type RateLimitSurface =
+  | "posts"
+  | "image"
+  | "download"
+  | "tags"
+  | "trends"
+  | "ai"
+  | "auth"
+  | "feedback"
+  | "favorites"
+
+export interface RateLimitBlockFields {
+  /** Which product surface was rejected. */
+  surface: RateLimitSurface
+  /** Whether the limit key was an anonymous IP or an authenticated user. */
+  keyType: "anon" | "authed"
+  /** Which counter tripped: the per-key window or the shared global budget. */
+  scope: "per-ip" | "global" | "circuit" | "client"
+  /** Upstream origin the surface protects (for cost attribution). */
+  origin?: string
+  /** Correlation id if available. */
+  requestId?: string
+  [key: string]: unknown
+}
+
+export function logRateLimitBlock(fields: RateLimitBlockFields): void {
+  log.warn("ratelimit_block", { layer: "rate-limit", ...fields })
+}
+
 // Cache operations
 export function logCacheHit(
   layer: "worker" | "api",

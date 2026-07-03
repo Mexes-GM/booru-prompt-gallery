@@ -1,7 +1,7 @@
 import { Env } from '../types'
 import { getSupabase } from '../lib/supabase'
-import { getRedis, Redis } from '../lib/redis'
 import { jsonResponse, getClientIp } from '../utils'
+import { memoryRateLimit } from '../lib/rate-limit-cache'
 
 interface TagData {
   name: string
@@ -12,11 +12,10 @@ let tagsCache: TagData[] | null = null
 let cacheTimestamp = 0
 const CACHE_DURATION = 24 * 60 * 60 * 1000
 
-async function checkRateLimit(redis: Redis | null, clientIp: string): Promise<boolean> {
-  if (!redis) return true
-  const key = `ratelimit:tags:${clientIp}`
-  const count = await redis.incrWithExpire(key, 60)
-  return count <= 60
+function checkRateLimit(clientIp: string): boolean {
+  // This route serves a 24h-cached static list — it never touches donmai,
+  // so a pure in-memory limiter is enough (Fase 5, redis-optimization-plan.md).
+  return memoryRateLimit(`tags:${clientIp}`, 60, 60_000)
 }
 
 export async function tagsHandler(
@@ -26,10 +25,9 @@ export async function tagsHandler(
   const url = new URL(request.url)
   const category = url.searchParams.get('category')
 
-  // Rate limit
-  const redis = getRedis(env)
+  // Rate limit — pure in-memory, no Redis (Fase 5).
   const clientIp = getClientIp(request)
-  const allowed = await checkRateLimit(redis, clientIp)
+  const allowed = checkRateLimit(clientIp)
   if (!allowed) {
     return jsonResponse(
       { error: 'Too many requests. Please wait a moment.' },

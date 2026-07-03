@@ -6,6 +6,7 @@ import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
 // URL helpers extracted to lib/booru/urls.ts (pure, no React). Re-exported below
 // so existing `@/lib/api-client` consumers keep working.
 import { apiUrl, buildDirectDanbooruUrl } from './booru/urls'
+import { getAuthHeader } from './booru/auth-header'
 import { transformAibooruPost, transformE621Post } from './booru/post-transformers'
 
 export { transformAibooruPost, transformE621Post }
@@ -263,12 +264,26 @@ const fetcher = async (url: string) => {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         const isDirectAibooru = url.startsWith(PROVIDER_URLS.AIBOORU)
+        // F4 (rate-limit-antiabuse plan): only attach the Supabase access
+        // token to requests that actually reach OUR infrastructure
+        // (/api/posts — same-origin Next.js or our Cloudflare Worker).
+        // Direct cross-origin fetches to third-party boorus (Danbooru,
+        // e621, Aibooru...) must NOT get a custom Authorization header —
+        // it turns a simple CORS request into one requiring a preflight,
+        // which those APIs don't handle and rejects the whole request.
+        const isOwnInfra = url.includes('/api/posts')
+
+        // F4 (rate-limit-antiabuse plan): attach the Supabase access token
+        // (if any) so the Worker can key adaptive limits by authed user
+        // instead of IP. No-op when there's no session or the flag is off.
+        const authHeader = isOwnInfra ? await getAuthHeader() : {}
 
         const headers: HeadersInit = isDirectAibooru
           ? {}
           : {
             'Accept': 'application/json',
             'User-Agent': USER_AGENT,
+            ...authHeader,
           }
 
         const res = await fetch(url, { headers })
@@ -588,8 +603,10 @@ export async function fetchBatchTagCounts(
       provider
     })
     
-    // Uses relative path; apiUrl() prepends CF Worker URL when configured
-    const response = await fetch(apiUrl(`/api/booru/tags?${params.toString()}`))
+    // Uses relative path; apiUrl() prepends CF Worker URL when configured.
+    // F4: attach the Supabase access token (if any) for adaptive limits.
+    const authHeader = await getAuthHeader()
+    const response = await fetch(apiUrl(`/api/booru/tags?${params.toString()}`), { headers: authHeader })
     
     if (!response.ok) {
       console.error(`Failed to fetch tag counts: ${response.status}`)

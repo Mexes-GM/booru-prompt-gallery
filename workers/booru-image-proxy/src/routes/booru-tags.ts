@@ -5,12 +5,27 @@ import { checkCircuitOpen } from '../lib/circuit-breaker'
 import { PROVIDER_URLS, getDanbooruUserAgent } from '../lib/constants'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
 import type { Redis } from '../lib/redis'
+import { isBlocked, markBlocked, clearBlocked } from '../lib/rate-limit-cache'
+import { logRateLimitBlock } from '../logger'
+import { WORKER_LIMITS } from '../lib/limits'
+import { resolveRateLimitUserId } from '../lib/rate-limit-identity'
 
-async function checkRateLimit(redis: Redis | null, clientIp: string): Promise<boolean> {
+async function checkRateLimit(redis: Redis | null, clientIp: string, userId: string | null): Promise<boolean> {
   if (!redis) return true
-  const key = `ratelimit:booru-tags:${clientIp}`
-  const count = await redis.incrWithExpire(key, 60)
-  return count <= 30 // 30 req/min — this route hits external APIs
+  const authed = Boolean(userId)
+  const max = authed
+    ? WORKER_LIMITS.tags.perIp.max * (WORKER_LIMITS.tags.authedMultiplier ?? 1)
+    : WORKER_LIMITS.tags.perIp.max
+  const key = authed ? `ratelimit:booru-tags:authed:${userId}` : `ratelimit:booru-tags:${clientIp}`
+  if (isBlocked(key)) return false
+  const count = await redis.incrWithExpire(key, WORKER_LIMITS.tags.perIp.windowS)
+  const allowed = count <= max // hits external booru APIs
+  if (!allowed) {
+    markBlocked(key, WORKER_LIMITS.tags.perIp.windowS)
+  } else {
+    clearBlocked(key)
+  }
+  return allowed
 }
 
 async function fetchWithRetry(url: string, headers: Record<string, string>, retries = 2): Promise<Response> {
@@ -44,8 +59,13 @@ export async function booruTagsHandler(
   // Rate limit
   const redis = getRedis(env)
   const clientIp = getClientIp(request)
-  const allowed = await checkRateLimit(redis, clientIp)
+  // F4 (flag-gated): resolves authed:<userId> when ADAPTIVE_LIMITS is on and
+  // the request carries a valid Supabase access token; otherwise null and
+  // behavior is identical to before this existed.
+  const userId = await resolveRateLimitUserId(request, env)
+  const allowed = await checkRateLimit(redis, clientIp, userId)
   if (!allowed) {
+    logRateLimitBlock(request, { surface: 'tags', keyType: userId ? 'authed' : 'anon', scope: 'per-ip', origin: provider })
     return errorResponse(
       'Too many tag search requests. Please wait a moment.',
       429,
@@ -62,6 +82,7 @@ export async function booruTagsHandler(
   if (provider === 'danbooru' && redis) {
     const circuit = await checkCircuitOpen(redis, 'danbooru-api')
     if (circuit.open) {
+      logRateLimitBlock(request, { surface: 'tags', keyType: 'anon', scope: 'circuit', origin: 'danbooru' })
       return errorResponse(
         'Danbooru is saturated. Please wait before searching tags.',
         429,

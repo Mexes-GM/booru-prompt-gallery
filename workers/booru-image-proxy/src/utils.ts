@@ -27,7 +27,10 @@ export function getCorsHeaders(origin: string | null): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    // F4 (rate-limit-antiabuse plan): Authorization carries the Supabase access
+    // token so the worker can resolve authed identity for adaptive limits.
+    // Additive — anonymous callers that never send this header are unaffected.
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Expose-Headers': 'X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Type, X-RateLimit-Daily-Remaining',
     'Access-Control-Max-Age': '86400', // Cache preflight for 24h
     ...securityHeaders,

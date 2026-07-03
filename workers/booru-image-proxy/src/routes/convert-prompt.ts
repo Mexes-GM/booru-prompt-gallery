@@ -2,6 +2,7 @@ import { Env } from '../types'
 import { jsonResponse, errorResponse } from '../utils'
 import { Redis } from '@upstash/redis/cloudflare'
 import { Ratelimit } from '@upstash/ratelimit'
+import { verifyTurnstile } from '../lib/turnstile'
 
 const SYSTEM_PROMPT = `You are an expert prompt engineer for Anima, a text-to-image model focused on anime/illustration style. Convert booru tags into a descriptive natural language paragraph.
 
@@ -311,8 +312,8 @@ export async function convertPromptHandler(
   }
 
   try {
-    const body = (await request.json()) as { tags?: string, provider?: string, apiKey?: string, image?: string, model?: string }
-    const { tags, provider = 'cloudflare', apiKey, image, model: customModel } = body
+    const body = (await request.json()) as { tags?: string, provider?: string, apiKey?: string, image?: string, model?: string, turnstile_token?: string }
+    const { tags, provider = 'cloudflare', apiKey, image, model: customModel, turnstile_token } = body
 
     // ── Input Validation ──────────────────────────────────────────────────────
     // Validate provider early
@@ -353,6 +354,25 @@ export async function convertPromptHandler(
     // ── Rate Limiting ──────────────────────────────────────────────────────────
     const ip = request.headers.get('cf-connecting-ip') || 'unknown'
     const isFreeTier = provider === 'cloudflare' || !apiKey
+
+    // F2 (rate-limit-antiabuse): gate the FREE tier — which spends OUR shared
+    // Cloudflare Workers AI quota — behind Turnstile. Enforced ONLY when the
+    // explicit flag TURNSTILE_AI_GATE='1' is set (decoupled from the feedback
+    // secret, so setting TURNSTILE_SECRET_KEY alone never breaks AI). Default
+    // off → no behavior change. The paid tier (user's own API key, no cost to
+    // us) is never challenged. Runs before the Redis limiters so a token-less
+    // bot is rejected without spending rate-limit commands.
+    if (isFreeTier && env.TURNSTILE_AI_GATE === '1') {
+      const turnstileOk = await verifyTurnstile(env, turnstile_token, ip)
+      if (!turnstileOk) {
+        return errorResponse(
+          'Verification required. Please retry; if this persists, refresh the page.',
+          403,
+          { 'X-RateLimit-Type': 'challenge' }
+        )
+      }
+    }
+
     const limiters = createRatelimiters(env)
     let dailyRemaining: number | null = null
 

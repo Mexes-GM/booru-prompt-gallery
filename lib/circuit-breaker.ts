@@ -130,21 +130,11 @@ import { redis } from "./redis"
 
 const CIRCUIT_REDIS_PREFIX = "circuit:"
 
-/**
- * Check circuit state across all Vercel instances via Redis.
- * Falls back to local in-memory state if Redis is unavailable.
- */
-export async function isCircuitOpenShared(key: string): Promise<boolean> {
-  if (isCircuitOpen(key)) return true
-
-  if (!redis) return false
-  try {
-    const val = await redis.get(`${CIRCUIT_REDIS_PREFIX}${key}`)
-    return val === "open"
-  } catch {
-    return false
-  }
-}
+// Note: the old isCircuitOpenShared() read-only helper was removed — its
+// only call sites (/api/posts, /api/download, /api/favorites,
+// /api/booru/tags) now go through getDanbooruCombinedLimit() in
+// lib/rate-limit.ts (Fase 2 — redis-optimization-plan.md), which reads the
+// same circuit key as part of its single merged EVAL.
 
 /**
  * Record failure locally and broadcast to all instances via Redis.

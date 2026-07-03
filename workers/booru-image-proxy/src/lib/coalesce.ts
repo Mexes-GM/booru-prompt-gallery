@@ -1,6 +1,27 @@
 import { Redis } from './redis'
 import { sleep } from '../utils'
 
+/**
+ * Fase 3 (redis-optimization-plan.md): peek the coalesce cache for `key`
+ * without acquiring any lock or running the fetcher. Used to skip
+ * rate-limit/circuit-breaker Redis commands entirely on a cache hit — a
+ * cached response never reaches the origin, so it doesn't need to be
+ * counted against the per-IP/global/circuit protections.
+ *
+ * Costs 1 extra GET on a cache MISS (coalesce() below re-checks), but saves
+ * 1-4 commands on a HIT, which is the common case for popular/trending posts.
+ */
+export async function peekCache<T>(redis: Redis | null, key: string): Promise<T | null> {
+  if (!redis) return null
+  const cached = await redis.get(`coalesce:cache:${key}`)
+  if (!cached) return null
+  try {
+    return JSON.parse(cached) as T
+  } catch {
+    return null
+  }
+}
+
 export async function coalesce<T>(
   redis: Redis | null,
   key: string,
