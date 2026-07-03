@@ -1,6 +1,7 @@
 import { useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useLowMotion } from "@/hooks/use-low-motion"
+import { isDanbooruCircuitOpen, openDanbooruCircuit } from "@/lib/booru/danbooru-circuit"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -25,19 +26,13 @@ import {
 } from "lucide-react"
 import {
     BooruPost,
-    isAibooruPost,
-    getPromptFromPost,
-    removeLoRaTags as removeLoRaTagsUtil,
-    removeQualityTags as removeQualityTagsUtil,
     BooruProvider
 } from "@/lib/api-client"
 import { PROVIDER_POST_URLS } from "@/lib/constants"
 import { getDanbooruProxyUrl, getGelbooruProxyUrl } from "@/lib/proxy-url"
-import { cleanPrompt } from "@/lib/cleanPrompt"
-import { type BackgroundMode, processBackgroundTags } from "@/lib/background-detector"
-import { applyWeights, extractWeights } from "@/lib/weight-utils"
-import { classifyTags, TagCategory, ClassifiedTags } from "@/lib/tag-classifier"
-import { resolveTagConflicts } from "@/lib/tag-conflicts"
+import { type BackgroundMode } from "@/lib/background-detector"
+import { type TagCategory, type ClassifiedTags } from "@/lib/tag-classifier"
+import { useCardPrompt } from "@/hooks/use-card-prompt"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import {
     DropdownMenu,
@@ -167,26 +162,6 @@ interface MasonryItemProps {
     showCategoryTagBadges?: boolean
 }
 
-// Module-level circuit breaker: if any Danbooru direct CDN image fails with 403,
-// skip direct attempts for the rest of the session. Prevents 2x requests on every
-// image when the user's IP is blocked by Cloudflare WAF.
-// Resets on page reload (sessionStorage) or after 30 min inactivity.
-const DANBOORU_CB_KEY = 'danbooru_direct_blocked'
-function isDanbooruCircuitOpen(): boolean {
-  if (typeof window === 'undefined') return false
-  try {
-    const entry = sessionStorage.getItem(DANBOORU_CB_KEY)
-    if (!entry) return false
-    const { ts } = JSON.parse(entry)
-    return Date.now() - ts < 30 * 60 * 1000 // 30 min
-  } catch { return false }
-}
-function openDanbooruCircuit(): void {
-  if (typeof window === 'undefined') return
-  try {
-    sessionStorage.setItem(DANBOORU_CB_KEY, JSON.stringify({ ts: Date.now() }))
-  } catch { /* noop */ }
-}
 
 // Memoized MasonryItem to prevent unnecessary re-renders
 export const MasonryItem = memo(function MasonryItem({
@@ -238,8 +213,6 @@ export const MasonryItem = memo(function MasonryItem({
     showCategoryTagBadges = true,
 }: MasonryItemProps) {
     const lowMotion = useLowMotion()
-    const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
-    const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
 
     // State to hold modified prompt from user interaction
     const [modifiedContent, setModifiedContent] = useState<string | null>(null)
@@ -259,159 +232,39 @@ export const MasonryItem = memo(function MasonryItem({
         toggleFavorite(post.id, itemProvider, folderId, post)
     }
 
-    // Check if this is an Aibooru post with prompt
-    const isAiPost = isAibooruPost(post)
-    let aiPrompt = isAiPost ? getPromptFromPost(post) : null
-
-    // Apply LoRa tag removal if option is enabled (only to original prompt)
-    if (aiPrompt && removeLoRaTags) {
-        aiPrompt = removeLoRaTagsUtil(aiPrompt)
-    }
-
-    // Apply quality tag removal if option is enabled (only to original prompt)
-    if (aiPrompt && removeQualityTags) {
-        aiPrompt = removeQualityTagsUtil(aiPrompt)
-    }
-
-    // ponytail: compute cleanPrompt once with common options, derive variants.
-    // pureContent = shared + bg processing. baseContent = shared + addedTags + bg processing.
-    // teachContent stays separate (different optimizeTags: false pipeline).
-    const sharedCleaned = useMemo(() => {
-        const sharedOpts = {
-            includeCharacters, includeCopyrights: false, optimizeTags,
-            exclude: excludeList, addedTags: [] as string[], tagOverrides,
-            backgroundMode: 'keep' as BackgroundMode, simpleBackgroundReplacementTags,
-            escapeOutput: false, metaTags: post.tag_string_meta,
-        }
-        return aiPrompt
-            ? cleanPrompt(aiPrompt, "", "", "", sharedOpts)
-            : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, sharedOpts)
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, simpleBackgroundReplacementTags])
-
-    // ---- Background processing helper (applied on top of sharedCleaned) ----
-    const applyBackground = useCallback((content: string) => {
-        if (!content) return content
-        if (backgroundMode === 'keep' || backgroundMode === undefined) return content
-        const tags = content.split(',').map(t => t.trim())
-        const processed = processBackgroundTags(
-            tags, backgroundMode, simpleBackgroundReplacementTags, tagOverrides,
-            { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients },
-            detailedBackgroundsList, post.id,
-        )
-        return processed.join(', ')
-    }, [backgroundMode, simpleBackgroundReplacementTags, tagOverrides, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, post.id])
-
-    // ---- Derived outputs ----
-
-    // pureContent: sharedCleaned + background processing, no added tags (for classification/copying)
-    const pureContent = useMemo(() => applyBackground(sharedCleaned), [sharedCleaned, applyBackground])
-
-    const conflictResolution = useMemo(() => {
-        if (!pureContent || addList.length === 0 || !smartTagExclusion) return { validTags: addList, conflictingTags: [] };
-        const baseTags = pureContent.split(',').map(t => t.trim());
-        return resolveTagConflicts(baseTags, addList);
-    }, [pureContent, addList, smartTagExclusion])
-
-    // baseContent: full cleanPrompt with conflict-resolved addedTags.
-    // Must go through cleanPrompt so addedTags get normalized, exclusion-filtered,
-    // and deduplicated against the rest of the output.
-    const baseContent = useMemo(() => {
-        const opts = {
-            includeCharacters, includeCopyrights: false, optimizeTags,
-            exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides,
-            backgroundMode, simpleBackgroundReplacementTags,
-            randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
-            backgroundSeed: post.id,
-            metaTags: post.tag_string_meta,
-        }
-        return aiPrompt
-            ? cleanPrompt(aiPrompt, "", "", "", opts)
-            : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, opts)
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, post.id, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList])
-
-    const displayContent = useMemo(() => {
-        if (isGlobalWeightsEnabled && baseContent) {
-            return applyWeights(baseContent, globalWeights)
-        }
-        return baseContent
-    }, [baseContent, isGlobalWeightsEnabled, globalWeights])
-
-    const pureDisplayContent = useMemo(() => {
-        if (isGlobalWeightsEnabled && pureContent) {
-            return applyWeights(pureContent, globalWeights)
-        }
-        return pureContent
-    }, [pureContent, isGlobalWeightsEnabled, globalWeights])
-
-    // Reset modified content when BASE content changes substantially (e.g. new post or new filters)
-    // NOT when global weights change/toggle, to preserve local edits
-    useEffect(() => {
-        setModifiedContent(null)
-    }, [baseContent])
-
-    // Prepare character tags
-    const characterTagsArray = useMemo(() => (post.tag_string_character ? post.tag_string_character.split(' ') : [])
-        .map(t => t.replace(/_/g, ' ').toLowerCase().replace(/\(/g, "\\(").replace(/\)/g, "\\)")), [post.tag_string_character])
-
-    // Lazy: only computed when the Teach modal opens (rare).
-    // Combines teachContent → teachTagsForClassification → classifiedTeachTags
-    // into a single on-demand pipeline instead of 3 eager useMemos.
-    const getClassifiedTeachTags = useCallback(() => {
-        const raw = aiPrompt
-            ? cleanPrompt(aiPrompt, "", "", "", {
-                includeCharacters, includeCopyrights: false, optimizeTags: false,
-                exclude: excludeList, tagOverrides,
-                backgroundMode: 'keep', simpleBackgroundReplacementTags,
-                escapeOutput: false, metaTags: post.tag_string_meta,
-            })
-            : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, {
-                includeCharacters, includeCopyrights: false, optimizeTags: false,
-                exclude: excludeList, tagOverrides,
-                backgroundMode: 'keep', simpleBackgroundReplacementTags,
-                escapeOutput: false, metaTags: post.tag_string_meta,
-            })
-        const teachTags = raw ? raw.split(',').map(t => t.trim()) : []
-        const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim()
-        const charTagsSet = new Set(characterTagsArray.map(normalizeForMatch))
-        const filteredTags = teachTags.filter(t => !charTagsSet.has(normalizeForMatch(t)))
-        return classifyTags(filteredTags, tagOverrides, [])
-    }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags, characterTagsArray])
-
-    // Pre-classify tags for the dropdown counts (USING PURE DISPLAY CONTENT)
-    // This ensures that "added tags" don't inflate the category counts
-    const tagsForClassification = useMemo(() => pureDisplayContent ? pureDisplayContent.split(',').map(t => t.trim()) : [], [pureDisplayContent])
-
-    const totalTagsCount = useMemo(() => tagsForClassification.filter(t => t.length > 0).length, [tagsForClassification])
-
-    const tagCountIndicator = useMemo(() => {
-        if (!tagCounts || characterTagsArray.length === 0) return null;
-        
-        let maxCount = 0;
-        let sumCounts = 0;
-        
-        // Find the top character's count
-        for (const rawTag of characterTagsArray) {
-            // Re-normalize tag to match how it might be stored in the dictionary if needed, 
-            // but Danbooru tags typically keep underscores. 
-            // In characterTagsArray spaces were replaced, we should check both.
-            const withSpaces = rawTag.replace(/\\/g, ''); // remove escapes
-            const withUnderscores = withSpaces.replace(/\s+/g, '_');
-            
-            const count = tagCounts[withUnderscores] ?? tagCounts[withSpaces] ?? 0;
-            if (count > maxCount) maxCount = count;
-            sumCounts += count;
-        }
-        
-        if (maxCount === 0) return null;
-        
-        return Intl.NumberFormat('en', { notation: 'compact' }).format(maxCount);
-    }, [tagCounts, characterTagsArray]);
-
-    const classifiedTags = useMemo(() => {
-        // Ensure character tags are included in the classification source
-        const allTagsForClassification = Array.from(new Set([...characterTagsArray, ...tagsForClassification]))
-        return classifyTags(allTagsForClassification, tagOverrides, characterTagsArray)
-    }, [characterTagsArray, tagsForClassification, tagOverrides])
+    const {
+        isAiPost,
+        aiPrompt,
+        baseContent,
+        displayContent,
+        pureDisplayContent,
+        characterTagsArray,
+        getClassifiedTeachTags,
+        totalTagsCount,
+        tagCountIndicator,
+        classifiedTags,
+        hasActiveOptions,
+        conflictingTags,
+    } = useCardPrompt({
+        post,
+        tagCounts,
+        excludeInput,
+        addInput,
+        includeCharacters,
+        optimizeTags,
+        smartTagExclusion,
+        removeLoRaTags,
+        removeQualityTags,
+        backgroundMode,
+        simpleBackgroundReplacementTags,
+        randomBackgroundPatterns,
+        randomBackgroundIncludeGradients,
+        detailedBackgroundsList,
+        tagOverrides,
+        globalWeights,
+        isGlobalWeightsEnabled,
+        onBaseContentChange: () => setModifiedContent(null),
+    })
 
     const copyCategory = async (category: TagCategory) => {
         if (!pureDisplayContent) return
@@ -514,11 +367,7 @@ export const MasonryItem = memo(function MasonryItem({
         }
     }
 
-    // Determine if options are active that affect the prompt
-    const hasActiveOptions = useMemo(() => {
-        // Only show indicator if Smart Tag Exclusion actively blocked tags from being added
-        return conflictResolution.conflictingTags.length > 0
-    }, [conflictResolution.conflictingTags.length])
+    // hasActiveOptions now comes from useCardPrompt()
 
     // Grid View
     const renderCard = () => {
@@ -837,7 +686,7 @@ export const MasonryItem = memo(function MasonryItem({
                             onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
                             globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                             onSearch={onSearch}
-                              conflictingTags={conflictResolution.conflictingTags}
+                              conflictingTags={conflictingTags}
                         />
                     </div>
 
@@ -1195,7 +1044,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
                                 globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                                 onSearch={onSearch}
-                                conflictingTags={conflictResolution.conflictingTags}
+                                conflictingTags={conflictingTags}
                             />
                         </div>
 

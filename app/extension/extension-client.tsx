@@ -86,6 +86,7 @@ import {
 } from "@/components/ui/dialog"
 import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
+import { SmoothFilterSlider } from "@/components/ui/smooth-filter-slider"
 import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-modal"
 import { BlacklistManager } from "@/components/prompt-gallery/blacklist-manager"
 import { useBlacklist } from "@/hooks/use-blacklist"
@@ -438,110 +439,6 @@ function PocketCard({
         </div>
       </div>
     </Card>
-  )
-}
-
-interface SmoothFilterSliderProps {
-  min: number
-  max: number
-  step?: number
-  value: string
-  onChange: (value: string) => void
-  onCommit: (value: string) => void
-  disabled?: boolean
-  labelPrefix: string
-  tooltipTitle: string
-  tooltipDescription: string
-  tooltipVisual?: React.ReactNode
-  inputId: string
-  isInputValid: boolean
-  maxInput?: number
-  ariaLabel: string
-  dotColor?: string
-}
-
-function SmoothFilterSlider({
-  min,
-  max,
-  step = 1,
-  value,
-  onChange,
-  onCommit,
-  disabled = false,
-  labelPrefix,
-  tooltipTitle,
-  tooltipDescription,
-  tooltipVisual,
-  inputId,
-  isInputValid,
-  maxInput = 1000000,
-  ariaLabel,
-  dotColor,
-}: SmoothFilterSliderProps) {
-  const [localValue, setLocalValue] = useState(value)
-
-  useEffect(() => {
-    setLocalValue(value)
-  }, [value])
-
-  const handleSliderChange = useCallback((val: number[]) => {
-    setLocalValue(val[0].toString())
-  }, [])
-
-  const handleSliderCommit = useCallback((val: number[]) => {
-    const stringVal = val[0].toString()
-    onChange(stringVal)
-    onCommit(stringVal)
-  }, [onChange, onCommit])
-
-  const handleInputChange = useCallback((newVal: string) => {
-    setLocalValue(newVal)
-    onChange(newVal)
-  }, [onChange])
-
-  const handleInputBlur = useCallback(() => {
-    onCommit(localValue)
-  }, [onCommit, localValue])
-
-  return (
-    <div className="space-y-1 mt-2">
-      <label htmlFor={inputId} className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
-        {dotColor && <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></span>}
-        <InfoTooltip
-          title={tooltipTitle}
-          description={tooltipDescription}
-          visual={tooltipVisual}
-        >
-          {labelPrefix} ({`>=`} {localValue})
-        </InfoTooltip>
-      </label>
-      <div className="flex items-center gap-3">
-        <Slider
-          min={min}
-          max={max}
-          step={step}
-          value={[parseInt(localValue) || min]}
-          onValueChange={handleSliderChange}
-          onValueCommit={handleSliderCommit}
-          disabled={disabled}
-          className={`flex-1 ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
-          aria-label={ariaLabel}
-        />
-        <DebouncedInput
-          id={inputId}
-          type="number"
-          min={min}
-          max={maxInput}
-          value={localValue}
-          onChange={handleInputChange}
-          debounceTime={500}
-          onBlur={handleInputBlur}
-          disabled={disabled}
-          className={`h-7 w-14 text-[10px] text-center bg-background/50 ${!isInputValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
-          aria-label={`${ariaLabel} input`}
-        />
-      </div>
-    </div>
   )
 }
 
@@ -1439,6 +1336,7 @@ export default function ExtensionClient() {
               {/* Sliders */}
               <div className="flex flex-col gap-1">
                 <SmoothFilterSlider
+                  variant="compact"
                   min={5}
                   max={100}
                   step={1}
@@ -1457,6 +1355,7 @@ export default function ExtensionClient() {
                 />
 
                 <SmoothFilterSlider
+                  variant="compact"
                   min={0}
                   max={10000}
                   step={100}
