@@ -19,6 +19,14 @@ const CLOUDFLARE_WORKER_URL = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || ''
 
 const PROXY_AVAILABLE = Boolean(CLOUDFLARE_WORKER_URL)
 
+// AWS CloudFront distribution fronting cdn.donmai.us (origin-pull + Referer
+// injection + edge cache). When set, Danbooru images are served through it as
+// the PRIMARY path: donmai's Cloudflare WAF blocks direct cross-origin browser
+// loads for ALL users (Cross-Origin-Resource-Policy / bot check), so there is no
+// useful "direct" path. Falls back to the same-origin /api/download route when
+// unset. See docs/image-proxy-migration-plan.md.
+const CDN_PROXY_URL = (process.env.NEXT_PUBLIC_CDN_PROXY_URL || '').replace(/\/$/, '')
+
 // Domains that can be loaded directly (no Referer requirement, permissive CORS)
 const DIRECT_DOMAINS = [
   'aibooru.online',
@@ -104,16 +112,36 @@ export function optimizeImageUrl(url: string, opts: ImageOptimizeOptions = {}): 
   return `${WESERV_BASE}?${params.toString()}`
 }
 
+/**
+ * Rewrite a cdn.donmai.us image URL to the CloudFront proxy host, preserving the
+ * path/query. Returns null when CDN proxying is not configured or the URL is not
+ * a cdn.donmai.us image (the distribution's origin is cdn.donmai.us).
+ */
+export function getDanbooruCdnUrl(imageUrl: string): string | null {
+  if (!CDN_PROXY_URL || !imageUrl) return null
+  try {
+    const u = new URL(imageUrl)
+    if (u.hostname === 'cdn.donmai.us') {
+      return `${CDN_PROXY_URL}${u.pathname}${u.search}`
+    }
+  } catch {
+    // not an absolute URL — ignore
+  }
+  return null
+}
+
 function proxyUrl(imageUrl: string): string {
-  if (!PROXY_AVAILABLE) return optimizeImageUrl(imageUrl)
+  // Danbooru/donmai: CloudFront (if configured) else same-origin /api/download.
+  // Independent of the CF Worker — that is only for Gelbooru/Rule34.
+  if (isDomain(imageUrl, NETLIFY_PROXY_DOMAINS)) {
+    return getDanbooruCdnUrl(imageUrl) ?? `/api/download?url=${encodeURIComponent(imageUrl)}&inline=1`
+  }
   // Direct — no Referer/WAF concerns, so safe to optimize via weserv.
   if (isDomain(imageUrl, DIRECT_DOMAINS)) return optimizeImageUrl(imageUrl)
-  // Netlify server proxy — avoids cross-Cloudflare blocking
-  if (isDomain(imageUrl, NETLIFY_PROXY_DOMAINS)) {
-    return `/api/download?url=${encodeURIComponent(imageUrl)}&inline=1`
-  }
   // CF Worker — for Gelbooru/Rule34 (Referer injection, non-Cloudflare CDNs)
-  return `${CLOUDFLARE_WORKER_URL}?url=${encodeURIComponent(imageUrl)}`
+  if (PROXY_AVAILABLE) return `${CLOUDFLARE_WORKER_URL}?url=${encodeURIComponent(imageUrl)}`
+  // No worker configured — return direct/optimized as a last resort.
+  return optimizeImageUrl(imageUrl)
 }
 
 export function getDanbooruProxyUrl(imageUrl: string): string {

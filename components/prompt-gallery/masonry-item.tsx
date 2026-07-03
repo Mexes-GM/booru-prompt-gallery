@@ -29,7 +29,7 @@ import {
     BooruProvider
 } from "@/lib/api-client"
 import { PROVIDER_POST_URLS } from "@/lib/constants"
-import { getDanbooruProxyUrl, getGelbooruProxyUrl } from "@/lib/proxy-url"
+import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type TagCategory, type ClassifiedTags } from "@/lib/tag-classifier"
 import { useCardPrompt } from "@/hooks/use-card-prompt"
@@ -299,31 +299,33 @@ export const MasonryItem = memo(function MasonryItem({
     const gelbooruNeedsProxy = isGelbooru && !!rawFileUrl
     const isAibooru = itemProvider === 'aibooru'
 
-    // Danbooru: try direct CDN URL first. If Cloudflare WAF blocks (403),
-    // handleImageError switches to /api/download proxy as fallback.
-    // ponytail: direct-first avoids Netlify function cost for ~90% of users
-    // whose IPs aren't blocked by the WAF. Add when: Cloudflare stops
-    // cross-blocking Worker IPs, or Danbooru changes CDN provider.
+    // Danbooru image routing:
+    // - CloudFront (getDanbooruCdnUrl) is the PRIMARY path when NEXT_PUBLIC_CDN_PROXY_URL
+    //   is set. Direct cross-origin loads are blocked by donmai's WAF/CORP for ALL
+    //   browsers, so there is no useful "direct" path once CloudFront is configured.
+    // - When CloudFront is NOT set, fall back to the legacy direct-first strategy: try
+    //   the raw CDN URL and, on 403, open a session circuit breaker that routes the rest
+    //   of the session through the same-origin /api/download proxy.
+    const isDanbooruImg = rawFileUrl && (rawFileUrl.includes('donmai.us') || rawFileUrl.includes('cdn.donmai.us'))
+    const danbooruCdnUrl = isDanbooruImg ? getDanbooruCdnUrl(rawFileUrl!) : null
+
     const fileUrl = gelbooruNeedsProxy
         ? getGelbooruProxyUrl(rawFileUrl!)
-        : rawFileUrl
+        : (danbooruCdnUrl ?? rawFileUrl)
 
-    // ── Image URL with circuit-breaker fallback ──
-    // Danbooru: try direct CDN first (no proxy cost). If ANY image gets 403,
-    // the circuit opens and ALL subsequent Danbooru images go through proxy
-    // for the rest of the session. This prevents 2x requests per image.
-    // Non-Danbooru: use fileUrl as normal (Gelbooru proxy, Aibooru/E621 direct).
-    const isDanbooruImg = rawFileUrl && (rawFileUrl.includes('donmai.us') || rawFileUrl.includes('cdn.donmai.us'))
-    const danbooruCircuitOpen = isDanbooruImg && isDanbooruCircuitOpen()
+    // Circuit breaker only applies to the legacy direct-first path (no CloudFront).
+    const danbooruCircuitOpen = isDanbooruImg && !danbooruCdnUrl && isDanbooruCircuitOpen()
     const proxyFileUrl = isDanbooruImg
       ? `/api/download?url=${encodeURIComponent(rawFileUrl!)}&inline=1`
       : undefined
     const displayFileUrl = danbooruCircuitOpen ? proxyFileUrl! : (useFallbackUrl && proxyFileUrl ? proxyFileUrl : fileUrl)
 
     const handleImageError = useCallback(() => {
-        // Danbooru direct failed → open circuit, switch to proxy for this image
+        // Image failed → switch to the /api/download fallback once. On the legacy
+        // direct-first path (no CloudFront) also open the session circuit so the rest
+        // of the session skips the doomed direct attempt.
         if (isDanbooruImg && !danbooruCircuitOpen && !useFallbackUrl) {
-            openDanbooruCircuit()
+            if (!danbooruCdnUrl) openDanbooruCircuit()
             setUseFallbackUrl(true)
             setImageError(false)
             return
@@ -335,7 +337,7 @@ export const MasonryItem = memo(function MasonryItem({
             setImageError(false)
             setRetryKey(k => k + 1)
         }, 10_000)
-    }, [onImageError, isDanbooruImg, danbooruCircuitOpen, useFallbackUrl])
+    }, [onImageError, isDanbooruImg, danbooruCdnUrl, danbooruCircuitOpen, useFallbackUrl])
 
     let postUrl = PROVIDER_POST_URLS.DANBOORU(post.id)
 

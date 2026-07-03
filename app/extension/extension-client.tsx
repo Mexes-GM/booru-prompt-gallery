@@ -8,7 +8,7 @@ import { useDetailedBackgrounds } from "@/hooks/use-detailed-backgrounds"
 import { userPreferences, STORAGE_KEYS, type TagPreset, type HistoryItem } from "@/lib/storage"
 import { onSettingsChange } from "@/lib/settings-bridge"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
-import { getGelbooruProxyUrl } from "@/lib/proxy-url"
+import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { cleanPrompt } from "@/lib/cleanPrompt"
 import { processBackgroundTags, BackgroundMode } from "@/lib/background-detector"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
@@ -250,7 +250,7 @@ function PocketCard({
   // For Gelbooru/Rule34, route through referrer-injecting worker proxy.
   const fileUrl = (isGelbooru || itemProvider === "rule34") && rawFileUrl
     ? getGelbooruProxyUrl(rawFileUrl)
-    : rawFileUrl
+    : (getDanbooruCdnUrl(rawFileUrl || '') ?? rawFileUrl)
 
   // For Danbooru, use proxy fallback if direct loading fails.
   const proxyFileUrl = isDanbooruImg

@@ -122,6 +122,7 @@ See [`.env.example`](.env.example) for the full list. Here's what each one does 
 | `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Multi-device favorites sync + auth | Favorites save to localStorage (anonymous mode); admin panel disabled |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-side admin operations | Admin panel disabled; graceful no-op fallback |
 | `NEXT_PUBLIC_IMAGE_PROXY_URL` | Cloudflare Worker for image proxying and API routes | Uses same-origin `/api/*` routes — works fine locally |
+| `NEXT_PUBLIC_CDN_PROXY_URL` | AWS CloudFront distribution fronting `cdn.donmai.us` — serves Danbooru images via edge cache + Referer injection, keeping image bandwidth off Netlify/Vercel | Falls back to the same-origin `/api/download` route |
 | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Server-side rate limiting | In-memory fallback (production); disabled entirely in dev mode |
 | `NEXT_PUBLIC_SENTRY_DSN` + `SENTRY_AUTH_TOKEN` | Error tracking | Disabled — Sentry only activates when `NODE_ENV=production` |
 | `DANBOORU_USERNAME` + `DANBOORU_API_KEY` | Higher Danbooru rate limits (server-side) | Client fetches directly from Danbooru's public API — works without keys |

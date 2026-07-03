@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import { AnnouncementsCarousel } from "@/components/prompt-gallery/announcements-carousel"
+import { getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
@@ -778,12 +779,16 @@ export function PromptGallery() {
         imageUrl.includes('rule34.xxx') ||
         imageUrl.includes('gelbooru.com')
 
+      // Danbooru: prefer the CloudFront proxy (edge cache + CORS) when configured.
+      const cdnUrl = getDanbooruCdnUrl(imageUrl)
+
       let fetchUrl: string
-      if (needsVercelProxy) {
+      if (cdnUrl) {
+        fetchUrl = cdnUrl
+      } else if (needsVercelProxy) {
         fetchUrl = apiUrl(`/api/download?url=${encodeURIComponent(imageUrl)}`)
       } else {
-        // Direct fetch — Danbooru/Aibooru/E621 CDNs are permissive, no Referer needed.
-        // ponytail: one less proxy hop. Add when: if a provider adds CORS restrictions.
+        // Direct fetch — Aibooru/E621 CDNs are permissive, no Referer needed.
         fetchUrl = imageUrl
       }
 
