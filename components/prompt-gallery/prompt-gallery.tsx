@@ -1282,6 +1282,8 @@ export function PromptGallery() {
             noMoreResults={search.noMoreResults}
             loadMoreError={search.loadMoreError}
             loadMore={search.loadMore}
+            scrollLimited={search.scrollLimited}
+            sessionCapReached={search.sessionCapReached}
             favsIsLoading={favs.isLoading}
             favsIsRefreshing={favs.isRefreshing}
             favoritesError={favs.favoritesError}

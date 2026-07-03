@@ -21,6 +21,10 @@ interface ResultsStatesProps {
   noMoreResults: boolean
   loadMoreError: boolean
   loadMore: () => void
+  /** Client-side burst throttle tripped (too many page loads in a short window). */
+  scrollLimited: boolean
+  /** Per-session page cap reached (bounds scroll-scraping). */
+  sessionCapReached: boolean
 
   // favorites
   favsIsLoading: boolean
@@ -51,6 +55,8 @@ export function ResultsStates({
   noMoreResults,
   loadMoreError,
   loadMore,
+  scrollLimited,
+  sessionCapReached,
   favsIsLoading,
   favsIsRefreshing,
   favoritesError,
@@ -65,14 +71,34 @@ export function ResultsStates({
       {/* Load More / States */}
       {filteredPostsLength > 0 && !showFavorites && activeFavoriteFolder !== 'artists' && (
         <div className="text-center pb-8">
-          {!loadMoreError && !imageRateLimited ? (
-            <InfiniteScrollTrigger
-              onIntersect={loadMore}
-              hasNextPage={!noMoreResults && !imageRateLimited}
-              isLoading={isLoadingMore}
-              error={loadMoreError}
-              loadedCount={filteredPostsLength}
-            />
+          {sessionCapReached ? (
+            <div className="space-y-1 max-w-xs mx-auto">
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                Session limit reached for this search.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Try a new search, provider, or filter to keep browsing.
+              </p>
+            </div>
+          ) : !loadMoreError && !imageRateLimited ? (
+            scrollLimited ? (
+              <div className="flex flex-col items-center gap-3 w-full max-w-xs mx-auto">
+                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                  <div className="w-1/4 h-full bg-amber-500 rounded-full animate-indeterminate-bar" />
+                </div>
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  Scrolling too fast — pausing for 5s.
+                </p>
+              </div>
+            ) : (
+              <InfiniteScrollTrigger
+                onIntersect={loadMore}
+                hasNextPage={!noMoreResults && !imageRateLimited}
+                isLoading={isLoadingMore}
+                error={loadMoreError}
+                loadedCount={filteredPostsLength}
+              />
+            )
           ) : imageRateLimited ? (
             <div className="space-y-2">
               <p className="text-sm text-amber-600 dark:text-amber-400">Slow down! Too many requests at once.</p>
@@ -99,7 +125,7 @@ export function ResultsStates({
             </div>
           )}
 
-          {noMoreResults && !loadMoreError && !imageRateLimited && (
+          {noMoreResults && !loadMoreError && !imageRateLimited && !sessionCapReached && (
             <p className="text-muted-foreground text-sm py-4">
               --- End of results ---
             </p>

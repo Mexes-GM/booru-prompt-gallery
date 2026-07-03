@@ -381,8 +381,18 @@ export function useBooruSearch() {
   // time. This is a real sliding-window cap: at most MAX_LOADS_PER_WINDOW
   // page loads within WINDOW_MS. Once hit, further loads are refused (with
   // user-visible feedback) until the oldest load in the window expires.
+  //
+  // TIGHTENED (2026-07-03, real ~500 users/day sizing): 5/10s was more burst
+  // room than natural human scroll needs (reading/looking at each page takes
+  // longer than 2s in practice). 3/10s still feels fluid for normal scrolling
+  // but cuts automated/scripted scrolling off sooner, reducing the aggregate
+  // request volume a normal day of traffic generates.
   const WINDOW_MS = 10_000
-  const MAX_LOADS_PER_WINDOW = 5
+  const MAX_LOADS_PER_WINDOW = 2
+  // Fixed cooldown once the burst cap trips (see SIMPLIFIED note below) —
+  // predictable and easy to show in the UI, instead of a variable wait
+  // computed from the sliding window's exact expiry.
+  const SCROLL_COOLDOWN_MS = 5_000
   const loadTimestampsRef = useRef<number[]>([])
   const throttleRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollLimitedRef = useRef(false)
@@ -392,9 +402,17 @@ export function useBooruSearch() {
   // automated scroll-scraping: a bot that keeps the infinite-scroll trigger
   // firing can otherwise pull unlimited pages. `size` is the SWR page count
   // for the CURRENT search and resets to 1 on any new search/provider/filter
-  // change, so this cap is naturally per-search-session. A human effectively
-  // never reaches 100 pages (~3000 posts); when they do, a refresh continues.
-  const MAX_SESSION_PAGE_LOADS = 100
+  // change, so this cap is naturally per-search-session.
+  //
+  // TIGHTENED (2026-07-03, real ~500 users/day sizing): 100 pages (~3000
+  // posts) was sized to never bother a human, but that also meant it did
+  // nothing to reduce the aggregate request volume of normal browsing — only
+  // stopped extreme scraping. 35 pages (~1050 posts) is still generous for a
+  // real browsing session (few users scroll that deep in one sitting) while
+  // meaningfully lowering the ceiling per search session. Changing search,
+  // provider, order, or any filter resets this cap immediately — a full page
+  // refresh is NOT required to keep browsing.
+  const MAX_SESSION_PAGE_LOADS = 35
   const [sessionCapReached, setSessionCapReached] = useState(false)
 
   const loadMore = useCallback(() => {
@@ -411,14 +429,14 @@ export function useBooruSearch() {
 
     // Hard per-session cap (F5): refuse further auto/manual loads once the
     // session has pulled MAX_SESSION_PAGE_LOADS pages. Bounds scroll-scraping
-    // without hurting humans (who effectively never reach it); a page refresh
-    // resets `size` and lets browsing continue.
+    // without hurting humans (who effectively never reach it); changing the
+    // search/provider/filters resets `size` and lets browsing continue.
     if (size >= MAX_SESSION_PAGE_LOADS) {
       if (!sessionCapReached) {
         setSessionCapReached(true)
         toast({
           title: "Session Limit Reached",
-          description: `You've loaded ${MAX_SESSION_PAGE_LOADS} pages this session. Refresh the page to keep browsing.`,
+          description: `You've loaded ${MAX_SESSION_PAGE_LOADS} pages for this search. Try a new search or filter to keep browsing.`,
           variant: "default",
         })
       }
@@ -433,24 +451,34 @@ export function useBooruSearch() {
       // Cap hit: refuse this load and surface it to the user instead of
       // silently queuing forever — sustained scrolling should visibly
       // pause, not just get quietly delayed.
+      //
+      // SIMPLIFIED (2026-07-03): previously the cooldown was computed from
+      // the sliding window itself (time until the oldest load ages out),
+      // which was mathematically precise but gave the user an unpredictable
+      // wait (anywhere from ~0 to ~10s) with no way to communicate a real
+      // number in the UI. A fixed, short cooldown is easier to reason about
+      // and to show ("pausing for 3s") at the cost of being slightly less
+      // precise about the exact moment the window would allow a retry.
       const wasAlreadyLimited = scrollLimitedRef.current
       scrollLimitedRef.current = true
       setScrollLimited(true)
       if (!wasAlreadyLimited) {
         toast({
           title: "Scrolling Too Fast",
-          description: `Loading is paused for a few seconds to avoid overloading the provider. Please slow down.`,
+          description: `Loading is paused for ${SCROLL_COOLDOWN_MS / 1000}s to avoid overloading the provider. Please slow down.`,
           variant: "default",
         })
       }
-      const oldest = loadTimestampsRef.current[0]
-      const retryIn = WINDOW_MS - (now - oldest) + 50
       if (throttleRetryRef.current) clearTimeout(throttleRetryRef.current)
       throttleRetryRef.current = setTimeout(() => {
         throttleRetryRef.current = null
         scrollLimitedRef.current = false
         setScrollLimited(false)
-      }, retryIn)
+        // Clear the burst window on cooldown expiry so the user gets a full
+        // fresh allowance instead of immediately re-tripping the cap with
+        // whatever timestamps are still inside WINDOW_MS.
+        loadTimestampsRef.current = []
+      }, SCROLL_COOLDOWN_MS)
       return
     }
 

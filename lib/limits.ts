@@ -47,24 +47,17 @@ export const NEXT_LIMITS = {
    * is unchanged. Purely additive — logged-in users get more headroom, nobody
    * gets less. The `global` cap is NOT scaled (it's the shared origin budget).
    *
-   * F4 — budget calculation (2026-07-03, ~500 users/day baseline): the
-   * `global` cap (8 req/1s) bounds this Next.js surface's outbound pressure on
-   * Danbooru independently of the Worker's own `postsDanbooru.global` (this
-   * app has two origins hitting Danbooru: the Worker for /api/posts+download,
-   * and this Next.js API for the same routes when NEXT_PUBLIC_IMAGE_PROXY_URL
-   * is unset, i.e. local dev / same-origin fallback — the two are never both
-   * "live" for the same request, so their ceilings aren't additive in
-   * practice). Worst-case ceiling if saturated 24/7: 8/s * 86400s = 691,200
-   * req/day — again a theoretical upper bound the limiter enforces, not the
-   * expected spend (see workers/booru-image-proxy/src/lib/limits.ts for the
-   * full explanation of why this ceiling deliberately exceeds a byte-for-byte
-   * Upstash budget: Fase 2's free edge WAF is the layer that actually keeps
-   * real spend near the ~sub-1% low-thousands/day documented in
-   * redis-optimization-plan.md, not this app-level cap alone).
+   * TIGHTENED (2026-07-03, real ~500 users/day sizing): the previous
+   * perIp=15/global=8-per-1s values were sized for a much larger concurrent
+   * user base than this app actually has. At 500 users/day, real concurrent
+   * peak is more like 10-30 simultaneous users, not hundreds — so the caps
+   * were rewritten to be ~3-4x that realistic peak instead of ~3-4x a
+   * hypothetical much-bigger one. This directly reduces the Redis command
+   * budget for the aggregate traffic of a normal day, not just abuse spikes.
    */
   danbooruCombined: {
-    perIp: { max: 15, windowS: 10 },
-    global: { max: 8, windowS: 1 },
+    perIp: { max: 10, windowS: 10 },
+    global: { max: 4, windowS: 1 },
     authedMultiplier: 3,
   },
 } as const

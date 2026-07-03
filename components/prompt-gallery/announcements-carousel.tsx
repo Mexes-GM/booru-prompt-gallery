@@ -30,6 +30,7 @@ const COLORS = {
 } as const
 
 const ITEMS: AnnouncementItem[] = [
+  { color: 'indigo', icon: <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />, title: 'Feedback Form Fixed', badge: 'Fix', body: "The Feedback form is back up and working — a misconfiguration was blocking every submission. Bug reports and feature requests go through again." },
   { color: 'amber', icon: <Sparkles className="h-4 w-4 text-amber-600 dark:text-amber-400" />, title: 'Major Mobile Improvements', badge: 'Important', body: "We've overhauled navigation and overall usability on mobile, plus fixed several performance issues along the way. If you found mobile clunky before, give it another try — it should feel a lot smoother now." },
   { color: 'indigo', icon: <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />, title: 'Fixed Search Limits Per Site', badge: 'Fix', body: "Each site has its own rules for how many tags, filters, and sorting options it allows. We found and fixed several cases where the wrong rules were being applied, so your searches now work correctly no matter which site you pick." },
   { color: 'emerald', icon: <Tag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Smarter Search Warnings', badge: 'New', body: "If you type a special search filter that doesn't work on the selected site, we'll now let you know and suggest the right one to use instead." },

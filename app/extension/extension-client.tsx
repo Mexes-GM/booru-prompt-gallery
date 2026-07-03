@@ -1581,13 +1581,33 @@ export default function ExtensionClient() {
 
             {/* Infinite Scroll Trigger */}
             <div className="pt-4 flex items-center justify-center">
-              <InfiniteScrollTrigger
-                onIntersect={search.loadMore}
-                hasNextPage={!search.noMoreResults}
-                isLoading={search.isLoadingMore}
-                error={search.loadMoreError}
-                loadedCount={search.allPosts.length}
-              />
+              {search.sessionCapReached ? (
+                <div className="space-y-1 max-w-xs mx-auto text-center">
+                  <p className="text-sm text-amber-600 dark:text-amber-400">
+                    Session limit reached for this search.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Try a new search, provider, or filter to keep browsing.
+                  </p>
+                </div>
+              ) : search.scrollLimited ? (
+                <div className="flex flex-col items-center gap-3 w-full max-w-xs mx-auto">
+                  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                    <div className="w-1/4 h-full bg-amber-500 rounded-full animate-indeterminate-bar" />
+                  </div>
+                  <p className="text-sm text-amber-600 dark:text-amber-400">
+                    Scrolling too fast — pausing for 5s.
+                  </p>
+                </div>
+              ) : (
+                <InfiniteScrollTrigger
+                  onIntersect={search.loadMore}
+                  hasNextPage={!search.noMoreResults}
+                  isLoading={search.isLoadingMore}
+                  error={search.loadMoreError}
+                  loadedCount={search.allPosts.length}
+                />
+              )}
             </div>
           </>
         )}

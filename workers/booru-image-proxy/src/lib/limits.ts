@@ -22,11 +22,19 @@
 //
 // F4 — explicit budget calculation (2026-07-03, ~500 users/day baseline):
 //
+// TIGHTENED (2026-07-03, second pass): the original global caps below were
+// sized for a much larger concurrent user base than this app actually has.
+// At 500 users/day, real concurrent peak is more like 10-30 simultaneous
+// users, not hundreds. The values were rewritten to be ~3-4x that realistic
+// peak instead of ~3-4x a hypothetical much-bigger one — this reduces the
+// aggregate Redis command budget for a NORMAL day's traffic, not just abuse
+// spikes (which Fase 1's short-circuit already contains cheaply).
+//
 //   Surface          | global max | window | commands/req | worst-case cmd/day
 //   -----------------|-----------:|-------:|--------------:|-------------------:
-//   image             |        600 |    60s | 1 (merged EVAL)| 600 * (86400/60)  = 864,000 ceiling*
-//   postsDanbooru     |        480 |    60s | 1 (merged EVAL)| 480 * (86400/60)  = 691,200 ceiling*
-//   downloadDanbooru  |        100 |    60s | 1 (merged EVAL)| 100 * (86400/60)  = 144,000 ceiling*
+//   image             |        150 |    60s | 1 (merged EVAL)| 150 * (86400/60)  = 216,000 ceiling*
+//   postsDanbooru     |        120 |    60s | 1 (merged EVAL)| 120 * (86400/60)  = 172,800 ceiling*
+//   downloadDanbooru  |         40 |    60s | 1 (merged EVAL)|  40 * (86400/60)  =  57,600 ceiling*
 //
 //   * These are the THEORETICAL ceiling if the global bucket were saturated
 //     100% of every minute, 24/7 — i.e. an ongoing attack, not real traffic.
@@ -36,18 +44,17 @@
 //     day), and Fase 1 (short-circuit already-blocked keys) means a sustained
 //     flood only pays the EVAL cost once per window, not once per request.
 //   Sum of worst-case ceilings across the three Redis-metered surfaces above
-//   is ~1.7M cmd/day IF all three were saturated simultaneously and forever —
-//   this is intentionally NOT the design target (that would blow the 500K/mo
-//   Upstash tier in ~9 hours). It is the reason Fase 2 (edge WAF, $0, cuts
-//   floods off before they reach the Worker/Redis at all) is required
-//   alongside these app-level caps, not instead of them: the app-level caps
-//   are the LAST line of defense, sized to protect the shared booru origins
-//   (donmai, gelbooru) from getting hammered, not to fit a byte-for-byte
-//   Upstash budget on their own. Fase 0 telemetry (`ratelimit_block` logs)
-//   is what confirms real-world spend stays in the low-thousands/day range
-//   documented in redis-optimization-plan.md (~77K/day was the ABUSE
-//   incident this whole plan responds to, already cut by Fase 1 short-
-//   circuiting + Fase 2 edge rules pending manual WAF setup).
+//   is now ~450K cmd/day if all three were saturated simultaneously and
+//   forever (down from ~1.7M before this pass) — still intentionally above
+//   the exact 16.6K/day Upstash average, because Fase 2 (edge WAF, $0, cuts
+//   floods off before they reach the Worker/Redis at all) is the layer meant
+//   to actually keep sustained-attack spend low; these app-level caps are the
+//   last line of defense, now sized closer to this app's real concurrency
+//   instead of a generic "big app" assumption. Fase 0 telemetry
+//   (`ratelimit_block` logs) is what confirms real-world spend stays in the
+//   low-thousands/day range documented in redis-optimization-plan.md
+//   (~77K/day was the ABUSE incident this whole plan responds to, already cut
+//   by Fase 1 short-circuiting + Fase 2 edge rules pending manual WAF setup).
 //
 // F4 — authedMultiplier: when ADAPTIVE_LIMITS='1' and a request carries a
 // verified Supabase access token (Authorization: Bearer <jwt>, checked by
@@ -78,14 +85,14 @@ export interface SurfaceLimits {
 export const WORKER_LIMITS = {
   /** Image proxy (Gelbooru/Rule34 bytes) — cache-miss only. */
   image: {
-    perIp: { max: 15, windowS: 10 },
-    global: { max: 600, windowS: 60 },
+    perIp: { max: 10, windowS: 10 },
+    global: { max: 150, windowS: 60 },
     authedMultiplier: 2,
   },
   /** Posts search — Danbooru (most origin-sensitive: per-IP + global). */
   postsDanbooru: {
-    perIp: { max: 90, windowS: 60 },
-    global: { max: 480, windowS: 60 },
+    perIp: { max: 40, windowS: 60 },
+    global: { max: 120, windowS: 60 },
     authedMultiplier: 2,
   },
   /** Posts search — other providers (per-IP only). */
@@ -96,7 +103,7 @@ export const WORKER_LIMITS = {
   /** Image download — Danbooru (per-IP + global). */
   downloadDanbooru: {
     perIp: { max: 30, windowS: 60 },
-    global: { max: 100, windowS: 60 },
+    global: { max: 40, windowS: 60 },
     authedMultiplier: 2,
   },
   /** Image download — other providers (per-IP only). */
@@ -106,7 +113,7 @@ export const WORKER_LIMITS = {
   },
   /** Tag-count / autocomplete lookups (hits external booru APIs). */
   tags: {
-    perIp: { max: 30, windowS: 60 },
+    perIp: { max: 20, windowS: 60 },
     authedMultiplier: 2,
   },
 } as const satisfies Record<string, SurfaceLimits>
