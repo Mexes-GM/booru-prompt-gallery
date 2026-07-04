@@ -143,6 +143,7 @@ import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 import { useMergeMode } from "@/hooks/use-merge-mode"
 const MergeStickyFooter = dynamic(() => import("./merge-sticky-footer").then(m => m.MergeStickyFooter), { ssr: false, loading: () => null })
 const AiConvertStickyFooter = dynamic(() => import("./ai-convert-sticky-footer").then(m => m.AiConvertStickyFooter), { ssr: false, loading: () => null })
+import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
@@ -609,15 +610,17 @@ export function PromptGallery() {
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
   const [aiConvertTags, setAiConvertTags] = useState("")
   const [aiConvertImage, setAiConvertImage] = useState<string | undefined>(undefined)
+  const [aiConvertMeta, setAiConvertMeta] = useState<ConvertMeta | undefined>(undefined)
 
   // Handle sending tags to convert and auto-enable mode
-  const handleSendToConvert = useCallback((tagsToSend: string, imageUrl?: string) => {
+  const handleSendToConvert = useCallback((tagsToSend: string, imageUrl?: string, meta?: ConvertMeta) => {
     // Disable merge mode if active
     if (mergeModeIsMergeMode) {
       mergeModeDisableMergeMode()
     }
     setAiConvertTags(tagsToSend)
     setAiConvertImage(imageUrl)
+    setAiConvertMeta(meta)
     setIsAiConvertMode(true)
   }, [mergeModeIsMergeMode, mergeModeDisableMergeMode])
 
@@ -1463,6 +1466,7 @@ export function PromptGallery() {
         isOpen={isAiConvertMode}
         tags={aiConvertTags}
         image={aiConvertImage}
+        meta={aiConvertMeta}
         onExit={() => setIsAiConvertMode(false)}
       />
 

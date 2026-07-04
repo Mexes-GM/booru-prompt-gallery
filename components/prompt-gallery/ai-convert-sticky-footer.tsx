@@ -82,10 +82,17 @@ const PROVIDER_MODELS: Record<string, { id: string; label: string; tag?: string 
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface ConvertMeta {
+  characters?: string
+  series?: string
+  artist?: string
+}
+
 interface AiConvertStickyFooterProps {
   isOpen: boolean
   tags: string
   image?: string
+  meta?: ConvertMeta
   onExit: () => void
 }
 
@@ -93,6 +100,7 @@ const AiConvertStickyFooterComponent = ({
   isOpen,
   tags,
   image,
+  meta,
   onExit
 }: AiConvertStickyFooterProps) => {
   const { settings, saveSettings, isLoaded } = useLLMSettings()
@@ -207,6 +215,9 @@ const AiConvertStickyFooterComponent = ({
           apiKey: prov === 'cloudflare' ? undefined : key,
           model: model || undefined,
           image: image || undefined,
+          // Authoritative identity metadata (character/series) from the booru API,
+          // so the model uses exact names instead of guessing from the tag soup.
+          meta: meta && (meta.characters || meta.series || meta.artist) ? meta : undefined,
           // Only the free 'cloudflare' tier is gated server-side (F2).
           turnstile_token: prov === 'cloudflare' ? (turnstileToken || undefined) : undefined,
         }),

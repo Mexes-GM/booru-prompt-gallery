@@ -32,6 +32,7 @@ import { PROVIDER_POST_URLS } from "@/lib/constants"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type TagCategory, type ClassifiedTags } from "@/lib/tag-classifier"
+import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { useCardPrompt } from "@/hooks/use-card-prompt"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import {
@@ -158,7 +159,7 @@ interface MasonryItemProps {
     onSearch?: (tag: string) => void
     onImageError?: () => void
     isNaturalLanguageMode?: boolean
-    onSendToConvert?: (tags: string, imageUrl?: string) => void
+    onSendToConvert?: (tags: string, imageUrl?: string, meta?: ConvertMeta) => void
     showCategoryTagBadges?: boolean
 }
 
@@ -265,6 +266,23 @@ export const MasonryItem = memo(function MasonryItem({
         isGlobalWeightsEnabled,
         onBaseContentChange: () => setModifiedContent(null),
     })
+
+    // Authoritative identity metadata for the AI converter, taken straight from
+    // the booru API (not guessed from the flattened prompt). Gated by
+    // includeCharacters so an intentionally anonymized prompt doesn't get the
+    // real character name re-injected on the LLM side.
+    const buildConvertMeta = (): ConvertMeta | undefined => {
+        if (!includeCharacters) return undefined
+        const toList = (s?: string) =>
+            (s || '').split(/\s+/).filter(Boolean).map(t => t.replace(/_/g, ' ')).join(', ')
+        const characters = toList(post.tag_string_character)
+        const series = toList(post.tag_string_copyright)
+        if (!characters && !series) return undefined
+        return {
+            characters: characters || undefined,
+            series: series || undefined,
+        }
+    }
 
     const copyCategory = async (category: TagCategory) => {
         if (!pureDisplayContent) return
@@ -645,7 +663,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     onClick={(e) => {
                                         e.preventDefault()
                                         e.stopPropagation()
-                                        onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url)
+                                        onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())
                                     }}
                                     aria-label="Convert to Natural Language"
                                 >
@@ -695,7 +713,7 @@ export const MasonryItem = memo(function MasonryItem({
                     <div className="flex button-group items-stretch isolate shrink-0">
                         {isNaturalLanguageMode ? (
                             <Button
-                                onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url)}
+                                onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())}
                                 className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
                                 variant="default"
                                 disabled={!displayContent}
@@ -1008,7 +1026,7 @@ export const MasonryItem = memo(function MasonryItem({
                                             onClick={(e) => {
                                                 e.preventDefault()
                                                 e.stopPropagation()
-                                                onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url)
+                                                onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())
                                             }}
                                             className="focus-ring h-8 w-8"
                                             aria-label="Convert to Natural Language"
@@ -1053,7 +1071,7 @@ export const MasonryItem = memo(function MasonryItem({
                         <div className="flex flex-col sm:flex-row gap-2">
                             {isNaturalLanguageMode ? (
                                 <Button
-                                    onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url)}
+                                    onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())}
                                     variant="default"
                                     disabled={!displayContent}
                                     className="focus-ring flex-1 sm:flex-none"

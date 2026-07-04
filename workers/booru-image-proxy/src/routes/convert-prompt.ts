@@ -106,6 +106,19 @@ const TEXT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 // '@cf/meta/llama-3.1-8b-instruct-fast' — 8B, fastest
 const VISION_MODEL = '@cf/google/gemma-4-26b-a4b-it'
 // Gemma 4 26B MoE (4B active) — vision, fast, uses free CF neurons quota
+//
+// ⚠️ VERIFY-AGAINST-CATALOG: the VISION_MODEL id above (and the OpenRouter
+// 'google/gemma-4-31b-it:free' entry, plus the Anthropic 'anthropic-version'
+// header below) could not be verified against live provider catalogs. If the
+// vision model id is wrong, analyzeImageForPrompt() throws → returns '' and
+// every image-based conversion silently degrades to tags-only. Confirm these
+// ids before shipping.
+
+// Generation tuning for the tag→prose task. Low temperature keeps the model
+// faithful to the tags (the SYSTEM_PROMPT forbids filler/hallucination); a
+// bounded max output stops it rambling past the 2–6 sentence target.
+const GEN_TEMPERATURE = 0.4
+const MAX_OUTPUT_TOKENS = 768
 
 function isExternalUrl(s: string): boolean {
   return s.startsWith('http://') || s.startsWith('https://')
@@ -194,6 +207,46 @@ function proxyImageUrl(rawUrl: string, workerHost: string): string {
   return `https://${workerHost}/?url=${encodeURIComponent(rawUrl)}`
 }
 
+/**
+ * Authoritative identity metadata pulled from the booru API (not guessed by the
+ * model). Injected as a context block so the LLM uses correct names instead of
+ * inferring which tags are character/series/artist.
+ */
+interface ConvertMeta {
+  characters?: string
+  series?: string
+  artist?: string
+}
+
+/** Cap length + strip control chars from a metadata string. Returns '' if invalid/empty. */
+function sanitizeMetaField(v: unknown): string {
+  if (typeof v !== 'string') return ''
+  const cleaned = v.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim()
+  return cleaned.slice(0, 200)
+}
+
+/**
+ * Build an authoritative context block from booru metadata. The app knows the
+ * character/series/artist names exactly from the API, so we hand them to the
+ * model rather than forcing it to guess. Directly reinforces the SYSTEM_PROMPT
+ * rules about proper-casing names and never replacing a named character with
+ * "girl"/"woman". Returns '' when there is no metadata.
+ */
+function buildContextHints(meta?: ConvertMeta): string {
+  if (!meta) return ''
+  const lines: string[] = []
+  if (meta.characters) lines.push(`- Character(s): ${meta.characters}`)
+  if (meta.series)     lines.push(`- Series/franchise: ${meta.series}`)
+  if (meta.artist)     lines.push(`- Artist: ${meta.artist}`)
+  if (lines.length === 0) return ''
+  return `CONTEXT (authoritative identity from booru metadata — use these exact names with correct capitalization; never replace a named character with "girl" or "woman"):\n${lines.join('\n')}\n\n`
+}
+
+/** Compose the text-only user message: context hints + one-shot template + tags. */
+function textUserMessage(tags: string, hints = ''): string {
+  return `${hints}${USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags)}`
+}
+
 function buildVisionMessages(tags: string | undefined, image: string, workerHost: string) {
   const systemPromptVision = `Convert Booru tags into a single flowing paragraph of natural English prose. You also receive an image for visual reference — use it to refine colors, lighting, and composition that the tags may describe imprecisely. Replace underscores with spaces. Capitalize names. Output only the paragraph. Do not use bullet points, markdown, or analysis.`
 
@@ -231,15 +284,15 @@ Describe the character, their appearance, outfit, pose, the setting, and the lig
  * Build multimodal messages for providers with native vision (OpenAI, Claude, OpenRouter).
  * The provider downloads the image directly — no proxy needed.
  */
-function buildNativeVisionUserContent(tags: string | undefined, image: string): string {
+function buildNativeVisionUserContent(tags: string | undefined, image: string, hints = ''): string {
   if (tags) {
-    return `TAGS:\n${tags}\n\nDescribe this image in natural language, combining the character/outfit/scene information from the tags with the visual details (colors, lighting, composition, spatial relationships) you see in the image.`
+    return `${hints}TAGS:\n${tags}\n\nDescribe this image in natural language, combining the character/outfit/scene information from the tags with the visual details (colors, lighting, composition, spatial relationships) you see in the image.`
   }
-  return 'Describe this image as a natural language prompt for an image generator. Focus on subject identity, appearance, clothing, pose, setting, lighting, and composition.'
+  return `${hints}Describe this image as a natural language prompt for an image generator. Focus on subject identity, appearance, clothing, pose, setting, lighting, and composition.`
 }
 
-function buildTextMessages(tags: string, model?: string) {
-  const userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags)
+function buildTextMessages(tags: string, model?: string, hints = '') {
+  const userMessage = `${hints}${USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags)}`
   return {
     model: model || TEXT_MODEL,
     messages: [
@@ -279,16 +332,16 @@ async function analyzeImageForPrompt(
  * Build text messages enriched with an image description for models that
  * lack native vision. The description is injected as context before the tags.
  */
-function buildEnrichedUserMessage(imageDescription: string, tags: string): string {
-  return `[Visual analysis of the reference image]:\n${imageDescription}\n\nTAGS:\n${tags}\n\nUsing both the visual analysis above and the tags below, produce a natural language description. The visual analysis provides colors, lighting, composition and spatial details. The tags provide character identity, outfits, and attributes. Combine both sources.`
+function buildEnrichedUserMessage(imageDescription: string, tags: string, hints = ''): string {
+  return `${hints}[Visual analysis of the reference image]:\n${imageDescription}\n\nTAGS:\n${tags}\n\nUsing both the visual analysis above and the tags below, produce a natural language description. The visual analysis provides colors, lighting, composition and spatial details. The tags provide character identity, outfits, and attributes. Combine both sources.`
 }
 
-function buildTextMessagesWithVision(tags: string, imageDescription: string, model?: string) {
+function buildTextMessagesWithVision(tags: string, imageDescription: string, model?: string, hints = '') {
   return {
     model: model || TEXT_MODEL,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildEnrichedUserMessage(imageDescription, tags) }
+      { role: 'user', content: buildEnrichedUserMessage(imageDescription, tags, hints) }
     ]
   }
 }
@@ -312,8 +365,8 @@ export async function convertPromptHandler(
   }
 
   try {
-    const body = (await request.json()) as { tags?: string, provider?: string, apiKey?: string, image?: string, model?: string, turnstile_token?: string }
-    const { tags, provider = 'cloudflare', apiKey, image, model: customModel, turnstile_token } = body
+    const body = (await request.json()) as { tags?: string, provider?: string, apiKey?: string, image?: string, model?: string, turnstile_token?: string, meta?: { characters?: string, series?: string, artist?: string } }
+    const { tags, provider = 'cloudflare', apiKey, image, model: customModel, turnstile_token, meta: rawMeta } = body
 
     // ── Input Validation ──────────────────────────────────────────────────────
     // Validate provider early
@@ -351,6 +404,20 @@ export async function convertPromptHandler(
     // Worker host for self-referencing the image proxy
     const workerHost = new URL(request.url).host
 
+    // ── Context hints ───────────────────────────────────────────────────────
+    // Authoritative identity metadata (character/series/artist) from the booru
+    // API. Sanitized + length-capped, then rendered into a context block that is
+    // prepended to every provider's user message so the model uses exact names.
+    const meta: ConvertMeta | undefined = rawMeta
+      ? {
+          characters: sanitizeMetaField(rawMeta.characters) || undefined,
+          series: sanitizeMetaField(rawMeta.series) || undefined,
+          artist: sanitizeMetaField(rawMeta.artist) || undefined,
+        }
+      : undefined
+    const hints = buildContextHints(meta)
+    // ──────────────────────────────────────────────────────────────────────────
+
     // ── Rate Limiting ──────────────────────────────────────────────────────────
     const ip = request.headers.get('cf-connecting-ip') || 'unknown'
     const isFreeTier = provider === 'cloudflare' || !apiKey
@@ -378,7 +445,7 @@ export async function convertPromptHandler(
 
     if (limiters) {
       if (isFreeTier) {
-        // 1. Check daily budget first (100 req / 24 h)
+        // 1. Check daily budget first (10 req / 24 h)
         const daily = await limiters.freeDaily.limit(ip)
         dailyRemaining = daily.remaining
         if (!daily.success) {
@@ -440,13 +507,21 @@ export async function convertPromptHandler(
         if (image) {
           // Vision path: analyze image with Gemma 4, then feed to text model
           const imageDesc = await analyzeImageForPrompt(tags, image, workerHost, env.AI)
-          const textMsg = buildTextMessagesWithVision(tags || '', imageDesc, customModel)
-          const response = await env.AI.run(textMsg.model, { messages: textMsg.messages }) as any
+          // Graceful fallback: if vision produced nothing, use tags-only rather
+          // than injecting an empty "[Visual analysis]:" block. If there are no
+          // tags either, we have nothing to work with.
+          if (!imageDesc && !tags) {
+            return errorResponse('Could not analyze the image. Please try again or add tags.', 502, rlHeaders)
+          }
+          const textMsg = imageDesc
+            ? buildTextMessagesWithVision(tags || '', imageDesc, customModel, hints)
+            : buildTextMessages(tags as string, customModel, hints)
+          const response = await env.AI.run(textMsg.model, { messages: textMsg.messages, temperature: GEN_TEMPERATURE, max_tokens: MAX_OUTPUT_TOKENS }) as any
           return jsonResponse({ result: extractCfAiResult(response) }, 200, rlHeaders)
         } else {
           // Text path
-          const textMsg = buildTextMessages(tags!, customModel)
-          const response = await env.AI.run(textMsg.model, { messages: textMsg.messages }) as any
+          const textMsg = buildTextMessages(tags!, customModel, hints)
+          const response = await env.AI.run(textMsg.model, { messages: textMsg.messages, temperature: GEN_TEMPERATURE, max_tokens: MAX_OUTPUT_TOKENS }) as any
           const result = extractCfAiResult(response)
           if (!result) {
             console.error('Empty AI response:', JSON.stringify(response).slice(0, 500))
@@ -474,20 +549,20 @@ export async function convertPromptHandler(
         messages = [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: [
-            { type: 'text', text: buildNativeVisionUserContent(tags, image) },
+            { type: 'text', text: buildNativeVisionUserContent(tags, image, hints) },
             { type: 'image_url', image_url: { url: imgUrl } }
           ]}
         ]
       } else {
         messages = [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string) }
+          { role: 'user', content: textUserMessage(tags as string, hints) }
         ]
       }
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: customModel || 'gpt-5.4-mini', messages, temperature: 0.7 })
+        body: JSON.stringify({ model: customModel || 'gpt-5.4-mini', messages, temperature: GEN_TEMPERATURE, max_tokens: MAX_OUTPUT_TOKENS })
       })
       if (!res.ok) {
         const error = await res.json() as any;
@@ -514,9 +589,14 @@ export async function convertPromptHandler(
         // Gemini fileData.fileUri doesn't accept external URLs — use Gemma 4 vision pipeline
         if (!env.AI) return errorResponse('AI service temporarily unavailable', 503)
         const imageDesc = await analyzeImageForPrompt(tags, image, workerHost, env.AI)
-        userMessage = buildEnrichedUserMessage(imageDesc, tags as string)
+        if (!imageDesc && !tags) {
+          return errorResponse('Could not analyze the image. Please try again or add tags.', 502)
+        }
+        userMessage = imageDesc
+          ? buildEnrichedUserMessage(imageDesc, tags as string, hints)
+          : textUserMessage(tags as string, hints)
       } else {
-        userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+        userMessage = textUserMessage(tags as string, hints)
       }
 
       const modelName = customModel || 'gemini-3.5-flash'
@@ -528,7 +608,7 @@ export async function convertPromptHandler(
             parts: [{ text: SYSTEM_PROMPT }]
           },
           contents: [{ role: "user", parts: [{ text: userMessage }] }],
-          generationConfig: { temperature: 0.7 }
+          generationConfig: { temperature: GEN_TEMPERATURE, maxOutputTokens: MAX_OUTPUT_TOKENS }
         })
       })
       if (!res.ok) {
@@ -553,11 +633,11 @@ export async function convertPromptHandler(
         // Native vision: user's key, Claude downloads the image
         const imgUrl = isExternalUrl(image) ? proxyImageUrl(image, workerHost) : image
         claudeContent = [
-          { type: 'text', text: buildNativeVisionUserContent(tags, image) },
+          { type: 'text', text: buildNativeVisionUserContent(tags, image, hints) },
           { type: 'image', source: { type: 'url', url: imgUrl } }
         ]
       } else {
-        claudeContent = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+        claudeContent = textUserMessage(tags as string, hints)
       }
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -570,7 +650,7 @@ export async function convertPromptHandler(
           model: customModel || 'claude-sonnet-4-6',
           system: SYSTEM_PROMPT,
           messages: [{ role: 'user', content: claudeContent }],
-          temperature: 0.7, max_tokens: 1024
+          temperature: GEN_TEMPERATURE, max_tokens: MAX_OUTPUT_TOKENS
         })
       })
       if (!res.ok) {
@@ -595,9 +675,14 @@ export async function convertPromptHandler(
       if (image) {
         if (!env.AI) return errorResponse('AI service temporarily unavailable', 503)
         const imageDesc = await analyzeImageForPrompt(tags, image, workerHost, env.AI)
-        userMessage = buildEnrichedUserMessage(imageDesc, tags as string)
+        if (!imageDesc && !tags) {
+          return errorResponse('Could not analyze the image. Please try again or add tags.', 502)
+        }
+        userMessage = imageDesc
+          ? buildEnrichedUserMessage(imageDesc, tags as string, hints)
+          : textUserMessage(tags as string, hints)
       } else {
-        userMessage = USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string)
+        userMessage = textUserMessage(tags as string, hints)
       }
       const res = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
@@ -606,7 +691,7 @@ export async function convertPromptHandler(
           // deepseek-chat is deprecated as of July 2026; use deepseek-v4-flash (fast) or deepseek-v4-pro (best)
           model: customModel || 'deepseek-v4-flash',
           messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userMessage }],
-          temperature: 0.7
+          temperature: GEN_TEMPERATURE, max_tokens: MAX_OUTPUT_TOKENS
         })
       })
       if (!res.ok) {
@@ -631,14 +716,14 @@ export async function convertPromptHandler(
         messages = [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: [
-            { type: 'text', text: buildNativeVisionUserContent(tags, image) },
+            { type: 'text', text: buildNativeVisionUserContent(tags, image, hints) },
             { type: 'image_url', image_url: { url: imgUrl } }
           ]}
         ]
       } else {
         messages = [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: USER_MESSAGE_TEMPLATE.replace('TAGS_PLACEHOLDER', tags as string) }
+          { role: 'user', content: textUserMessage(tags as string, hints) }
         ]
       }
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -651,7 +736,7 @@ export async function convertPromptHandler(
         },
         body: JSON.stringify({
           model: customModel || 'google/gemini-3.5-flash',
-          messages, temperature: 0.7
+          messages, temperature: GEN_TEMPERATURE, max_tokens: MAX_OUTPUT_TOKENS
         })
       })
       if (!res.ok) {
