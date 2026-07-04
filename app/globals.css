@@ -379,11 +379,12 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-/* Browser translation protection - selective approach */
-.notranslate {
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-}
+/* Browser translation protection - selective approach.
+   NOTE: do NOT apply `transform` here. `.notranslate` is set on <body>, and any
+   transform on <body> creates a containing block that makes `position: fixed`
+   resolve against <body> (page height) instead of the viewport. That pushed
+   Radix Dialog/portal content off-screen (only the overlay showed). The real
+   Google-Translate opt-out is the CSS `translate: no` property below. */
 
 /* Protect only critical UI elements from translation */
 [translate="no"],
@@ -401,15 +402,15 @@ select,
   translate: no !important;
 }
 
-/* Prevent DOM manipulation issues on dynamic UI components */
+/* Prevent DOM manipulation issues on dynamic UI components.
+   Only opt out of translation; no `transform` (see note above — transforms on
+   portal wrappers can also break nested fixed positioning). */
 [data-radix-popper-content-wrapper],
 [data-radix-portal],
 [data-side],
 [data-align],
 [data-radix-collection-item] {
   translate: no !important;
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
 }
 
 /* Protect navigation and control elements */
