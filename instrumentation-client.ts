@@ -2,6 +2,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { getTranslationState, initTranslationTracing } from "@/lib/sentry-tracing";
 
 // Scrub sensitive data from URLs and request objects
 function scrubSensitiveData(url: string | undefined): string | undefined {
@@ -46,7 +47,21 @@ Sentry.init({
   // Sample only 10% of traces to stay within free tier (5K events/month)
   tracesSampleRate: 0.1,
 
-  // Disable logs and replay to save quota + reduce bundle size
+  // Session Replay — always capture a replay on error (rare crash → ~1 replay),
+  // PLUS a small 5% sample of normal sessions. The 5% is deliberate: the
+  // "favorites stuck on Loading N more" bug does NOT throw, so onError alone
+  // would never record it — the session sample lets us catch it in the wild.
+  integrations: [
+    Sentry.replayIntegration({
+      maskAllText: false,   // we must see the UI text to confirm browser translation
+      blockAllMedia: true,  // don't record gallery images (bandwidth + rating-safe)
+    }),
+  ],
+  replaysSessionSampleRate: 0.05,
+  replaysOnErrorSampleRate: 1.0,
+
+  // Sentry Logs stay off to save quota + bundle; we rely on breadcrumbs, which
+  // ride inside the error event for free.
   enableLogs: false,
 
   // Don't send PII in a gallery app
@@ -137,6 +152,32 @@ Sentry.init({
     }
     event.tags.runtime = 'browser';
 
+    // ── Enrich React #185 ("Maximum update depth exceeded") with a snapshot of
+    // the browser-translation state at crash time. This is the suspected root
+    // cause (Google Translate mutating the DOM under React) but is not
+    // reproducible server-side — attaching the live state lets us confirm it
+    // from the next real occurrence. See SENTRY-FULVOUS-ANCHOR-7.
+    const isRenderLoop =
+      errorMessage.includes('Maximum update depth exceeded') ||
+      errorMessage.includes('React error #185') ||
+      errorMessage.includes('#185');
+
+    if (isRenderLoop) {
+      try {
+        const translation = getTranslationState();
+        event.contexts = event.contexts || {};
+        (event.contexts as Record<string, unknown>).translation = translation;
+        event.tags.error_type = 'render_loop';
+        event.tags.page_translated = String(translation.detected);
+        event.tags.likely_cause = translation.detected ? 'browser_translator' : 'render_loop';
+        // Split translated vs genuine #185 into separate issues so translation
+        // crashes stop masking any real render loop (and vice versa).
+        event.fingerprint = ['react-185', translation.detected ? 'translated' : 'genuine'];
+      } catch {
+        /* non-fatal: enrichment is best-effort */
+      }
+    }
+
     return event;
   },
 });
@@ -153,3 +194,15 @@ if (process.env.NEXT_PUBLIC_PERF_DEBUG === "1") {
 }
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
+
+// Start browser-translation tracing (breadcrumb + tags on detection). Gated to
+// production + configured DSN so it adds zero overhead in dev.
+if (process.env.NODE_ENV === "production" && Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN)) {
+  if (typeof window !== "undefined") {
+    if (document.readyState === "loading") {
+      window.addEventListener("DOMContentLoaded", () => initTranslationTracing(), { once: true });
+    } else {
+      initTranslationTracing();
+    }
+  }
+}

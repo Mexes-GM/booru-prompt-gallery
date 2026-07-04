@@ -2,6 +2,7 @@
 
 import React from 'react'
 import * as Sentry from "@sentry/nextjs"
+import { getTranslationState } from '@/lib/sentry-tracing'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -72,27 +73,48 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
            error.message.includes('#185')
   }
 
+  // Detect whether the page is currently being auto-translated by the browser
+  // (Google Translate / Chrome mobile). Delegates to the shared snapshot so the
+  // boundary and the Sentry beforeSend hook agree. See SENTRY-FULVOUS-ANCHOR-7.
+  isLikelyTranslated(): boolean {
+    return getTranslationState().detected
+  }
+
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     // Update state so the next render will show the fallback UI
     return { hasError: true, error }
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    const translation = getTranslationState()
+    const isRenderLoop = this.isRenderLoopError(error)
+    const isDom = this.isDOMManipulationError(error)
+
+    const errorType = isRenderLoop ? 'render_loop' : isDom ? 'dom_manipulation' : 'react'
+    // #185 / DOM errors are attributed to the browser translator when we can
+    // detect it live (Google Translate mutating the DOM under React). The old
+    // code tagged #185 as 'cache_loop', which misdirected debugging for months.
+    const likelyCause = translation.detected
+      ? 'browser_translator'
+      : isRenderLoop
+        ? 'render_loop'
+        : isDom
+          ? 'dom_no_translation_detected'
+          : 'unknown'
+
+    // Tags/contexts are passed to captureException so they land on THIS event
+    // (setTag after capture would only affect subsequent events).
     Sentry.captureException(error, {
-      contexts: { react: { componentStack: errorInfo.componentStack } },
+      contexts: {
+        react: { componentStack: errorInfo.componentStack },
+        translation: translation as unknown as Record<string, unknown>,
+      },
+      tags: {
+        error_type: errorType,
+        likely_cause: likelyCause,
+        page_translated: String(translation.detected),
+      },
     })
-
-    // Check if it's a DOM manipulation error (common with browser translators)
-    if (this.isDOMManipulationError(error)) {
-      Sentry.setTag('error_type', 'dom_manipulation')
-      Sentry.setTag('likely_cause', 'browser_translator')
-    }
-
-    // Check if it's a render loop error (React #185)
-    if (this.isRenderLoopError(error)) {
-      Sentry.setTag('error_type', 'render_loop')
-      Sentry.setTag('likely_cause', 'cache_loop')
-    }
   }
 
   resetError = () => {
@@ -115,7 +137,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 {isRenderLoop
-                  ? 'The app encountered a loading error, likely caused by cached data. Clear the cache and try again.'
+                  ? 'The app crashed while rendering. This is most often caused by your browser auto-translating the page. Select "Show original" / turn off translation for this site, then reload. If that doesn\'t help, clear the cache below.'
                   : 'Something went wrong. This might be caused by browser translation features. Try disabling auto-translate for this site or refresh the page.'
                 }
               </AlertDescription>

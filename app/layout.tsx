@@ -127,6 +127,10 @@ export const metadata: Metadata = {
   other: {
     'msapplication-TileColor': '#000000',
     'msapplication-config': '/browserconfig.xml',
+    // Emits <meta name="google" content="notranslate"> — reinforces the
+    // translate="no" attribute so Chrome/Google Translate never rewrites the
+    // DOM and triggers React #185. See SENTRY-FULVOUS-ANCHOR-7.
+    google: 'notranslate',
   },
   verification: {
     google: 'oV_N0Kfu6vS1TFmbLjhRvmawBmVCnRk9VrlKawuEosE',
@@ -168,8 +172,13 @@ export default function RootLayout({
   }
 
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${fontSans.variable} ${fontMono.variable} font-sans`} suppressHydrationWarning>
+    // translate="no" + the notranslate class opt the app out of browser/Google
+    // auto-translation. Chrome (esp. on mobile, for non-English locales like
+    // es-419) otherwise rewrites text nodes into <font> wrappers, mutating the
+    // DOM out from under React and triggering "Maximum update depth exceeded"
+    // (React #185) crashes. See SENTRY-FULVOUS-ANCHOR-7.
+    <html lang="en" translate="no" suppressHydrationWarning>
+      <body className={`${fontSans.variable} ${fontMono.variable} font-sans notranslate`} suppressHydrationWarning>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 z-50 bg-background px-4 py-2 border rounded shadow-md">
           Skip to content
         </a>

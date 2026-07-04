@@ -185,7 +185,7 @@ import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 // ─────────────────────────────────────────────────────────────────────────────
 type VerificationState =
   | { phase: 'idle' }
-  | { phase: 'checking' }
+  | { phase: 'checking'; checked: number; total: number }
   | { phase: 'done'; confirmed: string[]; recovered: number }
 
 function UnavailablePostsNotice({
@@ -210,8 +210,6 @@ function UnavailablePostsNotice({
   }, [activeFolderId])
 
   const handleCheck = async () => {
-    setState({ phase: 'checking' })
-
     // Group unavailable keys by provider for a batched re-fetch
     const byProvider: Record<string, number[]> = {}
     for (const key of unavailableKeys) {
@@ -223,34 +221,67 @@ function UnavailablePostsNotice({
       ;(byProvider[provider] ??= []).push(id)
     }
 
+    const totalToCheck = Object.values(byProvider).reduce((n, ids) => n + ids.length, 0)
+    setState({ phase: 'checking', checked: 0, total: totalToCheck })
+
     // Re-query /api/favorites for each provider batch
     const foundIds = new Set<string>()
     const recoveredPosts: BooruPost[] = []
-    
-    try {
-      const entries = Object.entries(byProvider)
-      await Promise.allSettled(
-        entries.map(async ([provider, ids]) => {
-          try {
-            const res = await fetch('/api/favorites', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ favorites: ids.map(id => ({ id, provider })) }),
-            })
-            if (!res.ok) return
-            const posts: BooruPost[] = await res.json()
-            for (const p of posts) {
-              if (p?.id) {
-                foundIds.add(`${provider}:${p.id}`)
-                recoveredPosts.push(p)
-              }
-            }
-          } catch {
-            // Network error on re-check — treat as inconclusive (don't mark as deleted)
-            for (const id of ids) foundIds.add(`${provider}:${id}`)
-          }
+    let checkedCount = 0
+
+    // Batch client-side (like the main favorites loader) so we can report live
+    // progress. Danbooru is rate-limited, so its batches run sequentially with a
+    // delay; other providers run in parallel.
+    const BATCH = 20
+    const DANBOORU_DELAY = 1100
+
+    const bumpProgress = (n: number) => {
+      checkedCount += n
+      setState({ phase: 'checking', checked: checkedCount, total: totalToCheck })
+    }
+
+    const fetchBatch = async (provider: string, ids: number[]) => {
+      try {
+        const res = await fetch('/api/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ favorites: ids.map(id => ({ id, provider })) }),
         })
-      )
+        // Non-OK (rate limit / server error) → inconclusive for this batch:
+        // leave these ids out of foundIds so the original delete semantics are
+        // preserved (still counted as missing), but never crash the flow.
+        if (!res.ok) return
+        const posts: BooruPost[] = await res.json()
+        for (const p of posts) {
+          if (p?.id) {
+            foundIds.add(`${provider}:${p.id}`)
+            recoveredPosts.push(p)
+          }
+        }
+      } catch {
+        // Network error on re-check — treat as inconclusive (don't mark deleted)
+        for (const id of ids) foundIds.add(`${provider}:${id}`)
+      } finally {
+        bumpProgress(ids.length)
+      }
+    }
+
+    try {
+      for (const [provider, ids] of Object.entries(byProvider)) {
+        const batches: number[][] = []
+        for (let i = 0; i < ids.length; i += BATCH) batches.push(ids.slice(i, i + BATCH))
+
+        if (provider === 'danbooru') {
+          for (let i = 0; i < batches.length; i++) {
+            await fetchBatch(provider, batches[i])
+            if (i < batches.length - 1) {
+              await new Promise(r => setTimeout(r, DANBOORU_DELAY))
+            }
+          }
+        } else {
+          await Promise.allSettled(batches.map(b => fetchBatch(provider, b)))
+        }
+      }
     } catch {
       // Complete failure — treat all as inconclusive, show no delete buttons
       setState({ phase: 'done', confirmed: [], recovered: unavailableKeys.length })
@@ -320,13 +351,26 @@ function UnavailablePostsNotice({
         )}
 
         {state.phase === 'checking' && (
-          <div className="flex items-center gap-4 py-2">
-            <Loader2 className="h-5 w-5 text-destructive animate-spin shrink-0" />
-            <div className="space-y-1">
-              <AlertTitle className="text-destructive font-medium mb-0">Verifying on booru...</AlertTitle>
-              <AlertDescription className="text-muted-foreground text-xs">
-                Querying the original server to see if the posts still exist. This might take a few seconds due to rate limits.
-              </AlertDescription>
+          <div className="flex flex-col gap-2 py-2">
+            <div className="flex items-center gap-4">
+              <Loader2 className="h-5 w-5 text-destructive animate-spin shrink-0" />
+              <div className="space-y-1 flex-1">
+                <AlertTitle className="text-destructive font-medium mb-0">Verifying on booru...</AlertTitle>
+                <AlertDescription className="text-muted-foreground text-xs">
+                  Querying the original server to see if the posts still exist. This might take a few seconds due to rate limits.
+                </AlertDescription>
+              </div>
+            </div>
+            <div className="w-full pl-9">
+              <div className="w-full bg-destructive/10 rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-full bg-destructive/60 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${state.total > 0 ? Math.round((state.checked / state.total) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground text-right tabular-nums">
+                {Math.min(state.checked, state.total)} / {state.total}
+              </p>
             </div>
           </div>
         )}
@@ -1247,11 +1291,35 @@ export function PromptGallery() {
             onRemove={savedArtists.removeArtist}
           />
 
-          {folderMismatch.loading > 0 && (
-            <p className="text-sm text-muted-foreground text-center py-2 animate-pulse">
-              Loading {folderMismatch.loading} more {folderMismatch.loading === 1 ? 'post' : 'posts'}…
-            </p>
-          )}
+          {folderMismatch.loading > 0 && filteredPosts.length > 0 && (() => {
+            // Loading feedback while remaining favorites stream in (batched,
+            // rate-limited Danbooru fetches can take 10-20s). Without a live
+            // progress bar this looked frozen. Prefer the fetcher's real
+            // loaded/total counter; fall back to the folder-mismatch count.
+            const prog = favs.favoritesProgress
+            const total = prog.total > 0 ? prog.total : folderMismatch.loading
+            const loaded = prog.total > 0 ? Math.min(prog.loaded, total) : 0
+            const pct = total > 0 ? Math.round((loaded / total) * 100) : 0
+            return (
+              <div className="w-full max-w-xs mx-auto py-3">
+                <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground text-center">
+                  Loading favorites…{" "}
+                  <span className="font-medium text-foreground">{loaded}</span>
+                  {" / "}{total}
+                  <span className="text-xs ml-1">({pct}%)</span>
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground/70 text-center">
+                  Fetching from the booru — this can take a moment due to rate limits.
+                </p>
+              </div>
+            )
+          })()}
 
           {folderMismatch.unavailable > 0 && (
             <UnavailablePostsNotice

@@ -8,6 +8,7 @@ import { PROVIDER_URLS } from "@/lib/constants"
 import { createClient } from "@/lib/supabase/client"
 import { apiUrl } from "@/lib/booru/urls"
 import { transformAibooruPost, transformE621Post } from "@/lib/booru/post-transformers"
+import { addFavoritesBreadcrumb, setFavoritesContext } from "@/lib/sentry-tracing"
 import {
   type FavoriteItem,
   type CachedPostRow,
@@ -128,8 +129,18 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
       // Only fetch favorites that aren't already in cache, within visible window
       const toFetch = effectiveFavorites.filter(f => !accumulated.has(`${f.provider}:${f.id}`))
 
+      // Sentry timeline: record how the favorites load starts (count + cache hits),
+      // so a subsequent crash shows exactly how far loading got.
+      setFavoritesContext({ count: favorites.length })
+      addFavoritesBreadcrumb('favorites load start', {
+        total: favorites.length,
+        fromCache: loadedCount,
+        toFetch: toFetch.length,
+      })
+
       let lastProgressUpdate = 0
-      const PROGRESS_THROTTLE_MS = 3000
+      // Flush the grid + counter roughly this often while batches stream in.
+      const PROGRESS_THROTTLE_MS = 1200
 
       // Sync the persistent ref with current total
       progressRef.current.total = favorites.length
@@ -138,12 +149,20 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         loadedCount += count
         const displayed = Math.min(loadedCount, favorites.length)
         const now = Date.now()
-        const shouldFlush = loadedCount >= effectiveFavorites.length
+        const isComplete = loadedCount >= effectiveFavorites.length
+        // Flush INCREMENTALLY, not only at 100%. Previously the grid + counter
+        // were updated exclusively when loadedCount reached the total, so a
+        // heavy-favorites user watched a frozen "Loading N more" with an empty
+        // grid for the entire (rate-limited, ~1.1s/batch) sequence — looking
+        // exactly like a permanent hang. Now partial results render as they
+        // arrive and the counter advances. The final flush still fires on
+        // completion so the last batch is never dropped.
+        const throttleElapsed = now - lastProgressUpdate >= PROGRESS_THROTTLE_MS
 
         // Always keep the ref fresh so the final flush has the correct value
         progressRef.current = { loaded: displayed, total: favorites.length }
 
-        if (shouldFlush) {
+        if (isComplete || throttleElapsed) {
           lastProgressUpdate = now
           // Batch setProgress + mutate into one render cycle via startTransition
           startTransition(() => {
@@ -162,17 +181,49 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         })
       }
 
-      // Helper: fetch with retry on 429 (rate limit) — exponential backoff
+      // Helper: fetch with retry on 429 (rate limit) — exponential backoff.
+      // Each attempt has a hard timeout (via AbortController) so a hung/slow
+      // batch can't block the whole favorites load indefinitely. Without this,
+      // one stalled request left Promise.allSettled unresolved forever, freezing
+      // the grid at "Loading N more".
+      const REQUEST_TIMEOUT_MS = 15000
       const fetchWithRetry = async (url: string, body: object, maxRetries = 3): Promise<Response> => {
         let lastStatus = 0
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           if (signal?.aborted) throw new Error("aborted")
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal,
-          })
+
+          // Combine the SWR abort signal with a per-attempt timeout.
+          const timeoutController = new AbortController()
+          const onParentAbort = () => timeoutController.abort()
+          signal?.addEventListener('abort', onParentAbort)
+          const timer = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS)
+
+          let res: Response
+          try {
+            res = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+              signal: timeoutController.signal,
+            })
+          } catch {
+            // Parent (SWR) aborted → bubble up so the fetcher stops cleanly.
+            if (signal?.aborted) throw new Error("aborted")
+            // Timeout or network error → treat as transient and retry with
+            // backoff instead of hanging forever. If retries are exhausted the
+            // loop falls through and returns a synthetic failure Response so the
+            // caller still advances progress for this batch.
+            lastStatus = 0
+            console.warn(`[useFavoritePosts] Request timed out/failed (attempt ${attempt + 1}/${maxRetries + 1})`)
+            if (attempt < maxRetries) {
+              await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)))
+            }
+            continue
+          } finally {
+            clearTimeout(timer)
+            signal?.removeEventListener('abort', onParentAbort)
+          }
+
           if (res.ok || res.status !== 429) return res
           // 429 — wait and retry with exponential backoff
           lastStatus = res.status
@@ -244,7 +295,9 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         }
 
         // If everything was cached (localStorage + Supabase), we're done
-        if (toFetch.length === 0) return getSortedPosts(favorites, accumulated)
+        if (toFetch.length === 0) {
+          return getSortedPosts(favorites, accumulated)
+        }
 
         const aibooruFavs = toFetch.filter(f => f.provider === 'aibooru')
         const e621Favs = toFetch.filter(f => f.provider === 'e621')
@@ -253,6 +306,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         // Separate Danbooru (needs sequential rate-limited batching) from others
         const danbooruFavs = serverFavs.filter(f => f.provider === 'danbooru')
         const otherServerFavs = serverFavs.filter(f => f.provider !== 'danbooru')
+
 
         // Track parallel operations so we can await them before final return
         const parallelTasks: Promise<void>[] = []
@@ -292,6 +346,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
                     circuitBroken = true
                     rateLimitCooldownUntilRef.current = Date.now() + CIRCUIT_COOLDOWN_MS
                     reportError(new Error('Rate limit reached — pausing 30s. Some favorites may not load.'))
+                    addFavoritesBreadcrumb('favorites rate-limit circuit tripped', { consecutive429Hits })
                     console.warn(`[useFavoritePosts] Circuit breaker tripped after ${consecutive429Hits} consecutive 429s`)
                   }
                 } else {
@@ -304,14 +359,19 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
               consecutive429Hits = 0
               const posts: any[] = await res.json()
               if (signal?.aborted) return
-              let loaded = 0
               posts.forEach((p: any) => {
                 if (p && p.id) {
                   accumulated.set(`${(p._provider || '').toLowerCase()}:${p.id}`, p)
-                  loaded++
                 }
               })
-              addProgress(loaded)
+              // Advance progress by the number of favorites ATTEMPTED, not the
+              // number of posts the booru actually returned. Deleted/removed
+              // posts (id no longer exists) come back missing, so counting only
+              // returned posts left progress permanently short of total — which
+              // froze the UI on "Loading N more posts…" forever. Counting
+              // attempts lets progress reach 100%, after which folderMismatch
+              // correctly surfaces the missing ones as "unavailable".
+              addProgress(otherServerFavs.length)
             } catch (err) {
               if (signal?.aborted) return
               console.warn("[useFavoritePosts] Other server favs fetch error:", err)
@@ -413,14 +473,17 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
                   consecutive429Hits = 0
                   const posts: any[] = await res.json()
                   if (signal?.aborted) return
-                  let loaded = 0
                   posts.forEach((p: any) => {
                     if (p && p.id) {
                       accumulated.set(`${(p._provider || '').toLowerCase()}:${p.id}`, p)
-                      loaded++
                     }
                   })
-                  addProgress(loaded)
+                  // Advance by the batch size (favorites ATTEMPTED), not the
+                  // number returned. A batch of 20 whose posts were deleted on
+                  // Danbooru returns <20 posts; counting only those left the
+                  // progress counter stuck below total and hung the favorites
+                  // view on "Loading N more posts…". See otherServerFavs above.
+                  addProgress(batches[i].length)
                 } else {
                   if (res.status === 429) {
                     rateLimitHits++
@@ -429,6 +492,7 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
                       circuitBroken = true
                       rateLimitCooldownUntilRef.current = Date.now() + CIRCUIT_COOLDOWN_MS
                       reportError(new Error('Rate limit reached — pausing 30s. Some favorites may not load.'))
+                      addFavoritesBreadcrumb('favorites rate-limit circuit tripped', { consecutive429Hits, provider: 'danbooru' })
                       console.warn(`[useFavoritePosts] Circuit breaker tripped after ${consecutive429Hits} consecutive 429s`)
                     }
                   } else {
@@ -462,6 +526,11 @@ export function useFavoritePosts(favorites: FavoriteItem[]) {
         }
 
         const finalPosts = getSortedPosts(effectiveFavorites, accumulated)
+        addFavoritesBreadcrumb('favorites load complete', {
+          loaded: finalPosts.length,
+          total: favorites.length,
+          rateLimitHits,
+        })
         // Persist to localStorage cache for instant loads on next visit
         if (cacheKey) setCachedFavorites(cacheKey, finalPosts)
         // Persist to Supabase cache so future visits skip booru API entirely

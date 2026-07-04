@@ -36,6 +36,9 @@ export function useUser() {
         data: { hasUser: !!session?.user, userId: session?.user?.id }
       })
 
+      // Identify the user by UUID only (no PII) so Sentry shows affected-user
+      // counts and lets us filter a specific user's crashes. See SENTRY-FULVOUS-ANCHOR-7.
+      Sentry.setUser(session?.user ? { id: session.user.id } : null)
       setUser(session?.user ?? null)
       setSession(session ?? null)
       setLoading(false)
@@ -51,6 +54,9 @@ export function useUser() {
         data: { hasUser: !!session?.user, userId: session?.user?.id }
       })
 
+      // Identify the user by UUID only (no PII) so Sentry shows affected-user
+      // counts and lets us filter a specific user's crashes. See SENTRY-FULVOUS-ANCHOR-7.
+      Sentry.setUser(session?.user ? { id: session.user.id } : null)
       setUser(session?.user ?? null)
       setSession(session ?? null)
       setLoading(false)

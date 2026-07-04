@@ -1,38 +1,115 @@
 /**
- * Analytics module — kept intentionally minimal to stay within
- * Vercel Web Analytics free-tier limits (50K events/month).
+ * Analytics / telemetry module.
  *
- * Only the `<Analytics />` component in layout.tsx sends automatic
- * pageview events.  Custom events are disabled to save quota.
+ * Vercel Web Analytics custom events stay DISABLED to protect the free-tier
+ * quota (50K events/month) — only the automatic `<Analytics />` pageviews ship.
  *
- * If you need granular tracking later, re-enable individual
- * functions and budget ~20 events/session × expected sessions.
+ * However, every one of these already-wired call sites now also drops a Sentry
+ * **breadcrumb** (and, for a few, a triage **tag**). Breadcrumbs ride *inside*
+ * the error event Sentry already sends, so they cost ZERO extra quota and give
+ * a full "what the user was doing" timeline for ANY future crash — not just the
+ * translation bug (SENTRY-FULVOUS-ANCHOR-7). In dev / when Sentry is disabled
+ * these are safe no-ops.
  */
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
+import * as Sentry from "@sentry/nextjs"
 
-// No-op: every consumer can still call these without breaking,
-// but nothing is sent to Vercel Analytics.
-export function safeTrack(_event: string, _props: Record<string, any> = {}) {
-  // intentionally empty — saves Web Analytics Events quota
+// Thin, crash-proof wrappers so telemetry can never take down the app.
+function crumb(
+  category: string,
+  message: string,
+  data?: Record<string, unknown>,
+  level: Sentry.SeverityLevel = "info",
+) {
+  try {
+    Sentry.addBreadcrumb({ category, message, level, data })
+  } catch {
+    /* non-fatal: telemetry is best-effort */
+  }
 }
 
-// Stubs so existing imports don't break
+function tag(key: string, value: string) {
+  try {
+    Sentry.setTag(key, value)
+  } catch {
+    /* non-fatal */
+  }
+}
+
+// Generic event breadcrumb (kept for callers that use the raw API).
+export function safeTrack(event: string, props: Record<string, any> = {}) {
+  crumb("action", event, props)
+}
+
+// Scroll-depth / time-on-page would be too noisy as breadcrumbs — keep no-op.
 export function initScrollDepthTracking() { return () => { } }
 export function trackTimeOnPage(_startTime: number) { }
-export function trackExternalLink(_href: string, _context?: string) { }
-export function trackFavorite(_postId: number, _action: 'add' | 'remove') { }
-export function trackCopy(_postId: number) { }
-export function trackSearch(_params: { query: string; rating: string; order: string; tagCount: number }) { }
-export function trackLoadMore(_params: { order: string; nextPage: number; currentCount: number }) { }
-export function trackViewMode(_mode: string) { }
-export function trackScaleChange(_scale: string) { }
-export function trackFilterChange(_key: string, _value: string) { }
-export function trackRefresh(_order: string) { }
-export function trackProviderChange(_provider: string) { }
-export function trackAibooruOption(_option: string, _enabled: boolean) { }
-export function trackRatingChange(_rating: string) { }
-export function trackOrderChange(_order: string) { }
-export function trackDanbooruOption(_option: string, _enabled: boolean) { }
-export function trackRule34Option(_option: string, _enabled: boolean) { }
-export function trackE621Option(_option: string, _enabled: boolean) { }
+
+export function trackExternalLink(href: string, context?: string) {
+  crumb("navigation", "external link", { href, context })
+}
+
+export function trackFavorite(postId: number, action: 'add' | 'remove') {
+  crumb("favorites", `favorite ${action}`, { postId, action })
+}
+
+export function trackCopy(postId: number) {
+  crumb("action", "copy prompt", { postId })
+}
+
+export function trackSearch(params: { query: string; rating: string; order: string; tagCount: number }) {
+  crumb("search", "search executed", params)
+}
+
+export function trackLoadMore(params: { order: string; nextPage: number; currentCount: number }) {
+  crumb("search", "load more", params)
+}
+
+export function trackViewMode(mode: string) {
+  tag("view_mode", mode)
+  crumb("ui", "view mode", { mode })
+}
+
+export function trackScaleChange(scale: string) {
+  crumb("ui", "card scale", { scale })
+}
+
+export function trackFilterChange(key: string, value: string) {
+  crumb("filter", "filter change", { key, value })
+}
+
+export function trackRefresh(order: string) {
+  crumb("search", "refresh", { order })
+}
+
+export function trackProviderChange(provider: string) {
+  // Provider is the single most useful triage dimension — surface it as a tag
+  // on every subsequent event, plus a breadcrumb for the timeline.
+  tag("provider", provider)
+  crumb("provider", "provider change", { provider })
+}
+
+export function trackAibooruOption(option: string, enabled: boolean) {
+  crumb("filter", "aibooru option", { option, enabled })
+}
+
+export function trackRatingChange(rating: string) {
+  tag("rating", rating)
+  crumb("filter", "rating change", { rating })
+}
+
+export function trackOrderChange(order: string) {
+  crumb("filter", "order change", { order })
+}
+
+export function trackDanbooruOption(option: string, enabled: boolean) {
+  crumb("filter", "danbooru option", { option, enabled })
+}
+
+export function trackRule34Option(option: string, enabled: boolean) {
+  crumb("filter", "rule34 option", { option, enabled })
+}
+
+export function trackE621Option(option: string, enabled: boolean) {
+  crumb("filter", "e621 option", { option, enabled })
+}
