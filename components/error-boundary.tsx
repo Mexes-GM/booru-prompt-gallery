@@ -10,6 +10,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 interface ErrorBoundaryState {
   hasError: boolean
   error?: Error
+  /** Sentry event id for the captured crash — shown to the user so they can report it. */
+  eventId?: string
 }
 
 interface ErrorBoundaryProps {
@@ -73,6 +75,18 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
            error.message.includes('#185')
   }
 
+  // The #185 render loop only reproduced for SIGNED-IN users (auth + favorites
+  // resolving on mount drive the re-renders). Detect a Supabase session from
+  // localStorage so the crash event is tagged signed_in — a key correlation.
+  isSignedIn(): boolean | null {
+    try {
+      if (typeof localStorage === 'undefined') return null
+      return Object.keys(localStorage).some((k) => /^sb-.*-auth-token$/.test(k))
+    } catch {
+      return null
+    }
+  }
+
   // Detect whether the page is currently being auto-translated by the browser
   // (Google Translate / Chrome mobile). Delegates to the shared snapshot so the
   // boundary and the Sentry beforeSend hook agree. See SENTRY-FULVOUS-ANCHOR-7.
@@ -104,21 +118,27 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
     // Tags/contexts are passed to captureException so they land on THIS event
     // (setTag after capture would only affect subsequent events).
-    Sentry.captureException(error, {
+    const signedIn = this.isSignedIn()
+    const eventId = Sentry.captureException(error, {
       contexts: {
         react: { componentStack: errorInfo.componentStack },
         translation: translation as unknown as Record<string, unknown>,
+        auth: { signedIn },
       },
       tags: {
         error_type: errorType,
         likely_cause: likelyCause,
         page_translated: String(translation.detected),
+        signed_in: String(signedIn),
       },
     })
+    // Surface the id so the fallback UI can show it and the user can report the
+    // exact crash back to us (max info if the fix ever regresses).
+    this.setState({ eventId })
   }
 
   resetError = () => {
-    this.setState({ hasError: false, error: undefined })
+    this.setState({ hasError: false, error: undefined, eventId: undefined })
   }
 
   render() {
@@ -137,8 +157,8 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 {isRenderLoop
-                  ? 'The app crashed while rendering. This is most often caused by your browser auto-translating the page. Select "Show original" / turn off translation for this site, then reload. If that doesn\'t help, clear the cache below.'
-                  : 'Something went wrong. This might be caused by browser translation features. Try disabling auto-translate for this site or refresh the page.'
+                  ? 'The app hit a rendering error and reloaded this screen. If it keeps happening, please report it using the code below so we can look into it — reloading usually fixes it in the meantime.'
+                  : 'Something went wrong. Try again or reload the page. If it keeps happening, please report the code below.'
                 }
               </AlertDescription>
             </Alert>
@@ -174,6 +194,12 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               </Button>
             </div>
             
+            {this.state.eventId && (
+              <p className="text-xs text-center text-muted-foreground">
+                Report code: <code className="font-mono select-all">{this.state.eventId}</code>
+              </p>
+            )}
+
             {this.state.error && (
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer hover:text-foreground">
