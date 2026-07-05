@@ -158,7 +158,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
           </AnimatePresence>
         </div>
         <div className="p-4 bg-muted/30 border-t border-border/50 text-center text-xs text-muted-foreground">
-          By signing in, you agree to our Terms of Service and <Link href="/privacy" className="underline hover:text-primary" onClick={() => resetState(false)}>Privacy Policy</Link>.
+          By signing in, you agree to our <Link href="/terms" className="underline hover:text-primary" onClick={() => resetState(false)}>Terms of Service</Link> and <Link href="/privacy" className="underline hover:text-primary" onClick={() => resetState(false)}>Privacy Policy</Link>.
         </div>
       </DialogContent>
     </Dialog>

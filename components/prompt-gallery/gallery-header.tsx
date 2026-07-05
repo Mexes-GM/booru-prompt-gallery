@@ -218,6 +218,12 @@ export function GalleryHeader({
                   </a>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
+                  <a href="/terms" className="cursor-pointer w-full flex items-center">
+                    <Shield className="mr-2 h-4 w-4" />
+                    <span>Terms of Service</span>
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
                   <a
                     href="https://stats.uptimerobot.com/YcL3JPgshk"
                     target="_blank"

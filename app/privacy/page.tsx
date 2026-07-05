@@ -1,104 +1,190 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Metadata } from "next"
+import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "Read our privacy policy to understand how Booru Prompt Gallery handles your local data, favorites, and history while using our AI art prompt tools.",
+  description:
+    "How Booru Prompt Gallery handles your data: local storage, optional accounts, analytics, error tracking, and the third-party services involved.",
 }
 
 export default function PrivacyPage() {
-  const lastUpdated = "February 15, 2026"
+  const lastUpdated = "July 4, 2026"
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-4xl">
       <h1 className="text-3xl font-bold mb-2">Privacy Policy</h1>
       <p className="text-muted-foreground mb-6">Last updated: {lastUpdated}</p>
-      
+
       <div className="grid gap-6">
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>1. Data Collection</CardTitle>
+            <CardTitle>1. Overview</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              <strong>Local Storage:</strong> Booru Prompt Gallery primarily uses your browser&apos;s Local Storage to save 
-              your favorites, history, and application preferences. This data stays on your device.
+              Booru Prompt Gallery (&quot;the app&quot;, &quot;we&quot;) is a tool for browsing booru-style image boards and
+              turning their tags into clean prompts. It is built around <strong>data minimization</strong>: you can use
+              almost every feature without an account, and most of your data never leaves your own browser.
             </p>
             <p>
-              <strong>Analytics:</strong> We use Vercel Analytics to collect anonymous usage data to help us 
-              improve the tool. This includes information about which features are used most frequently, 
-              but does not include personally identifiable information.
+              This page explains exactly what data is stored, where it lives, and which third parties are involved.
             </p>
           </CardContent>
         </Card>
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>2. Authentication & Account Data</CardTitle>
+            <CardTitle>2. Data Stored on Your Device</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              When you choose to sign in to Booru Prompt Gallery, we use <strong>Magic Link</strong> (passwordless email) as our authentication provider.
-              We are committed to data minimization and only request your email address.
-            </p>
-            {/* Google OAuth Temporarily Hidden
-            <p>
-              When you choose to sign in to Booru Prompt Gallery, we use <strong>Google OAuth</strong> as our authentication provider.
-              We are committed to data minimization and only request the following limited permissions (scopes):
+              By default the app stores everything locally in your browser&apos;s <strong>Local Storage</strong> — no
+              account required and nothing is sent to our servers:
             </p>
             <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
-              <li>
-                <strong>openid</strong>: Used to associate you with your personal info on Google for authentication purposes.
-              </li>
-              <li>
-                <strong>userinfo.email</strong>: Used to see your primary Google Account email address.
-              </li>
+              <li>Favorites (when you are not signed in)</li>
+              <li>Copy history and recent tags</li>
+              <li>Presets, blacklist, tag weights, and content filter preferences</li>
+              <li>UI settings such as provider selection, card scale, and dismissed announcements</li>
             </ul>
-            */}
-            <p className="pt-2">
-              <strong>How we use this data:</strong> Your email address is used solely as a unique identifier to link your account
-              to your saved preferences, favorites, and history across devices. We do <strong>not</strong> share your email 
-              with third parties or use it for marketing purposes.
+            <p>
+              You can clear all of this at any time by clearing your browser&apos;s site data for this domain.
             </p>
           </CardContent>
         </Card>
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>3. Third-Party Services</CardTitle>
+            <CardTitle>3. Accounts &amp; Cloud Sync (Optional)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              This application interacts with external APIs (Danbooru, Rule34, etc.) to fetch images and tags. 
-              When you browse the gallery, your IP address may be visible to these third-party providers as 
-              part of the standard web request process.
+              Signing in is entirely optional and only exists to <strong>sync your favorites and preferences across
+              devices</strong>. Authentication uses a passwordless <strong>Magic Link</strong> sent to your email, so we
+              never handle or store a password.
             </p>
             <p>
-              We recommend reviewing the privacy policies of the booru providers you choose to use within the app.
+              <strong>What we collect:</strong> only your <strong>email address</strong>, used solely as the unique
+              identifier that links your account to your synced favorites and settings. We do not use it for marketing
+              and we do not sell or share it.
+            </p>
+            <p>
+              <strong>Where it lives:</strong> account and synced data are stored in <strong>Supabase</strong> (a hosted
+              PostgreSQL provider) acting as our data processor. See{" "}
+              <a
+                href="https://supabase.com/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-primary"
+              >
+                Supabase&apos;s privacy policy
+              </a>
+              .
             </p>
           </CardContent>
         </Card>
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>4. Cookies</CardTitle>
+            <CardTitle>4. Analytics</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <p>
-              We do not use tracking cookies for marketing purposes. We use functional cookies required for 
-              authentication and server-side features to maintain your session securely.
+              We use <strong>Cloudflare Web Analytics</strong>, which is privacy-first and{" "}
+              <strong>cookieless</strong> — it does not fingerprint you or track you across sites. Depending on the
+              hosting platform, <strong>Vercel Analytics</strong> may also collect anonymous page views. Neither
+              includes personally identifiable information; both are used only to understand aggregate usage and improve
+              the app.
             </p>
           </CardContent>
         </Card>
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>5. Contact</CardTitle>
+            <CardTitle>5. Error Tracking</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>
+              To diagnose crashes we use <strong>Sentry</strong>. Diagnostic data (such as the error, a technical
+              breadcrumb trail of in-app actions, and basic device/browser info) is only transmitted{" "}
+              <strong>when an error actually occurs</strong>. We do not send your prompts, favorites, or browsing content
+              as part of normal use.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>6. Third-Party Booru Providers</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>
+              Images and tags are fetched from external providers (Danbooru, Gelbooru, e621, Aibooru, Rule34). When you
+              browse, requests to these providers (sometimes via our image proxy) may expose your IP address to them as
+              part of the normal web request process. We do not control their data practices and recommend reviewing the
+              privacy policy of any provider you use.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>7. Cookies</CardTitle>
           </CardHeader>
           <CardContent>
             <p>
-              If you have any questions about this privacy policy or how your data is handled, you can reach out 
-              via the Feedback tool in the application.
+              We do not use advertising or cross-site tracking cookies. We use only the functional cookies required to
+              keep you signed in and to maintain a secure session.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>8. Data Retention &amp; Your Rights</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>
+              Local data stays until you clear it. Account data is retained while your account exists. You have the right
+              to <strong>access, correct, or delete</strong> your data.
+            </p>
+            <p>
+              <strong>Deleting your account:</strong> request deletion through the in-app Feedback tool. On deletion we
+              remove your account record and associated synced favorites/preferences from Supabase. You can also stop
+              syncing at any time by signing out and clearing your local site data.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>9. Age Restriction &amp; Mature Content</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>
+              Some supported providers host explicit or mature (NSFW) content. The app is intended for adults and you
+              must be of legal age in your jurisdiction (at least 18) to view such content. A content filter is enabled
+              where applicable, but you are responsible for the material you choose to display.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>10. Changes &amp; Contact</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>
+              We may update this policy; material changes will be reflected in the &quot;Last updated&quot; date above.
+              See also our{" "}
+              <Link href="/terms" className="underline hover:text-primary">
+                Terms of Service
+              </Link>
+              .
+            </p>
+            <p>
+              Questions about your data or this policy? Reach out via the <strong>Feedback</strong> tool in the app.
             </p>
           </CardContent>
         </Card>
