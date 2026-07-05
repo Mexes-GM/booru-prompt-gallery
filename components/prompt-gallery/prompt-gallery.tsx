@@ -120,7 +120,6 @@ import {
   trackExternalLink,
   trackCopy,
   trackViewMode,
-  trackScaleChange,
   trackProviderChange,
 } from '@/lib/analytics'
 import { SOCIAL_URLS } from '@/lib/constants'
@@ -170,7 +169,7 @@ import { ArtistGridSection } from "@/components/prompt-gallery/artist-grid-secti
 import { useTagCounts } from "@/hooks/use-tag-counts"
 import { usePromptOptions } from "@/hooks/use-prompt-options"
 import { useBackgroundSettings } from "@/hooks/use-background-settings"
-import { useGalleryViewState, type CardScale } from "@/hooks/use-gallery-view-state"
+import { useGalleryViewState } from "@/hooks/use-gallery-view-state"
 import { useGlobalWeights } from "@/hooks/use-global-weights"
 import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 
@@ -469,7 +468,7 @@ export function PromptGallery() {
   // 2. Local UI State & Persistence
   const {
     viewMode, setViewMode,
-    cardScale, setCardScale,
+    cardScale,
     scaleValue, setScaleValue,
   } = useGalleryViewState()
 
@@ -673,20 +672,11 @@ export function PromptGallery() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Scale effect - Slider drives persistence
-  useEffect(() => {
-    const scale = scaleValue[0]
-    let val: CardScale = 'medium'
-    if (scale === 1) val = 'small'
-    else if (scale === 2) val = 'medium'
-    else val = 'large'
-
-    // Only update if different to avoid loops (though usePersistentState setter might trigger re-render)
-    if (val !== cardScale) {
-      setCardScale(val)
-      trackScaleChange(val)
-    }
-  }, [scaleValue, cardScale, setCardScale])
+  // NOTE: the slider<->scale sync used to live here as a second effect writing
+  // cardScale from scaleValue. It has been removed: `setScaleValue` now writes
+  // `cardScale` directly (single source of truth in useGalleryViewState), which
+  // eliminates the bidirectional ping-pong that caused the React #185 render
+  // loop. See docs/SENTRY-FULVOUS-ANCHOR-11-render-loop.md.
 
   // We will render <title> directly in the JSX instead of useEffect
   
