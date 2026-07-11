@@ -41,7 +41,6 @@ export function QueryStatusPanel({
       {(() => {
         const queryMeta = getFinalQueryTagsWithMeta(searchTags, ratingFilter, order, appliedTagCountFilter, booruProvider)
         const hasPromptTag = booruProvider === "aibooru" && searchTags.includes("has:prompt")
-        if (queryMeta.tags.length === 0 && !hasPromptTag) return null
 
         const isUnlimited = queryMeta.slotLimit === Infinity
         const isAtLimit = !isUnlimited && queryMeta.slotsUsed >= queryMeta.slotLimit

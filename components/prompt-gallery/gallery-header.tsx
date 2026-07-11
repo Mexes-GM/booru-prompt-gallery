@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   Shield,
   Activity,
+  HelpCircle,
 } from "lucide-react"
 import { SOCIAL_URLS } from "@/lib/constants"
 import { trackViewMode } from "@/lib/analytics"
@@ -36,6 +37,7 @@ interface GalleryHeaderProps {
   decreaseScale: () => void
   increaseScale: () => void
   setShowWelcomeModal: (open: boolean) => void
+  onOpenTour: () => void
 }
 
 /**
@@ -51,6 +53,7 @@ export function GalleryHeader({
   decreaseScale,
   increaseScale,
   setShowWelcomeModal,
+  onOpenTour,
 }: GalleryHeaderProps) {
   return (
     <header className="w-full border-b glass-effect">
@@ -162,6 +165,21 @@ export function GalleryHeader({
             <span className="hidden md:inline-flex">
               <ThemeToggle />
             </span>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onOpenTour}
+                  className="focus-ring"
+                  aria-label="Replay welcome tour"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Replay welcome tour</TooltipContent>
+            </Tooltip>
 
             <UserNav />
 

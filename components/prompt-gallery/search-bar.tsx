@@ -1,8 +1,19 @@
 "use client"
 
+import { useState } from "react"
 import dynamic from "next/dynamic"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import {
   Sheet,
@@ -24,6 +35,9 @@ import {
   Copy,
 } from "lucide-react"
 import type { HistoryItem } from "@/lib/storage"
+import { userPreferences } from "@/lib/storage"
+import { shouldConfirmNsfwEnable, nextRatingFilter, ALL_RATING } from "@/lib/nsfw-consent"
+import { usePostHog } from 'posthog-js/react'
 
 const BlacklistManager = dynamic(() => import("@/components/prompt-gallery/blacklist-manager").then(m => m.BlacklistManager), { ssr: false, loading: () => null })
 
@@ -86,9 +100,32 @@ export function SearchBar({
   showSettings,
   setShowSettings,
 }: SearchBarProps) {
+  const posthog = usePostHog()
+  
+  // Capa 2: first-time confirmation before enabling NSFW. Once acknowledged
+  // (persisted), the toggle is instant. Turning NSFW back off never prompts.
+  const [nsfwDialogOpen, setNsfwDialogOpen] = useState(false)
+
+  const handleToggleRating = () => {
+    if (shouldConfirmNsfwEnable(ratingFilter, userPreferences.getNsfwAcknowledged())) {
+      setNsfwDialogOpen(true)
+      return
+    }
+    const newRating = nextRatingFilter(ratingFilter)
+    posthog.capture('nsfw_preference_changed', { rating_filter: newRating })
+    setRatingFilter(newRating)
+  }
+
+  const confirmEnableNsfw = () => {
+    userPreferences.setNsfwAcknowledged(true)
+    posthog.capture('nsfw_preference_changed', { rating_filter: ALL_RATING })
+    setRatingFilter(ALL_RATING)
+    setNsfwDialogOpen(false)
+  }
+
   return (
     <div className="flex flex-col sm:flex-row gap-3">
-      <div className="flex flex-1 group gap-0">
+      <div className="flex flex-1 group gap-0" data-tour="search">
         <div className="relative flex-1">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground pointer-events-none z-20">
             <Search className="h-5 w-5" />
@@ -97,7 +134,14 @@ export function SearchBar({
             placeholders={placeholders}
             value={searchTags}
             setValue={setSearchTags}
-            onSearch={() => handleSearch({ preventDefault: () => { } } as React.FormEvent)}
+            onSearch={() => {
+              posthog.capture('search_executed', {
+                booru_source: booruProvider,
+                query_length: searchTags.length,
+                is_shuffle: isShuffle
+              })
+              handleSearch({ preventDefault: () => { } } as React.FormEvent)
+            }}
             className="pl-10 pr-10 h-11 text-base shadow-sm rounded-r-none border-r-0 z-10 relative bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
             aria-label="Search tags input"
           />
@@ -113,43 +157,42 @@ export function SearchBar({
           )}
         </div>
 
-        {/* Blacklist Manager */}
-        {isClient && (
-          <BlacklistManager
-            blacklist={blacklist}
-            onAdd={addTag}
-            onRemove={removeTag}
-            onReset={resetBlacklist}
-          />
-        )}
+        {/* Blacklist Manager + NSFW Toggle - grouped for the tour spotlight */}
+        <div className="inline-flex items-center" data-tour="safety-controls">
+          {isClient && (
+            <BlacklistManager
+              blacklist={blacklist}
+              onAdd={addTag}
+              onRemove={removeTag}
+              onReset={resetBlacklist}
+            />
+          )}
 
-        {/* NSFW Toggle - Attached to Input */}
-        {isClient && (
-          <Button
-            type="button"
-            disabled={booruProvider === 'rule34'}
-            variant="outline"
-            onClick={() => {
-              const newRating = ratingFilter === "rating:general" ? "all" : "rating:general"
-              setRatingFilter(newRating)
-            }}
-            className={`h-11 px-4 rounded-l-none border-l-0 shadow-sm transition-all z-0 ${booruProvider === 'rule34'
-              ? "opacity-50 cursor-not-allowed bg-muted"
-              : ratingFilter === "rating:general"
-                ? "bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 border-green-200/50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 dark:border-green-800/50"
-                : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            title={booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
-            aria-label={ratingFilter === "rating:general" ? "Current filter: Safe content. Click to show all." : "Current filter: All content. Click to show safe only."}
-          >
-            <Shield className="w-4 h-4 sm:mr-2" />
-            <span className="text-xs font-semibold hidden sm:inline">
-              {ratingFilter === "rating:general" ? "Safe" : "NSFW"}
-            </span>
-          </Button>
-        )}
+          {/* NSFW Toggle - Attached to Input */}
+          {isClient && (
+            <Button
+              type="button"
+              disabled={booruProvider === 'rule34'}
+              variant="outline"
+              onClick={handleToggleRating}
+              className={`h-11 px-2.5 sm:px-4 rounded-l-none border-l-0 shadow-sm transition-all z-0 ${booruProvider === 'rule34'
+                ? "opacity-50 cursor-not-allowed bg-muted"
+                : ratingFilter === "rating:general"
+                  ? "bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 border-green-200/50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 dark:border-green-800/50"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              title={booruProvider === 'rule34' ? "NSFW is always enabled for Rule34" : "Toggle NSFW content"}
+              aria-label={ratingFilter === "rating:general" ? "Current filter: Safe content. Click to show all." : "Current filter: All content. Click to show safe only."}
+            >
+              <Shield className="w-4 h-4 mr-1 sm:mr-2 shrink-0" />
+              <span className="text-xs font-semibold whitespace-nowrap">
+                {ratingFilter === "rating:general" ? "Safe" : "NSFW"}
+              </span>
+            </Button>
+          )}
+        </div>
       </div>
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap" data-tour="quick-controls">
 
         <Button
           type="button"
@@ -236,6 +279,27 @@ export function SearchBar({
           <Settings className="w-4 h-4" />
         </Button>
       </div>
+
+      {/* Capa 2: NSFW enable confirmation (first time only) */}
+      <AlertDialog open={nsfwDialogOpen} onOpenChange={setNsfwDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Show adult (NSFW) content?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You&apos;re about to turn off the Safe filter. Results may include
+              explicit / adult (18+) content. Only continue if you are of legal
+              age and want to see this material. You can switch back to Safe at
+              any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">Stay in Safe mode</AlertDialogCancel>
+            <AlertDialogAction type="button" onClick={confirmEnableNsfw}>
+              Show NSFW
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

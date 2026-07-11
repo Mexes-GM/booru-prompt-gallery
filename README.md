@@ -1,6 +1,6 @@
 # Booru Prompt Gallery
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat&logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
 
@@ -196,4 +196,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+AGPL-3.0 — see [LICENSE](LICENSE).
+
+This project is free and open source. You can use, modify, and self-host it — but if you run a modified version as a network service, you must make the modified source code available to your users under the same license. This prevents closed-source forks from monetizing this project without giving back to the community.

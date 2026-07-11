@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePostHog } from "posthog-js/react";
 
 interface PromptImportZoneProps {
   isDragActive: boolean;
@@ -34,6 +35,7 @@ export function PromptImportZone({
 }: PromptImportZoneProps) {
   const [lastFileName, setLastFileName] = useState<string>("");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const posthog = usePostHog();
 
   // Cleanup object URL on unmount to avoid memory leaks
   useEffect(() => {
@@ -47,6 +49,7 @@ export function PromptImportZone({
     if (files.length > 0) {
       setLastFileName(files[0].name);
       importFileAsPreview(files[0]);
+      posthog.capture('import_used', { method: 'drop', file_type: files[0].type });
     }
     await onDrop(e);
   };
@@ -56,6 +59,7 @@ export function PromptImportZone({
     if (files && files.length > 0) {
       setLastFileName(files[0].name);
       importFileAsPreview(files[0]);
+      posthog.capture('import_used', { method: 'file_select', file_type: files[0].type });
     }
     onFileInputChange(e);
   };

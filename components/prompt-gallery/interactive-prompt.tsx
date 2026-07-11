@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react"
 import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle, Copy, Check } from "lucide-react"
+import { usePostHog } from 'posthog-js/react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
@@ -157,6 +158,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const triggerRef = useRef<HTMLSpanElement | null>(null)
   const { toast } = useToast()
+  const posthog = usePostHog()
 
   useEffect(() => {
     return () => {
@@ -167,6 +169,9 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
   const copyTag = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(tag.text)
+      
+      posthog.capture('dynamic_tag_copied')
+
       if (triggerRef.current) {
         const rect = triggerRef.current.getBoundingClientRect()
         setBadgePos({
@@ -197,6 +202,9 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open)
+    if (open) {
+      posthog.capture('dynamic_tag_clicked')
+    }
     if (!open) {
       // Commit on close
       if (draftWeight !== tag.weight) {

@@ -7,7 +7,8 @@
     "sidePanel",
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "permissions"
   ],
   "host_permissions": [
     "*://*.seaart.ai/*",
@@ -18,6 +19,9 @@
     "https://static.cdn.seaart.me/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"

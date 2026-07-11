@@ -28,6 +28,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { usePathname } from "next/navigation"
+import { usePostHog } from "posthog-js/react"
 import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
 
 // --- Animation Variants ---
@@ -130,6 +131,7 @@ export function FeedbackDialog() {
     const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
     const { toast } = useToast()
     const pathname = usePathname()
+    const posthog = usePostHog()
 
     const turnstileRequired = isTurnstileEnabled()
 
@@ -170,6 +172,10 @@ export function FeedbackDialog() {
                 const data = await response.json()
                 throw new Error(data.message || data.error || "Failed to submit")
             }
+
+            posthog.capture('feedback_submitted', {
+                feedback_type: type
+            })
 
             setSuccess(true)
 

@@ -20,7 +20,7 @@ interface ResultsGridProps {
 export function ResultsGrid({ posts, viewMode, effectiveScale, renderItem }: ResultsGridProps) {
   if (viewMode === "grid") {
     return (
-      <div id="results-anchor" className="mb-8 min-h-[500px] scroll-mt-20">
+      <div id="results-anchor" data-tour="results" className="mb-8 min-h-[500px] scroll-mt-20">
         <MasonryGrid
           items={posts}
           scale={effectiveScale}

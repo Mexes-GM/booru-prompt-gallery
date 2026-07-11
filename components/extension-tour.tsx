@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useJoyride, STATUS, type Status, type TooltipRenderProps } from "react-joyride"
-import { X } from "lucide-react"
+import { X, Settings2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
@@ -32,12 +32,6 @@ function TourTooltip({
       {/* Header */}
       <div className="flex items-start justify-between gap-2 border-b px-4 pb-2 pt-3.5">
         <div className="flex min-w-0 items-center gap-2">
-          <Badge
-            variant="outline"
-            className="h-fit shrink-0 select-none border-primary/20 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary"
-          >
-            Tour
-          </Badge>
           {step.title && (
             <h3 className="truncate text-sm font-bold leading-tight text-foreground">
               {step.title}
@@ -145,21 +139,26 @@ export function ExtensionTour({ externalRun }: { externalRun?: boolean }) {
     steps: [
       {
         target: "#extension-target-btn",
-        title: "🎯 Select your target",
+        title: "Select your target",
         content:
           "This button lets you pick WHERE your prompts go. Click it, then click any textarea on the page you want to send prompts to (e.g., SeaArt, TensorArt, or any image generator).",
         placement: "top",
       },
       {
         target: ".pocket-card-send-btn",
-        title: "📤 Send a prompt",
+        title: "Send a prompt",
         content:
           "Once you've set a target, click Send on any image card to inject its prompt directly into the textarea you selected. The prompt will queue and auto-inject when the generator is ready.",
         placement: "top",
       },
       {
         target: "#extension-settings-btn",
-        title: "⚙️ Fine-tune your prompts",
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <Settings2 className="h-4 w-4 shrink-0" />
+            Fine-tune your prompts
+          </span>
+        ),
         content:
           "Open Settings to customize which tags to add/remove, adjust character inclusion, background handling, and more — all automatically applied to every prompt you send.",
         placement: "bottom",

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 }
 
 export default function PrivacyPage() {
-  const lastUpdated = "July 4, 2026"
+  const lastUpdated = "July 11, 2026"
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-4xl">
@@ -87,15 +87,57 @@ export default function PrivacyPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>4. Analytics</CardTitle>
+            <CardTitle>4. Analytics &amp; Product Usage</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              We use <strong>Cloudflare Web Analytics</strong>, which is privacy-first and{" "}
-              <strong>cookieless</strong> — it does not fingerprint you or track you across sites. Depending on the
-              hosting platform, <strong>Vercel Analytics</strong> may also collect anonymous page views. Neither
-              includes personally identifiable information; both are used only to understand aggregate usage and improve
-              the app.
+              We use analytics to understand how the app is used and prioritize development. We <strong>do not</strong> sell
+              this data, use it for advertising, or track you across other websites.
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
+              <li>
+                <strong>Cloudflare Web Analytics:</strong> Aggregate, cookieless page views and performance
+                metrics. Does not fingerprint or track you across sites.
+              </li>
+              <li>
+                <strong>PostHog (Product Analytics):</strong> We record specific in-app behavioral events to
+                understand feature usage. PostHog stores an anonymous session identifier in your browser's
+                local storage (not a tracking cookie). The events we capture include:
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                  <li>Searches performed (query length, provider, shuffle on/off — <em>not</em> the search text itself)</li>
+                  <li>Prompts copied (whether it was AI-converted text or raw tags, and the source provider — <em>not</em> the prompt content)</li>
+                  <li>Tags copied by category (e.g. "appearance", "clothing" — <em>not</em> the tag text itself)</li>
+                  <li>Images downloaded (source provider only)</li>
+                  <li>AI tag conversion started and completed (provider name, success/fail — <em>not</em> the tags)</li>
+                  <li>Feature used: Merge mode, Variant mode, Teach Modal, Dynamic tag opened/copied — <em>no content is recorded</em></li>
+                  <li>Favorite added or removed — <em>no post ID or content is recorded, only that the action happened</em></li>
+                  <li>Feedback form submitted (type only: bug / feature / other — <em>not</em> the message)</li>
+                  <li>Generation settings toggled (which setting and its new on/off value)</li>
+                  <li>Background option changed (which mode was selected)</li>
+                  <li>Import used (drag-and-drop or file picker, file type)</li>
+                  <li>Content filter changed (SFW / NSFW preference value)</li>
+                  <li>Provider changed (which booru provider was selected)</li>
+                  <li>Sign-in occurred (no email or identity is sent to PostHog)</li>
+                </ul>
+              </li>
+            </ul>
+            <p>
+              If you are <strong>not signed in</strong>, all of the above is fully anonymous — it cannot be linked
+              to you personally. If you <strong>sign in</strong>, telemetry is associated with your anonymous
+              account ID (a random UUID) to help us troubleshoot issues. Your email address is <em>never</em> sent
+              to PostHog.
+            </p>
+            <p>
+              PostHog is operated by PostHog, Inc. See their{" "}
+              <a
+                href="https://posthog.com/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-primary"
+              >
+                privacy policy
+              </a>
+              {" "}for details on how they handle this data.
             </p>
           </CardContent>
         </Card>
@@ -130,13 +172,17 @@ export default function PrivacyPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>7. Cookies</CardTitle>
+            <CardTitle>7. Cookies & Local Storage</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <p>
-              We do not use advertising or cross-site tracking cookies. We use only the functional cookies required to
-              keep you signed in and to maintain a secure session.
+              We do not use advertising or cross-site tracking cookies. We use only functional cookies and local storage to:
             </p>
+            <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
+              <li>Keep you signed in and maintain a secure session.</li>
+              <li>Store your preferences and favorites locally.</li>
+              <li>Maintain an anonymous session identifier for our product analytics (PostHog) so we can understand continuous usage.</li>
+            </ul>
           </CardContent>
         </Card>
 
@@ -153,6 +199,12 @@ export default function PrivacyPage() {
               <strong>Deleting your account:</strong> request deletion through the in-app Feedback tool. On deletion we
               remove your account record and associated synced favorites/preferences from Supabase. You can also stop
               syncing at any time by signing out and clearing your local site data.
+            </p>
+            <p>
+              <strong>Opting out of product analytics:</strong> PostHog respects the browser's{" "}
+              <strong>Do Not Track</strong> signal. You can also block analytics by using a content blocker (e.g.
+              uBlock Origin) — the app will continue to work fully without it. Clearing your browser's local
+              storage for this domain will also reset your anonymous PostHog session identifier.
             </p>
           </CardContent>
         </Card>

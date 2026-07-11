@@ -153,6 +153,7 @@ import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { GalleryModals } from "@/components/prompt-gallery/gallery-modals"
 import { GalleryHeader } from "@/components/prompt-gallery/gallery-header"
+import { MainTour } from "@/components/prompt-gallery/main-tour"
 import { GalleryHero } from "@/components/prompt-gallery/gallery-hero"
 import { TagsManagementPanel } from "@/components/prompt-gallery/tags-management-panel"
 import { PromptGenerationOptionsPanel } from "@/components/prompt-gallery/prompt-generation-options-panel"
@@ -172,6 +173,8 @@ import { useBackgroundSettings } from "@/hooks/use-background-settings"
 import { useGalleryViewState } from "@/hooks/use-gallery-view-state"
 import { useGlobalWeights } from "@/hooks/use-global-weights"
 import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
+import { useFilteredPosts } from "@/hooks/use-filtered-posts"
+import { usePostHog } from 'posthog-js/react'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UnavailablePostsNotice
@@ -444,6 +447,7 @@ export function PromptGallery() {
   const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
   const isMobile = useIsMobile()
+  const posthog = usePostHog()
 
   const [imageRateLimited, setImageRateLimited] = useState(false)
   const imageErrorCountRef = useRef(0)
@@ -518,6 +522,7 @@ export function PromptGallery() {
   )
 
   const [showSettings, setShowSettings] = useState(true)
+  const [tourRunSignal, setTourRunSignal] = useState(0)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [showStickyPanel, setShowStickyPanel] = useState(false)
@@ -775,6 +780,14 @@ export function PromptGallery() {
   const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string) => {
     try {
       await navigator.clipboard.writeText(content)
+
+      // PostHog Tracking
+      posthog.capture('prompt_copied', {
+        copy_type: isPrompt ? 'ai_text' : 'tags',
+        booru_source: search.booruProvider,
+        has_translated_tags: isAiConvertMode || content.includes('Masterpiece')
+      })
+
       setCopiedId(postId)
 
       addToHistory({ content, postId, thumbnailUrl })
@@ -796,6 +809,11 @@ export function PromptGallery() {
 
   const downloadImage = useCallback(async (post: BooruPost) => {
     try {
+      posthog.capture('image_downloaded', {
+        booru_source: search.booruProvider,
+        resolution_type: 'full'
+      })
+
       const imageUrl = post.file_url || post.large_file_url
 
       if (!imageUrl) {
@@ -878,83 +896,20 @@ export function PromptGallery() {
     "large breasts, swimsuit",
   ], [search.isShuffle])
 
-  const filteredPosts = useMemo(() => {
-    let source = search.allPosts
-    if (favs.showFavorites) {
-      source = favs.favoritePosts || []
-    }
-
-    // Visual-only folder filter — applied at render, not in the hook.
-    // useFavoritePosts always receives ALL favorites so SWR cache stays stable.
-    const filterByFolder =
-      favs.showFavorites &&
-      activeFavoriteFolder !== "all" &&
-      activeFavoriteFolder !== "artists"
-
-    return source.filter(post => {
-      // Folder filter (render-level, not in hook)
-      if (filterByFolder) {
-        const key = favKey(post._provider || search.booruProvider, post.id)
-        const postFolders = favs.favoriteFolderMap[key] || []
-        if (activeFavoriteFolder === null) {
-          if (postFolders.length !== 0) return false
-        } else {
-          if (!postFolders.includes(activeFavoriteFolder)) return false
-        }
-      }
-
-      // Blacklist filter
-      if (post.tag_string) {
-        const postTags = post.tag_string.split(' ')
-        const normalizedBlacklist = blacklist.map(tag => tag.replace(/\s+/g, '_'))
-        if (postTags.some(tag => normalizedBlacklist.includes(tag))) {
-          return false
-        }
-      }
-
-      // Character count filter
-      const minCharPostCount = (includeCharacters && parseInt(search.appliedCharacterCountFilter)) || 0
-      if (minCharPostCount > 0) {
-        // The "Minimum Character Post Count" filter needs per-tag booru post counts,
-        // which are only available for Danbooru/Aibooru (fetchBatchTagCounts / the
-        // /api/booru/tags route). For every other provider (e621, gelbooru, rule34)
-        // `tagCounts` is always empty, so evaluating the filter there would drop EVERY
-        // post — that was the e621 "only 1-3 results" bug. Treat the filter as a no-op
-        // (pass-through) on providers without count support instead of silently
-        // filtering everything out.
-        const postProvider = post._provider || search.booruProvider
-        const supportsCharCounts = postProvider === 'danbooru' || postProvider === 'aibooru'
-
-        if (supportsCharCounts) {
-          if (!post.tag_string_character) {
-            return false
-          }
-          const charTags = post.tag_string_character.split(' ').filter(Boolean)
-          let hasValidCount = false
-
-          for (const tag of charTags) {
-            const count = tagCounts[tag]
-            if (count === undefined) {
-              continue
-            } else if (count >= minCharPostCount) {
-              hasValidCount = true
-              break
-            }
-          }
-
-          if (!hasValidCount) {
-            return false
-          }
-        }
-        // else: provider has no per-tag counts — skip this filter entirely.
-      }
-
-      if (favs.showFavorites) return true
-      const fileUrl = post.large_file_url || post.file_url
-      const match = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
-      return !!match
-    })
-  }, [favs.showFavorites, favs.favoritePosts, search.allPosts, search.booruProvider, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts, activeFavoriteFolder, favs.favoriteFolderMap])
+  const filteredPosts = useFilteredPosts({
+    allPosts: search.allPosts,
+    booruProvider: search.booruProvider,
+    blacklist,
+    includeCharacters,
+    appliedCharacterCountFilter: search.appliedCharacterCountFilter,
+    tagCounts,
+    favorites: {
+      showFavorites: favs.showFavorites,
+      favoritePosts: favs.favoritePosts,
+      favoriteFolderMap: favs.favoriteFolderMap,
+    },
+    activeFavoriteFolder,
+  })
 
   // Constant empty array reference for memoization
   const EMPTY_ARRAY = useRef<string[]>([]).current
@@ -1113,6 +1068,15 @@ export function PromptGallery() {
           decreaseScale={decreaseScale}
           increaseScale={increaseScale}
           setShowWelcomeModal={setShowWelcomeModal}
+          onOpenTour={() => setTourRunSignal((n) => n + 1)}
+        />
+
+        <MainTour
+          runSignal={tourRunSignal}
+          onStart={() => {
+            setShowSettings(true)
+            setIsPromptOptionsExpanded(true)
+          }}
         />
 
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>

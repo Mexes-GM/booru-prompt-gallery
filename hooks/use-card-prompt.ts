@@ -14,7 +14,7 @@ import { applyWeights } from "@/lib/weight-utils"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
 
-interface UseCardPromptArgs {
+export interface UseCardPromptArgs {
   post: BooruPost
   tagCounts?: Record<string, number>
   excludeInput: string
@@ -36,6 +36,19 @@ interface UseCardPromptArgs {
    *  caller can reset any local edit state (e.g. InteractivePrompt's modifiedContent). */
   onBaseContentChange?: () => void
 }
+
+/**
+ * The "prompt settings" subset of UseCardPromptArgs — everything except the
+ * per-card/per-render pieces (post, tagCounts, globalWeights,
+ * isGlobalWeightsEnabled, onBaseContentChange) that callers typically pass
+ * separately. Lets shells (web app, Pocket) build one settings bundle from
+ * their own state hooks and spread it into useCardPrompt per card, instead of
+ * re-declaring the field list.
+ */
+export type UseCardPromptOptions = Omit<
+  UseCardPromptArgs,
+  "post" | "tagCounts" | "globalWeights" | "isGlobalWeightsEnabled" | "onBaseContentChange"
+>
 
 /**
  * Derives the full prompt pipeline for a single masonry card: cleanPrompt →

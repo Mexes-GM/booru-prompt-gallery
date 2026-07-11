@@ -4,21 +4,22 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useBooruSearch } from "@/hooks/use-booru-search"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePreferencesSync } from "@/hooks/use-preferences-sync"
-import { useDetailedBackgrounds } from "@/hooks/use-detailed-backgrounds"
-import { userPreferences, STORAGE_KEYS, type TagPreset, type HistoryItem } from "@/lib/storage"
-import { onSettingsChange } from "@/lib/settings-bridge"
+import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
+import { usePromptOptions } from "@/hooks/use-prompt-options"
+import { useBackgroundSettings } from "@/hooks/use-background-settings"
+import { useGlobalWeights } from "@/hooks/use-global-weights"
+import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
+import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
+import { TagsManagementPanel } from "@/components/prompt-gallery/tags-management-panel"
+import { PromptGenerationOptionsPanel } from "@/components/prompt-gallery/prompt-generation-options-panel"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
-import { cleanPrompt } from "@/lib/cleanPrompt"
-import { processBackgroundTags, BackgroundMode } from "@/lib/background-detector"
-import { resolveTagConflicts } from "@/lib/tag-conflicts"
-import { classifyTags } from "@/lib/tag-classifier"
-import { applyWeights } from "@/lib/weight-utils"
-import { removeLoRaTags as removeLoRaTagsUtil, removeQualityTags as removeQualityTagsUtil, BooruPost, BooruProvider } from "@/lib/api-client"
+import type { BackgroundMode } from "@/lib/background-detector"
+import { useCardPrompt, type UseCardPromptOptions } from "@/hooks/use-card-prompt"
+import { BooruPost, BooruProvider } from "@/lib/api-client"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { MasonryGrid } from "@/components/masonry-grid"
@@ -29,7 +30,6 @@ import {
   Copy,
   Send,
   Check,
-  ChevronDown,
   Sliders,
   Shield,
   Search,
@@ -39,8 +39,6 @@ import {
   Shuffle,
   History,
   Trash2,
-  Save,
-  CornerDownRight,
   Smile,
   User,
   Shirt,
@@ -49,24 +47,16 @@ import {
   HelpCircle,
   Crosshair,
   MousePointerClick,
+  Sparkles,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useTagCounts } from "@/hooks/use-tag-counts"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import { ExtensionTour } from "@/components/extension-tour"
+import { TargetSetupWizard, SiteTargetStatusBadge } from "@/components/prompt-gallery/target-setup-wizard"
 
-import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   Sheet,
   SheetContent,
@@ -75,18 +65,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
-import { InfoTooltip } from "@/components/ui/info-tooltip"
-import { SmoothFilterSlider } from "@/components/ui/smooth-filter-slider"
 import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-modal"
 import { BlacklistManager } from "@/components/prompt-gallery/blacklist-manager"
 import { useBlacklist } from "@/hooks/use-blacklist"
@@ -144,10 +122,13 @@ interface QueueStatus {
   platform: string
 }
 
-// Styled PocketCard that mirrors the original MasonryItem's layout and style in miniature
+// Styled PocketCard that mirrors the original MasonryItem's layout and style in miniature.
+// Prompt derivation goes through the shared useCardPrompt hook (same pipeline as
+// MasonryItem in the main web app) instead of a bespoke single-pass cleaner, so
+// both shells always produce an identical prompt for the same post + settings.
 function PocketCard({
   post,
-  getCleanedPrompt,
+  promptOptions,
   isAibooru,
   booruProvider,
   width,
@@ -165,7 +146,7 @@ function PocketCard({
   onNoTarget,
 }: {
   post: BooruPost
-  getCleanedPrompt: (post: BooruPost) => string
+  promptOptions: UseCardPromptOptions
   isAibooru: boolean
   booruProvider: string
   width: number
@@ -188,11 +169,21 @@ function PocketCard({
   const [useFallbackUrl, setUseFallbackUrl] = useState(false)
   const [modifiedContent, setModifiedContent] = useState<string | null>(null)
 
-  const cleanedPrompt = useMemo(() => getCleanedPrompt(post), [post, getCleanedPrompt])
+  const {
+    displayContent,
+    classifiedTags: cardClassifiedTags,
+    totalTagsCount: cardTotalTagsCount,
+    tagCountIndicator: cardTagCountIndicator,
+  } = useCardPrompt({
+    post,
+    tagCounts,
+    ...promptOptions,
+    globalWeights,
+    isGlobalWeightsEnabled,
+    onBaseContentChange: () => setModifiedContent(null),
+  })
 
-  useEffect(() => {
-    setModifiedContent(null)
-  }, [cleanedPrompt])
+  const cleanedPrompt = displayContent
 
   const displayPrompt = modifiedContent ?? cleanedPrompt
 
@@ -265,36 +256,12 @@ function PocketCard({
     }
   }
 
-  // Calculate tag counts
-  const characterTagsArray = useMemo(() => (post.tag_string_character ? post.tag_string_character.split(' ') : [])
-      .map(t => t.replace(/_/g, ' ').toLowerCase().replace(/\(/g, "\\(").replace(/\)/g, "\\)")), [post.tag_string_character])
-
-  const tagsForClassification = useMemo(() => displayPrompt ? displayPrompt.split(',').map(t => t.trim()) : [], [displayPrompt])
-
-  const totalTagsCount = useMemo(() => tagsForClassification.filter(t => t.length > 0).length, [tagsForClassification])
-
-  const tagCountIndicator = useMemo(() => {
-      if (!tagCounts || characterTagsArray.length === 0) return null;
-      
-      let maxCount = 0;
-      
-      for (const rawTag of characterTagsArray) {
-          const withSpaces = rawTag.replace(/\\/g, ''); // remove escapes
-          const withUnderscores = withSpaces.replace(/\s+/g, '_');
-          
-          const count = tagCounts[withUnderscores] ?? tagCounts[withSpaces] ?? 0;
-          if (count > maxCount) maxCount = count;
-      }
-      
-      if (maxCount === 0) return null;
-      
-      return Intl.NumberFormat('en', { notation: 'compact' }).format(maxCount);
-  }, [tagCounts, characterTagsArray]);
-
-  const classifiedTags = useMemo(() => {
-    const allTagsForClassification = Array.from(new Set([...characterTagsArray, ...tagsForClassification]))
-    return classifyTags(allTagsForClassification, {}, characterTagsArray)
-  }, [characterTagsArray, tagsForClassification])
+  // Tag counts, classification and character tags now come straight from
+  // useCardPrompt (same derivation as MasonryItem) instead of a second,
+  // pocket-only implementation that could drift from the main pipeline.
+  const totalTagsCount = cardTotalTagsCount
+  const tagCountIndicator = cardTagCountIndicator
+  const classifiedTags = cardClassifiedTags
 
   return (
     <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300">
@@ -471,6 +438,8 @@ export default function ExtensionClient() {
   // True once the user has successfully picked a destination field this session.
   // Used to guide first-time users through the Target → Send flow.
   const [hasTargetSet, setHasTargetSet] = useState(false)
+  // (Fase 5b) Controls the 3-step site setup wizard dialog.
+  const [wizardOpen, setWizardOpen] = useState(false)
 
   // Responsive column count for the masonry grid, based on the panel width.
   // Chrome side panels are resizable, so we adapt instead of forcing 2 columns.
@@ -597,7 +566,9 @@ export default function ExtensionClient() {
 
   const { blacklist, addTag, removeTag, resetBlacklist } = useBlacklist()
 
-  // Pocket Settings
+  // Pocket Settings — same shared hooks the main web app uses, so a feature
+  // added to one of these hooks (e.g. a new prompt option or background mode)
+  // shows up in the Pocket automatically instead of needing a hand-written copy.
   const [addInput, setAddInput] = usePersistentState(
     "",
     userPreferences.getAddTagsInput,
@@ -614,168 +585,40 @@ export default function ExtensionClient() {
     STORAGE_KEYS.EXCLUDE_TAGS
   )
 
-  const [promptOptions, setPromptOptions] = usePersistentState(
-    { includeCharacters: true, optimizeTags: true, smartTagExclusion: true },
-    userPreferences.getPromptOptions,
-    userPreferences.setPromptOptions,
-    "promptOptions",
-    STORAGE_KEYS.PROMPT_OPTIONS
-  )
+  const {
+    includeCharacters, optimizeTags, smartTagExclusion,
+    setIncludeCharacters, setOptimizeTags, setSmartTagExclusion,
+  } = usePromptOptions()
 
-  const { includeCharacters = true, optimizeTags = true, smartTagExclusion = true } = promptOptions
+  const {
+    backgroundMode, setBackgroundMode,
+    detailedBackgroundsList,
+    simpleBackgroundReplacementTags, setSimpleBackgroundReplacementTags,
+    randomBackgroundPatterns, setRandomBackgroundPatterns,
+    randomBackgroundIncludeGradients, setRandomBackgroundIncludeGradients,
+  } = useBackgroundSettings()
 
-  const setIncludeCharacters = (val: boolean) =>
-    setPromptOptions(prev => ({ ...prev, includeCharacters: val }))
+  const {
+    globalWeights, setGlobalWeights,
+    isGlobalWeightsEnabled, setIsGlobalWeightsEnabled,
+    isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen,
+    handleGlobalWeightChange, handleClearGlobalWeights, handleRemoveGlobalWeight,
+    toggleGlobalWeights,
+  } = useGlobalWeights(toast)
 
-  const setOptimizeTags = (val: boolean) =>
-    setPromptOptions(prev => ({ ...prev, optimizeTags: val }))
-
-  const setSmartTagExclusion = (val: boolean) =>
-    setPromptOptions(prev => ({ ...prev, smartTagExclusion: val }))
-
-  const [backgroundMode, setBackgroundMode] = usePersistentState<BackgroundMode>(
-    "keep",
-    userPreferences.getBackgroundMode,
-    userPreferences.setBackgroundMode,
-    "backgroundMode",
-    STORAGE_KEYS.BACKGROUND_MODE
-  )
-
-  const [simpleBackgroundReplacementTags, setSimpleBackgroundReplacementTags] = usePersistentState(
-    "simple background, white background",
-    userPreferences.getSimpleBackgroundReplacementTags,
-    userPreferences.setSimpleBackgroundReplacementTags,
-    "simpleBackgroundReplacementTags",
-    STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS
-  )
-
-  const [randomBackgroundPatterns, setRandomBackgroundPatterns] = usePersistentState(
-    true,
-    userPreferences.getRandomBackgroundPatterns,
-    userPreferences.setRandomBackgroundPatterns,
-    "randomBackgroundPatterns",
-    STORAGE_KEYS.RANDOM_BACKGROUND_PATTERNS
-  )
-
-  const [randomBackgroundIncludeGradients, setRandomBackgroundIncludeGradients] = usePersistentState(
-    true,
-    userPreferences.getRandomBackgroundIncludeGradients,
-    userPreferences.setRandomBackgroundIncludeGradients,
-    "randomBackgroundIncludeGradients",
-    STORAGE_KEYS.RANDOM_BACKGROUND_INCLUDE_GRADIENTS
-  )
-
-  const [isGlobalWeightsEnabled, setIsGlobalWeightsEnabled] = usePersistentState(
-    false,
-    userPreferences.getGlobalWeightsEnabled,
-    userPreferences.setGlobalWeightsEnabled,
-    "isGlobalWeightsEnabled",
-    STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED
-  )
-
-  const [globalWeights, setGlobalWeights] = usePersistentState<Record<string, number>>(
-    {},
-    userPreferences.getGlobalWeights,
-    userPreferences.setGlobalWeights,
-    "globalWeights",
-    STORAGE_KEYS.GLOBAL_WEIGHTS
-  )
-
-  const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
-
-  // Presets State
-  const [presets, setPresets] = useState<TagPreset[]>([])
-  const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false)
-  const [presetName, setPresetName] = useState("")
-
-  useEffect(() => {
-    if (search.isClient) {
-      setPresets(userPreferences.getAddTagsPresets())
-    }
-  }, [search.isClient])
-
-  const savePreset = () => {
-    if (!presetName.trim() || !addInput.trim()) return
-    const newPresets = userPreferences.addAddTagsPreset({ name: presetName, content: addInput })
-    setPresets(newPresets)
-    setPresetName("")
-    setIsPresetDialogOpen(false)
-    toast({ title: "Preset saved", description: "The preset has been successfully saved." })
-  }
-
-  const loadPreset = (preset: TagPreset) => {
-    setAddInput(preset.content)
-    toast({ title: "Preset loaded", description: `Loaded: ${preset.name}` })
-  }
-
-  const deletePreset = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    const newPresets = userPreferences.removeAddTagsPreset(id)
-    setPresets(newPresets)
-    toast({ title: "Preset deleted", description: "The preset has been removed." })
-  }
-
-  // History State
-  const [history, setHistory] = useState<HistoryItem[]>([])
-
-  useEffect(() => {
-    if (search.isClient) {
-      setHistory(userPreferences.getHistory())
-    }
-  }, [search.isClient])
-
-  // Listen for preset/history changes from web app/other tabs via BroadcastChannel
-  useEffect(() => {
-    return onSettingsChange((key) => {
-      if (key === STORAGE_KEYS.ADD_TAGS_PRESETS) {
-        setPresets(userPreferences.getAddTagsPresets())
-      } else if (key === STORAGE_KEYS.HISTORY) {
-        setHistory(userPreferences.getHistory())
-      }
-    })
-  }, [])
+  const {
+    presets,
+    history,
+    previouslyCopiedPostIds,
+    isPresetDialogOpen, setIsPresetDialogOpen,
+    presetName, setPresetName,
+    savePreset, loadPreset, deletePreset,
+    addToHistory, removeHistoryItem, clearHistory,
+  } = usePresetsAndHistory({ isClient: search.isClient, addInput, setAddInput, toast })
 
   const handleUsedPrompt = useCallback((promptText: string, postId: number, thumbnailUrl?: string) => {
-    const newHistory = userPreferences.addToHistory({ content: promptText, postId, thumbnailUrl })
-    setHistory(newHistory)
-  }, [])
-
-  const previouslyCopiedPostIds = useMemo(() => {
-    return new Set(history.map(item => item.postId).filter((id): id is number => id !== undefined))
-  }, [history])
-
-  // Detailed background list (loaded only when Detailed Random is selected)
-  const detailedBackgroundsList = useDetailedBackgrounds(backgroundMode === 'detailed_random')
-
-  // Global weight handlers
-  const handleGlobalWeightChange = useCallback((tag: string, weight: number) => {
-    setGlobalWeights(prev => {
-      const next = { ...prev }
-      next[tag.toLowerCase()] = weight
-      return next
-    })
-  }, [setGlobalWeights])
-
-  const handleRemoveGlobalWeight = useCallback((tag: string) => {
-    setGlobalWeights(prev => {
-      const next = { ...prev }
-      delete next[tag]
-      return next
-    })
-  }, [setGlobalWeights])
-
-  const handleClearGlobalWeights = useCallback(() => {
-    setGlobalWeights({})
-    setIsGlobalWeightsModalOpen(false)
-    toast({ title: "Weights reset", description: "All weights have been cleared." })
-  }, [setGlobalWeights, toast])
-
-  const toggleGlobalWeights = (enabled: boolean) => {
-    setIsGlobalWeightsEnabled(enabled)
-  }
-
-  // Exclude list (for cleaning prompt)
-  const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
+    addToHistory({ content: promptText, postId, thumbnailUrl })
+  }, [addToHistory])
 
   // Autocomplete placeholders
   const placeholders = useMemo(() => [
@@ -784,70 +627,28 @@ export default function ExtensionClient() {
     "swimsuit, wet hair",
   ], [])
 
-  // Core Prompt Cleaning Pipeline
-  const getCleanedPrompt = useCallback((post: BooruPost) => {
-    let aiPrompt = post.ai_metadata?.prompt
-    if (aiPrompt) {
-      if (search.removeLoRaTags) aiPrompt = removeLoRaTagsUtil(aiPrompt)
-      if (search.removeQualityTags) aiPrompt = removeQualityTagsUtil(aiPrompt)
-    }
-
-    const baseOpts = {
-      includeCharacters,
-      includeCopyrights: false,
-      optimizeTags,
-      exclude: excludeList,
-      metaTags: post.tag_string_meta,
-    }
-
-    // Single cleanPrompt pass; background/weights are applied afterwards on the cleaned array.
-    const cleaned = aiPrompt
-      ? cleanPrompt(aiPrompt, "", "", "", {
-          ...baseOpts,
-          addedTags: [],
-          backgroundMode: 'keep',
-          simpleBackgroundReplacementTags,
-          escapeOutput: false,
-        })
-      : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, {
-          ...baseOpts,
-          addedTags: [],
-          backgroundMode: 'keep',
-          simpleBackgroundReplacementTags,
-          escapeOutput: false,
-        })
-
-    // Post-process: background
-    let content = cleaned
-    if (cleaned && backgroundMode !== 'keep') {
-      const tags = cleaned.split(',').map(t => t.trim())
-      const processed = processBackgroundTags(
-        tags, backgroundMode, simpleBackgroundReplacementTags, {},
-        { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients },
-        detailedBackgroundsList, post.id
-      )
-      content = processed.join(', ')
-    }
-
-    // Resolve conflicts between the cleaned content and the added tags
-    const addList = addInput ? addInput.split(',').map(t => t.trim()).filter(Boolean) : []
-    const conflictResolution = (content && addList.length > 0 && smartTagExclusion)
-      ? resolveTagConflicts(content.split(',').map(t => t.trim()), addList)
-      : { validTags: addList }
-
-    // Build final prompt: valid added tags FIRST (matches the main web app's
-    // cleanPrompt, which places user-added tags at the beginning), then content.
-    const finalTags = [...conflictResolution.validTags, ...content.split(',').map(t => t.trim()).filter(Boolean)]
-    let finalPrompt = finalTags.join(', ')
-
-    // Apply global weights
-    if (isGlobalWeightsEnabled && finalPrompt) {
-      finalPrompt = applyWeights(finalPrompt, globalWeights)
-    }
-
-    return finalPrompt
-  }, [
-    excludeList,
+  // Prompt options bundle passed down to PocketCard, which derives the actual
+  // prompt via the shared useCardPrompt hook — the same pipeline MasonryItem
+  // uses in the main web app. This replaces the old bespoke, single-pass
+  // getCleanedPrompt() that had drifted from useCardPrompt's two-pass pipeline
+  // (added tags used to be concatenated outside cleanPrompt instead of going
+  // through it, which skipped normalization/dedup against the rest of the tags).
+  const cardPromptOptions: UseCardPromptOptions = useMemo(() => ({
+    excludeInput,
+    addInput,
+    includeCharacters,
+    optimizeTags,
+    smartTagExclusion,
+    removeLoRaTags: search.removeLoRaTags,
+    removeQualityTags: search.removeQualityTags,
+    backgroundMode,
+    simpleBackgroundReplacementTags,
+    randomBackgroundPatterns,
+    randomBackgroundIncludeGradients,
+    detailedBackgroundsList,
+  }), [
+    excludeInput,
+    addInput,
     includeCharacters,
     optimizeTags,
     smartTagExclusion,
@@ -858,55 +659,19 @@ export default function ExtensionClient() {
     randomBackgroundPatterns,
     randomBackgroundIncludeGradients,
     detailedBackgroundsList,
-    addInput,
-    isGlobalWeightsEnabled,
-    globalWeights
   ])
 
-  // Filter posts based on global blacklist + character count filter (mirrors prompt-gallery.tsx)
-  const filteredPosts = useMemo(() => {
-    if (!search.isClient) return []
-    const source = search.allPosts
-    const normalizedBlacklist = blacklist.map(tag => tag.replace(/\s+/g, '_'))
-    const providerSupportsCharacters = source.some(p => !!p.tag_string_character)
-
-    return source.filter(post => {
-      // 1. Blacklist filter
-      if (blacklist.length > 0) {
-        const postTags = (post.tag_string || '').split(' ')
-        if (normalizedBlacklist.some(black => postTags.includes(black))) return false
-      }
-
-      // 2. Character count filter
-      const minCharPostCount = (includeCharacters && parseInt(search.appliedCharacterCountFilter)) || 0
-      if (minCharPostCount > 0) {
-        // Per-tag booru post counts are only available for Danbooru/Aibooru. On any
-        // other provider (e621, gelbooru, rule34) `tagCounts` is always empty, so
-        // running this filter there would drop EVERY post. Skip it (pass-through)
-        // for providers without count support instead of filtering everything out.
-        const postProvider = post._provider || search.booruProvider
-        const supportsCharCounts = postProvider === 'danbooru' || postProvider === 'aibooru'
-
-        if (supportsCharCounts) {
-          if (!post.tag_string_character) {
-            if (!providerSupportsCharacters) return true
-            return false
-          }
-          const charTags = post.tag_string_character.split(' ').filter(Boolean)
-          let hasValidCount = false
-          for (const tag of charTags) {
-            const count = tagCounts[tag]
-            if (count === undefined) continue
-            if (count >= minCharPostCount) { hasValidCount = true; break }
-          }
-          if (!hasValidCount) return false
-        }
-        // else: provider has no per-tag counts — skip this filter entirely.
-      }
-
-      return true
-    })
-  }, [search.isClient, search.allPosts, blacklist, includeCharacters, search.appliedCharacterCountFilter, tagCounts, search.booruProvider])
+  // Filter posts: shared with the web app via useFilteredPosts (blacklist +
+  // character-count filter; the Pocket has no favorites, so that part is
+  // simply omitted). isClient guard preserved: return [] until hydrated.
+  const filteredPosts = useFilteredPosts({
+    allPosts: search.isClient ? search.allPosts : [],
+    booruProvider: search.booruProvider,
+    blacklist,
+    includeCharacters,
+    appliedCharacterCountFilter: search.appliedCharacterCountFilter,
+    tagCounts,
+  })
 
   const isRule34 = search.booruProvider === "rule34"
   const isTagCountSupported = search.booruProvider === 'danbooru' || search.booruProvider === 'gelbooru' || search.booruProvider === 'rule34'
@@ -1120,10 +885,7 @@ export default function ExtensionClient() {
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => {
-                                  userPreferences.removeFromHistory(item.id)
-                                  setHistory(userPreferences.getHistory())
-                                }}
+                                onClick={() => removeHistoryItem(item.id)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -1156,10 +918,7 @@ export default function ExtensionClient() {
                           variant="outline"
                           size="sm"
                           className="w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 h-8"
-                          onClick={() => {
-                            userPreferences.clearHistory()
-                            setHistory([])
-                          }}
+                          onClick={clearHistory}
                         >
                           Clear History
                         </Button>
@@ -1206,304 +965,63 @@ export default function ExtensionClient() {
                 <Sliders size={10} /> Prompt Settings
               </h2>
 
-              {/* Tags to Add */}
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="add-tags-input" className="text-xs font-semibold">Tags to Add</Label>
-                  <span className="text-[10px] text-muted-foreground">(Only final prompt)</span>
-                </div>
-                <div className="flex h-8 w-full items-center rounded-md border border-input bg-background/50 pl-2 pr-1 text-xs shadow-sm focus-within:ring-1 focus-within:ring-ring">
-                  <DebouncedHTMLInput
-                    id="add-tags-input"
-                    value={addInput}
-                    onChange={setAddInput}
-                    debounceTime={400}
-                    placeholder="masterpiece, best quality..."
-                    className="flex-1 bg-transparent border-none p-0 placeholder:text-muted-foreground focus:outline-none h-full min-w-0"
-                  />
-                  <div className="flex items-center gap-0.5 shrink-0 ml-1">
-                    {addInput && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setAddInput("")}
-                        className="h-5 w-5 text-muted-foreground hover:text-foreground rounded-full"
-                      >
-                        <X className="h-2.5 w-2.5" />
-                      </Button>
-                    )}
-                    <div className="h-3.5 w-px bg-border mx-0.5" />
-                    
-                    <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" title="Save Preset">
-                          <Save className="h-3 w-3" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="sm:max-w-[350px]">
-                        <DialogHeader>
-                          <DialogTitle className="text-sm font-bold">Save Preset</DialogTitle>
-                          <DialogDescription className="text-xs">
-                            Enter a name to save this list of tags.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-3 py-2 text-xs">
-                          <div className="space-y-1">
-                            <Label className="text-xs font-medium">Preset Name</Label>
-                            <Input
-                              value={presetName}
-                              onChange={(e) => setPresetName(e.target.value)}
-                              placeholder="My awesome preset"
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs font-medium">Tags</Label>
-                            <div className="p-2 bg-muted rounded text-[10px] font-mono break-all max-h-20 overflow-y-auto">
-                              {addInput || <span className="text-muted-foreground italic">No tags entered</span>}
-                            </div>
-                          </div>
-                        </div>
-                        <DialogFooter className="flex-row gap-1 justify-end">
-                          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setIsPresetDialogOpen(false)}>Cancel</Button>
-                          <Button size="sm" className="h-8 text-xs" onClick={savePreset} disabled={!presetName.trim() || !addInput.trim()}>Save</Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
+              {/* Same panel the main web app uses (compact variant): Tags to
+                  Add/Exclude + presets + minimum tag/character sliders. Any
+                  control added here shows up in the Pocket automatically. */}
+              <TagsManagementPanel
+                variant="compact"
+                addInput={addInput}
+                setAddInput={setAddInput}
+                isPresetDialogOpen={isPresetDialogOpen}
+                setIsPresetDialogOpen={setIsPresetDialogOpen}
+                presetName={presetName}
+                setPresetName={setPresetName}
+                savePreset={savePreset}
+                presets={presets}
+                loadPreset={loadPreset}
+                deletePreset={deletePreset}
+                excludeInput={excludeInput}
+                setExcludeInput={setExcludeInput}
+                tagCountFilter={search.tagCountFilter}
+                setTagCountFilter={search.setTagCountFilter}
+                setAppliedTagCountFilter={search.setAppliedTagCountFilter}
+                isTagCountSupported={isTagCountSupported}
+                isTagCountValid={isTagCountValid}
+                characterCountFilter={search.characterCountFilter}
+                setCharacterCountFilter={search.setCharacterCountFilter}
+                setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
+                includeCharacters={includeCharacters}
+              />
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" title="View Presets">
-                          <ChevronDown className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-[180px] text-xs">
-                        <DropdownMenuLabel className="text-[10px]">Saved Presets</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {presets.length === 0 ? (
-                          <div className="p-2 text-center text-muted-foreground text-[10px]">
-                            No saved presets
-                          </div>
-                        ) : (
-                          presets.map(preset => (
-                            <DropdownMenuItem key={preset.id} className="justify-between group cursor-pointer text-xs" onClick={() => loadPreset(preset)}>
-                              <span className="truncate mr-1">{preset.name}</span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                                onClick={(e) => deletePreset(preset.id, e)}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </DropdownMenuItem>
-                          ))
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tags to Exclude */}
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="exclude-tags-input" className="text-xs font-semibold">Tags to Exclude</Label>
-                  <span className="text-[10px] text-muted-foreground">(Only final prompt)</span>
-                </div>
-                <div className="relative">
-                  <DebouncedInput
-                    id="exclude-tags-input"
-                    value={excludeInput}
-                    onChange={setExcludeInput}
-                    debounceTime={400}
-                    placeholder="bad quality, watermark, signature..."
-                    className="h-8 text-xs bg-background/50 pr-7"
-                  />
-                  {excludeInput && (
-                    <button
-                      type="button"
-                      onClick={() => setExcludeInput("")}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted"
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Sliders */}
-              <div className="flex flex-col gap-1">
-                <SmoothFilterSlider
-                  variant="compact"
-                  min={5}
-                  max={100}
-                  step={1}
-                  value={search.tagCountFilter}
-                  onChange={search.setTagCountFilter}
-                  onCommit={search.setAppliedTagCountFilter}
-                  disabled={!isTagCountSupported}
-                  labelPrefix="Minimum Tags"
-                  tooltipTitle="Minimum Tag Count"
-                  tooltipDescription="Only shows prompts that have at least this number of tags. Recommended between 20 and 30 for detailed prompts."
-                  inputId="tag-count"
-                  isInputValid={isTagCountValid}
-                  maxInput={1000}
-                  ariaLabel="Minimum tags"
-                  dotColor={isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}
-                />
-
-                <SmoothFilterSlider
-                  variant="compact"
-                  min={0}
-                  max={10000}
-                  step={100}
-                  value={search.characterCountFilter}
-                  onChange={search.setCharacterCountFilter}
-                  onCommit={search.setAppliedCharacterCountFilter}
-                  disabled={!includeCharacters}
-                  labelPrefix="Minimum Character Posts"
-                  tooltipTitle="Minimum Character Posts"
-                  tooltipDescription="Filters images to only include characters with more posts accumulated in the booru database, avoiding obscure characters."
-                  inputId="character-count"
-                  isInputValid={!!search.characterCountFilter && /^\d+$/.test(search.characterCountFilter)}
-                  maxInput={1000000}
-                  ariaLabel="Minimum character posts"
-                  dotColor={includeCharacters ? "bg-blue-500" : "bg-gray-400"}
-                />
-              </div>
-
-              {/* Switches Grid */}
-              <div className="flex flex-col gap-1 border-t pt-2">
-                <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                  <Label htmlFor="include-characters" className="text-xs select-none cursor-pointer flex-1">Include Characters</Label>
-                  <Switch id="include-characters" checked={includeCharacters} onCheckedChange={setIncludeCharacters} className="scale-75 origin-right" />
-                </div>
-                <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                  <Label htmlFor="smart-tag" className="text-xs select-none cursor-pointer flex-1">Smart Tag Combination</Label>
-                  <Switch id="smart-tag" checked={optimizeTags} onCheckedChange={setOptimizeTags} className="scale-75 origin-right" />
-                </div>
-                <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                  <div className="flex items-center gap-1.5 flex-1">
-                    <Label htmlFor="smart-exclusion" className="text-xs select-none cursor-pointer">Smart Tag Exclusion</Label>
-                    <Badge variant="default" className="text-[8px] py-0 px-1 !rounded h-3.5 select-none shrink-0">Beta</Badge>
-                  </div>
-                  <Switch id="smart-exclusion" checked={smartTagExclusion} onCheckedChange={setSmartTagExclusion} className="scale-75 origin-right" />
-                </div>
-
-                {search.booruProvider === "aibooru" && (
-                  <>
-                    <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                      <Label htmlFor="remove-lora" className="text-xs select-none cursor-pointer flex-1">Remove LoRa tags</Label>
-                      <Switch id="remove-lora" checked={search.removeLoRaTags} onCheckedChange={search.setRemoveLoRaTags} className="scale-75 origin-right" />
-                    </div>
-                    <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                      <Label htmlFor="remove-quality" className="text-xs select-none cursor-pointer flex-1">Remove Quality tags</Label>
-                      <Switch id="remove-quality" checked={search.removeQualityTags} onCheckedChange={search.setRemoveQualityTags} className="scale-75 origin-right" />
-                    </div>
-                  </>
-                )}
-
-                <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                  <div className="flex flex-col gap-0.5 flex-1">
-                    <Label htmlFor="global-weights-toggle" className="text-xs select-none cursor-pointer">Global Tag Weights</Label>
-                    <span className="text-[10px] text-muted-foreground leading-none">Apply weights across all cards</span>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Switch id="global-weights-toggle" checked={isGlobalWeightsEnabled} onCheckedChange={toggleGlobalWeights} className="scale-75 origin-right" />
-                    <Button variant="outline" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setIsGlobalWeightsModalOpen(true)}>Manage</Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Background Options */}
-              <div className="flex flex-col gap-2 p-2 rounded-lg bg-muted/40 border border-border/50">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-1">
-                      <Label htmlFor="background-handling-select" className="text-xs font-semibold cursor-pointer">Background Options</Label>
-                      <Badge variant="default" className="text-[8px] py-0 px-1 !rounded h-3.5 select-none shrink-0">Beta</Badge>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground leading-tight">Modify background/scene tags</span>
-                  </div>
-                  <Select
-                    value={backgroundMode}
-                    onValueChange={(val: BackgroundMode) => {
-                      setBackgroundMode(val)
-                    }}
-                  >
-                    <SelectTrigger id="background-handling-select" className="h-7 text-[11px] bg-background w-[110px]">
-                      <SelectValue placeholder="Original" />
-                    </SelectTrigger>
-                    <SelectContent className="text-xs">
-                      <SelectItem value="keep">Original</SelectItem>
-                      <SelectItem value="remove_all">Remove All</SelectItem>
-                      <SelectItem value="force_simple">Replace</SelectItem>
-                      <SelectItem value="random">Simple Random</SelectItem>
-                      <SelectItem value="detailed_random">Detailed Random</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <AnimatePresence>
-                  {backgroundMode === 'force_simple' && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.15, ease: "easeInOut" }}
-                      className="overflow-hidden"
-                    >
-                      <div className="pt-1.5 flex items-center gap-1.5">
-                        <CornerDownRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                        <DebouncedInput
-                          value={simpleBackgroundReplacementTags}
-                          onChange={setSimpleBackgroundReplacementTags}
-                          debounceTime={400}
-                          placeholder="e.g., white background, simple background"
-                          className="h-7 text-xs bg-background flex-1"
-                        />
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {backgroundMode === 'random' && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.15, ease: "easeInOut" }}
-                      className="overflow-hidden"
-                    >
-                      <div className="pt-2 flex flex-col gap-1.5 pl-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[11px] font-medium">Include Patterns</span>
-                            <span className="text-[10px] text-muted-foreground leading-none">Stripes, dots, etc.</span>
-                          </div>
-                          <Switch
-                            checked={randomBackgroundPatterns}
-                            onCheckedChange={setRandomBackgroundPatterns}
-                            className="scale-75 origin-right"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[11px] font-medium">Include Gradients</span>
-                            <span className="text-[10px] text-muted-foreground leading-none">Gradients and two-tone colors</span>
-                          </div>
-                          <Switch
-                            checked={randomBackgroundIncludeGradients}
-                            onCheckedChange={setRandomBackgroundIncludeGradients}
-                            className="scale-75 origin-right"
-                          />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              {/* Same panel the main web app uses (compact variant): prompt
+                  option switches + background handling. */}
+              <PromptGenerationOptionsPanel
+                variant="compact"
+                isPromptOptionsExpanded={showSettings}
+                setIsPromptOptionsExpanded={setShowSettings}
+                booruProvider={search.booruProvider}
+                includeCharacters={includeCharacters}
+                setIncludeCharacters={setIncludeCharacters}
+                optimizeTags={optimizeTags}
+                setOptimizeTags={setOptimizeTags}
+                smartTagExclusion={smartTagExclusion}
+                setSmartTagExclusion={setSmartTagExclusion}
+                removeLoRaTags={search.removeLoRaTags}
+                setRemoveLoRaTags={search.setRemoveLoRaTags}
+                removeQualityTags={search.removeQualityTags}
+                setRemoveQualityTags={search.setRemoveQualityTags}
+                isGlobalWeightsEnabled={isGlobalWeightsEnabled}
+                toggleGlobalWeights={toggleGlobalWeights}
+                setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
+                backgroundMode={backgroundMode}
+                setBackgroundMode={setBackgroundMode}
+                simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
+                setSimpleBackgroundReplacementTags={setSimpleBackgroundReplacementTags}
+                randomBackgroundPatterns={randomBackgroundPatterns}
+                setRandomBackgroundPatterns={setRandomBackgroundPatterns}
+                randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
+                setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
+              />
 
               {/* Auto-Downloading */}
               <div className="flex flex-col gap-1 border-t pt-2">
@@ -1559,7 +1077,7 @@ export default function ExtensionClient() {
                 <PocketCard
                   key={post.id}
                   post={post}
-                  getCleanedPrompt={getCleanedPrompt}
+                  promptOptions={cardPromptOptions}
                   isAibooru={post._provider === "aibooru" || search.booruProvider === "aibooru"}
                   booruProvider={search.booruProvider}
                   width={width}
@@ -1615,19 +1133,22 @@ export default function ExtensionClient() {
 
       {/* Floating Queue Badge native to React App */}
       <div className="fixed bottom-6 right-1/2 translate-x-1/2 flex flex-col items-center gap-1.5 z-50 pointer-events-none w-max max-w-[95vw]">
-        {/* Target Info Pill */}
-        <AnimatePresence>
-          {queueStatus.platform !== "Unknown" && (
-            <motion.div 
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 5 }}
-              className="bg-secondary/90 border border-border backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-secondary-foreground pointer-events-auto shadow-sm"
-            >
-              Target: <span className="font-semibold ml-1">{queueStatus.platform}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Target Info Pill + per-site config status */}
+        <div className="flex items-center gap-1.5 pointer-events-auto">
+          <AnimatePresence>
+            {queueStatus.platform !== "Unknown" && (
+              <motion.div 
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 5 }}
+                className="bg-secondary/90 border border-border backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium text-secondary-foreground shadow-sm"
+              >
+                Target: <span className="font-semibold ml-1">{queueStatus.platform}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <SiteTargetStatusBadge onOpenWizard={() => setWizardOpen(true)} />
+        </div>
         
         {/* Main Queue Bar */}
         <Card className="flex items-center justify-center gap-2.5 px-3.5 py-1.5 rounded-full text-xs shadow-lg pointer-events-auto whitespace-nowrap bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-border">
@@ -1696,6 +1217,17 @@ export default function ExtensionClient() {
                 </>
               )}
             </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              title="Full setup: prompt, generate button, and queue"
+              aria-label="Open the site setup wizard"
+              onClick={() => setWizardOpen(true)}
+              className="h-6 w-6 p-0 rounded-full text-[11px] bg-transparent hover:bg-primary/10 hover:text-primary hover:border-primary/50"
+            >
+              <Sparkles className="w-3 h-3" />
+            </Button>
             
             {queueStatus.length > 0 && (
               <Button 
@@ -1722,6 +1254,7 @@ export default function ExtensionClient() {
         onSaveWeight={handleGlobalWeightChange}
       />
 
+      <TargetSetupWizard open={wizardOpen} onOpenChange={setWizardOpen} />
       <ExtensionTour externalRun={tourRun} />
     </div>
     </TooltipProvider>

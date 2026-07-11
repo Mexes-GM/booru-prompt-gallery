@@ -13,6 +13,7 @@
  */
 
 import * as Sentry from "@sentry/nextjs"
+import posthog from 'posthog-js'
 
 // Thin, crash-proof wrappers so telemetry can never take down the app.
 function crumb(
@@ -51,6 +52,9 @@ export function trackExternalLink(href: string, context?: string) {
 
 export function trackFavorite(postId: number, action: 'add' | 'remove') {
   crumb("favorites", `favorite ${action}`, { postId, action })
+  if (typeof window !== 'undefined') {
+    posthog.capture(action === 'add' ? 'favorite_added' : 'favorite_removed')
+  }
 }
 
 export function trackCopy(postId: number) {

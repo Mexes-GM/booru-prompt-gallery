@@ -7,6 +7,8 @@ import { DebouncedInput } from "@/components/ui/debounced-input"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
+import { usePostHog } from 'posthog-js/react'
 import { Switch } from "@/components/ui/switch"
 import {
   ArrowRight,
@@ -51,6 +53,15 @@ interface PromptGenerationOptionsPanelProps {
   setRandomBackgroundPatterns: (val: boolean) => void
   randomBackgroundIncludeGradients: boolean
   setRandomBackgroundIncludeGradients: (val: boolean) => void
+
+  /**
+   * "full" (default) is the desktop 2-column panel with InfoTooltip visuals
+   * and a mobile-only collapsible header. "compact" renders the same controls
+   * with the Pocket's tighter markup (small switches/selects, plain Labels
+   * instead of InfoTooltip demos, always expanded — the Pocket has its own
+   * outer Collapsible). Both variants share the exact same props/handlers.
+   */
+  variant?: "full" | "compact"
 }
 
 /**
@@ -66,29 +77,194 @@ export function PromptGenerationOptionsPanel({
   setIsPromptOptionsExpanded,
   booruProvider,
   includeCharacters,
-  setIncludeCharacters,
+  setIncludeCharacters: _setIncludeCharacters,
   optimizeTags,
-  setOptimizeTags,
+  setOptimizeTags: _setOptimizeTags,
   smartTagExclusion,
-  setSmartTagExclusion,
+  setSmartTagExclusion: _setSmartTagExclusion,
   removeLoRaTags,
-  setRemoveLoRaTags,
+  setRemoveLoRaTags: _setRemoveLoRaTags,
   removeQualityTags,
-  setRemoveQualityTags,
+  setRemoveQualityTags: _setRemoveQualityTags,
   isGlobalWeightsEnabled,
-  toggleGlobalWeights,
+  toggleGlobalWeights: _toggleGlobalWeights,
   setIsGlobalWeightsModalOpen,
   backgroundMode,
-  setBackgroundMode,
+  setBackgroundMode: _setBackgroundMode,
   simpleBackgroundReplacementTags,
-  setSimpleBackgroundReplacementTags,
+  setSimpleBackgroundReplacementTags: _setSimpleBackgroundReplacementTags,
   randomBackgroundPatterns,
-  setRandomBackgroundPatterns,
+  setRandomBackgroundPatterns: _setRandomBackgroundPatterns,
   randomBackgroundIncludeGradients,
-  setRandomBackgroundIncludeGradients,
+  setRandomBackgroundIncludeGradients: _setRandomBackgroundIncludeGradients,
+  variant = "full",
 }: PromptGenerationOptionsPanelProps) {
+  const posthog = usePostHog();
+
+  const trackSetting = (settingName: string, value: string | boolean) => {
+    posthog.capture('generation_settings_changed', {
+      setting_changed: settingName,
+      new_value: value,
+    });
+  };
+
+  const trackBackground = (settingName: string, value: string | boolean) => {
+    posthog.capture('background_option_changed', {
+      setting_changed: settingName,
+      new_value: value,
+    });
+  };
+
+  const setIncludeCharacters = (val: boolean) => { trackSetting('includeCharacters', val); _setIncludeCharacters(val); };
+  const setOptimizeTags = (val: boolean) => { trackSetting('optimizeTags', val); _setOptimizeTags(val); };
+  const setSmartTagExclusion = (val: boolean) => { trackSetting('smartTagExclusion', val); _setSmartTagExclusion(val); };
+  const setRemoveLoRaTags = (val: boolean) => { trackSetting('removeLoRaTags', val); _setRemoveLoRaTags(val); };
+  const setRemoveQualityTags = (val: boolean) => { trackSetting('removeQualityTags', val); _setRemoveQualityTags(val); };
+  // toggleGlobalWeights prop expects (enabled: boolean) => void
+  const toggleGlobalWeights = (enabled: boolean) => { trackSetting('globalWeights', enabled); _toggleGlobalWeights(enabled); };
+
+  const setBackgroundMode = (val: BackgroundMode) => { trackBackground('backgroundMode', val); _setBackgroundMode(val); };
+  const setSimpleBackgroundReplacementTags = (val: string) => { trackBackground('simpleBackgroundReplacementTags', val); _setSimpleBackgroundReplacementTags(val); };
+  const setRandomBackgroundPatterns = (val: boolean) => { trackBackground('randomBackgroundPatterns', val); _setRandomBackgroundPatterns(val); };
+  const setRandomBackgroundIncludeGradients = (val: boolean) => { trackBackground('randomBackgroundIncludeGradients', val); _setRandomBackgroundIncludeGradients(val); };
+
+  if (variant === "compact") {
+    return (
+      <>
+        {/* Switches Grid */}
+        <div className="flex flex-col gap-1 border-t pt-2">
+          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+            <Label htmlFor="include-characters" className="text-xs select-none cursor-pointer flex-1">Include Characters</Label>
+            <Switch id="include-characters" checked={includeCharacters} onCheckedChange={setIncludeCharacters} className="scale-75 origin-right" />
+          </div>
+          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+            <Label htmlFor="smart-tag" className="text-xs select-none cursor-pointer flex-1">Smart Tag Combination</Label>
+            <Switch id="smart-tag" checked={optimizeTags} onCheckedChange={setOptimizeTags} className="scale-75 origin-right" />
+          </div>
+          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+            <div className="flex items-center gap-1.5 flex-1">
+              <Label htmlFor="smart-exclusion" className="text-xs select-none cursor-pointer">Smart Tag Exclusion</Label>
+              <Badge variant="default" className="text-[8px] py-0 px-1 !rounded h-3.5 select-none shrink-0">Beta</Badge>
+            </div>
+            <Switch id="smart-exclusion" checked={smartTagExclusion} onCheckedChange={setSmartTagExclusion} className="scale-75 origin-right" />
+          </div>
+
+          {booruProvider === "aibooru" && (
+            <>
+              <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+                <Label htmlFor="remove-lora" className="text-xs select-none cursor-pointer flex-1">Remove LoRa tags</Label>
+                <Switch id="remove-lora" checked={removeLoRaTags} onCheckedChange={setRemoveLoRaTags} className="scale-75 origin-right" />
+              </div>
+              <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+                <Label htmlFor="remove-quality" className="text-xs select-none cursor-pointer flex-1">Remove Quality tags</Label>
+                <Switch id="remove-quality" checked={removeQualityTags} onCheckedChange={setRemoveQualityTags} className="scale-75 origin-right" />
+              </div>
+            </>
+          )}
+
+          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+            <div className="flex flex-col gap-0.5 flex-1">
+              <Label htmlFor="global-weights-toggle" className="text-xs select-none cursor-pointer">Global Tag Weights</Label>
+              <span className="text-[10px] text-muted-foreground leading-none">Apply weights across all cards</span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <Switch id="global-weights-toggle" checked={isGlobalWeightsEnabled} onCheckedChange={toggleGlobalWeights} className="scale-75 origin-right" />
+              <Button variant="outline" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setIsGlobalWeightsModalOpen(true)}>Manage</Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Background Options */}
+        <div className="flex flex-col gap-2 p-2 rounded-lg bg-muted/40 border border-border/50">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1">
+                <Label htmlFor="background-handling-select" className="text-xs font-semibold cursor-pointer">Background Options</Label>
+                <Badge variant="default" className="text-[8px] py-0 px-1 !rounded h-3.5 select-none shrink-0">Beta</Badge>
+              </div>
+              <span className="text-[10px] text-muted-foreground leading-tight">Modify background/scene tags</span>
+            </div>
+            <Select
+              value={backgroundMode}
+              onValueChange={(val: BackgroundMode) => setBackgroundMode(val)}
+            >
+              <SelectTrigger id="background-handling-select" className="h-7 text-[11px] bg-background w-[110px]">
+                <SelectValue placeholder="Original" />
+              </SelectTrigger>
+              <SelectContent className="text-xs">
+                <SelectItem value="keep">Original</SelectItem>
+                <SelectItem value="remove_all">Remove All</SelectItem>
+                <SelectItem value="force_simple">Replace</SelectItem>
+                <SelectItem value="random">Simple Random</SelectItem>
+                <SelectItem value="detailed_random">Detailed Random</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <AnimatePresence>
+            {backgroundMode === 'force_simple' && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
+                <div className="pt-1.5 flex items-center gap-1.5">
+                  <CornerDownRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                  <DebouncedInput
+                    value={simpleBackgroundReplacementTags}
+                    onChange={setSimpleBackgroundReplacementTags}
+                    debounceTime={400}
+                    placeholder="e.g., white background, simple background"
+                    className="h-7 text-xs bg-background flex-1"
+                  />
+                </div>
+              </motion.div>
+            )}
+
+            {backgroundMode === 'random' && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
+                <div className="pt-2 flex flex-col gap-1.5 pl-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[11px] font-medium">Include Patterns</span>
+                      <span className="text-[10px] text-muted-foreground leading-none">Stripes, dots, etc.</span>
+                    </div>
+                    <Switch
+                      checked={randomBackgroundPatterns}
+                      onCheckedChange={setRandomBackgroundPatterns}
+                      className="scale-75 origin-right"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[11px] font-medium">Include Gradients</span>
+                      <span className="text-[10px] text-muted-foreground leading-none">Gradients and two-tone colors</span>
+                    </div>
+                    <Switch
+                      checked={randomBackgroundIncludeGradients}
+                      onCheckedChange={setRandomBackgroundIncludeGradients}
+                      className="scale-75 origin-right"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </>
+    )
+  }
+
   return (
-    <div className="space-y-4 rounded-xl border border-border/60 bg-muted/30 p-4">
+    <div className="space-y-4 rounded-xl border border-border/60 bg-muted/30 p-4" data-tour="generation-options">
       <button
         type="button"
         onClick={() => setIsPromptOptionsExpanded((v) => !v)}

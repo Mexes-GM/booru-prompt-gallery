@@ -53,6 +53,7 @@
     "next-themes": "latest",
     "pg": "^8.16.3",
     "piexifjs": "^1.0.6",
+    "posthog-js": "^1.399.2",
     "react": "^19.2.3",
     "react-day-picker": "latest",
     "react-dom": "^19.2.3",

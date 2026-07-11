@@ -20,7 +20,7 @@ import GoogleMono from '@lobehub/icons/es/Google/components/Mono'
 import DeepSeekMono from '@lobehub/icons/es/DeepSeek/components/Mono'
 import OpenRouterMono from '@lobehub/icons/es/OpenRouter/components/Mono'
 import CloudflareMono from '@lobehub/icons/es/Cloudflare/components/Mono'
-
+import { usePostHog } from 'posthog-js/react'
 // ── Provider icons ──────────────────────────────────────────────────────────
 const ProviderIcon = ({ provider }: { provider: string }) => {
   const size = 14
@@ -105,6 +105,7 @@ const AiConvertStickyFooterComponent = ({
 }: AiConvertStickyFooterProps) => {
   const { settings, saveSettings, isLoaded } = useLLMSettings()
   const shouldReduceMotion = useLowMotion()
+  const posthog = usePostHog()
 
   const [result, setResult] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -202,6 +203,12 @@ const AiConvertStickyFooterComponent = ({
     setResult('')
     setError(null)
     setIsCopied(false)
+    
+    const startTime = Date.now()
+    posthog.capture('ai_convert_started', {
+      provider: prov,
+      model_id: model || 'default'
+    })
 
     try {
       const res = await fetch(apiUrl('/api/llm/convert'), {
@@ -246,6 +253,12 @@ const AiConvertStickyFooterComponent = ({
 
       setResult(data.result)
       addToHistory(tagsToConvert, data.result)
+      
+      posthog.capture('ai_convert_completed', {
+        provider: prov,
+        model_id: model || 'default',
+        generation_duration_ms: Date.now() - startTime
+      })
     } catch (err: any) {
       console.error(err)
       // Show inline only — no duplicate toast

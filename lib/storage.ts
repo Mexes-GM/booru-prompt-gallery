@@ -85,7 +85,13 @@ export const STORAGE_KEYS = {
   // Saved Artists (local fallback when not authenticated)
   SAVED_ARTISTS: 'booru-saved-artists',
 
-  SHOW_CATEGORY_BADGES: 'booru_gallery_show_category_badges'
+  SHOW_CATEGORY_BADGES: 'booru_gallery_show_category_badges',
+
+  // NSFW consent friction (see lib/nsfw-consent.ts): once the user confirms
+  // enabling NSFW / entering Rule34 the first time, we remember it so we don't
+  // nag on every subsequent toggle/switch.
+  NSFW_ACKNOWLEDGED: 'nsfw-acknowledged',
+  RULE34_ACKNOWLEDGED: 'rule34-acknowledged'
 } as const
 
 export interface HistoryItem {
@@ -366,7 +372,20 @@ export const userPreferences = {
     storage.get(STORAGE_KEYS.SHOW_CATEGORY_BADGES, true),
 
   setShowCategoryTagBadges: (val: boolean) =>
-    storage.set(STORAGE_KEYS.SHOW_CATEGORY_BADGES, val)
+    storage.set(STORAGE_KEYS.SHOW_CATEGORY_BADGES, val),
+
+  // NSFW consent acknowledgments (see lib/nsfw-consent.ts)
+  getNsfwAcknowledged: (): boolean =>
+    storage.get(STORAGE_KEYS.NSFW_ACKNOWLEDGED, false),
+
+  setNsfwAcknowledged: (val: boolean) =>
+    storage.set(STORAGE_KEYS.NSFW_ACKNOWLEDGED, val),
+
+  getRule34Acknowledged: (): boolean =>
+    storage.get(STORAGE_KEYS.RULE34_ACKNOWLEDGED, false),
+
+  setRule34Acknowledged: (val: boolean) =>
+    storage.set(STORAGE_KEYS.RULE34_ACKNOWLEDGED, val)
 }
 
 export interface SavedArtist {

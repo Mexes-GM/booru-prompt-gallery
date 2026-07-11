@@ -1,11 +1,25 @@
 "use client"
 
+import { useState } from "react"
 import dynamic from "next/dynamic"
 import { motion } from "framer-motion"
+import { usePostHog } from "posthog-js/react"
 import { Button } from "@/components/ui/button"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog"
 import { Heart, FileCheck2, Dices, Sparkles } from "lucide-react"
 import type { BooruProvider } from "@/lib/api-client"
+import { userPreferences } from "@/lib/storage"
+import { shouldConfirmProvider, ADULT_ONLY_PROVIDER } from "@/lib/nsfw-consent"
 
 const TrendSheet = dynamic(() => import("@/components/trends/trend-sheet").then(m => m.TrendSheet), { ssr: false, loading: () => null })
 const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
@@ -57,10 +71,40 @@ export function GalleryToolbar({
   onOpenReverseParser,
   onProviderChange,
 }: GalleryToolbarProps) {
+  // Capa 3: first-time confirmation before switching to the adult-only Rule34
+  // provider (which cannot be rating-filtered). Once acknowledged, switching is
+  // instant. Applies the same side effects as a normal provider switch.
+  const [rule34DialogOpen, setRule34DialogOpen] = useState(false)
+  const posthog = usePostHog()
+
+  const applyProvider = (p: BooruProvider) => {
+    setBooruProvider(p)
+    if (showFavorites) {
+      toggleShowFavorites()
+    }
+    onProviderChange(p)
+    posthog.capture('provider_changed', { provider: p })
+  }
+
+  const handleSelectProvider = (p: BooruProvider) => {
+    if (shouldConfirmProvider(p, userPreferences.getRule34Acknowledged())) {
+      setRule34DialogOpen(true)
+      return
+    }
+    applyProvider(p)
+  }
+
+  const confirmRule34 = () => {
+    userPreferences.setRule34Acknowledged(true)
+    applyProvider(ADULT_ONLY_PROVIDER as BooruProvider)
+    setRule34DialogOpen(false)
+    posthog.capture('rule34_consent_confirmed')
+  }
+
   return (
     <div className="flex flex-col lg:flex-row gap-8 justify-start items-start lg:items-center">
       {/* API Provider Selector */}
-      <div className="flex flex-col gap-1.5 w-full lg:w-auto">
+      <div className="flex flex-col gap-1.5 w-full lg:w-auto" data-tour="provider">
         <span className="text-xs font-medium text-muted-foreground ml-1">API Provider</span>
         <div className="bg-muted/50 p-1 rounded-lg flex flex-wrap sm:flex-nowrap gap-1 w-full sm:w-auto">
           {PROVIDERS.map(p => (
@@ -68,13 +112,7 @@ export function GalleryToolbar({
               key={p}
               type="button"
               variant="ghost"
-              onClick={() => {
-                setBooruProvider(p)
-                if (showFavorites) {
-                  toggleShowFavorites()
-                }
-                onProviderChange(p)
-              }}
+              onClick={() => handleSelectProvider(p)}
               className={`relative h-11 sm:h-8 text-sm px-3 sm:px-4 min-w-fit flex-1 sm:flex-none whitespace-nowrap ${!showFavorites && booruProvider === p ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
             >
               {!showFavorites && booruProvider === p && (
@@ -91,7 +129,7 @@ export function GalleryToolbar({
       </div>
 
       {/* Quick Actions */}
-      <div className="flex flex-col gap-1.5 w-full lg:w-auto">
+      <div className="flex flex-col gap-1.5 w-full lg:w-auto" data-tour="modes">
         <span className="text-xs font-medium text-muted-foreground ml-1">Options</span>
         <div className="flex items-center gap-2 w-full lg:w-auto justify-start flex-wrap">
 
@@ -114,6 +152,7 @@ export function GalleryToolbar({
                 onClick={() => {
                   if (isMergeMode) disableMergeMode()
                   toggleShowFavorites()
+                  posthog.capture('favorites_panel_toggled', { action: showFavorites ? 'close' : 'open' })
                 }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
@@ -158,9 +197,11 @@ export function GalleryToolbar({
               onClick={() => {
                 if (isMergeMode && mergeModeType === 'merge') {
                   disableMergeMode()
+                  posthog.capture('merge_mode_toggled', { action: 'disable' })
                 } else {
                   if (showFavorites) toggleShowFavorites()
                   enableMergeMode()
+                  posthog.capture('merge_mode_toggled', { action: 'enable' })
                 }
               }}
               variant="secondary"
@@ -198,9 +239,11 @@ export function GalleryToolbar({
               onClick={() => {
                 if (isMergeMode && mergeModeType === 'variations') {
                   disableMergeMode()
+                  posthog.capture('variation_mode_toggled', { action: 'disable' })
                 } else {
                   if (showFavorites) toggleShowFavorites()
                   enableVariationMode()
+                  posthog.capture('variation_mode_toggled', { action: 'enable' })
                 }
               }}
               variant="secondary"
@@ -231,9 +274,33 @@ export function GalleryToolbar({
             </Button>
           </InfoTooltip>
 
-          <FeedbackDialog />
+          <div className="inline-flex" data-tour="feedback">
+            <FeedbackDialog />
+          </div>
         </div>
       </div>
+
+      {/* Capa 3: Rule34 adult-only confirmation (first time only) */}
+      <AlertDialog open={rule34DialogOpen} onOpenChange={setRule34DialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch to Rule34?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Rule34 hosts exclusively explicit / adult (18+) content and, unlike
+              the other providers, its results cannot be filtered to Safe — the
+              Safe/NSFW toggle is disabled while it&apos;s selected. Only continue
+              if you are of legal age and want to see this material. You can switch
+              back to another provider at any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
+            <AlertDialogAction type="button" onClick={confirmRule34}>
+              Continue to Rule34
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

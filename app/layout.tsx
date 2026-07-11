@@ -9,6 +9,7 @@ import { Analytics } from '@vercel/analytics/next'
 // Cloudflare Web Analytics — privacy-friendly, works on Netlify and any host.
 import { CloudflareAnalytics } from '@/components/analytics/cloudflare-analytics'
 import ErrorBoundary from '@/components/error-boundary'
+import { PostHogProvider } from '@/components/analytics/posthog-provider'
 
 // Neutral, technical sans with character (anti-slop, not "toon"). Exposed as a
 // CSS variable so Tailwind's `font-sans` (= var(--font-sans)) picks it up.
@@ -192,16 +193,18 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <ErrorBoundary>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            {children}
-            <Toaster />
-            {/* Vercel Analytics only reports data on Vercel; render it only there. */}
-            {process.env.VERCEL === "1" && <Analytics />}
-            {/* Cloudflare Web Analytics covers Netlify (and any other host). */}
-            <CloudflareAnalytics />
-          </ThemeProvider>
-        </ErrorBoundary>
+        <PostHogProvider>
+          <ErrorBoundary>
+            <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+              {children}
+              <Toaster />
+              {/* Vercel Analytics only reports data on Vercel; render it only there. */}
+              {process.env.VERCEL === "1" && <Analytics />}
+              {/* Cloudflare Web Analytics covers Netlify (and any other host). */}
+              <CloudflareAnalytics />
+            </ThemeProvider>
+          </ErrorBoundary>
+        </PostHogProvider>
       </body>
     </html>
   )

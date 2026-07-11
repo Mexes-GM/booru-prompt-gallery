@@ -104,3 +104,4 @@ panelejemplo.png
 
 # Local schema exports (regenerate with `supabase db dump`, not versioned)
 supabase/schema.snapshot.sql
+.env.local

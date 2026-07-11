@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import * as Sentry from "@sentry/nextjs"
+import posthog from 'posthog-js'
 
 export function useUser() {
   const [user, setUser] = useState<User | null>(null)
@@ -39,6 +40,11 @@ export function useUser() {
       // Identify the user by UUID only (no PII) so Sentry shows affected-user
       // counts and lets us filter a specific user's crashes. See SENTRY-FULVOUS-ANCHOR-7.
       Sentry.setUser(session?.user ? { id: session.user.id } : null)
+      // Re-identify with PostHog on page refresh so events from returning sessions
+      // are correlated to the correct person profile.
+      if (session?.user) {
+        posthog.identify(session.user.id)
+      }
       setUser(session?.user ?? null)
       setSession(session ?? null)
       setLoading(false)
@@ -57,6 +63,19 @@ export function useUser() {
       // Identify the user by UUID only (no PII) so Sentry shows affected-user
       // counts and lets us filter a specific user's crashes. See SENTRY-FULVOUS-ANCHOR-7.
       Sentry.setUser(session?.user ? { id: session.user.id } : null)
+      
+      if (typeof window !== 'undefined') {
+        if (session?.user) {
+          posthog.identify(session.user.id);
+        } else {
+          posthog.reset();
+        }
+        
+        if (event === 'SIGNED_IN') {
+          posthog.capture('user_authenticated');
+        }
+      }
+      
       setUser(session?.user ?? null)
       setSession(session ?? null)
       setLoading(false)

@@ -48,6 +48,7 @@ import { SaveFavoriteButton } from "./save-favorite-button"
 import { SaveArtistButton } from "./save-artist-button"
 import { FavoriteFolder } from "@/hooks/use-booru-favorites"
 import { trackExternalLink } from "@/lib/analytics"
+import { usePostHog } from 'posthog-js/react'
 import { toast } from "@/hooks/use-toast"
 import { SCALE_CONFIG } from "@/components/masonry-grid"
 
@@ -214,6 +215,7 @@ export const MasonryItem = memo(function MasonryItem({
     showCategoryTagBadges = true,
 }: MasonryItemProps) {
     const lowMotion = useLowMotion()
+    const posthog = usePostHog()
 
     // State to hold modified prompt from user interaction
     const [modifiedContent, setModifiedContent] = useState<string | null>(null)
@@ -289,6 +291,9 @@ export const MasonryItem = memo(function MasonryItem({
         const subset = classifiedTags[category]
 
         if (subset.length > 0) {
+            posthog.capture('category_tags_copied', {
+                category_name: category
+            })
             await copyToClipboard(subset.join(', '), post.id, false, post.preview_file_url)
         } else {
             toast({
@@ -710,7 +715,7 @@ export const MasonryItem = memo(function MasonryItem({
                         />
                     </div>
 
-                    <div className="flex button-group items-stretch isolate shrink-0">
+                    <div className="flex button-group items-stretch isolate shrink-0" {...(index === 0 ? { 'data-tour': 'copy-options' } : {})}>
                         {isNaturalLanguageMode ? (
                             <Button
                                 onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())}
@@ -755,7 +760,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     <ChevronDown className="h-4 w-4" aria-hidden="true" />
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                            <DropdownMenuContent align="end" className="z-[10005]">
                                 <DropdownMenuLabel>Copy Options</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => copyCategory('scenery')}>
@@ -790,6 +795,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 <DropdownMenuItem
                                     onSelect={(e) => {
                                         e.preventDefault()
+                                        posthog.capture('teach_modal_opened')
                                         setTeachModalData({ open: true, tags: getClassifiedTeachTags() })
                                     }}
                                 >
@@ -1148,6 +1154,7 @@ export const MasonryItem = memo(function MasonryItem({
                                     <DropdownMenuItem
                                         onSelect={(e) => {
                                             e.preventDefault()
+                                            posthog.capture('teach_modal_opened')
                                             setTeachModalData({ open: true, tags: getClassifiedTeachTags() })
                                         }}
                                     >
