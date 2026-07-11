@@ -143,14 +143,14 @@
       <span>Environment:</span>
       <div class="btn-group">
         <button id="btn-local" class="btn active" data-url="http://localhost:3000/extension">Local (Dev)</button>
-        <button id="btn-prod" class="btn" data-url="https://booru-prompt-gallery.netlify.app/extension">Production</button>
+        <button id="btn-prod" class="btn" data-url="https://booru-prompt-gallery.vercel.app/extension">Production</button>
       </div>
     </div>
 
     <!-- The actual hosted app iframe. Defaults to production; sidepanel.js swaps
          to localhost only when dev mode is enabled. The queue / target UI is
          rendered inside this React app, not by the host page. -->
-    <iframe id="app-frame" src="https://booru-prompt-gallery.netlify.app/extension" allow="clipboard-write"></iframe>
+    <iframe id="app-frame" src="https://booru-prompt-gallery.vercel.app/extension" allow="clipboard-write"></iframe>
 
   </div>
   <script src="sidepanel.js"></script>

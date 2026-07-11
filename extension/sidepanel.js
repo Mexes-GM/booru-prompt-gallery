@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Environment switching logic
 // ─────────────────────────────────────────────────────────────────────────────
-const PROD_URL = "https://booru-prompt-gallery.netlify.app/extension";
+const PROD_URL = "https://booru-prompt-gallery.vercel.app/extension";
 const DEV_URL = "http://localhost:3000/extension";
 
 const btnLocal = document.getElementById("btn-local");
@@ -392,7 +392,7 @@ function updateQueueUI() {
 function notifyIframe(payload) {
   try {
     // Post with "*" — the React app verifies event.source === window.parent.
-    // Using a pinned origin fails because the iframe (localhost / netlify) and
+    // Using a pinned origin fails because the iframe (localhost / vercel) and
     // this sidepanel (chrome-extension://) have different origins.
     appFrame.contentWindow.postMessage({ type: "QUEUE_STATUS", ...payload, autoDownloadEnabled }, "*");
   } catch (_) {
@@ -682,7 +682,7 @@ let targetingTimeoutId = null;
 function sendTargetStatus(state, detail) {
   try {
     // "*" — React verifies event.source === window.parent (origins differ:
-    // iframe is localhost/netlify, this sidepanel is chrome-extension://).
+    // iframe is localhost/vercel, this sidepanel is chrome-extension://).
     appFrame.contentWindow.postMessage({ type: "TARGET_STATUS", state, detail: detail || null }, "*");
   } catch (_) { /* iframe not ready */ }
   dlog(`[Target] ▶ state="${state}"`, detail || "");
