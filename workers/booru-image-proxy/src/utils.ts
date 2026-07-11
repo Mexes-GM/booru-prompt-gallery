@@ -27,10 +27,12 @@ export function getCorsHeaders(origin: string | null): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    // F4 (rate-limit-antiabuse plan): Authorization carries the Supabase access
-    // token so the worker can resolve authed identity for adaptive limits.
-    // Additive — anonymous callers that never send this header are unaffected.
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, User-Agent',
+    // NOTE: 'User-Agent' is a forbidden request header per the Fetch spec;
+    // no browser JS can ever send it, so it must NOT be listed here.
+    // Listing it causes Firefox to include it in preflight checks and then
+    // fail CORS validation. The worker sets User-Agent on its own outbound
+    // requests to booru APIs server-side, which is completely separate.
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Expose-Headers': 'X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Type, X-RateLimit-Daily-Remaining',
     'Access-Control-Max-Age': '86400', // Cache preflight for 24h
     ...securityHeaders,

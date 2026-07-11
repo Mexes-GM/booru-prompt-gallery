@@ -49,14 +49,7 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
     }
   }, [triggerOpen])
 
-  useEffect(() => {
-    const hasSeen = localStorage.getItem(STORAGE_KEY)
-    if (!hasSeen) {
-      // Small delay to ensure smooth hydration/mounting
-      const timer = setTimeout(() => setOpen(true), 1000)
-      return () => clearTimeout(timer)
-    }
-  }, [])
+  // Auto-open disabled — modal only opens when triggered manually from the header
 
   useEffect(() => {
     if (!api) return

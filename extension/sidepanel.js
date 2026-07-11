@@ -975,9 +975,19 @@ function armTargetingInPage(targetKind, devMode) {
         if (v) candidates.push({ type: "stable-attribute", selector: `${el.tagName.toLowerCase()}[${attr}="${escSel(v)}"]` });
       }
       const ariaLabelAttr = el.getAttribute && el.getAttribute("aria-label");
-      if (ariaLabelAttr) candidates.push({ type: "stable-attribute", selector: `${el.tagName.toLowerCase()}[aria-label="${escSel(ariaLabelAttr)}"]` });
+      // Only use aria-label/placeholder as stable candidates when they are
+      // unique in the document — a shared value like placeholder="text"
+      // (ComfyUI's default for all text nodes) would make querySelector pick
+      // the first match rather than the element the user actually selected.
+      if (ariaLabelAttr) {
+        const ariaMatches = document.querySelectorAll(`${el.tagName.toLowerCase()}[aria-label="${CSS.escape(ariaLabelAttr)}"]`);
+        if (ariaMatches.length === 1) candidates.push({ type: "stable-attribute", selector: `${el.tagName.toLowerCase()}[aria-label="${escSel(ariaLabelAttr)}"]` });
+      }
       const placeholderAttr = el.getAttribute && el.getAttribute("placeholder");
-      if (placeholderAttr) candidates.push({ type: "stable-attribute", selector: `${el.tagName.toLowerCase()}[placeholder="${escSel(placeholderAttr)}"]` });
+      if (placeholderAttr) {
+        const phMatches = document.querySelectorAll(`${el.tagName.toLowerCase()}[placeholder="${CSS.escape(placeholderAttr)}"]`);
+        if (phMatches.length === 1) candidates.push({ type: "stable-attribute", selector: `${el.tagName.toLowerCase()}[placeholder="${escSel(placeholderAttr)}"]` });
+      }
 
       const buildStructuralSelector = (node, root) => {
         const segments = [];
@@ -1015,6 +1025,35 @@ function armTargetingInPage(targetKind, devMode) {
 
       const structural = buildStructuralSelector(el, document.body);
       if (structural) candidates.push({ type: "structural-path", selector: structural });
+
+      // ── Coordinates candidate (Fase SeaArt fix) ───────────────────────────
+      // SeaArt ComfyUI textareas have no id/name/aria-label/placeholder, so the
+      // only locator generated above is structural-path (DOM position), which
+      // breaks when the user loads a different workflow or moves nodes (the
+      // nth-of-type index shifts). Store the element's viewport rect + className
+      // as a last-resort tiebreaker: at injection time we find the textarea
+      // closest to these coordinates (within `tolerance` px). Placed AFTER
+      // structural-path so a still-valid structural locator wins first.
+      const hasStableCandidate = candidates.some(c => c.type === "stable-attribute");
+      try {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          // Also capture the parent .dom-widget's rect when present (ComfyUI
+          // nodes). The widget rect is more stable than the textarea rect itself
+          // because it's the node container that gets repositioned as a unit.
+          const widget = el.closest && el.closest(".dom-widget");
+          const wr = widget ? widget.getBoundingClientRect() : null;
+          candidates.push({
+            type: "coordinates",
+            rect: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
+            widgetRect: wr ? { x: Math.round(wr.x), y: Math.round(wr.y), width: Math.round(wr.width), height: Math.round(wr.height) } : null,
+            className: typeof el.className === "string" ? el.className.slice(0, 200) : "",
+            // Wider tolerance when no stable attr exists — the canvas may have
+            // scrolled slightly between sessions.
+            tolerance: hasStableCandidate ? 60 : 120,
+          });
+        }
+      } catch (_) { /* getBoundingClientRect failed — no coordinates candidate */ }
 
       if (candidates.length === 0) return null;
 
@@ -2184,9 +2223,46 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator) {
             const tryQuery = (root, selector) => { try { return root.querySelector(selector); } catch (_) { return null; } };
             for (const cand of promptLocator.candidates) {
               try {
-                if (cand.type === "stable-attribute" || cand.type === "structural-path") {
+                if (cand.type === "stable-attribute") {
                   const found = tryQuery(document, cand.selector);
-                  if (found) { promptTextarea = found; break; }
+                  if (found) {
+                    // ── Uniqueness check ─────────────────────────────────────
+                    // On SeaArt/ComfyUI all textareas share placeholder="text"
+                    // and the same class. A selector like
+                    // textarea[placeholder="text"] matches every one of them;
+                    // querySelector returns the first DOM match, which is almost
+                    // always the wrong field. Only accept a stable-attribute
+                    // candidate if it uniquely identifies a SINGLE element in
+                    // this frame; otherwise fall through to the next candidate
+                    // (structural-path or coordinates) which uses position to
+                    // disambiguate.
+                    try {
+                      const allMatches = document.querySelectorAll(cand.selector);
+                      if (allMatches.length === 1) { promptTextarea = found; break; }
+                      // Multiple matches → ambiguous; try next candidate.
+                    } catch (_) {
+                      // querySelectorAll failed — treat as unique and proceed
+                      promptTextarea = found; break;
+                    }
+                  }
+                } else if (cand.type === "structural-path") {
+                  // ── Change C: validate className before accepting ────────────
+                  // If the DOM order changed (e.g. different ComfyUI workflow),
+                  // nth-of-type(N) may resolve to a completely different element.
+                  // Confirm the found element has the same className that was
+                  // snapshotted at selection time before trusting this locator.
+                  const found = tryQuery(document, cand.selector);
+                  if (found) {
+                    const savedClass = promptLocator.meta && promptLocator.meta.className;
+                    const foundClass = typeof found.className === "string" ? found.className.slice(0, 160) : "";
+                    // Accept if: no className was saved (legacy locator), OR
+                    // classes match exactly, OR the found element's class at
+                    // least starts with the saved value (handles minor additions).
+                    if (!savedClass || foundClass === savedClass || (savedClass && foundClass.startsWith(savedClass.split(" ")[0]))) {
+                      promptTextarea = found; break;
+                    }
+                    // Class mismatch → DOM order shifted; fall through to next candidate.
+                  }
                 } else if (cand.type === "shadow-path" && Array.isArray(cand.selectors)) {
                   let root = document, el = null;
                   for (let i = 0; i < cand.selectors.length; i++) {
@@ -2198,6 +2274,36 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator) {
                     }
                   }
                   if (el) { promptTextarea = el; break; }
+                } else if (cand.type === "coordinates") {
+                  // ── Change B: find element closest to saved viewport coords ─
+                  // Useful on SeaArt/ComfyUI where textareas share the same class
+                  // and differ only by canvas position. Queries by className first
+                  // (more specific), falling back to all textareas.
+                  const firstClass = cand.className && cand.className.trim().split(/\s+/)[0];
+                  const pool = firstClass
+                    ? Array.from(document.querySelectorAll(`.${CSS.escape(firstClass)}`))
+                    : Array.from(document.querySelectorAll("textarea, input"));
+                  const tol = cand.tolerance || 120;
+                  let closest = null, closestDist = Infinity;
+                  for (const el of pool) {
+                    const r = el.getBoundingClientRect();
+                    if (r.width === 0 || r.height === 0) continue;
+                    // Use widget rect for comparison when available (more stable
+                    // anchor point than the textarea rect, which sits inside the
+                    // canvas node and can shift with internal re-layout).
+                    const ref = cand.widgetRect || cand.rect;
+                    const widget = el.closest && el.closest(".dom-widget");
+                    const wr = widget ? widget.getBoundingClientRect() : null;
+                    const compRect = (cand.widgetRect && wr) ? wr : r;
+                    const dx = compRect.x - ref.x;
+                    const dy = compRect.y - ref.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < tol && dist < closestDist) {
+                      closestDist = dist;
+                      closest = el;
+                    }
+                  }
+                  if (closest) { promptTextarea = closest; break; }
                 }
               } catch (_) { /* try next candidate */ }
             }
@@ -2222,11 +2328,21 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator) {
                 return list;
               };
               const pool = querySelectorAllDeep(selectorByKind[kind] || selectorByKind.other);
+              // Pre-compute how many elements share each attribute value so we
+              // can discount attributes that are non-unique (e.g. placeholder=
+              // "text" on every ComfyUI textarea). A shared value gives every
+              // candidate the same score → querySelector picks the first → wrong.
+              const phCount  = placeholder ? pool.filter(e => e.getAttribute && e.getAttribute("placeholder") === placeholder).length : 0;
+              const alCount  = ariaLabel   ? pool.filter(e => e.getAttribute && e.getAttribute("aria-label")   === ariaLabel).length   : 0;
               let best = null, bestScore = 0;
               for (const cand of pool) {
                 let score = 0;
-                if (placeholder && cand.getAttribute && cand.getAttribute("placeholder") === placeholder) score += 3;
-                if (ariaLabel && cand.getAttribute && cand.getAttribute("aria-label") === ariaLabel) score += 3;
+                // Only award points for placeholder/ariaLabel when the value is
+                // unique (matches exactly 1 element in the pool). If every
+                // candidate shares the value it contributes zero disambiguating
+                // power, so we skip it to let position-based scoring win.
+                if (placeholder && phCount === 1 && cand.getAttribute && cand.getAttribute("placeholder") === placeholder) score += 3;
+                if (ariaLabel   && alCount === 1 && cand.getAttribute && cand.getAttribute("aria-label")   === ariaLabel)   score += 3;
                 if (metaText && (cand.textContent || "").trim().slice(0, 60) === metaText) score += 2;
                 if (className && typeof cand.className === "string" && cand.className.slice(0, 160) === className) score += 1;
                 if (score > bestScore) { bestScore = score; best = cand; }

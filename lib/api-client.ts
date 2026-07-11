@@ -278,11 +278,15 @@ const fetcher = async (url: string) => {
         // instead of IP. No-op when there's no session or the flag is off.
         const authHeader = isOwnInfra ? await getAuthHeader() : {}
 
+        // NOTE: Do NOT include 'User-Agent' here — it is a forbidden request
+        // header per the Fetch spec; browsers control it, not JS.
+        // Chrome silently drops it but Firefox includes it in the CORS
+        // preflight, which causes the request to fail if the server's
+        // Access-Control-Allow-Headers doesn't match exactly.
         const headers: HeadersInit = isDirectAibooru
           ? {}
           : {
             'Accept': 'application/json',
-            'User-Agent': USER_AGENT,
             ...authHeader,
           }
 
