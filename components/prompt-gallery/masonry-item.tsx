@@ -749,7 +749,7 @@ export const MasonryItem = memo(function MasonryItem({
                             </Button>
                         )}
 
-                        <DropdownMenu>
+                        <DropdownMenu modal={false}>
                             <DropdownMenuTrigger asChild>
                                 <Button
                                     variant={isNaturalLanguageMode ? "outline" : (copiedId === post.id ? "default" : "outline")}
@@ -1108,7 +1108,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 </Button>
                             )}
 
-                            <DropdownMenu>
+                            <DropdownMenu modal={false}>
                                 <DropdownMenuTrigger asChild>
                                     <Button
                                         variant="outline"
