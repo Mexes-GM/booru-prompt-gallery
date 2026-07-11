@@ -805,7 +805,7 @@ export function PromptGallery() {
         variant: "destructive",
       })
     }
-  }, [toast, addToHistory])
+  }, [toast, addToHistory, posthog, search.booruProvider, isAiConvertMode])
 
   const downloadImage = useCallback(async (post: BooruPost) => {
     try {
@@ -877,7 +877,7 @@ export function PromptGallery() {
         variant: "destructive",
       })
     }
-  }, [search.booruProvider, toast])
+  }, [search.booruProvider, toast, posthog])
 
   // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
   copyToClipboardRef.current = copyToClipboard

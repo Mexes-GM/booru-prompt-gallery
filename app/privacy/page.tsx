@@ -101,12 +101,12 @@ export default function PrivacyPage() {
               </li>
               <li>
                 <strong>PostHog (Product Analytics):</strong> We record specific in-app behavioral events to
-                understand feature usage. PostHog stores an anonymous session identifier in your browser's
+                understand feature usage. PostHog stores an anonymous session identifier in your browser&apos;s
                 local storage (not a tracking cookie). The events we capture include:
                 <ul className="list-disc pl-5 mt-2 space-y-1">
                   <li>Searches performed (query length, provider, shuffle on/off — <em>not</em> the search text itself)</li>
                   <li>Prompts copied (whether it was AI-converted text or raw tags, and the source provider — <em>not</em> the prompt content)</li>
-                  <li>Tags copied by category (e.g. "appearance", "clothing" — <em>not</em> the tag text itself)</li>
+                  <li>Tags copied by category (e.g. &quot;appearance&quot;, &quot;clothing&quot; — <em>not</em> the tag text itself)</li>
                   <li>Images downloaded (source provider only)</li>
                   <li>AI tag conversion started and completed (provider name, success/fail — <em>not</em> the tags)</li>
                   <li>Feature used: Merge mode, Variant mode, Teach Modal, Dynamic tag opened/copied — <em>no content is recorded</em></li>
@@ -201,9 +201,9 @@ export default function PrivacyPage() {
               syncing at any time by signing out and clearing your local site data.
             </p>
             <p>
-              <strong>Opting out of product analytics:</strong> PostHog respects the browser's{" "}
+              <strong>Opting out of product analytics:</strong> PostHog respects the browser&apos;s{" "}
               <strong>Do Not Track</strong> signal. You can also block analytics by using a content blocker (e.g.
-              uBlock Origin) — the app will continue to work fully without it. Clearing your browser's local
+              uBlock Origin) — the app will continue to work fully without it. Clearing your browser&apos;s local
               storage for this domain will also reset your anonymous PostHog session identifier.
             </p>
           </CardContent>

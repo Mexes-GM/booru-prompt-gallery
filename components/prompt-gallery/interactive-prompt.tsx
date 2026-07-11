@@ -193,7 +193,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
         variant: "destructive",
       })
     }
-  }, [tag.text, toast])
+  }, [tag.text, toast, posthog])
 
   // Sync draft weight when tag changes externally
   useEffect(() => {
