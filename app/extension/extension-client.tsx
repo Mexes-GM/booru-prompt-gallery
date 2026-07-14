@@ -1013,6 +1013,9 @@ export default function ExtensionClient() {
                 setAppliedTagCountFilter={search.setAppliedTagCountFilter}
                 isTagCountSupported={isTagCountSupported}
                 isTagCountValid={isTagCountValid}
+                scoreTier={search.scoreTier}
+                setScoreTier={search.setScoreTier}
+                setAppliedScoreTier={search.setAppliedScoreTier}
                 characterCountFilter={search.characterCountFilter}
                 setCharacterCountFilter={search.setCharacterCountFilter}
                 setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}

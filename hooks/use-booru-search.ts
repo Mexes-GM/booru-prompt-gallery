@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useInfinitePosts, BooruProvider, BooruPost, apiUrl } from "@/lib/api-client"
+import type { ScoreTier } from "@/lib/api-client"
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
@@ -119,6 +120,14 @@ export function useBooruSearch() {
     STORAGE_KEYS.MINIMUM_TAG_COUNT
   )
 
+  const [scoreTier, _setScoreTier] = usePersistentState<ScoreTier>(
+    "off",
+    userPreferences.getScoreTier,
+    userPreferences.setScoreTier,
+    "scoreTier",
+    STORAGE_KEYS.SCORE_TIER
+  )
+
   const [characterCountFilter, _setCharacterCountFilter] = usePersistentState(
     "0",
     userPreferences.getMinimumCharacterCount,
@@ -142,6 +151,11 @@ export function useBooruSearch() {
     _setTagCountFilter(value)
   }, [_setTagCountFilter])
 
+  const setScoreTier = useCallback((value: ScoreTier | ((prev: ScoreTier) => ScoreTier)) => {
+    userInteractionRef.current = true
+    _setScoreTier(value)
+  }, [_setScoreTier])
+
   const setCharacterCountFilter = useCallback((value: string | ((prev: string) => string)) => {
     userInteractionRef.current = true
     _setCharacterCountFilter(value)
@@ -153,6 +167,7 @@ export function useBooruSearch() {
   }, [_setCharacterCountRange])
 
   const [appliedTagCountFilter, setAppliedTagCountFilter] = useState("5")
+  const [appliedScoreTier, setAppliedScoreTier] = useState<ScoreTier>("off")
   const [appliedCharacterCountFilter, setAppliedCharacterCountFilter] = useState("0")
   const [appliedCharacterCountRange, setAppliedCharacterCountRange] = useState<[number, number]>([0, 10000])
   const [isClient, setIsClient] = useState(false)
@@ -161,10 +176,11 @@ export function useBooruSearch() {
   useEffect(() => {
     if (!userInteractionRef.current) {
       setAppliedTagCountFilter(tagCountFilter)
+      setAppliedScoreTier(scoreTier)
       setAppliedCharacterCountFilter(characterCountFilter)
       setAppliedCharacterCountRange(characterCountRange)
     }
-  }, [tagCountFilter, characterCountFilter, characterCountRange])
+  }, [tagCountFilter, scoreTier, characterCountFilter, characterCountRange])
 
  // Loading states
  const [loadMoreError, setLoadMoreError] = useState(false)
@@ -227,7 +243,7 @@ export function useBooruSearch() {
     size,
     setSize,
     mutate,
-  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter, appliedTagCountFilter)
+  } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter, appliedTagCountFilter, appliedScoreTier)
 
   // Debounce search tags
   useEffect(() => {
@@ -264,7 +280,7 @@ export function useBooruSearch() {
    setCircuitOpen(false)
    setSessionCapReached(false)
    loadMoreGuardRef.current = false
- }, [booruProvider, order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
+ }, [booruProvider, order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedScoreTier, appliedCharacterCountFilter, setSize])
 
   // --- Derived Data ---
 
@@ -272,7 +288,7 @@ export function useBooruSearch() {
   const lastSearchKeyRef = useRef<string>('')
 
   // Create a stable key for the current search parameters
-  const currentSearchKey = `${booruProvider}-${debouncedSearchTags}-${ratingFilter}-${order}-${randomSeed}-${appliedTagCountFilter}-${appliedCharacterCountFilter}`
+  const currentSearchKey = `${booruProvider}-${debouncedSearchTags}-${ratingFilter}-${order}-${randomSeed}-${appliedTagCountFilter}-${appliedScoreTier}-${appliedCharacterCountFilter}`
 
   const allPosts = useMemo(() => {
     if (!pages) return []
@@ -635,6 +651,8 @@ export function useBooruSearch() {
     removeQualityTags, setRemoveQualityTags,
     tagCountFilter, setTagCountFilter,
     appliedTagCountFilter, setAppliedTagCountFilter,
+    scoreTier, setScoreTier,
+    appliedScoreTier, setAppliedScoreTier,
     characterCountFilter, setCharacterCountFilter,
     appliedCharacterCountFilter, setAppliedCharacterCountFilter,
     characterCountRange, setCharacterCountRange,

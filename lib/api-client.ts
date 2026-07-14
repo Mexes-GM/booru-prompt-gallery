@@ -8,6 +8,7 @@ import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
 import { apiUrl, buildDirectDanbooruUrl } from './booru/urls'
 import { getAuthHeader } from './booru/auth-header'
 import { transformAibooruPost, transformE621Post } from './booru/post-transformers'
+import { relaxScoreFloorInUrl, SCORE_FLOOR_BY_PROVIDER, type BooruProvider as TagLimitsBooruProvider, type ScoreTier } from './booru/tag-limits'
 
 export { transformAibooruPost, transformE621Post }
 
@@ -248,6 +249,45 @@ let isFirstPage1 = true
 const PAGE1_SPACING_MS = 1000
 
 // Production fetcher with error handling, retry logic, and page-1 sequencing.
+
+// Fase 3 (§8 of docs/prompt-genericness-mitigation-plan.md): niche-tag fallback. A page is
+// considered "starved" by the quality floor when it comes back with fewer than a quarter of
+// the provider's per-page size (60) — clearly cut short by score:>=N rather than just being
+// the last, naturally-shorter page of results.
+const RELAX_MIN_RESULTS = 15
+
+// Detects which provider a fetcher URL belongs to (mirrors the identification logic already
+// used later in doFetch for response parsing) purely from the URL shape, so the niche-tag
+// fallback doesn't need scoreTier/provider threaded through the SWR key function.
+const detectProviderFromUrl = (url: string): TagLimitsBooruProvider | null => {
+  if (url.startsWith(PROVIDER_URLS.AIBOORU)) return 'aibooru'
+  if (url.includes('danbooru.donmai.us')) return 'danbooru'
+  if (url.includes('e621.net')) return 'e621'
+  if (url.includes('/api/posts')) {
+    if (url.includes('provider=gelbooru')) return 'gelbooru'
+    if (url.includes('provider=rule34')) return 'rule34'
+    if (url.includes('provider=e621')) return 'e621'
+    if (url.includes('provider=aibooru')) return 'aibooru'
+    return 'danbooru'
+  }
+  return null
+}
+
+// Finds which tier's score:>=N (if any) is present in the URL for this provider, trying the
+// strongest floors first (a 'best' URL also numerically matches a weaker tier's number only
+// when they coincide, which SCORE_FLOOR_BY_PROVIDER's calibration avoids in practice).
+const detectActiveScoreTier = (url: string, provider: TagLimitsBooruProvider): ScoreTier | null => {
+  const floors = SCORE_FLOOR_BY_PROVIDER[provider]
+  if (!floors) return null
+  for (const tier of ['best', 'great', 'good'] as const) {
+    const floor = floors[tier]
+    const rawPattern = new RegExp(`score:>=${floor}(?=[\\s+&]|%20|$)`, 'i')
+    const encodedPattern = new RegExp(`score(?:%3A|:)(?:%3E%3D|>=|%3E=|>%3D)${floor}(?=[\\s+&]|%20|$)`, 'i')
+    if (rawPattern.test(url) || encodedPattern.test(url)) return tier
+  }
+  return null
+}
+
 const fetcher = async (url: string) => {
   // Deduplicate identical concurrent requests
   const inflight = inflightRequests.get(url)
@@ -376,6 +416,37 @@ const fetcher = async (url: string) => {
           })
         }
 
+        // Fase 3 (§8 of docs/prompt-genericness-mitigation-plan.md): niche-tag fallback.
+        // If a quality-floor tier is active and this page came back starved (a niche search
+        // tag simply doesn't have enough posts clearing the score threshold), relax one tier
+        // and retry the SAME page once. Never applies to page 1 of a page-1-empty=stop
+        // pagination scheme differently — this only concerns count, not the stop condition
+        // (an empty array still means "no more results" regardless of the floor).
+        if (
+          attempt === 0 &&
+          Array.isArray(resultPosts) &&
+          resultPosts.length > 0 &&
+          resultPosts.length < RELAX_MIN_RESULTS
+        ) {
+          const provider = detectProviderFromUrl(url)
+          const activeTier = provider ? detectActiveScoreTier(url, provider) : null
+          if (provider && activeTier) {
+            const relaxedUrl = relaxScoreFloorInUrl(url, provider, activeTier)
+            if (relaxedUrl && relaxedUrl !== url) {
+              try {
+                const relaxedPosts = await fetcher(relaxedUrl)
+                // Only use the relaxed result if it actually did better — never regress.
+                if (Array.isArray(relaxedPosts) && relaxedPosts.length > resultPosts.length) {
+                  return relaxedPosts
+                }
+              } catch {
+                // Relaxed retry failed — fall through and return the original (starved) result
+                // rather than losing the page entirely.
+              }
+            }
+          }
+        }
+
         return resultPosts
       } catch (fetchError: unknown) {
         // Retry network errors (TypeError) — e.g. connection refused, DNS failure
@@ -430,8 +501,8 @@ const fetcher = async (url: string) => {
 // hasMultipleTags/processTagsForAPI/getProviderTagLimit helpers now live in a dependency-free
 // module (lib/booru/tag-limits.ts) so they can be unit-tested without pulling in React/Next.
 // See that file for the full empirical/documentation rationale behind each provider's limit.
-export { hasMultipleTags, getProviderTagLimit, isTagCountSupportedProvider } from './booru/tag-limits'
-import { processTagsForAPI, mapRatingForProvider, isTagCountSupportedProvider } from './booru/tag-limits'
+export { hasMultipleTags, getProviderTagLimit, isTagCountSupportedProvider, getScoreFloor } from './booru/tag-limits'
+import { processTagsForAPI, mapRatingForProvider, isTagCountSupportedProvider, getScoreFloor } from './booru/tag-limits'
 
 // Function to check if user entered more than 2 search terms total
 export const hasMoreThanTwoTerms = (tags: string): boolean => {
@@ -448,9 +519,9 @@ export const hasMoreThanTwoTerms = (tags: string): boolean => {
 // getFinalQueryTags also lives in lib/booru/tag-limits.ts (pure, unit-tested) and is
 // re-exported here for backwards compatibility with existing imports.
 export { getFinalQueryTags, getFinalQueryTagsWithMeta, detectMisusedMetatags } from './booru/tag-limits'
-export type { QueryTagMeta, FinalQueryTagsResult, MisusedMetatagWarning } from './booru/tag-limits'
+export type { QueryTagMeta, FinalQueryTagsResult, MisusedMetatagWarning, ScoreTier } from './booru/tag-limits'
 
-export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string) => {
+export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string, scoreTier: ScoreTier = 'off') => {
   // Provider-specific rating vocabulary mapping (e.g. e621 has no "general" tier —
   // see lib/booru/tag-limits.ts for the full empirical rationale).
   const effectiveRating = mapRatingForProvider(ratingFilter, provider)
@@ -460,12 +531,17 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
   // NOT on Gelbooru/Rule34. See lib/booru/tag-limits.ts for the full rationale.
   const tagCountPart = (tagCountFilter && isTagCountSupportedProvider(provider)) ? `tagcount:>=${tagCountFilter.replace(/\D/g, '')} ` : ''
 
+  // Quality floor (Palanca 1, docs/prompt-genericness-mitigation-plan.md §7-§8): score:>=N,
+  // free on all 5 providers (confirmed §7.2). No-op when scoreTier is 'off' (the default).
+  const scoreFloor = getScoreFloor(provider, scoreTier)
+  const scoreTierPart = scoreFloor != null ? `score:>=${scoreFloor} ` : ''
+
   // order:rank / random:N are appended to the query later (below, per-provider) and are
   // confirmed to consume one slot of the provider's tag limit — same as a normal tag.
   const systemOrderTagCount = (order === 'popular' || order === 'random') ? 1 : 0
   const processedTags = processTagsForAPI(tags, provider, systemOrderTagCount)
 
-  const query = processedTags ? `${ratingPart}${tagCountPart}${processedTags}` : `${ratingPart}${tagCountPart}`.trim()
+  const query = processedTags ? `${ratingPart}${tagCountPart}${scoreTierPart}${processedTags}` : `${ratingPart}${tagCountPart}${scoreTierPart}`.trim()
   const encodedQuery = encodeURIComponent(query)
 
   return useSWRInfinite<BooruPost[]>(

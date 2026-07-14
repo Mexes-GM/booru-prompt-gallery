@@ -10,8 +10,9 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Tag,
-  Wrench,
+  Replace,
+  SlidersHorizontal,
+  Heart,
 } from "lucide-react"
 
 type AnnouncementItem = {
@@ -30,9 +31,9 @@ const COLORS = {
 } as const
 
 const ITEMS: AnnouncementItem[] = [
-  { color: 'emerald', icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Page Tour', badge: 'New', body: "First time on the page? A guided tour now walks you through the main features so you can get up to speed quickly." },
-  { color: 'emerald', icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'NSFW Safety Confirmation', badge: 'New', body: "Accessing NSFW content now requires an explicit confirmation step to prevent accidental activation." },
-  { color: 'indigo', icon: <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />, title: 'Firefox Compatibility Fix', badge: 'Fix', body: "Fixed an issue that caused the page to malfunction in Firefox." },
+  { color: 'emerald', icon: <Replace className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Find and Replace', badge: 'New', body: "Quickly swap tags for others in your prompts." },
+  { color: 'emerald', icon: <SlidersHorizontal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Score Floor', badge: 'New', body: "Added the option to filter by score, since our own testing showed posts tend to be better tagged the higher their score. Optimized presets are included, based on that testing." },
+  { color: 'amber', icon: <Heart className="h-4 w-4 text-amber-600 dark:text-amber-400" />, title: 'History Panel Rework', badge: 'Changed', body: "The History side panel now behaves like Favorites for a more consistent experience." },
 ]
 
 interface AnnouncementsCarouselProps {

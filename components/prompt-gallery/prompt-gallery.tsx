@@ -1243,6 +1243,9 @@ export function PromptGallery() {
                         setAppliedTagCountFilter={search.setAppliedTagCountFilter}
                         isTagCountSupported={isTagCountSupported}
                         isTagCountValid={isTagCountValid}
+                        scoreTier={search.scoreTier}
+                        setScoreTier={search.setScoreTier}
+                        setAppliedScoreTier={search.setAppliedScoreTier}
                         characterCountFilter={search.characterCountFilter}
                         setCharacterCountFilter={search.setCharacterCountFilter}
                         setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
@@ -1286,6 +1289,7 @@ export function PromptGallery() {
                     ratingFilter={search.ratingFilter}
                     order={search.order}
                     appliedTagCountFilter={search.appliedTagCountFilter}
+                    appliedScoreTier={search.appliedScoreTier}
                     booruProvider={search.booruProvider}
                   />
                 </form>

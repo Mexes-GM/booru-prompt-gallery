@@ -62,6 +62,7 @@ export const STORAGE_KEYS = {
   HISTORY: 'prompt-history',
   ADD_TAGS_PRESETS: 'add-tags-presets',
   MINIMUM_TAG_COUNT: 'minimum-tag-count',
+  SCORE_TIER: 'scoreTier',
   MINIMUM_CHARACTER_COUNT: 'minimum-character-count',
   CHARACTER_COUNT_RANGE: 'character-count-range',
   BLACKLIST: 'blacklist',
@@ -218,6 +219,14 @@ export const userPreferences = {
 
   setMinimumTagCount: (count: string) =>
     storage.set(STORAGE_KEYS.MINIMUM_TAG_COUNT, count),
+
+  // Quality floor (Palanca 1, docs/prompt-genericness-mitigation-plan.md §7-§8): score:>=N
+  // tier, off by default. Imitates getMinimumTagCount/setMinimumTagCount exactly.
+  getScoreTier: (): 'off' | 'good' | 'great' | 'best' =>
+    storage.get(STORAGE_KEYS.SCORE_TIER, 'off'),
+
+  setScoreTier: (tier: 'off' | 'good' | 'great' | 'best') =>
+    storage.set(STORAGE_KEYS.SCORE_TIER, tier),
 
   getMinimumCharacterCount: (): string =>
     storage.get(STORAGE_KEYS.MINIMUM_CHARACTER_COUNT, "0"),

@@ -11,6 +11,7 @@ import {
   getProviderTagLimit,
   detectMisusedMetatags,
   type BooruProvider,
+  type ScoreTier,
 } from "@/lib/api-client"
 
 interface QueryStatusPanelProps {
@@ -18,6 +19,7 @@ interface QueryStatusPanelProps {
   ratingFilter: string
   order: string
   appliedTagCountFilter: string
+  appliedScoreTier: ScoreTier
   booruProvider: BooruProvider
 }
 
@@ -33,13 +35,14 @@ export function QueryStatusPanel({
   ratingFilter,
   order,
   appliedTagCountFilter,
+  appliedScoreTier,
   booruProvider,
 }: QueryStatusPanelProps) {
   return (
     <div className="space-y-2">
       {/* Active Query Display */}
       {(() => {
-        const queryMeta = getFinalQueryTagsWithMeta(searchTags, ratingFilter, order, appliedTagCountFilter, booruProvider)
+        const queryMeta = getFinalQueryTagsWithMeta(searchTags, ratingFilter, order, appliedTagCountFilter, booruProvider, appliedScoreTier)
         const hasPromptTag = booruProvider === "aibooru" && searchTags.includes("has:prompt")
 
         const isUnlimited = queryMeta.slotLimit === Infinity
