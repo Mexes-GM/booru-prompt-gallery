@@ -33,7 +33,7 @@
     "@radix-ui/react-toast": "^1.2.19",
     "@radix-ui/react-tooltip": "^1.2.12",
     "@sentry/nextjs": "^10.65.0",
-    "@supabase/ssr": "^0.8.0",
+    "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.5",
     "@types/pg": "^8.20.0",
     "@types/piexifjs": "^1.0.0",
