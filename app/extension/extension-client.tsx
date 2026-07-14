@@ -585,6 +585,22 @@ export default function ExtensionClient() {
     STORAGE_KEYS.EXCLUDE_TAGS
   )
 
+  const [findInput, setFindInput] = usePersistentState(
+    "",
+    userPreferences.getFindReplaceFindInput,
+    userPreferences.setFindReplaceFindInput,
+    "findReplaceFind",
+    STORAGE_KEYS.FIND_REPLACE_FIND
+  )
+
+  const [replaceInput, setReplaceInput] = usePersistentState(
+    "",
+    userPreferences.getFindReplaceReplaceInput,
+    userPreferences.setFindReplaceReplaceInput,
+    "findReplaceReplace",
+    STORAGE_KEYS.FIND_REPLACE_REPLACE
+  )
+
   const {
     includeCharacters, optimizeTags, smartTagExclusion,
     setIncludeCharacters, setOptimizeTags, setSmartTagExclusion,
@@ -617,8 +633,10 @@ export default function ExtensionClient() {
   } = usePresetsAndHistory({ isClient: search.isClient, addInput, setAddInput, toast })
 
   const handleUsedPrompt = useCallback((promptText: string, postId: number, thumbnailUrl?: string) => {
-    addToHistory({ content: promptText, postId, thumbnailUrl })
-  }, [addToHistory])
+    if (postId) {
+      addToHistory({ postId, provider: search.booruProvider })
+    }
+  }, [addToHistory, search.booruProvider])
 
   // Autocomplete placeholders
   const placeholders = useMemo(() => [
@@ -636,6 +654,8 @@ export default function ExtensionClient() {
   const cardPromptOptions: UseCardPromptOptions = useMemo(() => ({
     excludeInput,
     addInput,
+    findInput,
+    replaceInput,
     includeCharacters,
     optimizeTags,
     smartTagExclusion,
@@ -649,6 +669,8 @@ export default function ExtensionClient() {
   }), [
     excludeInput,
     addInput,
+    findInput,
+    replaceInput,
     includeCharacters,
     optimizeTags,
     smartTagExclusion,
@@ -876,7 +898,7 @@ export default function ExtensionClient() {
                                   {new Date(item.timestamp).toLocaleString()}
                                 </p>
                                 <p className="text-xs line-clamp-3 break-words font-mono bg-muted/50 p-1 rounded">
-                                  {item.content}
+                                  {item.content ?? `Post #${item.postId} (${item.provider})`}
                                 </p>
                               </div>
                             </div>
@@ -894,7 +916,7 @@ export default function ExtensionClient() {
                                 variant="secondary"
                                 className="h-7 text-xs px-2"
                                 onClick={() => {
-                                  navigator.clipboard.writeText(item.content)
+                                  navigator.clipboard.writeText(item.content ?? "")
                                   toast({ title: "Copied", description: "Prompt copied to clipboard." })
                                 }}
                               >
@@ -905,7 +927,7 @@ export default function ExtensionClient() {
                                 variant="default"
                                 className="h-7 text-xs px-2"
                                 onClick={() => {
-                                  window.parent.postMessage({ type: "INJECT_PROMPT", prompt: item.content }, TARGET_ORIGIN)
+                                  window.parent.postMessage({ type: "INJECT_PROMPT", prompt: item.content ?? "" }, TARGET_ORIGIN)
                                   toast({ title: "Sent", description: "Prompt injected into generator." })
                                 }}
                               >
@@ -982,6 +1004,10 @@ export default function ExtensionClient() {
                 deletePreset={deletePreset}
                 excludeInput={excludeInput}
                 setExcludeInput={setExcludeInput}
+                findInput={findInput}
+                setFindInput={setFindInput}
+                replaceInput={replaceInput}
+                setReplaceInput={setReplaceInput}
                 tagCountFilter={search.tagCountFilter}
                 setTagCountFilter={search.setTagCountFilter}
                 setAppliedTagCountFilter={search.setAppliedTagCountFilter}

@@ -173,6 +173,7 @@ import { useBackgroundSettings } from "@/hooks/use-background-settings"
 import { useGalleryViewState } from "@/hooks/use-gallery-view-state"
 import { useGlobalWeights } from "@/hooks/use-global-weights"
 import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
+import { useHistoryPosts } from "@/hooks/use-history-posts"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { usePostHog } from 'posthog-js/react'
 
@@ -449,6 +450,11 @@ export function PromptGallery() {
   const isMobile = useIsMobile()
   const posthog = usePostHog()
 
+  // History toggle — mirrors Favorites: switches the SAME masonry grid to show
+  // previously copied prompts instead of navigating to a separate page/route.
+  const [showHistory, setShowHistory] = useState(false)
+  const toggleShowHistory = useCallback(() => setShowHistory(prev => !prev), [])
+
   const [imageRateLimited, setImageRateLimited] = useState(false)
   const imageErrorCountRef = useRef(0)
   const IMAGE_ERROR_THRESHOLD = 8
@@ -486,6 +492,20 @@ export function PromptGallery() {
     }
   }, [favs.showFavorites, activeFavoriteFolder])
 
+  // History and Favorites are mutually exclusive views over the same masonry
+  // grid — enabling one turns the other off (toolbar already does this on
+  // click, this is a safety net for any other place either toggle changes).
+  useEffect(() => {
+    if (showHistory && favs.showFavorites) {
+      favs.toggleShowFavorites()
+    }
+    // Deliberately depend on individual `favs` members, not the whole object
+    // (same pattern as the favorites-folder-reset effect above) — `favs` is a
+    // fresh object every render, so depending on it directly would re-run this
+    // effect on every render instead of only when the relevant fields change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showHistory, favs.showFavorites, favs.toggleShowFavorites])
+
   // User Prefs UI state
   const {
     promptOptions, setPromptOptions,
@@ -513,6 +533,22 @@ export function PromptGallery() {
     STORAGE_KEYS.EXCLUDE_TAGS
   )
 
+  const [findInput, setFindInput] = usePersistentState(
+    "",
+    userPreferences.getFindReplaceFindInput,
+    userPreferences.setFindReplaceFindInput,
+    "findReplaceFind",
+    STORAGE_KEYS.FIND_REPLACE_FIND
+  )
+
+  const [replaceInput, setReplaceInput] = usePersistentState(
+    "",
+    userPreferences.getFindReplaceReplaceInput,
+    userPreferences.setFindReplaceReplaceInput,
+    "findReplaceReplace",
+    STORAGE_KEYS.FIND_REPLACE_REPLACE
+  )
+
   const [addInput, setAddInput] = usePersistentState(
     "",
     userPreferences.getAddTagsInput,
@@ -537,19 +573,30 @@ export function PromptGallery() {
 
   const {
     presets, setPresets,
-    history, setHistory,
+    history,
     previouslyCopiedPostIds,
     isPresetDialogOpen, setIsPresetDialogOpen,
     presetName, setPresetName,
     savePreset, loadPreset, deletePreset,
-    addToHistory, removeHistoryItem, clearHistory,
+    addToHistory,
   } = usePresetsAndHistory({ isClient: search.isClient, addInput, setAddInput, toast })
+
+  // History posts for the CURRENT provider only — same scoping Favorites uses
+  // (favs is scoped to search.booruProvider too), so switching providers in
+  // the toolbar switches both Favorites and History to that provider's data.
+  const historyForCurrentProvider = useMemo(
+    () => history.filter(item => item.provider === search.booruProvider),
+    [history, search.booruProvider]
+  )
+  const { posts: historyPosts, isLoading: isHistoryLoading, isValidating: isHistoryValidating } = useHistoryPosts(historyForCurrentProvider)
 
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
 
   // Debounce expensive inputs
   const debouncedAddInput = useDebounce(addInput, 500)
   const debouncedExcludeInput = useDebounce(excludeInput, 500)
+  const debouncedFindInput = useDebounce(findInput, 500)
+  const debouncedReplaceInput = useDebounce(replaceInput, 500)
 
   // Global Weights State — syncs across tabs/extension via localStorage
   const {
@@ -601,7 +648,19 @@ export function PromptGallery() {
   }, [])
 
   // Merge Mode Hook
-  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags)
+  // Find & Replace pairs (find[i] -> replace[i]), same pairing rule as useCardPrompt.
+  const mergeModeWordReplacements = useMemo(() => {
+    const finds = debouncedFindInput.split(',').map(t => t.trim()).filter(Boolean)
+    const replaces = debouncedReplaceInput.split(',').map(t => t.trim()).filter(Boolean)
+    const pairCount = Math.min(finds.length, replaces.length)
+    const rules: { find: string; replace: string }[] = []
+    for (let i = 0; i < pairCount; i++) {
+      rules.push({ find: finds[i], replace: replaces[i] })
+    }
+    return rules
+  }, [debouncedFindInput, debouncedReplaceInput])
+
+  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, mergeModeWordReplacements)
 
   // Extract stable mergeMode pieces to avoid dependency churn
   const mergeModeIsMergeMode = mergeMode.isMergeMode
@@ -790,7 +849,12 @@ export function PromptGallery() {
 
       setCopiedId(postId)
 
-      addToHistory({ content, postId, thumbnailUrl })
+      // Merge mode's combined prompt calls copyToClipboard with postId=0 (no
+      // single real post backs it) — skip history in that case since
+      // useHistoryPosts needs a real (provider, postId) pair to hydrate later.
+      if (postId) {
+        addToHistory({ postId, provider: search.booruProvider })
+      }
 
       toast({
         title: "Copied!",
@@ -909,6 +973,10 @@ export function PromptGallery() {
       favoriteFolderMap: favs.favoriteFolderMap,
     },
     activeFavoriteFolder,
+    history: {
+      showHistory,
+      historyPosts,
+    },
   })
 
   // Constant empty array reference for memoization
@@ -1012,6 +1080,8 @@ export function PromptGallery() {
       copyToClipboard={stableCopyToClipboard}
       excludeInput={debouncedExcludeInput}
       addInput={debouncedAddInput}
+      findInput={debouncedFindInput}
+      replaceInput={debouncedReplaceInput}
       includeCharacters={includeCharacters}
       optimizeTags={optimizeTags}
       smartTagExclusion={smartTagExclusion}
@@ -1041,7 +1111,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={showCategoryTagBadges}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1106,6 +1176,9 @@ export function PromptGallery() {
                     showFavorites={favs.showFavorites}
                     toggleShowFavorites={favs.toggleShowFavorites}
                     favoritesCount={favs.favorites.size}
+                    showHistory={showHistory}
+                    toggleShowHistory={toggleShowHistory}
+                    historyCount={historyForCurrentProvider.length}
                     isMergeMode={mergeMode.isMergeMode}
                     mergeModeType={mergeMode.mergeModeType}
                     disableMergeMode={mergeMode.disableMergeMode}
@@ -1135,10 +1208,6 @@ export function PromptGallery() {
                     addTag={addTag}
                     removeTag={removeTag}
                     resetBlacklist={resetBlacklist}
-                    history={history}
-                    removeHistoryItem={removeHistoryItem}
-                    copyToClipboard={copyToClipboard}
-                    clearHistory={clearHistory}
                     showSettings={showSettings}
                     setShowSettings={setShowSettings}
                   />
@@ -1160,6 +1229,10 @@ export function PromptGallery() {
                         deletePreset={deletePreset}
                         excludeInput={excludeInput}
                         setExcludeInput={setExcludeInput}
+                        findInput={findInput}
+                        setFindInput={setFindInput}
+                        replaceInput={replaceInput}
+                        setReplaceInput={setReplaceInput}
                         tagCountFilter={search.tagCountFilter}
                         setTagCountFilter={search.setTagCountFilter}
                         setAppliedTagCountFilter={search.setAppliedTagCountFilter}
@@ -1247,6 +1320,38 @@ export function PromptGallery() {
             }}
             onRemove={savedArtists.removeArtist}
           />
+
+          {showHistory && historyForCurrentProvider.length === 0 && (
+            <div className="text-center text-muted-foreground py-16">
+              No history yet for {search.booruProvider}. Copy a prompt from the gallery to see it here.
+            </div>
+          )}
+
+          {showHistory && historyForCurrentProvider.length > 0 && (isHistoryLoading || isHistoryValidating) && (historyPosts?.length ?? 0) < historyForCurrentProvider.length && (
+            <div className="w-full max-w-xs mx-auto py-3">
+              <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${historyForCurrentProvider.length > 0 ? Math.round(((historyPosts?.length ?? 0) / historyForCurrentProvider.length) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground text-center">
+                Loading history…{" "}
+                <span className="font-medium text-foreground">{historyPosts?.length ?? 0}</span>
+                {" / "}{historyForCurrentProvider.length}
+              </p>
+            </div>
+          )}
+
+          {showHistory && historyForCurrentProvider.length > 0 && !isHistoryLoading && !isHistoryValidating && (historyPosts?.length ?? 0) < historyForCurrentProvider.length && (
+            <div className="text-center text-muted-foreground py-8 px-4">
+              <p>
+                {historyForCurrentProvider.length - (historyPosts?.length ?? 0)} of your history{" "}
+                {historyForCurrentProvider.length - (historyPosts?.length ?? 0) === 1 ? "prompt" : "prompts"} could not
+                be loaded — the source post may have been deleted or is temporarily unavailable.
+              </p>
+            </div>
+          )}
 
           {folderMismatch.loading > 0 && filteredPosts.length > 0 && (() => {
             // Loading feedback while remaining favorites stream in (batched,

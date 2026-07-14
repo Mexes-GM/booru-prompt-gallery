@@ -2,6 +2,7 @@
 import { DEFAULT_BLACKLIST } from '@/lib/constants'
 import { generateId } from '@/lib/utils/id-generator'
 import { broadcastSettingChange } from '@/lib/settings-bridge'
+import type { BooruProvider } from '@/lib/booru/types'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -69,6 +70,8 @@ export const STORAGE_KEYS = {
   // New keys for audit fix
   ADD_TAGS: 'add-tags-input',
   EXCLUDE_TAGS: 'exclude-tags-input',
+  FIND_REPLACE_FIND: 'find-replace-find-input',
+  FIND_REPLACE_REPLACE: 'find-replace-replace-input',
   PROMPT_OPTIONS: 'prompt-options',
   VIEW_MODE: 'view-mode',
   CARD_SCALE: 'card-scale',
@@ -96,9 +99,12 @@ export const STORAGE_KEYS = {
 
 export interface HistoryItem {
   id: string
-  content: string
+  postId: number
+  provider: BooruProvider
   timestamp: number
-  postId?: number
+  // Kept as optional read-only fallbacks for items written before the
+  // provider field existed. Never written by addToHistory anymore.
+  content?: string
   thumbnailUrl?: string
 }
 
@@ -197,8 +203,23 @@ export const userPreferences = {
   setOrder: (order: 'popular' | 'recent' | 'random') =>
     storage.set(STORAGE_KEYS.ORDER, order),
 
-  getHistory: (): HistoryItem[] =>
-    storage.get(STORAGE_KEYS.HISTORY, []),
+  // Reads history and, on the first read after this change, migrates it in
+  // place: legacy items (pre-`provider` field) that cannot be reconstructed
+  // are silently dropped — same pattern used by Favorites for corrupt/legacy
+  // data (see use-favorites-core.ts migrateFromLocalStorage / favorites-logic.ts
+  // favKey parsing). Never guesses a provider. The normalized result is
+  // persisted back so this filter only runs once per user.
+  getHistory: (): HistoryItem[] => {
+    const raw = storage.get<HistoryItem[]>(STORAGE_KEYS.HISTORY, [])
+    const hasLegacyItems = raw.some(item => !item.provider)
+    if (!hasLegacyItems) return raw
+
+    const migrated = raw.filter(
+      (item): item is HistoryItem => typeof item.provider === 'string' && item.provider.length > 0
+    )
+    storage.set(STORAGE_KEYS.HISTORY, migrated)
+    return migrated
+  },
 
   getAddTagsPresets: (): TagPreset[] =>
     storage.get(STORAGE_KEYS.ADD_TAGS_PRESETS, []),
@@ -229,8 +250,10 @@ export const userPreferences = {
       id: generateId(),
       timestamp: Date.now()
     }
-    // Add to beginning, limit to last 100 items
-    const newHistory = [newItem, ...history].slice(0, 100)
+    // Add to beginning, limit to last 500 items (raised from 100 now that
+    // History is a full navigable page split across provider tabs, not just
+    // a quick sidebar sheet).
+    const newHistory = [newItem, ...history].slice(0, 500)
     storage.set(STORAGE_KEYS.HISTORY, newHistory)
     return newHistory
   },
@@ -277,6 +300,21 @@ export const userPreferences = {
 
   setExcludeTagsInput: (value: string) =>
     storage.set(STORAGE_KEYS.EXCLUDE_TAGS, value),
+
+  // Find & Replace: two comma-separated lists paired by index (find[i] -> replace[i]).
+  // See lib/cleanPrompt.ts applyWordReplacements for the matching rule
+  // (exact match against the parenthesized content of a tag only).
+  getFindReplaceFindInput: (): string =>
+    storage.get(STORAGE_KEYS.FIND_REPLACE_FIND, ""),
+
+  setFindReplaceFindInput: (value: string) =>
+    storage.set(STORAGE_KEYS.FIND_REPLACE_FIND, value),
+
+  getFindReplaceReplaceInput: (): string =>
+    storage.get(STORAGE_KEYS.FIND_REPLACE_REPLACE, ""),
+
+  setFindReplaceReplaceInput: (value: string) =>
+    storage.set(STORAGE_KEYS.FIND_REPLACE_REPLACE, value),
 
   getViewMode: (): 'grid' | 'list' =>
     storage.get(STORAGE_KEYS.VIEW_MODE, 'grid'),

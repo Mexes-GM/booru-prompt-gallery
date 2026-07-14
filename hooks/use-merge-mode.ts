@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory, classifyTags, classifyTag } from '@/lib/tag-classifier'
 import { processBackgroundTags, type BackgroundMode } from '@/lib/background-detector'
-import { META_TAGS_SET, normalize } from '@/lib/cleanPrompt'
+import { META_TAGS_SET, normalize, applyWordReplacementsToList, type WordReplacementRule } from '@/lib/cleanPrompt'
 
 // Helper: filter meta tags from raw tag array
 const filterMetaTags = (tags: string[]) =>
@@ -29,7 +29,8 @@ export function useMergeMode(
     addedTagsInput: string = "",
     tagOverrides: Record<string, string> = {},
     backgroundMode: BackgroundMode = 'keep',
-    simpleBackgroundReplacementTags: string = "simple background, white background"
+    simpleBackgroundReplacementTags: string = "simple background, white background",
+    wordReplacements: WordReplacementRule[] = []
 ) {
     const [isMergeMode, setIsMergeMode] = useState(false)
     const [mergeModeType, setMergeModeType] = useState<MergeModeType>('merge')
@@ -87,10 +88,13 @@ export function useMergeMode(
                 // New selection
                 // New selection
                 const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(Boolean)
-                const charTags = post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : []
+                const charTags = applyWordReplacementsToList(
+                    post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : [],
+                    wordReplacements,
+                )
 
                 // Prioritize character tags, filter meta tags from raw
-                const tags = Array.from(new Set([...charTags, ...filterMetaTags(rawTags)]))
+                const tags = Array.from(new Set([...charTags, ...applyWordReplacementsToList(filterMetaTags(rawTags), wordReplacements)]))
 
                 const classified = classifyTags(tags, tagOverrides, charTags) // Pass character tags to be forced into appearance
 
@@ -102,7 +106,7 @@ export function useMergeMode(
             }
             return next
         })
-    }, [tagOverrides])
+    }, [tagOverrides, wordReplacements])
 
     const removePost = useCallback((postId: number) => {
         setSelectedPosts(prev => {
@@ -144,8 +148,11 @@ export function useMergeMode(
         if (mergeModeType === 'merge') {
             pickedPosts.forEach((post, i) => {
                 const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(Boolean)
-                const charTags = post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : []
-                const tags = Array.from(new Set([...charTags, ...filterMetaTags(rawTags)]))
+                const charTags = applyWordReplacementsToList(
+                    post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : [],
+                    wordReplacements,
+                )
+                const tags = Array.from(new Set([...charTags, ...applyWordReplacementsToList(filterMetaTags(rawTags), wordReplacements)]))
                 const classified = classifyTags(tags, tagOverrides, charTags)
 
                 // Force coverage: the first `categories.length` posts get assigned `categories[i]`.
@@ -180,8 +187,11 @@ export function useMergeMode(
             // In variations mode, assign random allowed categories to each picked post
             pickedPosts.forEach(post => {
                 const rawTags = post.tag_string.split(' ').map(t => t.trim()).filter(Boolean)
-                const charTags = post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : []
-                const tags = Array.from(new Set([...charTags, ...filterMetaTags(rawTags)]))
+                const charTags = applyWordReplacementsToList(
+                    post.tag_string_character ? post.tag_string_character.split(' ').map(t => t.trim()).filter(Boolean) : [],
+                    wordReplacements,
+                )
+                const tags = Array.from(new Set([...charTags, ...applyWordReplacementsToList(filterMetaTags(rawTags), wordReplacements)]))
                 const classified = classifyTags(tags, tagOverrides, charTags)
 
                 const numCatsToPick = Math.floor(Math.random() * categories.length) + 1
@@ -215,7 +225,7 @@ export function useMergeMode(
         }
 
         setSelectedPosts(next)
-    }, [mergeModeType, tagOverrides, randomSettings, selectedPosts])
+    }, [mergeModeType, tagOverrides, randomSettings, selectedPosts, wordReplacements])
 
     const [excludedTags, setExcludedTags] = useState<Set<string>>(new Set())
 

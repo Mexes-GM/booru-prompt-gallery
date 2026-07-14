@@ -26,6 +26,17 @@ const FALLBACK_META_TAGS = [
   "request", "commentary", "translated", "highres", "absurdres", "translated"
 ];
 
+export interface WordReplacementRule {
+  find: string
+  replace: string
+}
+
+/** A replacement that was actually applied while cleaning a specific prompt. */
+export interface AppliedWordReplacement {
+  from: string
+  to: string
+}
+
 export interface CleanPromptOptions {
   includeCharacters?: boolean
   includeCopyrights?: boolean
@@ -42,6 +53,22 @@ export interface CleanPromptOptions {
   randomBackgroundIncludeGradients?: boolean
   detailedBackgroundsList?: string[][]
   backgroundSeed?: number
+
+  /**
+   * "Find & Replace" rules for outdated booru tag renames (e.g. Danbooru
+   * renamed "jinx (league of legends)" -> "jinx (league)", but image
+   * generation models were trained on the old tag). Matching is restricted to
+   * the exact content between parentheses of a tag ("personaje (serie)"
+   * pattern) to avoid false positives like "league of champions" mutating
+   * into "league of legends of champions" from a loose substring match.
+   */
+  wordReplacements?: WordReplacementRule[]
+  /**
+   * Optional out-parameter: when provided, every replacement actually applied
+   * while cleaning this prompt is pushed here. Lets callers (e.g. the UI)
+   * know which tags changed without altering cleanPrompt's return type.
+   */
+  onWordReplacementsApplied?: (applied: AppliedWordReplacement[]) => void
 }
 
 // --------------- Utilities ---------------
@@ -91,6 +118,103 @@ function withNormalizedVariants(list: string[]): Set<string> {
     set.add(under)
   }
   return set
+}
+
+// Matches a tag of the form "something (content)" and captures the prefix
+// (everything before the opening paren, trimmed) and the parenthesized content.
+const PARENTHESIZED_TAG_RE = /^(.*?)\(([^()]+)\)\s*$/
+
+/**
+ * Strips a single pair of wrapping parentheses, if present, so the user can
+ * type either "league" or "(league)" in the Find/Replace fields and get the
+ * same result — matching how the tag actually looks on the booru.
+ */
+function stripWrappingParens(s: string): string {
+  const trimmed = s.trim()
+  const match = trimmed.match(/^\(([^()]*)\)$/)
+  return match ? match[1].trim() : trimmed
+}
+
+/**
+ * Applies "Find & Replace" rules to a single already-normalized tag.
+ *
+ * Two matching modes, both restricted to *exact* matches (never a loose
+ * substring) to avoid corrupting unrelated tags:
+ *
+ * 1. Parenthesized tags ("character (series)" pattern): the rule matches the
+ *    exact content between parentheses. E.g. find="league" only turns
+ *    "jinx (league)" into "jinx (league of legends)" — it does NOT touch
+ *    "league of champions" (no parentheses), which a loose substring match
+ *    would have corrupted into "league of legends of champions".
+ * 2. Plain tags (no parentheses): the rule matches the exact, whole tag only.
+ *    E.g. find="long hair" only replaces the standalone tag "long hair" with
+ *    "short hair" — it never touches "long hair ribbon" or "very long hair",
+ *    which a substring match would have mangled.
+ */
+function applyWordReplacements(
+  tag: string,
+  rules: { find: string; replace: string }[],
+): { result: string; applied: AppliedWordReplacement | null } {
+  if (!rules.length) return { result: tag, applied: null }
+
+  const parenMatch = tag.match(PARENTHESIZED_TAG_RE)
+
+  if (parenMatch) {
+    const prefix = parenMatch[1]
+    const content = normalize(parenMatch[2])
+
+    for (const rule of rules) {
+      const find = normalize(stripWrappingParens(rule.find))
+      if (!find) continue
+      if (content === find) {
+        const replace = normalize(stripWrappingParens(rule.replace))
+        const result = `${prefix}(${replace})`.trim()
+        if (result === tag) return { result: tag, applied: null }
+        return { result, applied: { from: tag, to: result } }
+      }
+    }
+    return { result: tag, applied: null }
+  }
+
+  // Plain tag (no parentheses): match the whole tag by exact equality only.
+  const whole = normalize(tag)
+  for (const rule of rules) {
+    const find = normalize(rule.find)
+    if (!find) continue
+    if (whole === find) {
+      const replace = normalize(rule.replace)
+      if (replace === whole) return { result: tag, applied: null }
+      return { result: replace, applied: { from: tag, to: replace } }
+    }
+  }
+
+  return { result: tag, applied: null }
+}
+
+/**
+ * Applies `applyWordReplacements` to a whole list of tags, collecting every
+ * replacement that was actually made (for UI indicators) via `onApplied`.
+ */
+export function applyWordReplacementsToList(
+  tags: string[],
+  rules: { find: string; replace: string }[] | undefined,
+  onApplied?: (applied: AppliedWordReplacement[]) => void,
+): string[] {
+  if (!rules || rules.length === 0) return tags
+
+  const validRules = rules.filter((r) => r.find && r.find.trim().length > 0)
+  if (validRules.length === 0) return tags
+
+  const appliedList: AppliedWordReplacement[] = []
+  const result = tags.map((tag) => {
+    const { result: newTag, applied } = applyWordReplacements(tag, validRules)
+    if (applied) appliedList.push(applied)
+    return newTag
+  })
+
+  if (appliedList.length > 0) onApplied?.(appliedList)
+
+  return result
 }
 
 export function parseTagList(input: string): string[] {
@@ -770,8 +894,28 @@ export function cleanPrompt(
   // Parse inputs
   let allTags = parseTagList(tagString)
   const artistTagsSet = new Set(parseTagList(artistTags).map((t) => normalize(t)))
-  const characterTagsArray = parseTagList(characterTags)
-  const copyrightTagsArray = parseTagList(copyrightTags)
+
+  // Collects every "Find & Replace" hit across all tag sources for this call,
+  // reported to the caller via options.onWordReplacementsApplied.
+  const wordReplacementsApplied: AppliedWordReplacement[] = []
+  const collectReplacements = (applied: AppliedWordReplacement[]) => {
+    wordReplacementsApplied.push(...applied)
+  }
+
+  // "Find & Replace" targets the "character (series)" pattern, which lives in
+  // characterTags/copyrightTags (content tags with parentheses are filtered
+  // out below by `invalidBracket`), so it's applied right after parsing/
+  // normalizing those two sources, before classification/exclusion run.
+  const characterTagsArray = applyWordReplacementsToList(
+    parseTagList(characterTags).map((t) => normalize(t)),
+    options?.wordReplacements,
+    collectReplacements,
+  )
+  const copyrightTagsArray = applyWordReplacementsToList(
+    parseTagList(copyrightTags).map((t) => normalize(t)),
+    options?.wordReplacements,
+    collectReplacements,
+  )
   
   // Use meta tags from API if provided (via options), otherwise fallback to curated list
   const apiMetaTags = options?.metaTags ? parseTagList(options.metaTags) : []
@@ -841,9 +985,13 @@ export function cleanPrompt(
   })
 
   // Normalize and apply user exclusions
-  const formatted = filteredTags
-    .map((t) => normalize(t))
-    .filter((t) => !userExcludeSet.has(t))
+  const formatted = applyWordReplacementsToList(
+    filteredTags
+      .map((t) => normalize(t))
+      .filter((t) => !userExcludeSet.has(t)),
+    options?.wordReplacements,
+    collectReplacements,
+  )
 
   const processed = optimizeAll ? optimizeTags(formatted) : formatted
 
@@ -892,10 +1040,14 @@ export function cleanPrompt(
   const allFinal = new Set<string>()
 
   // 1. User Added Tags
-  const addedTagsProcessed = (options?.addedTags || [])
-    // .flatMap((t) => parseTagList(t)) // Don't split spaces in added tags (fixes "red eyes" -> "red, eyes")
-    .map((t) => normalize(t))
-    .filter((t) => !userExcludeSet.has(t))
+  const addedTagsProcessed = applyWordReplacementsToList(
+    (options?.addedTags || [])
+      // .flatMap((t) => parseTagList(t)) // Don't split spaces in added tags (fixes "red eyes" -> "red, eyes")
+      .map((t) => normalize(t))
+      .filter((t) => !userExcludeSet.has(t)),
+    options?.wordReplacements,
+    collectReplacements,
+  )
 
   for (const t of addedTagsProcessed) allFinal.add(t)
 
@@ -917,6 +1069,10 @@ export function cleanPrompt(
 
   const shouldEscape = options?.escapeOutput !== false
   const addedTagsSet = new Set(addedTagsProcessed)
+
+  if (wordReplacementsApplied.length > 0) {
+    options?.onWordReplacementsApplied?.(wordReplacementsApplied)
+  }
 
   return Array.from(allFinal)
     .map((t) => (shouldEscape && !addedTagsSet.has(t) ? escapeParentheses(t) : t))

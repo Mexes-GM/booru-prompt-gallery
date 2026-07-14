@@ -19,6 +19,7 @@ import {
     GraduationCap,
     AlertCircle,
     Sliders,
+    Replace,
     Users,
     Loader2,
     Tag,
@@ -138,6 +139,10 @@ interface MasonryItemProps {
     copyToClipboard: (text: string, id: number, isPrompt: boolean, thumb?: string) => Promise<void>
     excludeInput: string
     addInput: string
+    /** "Find" side of the Find & Replace list (comma-separated, paired by index with replaceInput). */
+    findInput?: string
+    /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput). */
+    replaceInput?: string
     includeCharacters: boolean
     optimizeTags: boolean
     smartTagExclusion?: boolean
@@ -189,6 +194,8 @@ export const MasonryItem = memo(function MasonryItem({
     copyToClipboard,
     excludeInput,
     addInput,
+    findInput = "",
+    replaceInput = "",
     includeCharacters,
     optimizeTags,
     smartTagExclusion = true,
@@ -248,11 +255,15 @@ export const MasonryItem = memo(function MasonryItem({
         classifiedTags,
         hasActiveOptions,
         conflictingTags,
+        hasReplacements,
+        replacedTags,
     } = useCardPrompt({
         post,
         tagCounts,
         excludeInput,
         addInput,
+        findInput,
+        replaceInput,
         includeCharacters,
         optimizeTags,
         smartTagExclusion,
@@ -433,6 +444,27 @@ export const MasonryItem = memo(function MasonryItem({
                                    transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
                                 >
                                     <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
+                                </motion.div>
+                            </motion.div>
+                        </div>
+                    )}
+                    {hasReplacements && (
+                        <div
+                            className="absolute top-9 right-2 z-20 pointer-events-none"
+                            aria-label={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
+                            title={replacedTags.map(r => `${r.from} → ${r.to}`).join('\n')}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm"
+                            >
+                                <motion.div
+                                   animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
+                                   transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                                >
+                                    <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
                                 </motion.div>
                             </motion.div>
                         </div>
@@ -878,6 +910,27 @@ export const MasonryItem = memo(function MasonryItem({
                                 </motion.div>
                             </div>
                         )}
+                        {hasReplacements && (
+                            <div
+                                className="absolute top-9 left-1.5 z-20 pointer-events-none"
+                                aria-label={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
+                                title={replacedTags.map(r => `${r.from} → ${r.to}`).join('\n')}
+                            >
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm"
+                                >
+                                    <motion.div
+                                       animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
+                                       transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                                    >
+                                        <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
+                                    </motion.div>
+                                </motion.div>
+                            </div>
+                        )}
                         <div className="absolute top-1 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                             <SaveFavoriteButton
                                 folders={folders}
@@ -1206,6 +1259,8 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.isSelected !== next.isSelected) return false
     if (prev.excludeInput !== next.excludeInput) return false
     if (prev.addInput !== next.addInput) return false
+    if (prev.findInput !== next.findInput) return false
+    if (prev.replaceInput !== next.replaceInput) return false
     if (prev.includeCharacters !== next.includeCharacters) return false
     if (prev.optimizeTags !== next.optimizeTags) return false
     if (prev.smartTagExclusion !== next.smartTagExclusion) return false

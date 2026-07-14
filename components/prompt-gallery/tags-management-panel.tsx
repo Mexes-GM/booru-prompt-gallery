@@ -23,7 +23,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { SmoothFilterSlider } from "@/components/ui/smooth-filter-slider"
-import { Check, ChevronDown, Save, Trash2, X } from "lucide-react"
+import { Check, ChevronDown, Save, Trash2, X, Replace } from "lucide-react"
 import type { TagPreset } from "@/lib/storage"
 
 interface TagsManagementPanelProps {
@@ -40,6 +40,13 @@ interface TagsManagementPanelProps {
 
   excludeInput: string
   setExcludeInput: (value: string) => void
+
+  /** "Find" side of the Find & Replace list (comma-separated, paired by index with replaceInput/setReplaceInput). */
+  findInput: string
+  setFindInput: (value: string) => void
+  /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput/setFindInput). */
+  replaceInput: string
+  setReplaceInput: (value: string) => void
 
   tagCountFilter: string
   setTagCountFilter: (value: string) => void
@@ -80,6 +87,10 @@ export function TagsManagementPanel({
   deletePreset,
   excludeInput,
   setExcludeInput,
+  findInput,
+  setFindInput,
+  replaceInput,
+  setReplaceInput,
   tagCountFilter,
   setTagCountFilter,
   setAppliedTagCountFilter,
@@ -213,6 +224,56 @@ export function TagsManagementPanel({
                 <X className="h-2.5 w-2.5" />
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Find & Replace */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="find-input" className="text-xs font-semibold">Find &amp; Replace</Label>
+            <span className="text-[10px] text-muted-foreground">(Exact tag or inside parentheses)</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="relative">
+              <DebouncedInput
+                id="find-input"
+                value={findInput}
+                onChange={setFindInput}
+                debounceTime={400}
+                placeholder="Find: league, long hair..."
+                className="h-8 text-xs bg-background/50 pr-7"
+                aria-label="Exact tags or parenthesized content to find"
+              />
+              {findInput && (
+                <button
+                  type="button"
+                  onClick={() => setFindInput("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </div>
+            <div className="relative">
+              <DebouncedInput
+                id="replace-input"
+                value={replaceInput}
+                onChange={setReplaceInput}
+                debounceTime={400}
+                placeholder="Replace: league of legends, short hair..."
+                className="h-8 text-xs bg-background/50 pr-7"
+                aria-label="Replacement values, paired by position with the Find list"
+              />
+              {replaceInput && (
+                <button
+                  type="button"
+                  onClick={() => setReplaceInput("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -422,6 +483,66 @@ export function TagsManagementPanel({
                   <X className="h-3 w-3" />
                 </button>
               )}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="find-input-full" className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              <InfoTooltip
+                title="Find & Replace"
+                description="A general-purpose find & replace for your prompts. Matching is always EXACT — either the full content inside parentheses, or the full plain tag — never a partial substring, so unrelated tags like 'league of champions' or 'very long hair' are never corrupted. Useful for all kinds of corrections: fixing outdated booru tag renames (e.g. Danbooru changed 'jinx (league of legends)' to 'jinx (league)', but image generation models were trained on the old tag), swapping plain tags like 'long hair' for 'short hair', or any other tag substitution you need. You can type the parentheses or not — 'league' and '(league)' both work. Enter comma-separated lists in both fields, paired by position: 1st Find with 1st Replace, 2nd with 2nd, etc."
+                visual={
+                  <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
+                    <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                        <span className="text-muted-foreground font-medium min-w-[70px]">Find:</span>
+                        <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 px-1.5 py-0.5 rounded">league, long hair</span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                        <span className="text-muted-foreground font-medium min-w-[70px]">Replace:</span>
+                        <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 px-1.5 py-0.5 rounded">league of legends, short hair</span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                        <span className="text-muted-foreground font-medium min-w-[70px]">Original:</span>
+                        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">jinx (league), long hair</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-1 px-1">
+                      <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
+                      <div className="flex flex-wrap gap-1">
+                        <span className="bg-amber-500/10 border border-amber-500/20 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Replace className="w-3 h-3" /> jinx (league of legends)</span>
+                        <span className="bg-amber-500/10 border border-amber-500/20 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Replace className="w-3 h-3" /> short hair</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-muted-foreground font-medium min-w-[70px]">Untouched:</span>
+                      <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">league of champions, very long hair</span>
+                    </div>
+                  </div>
+                }
+              >
+                Find &amp; Replace
+              </InfoTooltip>
+              <span className="text-[10px] font-normal text-muted-foreground/70">(Exact tag or inside parentheses)</span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="relative">
+                <DebouncedInput id="find-input-full" value={findInput} onChange={setFindInput} debounceTime={400} placeholder="Find: league, long hair..." className="h-9 text-sm bg-background/50" aria-label="Exact tags or parenthesized content to find" />
+                {findInput && (
+                  <button type="button" onClick={() => setFindInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-6 w-6 rounded-full hover:bg-muted" aria-label="Clear find list">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <DebouncedInput id="replace-input-full" value={replaceInput} onChange={setReplaceInput} debounceTime={400} placeholder="Replace: league of legends, short hair..." className="h-9 text-sm bg-background/50" aria-label="Replacement values, paired by position with the Find list" />
+                {replaceInput && (
+                  <button type="button" onClick={() => setReplaceInput("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-6 w-6 rounded-full hover:bg-muted" aria-label="Clear replace list">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <SmoothFilterSlider

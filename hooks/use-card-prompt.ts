@@ -8,7 +8,7 @@ import {
   removeLoRaTags as removeLoRaTagsUtil,
   removeQualityTags as removeQualityTagsUtil,
 } from "@/lib/api-client"
-import { cleanPrompt } from "@/lib/cleanPrompt"
+import { cleanPrompt, type AppliedWordReplacement } from "@/lib/cleanPrompt"
 import { type BackgroundMode, processBackgroundTags } from "@/lib/background-detector"
 import { applyWeights } from "@/lib/weight-utils"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
@@ -19,6 +19,10 @@ export interface UseCardPromptArgs {
   tagCounts?: Record<string, number>
   excludeInput: string
   addInput: string
+  /** "Find" side of the Find & Replace list (comma-separated, paired by index with replaceInput). */
+  findInput?: string
+  /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput). */
+  replaceInput?: string
   includeCharacters: boolean
   optimizeTags: boolean
   smartTagExclusion?: boolean
@@ -63,6 +67,8 @@ export function useCardPrompt({
   tagCounts,
   excludeInput,
   addInput,
+  findInput = "",
+  replaceInput = "",
   includeCharacters,
   optimizeTags,
   smartTagExclusion = true,
@@ -80,6 +86,20 @@ export function useCardPrompt({
 }: UseCardPromptArgs) {
   const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
   const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
+
+  // Find & Replace: "find, find2" / "replace, replace2" paired by index.
+  // Extra entries on either side (mismatched list lengths) are dropped rather
+  // than guessed at, since a wrong pairing could silently corrupt tags.
+  const wordReplacements = useMemo(() => {
+    const finds = findInput.split(',').map(t => t.trim()).filter(Boolean)
+    const replaces = replaceInput.split(',').map(t => t.trim()).filter(Boolean)
+    const pairCount = Math.min(finds.length, replaces.length)
+    const rules: { find: string; replace: string }[] = []
+    for (let i = 0; i < pairCount; i++) {
+      rules.push({ find: finds[i], replace: replaces[i] })
+    }
+    return rules
+  }, [findInput, replaceInput])
 
   // Check if this is an Aibooru post with prompt
   const isAiPost = isAibooruPost(post)
@@ -104,11 +124,12 @@ export function useCardPrompt({
       exclude: excludeList, addedTags: [] as string[], tagOverrides,
       backgroundMode: 'keep' as BackgroundMode, simpleBackgroundReplacementTags,
       escapeOutput: false, metaTags: post.tag_string_meta,
+      wordReplacements,
     }
     return aiPrompt
       ? cleanPrompt(aiPrompt, "", "", "", sharedOpts)
       : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, sharedOpts)
-  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, simpleBackgroundReplacementTags])
+  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, simpleBackgroundReplacementTags, wordReplacements])
 
   // ---- Background processing helper (applied on top of sharedCleaned) ----
   const applyBackground = useCallback((content: string) => {
@@ -137,7 +158,10 @@ export function useCardPrompt({
   // baseContent: full cleanPrompt with conflict-resolved addedTags.
   // Must go through cleanPrompt so addedTags get normalized, exclusion-filtered,
   // and deduplicated against the rest of the output.
-  const baseContent = useMemo(() => {
+  // replacedTags is captured alongside it (same computation) so the "Find &
+  // Replace" badge reflects exactly what ended up in the final prompt.
+  const { baseContent, replacedTags } = useMemo(() => {
+    let captured: AppliedWordReplacement[] = []
     const opts = {
       includeCharacters, includeCopyrights: false, optimizeTags,
       exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides,
@@ -145,11 +169,16 @@ export function useCardPrompt({
       randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
       backgroundSeed: post.id,
       metaTags: post.tag_string_meta,
+      wordReplacements,
+      onWordReplacementsApplied: (applied: AppliedWordReplacement[]) => { captured = applied },
     }
-    return aiPrompt
+    const content = aiPrompt
       ? cleanPrompt(aiPrompt, "", "", "", opts)
       : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, opts)
-  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, post.id, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList])
+    return { baseContent: content, replacedTags: captured }
+  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, post.id, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, wordReplacements])
+
+  const hasReplacements = replacedTags.length > 0
 
   const displayContent = useMemo(() => {
     if (isGlobalWeightsEnabled && baseContent) {
@@ -186,19 +215,21 @@ export function useCardPrompt({
         exclude: excludeList, tagOverrides,
         backgroundMode: 'keep', simpleBackgroundReplacementTags,
         escapeOutput: false, metaTags: post.tag_string_meta,
+        wordReplacements,
       })
       : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, {
         includeCharacters, includeCopyrights: false, optimizeTags: false,
         exclude: excludeList, tagOverrides,
         backgroundMode: 'keep', simpleBackgroundReplacementTags,
         escapeOutput: false, metaTags: post.tag_string_meta,
+        wordReplacements,
       })
     const teachTags = raw ? raw.split(',').map(t => t.trim()) : []
     const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim()
     const charTagsSet = new Set(characterTagsArray.map(normalizeForMatch))
     const filteredTags = teachTags.filter(t => !charTagsSet.has(normalizeForMatch(t)))
     return classifyTags(filteredTags, tagOverrides, [])
-  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags, characterTagsArray])
+  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags, characterTagsArray, wordReplacements])
 
   // Pre-classify tags for the dropdown counts (USING PURE DISPLAY CONTENT)
   // This ensures that "added tags" don't inflate the category counts
@@ -256,5 +287,7 @@ export function useCardPrompt({
     classifiedTags,
     hasActiveOptions,
     conflictingTags: conflictResolution.conflictingTags,
+    replacedTags,
+    hasReplacements,
   }
 }
