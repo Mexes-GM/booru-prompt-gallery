@@ -13,6 +13,18 @@ interface FavoritesProgress {
 interface ResultsStatesProps {
   filteredPostsLength: number
   showFavorites: boolean
+  /**
+   * True while the History view is active. History's own posts (`historyPosts`)
+   * never paginate — the InfiniteScrollTrigger below is wired to the REGULAR
+   * search's `loadMore`, which fetches more gallery results into
+   * `search.allPosts`. Without this gate, scrolling while History is open kept
+   * firing normal-search pagination in the background: every load pulled fresh
+   * posts into `search.allPosts`, and if one of those ids happened to already
+   * be in History (e.g. the user was mid-copying from the gallery), the two
+   * post objects for the same id collided downstream in MasonryGrid, producing
+   * the duplicated/looping card.
+   */
+  showHistory: boolean
   activeFavoriteFolder: string | null | 'all' | 'artists'
 
   // search
@@ -49,6 +61,7 @@ interface ResultsStatesProps {
 export function ResultsStates({
   filteredPostsLength,
   showFavorites,
+  showHistory,
   activeFavoriteFolder,
   isLoading,
   isLoadingMore,
@@ -69,7 +82,7 @@ export function ResultsStates({
   return (
     <>
       {/* Load More / States */}
-      {filteredPostsLength > 0 && !showFavorites && activeFavoriteFolder !== 'artists' && (
+      {filteredPostsLength > 0 && !showFavorites && !showHistory && activeFavoriteFolder !== 'artists' && (
         <div className="text-center pb-8">
           {sessionCapReached ? (
             <div className="space-y-1 max-w-xs mx-auto">
@@ -136,7 +149,7 @@ export function ResultsStates({
       {/* Loading / Empty States */}
       {/* Show progress bar only on initial load (no posts visible yet).
           During Load More, the button handles its own loading state. */}
-      {((isLoading && filteredPostsLength === 0 && !showFavorites) || (showFavorites && (favsIsLoading || favsIsRefreshing) && filteredPostsLength === 0 && activeFavoriteFolder !== 'artists')) && (
+      {((isLoading && filteredPostsLength === 0 && !showFavorites && !showHistory) || (showFavorites && (favsIsLoading || favsIsRefreshing) && filteredPostsLength === 0 && activeFavoriteFolder !== 'artists')) && (
         <div className="text-center py-12">
           {showFavorites && favoritesProgress.total > 0 ? (
             <>
@@ -194,7 +207,7 @@ export function ResultsStates({
         </div>
       )}
 
-      {!isLoading && (!favsIsLoading && !favsIsRefreshing) && filteredPostsLength === 0 && activeFavoriteFolder !== 'artists' && !favoritesError && !postsError && (
+      {!isLoading && (!favsIsLoading && !favsIsRefreshing) && filteredPostsLength === 0 && !showHistory && activeFavoriteFolder !== 'artists' && !favoritesError && !postsError && (
         <>
           {showFavorites ? (
             <div className="text-center py-12 px-4">

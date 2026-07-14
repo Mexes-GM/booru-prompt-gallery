@@ -16,7 +16,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog"
-import { Heart, FileCheck2, Dices, Sparkles } from "lucide-react"
+import { Heart, History, FileCheck2, Dices, Sparkles } from "lucide-react"
 import type { BooruProvider } from "@/lib/api-client"
 import { userPreferences } from "@/lib/storage"
 import { shouldConfirmProvider, ADULT_ONLY_PROVIDER } from "@/lib/nsfw-consent"
@@ -40,6 +40,9 @@ interface GalleryToolbarProps {
   showFavorites: boolean
   toggleShowFavorites: () => void
   favoritesCount: number
+  showHistory: boolean
+  toggleShowHistory: () => void
+  historyCount: number
   isMergeMode: boolean
   mergeModeType: 'merge' | 'variations'
   disableMergeMode: () => void
@@ -62,6 +65,9 @@ export function GalleryToolbar({
   showFavorites,
   toggleShowFavorites,
   favoritesCount,
+  showHistory,
+  toggleShowHistory,
+  historyCount,
   isMergeMode,
   mergeModeType,
   disableMergeMode,
@@ -81,6 +87,9 @@ export function GalleryToolbar({
     setBooruProvider(p)
     if (showFavorites) {
       toggleShowFavorites()
+    }
+    if (showHistory) {
+      toggleShowHistory()
     }
     onProviderChange(p)
     posthog.capture('provider_changed', { provider: p })
@@ -113,9 +122,9 @@ export function GalleryToolbar({
               type="button"
               variant="ghost"
               onClick={() => handleSelectProvider(p)}
-              className={`relative h-11 sm:h-8 text-sm px-3 sm:px-4 min-w-fit flex-1 sm:flex-none whitespace-nowrap ${!showFavorites && booruProvider === p ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
+              className={`relative h-11 sm:h-8 text-sm px-3 sm:px-4 min-w-fit flex-1 sm:flex-none whitespace-nowrap ${!showFavorites && !showHistory && booruProvider === p ? "text-foreground hover:bg-transparent" : "text-muted-foreground hover:text-foreground"}`}
             >
-              {!showFavorites && booruProvider === p && (
+              {!showFavorites && !showHistory && booruProvider === p && (
                 <motion.div
                   layoutId="activeProvider"
                   className="absolute inset-0 bg-background shadow-sm rounded-md"
@@ -151,6 +160,7 @@ export function GalleryToolbar({
                 type="button"
                 onClick={() => {
                   if (isMergeMode) disableMergeMode()
+                  if (showHistory) toggleShowHistory()
                   toggleShowFavorites()
                   posthog.capture('favorites_panel_toggled', { action: showFavorites ? 'close' : 'open' })
                 }}
@@ -171,7 +181,39 @@ export function GalleryToolbar({
           {/* Trending Sheet */}
           <TrendSheet onSelectTag={setSearchTags} />
 
-          {/* History Sheet */}
+          {/* History Toggle — mirrors the Favorites toggle: switches the same
+              masonry grid to show previously copied prompts, no navigation. */}
+          <InfoTooltip
+            hideIcon
+            side="bottom"
+            title="Prompt History"
+            description="Browse the prompts you've previously copied, shown in the same gallery grid as search results and favorites — with full categories, weights and per-category copy."
+          >
+            <Button
+              asChild
+              variant="secondary"
+              className={`h-11 sm:h-9 px-3 gap-1 transition-colors duration-200 cursor-pointer ${showHistory
+                ? "bg-amber-200 text-amber-800 hover:bg-amber-300 dark:bg-amber-800 dark:text-amber-100 dark:hover:bg-amber-700 shadow-inner"
+                : "bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40"
+                }`}
+            >
+              <motion.button
+                type="button"
+                onClick={() => {
+                  if (isMergeMode) disableMergeMode()
+                  if (showFavorites) toggleShowFavorites()
+                  toggleShowHistory()
+                  posthog.capture('history_panel_toggled', { action: showHistory ? 'close' : 'open' })
+                }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <History className="w-4 h-4" />
+                <span className="text-xs font-medium">History ({historyCount})</span>
+              </motion.button>
+            </Button>
+          </InfoTooltip>
+
           {/* Prompt Merge Button - moved from Search Bar */}
           <InfoTooltip
             hideIcon
@@ -200,6 +242,7 @@ export function GalleryToolbar({
                   posthog.capture('merge_mode_toggled', { action: 'disable' })
                 } else {
                   if (showFavorites) toggleShowFavorites()
+                  if (showHistory) toggleShowHistory()
                   enableMergeMode()
                   posthog.capture('merge_mode_toggled', { action: 'enable' })
                 }
@@ -242,6 +285,7 @@ export function GalleryToolbar({
                   posthog.capture('variation_mode_toggled', { action: 'disable' })
                 } else {
                   if (showFavorites) toggleShowFavorites()
+                  if (showHistory) toggleShowHistory()
                   enableVariationMode()
                   posthog.capture('variation_mode_toggled', { action: 'enable' })
                 }

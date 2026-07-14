@@ -29,6 +29,17 @@ export interface UseFilteredPostsArgs {
   }
   /** Active favorites folder filter (web app only; ignored without `favorites`). */
   activeFavoriteFolder?: string | null | "all" | "artists"
+  /**
+   * History integration (web app only), mirroring `favorites`. When
+   * `showHistory` is true, `historyPosts` becomes the post source instead of
+   * `allPosts`/favorites — same precedence favorites has today. Mutually
+   * exclusive with favorites at the call site (prompt-gallery.tsx only shows
+   * one of the two toggles active at a time).
+   */
+  history?: {
+    showHistory: boolean
+    historyPosts: BooruPost[] | undefined
+  }
 }
 
 /**
@@ -50,16 +61,22 @@ export function useFilteredPosts({
   tagCounts,
   favorites,
   activeFavoriteFolder = "all",
+  history,
 }: UseFilteredPostsArgs): BooruPost[] {
   return useMemo(() => {
     const showFavorites = favorites?.showFavorites ?? false
+    const showHistory = history?.showHistory ?? false
     let source = allPosts
-    if (showFavorites) {
+    if (showHistory) {
+      source = history?.historyPosts || []
+    } else if (showFavorites) {
       source = favorites?.favoritePosts || []
     }
 
     // Visual-only folder filter — applied at render, not in the favorites hook.
+    // Never applies in history mode (history has no folder concept).
     const filterByFolder =
+      !showHistory &&
       showFavorites &&
       activeFavoriteFolder !== "all" &&
       activeFavoriteFolder !== "artists"
@@ -123,7 +140,7 @@ export function useFilteredPosts({
         // else: provider has no per-tag counts — skip this filter entirely.
       }
 
-      if (showFavorites) return true
+      if (showFavorites || showHistory) return true
       const fileUrl = post.large_file_url || post.file_url
       const match = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
       return !!match
@@ -139,5 +156,7 @@ export function useFilteredPosts({
     favorites?.favoritePosts,
     favorites?.favoriteFolderMap,
     activeFavoriteFolder,
+    history?.showHistory,
+    history?.historyPosts,
   ])
 }

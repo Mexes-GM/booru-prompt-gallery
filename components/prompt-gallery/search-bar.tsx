@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import dynamic from "next/dynamic"
-import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -16,25 +15,13 @@ import {
 } from "@/components/ui/alert-dialog"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
-import {
   Search,
   X,
   Shield,
   Shuffle,
   RefreshCw,
-  History,
   Settings,
-  Trash2,
-  Copy,
 } from "lucide-react"
-import type { HistoryItem } from "@/lib/storage"
 import { userPreferences } from "@/lib/storage"
 import { shouldConfirmNsfwEnable, nextRatingFilter, ALL_RATING } from "@/lib/nsfw-consent"
 import { usePostHog } from 'posthog-js/react'
@@ -60,11 +47,6 @@ interface SearchBarProps {
   addTag: (tag: string) => void
   removeTag: (tag: string) => void
   resetBlacklist: () => void
-
-  history: HistoryItem[]
-  removeHistoryItem: (id: string) => void
-  copyToClipboard: (content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string) => void
-  clearHistory: () => void
 
   showSettings: boolean
   setShowSettings: (open: boolean) => void
@@ -93,10 +75,6 @@ export function SearchBar({
   addTag,
   removeTag,
   resetBlacklist,
-  history,
-  removeHistoryItem,
-  copyToClipboard,
-  clearHistory,
   showSettings,
   setShowSettings,
 }: SearchBarProps) {
@@ -215,59 +193,6 @@ export function SearchBar({
         >
           <RefreshCw className={`w-4 h-4 ${isValidating ? "animate-spin" : ""}`} />
         </Button>
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button type="button" variant="outline" size="icon" className="h-11 w-11 shadow-sm" aria-label="View history">
-              <History className="w-4 h-4" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent className="w-full sm:w-[400px] md:w-[540px]">
-            <SheetHeader>
-              <SheetTitle>Prompt History</SheetTitle>
-              <SheetDescription>Your recently copied prompts.</SheetDescription>
-            </SheetHeader>
-            <div className="mt-4 overflow-y-auto max-h-[calc(100vh-120px)] pr-2 space-y-4">
-              {history.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">No history yet</p>
-              ) : (
-                <>
-                  {history.map((item) => (
-                    <div key={item.id} className="border rounded-lg p-3 space-y-2 relative group">
-                      <div className="flex gap-3">
-                        {item.thumbnailUrl && (
-                          <div className="relative w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-muted">
-                            <Image
-                              src={item.thumbnailUrl}
-                              alt={`History item: ${item.content.slice(0, 50)}...`}
-                              fill
-                              className="object-cover"
-                              unoptimized
-                            />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-muted-foreground mb-1">{new Date(item.timestamp).toLocaleString()}</p>
-                          <p className="text-sm line-clamp-3 break-words font-mono bg-muted/50 p-1 rounded">{item.content}</p>
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-2 mt-2">
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => removeHistoryItem(item.id)} aria-label="Delete history item">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="secondary" className="h-8" onClick={() => copyToClipboard(item.content, item.postId || 0, true, item.thumbnailUrl)}>
-                          <Copy className="h-3 w-3 mr-1" /> Copy
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  <Button variant="outline" className="w-full text-destructive hover:text-destructive hover:bg-destructive/10" onClick={clearHistory}>
-                    Clear History
-                  </Button>
-                </>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
         <Button
           type="button"
           variant="outline"

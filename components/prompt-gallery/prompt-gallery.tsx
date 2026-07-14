@@ -581,14 +581,11 @@ export function PromptGallery() {
     addToHistory,
   } = usePresetsAndHistory({ isClient: search.isClient, addInput, setAddInput, toast })
 
-  // History posts for the CURRENT provider only — same scoping Favorites uses
-  // (favs is scoped to search.booruProvider too), so switching providers in
-  // the toolbar switches both Favorites and History to that provider's data.
-  const historyForCurrentProvider = useMemo(
-    () => history.filter(item => item.provider === search.booruProvider),
-    [history, search.booruProvider]
-  )
-  const { posts: historyPosts, isLoading: isHistoryLoading, isValidating: isHistoryValidating } = useHistoryPosts(historyForCurrentProvider)
+  // History shows copies from ALL providers at once (NOT scoped to the current
+  // toolbar provider). Each card renders from its own post data / _provider, so
+  // mixed providers coexist safely in one grid — this avoids the confusion of a
+  // copied prompt "disappearing" just because the user switched provider tabs.
+  const { posts: historyPosts, total: historyTotal, isLoading: isHistoryLoading, isValidating: isHistoryValidating, error: historyError, mutate: retryHistoryPosts } = useHistoryPosts(history)
 
   const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
 
@@ -853,7 +850,16 @@ export function PromptGallery() {
       // single real post backs it) — skip history in that case since
       // useHistoryPosts needs a real (provider, postId) pair to hydrate later.
       if (postId) {
-        addToHistory({ postId, provider: search.booruProvider })
+        // Snapshot the post the user just copied so History can render it later
+        // with ZERO network hydration (immune to transient booru/API failures).
+        // The copied card is always present in one of the currently-visible,
+        // provider-scoped lists — find it there. If somehow absent, we still
+        // store the {postId, provider} pointer and fall back to network fetch.
+        const snapshot =
+          search.allPosts?.find(p => p.id === postId) ||
+          favs.favoritePosts?.find(p => p.id === postId) ||
+          historyPosts?.find(p => p.id === postId)
+        addToHistory({ postId, provider: search.booruProvider, post: snapshot })
       }
 
       toast({
@@ -869,7 +875,7 @@ export function PromptGallery() {
         variant: "destructive",
       })
     }
-  }, [toast, addToHistory, posthog, search.booruProvider, isAiConvertMode])
+  }, [toast, addToHistory, posthog, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts, isAiConvertMode])
 
   const downloadImage = useCallback(async (post: BooruPost) => {
     try {
@@ -1178,7 +1184,7 @@ export function PromptGallery() {
                     favoritesCount={favs.favorites.size}
                     showHistory={showHistory}
                     toggleShowHistory={toggleShowHistory}
-                    historyCount={historyForCurrentProvider.length}
+                    historyCount={historyTotal}
                     isMergeMode={mergeMode.isMergeMode}
                     mergeModeType={mergeMode.mergeModeType}
                     disableMergeMode={mergeMode.disableMergeMode}
@@ -1321,37 +1327,64 @@ export function PromptGallery() {
             onRemove={savedArtists.removeArtist}
           />
 
-          {showHistory && historyForCurrentProvider.length === 0 && (
+          {showHistory && history.length === 0 && (
             <div className="text-center text-muted-foreground py-16">
-              No history yet for {search.booruProvider}. Copy a prompt from the gallery to see it here.
+              No history yet. Copy a prompt from the gallery to see it here.
             </div>
           )}
 
-          {showHistory && historyForCurrentProvider.length > 0 && (isHistoryLoading || isHistoryValidating) && (historyPosts?.length ?? 0) < historyForCurrentProvider.length && (
+          {showHistory && historyTotal > 0 && (isHistoryLoading || isHistoryValidating) && (historyPosts?.length ?? 0) < historyTotal && (
             <div className="w-full max-w-xs mx-auto py-3">
               <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
                 <div
                   className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
-                  style={{ width: `${historyForCurrentProvider.length > 0 ? Math.round(((historyPosts?.length ?? 0) / historyForCurrentProvider.length) * 100) : 0}%` }}
+                  style={{ width: `${historyTotal > 0 ? Math.round(((historyPosts?.length ?? 0) / historyTotal) * 100) : 0}%` }}
                 />
               </div>
               <p className="mt-2 text-sm text-muted-foreground text-center">
                 Loading history…{" "}
                 <span className="font-medium text-foreground">{historyPosts?.length ?? 0}</span>
-                {" / "}{historyForCurrentProvider.length}
+                {" / "}{historyTotal}
               </p>
             </div>
           )}
 
-          {showHistory && historyForCurrentProvider.length > 0 && !isHistoryLoading && !isHistoryValidating && (historyPosts?.length ?? 0) < historyForCurrentProvider.length && (
-            <div className="text-center text-muted-foreground py-8 px-4">
-              <p>
-                {historyForCurrentProvider.length - (historyPosts?.length ?? 0)} of your history{" "}
-                {historyForCurrentProvider.length - (historyPosts?.length ?? 0) === 1 ? "prompt" : "prompts"} could not
-                be loaded — the source post may have been deleted or is temporarily unavailable.
-              </p>
-            </div>
-          )}
+          {showHistory && historyTotal > 0 && !isHistoryLoading && !isHistoryValidating && (historyPosts?.length ?? 0) < historyTotal && (() => {
+            const missing = historyTotal - (historyPosts?.length ?? 0)
+            // If the fetch errored, or NOTHING hydrated at all, the cause is almost
+            // always transient (rate limit / 5xx / network) rather than the posts
+            // being genuinely gone — so lead with a retry-first message. A partial
+            // load (some succeeded) is more consistent with deleted/removed posts.
+            const likelyTransient = !!historyError || (historyPosts?.length ?? 0) === 0
+            return (
+              <div className="text-center text-muted-foreground py-8 px-4 space-y-3">
+                <p>
+                  {likelyTransient ? (
+                    <>
+                      Couldn&apos;t load {missing} of your history{" "}
+                      {missing === 1 ? "prompt" : "prompts"} — the booru may be rate-limiting or
+                      temporarily unavailable. Try again in a moment.
+                    </>
+                  ) : (
+                    <>
+                      {missing} of your history {missing === 1 ? "prompt" : "prompts"} could not be
+                      loaded — the source {missing === 1 ? "post" : "posts"} may have been deleted, or
+                      the booru is temporarily unavailable.
+                    </>
+                  )}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => retryHistoryPosts()}
+                  className="gap-1.5"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Retry
+                </Button>
+              </div>
+            )
+          })()}
 
           {folderMismatch.loading > 0 && filteredPosts.length > 0 && (() => {
             // Loading feedback while remaining favorites stream in (batched,
@@ -1406,6 +1439,7 @@ export function PromptGallery() {
           <ResultsStates
             filteredPostsLength={filteredPosts.length}
             showFavorites={favs.showFavorites}
+            showHistory={showHistory}
             activeFavoriteFolder={activeFavoriteFolder}
             isLoading={search.isLoading}
             isLoadingMore={search.isLoadingMore}

@@ -2,7 +2,7 @@
 import { DEFAULT_BLACKLIST } from '@/lib/constants'
 import { generateId } from '@/lib/utils/id-generator'
 import { broadcastSettingChange } from '@/lib/settings-bridge'
-import type { BooruProvider } from '@/lib/booru/types'
+import type { BooruProvider, BooruPost } from '@/lib/booru/types'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -102,6 +102,13 @@ export interface HistoryItem {
   postId: number
   provider: BooruProvider
   timestamp: number
+  // Self-contained snapshot of the copied post, captured at copy time from the
+  // card the user was looking at. History renders straight from this WITHOUT any
+  // network hydration, which makes the History view immune to transient booru/API
+  // failures (rate limits, 5xx, timeouts). Optional because legacy entries (and
+  // any item whose snapshot was dropped to fit the storage budget) don't have it —
+  // those fall back to on-demand network hydration via useHistoryPosts.
+  post?: BooruPost
   // Kept as optional read-only fallbacks for items written before the
   // provider field existed. Never written by addToHistory anymore.
   content?: string
@@ -119,6 +126,36 @@ export interface PromptOptions {
   includeCharacters: boolean
   optimizeTags: boolean
   smartTagExclusion: boolean
+}
+
+// History entries embed a self-contained snapshot of the copied post
+// (HistoryItem.post) so the History view renders straight from localStorage with
+// zero network hydration. To stay within the localStorage quota, cap the total
+// serialized size of the persisted history: snapshots are kept for the NEWEST
+// items first (the ones a user is most likely to revisit) and dropped from the
+// oldest once the budget is hit. A snapshot-less item still keeps its
+// {postId, provider} pointer and falls back to on-demand network hydration.
+const HISTORY_SNAPSHOT_BUDGET_BYTES = 1_500_000
+function fitHistoryToStorageBudget(items: HistoryItem[]): HistoryItem[] {
+  // Fast path: if everything (snapshots included) already fits, keep it as-is.
+  if (JSON.stringify(items).length <= HISTORY_SNAPSHOT_BUDGET_BYTES) return items
+  let used = 0
+  return items.map(item => {
+    if (!item.post) {
+      used += JSON.stringify(item).length
+      return item
+    }
+    const fullSize = JSON.stringify(item).length
+    if (used + fullSize <= HISTORY_SNAPSHOT_BUDGET_BYTES) {
+      used += fullSize
+      return item
+    }
+    // Over budget → drop this (older) item's snapshot, keep the pointer.
+    const pruned: HistoryItem = { ...item }
+    delete pruned.post
+    used += JSON.stringify(pruned).length
+    return pruned
+  })
 }
 
 // Type-safe getters and setters for specific preferences
@@ -252,8 +289,10 @@ export const userPreferences = {
     }
     // Add to beginning, limit to last 500 items (raised from 100 now that
     // History is a full navigable page split across provider tabs, not just
-    // a quick sidebar sheet).
-    const newHistory = [newItem, ...history].slice(0, 500)
+    // a quick sidebar sheet). Then trim embedded post snapshots so the whole
+    // history stays within the localStorage budget (snapshots kept for the
+    // newest items first — see fitHistoryToStorageBudget).
+    const newHistory = fitHistoryToStorageBudget([newItem, ...history].slice(0, 500))
     storage.set(STORAGE_KEYS.HISTORY, newHistory)
     return newHistory
   },
