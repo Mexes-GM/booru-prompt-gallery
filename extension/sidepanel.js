@@ -2996,7 +2996,21 @@ const autoDLDownloaded = new Set();
  * reports each loaded image back via chrome.runtime.sendMessage. Idempotent.
  */
 function installAutoDownloadObserverInPage() {
-  // Disconnect any existing observer/interval to refresh the extension context
+  const LOG = (...a) => console.log("%c[AutoDL]", "color:#a855f7;font-weight:bold", ...a);
+
+  // ── Idempotency guard ─────────────────────────────────────────────────
+  // processNext() calls startAutoDownloadObserver() on every iteration to
+  // re-install the observer if the page was reloaded. But if the observer
+  // is still alive, re-installing would disconnect it and re-seed all
+  // visible images — creating a race window where a just-completed
+  // generation's image gets marked as "seen" before the old observer had
+  // a chance to report it. Skipping when already active prevents this.
+  if (window.__booruAutoDLActive && window.__booruAutoDLObserver) {
+    LOG("observer already active — skipping re-install (seen:", window.__booruAutoDLSeen?.size || 0, ")");
+    return { status: "already_active", seen: window.__booruAutoDLSeen?.size || 0 };
+  }
+
+  // Disconnect any stale observer/interval before (re)installing
   if (window.__booruAutoDLObserver) { try { window.__booruAutoDLObserver.disconnect(); } catch (e) {} }
   if (window.__booruAutoDLInterval) { try { clearInterval(window.__booruAutoDLInterval); } catch (e) {} }
   window.__booruAutoDLObserver = null;
@@ -3004,8 +3018,6 @@ function installAutoDownloadObserverInPage() {
 
   window.__booruAutoDLActive = true;
   window.__booruAutoDLSeen = window.__booruAutoDLSeen || new Set();
-
-  const LOG = (...a) => console.log("%c[AutoDL]", "color:#a855f7;font-weight:bold", ...a);
 
   // Helper to find elements recursively, including traversing open shadow roots
   const querySelectorAllDeep = (selector, root = document) => {
@@ -3044,10 +3056,18 @@ function installAutoDownloadObserverInPage() {
     if (!src || !/^https?:/.test(src) || src.startsWith("data:") || src.startsWith("blob:")) return;
     if (img.naturalWidth <= 1) return; // not a real decoded image yet
     if (window.__booruAutoDLSeen.has(src)) return;
-    window.__booruAutoDLSeen.add(src);
     const prompt = getPrompt(img);
     LOG("new image →", src.slice(0, 80), "| prompt:", prompt.slice(0, 50));
-    try { chrome.runtime.sendMessage({ type: "AUTODL_NEW_IMAGE", src, prompt }); } catch (e) { LOG("send failed", e); }
+    try {
+      chrome.runtime.sendMessage({ type: "AUTODL_NEW_IMAGE", src, prompt });
+      window.__booruAutoDLSeen.add(src); // Only mark as seen AFTER successful send
+    } catch (e) {
+      LOG("send failed — extension context likely invalidated, flagging for re-install", e);
+      // Don't add to seen set: image was never reported, so a fresh observer
+      // should retry it. Flag inactive so the next processNext() will
+      // re-install with a fresh extension context.
+      window.__booruAutoDLActive = false;
+    }
   };
 
   const handleImg = (img) => {
