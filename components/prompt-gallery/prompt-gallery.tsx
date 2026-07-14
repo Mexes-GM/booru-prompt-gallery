@@ -46,7 +46,6 @@ import {
   ScrollText,
   Globe,
   ArrowRight,
-  Github,
   Pin,
   Ban,
   Activity,
