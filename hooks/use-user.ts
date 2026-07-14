@@ -4,6 +4,29 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import * as Sentry from "@sentry/nextjs"
 import posthog from 'posthog-js'
 
+// Module-level guard for the `user_authenticated` analytics event.
+//
+// useUser() is consumed by ~6 hooks/components, and EACH mounts its own
+// supabase.auth.onAuthStateChange listener. Supabase emits SIGNED_IN not just
+// on a real login but also on every TOKEN_REFRESHED-adjacent re-sync and on
+// each listener's initial state delivery — so a single real sign-in was firing
+// `user_authenticated` many times over (observed: ~4.8K events in 3 days vs a
+// few hundred real sign-ins). This shared, cross-instance guard records the
+// last authenticated user id and only captures the event when the identity
+// actually transitions to a new signed-in user.
+let lastAuthedUserId: string | null = null
+
+function captureAuthOnce(userId: string) {
+  if (typeof window === 'undefined') return
+  if (lastAuthedUserId === userId) return
+  lastAuthedUserId = userId
+  try {
+    posthog.capture('user_authenticated')
+  } catch {
+    /* non-fatal: telemetry is best-effort */
+  }
+}
+
 export function useUser() {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
@@ -66,13 +89,14 @@ export function useUser() {
       
       if (typeof window !== 'undefined') {
         if (session?.user) {
-          posthog.identify(session.user.id);
+          posthog.identify(session.user.id)
         } else {
-          posthog.reset();
+          posthog.reset()
+          lastAuthedUserId = null
         }
-        
-        if (event === 'SIGNED_IN') {
-          posthog.capture('user_authenticated');
+
+        if (event === 'SIGNED_IN' && session?.user) {
+          captureAuthOnce(session.user.id)
         }
       }
       
