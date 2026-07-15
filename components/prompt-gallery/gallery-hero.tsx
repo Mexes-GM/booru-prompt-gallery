@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { Github } from "lucide-react"
+import GithubMono from '@lobehub/icons/es/Github/components/Mono'
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AnnouncementsCarousel } from "@/components/prompt-gallery/announcements-carousel"
 import { DeploymentStatusBadges, MirrorLink } from "@/components/prompt-gallery/deployment-status"
@@ -135,7 +135,7 @@ export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: Gal
             onClick={() => trackExternalLink(SOCIAL_URLS.GITHUB, 'github')}
             className="inline-flex items-center px-4 py-2 bg-gray-800 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
           >
-            <Github className="w-4 h-4 mr-2" />
+            <GithubMono size={16} className="mr-2" />
             View on GitHub
           </a>
 

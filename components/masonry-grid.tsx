@@ -49,15 +49,51 @@ const MasonryItem = React.memo(({
   pos,
   renderItem,
   isInitial,
+  fromPos,
 }: {
   pos: { x: number; y: number; width: number; height: number; item: BooruPost; index: number }
   renderItem: (item: BooruPost, w: number, h: number, index: number) => React.ReactNode
   isInitial: boolean
+  /** Previous (x, y) this same item was rendered at, when a pure reorder just
+   *  happened (e.g. History moving a re-copied post to the front). When set,
+   *  the item FLIPs from `fromPos` to `pos` instead of snapping directly to
+   *  `pos` — see the `useLayoutEffect` below. */
+  fromPos?: { x: number; y: number } | null
 }) => {
   const staggerIndex = pos.index % 8
+  const elRef = useRef<HTMLDivElement>(null)
+
+  // FLIP: if this render carries a `fromPos` different from the new `pos`,
+  // paint the element at its OLD position first (synchronously, before the
+  // browser's next paint), then let a CSS transition carry it to the new
+  // position on the following frame. `transform` is a normal animatable CSS
+  // property, so no manual interpolation is needed — just two `transform`
+  // writes a frame apart.
+  React.useLayoutEffect(() => {
+    if (!fromPos) return
+    const el = elRef.current
+    if (!el) return
+    if (fromPos.x === pos.x && fromPos.y === pos.y) return
+
+    el.style.transition = "none"
+    el.style.transform = `translate3d(${fromPos.x}px, ${fromPos.y}px, 0)`
+    // Force a reflow so the browser commits the "from" transform before we
+    // switch to the animated "to" transform on the next frame.
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    el.getBoundingClientRect()
+
+    const raf = requestAnimationFrame(() => {
+      el.style.transition = ""
+      el.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`
+    })
+    return () => cancelAnimationFrame(raf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromPos, pos.x, pos.y])
+
   return (
     <div
-      className={`absolute${isInitial ? " masonry-item-enter" : ""}`}
+      ref={elRef}
+      className={`absolute${isInitial ? " masonry-item-enter" : ""}${fromPos ? " masonry-item-move" : ""}`}
       role="listitem"
       style={{
         width: pos.width,
@@ -95,9 +131,20 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
 
   // Trackear si los items acaban de montar (para animación inicial)
   const prevItemsLengthRef = useRef(0)
+  const prevItemIdsRef = useRef<Set<number | string>>(new Set())
   const [showInitialAnimation, setShowInitialAnimation] = useState(true)
-  // Índice desde el cual los items recién agregados (scroll infinito) deben animar su entrada
-  const [appendAnimFrom, setAppendAnimFrom] = useState<number | null>(null)
+  // IDs de items genuinamente nuevos (no vistos en el render anterior) que deben
+  // animar su entrada. Se calcula por diferencia de ID, no por posición/índice:
+  // un prepend (ej. History insertando el post recién copiado al frente) desplaza
+  // el índice de TODOS los items existentes +1, así que animar "todo índice >= N"
+  // marcaba erróneamente cards viejas como nuevas, produciendo el salto/duplicado
+  // visual al copiar un prompt ya presente en el historial.
+  const [newItemAnimIds, setNewItemAnimIds] = useState<Set<number | string> | null>(null)
+  // Posiciones (x, y) del render ANTERIOR, keyed por item id — solo se llena
+  // cuando el `layout` useMemo detecta un reorder puro (mismo set de IDs).
+  // Pasado a MasonryItem como `fromPos` para que haga un FLIP manual: pintar
+  // en la posición vieja, luego animar hacia la nueva vía CSS transition.
+  const prevPositionsByIdRef = useRef<Map<number | string, { x: number; y: number }> | null>(null)
 
   // Medir el ancho del contenedor de forma SÍNCRONA antes del primer paint.
   // Evita el flash en móvil donde el grid se pintaba con el ancho de fallback
@@ -197,28 +244,47 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
     }
   }, [])
 
-  // Detectar carga inicial vs. items agregados por scroll infinito
+  // Detectar carga inicial vs. items agregados (scroll infinito o prepend de
+  // History). El caso de puro reordenamiento (mismo set de IDs, distinto
+  // orden) NO se maneja aquí — se detecta directamente dentro del `layout`
+  // useMemo (variable `isPureReorder`), porque ahí es donde ya se tienen las
+  // posiciones viejas (`cache.positions`) necesarias para el FLIP; replicar
+  // la detección en dos lugares sería redundante y podría desincronizarse.
   useEffect(() => {
     const prev = prevItemsLengthRef.current
+    const prevIds = prevItemIdsRef.current
+    const currentIds = new Set(items.map(item => item.id))
 
     if (items.length > 0 && prev === 0) {
       // Carga inicial: animación de entrada de todo el primer lote
       setShowInitialAnimation(true)
       const timer = setTimeout(() => setShowInitialAnimation(false), 600)
       prevItemsLengthRef.current = items.length
+      prevItemIdsRef.current = currentIds
       return () => clearTimeout(timer)
     }
 
-    if (items.length > prev && prev > 0) {
-      // Scroll infinito: animar solo los items recién agregados (index >= prev)
-      setAppendAnimFrom(prev)
-      const timer = setTimeout(() => setAppendAnimFrom(null), 600)
-      prevItemsLengthRef.current = items.length
-      return () => clearTimeout(timer)
+    if (items.length !== prev && prev > 0) {
+      // Items agregados (al final por scroll infinito, o al frente/medio por
+      // History al copiar un post) o quitados: animar únicamente los IDs que
+      // no existían en el render anterior. Un post movido de posición (ya
+      // estaba en prevIds) NO se re-anima como nuevo.
+      const newIds = new Set<number | string>()
+      for (const id of currentIds) {
+        if (!prevIds.has(id)) newIds.add(id)
+      }
+      if (newIds.size > 0) {
+        setNewItemAnimIds(newIds)
+        const timer = setTimeout(() => setNewItemAnimIds(null), 600)
+        prevItemsLengthRef.current = items.length
+        prevItemIdsRef.current = currentIds
+        return () => clearTimeout(timer)
+      }
     }
 
     prevItemsLengthRef.current = items.length
-  }, [items.length])
+    prevItemIdsRef.current = currentIds
+  }, [items])
 
   const debouncedContainerWidth = useDebounce(containerWidth, 50)
 
@@ -373,25 +439,48 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
       }
 
     } else {
-      // Full recompute — new search, filter change, resize, items removed from middle, etc.
-      // Capture scroll anchor BEFORE recompute for scroll position restoration.
-      if (cache.positions.length > 0 && typeof window !== 'undefined' && containerRef.current) {
-        const scrollEl = scrollContainerRef?.current ?? null
-        const scrollTop = scrollEl ? scrollEl.scrollTop : window.scrollY
-        // offsetTop is relative to offsetParent; for internal scroll containers
-        // the container itself is the reference, so offsetTop is 0.
-        const containerTop = scrollEl ? 0 : containerRef.current.offsetTop
-        const relativeScroll = scrollTop - containerTop
+      // Full recompute — new search, filter change, resize, items removed from
+      // middle, or a pure reorder of the same ID set (e.g. History moving a
+      // re-copied post to the front).
+      //
+      // A pure reorder gets different treatment: skip scroll-anchoring (it
+      // would fight the movement animation by re-scrolling under the user
+      // while cards are sliding) and instead snapshot the OLD positions keyed
+      // by item id into `prevPositionsByIdRef`. MasonryItem reads that as
+      // `fromPos` and FLIPs from it to the new position via CSS transition
+      // (see MasonryItem's useLayoutEffect above) instead of snapping.
+      let isPureReorder = false
+      if (cache.itemIds.length > 0 && cache.itemIds.length === items.length) {
+        const prevIdSet = new Set(cache.itemIds)
+        isPureReorder = items.every(item => prevIdSet.has(item.id))
+      }
 
-        // Find the first cached item whose bottom is below the current scroll position
-        for (const pos of cache.positions) {
-          if (pos.y + pos.height > relativeScroll) {
-            scrollAnchorRef.current = {
-              anchorItemId: pos.item.id,
-              anchorOffsetFromViewport: pos.y - relativeScroll,
-              needsRestore: true,
+      if (isPureReorder) {
+        prevPositionsByIdRef.current = new Map(
+          cache.positions.map(p => [p.item.id, { x: p.x, y: p.y }])
+        )
+      } else {
+        prevPositionsByIdRef.current = null
+
+        // Capture scroll anchor BEFORE recompute for scroll position restoration.
+        if (cache.positions.length > 0 && typeof window !== 'undefined' && containerRef.current) {
+          const scrollEl = scrollContainerRef?.current ?? null
+          const scrollTop = scrollEl ? scrollEl.scrollTop : window.scrollY
+          // offsetTop is relative to offsetParent; for internal scroll containers
+          // the container itself is the reference, so offsetTop is 0.
+          const containerTop = scrollEl ? 0 : containerRef.current.offsetTop
+          const relativeScroll = scrollTop - containerTop
+
+          // Find the first cached item whose bottom is below the current scroll position
+          for (const pos of cache.positions) {
+            if (pos.y + pos.height > relativeScroll) {
+              scrollAnchorRef.current = {
+                anchorItemId: pos.item.id,
+                anchorOffsetFromViewport: pos.y - relativeScroll,
+                needsRestore: true,
+              }
+              break
             }
-            break
           }
         }
       }
@@ -455,6 +544,15 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout])
 
+  // Consume `prevPositionsByIdRef` after this render's MasonryItems have had
+  // a chance to read it as `fromPos` and kick off their FLIP (their own
+  // useLayoutEffect runs before this one, since child effects flush before
+  // parent effects). Clearing it here means a LATER render — one where
+  // `layout` didn't change again — won't keep re-triggering the same FLIP.
+  useEffect(() => {
+    prevPositionsByIdRef.current = null
+  }, [layout])
+
   // Virtualización: solo renderizar ítems en viewport + overscan.
   // Antes se filtraba O(n) sobre TODAS las posiciones en cada bucket de scroll.
   // Ahora se aprovecha que dentro de cada columna los items están en orden
@@ -509,7 +607,8 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
           key={`${(pos.item as any)._provider || (pos.item as any).provider || "post"}-${pos.item.id}`}
           pos={pos}
           renderItem={renderItem}
-          isInitial={showInitialAnimation || (appendAnimFrom !== null && pos.index >= appendAnimFrom)}
+          isInitial={showInitialAnimation || (newItemAnimIds !== null && newItemAnimIds.has(pos.item.id))}
+          fromPos={prevPositionsByIdRef.current?.get(pos.item.id) ?? null}
         />
       ))}
     </div>

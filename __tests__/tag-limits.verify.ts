@@ -10,7 +10,7 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/tag-limits.verify.ts
  */
-import { hasMultipleTags, getFinalQueryTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags } from '../lib/booru/tag-limits'
+import { hasMultipleTags, getFinalQueryTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags, getScoreFloor, relaxScoreTier, relaxScoreFloorInUrl } from '../lib/booru/tag-limits'
 
 let passed = 0
 let failed = 0
@@ -248,6 +248,83 @@ assert(noWarnings.length === 0, 'Normal tags + exclusion never trigger a warning
 
 // Empty input never triggers a warning.
 assert(detectMisusedMetatags('', 'gelbooru').length === 0, 'Empty input never triggers a warning')
+
+// ── Palanca 1 (docs/prompt-genericness-mitigation-plan.md §7-§8): score:>=N quality floor ──
+
+// getScoreFloor: per-provider/tier lookup, null when off or unknown.
+assert(getScoreFloor('danbooru', 'good') === 8, "getScoreFloor('danbooru','good') === 8")
+assert(getScoreFloor('danbooru', 'great') === 15, "getScoreFloor('danbooru','great') === 15")
+assert(getScoreFloor('danbooru', 'best') === 25, "getScoreFloor('danbooru','best') === 25")
+assert(getScoreFloor('aibooru', 'good') === 7, "getScoreFloor('aibooru','good') === 7")
+assert(getScoreFloor('e621', 'best') === 300, "getScoreFloor('e621','best') === 300")
+assert(getScoreFloor('gelbooru', 'good') === 5, "getScoreFloor('gelbooru','good') === 5")
+assert(getScoreFloor('rule34', 'great') === 90, "getScoreFloor('rule34','great') === 90")
+assert(getScoreFloor('danbooru', 'off') === null, "getScoreFloor(_,'off') === null")
+assert(getScoreFloor('x' as any, 'good') === null, "getScoreFloor('x','good') === null (unknown provider)")
+
+// getFinalQueryTags: scoreTier='off' (default) never adds score:>= — no regression for
+// existing callers that don't pass the new parameter at all.
+const noTierDefault = getFinalQueryTags('1girl', 'rating:general', 'recent', '', 'danbooru')
+assert(!noTierDefault.some(t => /^score:>=/.test(t)), 'Default scoreTier (omitted) never adds score:>=')
+
+const offTier = getFinalQueryTags('1girl', 'rating:general', 'recent', '', 'danbooru', 'off')
+assert(!offTier.some(t => /^score:>=/.test(t)), "scoreTier='off' never adds score:>=")
+
+// scoreTier='good' adds the right score:>=N per provider, and it's free (doesn't consume a slot).
+const goodTier = getFinalQueryTagsWithMeta('1girl, solo', 'rating:general', 'recent', '', 'danbooru', 'good')
+assert(goodTier.tags.some(t => t.value === 'score:>=8' && !t.countsTowardsLimit && !t.dropped), "Danbooru 'good': score:>=8 present and free")
+assert(goodTier.droppedUserTags.length === 0, "Danbooru 'good' with 2 user tags + free rating/score: nothing dropped (score is free)")
+assert(goodTier.slotsUsed === 2, `Danbooru 'good': slotsUsed stays 2 (just the 2 user tags), got ${goodTier.slotsUsed}`)
+
+const bestTierE621 = getFinalQueryTagsWithMeta('wolf', 'all', 'recent', undefined, 'e621', 'best')
+assert(bestTierE621.tags.some(t => t.value === 'score:>=300' && !t.countsTowardsLimit), "e621 'best': score:>=300 present and free")
+
+// score:>=N coexists with tagcount:>=N (both free) — order in the tags array is
+// tagcount: first, then score: (mirrors the source code's insertion order).
+const combinedFloors = getFinalQueryTagsWithMeta('1girl', 'rating:general', 'recent', '20', 'danbooru', 'great')
+assert(combinedFloors.tags.some(t => t.value === 'tagcount:>=20'), 'tagcount:>=20 still present alongside score floor')
+assert(combinedFloors.tags.some(t => t.value === 'score:>=15'), "score:>=15 ('great') present alongside tagcount")
+assert(combinedFloors.slotsUsed === 1, `Danbooru with 1 user tag + free tagcount/score/rating: slotsUsed is 1, got ${combinedFloors.slotsUsed}`)
+
+// Danbooru: 2 user tags (max limit) + scoreTier='good' → score is free, so no tags are dropped
+// (unlike order:/random:, which DO consume a slot and would force a drop).
+const danbooruTwoTagsWithFloor = getFinalQueryTagsWithMeta('1girl, solo', 'all', 'recent', undefined, 'danbooru', 'good')
+assert(danbooruTwoTagsWithFloor.droppedUserTags.length === 0, "Danbooru: 2 user tags + scoreTier='good' drops nothing (score is free)")
+assert(danbooruTwoTagsWithFloor.slotsUsed === 2, `Danbooru: 2 user tags + free score floor keeps slotsUsed at 2, got ${danbooruTwoTagsWithFloor.slotsUsed}`)
+
+// Gelbooru/Rule34: score:>=N supported and free too (confirmed §7.2), even though tagcount: isn't.
+const gelbooruGoodTier = getFinalQueryTagsWithMeta('1girl', 'all', 'recent', '20', 'gelbooru', 'good')
+assert(gelbooruGoodTier.tags.some(t => t.value === 'score:>=5' && !t.countsTowardsLimit), "Gelbooru 'good': score:>=5 present and free")
+assert(!gelbooruGoodTier.tags.some(t => /^tagcount:/.test(t.value)), 'Gelbooru: tagcount: still absent (unsupported) even with a score floor set')
+
+// ── Fase 3 (§8): niche-tag fallback — relax one tier when a page comes back starved ──
+
+// relaxScoreTier: best -> great -> good -> off -> null (nothing left to relax).
+assert(relaxScoreTier('best') === 'great', "relaxScoreTier('best') === 'great'")
+assert(relaxScoreTier('great') === 'good', "relaxScoreTier('great') === 'good'")
+assert(relaxScoreTier('good') === 'off', "relaxScoreTier('good') === 'off'")
+assert(relaxScoreTier('off') === null, "relaxScoreTier('off') === null (nothing left to relax)")
+
+// relaxScoreFloorInUrl: raw score:>=N in a plain query string gets replaced with the weaker tier's N.
+const rawUrl = 'https://danbooru.donmai.us/posts.json?tags=1girl%20score%3A%3E%3D25&page=1'
+const relaxedBest = relaxScoreFloorInUrl(rawUrl, 'danbooru', 'best')
+assert(!!relaxedBest && relaxedBest.includes('score%3A%3E%3D15'), `Danbooru 'best'->'great': score:>=25 replaced with score:>=15 (encoded), got: ${relaxedBest}`)
+assert(!!relaxedBest && !relaxedBest.includes('25'), "Danbooru 'best'->'great': old floor (25) no longer present")
+
+// relaxScoreFloorInUrl with a raw (unencoded) score:>=N in the string.
+const rawUrl2 = 'score:>=8 1girl solo'
+const relaxedGood = relaxScoreFloorInUrl(rawUrl2, 'danbooru', 'good')
+assert(relaxedGood === '1girl solo', "Danbooru 'good'->'off': score:>=8 removed entirely, got: " + relaxedGood)
+
+// relaxScoreFloorInUrl returns null when there's nothing to relax (tier is already 'off', or
+// the tier's floor isn't actually present in the URL — nothing to do).
+assert(relaxScoreFloorInUrl(rawUrl, 'danbooru', 'off') === null, "relaxScoreFloorInUrl(_,_,'off') === null (off has no floor to relax)")
+assert(relaxScoreFloorInUrl('1girl solo', 'danbooru', 'best') === null, 'relaxScoreFloorInUrl returns null when the URL contains no matching floor at all')
+
+// Different providers relax to their own calibrated numbers, not a shared global one.
+const rule34Url = 'sort:score 1girl score:>=90'
+const relaxedRule34 = relaxScoreFloorInUrl(rule34Url, 'rule34', 'great')
+assert(relaxedRule34 === 'sort:score 1girl score:>=35', `Rule34 'great'(90)->'good'(35): got ${relaxedRule34}`)
 
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

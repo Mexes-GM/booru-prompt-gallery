@@ -1,6 +1,43 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+@config "../tailwind.config.ts";
+
+/*
+ * Tailwind v4 compatibility shims — preserve v3 default behavior that the
+ * project's UI was designed around, since tailwind.config.ts (bridged via
+ * @config above) does not carry these v3-only defaults automatically:
+ *   - border and divide utilities defaulted to gray-200 in v3, now default
+ *     to currentColor in v4.
+ *   - ring defaulted to a 3px blue-500 ring in v3, now 1px currentColor.
+ *   - placeholder text used gray-400 in v3, now text color at 50% opacity.
+ *   - buttons used cursor: pointer in v3, now cursor: default (browser
+ *     default) in v4.
+ * See https://tailwindcss.com/docs/upgrade-guide for each of these.
+ */
+@theme {
+  --default-ring-width: 3px;
+  --default-ring-color: var(--color-blue-500);
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 @layer base {
   :root {
@@ -496,4 +533,12 @@ input[type="number"] {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* Masonry Grid — animación de reordenamiento (FLIP): cuando MasonryItem
+   detecta que el mismo post cambió de posición (ej. History moviendo la card
+   recién copiada al frente), pinta primero en la posición vieja y luego deja
+   que esta transition anime el `transform` hacia la posición nueva. */
+.masonry-item-move {
+  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }

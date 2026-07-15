@@ -10,6 +10,7 @@ export interface UserPreferencesData {
   rating_filter: string
   booru_provider: string
   minimum_tag_count: string
+  score_tier: string
   remove_lora_tags: boolean
   remove_quality_tags: boolean
 }
@@ -44,6 +45,7 @@ export class UserPreferencesSync {
         if (data.rating_filter) storage.set(STORAGE_KEYS.RATING_FILTER, data.rating_filter)
         if (data.booru_provider) storage.set(STORAGE_KEYS.BOORU_PROVIDER, data.booru_provider)
         if (data.minimum_tag_count) storage.set(STORAGE_KEYS.MINIMUM_TAG_COUNT, data.minimum_tag_count)
+        if (data.score_tier) storage.set(STORAGE_KEYS.SCORE_TIER, data.score_tier)
         if (data.remove_lora_tags !== null) storage.set(STORAGE_KEYS.REMOVE_LORA_TAGS, data.remove_lora_tags)
         if (data.remove_quality_tags !== null) storage.set(STORAGE_KEYS.REMOVE_QUALITY_TAGS, data.remove_quality_tags)
 
@@ -115,6 +117,7 @@ export class UserPreferencesSync {
       rating_filter: storage.get(STORAGE_KEYS.RATING_FILTER, 'rating:general'),
       booru_provider: storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'danbooru'),
       minimum_tag_count: storage.get(STORAGE_KEYS.MINIMUM_TAG_COUNT, '5'),
+      score_tier: storage.get(STORAGE_KEYS.SCORE_TIER, 'off'),
       remove_lora_tags: storage.get(STORAGE_KEYS.REMOVE_LORA_TAGS, false),
       remove_quality_tags: storage.get(STORAGE_KEYS.REMOVE_QUALITY_TAGS, false),
     }

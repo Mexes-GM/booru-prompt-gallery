@@ -9,7 +9,8 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Globe, Github, ExternalLink, ShieldAlert } from "lucide-react"
+import { Globe, ExternalLink, ShieldAlert } from "lucide-react"
+import GithubMono from '@lobehub/icons/es/Github/components/Mono'
 
 /**
  * Full-screen pause curtain for the Vercel deployment.
@@ -93,7 +94,7 @@ export function VercelPauseCurtain() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <Github className="h-4 w-4 mr-2" />
+                <GithubMono size={16} className="mr-2" />
                 View GitHub
               </a>
             </Button>

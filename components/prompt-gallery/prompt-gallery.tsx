@@ -46,7 +46,6 @@ import {
   ScrollText,
   Globe,
   ArrowRight,
-  Github,
   Pin,
   Ban,
   Activity,
@@ -1188,8 +1187,14 @@ export function PromptGallery() {
                     isMergeMode={mergeMode.isMergeMode}
                     mergeModeType={mergeMode.mergeModeType}
                     disableMergeMode={mergeMode.disableMergeMode}
-                    enableMergeMode={mergeMode.enableMergeMode}
-                    enableVariationMode={mergeMode.enableVariationMode}
+                    enableMergeMode={() => {
+                      setIsAiConvertMode(false)
+                      mergeMode.enableMergeMode()
+                    }}
+                    enableVariationMode={() => {
+                      setIsAiConvertMode(false)
+                      mergeMode.enableVariationMode()
+                    }}
                     setSearchTags={search.setSearchTags}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onProviderChange={trackProviderChange}
@@ -1244,6 +1249,9 @@ export function PromptGallery() {
                         setAppliedTagCountFilter={search.setAppliedTagCountFilter}
                         isTagCountSupported={isTagCountSupported}
                         isTagCountValid={isTagCountValid}
+                        scoreTier={search.scoreTier}
+                        setScoreTier={search.setScoreTier}
+                        setAppliedScoreTier={search.setAppliedScoreTier}
                         characterCountFilter={search.characterCountFilter}
                         setCharacterCountFilter={search.setCharacterCountFilter}
                         setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
@@ -1287,6 +1295,7 @@ export function PromptGallery() {
                     ratingFilter={search.ratingFilter}
                     order={search.order}
                     appliedTagCountFilter={search.appliedTagCountFilter}
+                    appliedScoreTier={search.appliedScoreTier}
                     booruProvider={search.booruProvider}
                   />
                 </form>
@@ -1528,6 +1537,7 @@ export function PromptGallery() {
           if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'merge') {
             mergeMode.disableMergeMode()
           } else {
+            setIsAiConvertMode(false)
             mergeMode.enableMergeMode()
           }
         }}
@@ -1535,6 +1545,7 @@ export function PromptGallery() {
           if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'variations') {
             mergeMode.disableMergeMode()
           } else {
+            setIsAiConvertMode(false)
             mergeMode.enableVariationMode()
           }
         }}

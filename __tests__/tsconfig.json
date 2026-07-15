@@ -4,7 +4,10 @@
     "target": "es2020",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "moduleResolution": "node",
-    "baseUrl": ".."
+    "types": ["node"],
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["./*"]
+    }
   }
 }

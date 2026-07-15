@@ -100,6 +100,75 @@ const TAGCOUNT_SUPPORTED_PROVIDERS = new Set<BooruProvider>(['danbooru', 'aiboor
 
 export const isTagCountSupportedProvider = (provider: BooruProvider): boolean => TAGCOUNT_SUPPORTED_PROVIDERS.has(provider)
 
+// Palanca 1 (docs/prompt-genericness-mitigation-plan.md §7-§8): quality floor via score:>=N.
+// Confirmed empirically (§7.2) that score: filters posts and is free (doesn't consume a tag
+// slot) on ALL 5 providers — unlike tagcount:, which Gelbooru/Rule34 don't support at all.
+// Score scales differ wildly by provider (§7.3 percentile sampling), so tiers map to different
+// raw numbers per provider instead of one global threshold.
+export type ScoreTier = 'off' | 'good' | 'great' | 'best'
+
+// score:>=N per provider/tier, calibrated from a random-sample percentile distribution
+// (roughly p50/p75/p90 — see §7.3 table). 'off' has no entry: no floor is applied.
+export const SCORE_FLOOR_BY_PROVIDER: Record<BooruProvider, Record<Exclude<ScoreTier, 'off'>, number>> = {
+  danbooru: { good: 8, great: 15, best: 25 },
+  aibooru: { good: 7, great: 12, best: 20 },
+  e621: { good: 50, great: 130, best: 300 },
+  gelbooru: { good: 5, great: 18, best: 50 },
+  rule34: { good: 35, great: 90, best: 180 },
+}
+
+// Returns the score:>= threshold to apply for a given provider/tier, or null when the floor
+// is off (or the provider/tier combination is unknown).
+export const getScoreFloor = (provider: BooruProvider, tier: ScoreTier): number | null => {
+  if (tier === 'off') return null
+  return SCORE_FLOOR_BY_PROVIDER[provider]?.[tier] ?? null
+}
+
+// Fase 3 (§8 of docs/prompt-genericness-mitigation-plan.md): niche-tag fallback. When a
+// quality-floor tier makes a page come back nearly empty (a niche tag simply doesn't have
+// enough posts clearing the threshold), relax one tier and retry once instead of showing a
+// half-empty page. best -> great -> good -> off (fully removes the floor).
+const TIER_RELAX_ORDER: ScoreTier[] = ['best', 'great', 'good', 'off']
+
+// Returns the next-weaker tier, or null if `tier` is already 'off' (nothing left to relax).
+export const relaxScoreTier = (tier: ScoreTier): ScoreTier | null => {
+  const index = TIER_RELAX_ORDER.indexOf(tier)
+  if (index === -1 || index === TIER_RELAX_ORDER.length - 1) return null
+  return TIER_RELAX_ORDER[index + 1]
+}
+
+// Replaces the score:>=N (or its URL-encoded form) belonging to `fromTier` inside a query
+// string / URL with the threshold for `toTier` (or removes it entirely when toTier is 'off').
+// Used by the fetcher (lib/api-client.ts) to retry a nearly-empty page with a relaxed floor
+// without rebuilding the whole query from scratch. Pure string replacement — safe even if the
+// exact numeric floor appears nowhere else, since SCORE_FLOOR_BY_PROVIDER values are looked up
+// directly rather than guessed from the URL.
+export const relaxScoreFloorInUrl = (url: string, provider: BooruProvider, fromTier: ScoreTier): string | null => {
+  const fromFloor = getScoreFloor(provider, fromTier)
+  if (fromFloor == null) return null
+
+  const toTier = relaxScoreTier(fromTier)
+  if (toTier == null) return null
+
+  const toFloor = getScoreFloor(provider, toTier)
+  // Match score:>=N in both raw and URL-encoded (score%3A%3E%3D or score:%3E%3D) forms, with
+  // the exact fromFloor value, followed by a boundary (space, encoded space, query separator,
+  // or end of string).
+  const rawPattern = new RegExp(`score:>=${fromFloor}(?=[\\s+&]|%20|$)`, 'i')
+  const encodedPattern = new RegExp(`score(?:%3A|:)(?:%3E%3D|>=|%3E=|>%3D)${fromFloor}(?=[\\s+&]|%20|$)`, 'i')
+
+  const replacement = toFloor != null ? `score:>=${toFloor}` : ''
+  const encodedReplacement = toFloor != null ? `score%3A%3E%3D${toFloor}` : ''
+
+  if (rawPattern.test(url)) {
+    return url.replace(rawPattern, replacement).replace(/\+{2,}|\s{2,}/g, ' ').trim()
+  }
+  if (encodedPattern.test(url)) {
+    return url.replace(encodedPattern, encodedReplacement).replace(/(%20|\+){2,}/g, '%20')
+  }
+  return null
+}
+
 const splitRawTags = (tags: string): string[] =>
   tags
     .split(',')
@@ -157,8 +226,8 @@ export const getProviderTagLimit = (provider: BooruProvider): number => PROVIDER
 // Builds the final list of query tags sent to the selected booru API: rating filter,
 // tag-count filter, order/random metatag, and the user's own tags — trimmed to respect
 // the provider's fixed tag-count limit (order/random consume one of the limited slots).
-export const getFinalQueryTags = (userTags: string, ratingFilter: string, order: string, tagCountFilter?: string, provider: BooruProvider = 'danbooru'): string[] =>
-  getFinalQueryTagsWithMeta(userTags, ratingFilter, order, tagCountFilter, provider).tags
+export const getFinalQueryTags = (userTags: string, ratingFilter: string, order: string, tagCountFilter?: string, provider: BooruProvider = 'danbooru', scoreTier: ScoreTier = 'off'): string[] =>
+  getFinalQueryTagsWithMeta(userTags, ratingFilter, order, tagCountFilter, provider, scoreTier).tags
     .filter(t => !t.dropped)
     .map(t => t.value)
 
@@ -183,7 +252,7 @@ export interface FinalQueryTagsResult {
 // Same as getFinalQueryTags, but returns per-tag metadata (free vs. limit-consuming,
 // kept vs. dropped) plus a slots-used/limit summary — used to power the "Active Query"
 // panel so users can see exactly how many of the provider's tag slots they're using.
-export const getFinalQueryTagsWithMeta = (userTags: string, ratingFilter: string, order: string, tagCountFilter?: string, provider: BooruProvider = 'danbooru'): FinalQueryTagsResult => {
+export const getFinalQueryTagsWithMeta = (userTags: string, ratingFilter: string, order: string, tagCountFilter?: string, provider: BooruProvider = 'danbooru', scoreTier: ScoreTier = 'off'): FinalQueryTagsResult => {
   const tags: QueryTagMeta[] = []
   const limit = PROVIDER_TAG_LIMITS[provider] ?? PROVIDER_TAG_LIMITS.danbooru
 
@@ -199,6 +268,14 @@ export const getFinalQueryTagsWithMeta = (userTags: string, ratingFilter: string
   // 0 posts on both — the Gelbooru 0.2 engine has no such metatag).
   if (tagCountFilter && isTagCountSupportedProvider(provider)) {
     tags.push({ value: `tagcount:>=${tagCountFilter.replace(/\D/g, '')}`, countsTowardsLimit: false, dropped: false })
+  }
+
+  // Quality floor (Palanca 1, §7-§8 of docs/prompt-genericness-mitigation-plan.md) — score:>=N,
+  // free on all 5 providers (confirmed §7.2). Applied right after tagcount:, same free-metatag
+  // treatment. Off by default; a no-op when scoreTier === 'off'.
+  const scoreFloor = getScoreFloor(provider, scoreTier)
+  if (scoreFloor != null) {
+    tags.push({ value: `score:>=${scoreFloor}`, countsTowardsLimit: false, dropped: false })
   }
 
   // Order/random metatag — confirmed to consume one slot of the limit, same as a normal tag.

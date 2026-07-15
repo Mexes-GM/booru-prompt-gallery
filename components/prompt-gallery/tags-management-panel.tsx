@@ -23,8 +23,10 @@ import {
 import { Label } from "@/components/ui/label"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { SmoothFilterSlider } from "@/components/ui/smooth-filter-slider"
+import { ScoreTierControl } from "@/components/prompt-gallery/score-tier-control"
 import { Check, ChevronDown, Save, Trash2, X, Replace } from "lucide-react"
 import type { TagPreset } from "@/lib/storage"
+import type { ScoreTier } from "@/lib/api-client"
 
 interface TagsManagementPanelProps {
   addInput: string
@@ -53,6 +55,11 @@ interface TagsManagementPanelProps {
   setAppliedTagCountFilter: (value: string) => void
   isTagCountSupported: boolean
   isTagCountValid: boolean
+
+  /** Quality floor (Palanca 1, docs/prompt-genericness-mitigation-plan.md §7-§8): score:>=N tier. */
+  scoreTier: ScoreTier
+  setScoreTier: (value: ScoreTier) => void
+  setAppliedScoreTier: (value: ScoreTier) => void
 
   characterCountFilter: string
   setCharacterCountFilter: (value: string) => void
@@ -96,6 +103,9 @@ export function TagsManagementPanel({
   setAppliedTagCountFilter,
   isTagCountSupported,
   isTagCountValid,
+  scoreTier,
+  setScoreTier,
+  setAppliedScoreTier,
   characterCountFilter,
   setCharacterCountFilter,
   setAppliedCharacterCountFilter,
@@ -296,6 +306,12 @@ export function TagsManagementPanel({
             maxInput={1000}
             ariaLabel="Minimum tags"
             dotColor={isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}
+          />
+          <ScoreTierControl
+            variant="compact"
+            value={scoreTier}
+            onChange={setScoreTier}
+            onCommit={setAppliedScoreTier}
           />
           <SmoothFilterSlider
             variant="compact"
@@ -582,6 +598,11 @@ export function TagsManagementPanel({
             maxInput={1000}
             ariaLabel="Minimum tag count"
             dotColor={isTagCountSupported ? "bg-blue-500" : "bg-gray-400"}
+          />
+          <ScoreTierControl
+            value={scoreTier}
+            onChange={setScoreTier}
+            onCommit={setAppliedScoreTier}
           />
           <SmoothFilterSlider
             min={0}
