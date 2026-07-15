@@ -3,12 +3,13 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export const runtime = 'edge'
 
-// Cache health check results for 5 minutes at the CDN level.
+// Cache health check results for 10 minutes at the CDN level.
 // This prevents external monitors from triggering excessive
-// outbound requests that could trip rate limits.
+// outbound requests / Supabase round-trips that could trip rate limits
+// or add unnecessary Active CPU on Vercel Fluid Compute.
 const CACHE_HEADERS = {
-  'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
-  'CDN-Cache-Control': 'public, s-maxage=300',
+  'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=120',
+  'CDN-Cache-Control': 'public, s-maxage=600',
 }
 
 export async function GET() {

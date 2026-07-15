@@ -37,13 +37,40 @@ function scrubSensitiveData(url: string | undefined): string | undefined {
   }
 }
 
+// Routes that are cheap, high-frequency, and not worth tracing (health/status
+// pollers). Excluding them from tracesSampler avoids the per-invocation cost
+// of building + shipping a span to Sentry on every hit, which otherwise adds
+// real Active CPU time on Vercel Fluid Compute for endpoints that are polled
+// far more often than actual users hit the app.
+const UNTRACED_ROUTES = ['/api/status', '/api/health', '/api/version']
+
+function isUntracedRoute(samplingContext: Record<string, unknown>): boolean {
+  const name = String(
+    (samplingContext as any)?.name ??
+      (samplingContext as any)?.transactionContext?.name ??
+      ''
+  )
+  const target = String(
+    (samplingContext as any)?.request?.url ??
+      (samplingContext as any)?.attributes?.['http.target'] ??
+      (samplingContext as any)?.attributes?.['url.path'] ??
+      ''
+  )
+  return UNTRACED_ROUTES.some((route) => name.includes(route) || target.includes(route))
+}
+
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   // Coerce "" to undefined so the withSentryConfig-injected release is used.
   release: process.env.NEXT_PUBLIC_APP_VERSION || undefined,
 
-  // Sample only 10% of traces to stay within free tier
-  tracesSampleRate: 0.1,
+  // Sample 10% of traces to stay within free tier, except for high-frequency
+  // polling routes (status/health/version) which we never trace — see
+  // isUntracedRoute above.
+  tracesSampler(samplingContext) {
+    if (isUntracedRoute(samplingContext)) return 0
+    return 0.1
+  },
 
   // Disable logs to save quota
   enableLogs: false,

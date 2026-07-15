@@ -47,18 +47,17 @@ Sentry.init({
   // Sample only 10% of traces to stay within free tier (5K events/month)
   tracesSampleRate: 0.1,
 
-  // Session Replay — always capture a replay on error (rare crash → ~1 replay),
-  // PLUS a small 5% sample of normal sessions. The 5% is deliberate: the
-  // "favorites stuck on Loading N more" bug does NOT throw, so onError alone
-  // would never record it — the session sample lets us catch it in the wild.
-  integrations: [
-    Sentry.replayIntegration({
-      maskAllText: false,   // we must see the UI text to confirm browser translation
-      blockAllMedia: true,  // don't record gallery images (bandwidth + rating-safe)
-    }),
-  ],
-  replaysSessionSampleRate: 0.05,
-  replaysOnErrorSampleRate: 1.0,
+  // Session Replay — disabled (screen recording). Was: always capture a
+  // replay on error, plus a 5% sample of normal sessions. Kept the comment
+  // for context if re-enabling is ever needed.
+  // integrations: [
+  //   Sentry.replayIntegration({
+  //     maskAllText: false,   // we must see the UI text to confirm browser translation
+  //     blockAllMedia: true,  // don't record gallery images (bandwidth + rating-safe)
+  //   }),
+  // ],
+  // replaysSessionSampleRate: 0.05,
+  // replaysOnErrorSampleRate: 1.0,
 
   // Sentry Logs stay off to save quota + bundle; we rely on breadcrumbs, which
   // ride inside the error event for free.

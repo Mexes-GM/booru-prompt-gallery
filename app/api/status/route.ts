@@ -3,14 +3,18 @@ import { SOCIAL_URLS, USER_AGENT } from '@/lib/constants'
 
 export const runtime = 'edge'
 
-// Status is read frequently by every visitor's badge widget, so we cache it
-// hard at the CDN (60s). That means at most ~1 real upstream check per minute
-// per edge region, keeping Vercel/Netlify function CPU negligible.
+// Status is read frequently by every visitor's badge widget. A deployment
+// status doesn't change second-to-second, so we cache it hard at the CDN
+// (5 min) — that's at most ~1 real upstream check per 5 minutes per edge
+// region, instead of 1/minute. This directly cuts Vercel Active CPU: measured
+// production usage showed /api/status as the single largest CPU consumer
+// among all routes (~397 invocations / 24h at ~150ms CPU each) despite the
+// old 60s cache.
 const CACHE_HEADERS = {
-  'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-  'CDN-Cache-Control': 'public, s-maxage=60',
-  'Vercel-CDN-Cache-Control': 'public, s-maxage=60',
-  'Netlify-CDN-Cache-Control': 'public, s-maxage=60',
+  'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+  'CDN-Cache-Control': 'public, s-maxage=300',
+  'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
+  'Netlify-CDN-Cache-Control': 'public, s-maxage=300',
 }
 
 type DeploymentStatus = 'up' | 'down' | 'paused' | 'unknown'
@@ -49,7 +53,7 @@ function mapUptimeRobotStatus(code: number): DeploymentStatus {
 
 async function fetchFromUptimeRobot(apiKey: string): Promise<StatusPayload['deployments'] | null> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 6000)
+  const timeout = setTimeout(() => controller.abort(), 3500)
   try {
     const res = await fetch('https://api.uptimerobot.com/v2/getMonitors', {
       method: 'POST',
@@ -105,7 +109,7 @@ async function fetchFromUptimeRobot(apiKey: string): Promise<StatusPayload['depl
 // signal only; UptimeRobot (external prober) is the authoritative source.
 async function pingDeployment(baseUrl: string): Promise<DeploymentStatus> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 5000)
+  const timeout = setTimeout(() => controller.abort(), 3000)
   try {
     const res = await fetch(`${baseUrl}/api/version`, {
       method: 'GET',
