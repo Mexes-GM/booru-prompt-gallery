@@ -290,9 +290,27 @@
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
-  scrollbar-gutter: stable;
+  /* Keep the vertical scrollbar always present so page-height changes never
+   * shift the layout. */
   overflow-y: scroll;
   overflow-anchor: none;
+}
+
+/* ── Fix: page horizontal shift when any Radix overlay opens ──────────────────
+ * Every Radix overlay (Dialog, Select, DropdownMenu, Popover) locks body scroll
+ * via `react-remove-scroll`, which sets `data-scroll-locked` and adds
+ * `margin-right: <scrollbar>px !important` to the <body> to compensate for a
+ * scrollbar it assumes it removes. But `html { overflow-y: scroll }` keeps that
+ * scrollbar permanently visible, so the compensation is spurious and shifts the
+ * centered layout ~4px.
+ *
+ * react-remove-scroll's own rule is `body[data-scroll-locked]` with !important,
+ * injected into <head> at runtime (after this file), so we must WIN the cascade:
+ * the `html` prefix raises specificity (0,1,2 > 0,1,1) and beats it regardless of
+ * source order. Scroll is still locked via the library's JS wheel/touch handlers. */
+html body[data-scroll-locked] {
+  margin-right: 0 !important;
+  padding-right: 0 !important;
 }
 
 /* Extension sidebar mode — runs inside an <iframe>.
