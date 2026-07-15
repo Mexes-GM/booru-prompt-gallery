@@ -133,7 +133,7 @@ export function FavoritesFolderTabs({
                                   setFolderToDelete({ id: tab.id as string, name: tab.name })
                                 }
                               }}
-                              className={`ml-1 rounded-full p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center transition-colors cursor-pointer ${isActive ? "hover:bg-black/20 text-primary-foreground" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
+                              className={`ml-1 rounded-full p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center transition-[background-color,color,transform] duration-150 ease-out active:scale-90 motion-reduce:active:scale-100 cursor-pointer ${isActive ? "hover:bg-black/20 text-primary-foreground" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
                               aria-label={`Delete folder ${tab.name}`}
                             >
                               <X className="w-3.5 h-3.5" />

@@ -375,10 +375,12 @@ html.extension-mode {
 
 .animate-nudge {
   animation: nudge 1.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  content-visibility: auto;
 }
 
 .animate-pulse-slow {
   animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  content-visibility: auto;
 }
 
 .animate-shake {

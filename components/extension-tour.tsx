@@ -58,7 +58,7 @@ function TourTooltip({
           {Array.from({ length: size }).map((_, i) => (
             <span
               key={i}
-              className={`h-1.5 rounded-full transition-all ${
+              className={`h-1.5 rounded-full transition-[width,background-color] duration-200 motion-reduce:transition-none ${
                 i === index ? "w-4 bg-primary" : "w-1.5 bg-muted-foreground/30"
               }`}
             />

@@ -95,7 +95,7 @@ export function InfiniteScrollTrigger({
  {isLoading ? (
  <div className="flex flex-col items-center gap-3 w-full max-w-xs mx-auto">
  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
- <div className="w-1/4 h-full bg-primary rounded-full animate-indeterminate-bar" />
+ <div className="w-1/4 h-full bg-primary rounded-full animate-indeterminate-bar [content-visibility:auto]" />
  </div>
  <p className="text-sm text-muted-foreground">
  Loading page {currentPage}...

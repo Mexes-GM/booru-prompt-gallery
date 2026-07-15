@@ -3,6 +3,7 @@
 import { useState } from "react"
 import dynamic from "next/dynamic"
 import { motion } from "framer-motion"
+import { useLowMotion } from "@/hooks/use-low-motion"
 import { usePostHog } from "posthog-js/react"
 import { Button } from "@/components/ui/button"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
@@ -82,6 +83,7 @@ export function GalleryToolbar({
   // instant. Applies the same side effects as a normal provider switch.
   const [rule34DialogOpen, setRule34DialogOpen] = useState(false)
   const posthog = usePostHog()
+  const lowMotion = useLowMotion()
 
   const applyProvider = (p: BooruProvider) => {
     setBooruProvider(p)
@@ -164,7 +166,7 @@ export function GalleryToolbar({
                   toggleShowFavorites()
                   posthog.capture('favorites_panel_toggled', { action: showFavorites ? 'close' : 'open' })
                 }}
-                whileHover={{ scale: 1.02 }}
+                whileHover={lowMotion ? undefined : { scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
               >
                 <motion.div
@@ -205,7 +207,7 @@ export function GalleryToolbar({
                   toggleShowHistory()
                   posthog.capture('history_panel_toggled', { action: showHistory ? 'close' : 'open' })
                 }}
-                whileHover={{ scale: 1.02 }}
+                whileHover={lowMotion ? undefined : { scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
               >
                 <History className="w-4 h-4" />

@@ -1141,7 +1141,7 @@ export default function ExtensionClient() {
               ) : search.scrollLimited ? (
                 <div className="flex flex-col items-center gap-3 w-full max-w-xs mx-auto">
                   <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                    <div className="w-1/4 h-full bg-amber-500 rounded-full animate-indeterminate-bar" />
+                    <div className="w-1/4 h-full bg-amber-500 rounded-full animate-indeterminate-bar [content-visibility:auto]" />
                   </div>
                   <p className="text-sm text-amber-600 dark:text-amber-400">
                     Scrolling too fast — pausing for 5s.
