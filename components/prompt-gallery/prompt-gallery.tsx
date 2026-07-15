@@ -1187,8 +1187,14 @@ export function PromptGallery() {
                     isMergeMode={mergeMode.isMergeMode}
                     mergeModeType={mergeMode.mergeModeType}
                     disableMergeMode={mergeMode.disableMergeMode}
-                    enableMergeMode={mergeMode.enableMergeMode}
-                    enableVariationMode={mergeMode.enableVariationMode}
+                    enableMergeMode={() => {
+                      setIsAiConvertMode(false)
+                      mergeMode.enableMergeMode()
+                    }}
+                    enableVariationMode={() => {
+                      setIsAiConvertMode(false)
+                      mergeMode.enableVariationMode()
+                    }}
                     setSearchTags={search.setSearchTags}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onProviderChange={trackProviderChange}
@@ -1531,6 +1537,7 @@ export function PromptGallery() {
           if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'merge') {
             mergeMode.disableMergeMode()
           } else {
+            setIsAiConvertMode(false)
             mergeMode.enableMergeMode()
           }
         }}
@@ -1538,6 +1545,7 @@ export function PromptGallery() {
           if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'variations') {
             mergeMode.disableMergeMode()
           } else {
+            setIsAiConvertMode(false)
             mergeMode.enableVariationMode()
           }
         }}

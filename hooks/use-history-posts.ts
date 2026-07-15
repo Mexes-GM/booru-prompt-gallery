@@ -4,6 +4,7 @@ import { useMemo, useRef, useEffect } from "react"
 import { useFavoritePosts, type FavoriteItem } from "@/hooks/use-favorite-posts"
 import type { HistoryItem } from "@/lib/storage"
 import type { BooruPost } from "@/lib/booru/types"
+import { dedupeHistoryKeys } from "@/lib/history-order"
 
 /**
  * Hydrates full `BooruPost[]` for a list of copy-history entries.
@@ -81,50 +82,22 @@ export function useHistoryPosts(history: HistoryItem[]) {
   // looping card. Dedup here (first occurrence = newest copy, since history is
   // newest-first) while keeping the missing-count check accurate against the
   // same deduped total.
-  const dedupedKeys = useMemo(() => {
-    const seen = new Set<string>()
-    const keys: string[] = []
-    for (const item of history) {
-      const key = `${item.provider}:${item.postId}`.toLowerCase()
-      if (!seen.has(key)) {
-        seen.add(key)
-        keys.push(key)
-      }
-    }
-    return keys
-  }, [history])
+  const dedupedKeys = useMemo(() => dedupeHistoryKeys(history), [history])
 
-  // ── Stable display order ──
-  // `dedupedKeys` reflects the RAW history order (newest HistoryItem first), so
-  // re-copying a post that's already in History — including copying it again
-  // from within the History view itself — moves its key to the front every
-  // time (a new HistoryItem is always prepended). That reordering defeats
-  // MasonryGrid's incremental layout cache (which only fast-paths when
-  // existing item IDs stay an ID-prefix match), forcing a full relayout on
-  // every copy: cards visibly jump/duplicate mid-transition, and are briefly
-  // interleaved enough to share Framer Motion `layoutId`/animation state and
-  // to interrupt in-flight image loads (looked like "the duplicate never
-  // finishes loading").
+  // `dedupedKeys` is already the correct display order: RAW history order
+  // (newest HistoryItem first), deduped so each post appears once at its
+  // most-recent copy position. Re-copying a post that's already in History
+  // (including from within the History view itself) moves its key to the
+  // front, same as any other "newest first" list — that's correct, expected
+  // behavior, not a bug.
   //
-  // Fix: track the order posts were first shown in and stick to it. A key
-  // already in `orderRef` keeps its original slot; only keys that are new
-  // (first-ever copy of that post) get appended at the end. Removing a post
-  // from history (removeFromHistory) drops it from the tracked order too, so
-  // it doesn't leave a stale slot.
-  const orderRef = useRef<string[]>([])
-  const displayKeys = useMemo(() => {
-    const currentSet = new Set(dedupedKeys)
-    // Keep previously-shown keys that are still present, in their existing order.
-    const stable = orderRef.current.filter(key => currentSet.has(key))
-    // Append genuinely new keys (never shown before) at the end.
-    const stableSet = new Set(stable)
-    for (const key of dedupedKeys) {
-      if (!stableSet.has(key)) stable.push(key)
-    }
-    orderRef.current = stable
-    return stable
-  }, [dedupedKeys])
-
+  // MasonryGrid's incremental layout cache used to force a full relayout on
+  // any reordering and, separately, mis-animated ALL existing cards as
+  // "newly added" whenever items were prepended (its append-detection was
+  // index-based, not ID-based) — that's what caused cards to visibly
+  // jump/duplicate on every copy. Both were fixed directly in MasonryGrid
+  // (ID-based new-item diffing + scroll-anchored full recompute), so this
+  // hook no longer needs to freeze display order to work around it.
   const posts = useMemo<BooruPost[]>(() => {
     const byKey = new Map<string, BooruPost>()
     for (const p of snapshotPosts) {
@@ -133,10 +106,10 @@ export function useHistoryPosts(history: HistoryItem[]) {
     for (const p of fetched.posts) {
       byKey.set(`${(p._provider || '').toLowerCase()}:${p.id}`, p)
     }
-    return displayKeys
+    return dedupedKeys
       .map(key => byKey.get(key))
       .filter((p): p is BooruPost => p !== undefined)
-  }, [displayKeys, snapshotPosts, fetched.posts])
+  }, [dedupedKeys, snapshotPosts, fetched.posts])
 
   return {
     data: posts.length,

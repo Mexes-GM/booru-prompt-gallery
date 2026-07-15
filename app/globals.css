@@ -534,3 +534,11 @@ input[type="number"] {
     transform: scale(1);
   }
 }
+
+/* Masonry Grid — animación de reordenamiento (FLIP): cuando MasonryItem
+   detecta que el mismo post cambió de posición (ej. History moviendo la card
+   recién copiada al frente), pinta primero en la posición vieja y luego deja
+   que esta transition anime el `transform` hacia la posición nueva. */
+.masonry-item-move {
+  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
