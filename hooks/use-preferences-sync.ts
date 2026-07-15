@@ -28,6 +28,7 @@ export function usePreferencesSync() {
     if (hasSyncedRef.current) return
 
     let isSubscribed = true
+    let cloudSyncFlagTimer: ReturnType<typeof setTimeout> | undefined
 
     async function loadCloudPreferences() {
       const { data, error } = await supabase
@@ -123,7 +124,7 @@ export function usePreferencesSync() {
             }
           } finally {
             // Use a small delay to let any queued microtasks settle before unblocking
-            setTimeout(() => {
+            cloudSyncFlagTimer = setTimeout(() => {
               _cloudSyncInProgress = false
             }, 50)
           }
@@ -155,6 +156,7 @@ export function usePreferencesSync() {
 
     return () => {
       isSubscribed = false
+      if (cloudSyncFlagTimer) clearTimeout(cloudSyncFlagTimer)
     }
   }, [user, supabase])
 

@@ -164,5 +164,5 @@ export function useFavoritesSync({
         console.warn("[useFavoritesSync] Error removing channel:", err)
       })
     }
-  }, [userId])
+  }, [userId, supabase, setFavorites, setFavoriteFolderMap, setFolders])
 }

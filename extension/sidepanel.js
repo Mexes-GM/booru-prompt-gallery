@@ -626,10 +626,16 @@ function resolveElementLocator(locator) {
     };
     const querySelectorAllDeep = (selector, root = document) => {
       const list = [];
+      const seen = new Set();
       const find = (node) => {
         if (!node) return;
         if (node.querySelectorAll) {
-          for (const m of node.querySelectorAll(selector)) if (!list.includes(m)) list.push(m);
+          for (const m of node.querySelectorAll(selector)) {
+            if (!seen.has(m)) {
+              seen.add(m);
+              list.push(m);
+            }
+          }
         }
         if (node.shadowRoot) find(node.shadowRoot);
         if (node.children) for (const child of node.children) find(child);
@@ -1113,12 +1119,16 @@ function armTargetingInPage(targetKind, devMode) {
   // Helper to find elements recursively, including traversing open shadow roots
   const querySelectorAllDeep = (selector, root = document) => {
     const list = [];
+    const seen = new Set();
     const find = (node) => {
       if (!node) return;
       if (node.querySelectorAll) {
         const matches = node.querySelectorAll(selector);
         for (const m of matches) {
-          if (!list.includes(m)) list.push(m);
+          if (!seen.has(m)) {
+            seen.add(m);
+            list.push(m);
+          }
         }
       }
       if (node.shadowRoot) find(node.shadowRoot);
@@ -1468,12 +1478,16 @@ function waitForGenerateButtonFree(tabId, frameId) {
           func: () => {
             const querySelectorAllDeep = (selector, root = document) => {
               const list = [];
+              const seen = new Set();
               const find = (node) => {
                 if (!node) return;
                 if (node.querySelectorAll) {
                   const matches = node.querySelectorAll(selector);
                   for (const m of matches) {
-                    if (!list.includes(m)) list.push(m);
+                    if (!seen.has(m)) {
+                      seen.add(m);
+                      list.push(m);
+                    }
                   }
                 }
                 if (node.shadowRoot) find(node.shadowRoot);
@@ -2318,9 +2332,10 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator) {
               };
               const querySelectorAllDeep = (selector, root = document) => {
                 const list = [];
+                const seen = new Set();
                 const find = (node) => {
                   if (!node) return;
-                  if (node.querySelectorAll) for (const m of node.querySelectorAll(selector)) if (!list.includes(m)) list.push(m);
+                  if (node.querySelectorAll) for (const m of node.querySelectorAll(selector)) { if (!seen.has(m)) { seen.add(m); list.push(m); } }
                   if (node.shadowRoot) find(node.shadowRoot);
                   if (node.children) for (const child of node.children) find(child);
                 };
@@ -2650,9 +2665,10 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator) {
               const { ariaLabel, text: metaText, className } = generateLocator.meta;
               const querySelectorAllDeep = (selector, root = document) => {
                 const list = [];
+                const seen = new Set();
                 const find = (node) => {
                   if (!node) return;
-                  if (node.querySelectorAll) for (const m of node.querySelectorAll(selector)) if (!list.includes(m)) list.push(m);
+                  if (node.querySelectorAll) for (const m of node.querySelectorAll(selector)) { if (!seen.has(m)) { seen.add(m); list.push(m); } }
                   if (node.shadowRoot) find(node.shadowRoot);
                   if (node.children) for (const child of node.children) find(child);
                 };
@@ -2811,12 +2827,16 @@ function countActiveTasks(tabId) {
       func: () => {
         const querySelectorAllDeep = (selector, root = document) => {
           const list = [];
+          const seen = new Set();
           const find = (node) => {
             if (!node) return;
             if (node.querySelectorAll) {
               const matches = node.querySelectorAll(selector);
               for (const m of matches) {
-                if (!list.includes(m)) list.push(m);
+                if (!seen.has(m)) {
+                  seen.add(m);
+                  list.push(m);
+                }
               }
             }
             if (node.shadowRoot) find(node.shadowRoot);
@@ -3022,12 +3042,16 @@ function installAutoDownloadObserverInPage() {
   // Helper to find elements recursively, including traversing open shadow roots
   const querySelectorAllDeep = (selector, root = document) => {
     const list = [];
+    const seen = new Set();
     const find = (node) => {
       if (!node) return;
       if (node.querySelectorAll) {
         const matches = node.querySelectorAll(selector);
         for (const m of matches) {
-          if (!list.includes(m)) list.push(m);
+          if (!seen.has(m)) {
+            seen.add(m);
+            list.push(m);
+          }
         }
       }
       if (node.shadowRoot) find(node.shadowRoot);

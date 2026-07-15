@@ -397,6 +397,7 @@ const MergeStickyFooterComponent = ({
 
                                                             return (
                                                                 <button
+                                                                    type="button"
                                                                     key={cat}
                                                                     onClick={() => {
                                                                         setRandomSettings(prev => ({
@@ -509,7 +510,7 @@ const MergeStickyFooterComponent = ({
                                                     unoptimized
                                                 />
                                                 <motion.button
-                                                    whileHover={{ scale: 1.1 }}
+                                                    whileHover={lowMotion ? undefined : { scale: 1.1 }}
                                                     whileTap={{ scale: 0.9 }}
                                                     onClick={() => onRemovePost(post.id)}
                                                     className="absolute top-1 right-1 bg-black/60 hover:bg-red-500 text-white rounded-full p-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10 backdrop-blur-sm"

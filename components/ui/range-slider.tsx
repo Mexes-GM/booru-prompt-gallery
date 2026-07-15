@@ -140,7 +140,7 @@ export function RangeSlider({
 
   return (
     <div className="space-y-2">
-      <label className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+      <label htmlFor={minInputId} className="text-xs font-medium text-muted-foreground flex items-center gap-2">
         {dotColor && <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />}
         <InfoTooltip
           title={tooltipTitle}

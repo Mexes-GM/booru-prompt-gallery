@@ -30,7 +30,7 @@ export function SearchWithAutocomplete({
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
-  const [cursorPosition, setCursorPosition] = useState(0)
+  const cursorPositionRef = useRef(0)
   
   const containerRef = useRef<HTMLDivElement>(null)
   // We don't have direct access to the input ref inside PlaceholdersAndVanishInput easily without forwarding ref
@@ -63,7 +63,7 @@ export function SearchWithAutocomplete({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
     setValue(newValue)
-    setCursorPosition(e.target.selectionStart || 0)
+    cursorPositionRef.current = e.target.selectionStart || 0
 
     if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
 
@@ -102,7 +102,7 @@ export function SearchWithAutocomplete({
   }, [])
 
   const selectSuggestion = (suggestion: TagResult) => {
-    const { start, end } = getCurrentTag(value, cursorPosition)
+    const { start, end } = getCurrentTag(value, cursorPositionRef.current)
     
     const before = value.slice(0, start)
     const after = value.slice(end)
@@ -181,16 +181,21 @@ export function SearchWithAutocomplete({
       />
       
       {isOpen && suggestions.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-popover border rounded-md shadow-lg z-50 overflow-hidden max-h-[300px] overflow-y-auto">
+        <div
+          data-state={isOpen ? "open" : "closed"}
+          className="absolute top-full left-0 right-0 mt-2 bg-popover border rounded-md shadow-lg z-50 overflow-hidden max-h-[300px] overflow-y-auto animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-150 motion-reduce:animate-in motion-reduce:fade-in-0 motion-reduce:zoom-in-100 motion-reduce:slide-in-from-top-0"
+        >
           {isLoading && (
               <div className="p-2 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
                   <Loader2 className="h-3 w-3 animate-spin"/> Loading...
               </div>
           )}
-          <ul className="py-1">
+          <ul className="py-1" role="listbox">
             {suggestions.map((suggestion, index) => (
               <li
                 key={`${suggestion.name}-${index}`}
+                role="option"
+                aria-selected={activeIndex === index}
                 className={cn(
                   "px-4 py-2 text-sm cursor-pointer flex justify-between items-center hover:bg-accent hover:text-accent-foreground",
                   activeIndex === index && "bg-accent text-accent-foreground"

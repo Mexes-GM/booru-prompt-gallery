@@ -28,7 +28,10 @@ export function usePresetsAndHistory({ isClient, addInput, setAddInput, toast }:
   const [history, setHistory] = useState<HistoryItem[]>([])
 
   const previouslyCopiedPostIds = useMemo(() => {
-    return new Set(history.map(item => item.postId).filter((id): id is number => id !== undefined))
+    return new Set(history.reduce<number[]>((acc, item) => {
+      if (item.postId !== undefined) acc.push(item.postId)
+      return acc
+    }, []))
   }, [history])
 
   useEffect(() => {

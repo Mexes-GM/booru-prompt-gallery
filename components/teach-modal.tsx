@@ -248,8 +248,8 @@ const SuccessAnimation = memo(function SuccessAnimation() {
 
         {/* Main Icon Circle */}
         <motion.div
-          initial={{ scale: 0, rotate: -180 }}
-          animate={{ scale: 1, rotate: 0 }}
+          initial={{ scale: 0.95, rotate: -180, opacity: 0 }}
+          animate={{ scale: 1, rotate: 0, opacity: 1 }}
           transition={{
             type: "spring",
             stiffness: 260,

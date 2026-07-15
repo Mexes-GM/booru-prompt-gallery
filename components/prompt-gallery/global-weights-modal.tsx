@@ -260,6 +260,7 @@ function WeightStepper({
             isSmall ? "h-8" : "h-11"
         )}>
             <button
+                type="button"
                 onClick={() => update(-0.1)}
                 className={cn(
                     "h-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-l-lg transition-colors focus:outline-none focus:bg-secondary/50",
@@ -287,6 +288,7 @@ function WeightStepper({
             </div>
 
             <button
+                type="button"
                 onClick={() => update(0.1)}
                 className={cn(
                     "h-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-r-lg transition-colors focus:outline-none focus:bg-secondary/50",

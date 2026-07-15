@@ -2,6 +2,7 @@ import { useEffect, useState, memo, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet"
+import { ClientFormattedDate } from "@/components/ui/client-formatted-date"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -149,11 +150,9 @@ const AiConvertStickyFooterComponent = ({
       result: resultToSave,
       timestamp: Date.now()
     }
-    setHistory(prev => {
-      const newHistory = [newItem, ...prev].slice(0, 50)
-      localStorage.setItem('ai-convert-history', JSON.stringify(newHistory))
-      return newHistory
-    })
+    const newHistory = [newItem, ...history].slice(0, 50)
+    setHistory(newHistory)
+    localStorage.setItem('ai-convert-history', JSON.stringify(newHistory))
   }
 
   const clearHistory = () => {
@@ -441,7 +440,7 @@ const AiConvertStickyFooterComponent = ({
                           <div key={item.id} className="relative rounded-xl border border-border/60 bg-secondary/15 p-4 flex flex-col gap-3 group transition-colors hover:border-primary/30 hover:bg-secondary/30">
                             <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider truncate flex justify-between items-center">
                               <span>Original Tags</span>
-                              <span>{new Date(item.timestamp).toLocaleString()}</span>
+                              <span><ClientFormattedDate timestamp={item.timestamp} /></span>
                             </div>
                             <p className="text-xs text-muted-foreground/80 line-clamp-2" title={item.tags}>
                               {item.tags}

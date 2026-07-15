@@ -131,7 +131,7 @@ export function StickyMiniControlPanel({
           <div className="p-2 sm:p-3 flex flex-wrap sm:flex-nowrap items-end gap-2 sm:gap-4 relative z-10">
             {/* Tags to Add */}
             <div className="flex-1 min-w-[200px] max-w-[450px] flex flex-col gap-1">
-              <label className="text-xs font-medium leading-none flex items-center gap-2 text-foreground">
+              <label htmlFor="sticky-add-tags-input" className="text-xs font-medium leading-none flex items-center gap-2 text-foreground">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" aria-hidden="true" />
                 Tags to Add
                 {tagCount > 0 && (
@@ -145,6 +145,7 @@ export function StickyMiniControlPanel({
               </label>
               <div className="flex h-8 w-full items-center rounded-md border border-input bg-background/50 pl-2 pr-1 text-sm shadow-sm transition-colors focus-within:outline-none focus-within:ring-1 focus-within:ring-ring">
                 <DebouncedInput
+                  id="sticky-add-tags-input"
                   value={addInput}
                   onChange={setAddInput}
                   placeholder="e.g. 1girl, solo..."

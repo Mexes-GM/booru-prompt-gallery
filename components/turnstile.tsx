@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useCallback, useId } from "react"
+import { useEffect, useRef, useCallback, useId, useLayoutEffect } from "react"
 
 /**
  * Cloudflare Turnstile widget — free, privacy-friendly CAPTCHA alternative.
@@ -74,7 +74,9 @@ export function Turnstile({ onVerify, className, theme = "auto" }: TurnstileProp
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetIdRef = useRef<string | null>(null)
   const onVerifyRef = useRef(onVerify)
-  onVerifyRef.current = onVerify
+  useLayoutEffect(() => {
+    onVerifyRef.current = onVerify
+  })
   const reactId = useId()
 
   const isConfigured = Boolean(siteKey)

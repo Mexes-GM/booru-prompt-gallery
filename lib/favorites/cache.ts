@@ -169,6 +169,9 @@ export function booruPostToCacheRow(post: BooruPost, provider: string): any {
   const artistTags = (post.tag_string_artist || '').split(/\s+/).filter(Boolean)
   const charTags = (post.tag_string_character || '').split(/\s+/).filter(Boolean)
   const copyTags = (post.tag_string_copyright || '').split(/\s+/).filter(Boolean)
+  const artistTagSet = new Set(artistTags)
+  const charTagSet = new Set(charTags)
+  const copyTagSet = new Set(copyTags)
   return {
     provider,
     post_id: post.id,
@@ -180,7 +183,7 @@ export function booruPostToCacheRow(post: BooruPost, provider: string): any {
     image_width: post.width || 0,
     image_height: post.height || 0,
     tag_string: {
-      general: tags.filter(t => !artistTags.includes(t) && !charTags.includes(t) && !copyTags.includes(t)),
+      general: tags.filter(t => !artistTagSet.has(t) && !charTagSet.has(t) && !copyTagSet.has(t)),
       artist: artistTags,
       character: charTags,
       copyright: copyTags,

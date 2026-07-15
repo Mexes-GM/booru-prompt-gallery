@@ -20,6 +20,7 @@ import { BooruPost, BooruProvider } from "@/lib/api-client"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
+import { ClientFormattedDate } from "@/components/ui/client-formatted-date"
 import { Button } from "@/components/ui/button"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { MasonryGrid } from "@/components/masonry-grid"
@@ -895,7 +896,7 @@ export default function ExtensionClient() {
                               )}
                               <div className="flex-1 min-w-0">
                                 <p className="text-[10px] text-muted-foreground mb-1">
-                                  {new Date(item.timestamp).toLocaleString()}
+                                  <ClientFormattedDate timestamp={item.timestamp} />
                                 </p>
                                 <p className="text-xs line-clamp-3 break-words font-mono bg-muted/50 p-1 rounded">
                                   {item.content ?? `Post #${item.postId} (${item.provider})`}
@@ -1234,7 +1235,7 @@ export default function ExtensionClient() {
                 </>
               ) : targetState === "waiting" ? (
                 <>
-                  <MousePointerClick className="w-3 h-3 animate-bounce" /> Click field...
+                  <MousePointerClick className="w-3 h-3 animate-nudge" /> Click field...
                 </>
               ) : targetState === "selected" ? (
                 <>

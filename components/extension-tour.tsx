@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useJoyride, STATUS, type Status, type TooltipRenderProps } from "react-joyride"
 import { X, Settings2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -97,19 +97,19 @@ function TourTooltip({
 }
 
 export function ExtensionTour({ externalRun }: { externalRun?: boolean }) {
-  const [hasSeenTour, setHasSeenTour] = useState(true)
+  const hasSeenTourRef = useRef(true)
   const [run, setRun] = useState(false)
 
   // Hydrate from localStorage on mount
   useEffect(() => {
     const seen = localStorage.getItem(TOUR_STORAGE_KEY) === "1"
-    setHasSeenTour(seen)
+    hasSeenTourRef.current = seen
     if (!seen) setRun(true) // auto-start on first visit
   }, [])
 
   const markDone = useCallback(() => {
     try { localStorage.setItem(TOUR_STORAGE_KEY, "1") } catch {}
-    setHasSeenTour(true)
+    hasSeenTourRef.current = true
     setRun(false)
   }, [])
 

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
 import { getDanbooruProxyUrl } from "@/lib/proxy-url"
+import { useLowMotion } from "@/hooks/use-low-motion"
 
 interface TrendCardProps {
   item: TrendItem
@@ -19,6 +20,7 @@ const PARTICLES = Array.from({ length: 12 })
 
 function TrendCardComponent({ item, onClick, rank, index }: TrendCardProps) {
   const [isCopied, setIsCopied] = useState(false)
+  const lowMotion = useLowMotion()
   const { toast } = useToast()
 
   const imageUrl = useMemo(() => {
@@ -51,7 +53,7 @@ function TrendCardComponent({ item, onClick, rank, index }: TrendCardProps) {
         delay: index * 0.05,
         ease: [0.25, 0.1, 0.25, 1]
       }}
-      whileHover={{ y: -5 }}
+      whileHover={lowMotion ? undefined : { y: -5 }}
     >
       <Card
         className="group relative overflow-hidden cursor-pointer border-0 rounded-xl bg-muted/20 hover:bg-muted/40 transition-colors shadow-sm hover:shadow-xl"
@@ -144,9 +146,9 @@ function TrendCardComponent({ item, onClick, rank, index }: TrendCardProps) {
 
                   {/* Success Circle */}
                   <motion.div
-                    initial={{ scale: 0, rotate: -45 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    exit={{ scale: 0 }}
+                    initial={{ scale: 0.95, rotate: -45, opacity: 0 }}
+                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                    exit={{ scale: 0.95, opacity: 0 }}
                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
                     className="bg-gradient-to-br from-green-400 to-green-600 rounded-full p-4 shadow-[0_0_20px_rgba(74,222,128,0.4)] relative z-10"
                   >

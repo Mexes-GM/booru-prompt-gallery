@@ -400,7 +400,7 @@ export function TargetSetupWizard({
               </>
             ) : currentState === "waiting" ? (
               <>
-                <MousePointerClick className="w-3.5 h-3.5 animate-bounce" /> Click the element on the page
+                <MousePointerClick className="w-3.5 h-3.5 animate-nudge" /> Click the element on the page
               </>
             ) : currentState === "selected" ? (
               <>

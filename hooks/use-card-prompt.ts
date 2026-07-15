@@ -13,6 +13,7 @@ import { type BackgroundMode, processBackgroundTags } from "@/lib/background-det
 import { applyWeights } from "@/lib/weight-utils"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
+import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 
 export interface UseCardPromptArgs {
   post: BooruPost
@@ -84,15 +85,15 @@ export function useCardPrompt({
   isGlobalWeightsEnabled = false,
   onBaseContentChange,
 }: UseCardPromptArgs) {
-  const excludeList = useMemo(() => excludeInput.split(',').map(t => t.trim()).filter(Boolean), [excludeInput])
-  const addList = useMemo(() => addInput.split(',').map(t => t.trim()).filter(Boolean), [addInput])
+  const excludeList = useMemo(() => splitCommaSeparatedTags(excludeInput), [excludeInput])
+  const addList = useMemo(() => splitCommaSeparatedTags(addInput), [addInput])
 
   // Find & Replace: "find, find2" / "replace, replace2" paired by index.
   // Extra entries on either side (mismatched list lengths) are dropped rather
   // than guessed at, since a wrong pairing could silently corrupt tags.
   const wordReplacements = useMemo(() => {
-    const finds = findInput.split(',').map(t => t.trim()).filter(Boolean)
-    const replaces = replaceInput.split(',').map(t => t.trim()).filter(Boolean)
+    const finds = splitCommaSeparatedTags(findInput)
+    const replaces = splitCommaSeparatedTags(replaceInput)
     const pairCount = Math.min(finds.length, replaces.length)
     const rules: { find: string; replace: string }[] = []
     for (let i = 0; i < pairCount; i++) {

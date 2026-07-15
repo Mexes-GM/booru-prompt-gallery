@@ -100,7 +100,7 @@ export function QueryStatusPanel({
 
             <div className="flex flex-wrap items-center gap-1.5">
               {queryMeta.tags.map((tag, index) => (
-                <Tooltip key={index}>
+                <Tooltip key={`${tag.value}-${index}`}>
                   <TooltipTrigger asChild>
                     <Badge
                       variant="secondary"
@@ -149,7 +149,7 @@ export function QueryStatusPanel({
           generates (the rating toggle, sort dropdown, tag-count slider already
           handle per-provider syntax correctly) — only from what's typed manually. */}
       {detectMisusedMetatags(searchTags, booruProvider).map((warning, index) => (
-        <Alert key={index} className="py-2 border-amber-300/60 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-900/20">
+        <Alert key={`${warning.tag}-${index}`} className="py-2 border-amber-300/60 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-900/20">
           <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           <AlertDescription className="text-xs text-amber-800 dark:text-amber-300">
             <span className="font-mono font-medium">{warning.tag}</span>: {warning.message}

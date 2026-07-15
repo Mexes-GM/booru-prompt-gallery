@@ -27,7 +27,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({}, { status: 200 })
     }
 
-    const requestedTags = tagsParam.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+    const requestedTags = tagsParam.split(',').reduce<string[]>((acc, t) => {
+      const normalized = t.trim().toLowerCase()
+      if (normalized) acc.push(normalized)
+      return acc
+    }, [])
     if (requestedTags.length === 0) {
       return NextResponse.json({}, { status: 200 })
     }
@@ -115,9 +119,16 @@ export async function GET(request: NextRequest) {
 
       // Create smaller chunks to avoid URI too long errors in external providers
       const CHUNK_SIZE = 50
-      
+
+      const chunks: string[][] = []
       for (let i = 0; i < missingTags.length; i += CHUNK_SIZE) {
-        const chunk = missingTags.slice(i, i + CHUNK_SIZE)
+        chunks.push(missingTags.slice(i, i + CHUNK_SIZE))
+      }
+
+      // Each chunk is an independent request to the provider + its own DB upsert
+      // (chunking here is only to stay under a safe URL length), so fetch them
+      // all concurrently instead of awaiting one at a time.
+      await Promise.all(chunks.map(async (chunk) => {
         const baseUrl = provider === 'aibooru' ? PROVIDER_URLS.AIBOORU : PROVIDER_URLS.DANBOORU
         const url = new URL(`${baseUrl}/tags.json`)
         url.searchParams.set('search[category]', '4') // 4 = character
@@ -183,7 +194,7 @@ export async function GET(request: NextRequest) {
         } else {
           console.error(`Failed to fetch missing tags from ${provider}: ${response.status}`)
         }
-      }
+      }))
     }
 
 	return NextResponse.json(tagCounts, {

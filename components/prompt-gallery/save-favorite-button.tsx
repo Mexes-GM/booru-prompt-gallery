@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import { useLowMotion } from "@/hooks/use-low-motion"
 import { Check, ChevronDown, Folder, Plus, Heart, Loader2, Star, Bookmark, Flame, Zap, Sparkles, Image as ImageIcon, Moon, Sun, Ghost, Cat, Dog, Gamepad2, Music, Camera, Palette, type LucideIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -58,6 +59,7 @@ export function SaveFavoriteButton({
 }: SaveFavoriteButtonProps) {
     const [open, setOpen] = useState(false)
     const [isCreating, setIsCreating] = useState(false)
+    const lowMotion = useLowMotion()
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -103,7 +105,7 @@ export function SaveFavoriteButton({
                 }}
             >
                 <motion.div
-                    whileHover={{ scale: 1.15 }}
+                    whileHover={lowMotion ? undefined : { scale: 1.15 }}
                     whileTap={{ scale: 0.85 }}
                     animate={isFavorited ? {
                         scale: [1, 1.4, 1],
@@ -129,7 +131,7 @@ export function SaveFavoriteButton({
                         }}
                     >
                         <motion.div
-                            whileHover={{ y: 2 }}
+                            whileHover={lowMotion ? undefined : { y: 2 }}
                             whileTap={{ scale: 0.9 }}
                             transition={{ type: "spring", stiffness: 400, damping: 10 }}
                         >
@@ -179,7 +181,7 @@ export function SaveFavoriteButton({
                                     return (
                                         <motion.div
                                             key={iconName}
-                                            whileHover={{ scale: 1.1 }}
+                                            whileHover={lowMotion ? undefined : { scale: 1.1 }}
                                             whileTap={{ scale: 0.9 }}
                                         >
                                             <Button
@@ -226,6 +228,7 @@ function FolderPopoverContent({
     onOpenCreateModal: (query: string) => void
 }) {
     const [searchQuery, setSearchQuery] = useState("")
+    const selectedFolderIdSet = useMemo(() => new Set(selectedFolderIds), [selectedFolderIds])
     const [activeValue, setActiveValue] = useState("")
 
     return (
@@ -263,9 +266,9 @@ function FolderPopoverContent({
                         <AnimatePresence>
                             {selectedFolderIds.length === 0 && isFavorited && (
                                 <motion.div
-                                    initial={{ scale: 0, opacity: 0 }}
+                                    initial={{ scale: 0.95, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
-                                    exit={{ scale: 0, opacity: 0 }}
+                                    exit={{ scale: 0.95, opacity: 0 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                 >
                                     <Check className="h-3 w-3 text-primary" />
@@ -274,7 +277,7 @@ function FolderPopoverContent({
                         </AnimatePresence>
                     </CommandItem>
                     {folders.map((folder) => {
-                        const isSelected = selectedFolderIds.includes(folder.id) && isFavorited;
+                        const isSelected = selectedFolderIdSet.has(folder.id) && isFavorited;
                         return (
                             <CommandItem
                                 key={folder.id}
@@ -291,9 +294,9 @@ function FolderPopoverContent({
                                 <AnimatePresence>
                                     {isSelected && (
                                         <motion.div
-                                            initial={{ scale: 0, opacity: 0 }}
+                                            initial={{ scale: 0.95, opacity: 0 }}
                                             animate={{ scale: 1, opacity: 1 }}
-                                            exit={{ scale: 0, opacity: 0 }}
+                                            exit={{ scale: 0.95, opacity: 0 }}
                                             transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                         >
                                             <Check className="h-3 w-3 text-primary" />

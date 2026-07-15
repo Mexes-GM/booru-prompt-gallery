@@ -154,8 +154,14 @@ export async function booruTagsHandler(
     }
 
     const CHUNK_SIZE = 50
+    const chunks: string[][] = []
     for (let i = 0; i < missingTags.length; i += CHUNK_SIZE) {
-      const chunk = missingTags.slice(i, i + CHUNK_SIZE)
+      chunks.push(missingTags.slice(i, i + CHUNK_SIZE))
+    }
+
+    // Each chunk is an independent request + its own DB upsert (chunking here is
+    // only to stay under a safe URL length), so fetch them all concurrently.
+    await Promise.all(chunks.map(async (chunk) => {
       const apiUrl = new URL(`${baseUrl}/tags.json`)
       apiUrl.searchParams.set('search[category]', '4')
       apiUrl.searchParams.set('search[name_comma]', chunk.join(','))
@@ -209,7 +215,7 @@ export async function booruTagsHandler(
       } catch (err) {
         console.error(`[booru-tags] Error fetching chunk:`, err)
       }
-    }
+    }))
   }
 
   return jsonResponse(tagCounts, 200, {

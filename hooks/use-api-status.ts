@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useLayoutEffect } from 'react'
 import { useToast } from '@/hooks/use-toast'
 
 export type ApiStatus = 'healthy' | 'slow' | 'error' | 'offline'
@@ -25,7 +25,9 @@ const DEFAULT_OPTIONS: UseApiStatusOptions = {
 export function useApiStatus(options: UseApiStatusOptions = {}) {
   const { toast } = useToast()
   const optsRef = useRef({ ...DEFAULT_OPTIONS, ...options })
-  optsRef.current = { ...DEFAULT_OPTIONS, ...options }
+  useLayoutEffect(() => {
+    optsRef.current = { ...DEFAULT_OPTIONS, ...options }
+  })
   
   const [apiStatus, setApiStatus] = useState<ApiStatusInfo>({
     status: 'healthy',

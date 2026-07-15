@@ -8,6 +8,7 @@
 
 import { classifyTags } from "./tag-classifier"
 import { processBackgroundTags, BackgroundMode } from "./background-detector"
+import { splitTags, splitCommaSeparatedTags } from "./utils/tag-utils"
 
 // --------------- Types ---------------
 interface TagData {
@@ -225,14 +226,14 @@ export function parseTagList(input: string): string[] {
   // La coma es el separador canónico de los prompts ya limpiados (y del aiPrompt /
   // CSV). Priorizarla hace que la salida de cleanPrompt sea segura de re-parsear.
   if (trimmed.includes(",")) {
-    return trimmed.split(",").map((t) => t.trim()).filter(Boolean)
+    return splitCommaSeparatedTags(trimmed)
   }
 
   // Sin comas: los tag_string crudos del booru vienen separados por espacios y
   // codifican los tags multi-palabra con guiones bajos ("1girl long_hair blue_eyes"),
   // por lo que cada token separado por espacio es un tag completo.
   if (trimmed.includes("_")) {
-    return trimmed.split(/\s+/).map((t) => t.trim()).filter(Boolean)
+    return splitTags(trimmed)
   }
 
   // Sin comas y sin guiones bajos: es prácticamente imposible que un tag_string
@@ -658,7 +659,8 @@ function optimizeTags(tags: string[]): string[] {
     "small breasts",
     "flat chest",
   ].map(normalize)
-  const presentBreasts = breastHierarchy.filter((b) => working.includes(b))
+  const workingSetForBreasts = new Set(working)
+  const presentBreasts = breastHierarchy.filter((b) => workingSetForBreasts.has(b))
   if (presentBreasts.length > 1) {
     const bestBreast = presentBreasts[0]
     working = working.filter((t) => !BREAST_SIZES_SET.has(t) || t === bestBreast)
@@ -676,7 +678,8 @@ function optimizeTags(tags: string[]): string[] {
     "very short hair",
     "bald",
   ].map(normalize)
-  const presentHair = hairHierarchy.filter((h) => working.includes(h))
+  const workingSetForHair = new Set(working)
+  const presentHair = hairHierarchy.filter((h) => workingSetForHair.has(h))
   if (presentHair.length > 1) {
     const bestHair = presentHair[0]
     working = working.filter((t) => !HAIR_LENGTHS_SET.has(t) || t === bestHair)
@@ -837,7 +840,11 @@ function combineSharedNounTags(original: string[]): string[] {
 function removeRedundantByInclusion(tagList: string[]): string[] {
   // Sort longest tags first so potential parents are processed before children
   const items = tagList.map((t) => {
-    const words = t.split(" ").map(w => w.trim()).filter(Boolean);
+    const words = t.split(" ").reduce<string[]>((acc, w) => {
+      const trimmed = w.trim()
+      if (trimmed) acc.push(trimmed)
+      return acc
+    }, []);
     return {
       tag: t,
       words,
@@ -958,10 +965,18 @@ export function cleanPrompt(
   }
 
   const normalizedCharacterSet = new Set(
-    characterTagsArray.map((t) => normalize(t)).filter((t) => t.length > 0),
+    characterTagsArray.reduce<string[]>((acc, t) => {
+      const n = normalize(t)
+      if (n.length > 0) acc.push(n)
+      return acc
+    }, []),
   )
   const normalizedCopyrightSet = new Set(
-    copyrightTagsArray.map((t) => normalize(t)).filter((t) => t.length > 0),
+    copyrightTagsArray.reduce<string[]>((acc, t) => {
+      const n = normalize(t)
+      if (n.length > 0) acc.push(n)
+      return acc
+    }, []),
   )
 
   // Filtering rules

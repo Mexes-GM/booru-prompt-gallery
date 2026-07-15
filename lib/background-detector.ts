@@ -3,6 +3,7 @@ export type BackgroundMode = 'keep' | 'remove_all' | 'force_simple' | 'random' |
 import { classifyTag } from "./tag-classifier";
 import { BACKGROUND_DICTIONARY } from "./background-dictionary";
 import { extractColorsFromTags, getDominantColor, getCoherentBackgroundColors, getRandomElement, seededRandom } from "./color-theory";
+import { splitCommaSeparatedTags } from "./utils/tag-utils";
 
 // ─── Expanded Background Tag Detection ──────────────────────────────────────
 
@@ -222,7 +223,8 @@ export function processBackgroundTags(
   
   if (mode === 'remove_all' || mode === 'force_simple' || mode === 'random' || mode === 'detailed_random') {
     // Full removal + scenery filter
-    newTags = tags.filter(tag => !analysis.backgroundTags.includes(tag));
+    const backgroundTagSet = new Set(analysis.backgroundTags);
+    newTags = tags.filter(tag => !backgroundTagSet.has(tag));
     newTags = newTags.filter(tag => classifyTag(tag, tagOverrides) !== 'scenery');
   } else {
     newTags = [...tags];
@@ -230,7 +232,7 @@ export function processBackgroundTags(
 
   // If forcing simple, inject the replacement tags
   if (mode === 'force_simple') {
-    const replTags = replacementTags.split(',').map(t => t.trim()).filter(Boolean);
+    const replTags = splitCommaSeparatedTags(replacementTags);
     replTags.forEach(rt => {
       if (!newTags.some(t => t.toLowerCase() === rt.toLowerCase())) {
         newTags.push(rt);

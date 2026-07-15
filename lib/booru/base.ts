@@ -104,9 +104,14 @@ export abstract class BaseBooruProvider implements IBooruProvider {
         const CHUNK_SIZE = 100
         const tagMap = new Map<string, number>()
 
-        // Fetch categories in chunks to avoid URL too long or PostgREST limits
+        // Fetch categories in chunks to avoid URL too long or PostgREST limits.
+        // Each chunk is an independent read, so run them all concurrently.
+        const chunks: string[][] = []
         for (let i = 0; i < uniqueTagsArray.length; i += CHUNK_SIZE) {
-            const chunk = uniqueTagsArray.slice(i, i + CHUNK_SIZE)
+            chunks.push(uniqueTagsArray.slice(i, i + CHUNK_SIZE))
+        }
+
+        await Promise.all(chunks.map(async (chunk) => {
             const { data } = await supabaseAdmin
                 .from('auto_suggest_tags')
                 .select('name, category')
@@ -115,7 +120,7 @@ export abstract class BaseBooruProvider implements IBooruProvider {
             if (data) {
                 data.forEach((row: TagCategoryRow) => tagMap.set(row.name, row.category))
             }
-        }
+        }))
 
         // Modifica posts en place o crea nuevos arrays
         return posts.map(post => {

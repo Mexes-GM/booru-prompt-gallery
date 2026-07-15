@@ -172,16 +172,18 @@ export function useBooruFavorites(
           // column, so the orphaned folder id must be stripped from each row
           // explicitly — otherwise the favorite keeps a dangling folder_ids entry
           // and disappears from both "Uncategorized" and every folder view.
-          for (const { key, folderIds } of affected) {
+          // Each row update targets a distinct favorite (independent write), so run
+          // them concurrently instead of one at a time.
+          await Promise.all(affected.map(async ({ key, folderIds }) => {
             const [provider, postIdStr] = key.split(":")
             const postId = parseInt(postIdStr, 10)
-            if (!provider || isNaN(postId)) continue
+            if (!provider || isNaN(postId)) return
             const { error } = await supabase
               .from("favorites")
               .update({ folder_ids: folderIds })
               .match({ user_id: user.id, provider, post_id: postId })
             if (error) throw error
-          }
+          }))
 
           const { error: deleteErr } = await supabase
             .from("favorite_folders")
@@ -420,7 +422,7 @@ export function useBooruFavorites(
         }
       }
     },
-    [booruProvider, user, supabase, core.folders, core.setFavorites, core.setFolderMap],
+    [booruProvider, user, supabase, core.folders, core.notifyLocalMutation, core.setFavorites, core.setFolderMap],
   )
 
   // ═══════════════════════════════════════════

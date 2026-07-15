@@ -79,28 +79,30 @@ export function prefetchTagCounts(posts: BooruPost[], provider: BooruProvider) {
   // 3. Batch fetch missing tags async without blocking anything
   const fetchMissingCounts = async () => {
     const chunks = chunkArray(Array.from(tagsToFetch), CHUNK_SIZE)
-    
-    for (const chunk of chunks) {
+
+    // Each chunk is an independent request (chunking here is only to stay under a
+    // safe URL length, not for rate-limiting), so fetch them all concurrently.
+    await Promise.all(chunks.map(async (chunk) => {
       try {
         const result = await fetchBatchTagCounts(chunk, provider)
-        
+
         if (!result) {
           // Re-enable for future retry on network failure
           chunk.forEach(tag => globalFetchingSet.delete(tag))
-          continue
+          return
         }
-        
+
         const updates: Record<string, number> = {}
         for (const tag of chunk) {
            updates[tag] = result[tag] || 0
         }
-        
+
         updateGlobalCache(updates)
       } catch (e) {
         console.error('Failed to fetch tag counts chunk:', e)
         chunk.forEach(tag => globalFetchingSet.delete(tag))
       }
-    }
+    }))
   }
 
   fetchMissingCounts()

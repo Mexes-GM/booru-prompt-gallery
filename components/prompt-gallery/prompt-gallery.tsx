@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue } from "react"
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -77,6 +77,7 @@ import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
 import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
+import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -646,8 +647,8 @@ export function PromptGallery() {
   // Merge Mode Hook
   // Find & Replace pairs (find[i] -> replace[i]), same pairing rule as useCardPrompt.
   const mergeModeWordReplacements = useMemo(() => {
-    const finds = debouncedFindInput.split(',').map(t => t.trim()).filter(Boolean)
-    const replaces = debouncedReplaceInput.split(',').map(t => t.trim()).filter(Boolean)
+    const finds = splitCommaSeparatedTags(debouncedFindInput)
+    const replaces = splitCommaSeparatedTags(debouncedReplaceInput)
     const pairCount = Math.min(finds.length, replaces.length)
     const rules: { find: string; replace: string }[] = []
     for (let i = 0; i < pairCount; i++) {
@@ -949,8 +950,10 @@ export function PromptGallery() {
   }, [search.booruProvider, toast, posthog])
 
   // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
-  copyToClipboardRef.current = copyToClipboard
-  downloadImageRef.current = downloadImage
+  useLayoutEffect(() => {
+    copyToClipboardRef.current = copyToClipboard
+    downloadImageRef.current = downloadImage
+  })
 
   // --- Preset Handlers now live in usePresetsAndHistory() ---
 

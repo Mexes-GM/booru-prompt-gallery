@@ -56,9 +56,12 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
 
     setCurrent(api.selectedScrollSnap())
 
-    api.on("select", () => {
-      setCurrent(api.selectedScrollSnap())
-    })
+    const onSelect = () => setCurrent(api.selectedScrollSnap())
+    api.on("select", onSelect)
+
+    return () => {
+      api?.off("select", onSelect)
+    }
   }, [api])
 
   const handleClose = () => {
@@ -168,8 +171,8 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
         <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0">
           <Carousel setApi={setApi} className="w-full">
             <CarouselContent>
-              {slides.map((slide, index) => (
-                <CarouselItem key={index}>
+              {slides.map((slide) => (
+                <CarouselItem key={slide.title}>
                   <div className="grid gap-4 py-1 p-1">
                     <div className={cn("p-4 rounded-xl border flex items-center gap-3", slide.bg, slide.border)}>
                       <h3 className={cn("font-semibold text-lg", slide.color)}>{slide.title}</h3>
@@ -178,8 +181,8 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
                     </div>
 
                     <div className="grid gap-3">
-                      {slide.features.map((feature, i) => (
-                        <Card key={i} className="border-muted bg-muted/30 shadow-sm">
+                      {slide.features.map((feature) => (
+                        <Card key={feature.title} className="border-muted bg-muted/30 shadow-sm">
                           <CardContent className="p-4 flex gap-4 items-start">
                             <div className={cn("mt-1 p-2 rounded-md bg-background shadow-sm shrink-0", slide.color)}>
                               <feature.icon className="w-5 h-5" />
@@ -210,9 +213,9 @@ export function TeachWelcomeModal({ triggerOpen, onOpenChange }: { triggerOpen?:
         <DialogFooter className="p-6 pt-2 bg-muted/20 border-t flex flex-col sm:flex-row gap-3 sm:justify-between items-center shrink-0">
           {/* Dots Indicator */}
           <div className="flex gap-1.5 order-2 sm:order-1">
-            {slides.map((_, index) => (
+            {slides.map((slide, index) => (
               <div
-                key={index}
+                key={slide.title}
                 className={cn(
                   "h-2 rounded-full transition-all duration-300 ease-in-out",
                   current === index ? "bg-primary w-6" : "bg-primary/20 w-2"

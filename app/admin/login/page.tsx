@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card"
@@ -17,22 +17,21 @@ export default function AdminLoginPage() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isMagicLinkSent, setIsMagicLinkSent] = useState(false)
-  const [rateLimitReset, setRateLimitReset] = useState<number | null>(null)
+  const rateLimitResetRef = useRef<number | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
-  const isRateLimited = rateLimitReset !== null && Date.now() < rateLimitReset
-
   const handleRateLimit = (remaining: number, reset: number) => {
     if (remaining <= 0) {
-      setRateLimitReset(reset)
-      setTimeout(() => setRateLimitReset(null), reset - Date.now())
+      rateLimitResetRef.current = reset
+      setTimeout(() => { rateLimitResetRef.current = null }, reset - Date.now())
     }
   }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    const isRateLimited = rateLimitResetRef.current !== null && Date.now() < rateLimitResetRef.current
     if (isRateLimited) {
       setError('Too many attempts. Please wait before trying again.')
       return

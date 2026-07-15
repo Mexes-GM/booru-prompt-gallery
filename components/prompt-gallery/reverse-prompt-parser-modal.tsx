@@ -220,11 +220,12 @@ export function ReversePromptParserModal({
           {/* Parser Options */}
           {rawInput.trim().length > 0 && (
             <div className="space-y-2 pb-1 border-b border-border/50">
-              <label className="text-sm font-semibold block">
+              <div className="text-sm font-semibold block">
                 Parser Options
-              </label>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
                 <button
+                  type="button"
                   onClick={() => setParserOptions(p => ({ ...p, removeWeights: !p.removeWeights }))}
                   className={cn(
                     "px-3 py-2 rounded-lg border-2 text-xs transition-all flex flex-col items-start gap-0.5 text-left",
@@ -240,6 +241,7 @@ export function ReversePromptParserModal({
                 </button>
                 
                 <button
+                  type="button"
                   onClick={() => setParserOptions(p => ({ ...p, removeLoras: !p.removeLoras }))}
                   className={cn(
                     "px-3 py-2 rounded-lg border-2 text-xs transition-all flex flex-col items-start gap-0.5 text-left",
@@ -260,13 +262,14 @@ export function ReversePromptParserModal({
           {/* Category Toggles */}
           {totalTags > 0 && (
             <div className="space-y-2">
-              <label className="text-sm font-semibold block">
+              <div className="text-sm font-semibold block">
                 Include Categories
-              </label>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {(Object.entries(categoryConfig) as Array<[keyof typeof categoryConfig, typeof categoryConfig.appearance]>).map(
                   ([key, config]) => (
                     <button
+                      type="button"
                       key={key}
                       onClick={() => toggleCategory(key)}
                       className={cn(
@@ -287,9 +290,9 @@ export function ReversePromptParserModal({
           {/* Preview Section */}
           {totalTags > 0 && (
             <div className="space-y-2">
-              <label className="text-sm font-semibold block">
+              <div className="text-sm font-semibold block">
                 Preview by Category
-              </label>
+              </div>
               <ScrollArea className="h-48 border rounded-lg p-3 bg-muted/30">
                 <motion.div
                   variants={containerVariants}
@@ -345,6 +348,7 @@ export function ReversePromptParserModal({
                   className="font-mono text-sm pr-14 py-4 min-h-[5rem] resize-none bg-muted/50 border-2"
                 />
                 <button
+                  type="button"
                   onClick={handleCopy}
                   className={cn(
                     "absolute right-2 top-1/2 -translate-y-1/2 px-3 py-2 rounded-md font-medium text-xs transition-all",

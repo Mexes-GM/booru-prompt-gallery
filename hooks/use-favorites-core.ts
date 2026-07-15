@@ -388,7 +388,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
     return () => {
       cancelled = true
     }
-  }, [user?.id, userLoading])
+  }, [user?.id, userLoading, supabase])
 
   // Manual sync from Supabase (authenticated users only)
   const syncFavorites = useCallback(async () => {
@@ -442,7 +442,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
       setError(e instanceof Error ? e.message : "Sync failed")
       setLoaded(true)
     }
-  }, [user?.id, userLoading])
+  }, [user?.id, userLoading, supabase])
 
   return {
     favorites,

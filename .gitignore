@@ -105,3 +105,6 @@ panelejemplo.png
 # Local schema exports (regenerate with `supabase db dump`, not versioned)
 supabase/schema.snapshot.sql
 .env.local
+
+# react-doctor triage working notes (internal process artifacts, not project docs)
+.react-doctor/

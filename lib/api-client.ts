@@ -2,6 +2,7 @@
 import useSWRInfinite from 'swr/infinite'
 import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
 import { prefetchTagCounts } from '@/hooks/use-tag-counts'
+import { splitCommaSeparatedTags } from './utils/tag-utils'
 import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
 // URL helpers extracted to lib/booru/urls.ts (pure, no React). Re-exported below
 // so existing `@/lib/api-client` consumers keep working.
@@ -120,7 +121,7 @@ export const removeQualityTags = (prompt: string): string => {
   })
 
   // Split prompt into individual tags
-  let tags = result.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+  let tags = splitCommaSeparatedTags(result)
 
   // Remove quality tags from each individual tag
   tags = tags.filter(tag => {
@@ -134,12 +135,13 @@ export const removeQualityTags = (prompt: string): string => {
     // Check for compound tags that contain quality words
     // Remove tags that are primarily quality-focused
     const qualityWords = ['detailed', 'ultra', 'extremely', 'highly', 'very', 'best', 'high', 'highest', 'amazing', 'quality', 'masterpiece']
+    const qualityWordSet = new Set(qualityWords)
     const tagWords = lowerTag.split(' ')
 
     // If tag contains "detailed" and other quality words, remove it entirely
     if (tagWords.includes('detailed')) {
       const hasOtherQualityWords = tagWords.some(word =>
-        qualityWords.includes(word) && word !== 'detailed'
+        qualityWordSet.has(word) && word !== 'detailed'
       )
       if (hasOtherQualityWords) {
         return false

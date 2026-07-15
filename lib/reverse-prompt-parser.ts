@@ -125,7 +125,11 @@ export function parseRawPrompt(
   const delimiter = hasComma ? "," : " "
 
   let intialFilteredTags: string[] = hasComma 
-    ? distributeBracketsAndSplit(workingPrompt).map((t) => t.trim()).filter(Boolean)
+    ? distributeBracketsAndSplit(workingPrompt).reduce<string[]>((acc, t) => {
+        const trimmed = t.trim()
+        if (trimmed) acc.push(trimmed)
+        return acc
+      }, [])
     : workingPrompt.split(/\s+/).filter(Boolean);
 
   if (options?.removeLoras) {

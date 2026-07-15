@@ -109,6 +109,7 @@ export function PromptImportZone({
                 <p className="font-medium text-destructive text-sm">{error}</p>
               </div>
               <button
+                type="button"
                 onClick={onErrorDismiss}
                 className="text-destructive hover:opacity-70 transition-opacity flex-shrink-0"
               >

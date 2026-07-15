@@ -15,7 +15,11 @@ export const splitTags = (
   separator: RegExp | string = /\s+/
 ): string[] => {
   if (!tagString) return []
-  return tagString.split(separator).filter(Boolean).map(tag => tag.trim())
+  return tagString.split(separator).reduce<string[]>((acc, tag) => {
+    const trimmed = tag.trim()
+    if (trimmed) acc.push(trimmed)
+    return acc
+  }, [])
 }
 
 /**

@@ -235,6 +235,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                               >
                                 <span>{tag}</span>
                                 <button
+                                  type="button"
                                   onClick={() => onRemove(tag)}
                                   className="rounded-md p-1 opacity-40 group-hover/badge:opacity-100 hover:bg-destructive/20 transition-all"
                                   aria-label={`Remove ${tag}`}

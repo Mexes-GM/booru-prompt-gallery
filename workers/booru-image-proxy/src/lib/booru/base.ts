@@ -106,8 +106,13 @@ export abstract class BaseBooruProvider {
       const CHUNK_SIZE = 100
       const tagMap = new Map<string, number>()
 
+      // Each chunk is an independent read, so run them all concurrently.
+      const chunks: string[][] = []
       for (let i = 0; i < uniqueTagsArray.length; i += CHUNK_SIZE) {
-        const chunk = uniqueTagsArray.slice(i, i + CHUNK_SIZE)
+        chunks.push(uniqueTagsArray.slice(i, i + CHUNK_SIZE))
+      }
+
+      await Promise.all(chunks.map(async (chunk) => {
         const { data } = await supabase
           .from('auto_suggest_tags')
           .select('name, category')
@@ -116,7 +121,7 @@ export abstract class BaseBooruProvider {
         if (data) {
           data.forEach((row: TagCategoryRow) => tagMap.set(row.name, row.category))
         }
-      }
+      }))
 
       return posts.map((post) => {
         if (!post.tag_string) return post

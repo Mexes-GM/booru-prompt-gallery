@@ -61,7 +61,7 @@ const MasonryItem = React.memo(({
   fromPos?: { x: number; y: number } | null
 }) => {
   const staggerIndex = pos.index % 8
-  const elRef = useRef<HTMLDivElement>(null)
+  const elRef = useRef<HTMLLIElement>(null)
 
   // FLIP: if this render carries a `fromPos` different from the new `pos`,
   // paint the element at its OLD position first (synchronously, before the
@@ -91,10 +91,9 @@ const MasonryItem = React.memo(({
   }, [fromPos, pos.x, pos.y])
 
   return (
-    <div
+    <li
       ref={elRef}
       className={`absolute${isInitial ? " masonry-item-enter" : ""}${fromPos ? " masonry-item-move" : ""}`}
-      role="listitem"
       style={{
         width: pos.width,
         height: pos.height,
@@ -110,7 +109,7 @@ const MasonryItem = React.memo(({
       >
         {renderItem(pos.item, pos.width, pos.height, pos.index)}
       </div>
-    </div>
+    </li>
   )
 })
 MasonryItem.displayName = "MasonryItem"
@@ -118,7 +117,7 @@ MasonryItem.displayName = "MasonryItem"
 type PositionEntry = { x: number; y: number; width: number; height: number; item: BooruPost; index: number }
 
 export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, forceColumns, scrollContainerRef, footerHeightOverride }: MasonryGridProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLUListElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [windowHeight, setWindowHeight] = useState(0)
   const isMobile = useIsMobile()
@@ -595,11 +594,10 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
   }, [layout.columns, scrollBucket, windowHeight, isMobile])
 
   return (
-    <div
+    <ul
       ref={containerRef}
       className="relative w-full"
       style={{ height: layout.totalHeight }}
-      role="list"
       aria-label={`${items.length} results`}
     >
       {visibleItems.map((pos) => (
@@ -611,6 +609,6 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
           fromPos={prevPositionsByIdRef.current?.get(pos.item.id) ?? null}
         />
       ))}
-    </div>
+    </ul>
   )
 }

@@ -229,6 +229,7 @@ export function TagsManagementPanel({
               <button
                 type="button"
                 onClick={() => setExcludeInput("")}
+                aria-label="Clear excluded tags"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted"
               >
                 <X className="h-2.5 w-2.5" />
@@ -258,6 +259,7 @@ export function TagsManagementPanel({
                 <button
                   type="button"
                   onClick={() => setFindInput("")}
+                  aria-label="Clear find list"
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted"
                 >
                   <X className="h-2.5 w-2.5" />
@@ -278,6 +280,7 @@ export function TagsManagementPanel({
                 <button
                   type="button"
                   onClick={() => setReplaceInput("")}
+                  aria-label="Clear replace list"
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted"
                 >
                   <X className="h-2.5 w-2.5" />

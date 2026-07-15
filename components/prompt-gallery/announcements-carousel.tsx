@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -76,21 +76,10 @@ export function AnnouncementsCarousel({ version, onDismiss }: AnnouncementsCarou
   }, [paused, visible])
 
   // Smoothly animate the carousel height so longer/shorter slides don't jump.
+  // The `layout` prop lets Framer Motion measure the new content size and
+  // FLIP to it (single measurement + transform), instead of us tracking a
+  // numeric pixel height in state and animating that directly.
   const slideRef = useRef<HTMLDivElement>(null)
-  const [height, setHeight] = useState<number | 'auto'>('auto')
-  useLayoutEffect(() => {
-    if (slideRef.current) setHeight(slideRef.current.offsetHeight)
-  }, [slide])
-
-  // Recalculate height when the active slide reflows (e.g. viewport resize or
-  // device rotation changes how many lines the body text wraps to).
-  useEffect(() => {
-    const el = slideRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => setHeight(el.offsetHeight))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [slide])
 
   const go = (next: number, direction: number) => {
     setPaused(true)
@@ -120,7 +109,7 @@ export function AnnouncementsCarousel({ version, onDismiss }: AnnouncementsCarou
         <div className="md:hidden">
           <motion.div
             className="relative overflow-hidden"
-            animate={{ height }}
+            layout
             transition={{ duration: 0.2, ease: "easeOut" }}
           >
             <AnimatePresence mode="popLayout" custom={dir} initial={false}>
@@ -161,8 +150,8 @@ export function AnnouncementsCarousel({ version, onDismiss }: AnnouncementsCarou
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <div className="flex gap-1.5">
-              {ITEMS.map((_, i) => (
-                <button key={i} onClick={() => go(i, i > slide ? 1 : -1)} aria-label={`Go to update ${i + 1}`} className={`h-1.5 rounded-full transition-all duration-300 ${i === slide ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`} />
+              {ITEMS.map((item, i) => (
+                <button type="button" key={item.title} onClick={() => go(i, i > slide ? 1 : -1)} aria-label={`Go to update ${i + 1}`} className={`h-1.5 rounded-full transition-all duration-300 ${i === slide ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`} />
               ))}
             </div>
             <Button variant="ghost" size="icon" onClick={() => go(slide + 1, 1)} className="h-7 w-7 rounded-full" aria-label="Next update">
@@ -173,10 +162,10 @@ export function AnnouncementsCarousel({ version, onDismiss }: AnnouncementsCarou
 
         {/* Desktop: full list */}
         <div className="hidden md:flex flex-col gap-3">
-          {ITEMS.map((it, i) => {
+          {ITEMS.map((it) => {
             const [border, bg, iconBg, badgeBg, badgeText] = COLORS[it.color] ?? COLORS.blue
             return (
-              <div key={i} className={`border-l-4 ${border} ${bg} hover:opacity-90 transition-colors p-4 rounded-r-xl`}>
+              <div key={it.title} className={`border-l-4 ${border} ${bg} hover:opacity-90 transition-colors p-4 rounded-r-xl`}>
                 <div className="flex items-start gap-3">
                   <div className={`flex-shrink-0 mt-0.5 flex h-8 w-8 items-center justify-center rounded-full ${iconBg}`}>{it.icon}</div>
                   <div className="flex-1 min-w-0">

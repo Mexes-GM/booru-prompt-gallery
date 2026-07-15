@@ -361,6 +361,22 @@ html.extension-mode {
   }
 }
 
+/* Subtle "click here" affordance nudge — replaces Tailwind's animate-bounce,
+   which uses a bouncy overshoot easing. This uses ease-out-expo instead. */
+@keyframes nudge {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.animate-nudge {
+  animation: nudge 1.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
 .animate-pulse-slow {
   animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

@@ -34,13 +34,16 @@ export function booruPostToCacheRow(
   const artistTags = (post.tag_string_artist || "").split(/\s+/).filter(Boolean)
   const charTags = (post.tag_string_character || "").split(/\s+/).filter(Boolean)
   const copyTags = (post.tag_string_copyright || "").split(/\s+/).filter(Boolean)
+  const artistTagSet = new Set(artistTags)
+  const charTagSet = new Set(charTags)
+  const copyTagSet = new Set(copyTags)
 
   const tagJson = {
     general: tags.filter(
       (t) =>
-        !artistTags.includes(t) &&
-        !charTags.includes(t) &&
-        !copyTags.includes(t),
+        !artistTagSet.has(t) &&
+        !charTagSet.has(t) &&
+        !copyTagSet.has(t),
     ),
     artist: artistTags,
     character: charTags,

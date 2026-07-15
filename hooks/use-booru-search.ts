@@ -233,6 +233,12 @@ export function useBooruSearch() {
         forcedRule34RatingRef.current = null
       }
     }
+    // Intentionally scoped to `booruProvider` only: this effect must fire when
+    // switching provider (to force/restore the Rule34 rating), not whenever the
+    // user manually changes `ratingFilter` while already on the same provider —
+    // adding `ratingFilter` here would re-run this on every manual rating change
+    // and fight the user's own selection via `forcedRule34RatingRef`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booruProvider])
 
   const {
@@ -546,7 +552,7 @@ export function useBooruSearch() {
       return next
     })
     setSize(1)
-  }, [setSize])
+  }, [setIsShuffle, setSize])
 
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -561,9 +567,9 @@ export function useBooruSearch() {
     // submission should execute immediately with whatever is in the input box,
     // rather than waiting for the debounce interval to settle.
     const query = searchTags.trim()
-    const tagCount = query ? query.split(',').map(t => t.trim()).filter(Boolean).length : 0
+    const tagCount = query ? query.split(',').reduce((count, t) => t.trim() ? count + 1 : count, 0) : 0
     trackSearch({ query: query || '(empty)', rating: ratingFilter, order, tagCount })
-  }, [order, ratingFilter, searchTags, debouncedSearchTags, appliedTagCountFilter, appliedCharacterCountFilter, setSize])
+  }, [order, ratingFilter, searchTags, setSize])
 
   const clearSearch = useCallback(() => {
     setSearchTags("")

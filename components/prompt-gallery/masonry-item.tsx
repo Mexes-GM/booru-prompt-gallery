@@ -94,8 +94,8 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
                 ))}
 
                 <motion.div
-                    initial={lowMotion ? { scale: 1, rotate: 0 } : { scale: 0, rotate: -45 }}
-                    animate={{ scale: 1, rotate: 0 }}
+                    initial={lowMotion ? { scale: 1, rotate: 0 } : { scale: 0.95, rotate: -45, opacity: 0 }}
+                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
                     transition={lowMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 20 }}
                     className="bg-gradient-to-br from-green-400 to-green-600 rounded-full p-4 shadow-[0_0_20px_rgba(74,222,128,0.4)] relative z-10"
                 >
@@ -287,7 +287,10 @@ export const MasonryItem = memo(function MasonryItem({
     const buildConvertMeta = (): ConvertMeta | undefined => {
         if (!includeCharacters) return undefined
         const toList = (s?: string) =>
-            (s || '').split(/\s+/).filter(Boolean).map(t => t.replace(/_/g, ' ')).join(', ')
+            (s || '').split(/\s+/).reduce<string[]>((acc, t) => {
+                if (t) acc.push(t.replace(/_/g, ' '))
+                return acc
+            }, []).join(', ')
         const characters = toList(post.tag_string_character)
         const series = toList(post.tag_string_copyright)
         if (!characters && !series) return undefined
@@ -517,7 +520,7 @@ export const MasonryItem = memo(function MasonryItem({
                                                     <span tabIndex={!hasTags ? -1 : 0} className="flex-1 flex max-w-[50px]">
                                                         <motion.button
                                                             disabled={!hasTags}
-                                                            whileHover={hasTags ? { scale: 1.1, y: -2 } : {}}
+                                                            whileHover={hasTags && !lowMotion ? { scale: 1.1, y: -2 } : {}}
                                                             whileTap={hasTags ? { scale: 0.9 } : {}}
                                                             onClick={(e) => {
                                                                 e.stopPropagation()

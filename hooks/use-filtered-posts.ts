@@ -82,6 +82,7 @@ export function useFilteredPosts({
       activeFavoriteFolder !== "artists"
 
     const normalizedBlacklist = blacklist.map(tag => tag.replace(/\s+/g, '_'))
+    const normalizedBlacklistSet = new Set(normalizedBlacklist)
 
     return source.filter(post => {
       // Folder filter (web app only)
@@ -98,7 +99,7 @@ export function useFilteredPosts({
       // Blacklist filter
       if (post.tag_string) {
         const postTags = post.tag_string.split(' ')
-        if (postTags.some(tag => normalizedBlacklist.includes(tag))) {
+        if (postTags.some(tag => normalizedBlacklistSet.has(tag))) {
           return false
         }
       }
@@ -152,10 +153,12 @@ export function useFilteredPosts({
     includeCharacters,
     appliedCharacterCountFilter,
     tagCounts,
+    favorites,
     favorites?.showFavorites,
     favorites?.favoritePosts,
     favorites?.favoriteFolderMap,
     activeFavoriteFolder,
+    history,
     history?.showHistory,
     history?.historyPosts,
   ])

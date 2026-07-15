@@ -69,13 +69,13 @@ const SuccessAnimation = memo(function SuccessAnimation() {
         >
             <div className="relative mb-6">
                 <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.1 }}
                     className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center"
                 >
                     <motion.div
-                        initial={{ scale: 0, opacity: 0 }}
+                        initial={{ scale: 0.95, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.2 }}
                         className="w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg shadow-primary/30"
