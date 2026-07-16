@@ -14,6 +14,9 @@ interface MasonryGridProps {
   scrollContainerRef?: React.RefObject<HTMLElement | null>
   /** Override the footer height used for item height calculation (default comes from SCALE_CONFIG) */
   footerHeightOverride?: number
+  /** Id of the currently expanded card, if any. That card's li drops `contain`
+   *  and gets a raised z-index so it overlays its neighbours when expanded. */
+  expandedItemId?: number | string | null
 }
 
 export const SCALE_CONFIG = {
@@ -50,6 +53,7 @@ const MasonryItem = React.memo(({
   renderItem,
   isInitial,
   fromPos,
+  isExpanded,
 }: {
   pos: { x: number; y: number; width: number; height: number; item: BooruPost; index: number }
   renderItem: (item: BooruPost, w: number, h: number, index: number) => React.ReactNode
@@ -59,6 +63,12 @@ const MasonryItem = React.memo(({
    *  the item FLIPs from `fromPos` to `pos` instead of snapping directly to
    *  `pos` — see the `useLayoutEffect` below. */
   fromPos?: { x: number; y: number } | null
+  /** When true, this card is expanded in place. We drop `contain` (which would
+   *  clip the overflowing expanded content to the fixed li box) and raise the
+   *  z-index so the card floats ABOVE its neighbors. The li's width/height stay
+   *  fixed, so the grid never reflows — the extra height simply overlays the
+   *  cards below it. */
+  isExpanded?: boolean
 }) => {
   const staggerIndex = pos.index % 8
   const elRef = useRef<HTMLLIElement>(null)
@@ -100,7 +110,10 @@ const MasonryItem = React.memo(({
         left: 0,
         top: 0,
         transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
-        contain: "layout style paint",
+        // When expanded, drop `contain` so the taller card can paint outside the
+        // fixed li box, and raise z-index so it overlays neighbouring cards.
+        contain: isExpanded ? "none" : "layout style paint",
+        zIndex: isExpanded ? 40 : undefined,
       }}
     >
       <div
@@ -116,7 +129,7 @@ MasonryItem.displayName = "MasonryItem"
 
 type PositionEntry = { x: number; y: number; width: number; height: number; item: BooruPost; index: number }
 
-export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, forceColumns, scrollContainerRef, footerHeightOverride }: MasonryGridProps) {
+export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, forceColumns, scrollContainerRef, footerHeightOverride, expandedItemId }: MasonryGridProps) {
   const containerRef = useRef<HTMLUListElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [windowHeight, setWindowHeight] = useState(0)
@@ -607,6 +620,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
           renderItem={renderItem}
           isInitial={showInitialAnimation || (newItemAnimIds !== null && newItemAnimIds.has(pos.item.id))}
           fromPos={prevPositionsByIdRef.current?.get(pos.item.id) ?? null}
+          isExpanded={expandedItemId != null && pos.item.id === expandedItemId}
         />
       ))}
     </ul>

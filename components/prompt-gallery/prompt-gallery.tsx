@@ -561,6 +561,13 @@ export function PromptGallery() {
   const [showSettings, setShowSettings] = useState(true)
   const [tourRunSignal, setTourRunSignal] = useState(0)
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  // In-place card expansion: id of the single card currently expanded to reveal
+  // its full prompt inline (no modal). Only one card expands at a time so the
+  // grid stays tidy; clicking another card swaps the expansion.
+  const [expandedPostId, setExpandedPostId] = useState<number | null>(null)
+  const handleToggleExpand = useCallback((postId: number) => {
+    setExpandedPostId(prev => (prev === postId ? null : postId))
+  }, [])
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [showStickyPanel, setShowStickyPanel] = useState(false)
   const controlPanelRef = useRef<HTMLDivElement>(null)
@@ -1132,6 +1139,8 @@ export function PromptGallery() {
       detailedBackgroundsList={detailedBackgroundsList}
       tagOverrides={tagOverrides}
       copiedId={copiedId}
+      isExpanded={expandedPostId === post.id}
+      onToggleExpand={handleToggleExpand}
       setTeachModalData={setTeachModalData}
       isMergeMode={mergeModeIsMergeMode}
       isSelected={mergeModeSelectedPosts.has(post.id)}
@@ -1148,7 +1157,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={showCategoryTagBadges}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1474,6 +1483,7 @@ export function PromptGallery() {
               viewMode={viewMode}
               effectiveScale={effectiveScale}
               renderItem={renderMasonryItem}
+              expandedItemId={expandedPostId}
             />
           )}
 

@@ -9,6 +9,8 @@ interface ResultsGridProps {
   viewMode: "grid" | "list"
   effectiveScale: CardScale
   renderItem: (post: BooruPost, width: number, height: number, index: number) => React.ReactNode
+  /** Id of the currently expanded card (in-place expansion), forwarded to the grid. */
+  expandedItemId?: number | string | null
 }
 
 /**
@@ -17,14 +19,15 @@ interface ResultsGridProps {
  * `renderMasonryItem` callback — it is NOT re-wrapped here so its referential
  * stability (and the perf optimization it exists for) is preserved.
  */
-export function ResultsGrid({ posts, viewMode, effectiveScale, renderItem }: ResultsGridProps) {
+export function ResultsGrid({ posts, viewMode, effectiveScale, renderItem, expandedItemId }: ResultsGridProps) {
   if (viewMode === "grid") {
     return (
-      <div id="results-anchor" data-tour="results" className="mb-8 min-h-[500px] scroll-mt-20">
+      <div id="results-anchor" data-tour="results" className="mb-8 min-h-[500px] scroll-mt-20 overflow-x-clip">
         <MasonryGrid
           items={posts}
           scale={effectiveScale}
           renderItem={renderItem}
+          expandedItemId={expandedItemId}
         />
       </div>
     )

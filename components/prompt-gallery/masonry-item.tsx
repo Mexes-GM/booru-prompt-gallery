@@ -189,6 +189,11 @@ interface MasonryItemProps {
     isNaturalLanguageMode?: boolean
     onSendToConvert?: (tags: string, imageUrl?: string, meta?: ConvertMeta) => void
     showCategoryTagBadges?: boolean
+    /** Whether this card is currently expanded in place (reveals the full prompt
+     *  inline, overlaying neighbours). */
+    isExpanded?: boolean
+    /** Toggle the in-place expansion for this post. */
+    onToggleExpand?: (postId: number) => void
 }
 
 
@@ -243,6 +248,8 @@ export const MasonryItem = memo(function MasonryItem({
     isNaturalLanguageMode = false,
     onSendToConvert,
     showCategoryTagBadges = true,
+    isExpanded = false,
+    onToggleExpand,
 }: MasonryItemProps) {
     const lowMotion = useLowMotion()
     const posthog = usePostHog()
@@ -258,6 +265,16 @@ export const MasonryItem = memo(function MasonryItem({
     useEffect(() => {
         return () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current) }
     }, [])
+
+    // While this card is expanded in place, allow Escape to collapse it.
+    useEffect(() => {
+        if (!isExpanded) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onToggleExpand?.(post.id)
+        }
+        window.addEventListener("keydown", onKey)
+        return () => window.removeEventListener("keydown", onKey)
+    }, [isExpanded, onToggleExpand, post.id])
 
     const itemProvider = post._provider || booruProvider
 
@@ -448,8 +465,25 @@ export const MasonryItem = memo(function MasonryItem({
         const imageHeight = height - footerHeight
 
         return (
-            <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-colors duration-300 border-0 shadow-none">
-                <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
+            <div
+                className={`group flex flex-col relative card-hover bg-card text-card-foreground border-0 rounded-xl ${isExpanded ? "overflow-visible shadow-2xl ring-2 ring-primary/40 z-30" : "overflow-hidden shadow-none"}`}
+                style={{ width: isExpanded ? width + 40 : width, marginLeft: isExpanded ? -20 : 0 }}
+            >
+                <div
+                    className="relative bg-muted overflow-hidden cursor-pointer"
+                    style={{ height: imageHeight }}
+                    onClick={() => { if (!isMergeMode) onToggleExpand?.(post.id) }}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? "Collapse prompt" : "Expand to see full prompt"}
+                    onKeyDown={(e) => {
+                        if ((e.key === "Enter" || e.key === " ") && !isMergeMode) {
+                            e.preventDefault()
+                            onToggleExpand?.(post.id)
+                        }
+                    }}
+                >
                     {isPreviouslyCopied && (
                         <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
                             <motion.div
@@ -769,7 +803,10 @@ export const MasonryItem = memo(function MasonryItem({
                     </div>
 
                     {/* Overlay actions */}
-                    <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                    <div
+                        className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <SaveFavoriteButton
                             folders={folders}
                             selectedFolderIds={currentFolderIds}
@@ -824,10 +861,30 @@ export const MasonryItem = memo(function MasonryItem({
                             </TooltipContent>
                         </Tooltip>
                     </div>
+
+                    {/* Expand / collapse affordance — makes the click-to-expand
+                        discoverable. Pointer-events-none so the click falls through
+                        to the image container's toggle handler. */}
+                    {!isMergeMode && (
+                        <div className="absolute inset-x-0 bottom-2 flex justify-center pointer-events-none z-10">
+                            <div className={`flex items-center gap-1 rounded-full bg-black/65 text-white/95 px-2 py-0.5 text-[10px] font-medium shadow-sm backdrop-blur-sm transition-opacity duration-200 ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
+                                <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
+                                {isExpanded ? "Collapse" : "Full prompt"}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                <div className={`${getCardContentClass()} flex flex-col`} style={{ height: footerHeight }}>
-                    <div className="bg-muted/50 rounded-lg overflow-y-auto prompt-container min-h-0">
+                <motion.div
+                    className={`${getCardContentClass()} flex flex-col overflow-hidden`}
+                    initial={false}
+                    animate={{ height: isExpanded ? "auto" : footerHeight }}
+                    transition={lowMotion ? { duration: 0 } : { type: "tween", duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+                >
+                    <div
+                        className="bg-muted/50 rounded-lg overflow-y-auto prompt-container min-h-0"
+                        style={isExpanded ? { maxHeight: "65vh" } : undefined}
+                    >
                         <InteractivePrompt
                             initialPrompt={displayContent}
                             onUpdate={setModifiedContent}
@@ -950,11 +1007,11 @@ export const MasonryItem = memo(function MasonryItem({
                             <TooltipContent>View original post</TooltipContent>
                         </Tooltip>
                     </div>
-                </div>
+                </motion.div>
                 <AnimatePresence>
                     {copiedId === post.id && <SuccessOverlay onSkip={onSkipAnimation} />}
                 </AnimatePresence>
-            </Card>
+            </div>
         )
     }
 
@@ -1420,6 +1477,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.isGlobalWeightsEnabled !== next.isGlobalWeightsEnabled) return false
     if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false
     if (prev.showCategoryTagBadges !== next.showCategoryTagBadges) return false
+    if (prev.isExpanded !== next.isExpanded) return false
 
     if (prev.folders !== next.folders) return false
     if (prev.currentFolderIds.length !== next.currentFolderIds.length || 
