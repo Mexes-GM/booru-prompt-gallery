@@ -14,6 +14,7 @@ import {
   SlidersHorizontal,
   Heart,
   Wrench,
+  AtSign,
 } from "lucide-react"
 
 type AnnouncementItem = {
@@ -32,6 +33,7 @@ const COLORS = {
 } as const
 
 const ITEMS: AnnouncementItem[] = [
+  { color: 'emerald', icon: <AtSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Prepend Artist (@artist)', badge: 'New', body: "Added the option to prepend a card's artist as \"@artist\" at the start of the prompt, to replicate their style. Only works for Anima checkpoints." },
   { color: 'emerald', icon: <Replace className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Find and Replace', badge: 'New', body: "Quickly swap tags for others in your prompts." },
   { color: 'emerald', icon: <SlidersHorizontal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Score Floor', badge: 'New', body: "Added the option to filter by score, since our own testing showed posts tend to be better tagged the higher their score. Optimized presets are included, based on that testing." },
   { color: 'amber', icon: <Heart className="h-4 w-4 text-amber-600 dark:text-amber-400" />, title: 'History Panel Rework', badge: 'Changed', body: "The History side panel now behaves like Favorites for a more consistent experience." },

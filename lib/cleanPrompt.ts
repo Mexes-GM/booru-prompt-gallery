@@ -70,6 +70,15 @@ export interface CleanPromptOptions {
    * know which tags changed without altering cleanPrompt's return type.
    */
   onWordReplacementsApplied?: (applied: AppliedWordReplacement[]) => void
+
+  /**
+   * When set, prepends "@<artist>," at the very start of the returned prompt.
+   * Caller is responsible for resolving the artist name (e.g. the post's
+   * first artist tag) — cleanPrompt just formats and prepends it verbatim.
+   * Only meaningful for checkpoints that support "@artist" invocation syntax
+   * (e.g. Anima Pencil-XL); harmless no-op literal tag on other checkpoints.
+   */
+  prependArtistTag?: string
 }
 
 // --------------- Utilities ---------------
@@ -1089,7 +1098,15 @@ export function cleanPrompt(
     options?.onWordReplacementsApplied?.(wordReplacementsApplied)
   }
 
-  return Array.from(allFinal)
+  const finalTags = Array.from(allFinal)
     .map((t) => (shouldEscape && !addedTagsSet.has(t) ? escapeParentheses(t) : t))
-    .join(", ")
+
+  // Anima-style "@artist" invocation: prepended raw (never escaped/normalized
+  // like a regular tag) so it reaches the model exactly as "@artistname".
+  const artistTag = options?.prependArtistTag?.trim()
+  if (artistTag) {
+    return [`@${artistTag}`, ...finalTags].join(", ")
+  }
+
+  return finalTags.join(", ")
 }

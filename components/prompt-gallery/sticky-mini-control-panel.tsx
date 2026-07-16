@@ -14,7 +14,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface StickyMiniControlPanelProps {
@@ -27,6 +26,8 @@ interface StickyMiniControlPanelProps {
   setOptimizeTags: (val: boolean) => void;
   smartTagExclusion: boolean;
   setSmartTagExclusion: (val: boolean) => void;
+  prependAnimaArtist: boolean;
+  setPrependAnimaArtist: (val: boolean) => void;
   backgroundMode: string;
   setBackgroundMode: (val: any) => void;
   simpleBackgroundReplacementTags: string;
@@ -53,6 +54,8 @@ export function StickyMiniControlPanel({
   setOptimizeTags,
   smartTagExclusion,
   setSmartTagExclusion,
+  prependAnimaArtist,
+  setPrependAnimaArtist,
   backgroundMode,
   setBackgroundMode,
   simpleBackgroundReplacementTags,
@@ -192,19 +195,26 @@ export function StickyMiniControlPanel({
                       <Switch id="mini-smart-tag" checked={optimizeTags} onCheckedChange={setOptimizeTags} />
                     </div>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="mini-smart-excl" className="text-xs">Smart Tag Exclusion</Label>
-                        <Badge variant="default" className="text-[10px] py-0 px-1 !rounded-sm">Beta</Badge>
-                      </div>
+                      <Label htmlFor="mini-smart-excl" className="text-xs">Smart Tag Exclusion</Label>
                       <Switch id="mini-smart-excl" checked={smartTagExclusion} onCheckedChange={setSmartTagExclusion} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1 cursor-help">
+                            <Label htmlFor="mini-prepend-artist" className="text-xs">Prepend Artist (@artist)</Label>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[220px]">
+                          Adds the post&apos;s artist as &quot;@artist,&quot; at the start of the prompt. Only works with Anima checkpoints.
+                        </TooltipContent>
+                      </Tooltip>
+                      <Switch id="mini-prepend-artist" checked={prependAnimaArtist} onCheckedChange={setPrependAnimaArtist} />
                     </div>
 
                     <div className="border-t pt-3 mt-1">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Label className="text-xs font-medium">Background Options</Label>
-                          <Badge variant="default" className="text-[10px] py-0 px-1 !rounded-sm">Beta</Badge>
-                        </div>
+                        <Label className="text-xs font-medium">Background Options</Label>
                       </div>
                       <Select value={backgroundMode} onValueChange={setBackgroundMode}>
                         <SelectTrigger className="h-8 text-xs">

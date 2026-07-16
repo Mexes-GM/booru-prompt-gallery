@@ -167,6 +167,7 @@ interface MasonryItemProps {
     includeCharacters: boolean
     optimizeTags: boolean
     smartTagExclusion?: boolean
+    prependAnimaArtist?: boolean
     removeLoRaTags: boolean
     removeQualityTags: boolean
     backgroundMode?: BackgroundMode
@@ -220,6 +221,7 @@ export const MasonryItem = memo(function MasonryItem({
     includeCharacters,
     optimizeTags,
     smartTagExclusion = true,
+    prependAnimaArtist = false,
     removeLoRaTags,
     removeQualityTags,
     backgroundMode,
@@ -289,6 +291,7 @@ export const MasonryItem = memo(function MasonryItem({
         includeCharacters,
         optimizeTags,
         smartTagExclusion,
+        prependAnimaArtist,
         removeLoRaTags,
         removeQualityTags,
         backgroundMode,
@@ -1407,6 +1410,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.includeCharacters !== next.includeCharacters) return false
     if (prev.optimizeTags !== next.optimizeTags) return false
     if (prev.smartTagExclusion !== next.smartTagExclusion) return false
+    if (prev.prependAnimaArtist !== next.prependAnimaArtist) return false
     if (prev.removeLoRaTags !== next.removeLoRaTags) return false
     if (prev.removeQualityTags !== next.removeQualityTags) return false
     if (prev.backgroundMode !== next.backgroundMode) return false

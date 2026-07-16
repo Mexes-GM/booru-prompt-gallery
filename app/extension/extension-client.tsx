@@ -655,8 +655,8 @@ export default function ExtensionClient() {
   )
 
   const {
-    includeCharacters, optimizeTags, smartTagExclusion,
-    setIncludeCharacters, setOptimizeTags, setSmartTagExclusion,
+    includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
+    setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
   } = usePromptOptions()
 
   const {
@@ -712,6 +712,7 @@ export default function ExtensionClient() {
     includeCharacters,
     optimizeTags,
     smartTagExclusion,
+    prependAnimaArtist,
     removeLoRaTags: search.removeLoRaTags,
     removeQualityTags: search.removeQualityTags,
     backgroundMode,
@@ -727,6 +728,7 @@ export default function ExtensionClient() {
     includeCharacters,
     optimizeTags,
     smartTagExclusion,
+    prependAnimaArtist,
     search.removeLoRaTags,
     search.removeQualityTags,
     backgroundMode,
@@ -1100,6 +1102,8 @@ export default function ExtensionClient() {
                 setOptimizeTags={setOptimizeTags}
                 smartTagExclusion={smartTagExclusion}
                 setSmartTagExclusion={setSmartTagExclusion}
+                prependAnimaArtist={prependAnimaArtist}
+                setPrependAnimaArtist={setPrependAnimaArtist}
                 removeLoRaTags={search.removeLoRaTags}
                 setRemoveLoRaTags={search.setRemoveLoRaTags}
                 removeQualityTags={search.removeQualityTags}

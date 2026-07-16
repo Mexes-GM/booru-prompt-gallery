@@ -35,6 +35,8 @@ interface PromptGenerationOptionsPanelProps {
   setOptimizeTags: (val: boolean) => void
   smartTagExclusion: boolean
   setSmartTagExclusion: (val: boolean) => void
+  prependAnimaArtist: boolean
+  setPrependAnimaArtist: (val: boolean) => void
 
   removeLoRaTags: boolean
   setRemoveLoRaTags: (val: boolean) => void
@@ -82,6 +84,8 @@ export function PromptGenerationOptionsPanel({
   setOptimizeTags: _setOptimizeTags,
   smartTagExclusion,
   setSmartTagExclusion: _setSmartTagExclusion,
+  prependAnimaArtist,
+  setPrependAnimaArtist: _setPrependAnimaArtist,
   removeLoRaTags,
   setRemoveLoRaTags: _setRemoveLoRaTags,
   removeQualityTags,
@@ -118,6 +122,7 @@ export function PromptGenerationOptionsPanel({
   const setIncludeCharacters = (val: boolean) => { trackSetting('includeCharacters', val); _setIncludeCharacters(val); };
   const setOptimizeTags = (val: boolean) => { trackSetting('optimizeTags', val); _setOptimizeTags(val); };
   const setSmartTagExclusion = (val: boolean) => { trackSetting('smartTagExclusion', val); _setSmartTagExclusion(val); };
+  const setPrependAnimaArtist = (val: boolean) => { trackSetting('prependAnimaArtist', val); _setPrependAnimaArtist(val); };
   const setRemoveLoRaTags = (val: boolean) => { trackSetting('removeLoRaTags', val); _setRemoveLoRaTags(val); };
   const setRemoveQualityTags = (val: boolean) => { trackSetting('removeQualityTags', val); _setRemoveQualityTags(val); };
   // toggleGlobalWeights prop expects (enabled: boolean) => void
@@ -142,11 +147,17 @@ export function PromptGenerationOptionsPanel({
             <Switch id="smart-tag" checked={optimizeTags} onCheckedChange={setOptimizeTags} className="scale-75 origin-right" />
           </div>
           <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-            <div className="flex items-center gap-1.5 flex-1">
-              <Label htmlFor="smart-exclusion" className="text-xs select-none cursor-pointer">Smart Tag Exclusion</Label>
-              <Badge variant="default" className="text-[8px] py-0 px-1 !rounded h-3.5 select-none shrink-0">Beta</Badge>
-            </div>
+            <Label htmlFor="smart-exclusion" className="text-xs select-none cursor-pointer flex-1">Smart Tag Exclusion</Label>
             <Switch id="smart-exclusion" checked={smartTagExclusion} onCheckedChange={setSmartTagExclusion} className="scale-75 origin-right" />
+          </div>
+          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+            <InfoTooltip
+              title="Prepend Artist (@artist)"
+              description="Adds the post's artist as &quot;@artist,&quot; at the very start of the prompt. Only works for checkpoints that support Anima's @artist invocation syntax (e.g. Anima Pencil-XL) — other checkpoints treat it as a meaningless literal tag."
+            >
+              <Label htmlFor="prepend-anima-artist" className="text-xs select-none cursor-pointer flex-1">Prepend Artist (@artist)</Label>
+            </InfoTooltip>
+            <Switch id="prepend-anima-artist" checked={prependAnimaArtist} onCheckedChange={setPrependAnimaArtist} className="scale-75 origin-right" />
           </div>
 
           {booruProvider === "aibooru" && (
@@ -180,7 +191,6 @@ export function PromptGenerationOptionsPanel({
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center gap-1">
                 <Label htmlFor="background-handling-select" className="text-xs font-semibold cursor-pointer">Background Options</Label>
-                <Badge variant="default" className="text-[8px] py-0 px-1 !rounded h-3.5 select-none shrink-0">Beta</Badge>
               </div>
               <span className="text-[10px] text-muted-foreground leading-tight">Modify background/scene tags</span>
             </div>
@@ -385,7 +395,6 @@ export function PromptGenerationOptionsPanel({
                 >
                   <Label htmlFor="smart-exclusion" className="text-sm select-none cursor-pointer">Smart Tag Exclusion</Label>
                 </InfoTooltip>
-                <Badge variant="default" className="text-xs py-0 px-2 !rounded-lg">Beta</Badge>
               </div>
               <Switch
                 id="smart-exclusion"
@@ -393,6 +402,42 @@ export function PromptGenerationOptionsPanel({
                 onCheckedChange={setSmartTagExclusion}
                 className="scale-90"
                 aria-label="Enable smart tag exclusion"
+              />
+            </div>
+            <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
+              <div className="flex items-center gap-2">
+                <InfoTooltip
+                  title="Prepend Artist (@artist)"
+                  description="Adds the post's artist as &quot;@artist,&quot; at the very start of the prompt. Only works for checkpoints that support Anima's @artist invocation syntax (e.g. Anima Pencil-XL) — other checkpoints will treat it as a meaningless literal tag."
+                  visual={
+                    <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
+                      <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                          <span className="text-muted-foreground font-medium min-w-[70px]">Artist:</span>
+                          <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">wlop</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-1 px-1">
+                        <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
+                        <div className="flex flex-wrap gap-1">
+                          <span className="bg-green-500/10 border border-green-500/20 text-green-500 px-1.5 py-0.5 rounded font-mono">@wlop,</span>
+                          <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, solo...</span>
+                        </div>
+                      </div>
+                    </div>
+                  }
+                >
+                  <Label htmlFor="prepend-anima-artist" className="text-sm select-none cursor-pointer">Prepend Artist (@artist)</Label>
+                </InfoTooltip>
+                <Badge variant="default" className="text-xs py-0 px-2 !rounded-lg">Anima only</Badge>
+              </div>
+              <Switch
+                id="prepend-anima-artist"
+                checked={prependAnimaArtist}
+                onCheckedChange={setPrependAnimaArtist}
+                className="scale-90"
+                aria-label="Prepend the post's artist as @artist for Anima checkpoints"
               />
             </div>
           </>
@@ -533,7 +578,6 @@ export function PromptGenerationOptionsPanel({
                   >
                     <Label htmlFor="background-handling-select" className="text-sm font-medium cursor-pointer">Background Options</Label>
                   </InfoTooltip>
-                  <Badge variant="default" className="text-xs py-0 px-2 !rounded-lg">Beta</Badge>
                 </div>
                 <span className="text-[10px] text-muted-foreground leading-tight">Modify scenery tags</span>
               </div>

@@ -27,6 +27,12 @@ export interface UseCardPromptArgs {
   includeCharacters: boolean
   optimizeTags: boolean
   smartTagExclusion?: boolean
+  /**
+   * Prepends the post's first artist tag as "@artist," at the start of the
+   * prompt. Only meaningful for the Anima Pencil-XL checkpoint family.
+   * No-op when the post has no artist tag (e.g. Aibooru AI-generated posts).
+   */
+  prependAnimaArtist?: boolean
   removeLoRaTags?: boolean
   removeQualityTags?: boolean
   backgroundMode?: BackgroundMode
@@ -73,6 +79,7 @@ export function useCardPrompt({
   includeCharacters,
   optimizeTags,
   smartTagExclusion = true,
+  prependAnimaArtist = false,
   removeLoRaTags,
   removeQualityTags,
   backgroundMode,
@@ -156,6 +163,17 @@ export function useCardPrompt({
     return resolveTagConflicts(baseTags, addList)
   }, [pureContent, addList, smartTagExclusion])
 
+  // First artist tag (Anima "@artist" invocation, see prependAnimaArtist).
+  // Only the first artist is used — collabs with multiple artist tags fall
+  // back to that first one, same convention as SaveArtistButton. Aibooru
+  // posts (AI-generated) have no real booru artist, so tag_string_artist is
+  // empty there and this naturally becomes undefined (no-op).
+  const firstArtistTag = useMemo(() => {
+    if (!prependAnimaArtist) return undefined
+    const raw = post.tag_string_artist?.trim().split(/\s+/).filter(Boolean)[0]
+    return raw ? raw.replace(/_/g, " ") : undefined
+  }, [prependAnimaArtist, post.tag_string_artist])
+
   // baseContent: full cleanPrompt with conflict-resolved addedTags.
   // Must go through cleanPrompt so addedTags get normalized, exclusion-filtered,
   // and deduplicated against the rest of the output.
@@ -171,13 +189,14 @@ export function useCardPrompt({
       backgroundSeed: post.id,
       metaTags: post.tag_string_meta,
       wordReplacements,
+      prependArtistTag: firstArtistTag,
       onWordReplacementsApplied: (applied: AppliedWordReplacement[]) => { captured = applied },
     }
     const content = aiPrompt
       ? cleanPrompt(aiPrompt, "", "", "", opts)
       : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, opts)
     return { baseContent: content, replacedTags: captured }
-  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, post.id, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, wordReplacements])
+  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, post.id, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, wordReplacements, firstArtistTag])
 
   const hasReplacements = replacedTags.length > 0
 

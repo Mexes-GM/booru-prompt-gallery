@@ -127,6 +127,13 @@ export interface PromptOptions {
   includeCharacters: boolean
   optimizeTags: boolean
   smartTagExclusion: boolean
+  /**
+   * Prepends the post's first artist tag as "@artist," at the start of the
+   * prompt. Only meaningful for the Anima Pencil-XL checkpoint family, which
+   * recognizes learned artist styles via the "@" invocation syntax — other
+   * checkpoints will just see it as a literal, meaningless tag.
+   */
+  prependAnimaArtist?: boolean
 }
 
 // History entries embed a self-contained snapshot of the copied post
@@ -162,7 +169,7 @@ function fitHistoryToStorageBudget(items: HistoryItem[]): HistoryItem[] {
 // Type-safe getters and setters for specific preferences
 export const userPreferences = {
   getPromptOptions: (): PromptOptions =>
-    storage.get(STORAGE_KEYS.PROMPT_OPTIONS, { includeCharacters: true, optimizeTags: true, smartTagExclusion: true }),
+    storage.get(STORAGE_KEYS.PROMPT_OPTIONS, { includeCharacters: true, optimizeTags: true, smartTagExclusion: true, prependAnimaArtist: false }),
 
   setPromptOptions: (options: PromptOptions) =>
     storage.set(STORAGE_KEYS.PROMPT_OPTIONS, options),

@@ -510,8 +510,8 @@ export function PromptGallery() {
   // User Prefs UI state
   const {
     promptOptions, setPromptOptions,
-    includeCharacters, optimizeTags, smartTagExclusion,
-    setIncludeCharacters, setOptimizeTags, setSmartTagExclusion,
+    includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
+    setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
   } = usePromptOptions()
 
   const [showCategoryTagBadges, setShowCategoryTagBadges] = useState(true)
@@ -1121,6 +1121,7 @@ export function PromptGallery() {
       includeCharacters={includeCharacters}
       optimizeTags={optimizeTags}
       smartTagExclusion={smartTagExclusion}
+      prependAnimaArtist={prependAnimaArtist}
       removeLoRaTags={search.removeLoRaTags}
       removeQualityTags={search.removeQualityTags}
       backgroundMode={deferredBackgroundMode}
@@ -1147,7 +1148,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={showCategoryTagBadges}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges])
+  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1300,6 +1301,8 @@ export function PromptGallery() {
                         setOptimizeTags={setOptimizeTags}
                         smartTagExclusion={smartTagExclusion}
                         setSmartTagExclusion={setSmartTagExclusion}
+                        prependAnimaArtist={prependAnimaArtist}
+                        setPrependAnimaArtist={setPrependAnimaArtist}
                         removeLoRaTags={search.removeLoRaTags}
                         setRemoveLoRaTags={search.setRemoveLoRaTags}
                         removeQualityTags={search.removeQualityTags}
@@ -1552,6 +1555,8 @@ export function PromptGallery() {
         setOptimizeTags={setOptimizeTags}
         smartTagExclusion={smartTagExclusion}
         setSmartTagExclusion={setSmartTagExclusion}
+        prependAnimaArtist={prependAnimaArtist}
+        setPrependAnimaArtist={setPrependAnimaArtist}
         backgroundMode={backgroundMode}
         setBackgroundMode={setBackgroundMode}
         simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
