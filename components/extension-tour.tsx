@@ -104,7 +104,14 @@ export function ExtensionTour({ externalRun }: { externalRun?: boolean }) {
   useEffect(() => {
     const seen = localStorage.getItem(TOUR_STORAGE_KEY) === "1"
     hasSeenTourRef.current = seen
-    if (!seen) setRun(true) // auto-start on first visit
+    if (!seen) {
+      // Persist immediately at auto-start (not only on FINISH/SKIP) so an
+      // interrupted tour — reload, tab close, or a missing step target that
+      // stalls Joyride before FINISHED — doesn't re-trigger on every visit.
+      try { localStorage.setItem(TOUR_STORAGE_KEY, "1") } catch {}
+      hasSeenTourRef.current = true
+      setRun(true) // auto-start on first visit
+    }
   }, [])
 
   const markDone = useCallback(() => {

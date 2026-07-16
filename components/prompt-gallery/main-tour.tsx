@@ -122,6 +122,14 @@ export function MainTour({ runSignal, onStart }: MainTourProps) {
   useEffect(() => {
     const seen = localStorage.getItem(TOUR_STORAGE_KEY) === "1"
     if (!seen) {
+      // Persist the flag immediately, at auto-start, instead of waiting for the
+      // tour to FINISH/SKIP. Otherwise an interrupted tour (page reload, tab
+      // close, or a step whose target isn't in the DOM so Joyride stalls before
+      // emitting FINISHED) never writes the flag and re-triggers on every visit.
+      // Marking here makes it a true once-per-browser experience.
+      try {
+        localStorage.setItem(TOUR_STORAGE_KEY, "1")
+      } catch {}
       onStart?.()
       setRun(true)
     }
