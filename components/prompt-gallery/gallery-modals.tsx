@@ -18,6 +18,10 @@ const TeachWelcomeModal = dynamic(() => import("@/components/teach-welcome-modal
 const ReversePromptParserModal = dynamic(() => import("@/components/prompt-gallery/reverse-prompt-parser-modal").then(m => m.ReversePromptParserModal), { ssr: false, loading: () => null })
 const GlobalWeightsModal = dynamic(() => import("@/components/prompt-gallery/global-weights-modal").then(m => m.GlobalWeightsModal), { ssr: false, loading: () => null })
 
+// Stable fallback so TeachModal can stay mounted (with `open=false`) even before
+// any tags have been classified, instead of being conditionally unmounted.
+const EMPTY_CLASSIFIED_TAGS: ClassifiedTags = { clothing: [], pose: [], scenery: [], appearance: [], other: [] }
+
 interface GalleryModalsProps {
   // Teach modal
   teachModalData: { open: boolean; tags: ClassifiedTags | null }
@@ -75,14 +79,19 @@ export function GalleryModals({
 }: GalleryModalsProps) {
   return (
     <>
-      {teachModalData.tags && (
-        <TeachModal
-          open={teachModalData.open}
-          onOpenChange={(open) => setTeachModalData(prev => ({ ...prev, open }))}
-          initialClassifiedTags={teachModalData.tags}
-          onSuccess={onTeachSuccess}
-        />
-      )}
+      {/*
+        Always mounted (like the other floating modals below) so Radix Dialog
+        starts in data-state="closed" and can actually animate the closed->open
+        transition. Previously this was gated behind `teachModalData.tags &&`,
+        which meant the component (and its Dialog) was born already open on
+        first render, skipping the entry animation entirely.
+      */}
+      <TeachModal
+        open={teachModalData.open}
+        onOpenChange={(open) => setTeachModalData(prev => ({ ...prev, open }))}
+        initialClassifiedTags={teachModalData.tags ?? EMPTY_CLASSIFIED_TAGS}
+        onSuccess={onTeachSuccess}
+      />
       <TeachWelcomeModal triggerOpen={showWelcomeModal} onOpenChange={setShowWelcomeModal} />
 
       <GlobalWeightsModal

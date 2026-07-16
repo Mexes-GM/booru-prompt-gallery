@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { parseTagString } from "@/lib/weight-utils"
 import { useToast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 
 interface TagData {
   id: string
@@ -187,10 +188,11 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
         description: tag.text,
       })
     } catch {
-      toast({
+      toastError({
         title: "Copy failed",
         description: "Could not copy tag to clipboard",
-        variant: "destructive",
+        errorSource: "copy_tag_to_clipboard",
+        context: { tag: tag.text },
       })
     }
   }, [tag.text, toast, posthog])

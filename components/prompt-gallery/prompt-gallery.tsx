@@ -60,6 +60,7 @@ const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then
 
 import pkg from "@/package.json"
 import { useToast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
@@ -792,12 +793,13 @@ export function PromptGallery() {
       const is403 = search.error.status === 403 || search.error.statusCode === 403
       const isAibooruError = search.booruProvider === 'aibooru' && is403
 
-      toast({
+      toastError({
         title: isAibooruError ? "Aibooru Access Blocked" : "Connection error",
         description: isAibooruError
           ? "Aibooru is blocking server requests. Try Danbooru or Rule34 instead."
           : (search.error.message || "Could not load images"),
-        variant: "destructive",
+        errorSource: "booru_search",
+        context: { provider: search.booruProvider, status: search.error.status ?? search.error.statusCode },
       })
     }
     hasMounted.current = true
@@ -869,10 +871,11 @@ export function PromptGallery() {
       setTimeout(() => setCopiedId(null), 2000)
       trackCopy(postId)
     } catch (error) {
-      toast({
+      toastError({
         title: "Error",
         description: isPrompt ? "Could not copy prompt" : "Could not copy tags",
-        variant: "destructive",
+        errorSource: "copy_to_clipboard",
+        context: { provider: search.booruProvider, postId, isPrompt },
       })
     }
   }, [toast, addToHistory, posthog, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts, isAiConvertMode])
@@ -887,7 +890,12 @@ export function PromptGallery() {
       const imageUrl = post.file_url || post.large_file_url
 
       if (!imageUrl) {
-        toast({ title: "Download failed", description: "No image URL available", variant: "destructive" })
+        toastError({
+          title: "Download failed",
+          description: "No image URL available",
+          errorSource: "download_image",
+          context: { provider: post._provider || search.booruProvider, postId: post.id },
+        })
         return
       }
 
@@ -899,10 +907,14 @@ export function PromptGallery() {
       // Providers that need a proxy due to CORS/referrer restrictions.
       // ponytail: Danbooru CDN blocks cross-origin browser requests (Cloudflare WAF
       // triggers on sec-fetch-site: cross-site without Referer). Gelbooru has explicit
-      // anti-hotlink. Rule34 is auth-walled. E621 and Aibooru work direct.
+      // anti-hotlink. Rule34 is auth-walled. E621's static*.e621.net CDN does NOT send
+      // Access-Control-Allow-Origin (verified live: mode:'cors' -> TypeError: Failed to
+      // fetch, mode:'no-cors' -> opaque 200), so it needs the proxy too despite being
+      // viewable directly via <img> (which ignores CORS). Only Aibooru works direct.
       const needsVercelProxy = imageUrl.includes('donmai.us') ||
         imageUrl.includes('rule34.xxx') ||
-        imageUrl.includes('gelbooru.com')
+        imageUrl.includes('gelbooru.com') ||
+        imageUrl.includes('e621.net')
 
       // Danbooru: prefer the CloudFront proxy (edge cache + CORS) when configured.
       const cdnUrl = getDanbooruCdnUrl(imageUrl)
@@ -913,7 +925,7 @@ export function PromptGallery() {
       } else if (needsVercelProxy) {
         fetchUrl = apiUrl(`/api/download?url=${encodeURIComponent(imageUrl)}`)
       } else {
-        // Direct fetch — Aibooru/E621 CDNs are permissive, no Referer needed.
+        // Direct fetch — Aibooru's CDN is the only one that's actually CORS-permissive.
         fetchUrl = imageUrl
       }
 
@@ -940,12 +952,28 @@ export function PromptGallery() {
 
       toast({ title: "Download started", description: `Downloading ${filename}` })
     } catch (error) {
+      // A bare "TypeError: Failed to fetch" means the request never completed
+      // at the network level (CORS rejection, ad blocker, DNS/TLS failure, or
+      // the proxy being unreachable) — the browser gives no status code here.
+      // Distinguish it from HTTP-level failures so users get an actionable
+      // message instead of a generic one, and open the image directly as a
+      // fallback so they can still save it manually (e.g. right-click > Save).
+      const isNetworkFailure = error instanceof TypeError && /failed to fetch/i.test(error.message)
+
       console.error('Download error:', error)
-      toast({
+      toastError({
         title: "Download failed",
-        description: error instanceof Error ? error.message : "Error downloading image",
-        variant: "destructive",
+        description: isNetworkFailure
+          ? "Could not reach the image server. It may be blocked by an ad blocker/extension, or temporarily unreachable. Opening the image in a new tab instead."
+          : error instanceof Error ? error.message : "Error downloading image",
+        errorSource: "download_image",
+        context: { provider: post._provider || search.booruProvider, postId: post.id, networkFailure: isNetworkFailure },
       })
+
+      if (isNetworkFailure) {
+        const fallbackUrl = post.file_url || post.large_file_url
+        if (fallbackUrl) window.open(fallbackUrl, '_blank', 'noopener,noreferrer')
+      }
     }
   }, [search.booruProvider, toast, posthog])
 

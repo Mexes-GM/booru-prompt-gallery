@@ -11,6 +11,7 @@ import {
   persistToCache,
 } from "@/lib/api-client"
 import { toast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 import { trackFavorite, safeTrack } from "@/lib/analytics"
 import { useUser } from "@/hooks/use-user"
 import { createClient } from "@/lib/supabase/client"
@@ -133,10 +134,10 @@ export function useBooruFavorites(
           .single()
 
         if (error || !data) {
-          toast({
+          toastError({
             title: "Error creating category",
             description: error?.message || "Something went wrong",
-            variant: "destructive",
+            errorSource: "create_favorite_folder",
           })
           return null
         }
@@ -198,10 +199,11 @@ export function useBooruFavorites(
           // Rollback local state so the UI matches the (unchanged) DB.
           core.setFolders(prevFolders)
           core.setFolderMap(prevMap)
-          toast({
+          toastError({
             title: "Error deleting category",
             description: e?.message || "Failed to delete the category. Please try again.",
-            variant: "destructive",
+            errorSource: "delete_favorite_folder",
+            context: { folderId },
           })
           return
         }
@@ -380,10 +382,10 @@ export function useBooruFavorites(
           }
         } catch (dbError: any) {
           console.error("[toggleFavorite] DB operation failed, rolling back:", dbError)
-          toast({
+          toastError({
             title: "Error saving favorite",
             description: `Failed to save your changes to the cloud. (${dbError?.message || "Unknown error"})`,
-            variant: "destructive",
+            errorSource: "toggle_favorite",
           })
           // Rollback
           core.setFavorites(currentFavorites)

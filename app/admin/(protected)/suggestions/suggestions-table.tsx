@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 import { format } from "date-fns"
 import { Check, X, Filter, Loader2 } from "lucide-react"
 
@@ -57,10 +58,10 @@ export function SuggestionsTable({
       }
       router.refresh()
     } catch (error) {
-      toast({ 
-        title: "Error", 
+      toastError({
+        title: "Error",
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive"
+        errorSource: "admin_suggestion_update",
       })
     } finally {
       setIsProcessing(null)

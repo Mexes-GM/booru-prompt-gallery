@@ -11,7 +11,7 @@ import {
 import { cleanPrompt, type AppliedWordReplacement } from "@/lib/cleanPrompt"
 import { type BackgroundMode, processBackgroundTags } from "@/lib/background-detector"
 import { applyWeights } from "@/lib/weight-utils"
-import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
+import { classifyTags, computeRichnessScore, type ClassifiedTags, type RichnessScore } from "@/lib/tag-classifier"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 
@@ -268,6 +268,11 @@ export function useCardPrompt({
     return classifyTags(allTagsForClassification, tagOverrides, characterTagsArray)
   }, [characterTagsArray, tagsForClassification, tagOverrides])
 
+  // Richness score: category coverage (clothing/pose/scenery/appearance) derived
+  // from the same classifiedTags already computed above — no extra classification
+  // pass. See lib/tag-classifier.ts computeRichnessScore for rationale.
+  const richnessScore: RichnessScore = useMemo(() => computeRichnessScore(classifiedTags), [classifiedTags])
+
   // Determine if options are active that affect the prompt
   const hasActiveOptions = useMemo(() => {
     // Only show indicator if Smart Tag Exclusion actively blocked tags from being added
@@ -286,6 +291,7 @@ export function useCardPrompt({
     totalTagsCount,
     tagCountIndicator,
     classifiedTags,
+    richnessScore,
     hasActiveOptions,
     conflictingTags: conflictResolution.conflictingTags,
     replacedTags,

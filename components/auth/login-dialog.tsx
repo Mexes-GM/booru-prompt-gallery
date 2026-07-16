@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client"
 import { Loader2, Mail, ArrowRight, CheckCircle2 } from "lucide-react"
 import * as Sentry from "@sentry/nextjs"
 import { toast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 
@@ -56,10 +57,10 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
           tags: { context: "magic_link_login" }
         })
       }
-      toast({
+      toastError({
         title: "Error",
         description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
+        errorSource: "magic_link_login",
       })
       setIsLoading(false)
     }

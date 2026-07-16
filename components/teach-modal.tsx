@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 import { Loader2, GripVertical, Info, Check } from "lucide-react"
 import { submitTagSuggestions, getExistingSuggestions } from '@/app/actions/suggestions'
 import { TagCategory } from '@/lib/tag-classifier'
@@ -328,12 +329,12 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
 
       if (currentTagsJson !== newTagsJson) {
         setItems(initialClassifiedTags)
-        setIsReady(false)
-
-        // Delay rendering of heavy content to allow modal animation to start
-        const timer = setTimeout(() => {
-          setIsReady(true)
-        }, 50)
+        // Mount the heavy DnD content immediately (like the other modals).
+        // Previously this was delayed via setTimeout to "let the modal
+        // animation start first", but that delayed mount forced a large
+        // reflow (DndContext + columns) mid-animation, causing jank that
+        // made the fade/zoom entry look like it wasn't playing at all.
+        setIsReady(true)
 
         // Fetch existing suggestions
         const allTags = Object.values(initialClassifiedTags).flat()
@@ -342,8 +343,6 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
             setExistingSuggestions(suggestions)
           })
         }
-
-        return () => clearTimeout(timer)
       } else if (!isReady) {
         // Ensure isReady is true if we didn't reset
         setIsReady(true)
@@ -554,18 +553,18 @@ export function TeachModal({ open, onOpenChange, initialClassifiedTags, onSucces
 
         // Removed immediate onSuccess() to avoid parent re-render cutting the animation
       } else {
-        toast({
+        toastError({
           title: "Submission Failed",
           description: result.message,
-          variant: "destructive"
+          errorSource: "teach_submission",
         })
       }
     } catch (error) {
       console.error(error)
-      toast({
+      toastError({
         title: "Error",
         description: "An unexpected error occurred.",
-        variant: "destructive"
+        errorSource: "teach_submission",
       })
     } finally {
       setIsSubmitting(false)

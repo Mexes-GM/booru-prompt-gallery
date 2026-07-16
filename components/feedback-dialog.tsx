@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, memo } from "react"
+import { useState, useEffect, memo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { apiUrl } from "@/lib/api-client"
 import { cn } from "@/lib/utils"
@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast"
 import { usePathname } from "next/navigation"
 import { usePostHog } from "posthog-js/react"
 import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
+import { useFeedbackPrefill, clearPrefilledFeedback } from "@/components/feedback-prefill-context"
 
 // --- Animation Variants ---
 const containerVariants: any = {
@@ -129,11 +130,32 @@ export function FeedbackDialog() {
     const [content, setContent] = useState("")
     const [contact, setContact] = useState("")
     const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+    const [prefillMetadata, setPrefillMetadata] = useState<Record<string, unknown> | null>(null)
     const { toast } = useToast()
     const pathname = usePathname()
     const posthog = usePostHog()
+    const { request: prefillRequest, requestId: prefillRequestId } = useFeedbackPrefill()
 
     const turnstileRequired = isTurnstileEnabled()
+
+    // React to a toastError() "Report" click: open pre-filled with the
+    // error's type/content, and stash the extra metadata so it rides along
+    // on submit (merged with the usual user_agent/pathname/screen_size).
+    // See docs/error-toast-reporting-plan.md (Fase 2/3).
+    /* eslint-disable react-hooks/set-state-in-effect -- this effect
+       subscribes to an external module-level store (feedback-prefill-context)
+       and mirrors its state into local UI state; it is not deriving state
+       from props/state already available during render. */
+    useEffect(() => {
+        if (!prefillRequest) return
+        setType(prefillRequest.type)
+        setContent(prefillRequest.content)
+        setPrefillMetadata(prefillRequest.metadata ?? null)
+        setOpen(true)
+        clearPrefilledFeedback()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [prefillRequestId])
+    /* eslint-enable react-hooks/set-state-in-effect */
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -164,6 +186,7 @@ export function FeedbackDialog() {
                         user_agent: navigator.userAgent,
                         pathname: pathname,
                         screen_size: `${window.innerWidth}x${window.innerHeight}`,
+                        ...(prefillMetadata ?? {}),
                     },
                 }),
             })
@@ -187,6 +210,7 @@ export function FeedbackDialog() {
                     setContact("")
                     setType("bug")
                     setTurnstileToken(null)
+                    setPrefillMetadata(null)
                 }, 300)
             }, 2500)
 

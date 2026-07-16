@@ -15,6 +15,7 @@ import { useUser } from "@/hooks/use-user"
 import { LoginDialog } from "./login-dialog"
 import { LogOut, User as UserIcon, RefreshCw } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 import { motion } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
 
@@ -50,10 +51,10 @@ export function UserNav() {
       router.refresh()
     } catch (error) {
       console.error("Logout error:", error)
-      toast({
+      toastError({
         title: "Sign out failed",
         description: "Could not sign out. Please try again.",
-        variant: "destructive",
+        errorSource: "user_logout",
       })
     }
   }

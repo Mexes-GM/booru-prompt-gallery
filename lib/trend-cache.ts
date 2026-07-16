@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase-admin'
 import { TrendItem } from '@/lib/booru/types'
 
 const TABLE = 'trend_cache'
@@ -15,6 +15,8 @@ const FETCH_LOCK_TTL_SECONDS = 90
  * or null if expired / missing.
  */
 export async function getCachedTrends(): Promise<TrendItem[] | null> {
+    if (!isSupabaseAdminConfigured()) return null
+
     try {
         const { data, error } = await supabaseAdmin
             .from(TABLE)
@@ -44,6 +46,11 @@ export async function getCachedTrends(): Promise<TrendItem[] | null> {
  * false if another invocation is already fetching.
  */
 export async function tryAcquireTrendFetchLock(): Promise<boolean> {
+    // No Supabase configured (local dev, or prod without it wired up) — there's
+    // no shared lock to coordinate, so just let the caller fetch directly
+    // instead of falling into the noop-chain's always-false insert/update path.
+    if (!isSupabaseAdminConfigured()) return true
+
     try {
         // Get the current row
         const { data: existing } = await supabaseAdmin
@@ -116,6 +123,8 @@ export async function tryAcquireTrendFetchLock(): Promise<boolean> {
  * the Danbooru fetch instead of being stuck behind a day of empty results.
  */
 export async function setCachedTrends(trends: TrendItem[]): Promise<void> {
+    if (!isSupabaseAdminConfigured()) return
+
     try {
         const { data: existing } = await supabaseAdmin
             .from(TABLE)

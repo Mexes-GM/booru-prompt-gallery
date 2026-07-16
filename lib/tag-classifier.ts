@@ -152,6 +152,81 @@ export function classifyTags(tags: string[], overrides?: Record<string, string>,
   return result;
 }
 
+/**
+ * Richness score for a card: a composite depth-based score (0-10) after
+ * cleanPrompt + classifyTags.
+ *
+ * Design rationale (validated empirically twice, see
+ * docs/prompt-genericness-mitigation-plan.md §7.8 and the follow-up in the same
+ * section — "richness-score-v2" experiment):
+ * - v1 was a binary category-COVERAGE count (0-4, "is this category non-empty?").
+ *   It beat a raw tag count, but had its own blind spot: a category with a
+ *   single shallow tag (e.g. one `outdoors` tag) counted exactly the same as a
+ *   category with 8 detailed tags. Empirically, 33.8% of a real 80-post sample
+ *   had a binary score of >=3/4 while at least one of those categories had
+ *   only 1 tag — a "looks rich, isn't" false positive at the category level,
+ *   the same failure mode the whole palanca was meant to catch at the prompt
+ *   level.
+ * - v2 (this version) scores each category by DEPTH, not just presence:
+ *   0 tags = 0pts, 1-2 tags ("shallow") = 1pt, 3+ tags ("deep") = 2.5pts.
+ *   Summed across the 4 categories, max = 10. This fixes the blind spot by
+ *   construction (a shallow category can no longer look identical to a deep
+ *   one) and, on the same 80-post sample, has ~6x the variance of the binary
+ *   score (4.05 vs 0.674) — i.e. it actually discriminates between posts
+ *   instead of clustering most of them at "3" or "4".
+ * - Must be computed on already-classified (post-cleanPrompt) tags, not raw
+ *   tag_string, or meta/artist noise dilutes the signal (see the original
+ *   §7.8 finding: a post can have many total tags that are mostly
+ *   artist/character/meta and still be poor in what actually describes the
+ *   image).
+ * - "other" is intentionally excluded: it's a catch-all bucket
+ *   (artist/character/meta-ish leftovers), not a meaningful descriptive axis.
+ */
+export type RichnessDepth = 'none' | 'shallow' | 'deep';
+
+export interface RichnessScore {
+  /** Composite score, 0-10 (sum of per-category depth points, max 2.5 each). */
+  score: number;
+  /** Max possible score (10), for rendering "score/max". */
+  maxScore: number;
+  /** Per-category depth (none = 0 tags, shallow = 1-2, deep = 3+), for tooltips/breakdowns. */
+  breakdown: Record<'clothing' | 'pose' | 'scenery' | 'appearance', RichnessDepth>;
+}
+
+const RICHNESS_CATEGORIES: Array<'clothing' | 'pose' | 'scenery' | 'appearance'> = [
+  'clothing', 'pose', 'scenery', 'appearance'
+];
+
+const DEPTH_POINTS: Record<RichnessDepth, number> = {
+  none: 0,
+  shallow: 1,
+  deep: 2.5,
+};
+
+function depthFor(count: number): RichnessDepth {
+  if (count === 0) return 'none';
+  if (count <= 2) return 'shallow';
+  return 'deep';
+}
+
+export function computeRichnessScore(classified: ClassifiedTags): RichnessScore {
+  const breakdown = {
+    clothing: depthFor(classified.clothing.length),
+    pose: depthFor(classified.pose.length),
+    scenery: depthFor(classified.scenery.length),
+    appearance: depthFor(classified.appearance.length),
+  };
+  const score = RICHNESS_CATEGORIES.reduce(
+    (total, cat) => total + DEPTH_POINTS[breakdown[cat]],
+    0
+  );
+  return {
+    score,
+    maxScore: RICHNESS_CATEGORIES.length * DEPTH_POINTS.deep,
+    breakdown,
+  };
+}
+
 export function getSmartCombinedTags(tags: string[]): string[] {
   // Re-use cleanPrompt's optimization logic implicitly by calling cleanPrompt?
   // Or simpler: remove redundant subset tags.

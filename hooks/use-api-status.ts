@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useLayoutEffect } from 'react'
 import { useToast } from '@/hooks/use-toast'
+import { toastError } from '@/lib/toast-error'
 
 export type ApiStatus = 'healthy' | 'slow' | 'error' | 'offline'
 
@@ -68,10 +69,10 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
     
     // Mostrar toast solo para errores críticos (offline)
     if (isOffline) {
-      toast({
+      toastError({
         title: "API sin conexión",
         description: "La API no está respondiendo. Verifica tu conexión a internet.",
-        variant: "destructive",
+        errorSource: "api_status_offline",
       })
     }
   }, [toast])

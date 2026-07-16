@@ -32,9 +32,30 @@ import {
 import { PROVIDER_POST_URLS } from "@/lib/constants"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
-import { type TagCategory, type ClassifiedTags } from "@/lib/tag-classifier"
+import { type TagCategory, type ClassifiedTags, type RichnessDepth } from "@/lib/tag-classifier"
 import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { useCardPrompt } from "@/hooks/use-card-prompt"
+
+// Richness tooltip depth labels/classes (Palanca 7, docs/prompt-genericness-mitigation-plan.md
+// §7.8): maps each category's RichnessDepth to a short prefix + color, replacing the old
+// binary check/cross now that depth (none/shallow/deep) carries more signal than presence alone.
+const RICHNESS_DEPTH_LABEL: Record<RichnessDepth, string> = {
+    none: "✗",
+    shallow: "~",
+    deep: "✓",
+}
+const RICHNESS_DEPTH_CLASS: Record<RichnessDepth, string> = {
+    none: "text-muted-foreground",
+    shallow: "text-amber-400",
+    deep: "text-emerald-400",
+}
+
+// Temporary kill-switch (2026-07-16): the richness badge was judged not useful enough
+// in its current form to keep showing by default. The underlying computeRichnessScore
+// logic and tests stay intact — flip this back to true to re-enable the on-card badge
+// without redoing any of the plumbing.
+const SHOW_RICHNESS_BADGE = false
+
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import {
     DropdownMenu,
@@ -253,6 +274,7 @@ export const MasonryItem = memo(function MasonryItem({
         totalTagsCount,
         tagCountIndicator,
         classifiedTags,
+        richnessScore,
         hasActiveOptions,
         conflictingTags,
         hasReplacements,
@@ -434,44 +456,7 @@ export const MasonryItem = memo(function MasonryItem({
                             </motion.div>
                         </div>
                     )}
-                    {hasActiveOptions && (
-                        <div className="absolute top-2 right-2 z-20 pointer-events-none" aria-label="Options affecting prompt">
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm"
-                            >
-                                <motion.div
-                                   animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
-                                   transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                >
-                                    <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
-                                </motion.div>
-                            </motion.div>
-                        </div>
-                    )}
-                    {hasReplacements && (
-                        <div
-                            className="absolute top-9 right-2 z-20 pointer-events-none"
-                            aria-label={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
-                            title={replacedTags.map(r => `${r.from} → ${r.to}`).join('\n')}
-                        >
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm"
-                            >
-                                <motion.div
-                                   animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
-                                   transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                >
-                                    <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
-                                </motion.div>
-                            </motion.div>
-                        </div>
-                    )}
+
                     <AnimatePresence>
                         {isMergeMode && (
                             <motion.div
@@ -590,19 +575,111 @@ export const MasonryItem = memo(function MasonryItem({
                         </div>
                     )}
 
-                    {/* Character Tag Count Indicator */}
-                    {tagCountIndicator && includeCharacters && (
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help z-10">
-                                    <Users className="w-3.5 h-3.5 opacity-70" />
-                                    {tagCountIndicator}
-                                </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="text-xs">
-                                Character Post Count
-                            </TooltipContent>
-                        </Tooltip>
+                    {/* Bottom-left stack: options/replacement indicators above the character post count */}
+                    {(
+                        <div className="absolute bottom-2 left-2 z-20 flex flex-col items-start gap-1">
+                            {hasActiveOptions && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="pointer-events-auto" aria-label="Options affecting prompt">
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0.8 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm cursor-help"
+                                            >
+                                                <motion.div
+                                                   animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
+                                                   transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                                                >
+                                                    <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
+                                                </motion.div>
+                                            </motion.div>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="text-xs">
+                                        Smart Tag Exclusion
+                                    </TooltipContent>
+                                </Tooltip>
+                            )}
+                            {hasReplacements && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div
+                                            className="pointer-events-auto"
+                                            aria-label={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
+                                        >
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0.8 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm cursor-help"
+                                            >
+                                                <motion.div
+                                                   animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
+                                                   transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                                                >
+                                                    <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
+                                                </motion.div>
+                                            </motion.div>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="text-xs">
+                                        Find &amp; Replace
+                                    </TooltipContent>
+                                </Tooltip>
+                            )}
+                            {/* Character Tag Count Indicator */}
+                            {tagCountIndicator && includeCharacters && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help">
+                                            <Users className="w-3.5 h-3.5 opacity-70" />
+                                            {tagCountIndicator}
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="text-xs">
+                                        Character Post Count
+                                    </TooltipContent>
+                                </Tooltip>
+                            )}
+                            {/* Richness Score Indicator: category coverage (clothing/pose/scenery/appearance) */}
+                            {SHOW_RICHNESS_BADGE && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div
+                                        className={`px-1.5 py-0.5 rounded-md bg-black/60 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help pointer-events-auto ${richnessScore.score >= 8
+                                            ? "text-emerald-400"
+                                            : richnessScore.score <= 3
+                                                ? "text-red-400"
+                                                : "text-amber-400"
+                                            }`}
+                                        aria-label={`Richness score: ${richnessScore.score.toFixed(1)} of ${richnessScore.maxScore}`}
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        {richnessScore.score.toFixed(1)}/{richnessScore.maxScore}
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                    <div className="flex flex-col gap-0.5">
+                                        <span className="font-medium mb-0.5">Richness: {richnessScore.score.toFixed(1)}/{richnessScore.maxScore}</span>
+                                        <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.pose]}>
+                                            {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.pose]} Pose
+                                        </span>
+                                        <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.clothing]}>
+                                            {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.clothing]} Clothing
+                                        </span>
+                                        <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.scenery]}>
+                                            {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.scenery]} Scenery
+                                        </span>
+                                        <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.appearance]}>
+                                            {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.appearance]} Appearance
+                                        </span>
+                                    </div>
+                                </TooltipContent>
+                            </Tooltip>
+                            )}
+                        </div>
                     )}
 
                     <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1 z-10">
@@ -896,44 +973,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 </motion.div>
                             </div>
                         )}
-                        {hasActiveOptions && (
-                            <div className="absolute top-1.5 left-1.5 z-20 pointer-events-none" aria-label="Options affecting prompt">
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.8 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm"
-                                >
-                                    <motion.div
-                                       animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
-                                       transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                    >
-                                        <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
-                                    </motion.div>
-                                </motion.div>
-                            </div>
-                        )}
-                        {hasReplacements && (
-                            <div
-                                className="absolute top-9 left-1.5 z-20 pointer-events-none"
-                                aria-label={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
-                                title={replacedTags.map(r => `${r.from} → ${r.to}`).join('\n')}
-                            >
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.8 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm"
-                                >
-                                    <motion.div
-                                       animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
-                                       transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                    >
-                                        <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
-                                    </motion.div>
-                                </motion.div>
-                            </div>
-                        )}
+
                         <div className="absolute top-1 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                             <SaveFavoriteButton
                                 folders={folders}
@@ -968,19 +1008,111 @@ export const MasonryItem = memo(function MasonryItem({
                             </div>
                         )}
 
-                        {/* Character Tag Count Indicator */}
-                        {tagCountIndicator && includeCharacters && (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help z-10">
-                                        <Users className="w-3 h-3 opacity-70" />
-                                        {tagCountIndicator}
-                                    </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="text-xs">
-                                    Character Post Count
-                                </TooltipContent>
-                            </Tooltip>
+                        {/* Bottom-left stack: options/replacement indicators above the character post count */}
+                        {(
+                            <div className="absolute bottom-1 left-1 z-20 flex flex-col items-start gap-1">
+                                {hasActiveOptions && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div className="pointer-events-auto" aria-label="Options affecting prompt">
+                                                <motion.div
+                                                    initial={{ opacity: 0, scale: 0.8 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm cursor-help"
+                                                >
+                                                    <motion.div
+                                                       animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
+                                                       transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                                                    >
+                                                        <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
+                                                    </motion.div>
+                                                </motion.div>
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">
+                                            Smart Tag Exclusion
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
+                                {hasReplacements && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div
+                                                className="pointer-events-auto"
+                                                aria-label={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
+                                            >
+                                                <motion.div
+                                                    initial={{ opacity: 0, scale: 0.8 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm cursor-help"
+                                                >
+                                                    <motion.div
+                                                       animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
+                                                       transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                                                    >
+                                                        <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
+                                                    </motion.div>
+                                                </motion.div>
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">
+                                            Find &amp; Replace
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
+                                {/* Character Tag Count Indicator */}
+                                {tagCountIndicator && includeCharacters && (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help">
+                                                <Users className="w-3 h-3 opacity-70" />
+                                                {tagCountIndicator}
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="text-xs">
+                                            Character Post Count
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
+                                {/* Richness Score Indicator: category coverage (clothing/pose/scenery/appearance) */}
+                                {SHOW_RICHNESS_BADGE && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div
+                                            className={`px-1.5 py-0.5 rounded-md bg-black/60 text-[10px] font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help pointer-events-auto ${richnessScore.score >= 8
+                                                ? "text-emerald-400"
+                                                : richnessScore.score <= 3
+                                                    ? "text-red-400"
+                                                    : "text-amber-400"
+                                                }`}
+                                            aria-label={`Richness score: ${richnessScore.score.toFixed(1)} of ${richnessScore.maxScore}`}
+                                        >
+                                            <Sparkles className="w-3 h-3" />
+                                            {richnessScore.score.toFixed(1)}/{richnessScore.maxScore}
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="text-xs">
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="font-medium mb-0.5">Richness: {richnessScore.score.toFixed(1)}/{richnessScore.maxScore}</span>
+                                            <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.pose]}>
+                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.pose]} Pose
+                                            </span>
+                                            <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.clothing]}>
+                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.clothing]} Clothing
+                                            </span>
+                                            <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.scenery]}>
+                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.scenery]} Scenery
+                                            </span>
+                                            <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.appearance]}>
+                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.appearance]} Appearance
+                                            </span>
+                                        </div>
+                                    </TooltipContent>
+                                </Tooltip>
+                                )}
+                            </div>
                         )}
 
                         <div className="absolute bottom-1 right-1 flex flex-col items-end gap-1 z-10">

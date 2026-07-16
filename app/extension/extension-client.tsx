@@ -16,7 +16,8 @@ import { PromptGenerationOptionsPanel } from "@/components/prompt-gallery/prompt
 import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
 import type { BackgroundMode } from "@/lib/background-detector"
 import { useCardPrompt, type UseCardPromptOptions } from "@/hooks/use-card-prompt"
-import { BooruPost, BooruProvider } from "@/lib/api-client"
+import { BooruPost, BooruProvider, isTagCountSupportedProvider } from "@/lib/api-client"
+import { QueryStatusPanel } from "@/components/prompt-gallery/query-status-panel"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -32,6 +33,7 @@ import {
   Send,
   Check,
   Sliders,
+  Replace,
   Shield,
   Search,
   X,
@@ -70,6 +72,7 @@ import { GlobalWeightsModal } from "@/components/prompt-gallery/global-weights-m
 import { BlacklistManager } from "@/components/prompt-gallery/blacklist-manager"
 import { useBlacklist } from "@/hooks/use-blacklist"
 import { useToast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ThemeProvider } from "@/components/theme-provider"
 import { useTheme } from "next-themes"
@@ -175,6 +178,10 @@ function PocketCard({
     classifiedTags: cardClassifiedTags,
     totalTagsCount: cardTotalTagsCount,
     tagCountIndicator: cardTagCountIndicator,
+    hasActiveOptions,
+    hasReplacements,
+    replacedTags,
+    conflictingTags,
   } = useCardPrompt({
     post,
     tagCounts,
@@ -227,6 +234,17 @@ function PocketCard({
     setTimeout(() => setSendState("idle"), 4000)
   }
 
+  // Double-clicking the card triggers the same action as the Send button —
+  // but NOT when the double-click lands on the interactive prompt (tags are
+  // click/double-click-selectable text) or on one of the footer buttons
+  // (which already have their own handlers), to avoid hijacking text
+  // selection or double-firing an action the user is already triggering.
+  const handleCardDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement
+    if (target.closest(".prompt-container") || target.closest("button")) return
+    handleSend(e)
+  }
+
   const itemProvider = post._provider || booruProvider
   const isGelbooru = itemProvider === "gelbooru"
   const isDanbooru = itemProvider === "danbooru"
@@ -265,7 +283,11 @@ function PocketCard({
   const classifiedTags = cardClassifiedTags
 
   return (
-    <Card className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300">
+    <Card
+      className="w-full h-full overflow-hidden card-hover group flex flex-col relative transition-all duration-300"
+      onDoubleClick={handleCardDoubleClick}
+      title="Double-click to send this prompt"
+    >
       {/* 1. Image viewport matching original layout */}
       <div className="relative bg-muted overflow-hidden cursor-pointer" style={{ height: imageHeight }}>
         {isPreviouslyCopied && (
@@ -303,11 +325,40 @@ function PocketCard({
           </>
         )}
 
-        {/* Character Tag Count Indicator */}
-        {tagCountIndicator && (
-          <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm z-10 select-none">
-            <Users className="w-3.5 h-3.5 opacity-70" />
-            {tagCountIndicator}
+        {/* Bottom-left stack: options/replacement indicators above the character
+            post count — mirrors MasonryItem's equivalent stack so the Pocket
+            surfaces the same "something changed your prompt" signals. */}
+        {(hasActiveOptions || hasReplacements || (tagCountIndicator && promptOptions.includeCharacters)) && (
+          <div className="absolute bottom-2 left-2 z-10 flex flex-col items-start gap-1">
+            {hasActiveOptions && (
+              <div
+                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm select-none"
+                title="Smart Tag Exclusion blocked a conflicting added tag"
+              >
+                <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
+              </div>
+            )}
+            {hasReplacements && (
+              <div
+                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm select-none"
+                title={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
+              >
+                <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
+              </div>
+            )}
+            {/* Character Tag Count Indicator — hidden when "Include Characters" is
+                off, matching MasonryItem's `tagCountIndicator && includeCharacters`
+                gate in the main app (otherwise it leaks the character identity
+                even when the user explicitly asked to anonymize the prompt). */}
+            {tagCountIndicator && promptOptions.includeCharacters && (
+              <div
+                className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 backdrop-blur-sm shadow-sm select-none"
+                title="Character Post Count"
+              >
+                <Users className="w-3.5 h-3.5 opacity-70" />
+                {tagCountIndicator}
+              </div>
+            )}
           </div>
         )}
 
@@ -360,6 +411,7 @@ function PocketCard({
             globalWeights={globalWeights}
             onSearch={onSearch}
             onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
+            conflictingTags={conflictingTags}
           />
         </div>
 
@@ -500,18 +552,18 @@ export default function ExtensionClient() {
           setTimeout(() => setTargetState("idle"), 1500)
           break
         case "none":
-          toast({
-            variant: "destructive",
+          toastError({
             title: "No prompt field found",
             description: detail?.message || "Make sure the prompt node is visible on the page, then retry.",
+            errorSource: "extension_target_none",
           })
           setTimeout(() => setTargetState("idle"), 2500)
           break
         case "error":
-          toast({
-            variant: "destructive",
+          toastError({
             title: "Targeting failed",
             description: detail?.message || "Could not start targeting. Open the generation page and retry.",
+            errorSource: "extension_target_error",
           })
           setTimeout(() => setTargetState("idle"), 2500)
           break
@@ -697,7 +749,7 @@ export default function ExtensionClient() {
   })
 
   const isRule34 = search.booruProvider === "rule34"
-  const isTagCountSupported = search.booruProvider === 'danbooru' || search.booruProvider === 'gelbooru' || search.booruProvider === 'rule34'
+  const isTagCountSupported = isTagCountSupportedProvider(search.booruProvider)
   const isTagCountValid = !!search.tagCountFilter && /^\d+$/.test(search.tagCountFilter)
 
   if (!search.isClient) {
@@ -1021,6 +1073,18 @@ export default function ExtensionClient() {
                 setCharacterCountFilter={search.setCharacterCountFilter}
                 setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
                 includeCharacters={includeCharacters}
+              />
+
+              {/* Active Query breakdown + API tag-limit warnings + misused
+                  metatag warnings — same panel the main web app uses, so the
+                  Pocket surfaces the same per-provider dynamic tag limits. */}
+              <QueryStatusPanel
+                searchTags={search.searchTags}
+                ratingFilter={search.ratingFilter}
+                order={search.order}
+                appliedTagCountFilter={search.appliedTagCountFilter}
+                appliedScoreTier={search.appliedScoreTier}
+                booruProvider={search.booruProvider}
               />
 
               {/* Same panel the main web app uses (compact variant): prompt

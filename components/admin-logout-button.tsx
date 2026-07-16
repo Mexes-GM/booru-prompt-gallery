@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { LogOut } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/hooks/use-toast'
+import { toastError } from '@/lib/toast-error'
 
 export function LogoutButton() {
   const router = useRouter()
@@ -22,10 +23,10 @@ export function LogoutButton() {
       router.push('/admin/login')
     } catch (error) {
       console.error("Logout error:", error)
-      toast({
+      toastError({
         title: "Sign out failed",
         description: "Could not sign out. Please try again.",
-        variant: "destructive",
+        errorSource: "admin_logout",
       })
     }
   }

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/hooks/use-user"
 import { userPreferences, type SavedArtist } from "@/lib/storage"
 import { toast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 
 export type { SavedArtist }
 
@@ -166,7 +167,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
         )
         if (error) {
           console.error("[useSavedArtists] save error:", error)
-          toast({ title: "Error saving artist", description: error.message, variant: "destructive" })
+          toastError({ title: "Error saving artist", description: error.message, errorSource: "save_artist" })
           // Rollback
           setSavedArtists((prev) =>
             prev.filter((a) => buildKey(a.provider, a.artistTag) !== buildKey(artist.provider, artist.artistTag)),
@@ -195,7 +196,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
           .match({ user_id: userId, provider, artist_tag: artistTag })
         if (error) {
           console.error("[useSavedArtists] remove error:", error)
-          toast({ title: "Error removing artist", description: error.message, variant: "destructive" })
+          toastError({ title: "Error removing artist", description: error.message, errorSource: "remove_artist" })
           // Rollback
           setSavedArtists(before)
           return
@@ -216,7 +217,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       const { error } = await supabase.from("saved_artists").delete().eq("user_id", userId)
       if (error) {
         setSavedArtists(before)
-        toast({ title: "Error clearing artists", description: error.message, variant: "destructive" })
+        toastError({ title: "Error clearing artists", description: error.message, errorSource: "clear_artists" })
         return
       }
     } else {
