@@ -30,19 +30,26 @@ interface RangeSliderProps {
   dotColor?: string
   /** Show tick marks at this interval (0 = no ticks, default 0) */
   tickInterval?: number
-  /** Override active track color (default "bg-primary") */
+  /** Override active track color (default: shared violet gradient) */
   trackColor?: string
 }
+
+// Strong ease-out — the default CSS/Framer easings are too weak to feel
+// intentional. Shared with SmoothFilterSlider and slider.tsx for cohesion.
+const EASE_OUT = [0.23, 1, 0.32, 1] as const
 
 /**
  * EnhancedRangeSlider — Dual-thumb range slider with polished visuals.
  *
  * Visual features:
- * - Active zone between thumbs (colored), muted outside
- * - Animated thumbs with scale-on-drag (framer-motion whileDrag)
+ * - Active zone between thumbs filled with a directional violet gradient
+ * - Recessed groove track that grows on hover/drag instead of a flat bar
+ * - Domed knob thumbs with a violet aperture dot (dim when at the boundary,
+ *   full-strength once that end is active) and scale-on-drag (framer whileDrag)
  * - Floating value badges during interaction
  * - Optional tick marks at configurable intervals
  * - Debounced numeric inputs synced with slider
+ * Shares its visual language with slider.tsx and SmoothFilterSlider.
  */
 export function RangeSlider({
   min,
@@ -64,7 +71,7 @@ export function RangeSlider({
   ariaLabel,
   dotColor,
   tickInterval = 0,
-  trackColor = "bg-primary",
+  trackColor = "bg-[linear-gradient(90deg,hsl(var(--primary)/0.7),hsl(var(--primary)))]",
 }: RangeSliderProps) {
   const [localMin, setLocalMin] = useState(value[0])
   const [localMax, setLocalMax] = useState(value[1])
@@ -193,7 +200,7 @@ export function RangeSlider({
                   <div
                     key={t}
                     className={cn(
-                      "absolute top-1/2 -translate-y-1/2 w-0.5 rounded-full transition-colors duration-150",
+                      "absolute top-1/2 -translate-y-1/2 w-0.5 rounded-full transition-colors duration-150 ease-[cubic-bezier(0.4,0,0.2,1)]",
                       isActive ? "h-3 bg-primary/60" : "h-2 bg-muted-foreground/25"
                     )}
                     style={{ left: `${pct}%` }}
@@ -204,7 +211,7 @@ export function RangeSlider({
           )}
 
           <SliderPrimitive.Track
-            className="relative h-2 w-full grow overflow-visible rounded-full bg-secondary"
+            className="relative h-1.5 w-full grow overflow-visible rounded-full bg-secondary shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.09)] transition-[height] duration-150 ease-[cubic-bezier(0.4,0,0.2,1)]"
             onPointerEnter={() => setIsHovering(true)}
             onPointerLeave={() => setIsHovering(false)}
           >
@@ -215,24 +222,28 @@ export function RangeSlider({
           <SliderPrimitive.Thumb asChild>
             <motion.span
               className={cn(
-                "relative block h-5 w-5 rounded-full border-2 border-primary bg-background shadow-sm",
-                "ring-offset-background transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "relative grid h-5 w-5 place-items-center rounded-full border border-primary/50",
+                "bg-[radial-gradient(circle_at_50%_30%,hsl(var(--background)),hsl(var(--secondary)))]",
+                "shadow-[0_1px_3px_hsl(var(--foreground)/0.12),0_0_0_3px_hsl(var(--primary)/0.1)]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 "disabled:pointer-events-none disabled:opacity-50",
-                !disabled && "hover:border-primary/80",
-                isMinActive ? "bg-background" : "bg-primary/15"
               )}
-              whileHover={disabled ? undefined : { scale: 1.15 }}
-              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--primary) / 0.2)" }}
-              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 2px 8px hsl(var(--foreground) / 0.16), 0 0 0 6px hsl(var(--primary) / 0.18)" }}
+              transition={{ type: "spring", stiffness: 420, damping: 26 }}
             >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full transition-colors duration-150",
+                  isMinActive ? "bg-primary" : "bg-primary/40",
+                )}
+              />
               <AnimatePresence>
                 {showBadges && (
                   <motion.div
-                    initial={{ opacity: 0, y: 4, scale: 0.9 }}
+                    initial={{ opacity: 0, y: 4, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 4, scale: 0.9 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                    transition={{ duration: 0.15, ease: EASE_OUT }}
                     className={cn(
                       "absolute -top-8 left-1/2 -translate-x-1/2",
                       "px-2 py-0.5 rounded-md text-[11px] font-semibold font-mono whitespace-nowrap",
@@ -252,24 +263,28 @@ export function RangeSlider({
           <SliderPrimitive.Thumb asChild>
             <motion.span
               className={cn(
-                "relative block h-5 w-5 rounded-full border-2 border-primary bg-background shadow-sm",
-                "ring-offset-background transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "relative grid h-5 w-5 place-items-center rounded-full border border-primary/50",
+                "bg-[radial-gradient(circle_at_50%_30%,hsl(var(--background)),hsl(var(--secondary)))]",
+                "shadow-[0_1px_3px_hsl(var(--foreground)/0.12),0_0_0_3px_hsl(var(--primary)/0.1)]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 "disabled:pointer-events-none disabled:opacity-50",
-                !disabled && "hover:border-primary/80",
-                isMaxActive ? "bg-background" : "bg-primary/15"
               )}
-              whileHover={disabled ? undefined : { scale: 1.15 }}
-              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 0 0 4px hsl(var(--primary) / 0.2)" }}
-              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 2px 8px hsl(var(--foreground) / 0.16), 0 0 0 6px hsl(var(--primary) / 0.18)" }}
+              transition={{ type: "spring", stiffness: 420, damping: 26 }}
             >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full transition-colors duration-150",
+                  isMaxActive ? "bg-primary" : "bg-primary/40",
+                )}
+              />
               <AnimatePresence>
                 {showBadges && (
                   <motion.div
-                    initial={{ opacity: 0, y: 4, scale: 0.9 }}
+                    initial={{ opacity: 0, y: 4, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 4, scale: 0.9 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                    transition={{ duration: 0.15, ease: EASE_OUT }}
                     className={cn(
                       "absolute -top-8 left-1/2 -translate-x-1/2",
                       "px-2 py-0.5 rounded-md text-[11px] font-semibold font-mono whitespace-nowrap",
