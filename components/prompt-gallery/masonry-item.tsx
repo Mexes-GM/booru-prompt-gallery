@@ -430,6 +430,14 @@ export const MasonryItem = memo(function MasonryItem({
 
     // hasActiveOptions now comes from useCardPrompt()
 
+    // Landscape posts get a short, wide image cell. The bottom-right badge stack
+    // (category tag counts + total tag count) normally stacks vertically (flex-col),
+    // which needs more height than a landscape cell has and ends up overlapping the
+    // top-right hover action buttons. For landscape posts, lay those badges out
+    // horizontally instead so they stay a single short row.
+    const isLandscape = !!(post.width && post.height && post.width > post.height)
+    const badgeStackDirection = isLandscape ? "flex-row items-center" : "flex-col items-end"
+
     // Grid View
     const renderCard = () => {
     if (viewMode === "grid") {
@@ -685,7 +693,7 @@ export const MasonryItem = memo(function MasonryItem({
                     <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1 z-10">
                         {/* Category Tag Count Badges */}
                         {showCategoryTagBadges && effectiveScale !== 'small' && (
-                            <div className="flex flex-col items-end gap-1">
+                            <div className={`flex ${badgeStackDirection} gap-1`}>
                                 {classifiedTags.appearance.length > 0 && (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
