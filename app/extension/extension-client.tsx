@@ -843,7 +843,7 @@ export default function ExtensionClient() {
               <SearchWithAutocomplete
                 value={search.searchTags}
                 setValue={search.setSearchTags}
-                onSearch={() => search.handleSearch({} as React.FormEvent)}
+                onSearch={() => search.handleSearch()}
                 placeholders={placeholders}
                 className="pl-7 pr-7 h-8 text-[11px] shadow-none border border-input rounded-r-none border-r-0 z-10 relative bg-background focus-within:ring-1 focus-within:ring-ring"
               />

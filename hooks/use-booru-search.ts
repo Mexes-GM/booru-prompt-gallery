@@ -554,8 +554,8 @@ export function useBooruSearch() {
     setSize(1)
   }, [setIsShuffle, setSize])
 
-  const handleSearch = useCallback((e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSearch = useCallback((e?: React.FormEvent) => {
+    e?.preventDefault()
     setSize(1)
     setNoMoreResults(false)
     setLoadMoreError(false)

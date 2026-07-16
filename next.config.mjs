@@ -274,4 +274,29 @@ if (sentryConfigured) {
   }
 }
 
+// Upload client-bundle source maps to PostHog error tracking so stack traces
+// resolve to real file/function names instead of minified chunk output.
+// Requires a personal API key with error-tracking write access — only wired
+// up when present, so local/dev builds (and forks without it) are unaffected.
+const posthogSourceMapsConfigured =
+  Boolean(process.env.POSTHOG_API_KEY) && Boolean(process.env.POSTHOG_PROJECT_ID)
+
+if (posthogSourceMapsConfigured) {
+  try {
+    const { withPostHogConfig } = await import('@posthog/nextjs-config')
+    config = withPostHogConfig(config, {
+      personalApiKey: process.env.POSTHOG_API_KEY,
+      projectId: process.env.POSTHOG_PROJECT_ID,
+      host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+      sourcemaps: {
+        // Use the same unified release identifier as the Sentry upload above,
+        // so error events and their source maps line up under one release.
+        ...(RELEASE ? { releaseVersion: RELEASE } : {}),
+      },
+    })
+  } catch {
+    console.warn('PostHog source map upload not configured for this build')
+  }
+}
+
 export default config
