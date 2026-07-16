@@ -6,7 +6,7 @@
 
 **A multi-provider image gallery that extracts and cleans booru tags into ready-to-use prompts for AI art generation (Illustrious, Pony, SDXL).**
 
-[🌐 Live](https://booru-prompt-gallery.netlify.app) · [📝 Changelog](https://civitai.com/articles/17747) · [☕ Support](https://ko-fi.com/mexes)
+[🌐 Live](https://booru-prompt-gallery.netlify.app) · [📝 Changelog](https://civitai.com/articles/17747) · [☕ Support](https://buymeacoffee.com/Mexes)
 
 ---
 

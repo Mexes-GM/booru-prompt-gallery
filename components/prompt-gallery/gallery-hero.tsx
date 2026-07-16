@@ -16,7 +16,7 @@ interface GalleryHeroProps {
 
 /**
  * Static hero section above the search panel: tagline, social/support links
- * (CivitAI, Tensor.Art, SeaArt, Ko-fi, GitHub, mirror), deployment status
+ * (CivitAI, Tensor.Art, SeaArt, Buy Me a Coffee, GitHub, mirror), deployment status
  * badges, and the announcements carousel. No local state of its own — the
  * announcements open/dismiss state is owned by the caller since dismissing
  * also needs to persist to localStorage.
@@ -110,21 +110,20 @@ export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: Gal
         {/* Social Links - Horizontal */}
         <div className="flex items-center justify-center gap-3 mt-3 flex-wrap w-full">
           <a
-            id="support-kofi"
-            href={SOCIAL_URLS.KO_FI}
+            id="support-buymeacoffee"
+            href={SOCIAL_URLS.BUY_ME_A_COFFEE}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => trackExternalLink(SOCIAL_URLS.KO_FI, 'support')}
-            className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+            onClick={() => trackExternalLink(SOCIAL_URLS.BUY_ME_A_COFFEE, 'support')}
           >
             <Image
-              src="https://www.google.com/s2/favicons?domain=ko-fi.com&sz=64"
-              alt="Ko-fi"
-              width={16}
-              height={16}
-              className="w-4 h-4 mr-2"
+              src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=Mexes&button_colour=FFDD00&font_colour=000000&font_family=Poppins&outline_colour=000000&coffee_colour=ffffff"
+              alt="Buy me a coffee"
+              width={180}
+              height={40}
+              unoptimized
+              className="h-10 w-auto transition-transform duration-200 transform hover:scale-105"
             />
-            Support me on Ko-fi
           </a>
 
           <a

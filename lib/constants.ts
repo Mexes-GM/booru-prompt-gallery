@@ -96,7 +96,7 @@ export const SOCIAL_URLS = {
   CIVITAI_ARTICLE: 'https://civitai.com/articles/17747',
   TENSOR_ART: 'https://tensor.art/u/616420638671868313',
   SEAART: 'https://www.seaart.ai/user/e9f2dc73eaf4495fce59838fea87187c?u_code=EUY1AJ3T',
-  KO_FI: 'https://ko-fi.com/mexes',
+  BUY_ME_A_COFFEE: 'https://buymeacoffee.com/Mexes',
   GITHUB: 'https://github.com/Mexes-GM/booru-prompt-gallery',
   NETLIFY: 'https://booru-prompt-gallery.netlify.app',
   // Primary Vercel deployment (default vercel.app domain — always resolvable).

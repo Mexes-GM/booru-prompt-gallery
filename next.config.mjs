@@ -116,6 +116,11 @@ const nextConfig = {
         hostname: '*.gelbooru.com',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'img.buymeacoffee.com',
+        pathname: '/**',
+      },
     ],
     dangerouslyAllowSVG: false,
     formats: ['image/webp', 'image/avif'],
