@@ -32,9 +32,16 @@ export function useHistoryPosts(history: HistoryItem[]) {
     () =>
       history
         .filter(item => item.post)
-        // Guarantee _provider matches the canonical history provider (the
-        // snapshot may predate _provider being stamped, or carry a stale one).
-        .map(item => ({ ...(item.post as BooruPost), _provider: item.provider })),
+        // Prefer the snapshot's OWN `_provider` (stamped from the real post
+        // object at copy time — see prompt-gallery.tsx's copyToClipboard) over
+        // `item.provider`. They should match, but `item.provider` was for a
+        // time written from the currently-selected provider TAB instead of the
+        // copied post's actual provider (e.g. copying a Gelbooru post while
+        // viewing Favorites/History could tag it as whatever tab was active).
+        // That bug is fixed at the write site now, but existing localStorage
+        // history entries may still carry a stale/wrong `item.provider` — the
+        // embedded snapshot's `_provider` was always correct, so trust it first.
+        .map(item => ({ ...(item.post as BooruPost), _provider: item.post!._provider || item.provider })),
     [history]
   )
 

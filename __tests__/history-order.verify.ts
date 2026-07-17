@@ -120,5 +120,35 @@ function mk(provider: BooruProvider | string, postId: number) {
   assertDeepEqual(dedupeHistoryKeys([]), [], "empty history yields empty key list")
 }
 
+// ── Snapshot's own _provider wins over a stale/wrong `provider` field ──
+// Regression: `item.provider` used to be written from whichever provider TAB
+// was active at copy time, not the copied post's actual provider. A post
+// that only exists on Gelbooru could end up with `provider: "aibooru"` while
+// its embedded snapshot correctly says `_provider: "gelbooru"`. The key must
+// follow the snapshot so "View original post" links (built from this same
+// provider) point at the booru the post actually lives on.
+{
+  const history = [
+    { provider: "aibooru" as BooruProvider, postId: 42, post: { _provider: "gelbooru" } as any },
+  ]
+  assertDeepEqual(
+    dedupeHistoryKeys(history),
+    ["gelbooru:42"],
+    "mismatched item.provider is overridden by the snapshot's own _provider",
+  )
+}
+
+// ── No snapshot falls back to item.provider unchanged ──
+{
+  const history = [
+    mk("rule34", 7),
+  ]
+  assertDeepEqual(
+    dedupeHistoryKeys(history),
+    ["rule34:7"],
+    "legacy entries with no snapshot still key off item.provider",
+  )
+}
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

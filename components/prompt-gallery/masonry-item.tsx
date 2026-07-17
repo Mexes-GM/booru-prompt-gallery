@@ -418,9 +418,16 @@ export const MasonryItem = memo(function MasonryItem({
         }, 10_000)
     }, [onImageError, isDanbooruImg, danbooruCdnUrl, danbooruCircuitOpen, useFallbackUrl])
 
+    // Provider is the source of truth for the link — content heuristics like
+    // `isAiPost` (ai_metadata presence) must NOT override it. Aibooru posts
+    // can carry ai_metadata, but so can posts on other boorus (e.g. Gelbooru
+    // tagging AI-generated images), and previously `isAiPost` was checked
+    // FIRST, unconditionally sending those posts to aibooru.com/<id> — a post
+    // that only exists on Gelbooru/Rule34/etc. `isAiPost` is now only used as
+    // a fallback for the truly ambiguous case (no explicit provider at all).
     let postUrl = PROVIDER_POST_URLS.DANBOORU(post.id)
 
-    if (isAiPost || itemProvider === 'aibooru') {
+    if (itemProvider === 'aibooru') {
         postUrl = PROVIDER_POST_URLS.AIBOORU(post.id)
     } else if (itemProvider === 'rule34') {
         postUrl = PROVIDER_POST_URLS.RULE34(post.id)
@@ -428,6 +435,8 @@ export const MasonryItem = memo(function MasonryItem({
         postUrl = PROVIDER_POST_URLS.E621(post.id)
     } else if (itemProvider === 'gelbooru') {
         postUrl = PROVIDER_POST_URLS.GELBOORU(post.id)
+    } else if (itemProvider === 'danbooru' && isAiPost) {
+        postUrl = PROVIDER_POST_URLS.AIBOORU(post.id)
     }
 
     const getCardContentClass = () => {

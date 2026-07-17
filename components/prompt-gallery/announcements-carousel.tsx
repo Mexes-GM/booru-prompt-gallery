@@ -34,6 +34,7 @@ const COLORS = {
 } as const
 
 const ITEMS: AnnouncementItem[] = [
+  { color: 'blue', icon: <Wrench className="h-4 w-4 text-blue-600 dark:text-blue-400" />, title: '"View Original Post" Links Fixed', badge: 'Fixed', body: "Fixed a bug where \"View original post\" could send you to the wrong booru — most noticeable in History, where a re-copied post sometimes pointed at the wrong site's link for that same post ID." },
   { color: 'emerald', icon: <Maximize2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Click to Expand Cards', badge: 'New', body: "Click a card to make it bigger and see the whole prompt at a glance." },
   { color: 'emerald', icon: <AtSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Prepend Artist (@artist)', badge: 'New', body: "Added the option to prepend a card's artist as \"@artist\" at the start of the prompt, to replicate their style. Only works for Anima checkpoints." },
   { color: 'emerald', icon: <Replace className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Find and Replace', badge: 'New', body: "Quickly swap tags for others in your prompts." },

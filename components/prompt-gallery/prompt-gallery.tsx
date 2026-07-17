@@ -868,7 +868,13 @@ export function PromptGallery() {
           search.allPosts?.find(p => p.id === postId) ||
           favs.favoritePosts?.find(p => p.id === postId) ||
           historyPosts?.find(p => p.id === postId)
-        addToHistory({ postId, provider: search.booruProvider, post: snapshot })
+        // Use the snapshot's OWN provider, not the currently-selected provider
+        // tab. They can differ (favorites/history views, merge mode, etc.), and
+        // getting this wrong permanently mislabels the post — e.g. a Gelbooru
+        // post copied while the AIbooru tab is active would otherwise be stored
+        // as an AIbooru post, so "View original post" later builds an
+        // aibooru.com/<gelbooru-id> link instead of the real gelbooru.com one.
+        addToHistory({ postId, provider: (snapshot?._provider as BooruProvider) || search.booruProvider, post: snapshot })
       }
 
       toast({

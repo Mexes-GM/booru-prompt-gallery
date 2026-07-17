@@ -159,7 +159,7 @@ function PocketCard({
   tagCounts: Record<string, number>
   globalWeights: Record<string, number>
   onSearch: (tag: string) => void
-  onUsedPrompt: (prompt: string, postId: number, url?: string) => void
+  onUsedPrompt: (prompt: string, postId: number, url?: string, provider?: BooruProvider) => void
   queueLength: number
   isGlobalWeightsEnabled: boolean
   onGlobalWeightChange?: (tag: string, weight: number) => void
@@ -206,7 +206,7 @@ function PocketCard({
     try {
       await navigator.clipboard.writeText(displayPrompt)
       setCopied(true)
-      onUsedPrompt(displayPrompt, post.id, post.preview_file_url || post.file_url)
+      onUsedPrompt(displayPrompt, post.id, post.preview_file_url || post.file_url, post._provider as BooruProvider | undefined)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.error(err)
@@ -229,7 +229,7 @@ function PocketCard({
     }
     // Show 'queued' (amber) immediately; it will clear after 4 s or when queue empties
     setSendState("queued")
-    onUsedPrompt(displayPrompt, post.id, post.preview_file_url || post.file_url)
+    onUsedPrompt(displayPrompt, post.id, post.preview_file_url || post.file_url, post._provider as BooruProvider | undefined)
     // After a brief moment, revert to idle so the card is re-sendable
     setTimeout(() => setSendState("idle"), 4000)
   }
@@ -685,9 +685,13 @@ export default function ExtensionClient() {
     addToHistory, removeHistoryItem, clearHistory,
   } = usePresetsAndHistory({ isClient: search.isClient, addInput, setAddInput, toast })
 
-  const handleUsedPrompt = useCallback((promptText: string, postId: number, thumbnailUrl?: string) => {
+  const handleUsedPrompt = useCallback((promptText: string, postId: number, thumbnailUrl?: string, provider?: BooruProvider) => {
     if (postId) {
-      addToHistory({ postId, provider: search.booruProvider })
+      // Prefer the copied post's own provider (passed up from PocketCard's
+      // `post._provider`) over the currently-selected provider tab — they can
+      // differ, and mislabeling here permanently corrupts the stored provider
+      // (see the matching fix in prompt-gallery.tsx's copyToClipboard).
+      addToHistory({ postId, provider: provider || search.booruProvider })
     }
   }, [addToHistory, search.booruProvider])
 
