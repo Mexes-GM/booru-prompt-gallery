@@ -5,10 +5,23 @@ export type TagResult = {
   postCount: number
   category: number
   displayName?: string
+  /** The alias the user's query matched, if the match came from an alias rather than the canonical name (e.g. an alternate/informal name resolving to its canonical Danbooru tag). */
+  matchedAlias?: string | null
 }
 
 /**
  * Searches tags directly on the client side using the public Supabase client.
+ *
+ * Matches against both the canonical tag `name` and its `aliases` (Danbooru
+ * resolves many alternate/informal names as aliases of a canonical tag —
+ * without alias matching, typing one of those names would never surface a
+ * suggestion even though the canonical tag itself is searchable). Delegates
+ * to the `search_auto_suggest_tags` RPC (see
+ * supabase/migrations/20260717000000_auto_suggest_tags_aliases.sql and
+ * .../20260718000000_auto_suggest_tags_alias_match.sql) because PostgREST's
+ * client filters can't ILIKE an expression like array_to_string(aliases, ' ')
+ * — only plain columns — and because surfacing WHICH alias matched (for the
+ * "alias -> tag" UI hint) requires a per-row subquery, not a filter.
  */
 export async function searchTags(query: string): Promise<TagResult[]> {
   if (!query || query.trim().length < 2) {
@@ -19,39 +32,40 @@ export async function searchTags(query: string): Promise<TagResult[]> {
 
   try {
     const supabase = createClient()
-    
-    // Search tags in Supabase using ILIKE for case-insensitive search
+
     const { data, error } = await supabase
-      .from('auto_suggest_tags')
-      .select('name, category')
-      .ilike('name', `%${normalizedQuery}%`)
-      .limit(20)
+      .rpc('search_auto_suggest_tags', { query: normalizedQuery, result_limit: 20 })
 
     if (error) throw error
     if (!data) return []
 
-    const results: TagResult[] = data.map((tag: { name: string; category: string | number }) => ({
+    const results: TagResult[] = data.map((tag: { name: string; category: string | number; post_count: number; matched_alias: string | null }) => ({
       name: tag.name,
-      postCount: 0,
+      postCount: Number(tag.post_count) || 0,
       category: Number(tag.category) || 0,
-      displayName: tag.name
+      displayName: tag.name,
+      matchedAlias: tag.matched_alias || null,
     }))
 
-    // Sort by exact match, then starts with match
+    // Sort by exact match (on name OR the matched alias — a query that's an
+    // exact alias is just as strong a signal as an exact tag name match),
+    // then starts-with, then post_count. The RPC already orders by
+    // (exact-match, post_count desc), so this only reorders prefix matches
+    // that would otherwise be buried under a more popular substring match.
     const finalResults = results.sort((a, b) => {
-      const aExact = a.name.toLowerCase() === normalizedQuery
-      const bExact = b.name.toLowerCase() === normalizedQuery
+      const aExact = a.name.toLowerCase() === normalizedQuery || a.matchedAlias?.toLowerCase() === normalizedQuery
+      const bExact = b.name.toLowerCase() === normalizedQuery || b.matchedAlias?.toLowerCase() === normalizedQuery
       if (aExact && !bExact) return -1
       if (!aExact && bExact) return 1
 
-      const aStarts = a.name.toLowerCase().startsWith(normalizedQuery)
-      const bStarts = b.name.toLowerCase().startsWith(normalizedQuery)
+      const aStarts = a.name.toLowerCase().startsWith(normalizedQuery) || a.matchedAlias?.toLowerCase().startsWith(normalizedQuery)
+      const bStarts = b.name.toLowerCase().startsWith(normalizedQuery) || b.matchedAlias?.toLowerCase().startsWith(normalizedQuery)
       if (aStarts && !bStarts) return -1
       if (!aStarts && bStarts) return 1
 
-      return 0
+      return b.postCount - a.postCount
     }).slice(0, 5)
-    
+
     return finalResults
 
   } catch (error) {

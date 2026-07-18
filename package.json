@@ -1,6 +1,6 @@
 {
   "name": "booru-prompt-gallery",
-  "version": "9.7.1",
+  "version": "9.7.2",
   "private": true,
   "scripts": {
     "build": "next build",

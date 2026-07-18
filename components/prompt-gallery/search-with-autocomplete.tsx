@@ -205,10 +205,18 @@ export function SearchWithAutocomplete({
               >
                 <div className="flex flex-col">
                     <span className={cn("font-medium", getCategoryColor(suggestion.category))}>
-                    {suggestion.name.replace(/_/g, ' ')}
+                      {suggestion.matchedAlias ? (
+                        <>
+                          <span className="text-muted-foreground">{suggestion.matchedAlias.replace(/_/g, ' ')}</span>
+                          <span className="text-muted-foreground mx-1.5" aria-hidden="true">&rarr;</span>
+                          {suggestion.name.replace(/_/g, ' ')}
+                        </>
+                      ) : (
+                        suggestion.name.replace(/_/g, ' ')
+                      )}
                     </span>
-                    {suggestion.displayName && suggestion.displayName !== suggestion.name && (
-                        <span className="text-xs text-muted-foreground">{suggestion.displayName}</span>
+                    {suggestion.matchedAlias && (
+                        <span className="text-xs text-muted-foreground">alias, resolves to this tag</span>
                     )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">

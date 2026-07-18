@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Replace,
   SlidersHorizontal,
-  Heart,
   Wrench,
   AtSign,
   Maximize2,
@@ -34,13 +33,12 @@ const COLORS = {
 } as const
 
 const ITEMS: AnnouncementItem[] = [
+  { color: 'emerald', icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Smarter Tag Autocomplete', badge: 'Improved', body: "Tag autocomplete now covers over 145,000 Danbooru tags (up from ~60,000) and understands aliases, so searching for a common alternate name now correctly finds and suggests the matching Danbooru tag." },
   { color: 'blue', icon: <Wrench className="h-4 w-4 text-blue-600 dark:text-blue-400" />, title: '"View Original Post" Links Fixed', badge: 'Fixed', body: "Fixed a bug where \"View original post\" could send you to the wrong booru — most noticeable in History, where a re-copied post sometimes pointed at the wrong site's link for that same post ID." },
   { color: 'emerald', icon: <Maximize2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Click to Expand Cards', badge: 'New', body: "Click a card to make it bigger and see the whole prompt at a glance." },
   { color: 'emerald', icon: <AtSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Prepend Artist (@artist)', badge: 'New', body: "Added the option to prepend a card's artist as \"@artist\" at the start of the prompt, to replicate their style. Only works for Anima checkpoints." },
   { color: 'emerald', icon: <Replace className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Find and Replace', badge: 'New', body: "Quickly swap tags for others in your prompts." },
   { color: 'emerald', icon: <SlidersHorizontal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Score Floor', badge: 'New', body: "Added the option to filter by score, since our own testing showed posts tend to be better tagged the higher their score. Optimized presets are included, based on that testing." },
-  { color: 'amber', icon: <Heart className="h-4 w-4 text-amber-600 dark:text-amber-400" />, title: 'History Panel Rework', badge: 'Changed', body: "The History side panel now behaves like Favorites for a more consistent experience." },
-  { color: 'blue', icon: <Wrench className="h-4 w-4 text-blue-600 dark:text-blue-400" />, title: 'e621 Downloads Fixed', badge: 'Fixed', body: "Downloading images from e621 wasn't working — it's fixed now and working again." },
 ]
 
 interface AnnouncementsCarouselProps {
