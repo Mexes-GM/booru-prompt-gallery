@@ -33,6 +33,7 @@ const COLORS = {
 } as const
 
 const ITEMS: AnnouncementItem[] = [
+  { color: 'blue', icon: <Wrench className="h-4 w-4 text-blue-600 dark:text-blue-400" />, title: 'Tooltips Now Work on Mobile', badge: 'Fixed', body: "Info tooltips wouldn't open on phones and tablets because they only responded to a mouse hover. Now a quick tap on the info icon opens the tip, and tapping anywhere else closes it." },
   { color: 'emerald', icon: <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Smarter Tag Autocomplete', badge: 'Improved', body: "Tag autocomplete now covers over 145,000 Danbooru tags (up from ~60,000) and understands aliases, so searching for a common alternate name now correctly finds and suggests the matching Danbooru tag." },
   { color: 'blue', icon: <Wrench className="h-4 w-4 text-blue-600 dark:text-blue-400" />, title: '"View Original Post" Links Fixed', badge: 'Fixed', body: "Fixed a bug where \"View original post\" could send you to the wrong booru — most noticeable in History, where a re-copied post sometimes pointed at the wrong site's link for that same post ID." },
   { color: 'emerald', icon: <Maximize2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Click to Expand Cards', badge: 'New', body: "Click a card to make it bigger and see the whole prompt at a glance." },

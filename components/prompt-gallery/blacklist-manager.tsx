@@ -91,6 +91,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
             <DialogTrigger asChild>
               <Button
                 variant="outline"
+                aria-label="Manage blacklisted tags"
                 className={cn("h-11 rounded-none relative z-10 px-2 sm:px-3 bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground", className)}
               >
                 <Tag className="w-3.5 h-3.5 sm:mr-1.5" />
