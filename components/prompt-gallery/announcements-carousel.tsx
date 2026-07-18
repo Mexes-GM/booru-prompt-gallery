@@ -10,6 +10,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Replace,
   SlidersHorizontal,
   Wrench,
@@ -42,6 +43,43 @@ const ITEMS: AnnouncementItem[] = [
   { color: 'emerald', icon: <SlidersHorizontal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, title: 'Score Floor', badge: 'New', body: "Added the option to filter by score, since our own testing showed posts tend to be better tagged the higher their score. Optimized presets are included, based on that testing." },
 ]
 
+// Single changelog row used by the desktop teaser/list. `clamp` truncates the
+// body to one line for the collapsed teaser.
+function DesktopAnnouncementItem({ it, clamp }: { it: AnnouncementItem; clamp: boolean }) {
+  const [border, bg, iconBg, badgeBg, badgeText] = COLORS[it.color] ?? COLORS.blue
+  return (
+    <div className={`border-l-4 ${border} ${bg} hover:opacity-90 transition-colors p-4 rounded-r-xl`}>
+      <div className="flex items-start gap-3">
+        <div className={`flex-shrink-0 mt-0.5 flex h-8 w-8 items-center justify-center rounded-full ${iconBg}`}>{it.icon}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <p className="text-sm font-semibold text-foreground leading-snug">{it.title}</p>
+            <Badge className={`text-[10px] px-1.5 py-0 h-4 font-medium border-0 ${badgeBg} ${badgeText} rounded-md`}>{it.badge}</Badge>
+          </div>
+          <p className={`text-xs text-muted-foreground leading-relaxed text-left ${clamp ? "line-clamp-1" : ""}`}>{it.body}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Staggered reveal for the desktop "show more" list. A parent container with
+// `staggerChildren` is the reliable way to reveal items one-by-one — per-child
+// delays fight with `layout` and read as a single blob. No `layout` here on
+// purpose: the container reserves its full height at once (children start
+// transparent) and the items then slide/fade in sequence, which looks crisper
+// than animating height and position simultaneously.
+const REST_LIST_VARIANTS = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.07, delayChildren: 0.03 } },
+  exit: { opacity: 0, transition: { duration: 0.12 } },
+}
+
+const REST_ITEM_VARIANTS = {
+  hidden: { opacity: 0, y: -10 },
+  show: { opacity: 1, y: 0, transition: { type: "spring", duration: 0.35, bounce: 0 } },
+}
+
 interface AnnouncementsCarouselProps {
   version: string
   onDismiss: () => void
@@ -52,6 +90,10 @@ export function AnnouncementsCarousel({ version, onDismiss }: AnnouncementsCarou
   const [dir, setDir] = useState(1)
   const [paused, setPaused] = useState(false)
   const [visible, setVisible] = useState(true)
+  // Desktop-only: collapse the changelog to a single-item teaser by default so
+  // it doesn't dominate the first view. Session-only (not persisted): a new
+  // visit always starts collapsed.
+  const [expanded, setExpanded] = useState(false)
 
   // Pause everything when the carousel is scrolled off-screen: avoids the
   // auto-rotate height animation shifting content the user is reading below it,
@@ -166,25 +208,43 @@ export function AnnouncementsCarousel({ version, onDismiss }: AnnouncementsCarou
           </div>
         </div>
 
-        {/* Desktop: full list */}
+        {/* Desktop: single-item teaser (newest = top of ITEMS) that expands to the full list */}
         <div className="hidden md:flex flex-col gap-3">
-          {ITEMS.map((it) => {
-            const [border, bg, iconBg, badgeBg, badgeText] = COLORS[it.color] ?? COLORS.blue
-            return (
-              <div key={it.title} className={`border-l-4 ${border} ${bg} hover:opacity-90 transition-colors p-4 rounded-r-xl`}>
-                <div className="flex items-start gap-3">
-                  <div className={`flex-shrink-0 mt-0.5 flex h-8 w-8 items-center justify-center rounded-full ${iconBg}`}>{it.icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <p className="text-sm font-semibold text-foreground leading-snug">{it.title}</p>
-                      <Badge className={`text-[10px] px-1.5 py-0 h-4 font-medium border-0 ${badgeBg} ${badgeText} rounded-md`}>{it.badge}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed text-left">{it.body}</p>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+          <DesktopAnnouncementItem it={ITEMS[0]} clamp={!expanded} />
+
+          {/* Extra items only mount on expand, so they always animate in (no
+              load animation to guard against). Parent variants stagger them. */}
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                key="rest"
+                className="flex flex-col gap-3"
+                variants={REST_LIST_VARIANTS}
+                initial="hidden"
+                animate="show"
+                exit="exit"
+              >
+                {ITEMS.slice(1).map((it) => (
+                  <motion.div key={it.title} variants={REST_ITEM_VARIANTS}>
+                    <DesktopAnnouncementItem it={it} clamp={false} />
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {ITEMS.length > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded((e) => !e)}
+              aria-expanded={expanded}
+              className="self-center h-6 -mt-1.5 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground transition-transform active:scale-[0.96]"
+            >
+              {expanded ? "Show less" : `Show ${ITEMS.length - 1} more`}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
