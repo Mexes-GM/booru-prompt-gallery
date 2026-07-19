@@ -190,6 +190,19 @@ export function useBooruSearch() {
  const loadMoreGuardRef = useRef(false)
  const [circuitOpen, setCircuitOpen] = useState(false)
 
+ // Consecutive fetched pages that added ZERO new deduped posts. A single such
+ // page is NOT a reliable end-of-results signal: it happens transiently from
+ // pagination drift on order:recent (new uploads shift the page window) and
+ // routinely on order:random (independent samples overlap). Treating one
+ // all-duplicate page as terminal was the "shows Load More, then suddenly
+ // End of results" bug. Only a sustained streak means the pool is exhausted.
+ const duplicatePagesRef = useRef(0)
+ // Best-effort auto-advance timer: keeps infinite scroll flowing across a
+ // duplicate-only page. The visible list didn't grow, so the scroll position
+ // (and the IntersectionObserver trigger) stays put and won't re-arm on its
+ // own — without this the user would be stranded at a manual "Load More".
+ const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Store the rating before we forced it to 'all' for Rule34
   const forcedRule34RatingRef = useRef<string | null>(null)
 
@@ -286,6 +299,11 @@ export function useBooruSearch() {
    setCircuitOpen(false)
    setSessionCapReached(false)
    loadMoreGuardRef.current = false
+   duplicatePagesRef.current = 0
+   if (autoAdvanceTimerRef.current) {
+     clearTimeout(autoAdvanceTimerRef.current)
+     autoAdvanceTimerRef.current = null
+   }
  }, [booruProvider, order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedScoreTier, appliedCharacterCountFilter, setSize])
 
   // --- Derived Data ---
@@ -437,6 +455,11 @@ export function useBooruSearch() {
   const MAX_SESSION_PAGE_LOADS = 35
   const [sessionCapReached, setSessionCapReached] = useState(false)
 
+  // How many consecutive all-duplicate pages to tolerate before concluding the
+  // result pool is genuinely exhausted. Small enough to stop wasting requests
+  // on a truly-empty tail, large enough to ride out transient duplicate pages.
+  const MAX_CONSECUTIVE_DUPLICATE_PAGES = 3
+
   const loadMore = useCallback(() => {
     // Synchronous guard: prevents re-entry from stale closures
     // (e.g. IntersectionObserver callback firing after React has
@@ -520,11 +543,18 @@ export function useBooruSearch() {
     trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
   }, [size, order, setSize, allPosts.length, toast, sessionCapReached])
 
+  // Stable ref to loadMore so the auto-advance effect can trigger the next
+  // page without listing loadMore in its deps (which would churn on every
+  // size/count change) and without capturing a stale closure.
+  const loadMoreRef = useRef(loadMore)
+  useEffect(() => { loadMoreRef.current = loadMore }, [loadMore])
+
   // Cancel any pending throttle retry on unmount to avoid calling a stale
   // closure after the component is gone.
   useEffect(() => {
     return () => {
       if (throttleRetryRef.current) clearTimeout(throttleRetryRef.current)
+      if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current)
     }
   }, [])
 
@@ -562,6 +592,11 @@ export function useBooruSearch() {
     setLastLoadAttempt(0)
     setCircuitOpen(false)
     loadMoreGuardRef.current = false
+    duplicatePagesRef.current = 0
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current)
+      autoAdvanceTimerRef.current = null
+    }
     
     // NOTE: This uses searchTags, not debouncedSearchTags, because the form
     // submission should execute immediately with whatever is in the input box,
@@ -627,12 +662,43 @@ export function useBooruSearch() {
           variant: isCircuitOpen || isRateLimit ? "default" : "destructive",
         })
         setLastLoadAttempt(0)
-      } else if (currentDedupedCount === lastLoadAttempt || isReachingEnd) {
-        // No new deduped posts arrived — all new pages were duplicates or empty
+      } else if (isReachingEnd) {
+        // Authoritative end: the API itself returned an empty page, so there
+        // is genuinely nothing left to fetch.
         setNoMoreResults(true)
         setLoadMoreError(false)
         setLastLoadAttempt(0)
+        duplicatePagesRef.current = 0
+      } else if (currentDedupedCount === lastLoadAttempt) {
+        // The fetched page added ZERO new deduped posts — every post was
+        // already loaded. This is NOT a reliable end signal (pagination drift
+        // on order:recent, sample overlap on order:random), so don't terminate
+        // on a single occurrence. Count the streak instead.
+        duplicatePagesRef.current += 1
+        setLastLoadAttempt(0)
+
+        if (duplicatePagesRef.current >= MAX_CONSECUTIVE_DUPLICATE_PAGES) {
+          // Sustained duplicates — the pool is effectively exhausted.
+          setNoMoreResults(true)
+          setLoadMoreError(false)
+          duplicatePagesRef.current = 0
+        } else {
+          // Keep pagination alive and auto-advance to the next page. The list
+          // didn't grow, so the observer trigger stays in view and won't
+          // re-arm by itself; nudge it forward. If the scroll rate limiter
+          // refuses the load, the "Load More" button remains for a manual
+          // retry (loadMore also enforces the per-session page cap).
+          setNoMoreResults(false)
+          setLoadMoreError(false)
+          if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current)
+          autoAdvanceTimerRef.current = setTimeout(() => {
+            autoAdvanceTimerRef.current = null
+            loadMoreRef.current()
+          }, 150)
+        }
       } else if (currentDedupedCount > lastLoadAttempt) {
+        // New posts arrived — reset the duplicate streak and clear end/error.
+        duplicatePagesRef.current = 0
         setNoMoreResults(false)
         setLoadMoreError(false)
         setLastLoadAttempt(0)
