@@ -37,19 +37,25 @@ export async function posthogIngestHandler(request: Request): Promise<Response> 
   const host = isAssetPath(path) ? POSTHOG_ASSETS_HOST : POSTHOG_API_HOST
   const targetUrl = `https://${host}${path}${url.search}`
 
-  // Forward everything (events, session recordings, decide/flags, and static
-  // asset GETs) with the same plain proxy: `new Request(request)` copies the
-  // method, body and headers; passing targetUrl to fetch() overrides only the
-  // destination and lets the runtime derive the correct Host. The Cookie header
-  // is dropped so the app's Supabase session cookies never reach PostHog.
+  // Build a PLAIN RequestInit (matches the working imageProxyHandler in this
+  // Worker). Do NOT pass the incoming Request as fetch()'s init: the Workers
+  // runtime rejects that with "Invalid URL: [object Request]".
   //
-  // No Worker-side Cache API is used on purpose: PostHog serves its static
-  // bundles with long Cache-Control, so the browser caches them anyway, and an
-  // earlier `caches.default.put()` attempt threw on non-cacheable upstream
-  // responses (Set-Cookie) — surfacing as a 500 that broke recorder.js/surveys.
+  // - Cookie is dropped so the app's Supabase session never reaches PostHog.
+  // - Host is dropped so the runtime derives it from targetUrl (a stale Host
+  //   header would break upstream routing).
+  // - The body is read fully into an ArrayBuffer (no streaming/duplex quirks).
+  //   PostHog compresses payloads itself, so the raw bytes + original
+  //   Content-Encoding header are forwarded untouched.
   // CORS headers are added by the outer fetch wrapper in index.ts.
-  const forwarded = new Request(request)
-  forwarded.headers.delete('cookie')
+  const headers = new Headers(request.headers)
+  headers.delete('cookie')
+  headers.delete('host')
 
-  return fetch(targetUrl, forwarded)
+  const init: RequestInit = { method: request.method, headers }
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = await request.arrayBuffer()
+  }
+
+  return fetch(targetUrl, init)
 }
