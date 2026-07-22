@@ -219,7 +219,7 @@ if (process.env.NEXT_PUBLIC_POSTHOG_KEY) {
   // so ingestion spends zero Vercel compute while staying first-party (ad-block
   // resistant). Falls back to PostHog directly when the Worker isn't configured
   // (local dev — where NEXT_PUBLIC_POSTHOG_KEY is normally unset anyway).
-  const workerUrl = (process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '').replace(/\/$/, '')
+  const workerUrl = (process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '').trim().replace(/\/$/, '')
   const posthogApiHost = workerUrl ? `${workerUrl}/ingest` : 'https://us.i.posthog.com'
 
   import("posthog-js").then(({ default: posthog }) => {
