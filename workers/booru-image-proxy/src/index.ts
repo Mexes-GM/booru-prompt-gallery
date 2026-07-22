@@ -13,6 +13,7 @@ import { imageProxyHandler } from './routes/image-proxy'
 import { trendsHandler } from './routes/trends'
 import { refreshTrendsCache } from './routes/trends'
 import { securityTxtHandler, robotsTxtHandler } from './routes/security-txt'
+import { posthogIngestHandler } from './routes/posthog-ingest'
 import { logger } from './logger'
 import { Env } from './types'
 
@@ -32,6 +33,12 @@ router.get('/api/trends', trendsHandler)
 
 // Security
 router.get('/security.txt', securityTxtHandler)
+
+// PostHog reverse-proxy (analytics events + session recordings). Moved off the
+// Next.js app's Vercel rewrites to keep ingestion from consuming Fluid Active
+// CPU. Matches GET (assets/decide) and POST (events/recordings); OPTIONS
+// preflight is served by the global handler below.
+router.all('/ingest/*', posthogIngestHandler)
 
 // Image proxy — legacy path (already deployed, used by NEXT_PUBLIC_IMAGE_PROXY_URL)
 router.get('/', imageProxyHandler)

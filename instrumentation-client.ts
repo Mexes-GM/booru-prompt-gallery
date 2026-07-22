@@ -211,9 +211,20 @@ if (process.env.NODE_ENV === "production" && Boolean(process.env.NEXT_PUBLIC_SEN
 // double-initialization. The PostHogProvider in layout.tsx wraps children with
 // PHProvider for usePostHog() hook access but does not re-init.
 if (process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+  // Reverse-proxy host. Previously "/ingest" (same-origin) was proxied to
+  // PostHog by next.config.mjs rewrites — but that ran through Next.js
+  // middleware + an external rewrite on every event, making analytics the
+  // biggest Fluid Active CPU consumer on Vercel. The proxy now lives on the
+  // Cloudflare Worker (see workers/booru-image-proxy/src/routes/posthog-ingest.ts),
+  // so ingestion spends zero Vercel compute while staying first-party (ad-block
+  // resistant). Falls back to PostHog directly when the Worker isn't configured
+  // (local dev — where NEXT_PUBLIC_POSTHOG_KEY is normally unset anyway).
+  const workerUrl = (process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '').replace(/\/$/, '')
+  const posthogApiHost = workerUrl ? `${workerUrl}/ingest` : 'https://us.i.posthog.com'
+
   import("posthog-js").then(({ default: posthog }) => {
     posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
-      api_host: "/ingest",
+      api_host: posthogApiHost,
       ui_host: "https://us.posthog.com",
       defaults: "2026-01-30",
       person_profiles: "identified_only",

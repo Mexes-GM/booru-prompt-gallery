@@ -22,7 +22,7 @@ function applySecurityHeaders(response: NextResponse, isExtensionRoute = false):
 
   const csp = `
  default-src 'self';
- script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com;
+ script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com https://*.workers.dev;
  style-src 'self' 'unsafe-inline';
  img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://*.donmai.us https://*.buymeacoffee.com https://gelbooru.com https://*.gelbooru.com https://*.workers.dev https://*.cloudfront.net;
  font-src 'self';
@@ -164,7 +164,12 @@ export const config = {
  matcher: [
  // Only match pages that actually need middleware processing.
  // Exclude static assets, images, and well-known files to reduce CPU.
+ // `ingest` is the PostHog reverse-proxy prefix (see next.config.mjs rewrites):
+ // analytics/session-recording traffic (/ingest/s/, /ingest/e/, ...) is pure
+ // machine-to-machine proxying — running auth/security-header middleware on it
+ // (and a Supabase getUser() round-trip per session-recording heartbeat for
+ // logged-in users) was the single largest Fluid Active CPU sink. Excluded here.
  // Works on both Vercel and Netlify (Netlify has no _vercel paths, so the exclusion is harmless).
- '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|icon\\.png|apple-icon\\.png|manifest\\.json|robots\\.txt|sitemap\\.xml|_vercel|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|css|js|woff|woff2|ttf|eot|map)$).*)',
+ '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|icon\\.png|apple-icon\\.png|manifest\\.json|robots\\.txt|sitemap\\.xml|ingest|_vercel|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|css|js|woff|woff2|ttf|eot|map)$).*)',
  ],
 }

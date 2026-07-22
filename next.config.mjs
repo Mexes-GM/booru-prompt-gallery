@@ -14,23 +14,15 @@ const RELEASE =
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: '/ingest/static/:path*',
-        destination: 'https://us-assets.i.posthog.com/static/:path*',
-      },
-      {
-        source: '/ingest/array/:path*',
-        destination: 'https://us-assets.i.posthog.com/array/:path*',
-      },
-      {
-        source: '/ingest/:path*',
-        destination: 'https://us.i.posthog.com/:path*',
-      },
-    ]
-  },
-  // Required to support PostHog trailing slash API requests
+  // NOTE: the PostHog reverse-proxy rewrites (/ingest/* -> *.i.posthog.com) used
+  // to live here. They were moved to the Cloudflare Worker
+  // (workers/booru-image-proxy/src/routes/posthog-ingest.ts) because proxying
+  // every analytics event / session-recording snapshot through Next.js
+  // middleware + an external rewrite was the largest Fluid Active CPU consumer
+  // on Vercel. The client now points PostHog's api_host at the Worker
+  // (see instrumentation-client.ts), so no /ingest handling is needed here.
+  // Kept to support PostHog-style trailing-slash API requests elsewhere and to
+  // avoid unintended trailing-slash redirects on existing routes.
   skipTrailingSlashRedirect: true,
   // Expose the resolved release to the client/server/edge runtimes so that the
   // Sentry.init() calls tag events with the same release used for map upload.
