@@ -205,7 +205,16 @@ export async function persistToCache(posts: BooruPost[]): Promise<void> {
   try {
     const supabase = createClient()
     const rows = posts.map(p => booruPostToCacheRow(p, p._provider || 'danbooru'))
-    const { error } = await supabase.from('booru_posts_cache').upsert(rows, {
+    // Dedupe by (provider, post_id) before upserting. Postgres rejects an
+    // INSERT ... ON CONFLICT DO UPDATE whose VALUES list targets the same
+    // conflict key twice ("ON CONFLICT DO UPDATE command cannot affect row a
+    // second time", SQLSTATE 21000), which PostgREST surfaces as a 500. The
+    // incoming posts array can contain the same favorite more than once, so we
+    // keep the last occurrence of each key.
+    const deduped = Array.from(
+      new Map(rows.map(r => [`${r.provider}:${r.post_id}`, r])).values()
+    )
+    const { error } = await supabase.from('booru_posts_cache').upsert(deduped, {
       onConflict: 'provider,post_id',
       ignoreDuplicates: false,
     })
