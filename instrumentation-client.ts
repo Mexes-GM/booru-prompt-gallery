@@ -98,8 +98,14 @@ Sentry.init({
     "The node before which the new node is to be inserted is not a child of this node",
   ],
   beforeSend(event) {
-    // Ignore events originating from file:// or chrome-extension:// protocols
-    if (event.request?.url && (event.request.url.startsWith("file://") || event.request.url.startsWith("chrome-extension://"))) {
+    // Ignore events originating from file://, chrome-extension:// (Chrome) or
+    // moz-extension:// (Firefox) protocols
+    if (
+      event.request?.url &&
+      (event.request.url.startsWith("file://") ||
+        event.request.url.startsWith("chrome-extension://") ||
+        event.request.url.startsWith("moz-extension://"))
+    ) {
       return null;
     }
     const stacktrace = event.exception?.values?.[0]?.stacktrace;

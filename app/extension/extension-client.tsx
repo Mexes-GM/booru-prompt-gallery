@@ -5,6 +5,7 @@ import { useBooruSearch } from "@/hooks/use-booru-search"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
+import type { TagAppendRule } from "@/lib/cleanPrompt"
 import { usePromptOptions } from "@/hooks/use-prompt-options"
 import { useBackgroundSettings } from "@/hooks/use-background-settings"
 import { useGlobalWeights } from "@/hooks/use-global-weights"
@@ -14,8 +15,11 @@ import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-
 import { TagsManagementPanel } from "@/components/prompt-gallery/tags-management-panel"
 import { PromptGenerationOptionsPanel } from "@/components/prompt-gallery/prompt-generation-options-panel"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
+import { computeGenerationResolution } from "@/lib/extension/generation-resolution"
+import { parsePromptList } from "@/lib/extension/prompt-list-parser"
 import type { BackgroundMode } from "@/lib/background-detector"
 import { useCardPrompt, type UseCardPromptOptions } from "@/hooks/use-card-prompt"
+import { useBulkSend, type BulkSendMode } from "@/hooks/use-bulk-send"
 import { BooruPost, BooruProvider, isTagCountSupportedProvider } from "@/lib/api-client"
 import { QueryStatusPanel } from "@/components/prompt-gallery/query-status-panel"
 import { Card } from "@/components/ui/card"
@@ -26,6 +30,16 @@ import { Button } from "@/components/ui/button"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { MasonryGrid } from "@/components/masonry-grid"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Loader2,
   Settings,
   RefreshCw,
@@ -34,6 +48,7 @@ import {
   Check,
   Sliders,
   Replace,
+  Plus,
   Shield,
   Search,
   X,
@@ -51,6 +66,10 @@ import {
   Crosshair,
   MousePointerClick,
   Sparkles,
+  Zap,
+  Pause,
+  Play,
+  ListPlus,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useTagCounts } from "@/hooks/use-tag-counts"
@@ -59,6 +78,7 @@ import { ExtensionTour } from "@/components/extension-tour"
 import { TargetSetupWizard, SiteTargetStatusBadge } from "@/components/prompt-gallery/target-setup-wizard"
 
 import { Switch } from "@/components/ui/switch"
+import { Input } from "@/components/ui/input"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import {
   Sheet,
@@ -79,21 +99,28 @@ import { useTheme } from "next-themes"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 
-// The sidepanel host is a chrome-extension page, whose origin is dynamic
-// (chrome-extension://<id>). We therefore post to the parent with "*" and rely
-// on the parent verifying our origin. Messages received from the parent are
-// trusted when they originate from window.parent AND from a chrome-extension://
-// origin (the sidepanel) or one of the known web hosts.
+// The sidepanel host is an extension page, whose origin is dynamic and
+// browser-dependent: `chrome-extension://<id>` on Chrome/Chromium,
+// `moz-extension://<id>` on Firefox (Gecko never uses the `chrome-extension://`
+// scheme — the two are mutually exclusive by design, one per engine, never
+// both). We therefore post to the parent with "*" and rely on the parent
+// verifying our origin. Messages received from the parent are trusted when
+// they originate from window.parent AND from either of those two extension-
+// page origin schemes (the sidepanel) or one of the known web hosts.
 const TARGET_ORIGIN = "*"
 // Origins allowed to send messages into this iframe (web hosts; the extension
-// sidepanel's chrome-extension:// origin is accepted dynamically below).
+// sidepanel's chrome-extension:///moz-extension:// origin is accepted dynamically below).
 const ALLOWED_ORIGINS = ["https://tensor.art", "https://seaart.ai"]
 
 /** True when a message genuinely comes from our embedding parent (the sidepanel). */
 function isTrustedParentMessage(event: MessageEvent): boolean {
   if (event.source !== window.parent) return false
   if (typeof event.origin !== "string") return false
-  return event.origin.startsWith("chrome-extension://") || ALLOWED_ORIGINS.includes(event.origin)
+  return (
+    event.origin.startsWith("chrome-extension://") ||
+    event.origin.startsWith("moz-extension://") ||
+    ALLOWED_ORIGINS.includes(event.origin)
+  )
 }
 
 /**
@@ -121,6 +148,7 @@ interface QueueStatus {
   isWaitingForSlot: boolean
   isPausedForVisibility: boolean
   isPausedForError: boolean
+  isPausedManually: boolean
   activeTasks: number
   limit: number
   platform: string
@@ -148,6 +176,11 @@ function PocketCard({
   isPreviouslyCopied,
   hasTarget,
   onNoTarget,
+  matchResolution,
+  maxLongSide,
+  strictResolutionCap,
+  resolutionConfigured,
+  onNoResolutionFields,
 }: {
   post: BooruPost
   promptOptions: UseCardPromptOptions
@@ -166,11 +199,21 @@ function PocketCard({
   isPreviouslyCopied?: boolean
   hasTarget?: boolean
   onNoTarget?: () => void
+  /** "Match image resolution" toggle state (lifted from ExtensionClient settings). */
+  matchResolution?: boolean
+  maxLongSide?: number
+  /** When true, maxLongSide is a hard per-side cap instead of a total-area budget. */
+  strictResolutionCap?: boolean
+  /** Whether this origin has widthField+heightField configured in its SiteProfile. */
+  resolutionConfigured?: boolean
+  /** Called once per send when matchResolution is on but fields aren't configured yet. */
+  onNoResolutionFields?: () => void
 }) {
   const [copied, setCopied] = useState(false)
   /** 'idle' | 'queued' (amber, waiting for TensorArt) | 'sent' (green, injected) */
   const [sendState, setSendState] = useState<"idle" | "queued" | "sent">("idle")
   const [useFallbackUrl, setUseFallbackUrl] = useState(false)
+  const [cdnRetry, setCdnRetry] = useState(0)
   const [modifiedContent, setModifiedContent] = useState<string | null>(null)
 
   const {
@@ -181,6 +224,8 @@ function PocketCard({
     hasActiveOptions,
     hasReplacements,
     replacedTags,
+    hasAppends,
+    appendedTags,
     conflictingTags,
   } = useCardPrompt({
     post,
@@ -221,11 +266,31 @@ function PocketCard({
       console.warn("Clipboard copy in iframe failed:", err)
     }
     // Enqueue in sidepanel.js — sidepanel will process it when TensorArt is free
-    window.parent.postMessage({ type: "INJECT_PROMPT", prompt: displayPrompt }, TARGET_ORIGIN)
+    // "Match image resolution": derive a generation width/height from the
+    // source post's real aspect ratio (post.width/post.height), scaled to
+    // maxLongSide. Missing post dimensions or an unconfigured resolution
+    // fields target degrade gracefully — the prompt still sends as-is.
+    const resolution = matchResolution
+      ? computeGenerationResolution(post.width, post.height, { maxLongSide, strictCap: strictResolutionCap })
+      : null
+    if (process.env.NODE_ENV !== "production") {
+      console.log("%c[BooruMatchRes]", "color:#8b5cf6;font-weight:bold", `handleSend — matchResolution=${matchResolution} post.width=${post.width} post.height=${post.height} maxLongSide=${maxLongSide} strictResolutionCap=${strictResolutionCap} -> resolution=${resolution ? `${resolution.width}x${resolution.height}` : "null"}`)
+    }
+    window.parent.postMessage({
+      type: "INJECT_PROMPT",
+      prompt: displayPrompt,
+      ...(resolution ? { width: resolution.width, height: resolution.height } : {}),
+    }, TARGET_ORIGIN)
     // If the user hasn't picked a destination field yet, the prompt will sit in
     // the queue with nowhere to go — guide them to set a target first.
     if (!hasTarget) {
       onNoTarget?.()
+    }
+    // Guide the user to configure width/height fields once, when the toggle
+    // is on but this origin's SiteProfile has no widthField/heightField yet
+    // (resolution was requested but couldn't be attached to this send).
+    if (matchResolution && resolution && !resolutionConfigured) {
+      onNoResolutionFields?.()
     }
     // Show 'queued' (amber) immediately; it will clear after 4 s or when queue empties
     setSendState("queued")
@@ -258,9 +323,16 @@ function PocketCard({
   const isDanbooruImg = rawFileUrl && (rawFileUrl.includes("donmai.us") || rawFileUrl.includes("cdn.donmai.us"))
 
   // For Gelbooru/Rule34, route through referrer-injecting worker proxy.
+  // Danbooru: CloudFront primary, with a one-shot cache-busting retry (?_r=N)
+  // so a transient origin-pull failure retries CloudFront before falling back
+  // to the same-origin /api/download proxy (keeps failures off Vercel Fluid).
+  const danbooruCdnUrl = getDanbooruCdnUrl(rawFileUrl || '')
+  const danbooruCdnUrlWithRetry = danbooruCdnUrl && cdnRetry > 0
+    ? `${danbooruCdnUrl}${danbooruCdnUrl.includes('?') ? '&' : '?'}_r=${cdnRetry}`
+    : danbooruCdnUrl
   const fileUrl = (isGelbooru || itemProvider === "rule34") && rawFileUrl
     ? getGelbooruProxyUrl(rawFileUrl)
-    : (getDanbooruCdnUrl(rawFileUrl || '') ?? rawFileUrl)
+    : (danbooruCdnUrlWithRetry ?? rawFileUrl)
 
   // For Danbooru, use proxy fallback if direct loading fails.
   const proxyFileUrl = isDanbooruImg
@@ -270,6 +342,13 @@ function PocketCard({
   const displayImageUrl = (useFallbackUrl && proxyFileUrl) ? proxyFileUrl : (fileUrl || "")
 
   const handleImageError = () => {
+    // Danbooru via CloudFront: retry CloudFront once (warm cache / transient
+    // origin challenge) before falling back to the same-origin /api/download
+    // proxy, keeping transient failures off the Vercel serverless function.
+    if (isDanbooruImg && danbooruCdnUrl && !useFallbackUrl && cdnRetry < 1) {
+      setCdnRetry(c => c + 1)
+      return
+    }
     if (isDanbooruImg && !useFallbackUrl) {
       setUseFallbackUrl(true)
     }
@@ -328,7 +407,7 @@ function PocketCard({
         {/* Bottom-left stack: options/replacement indicators above the character
             post count — mirrors MasonryItem's equivalent stack so the Pocket
             surfaces the same "something changed your prompt" signals. */}
-        {(hasActiveOptions || hasReplacements || (tagCountIndicator && promptOptions.includeCharacters)) && (
+        {(hasActiveOptions || hasReplacements || hasAppends || (tagCountIndicator && promptOptions.includeCharacters)) && (
           <div className="absolute bottom-2 left-2 z-10 flex flex-col items-start gap-1">
             {hasActiveOptions && (
               <div
@@ -344,6 +423,14 @@ function PocketCard({
                 title={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
               >
                 <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
+              </div>
+            )}
+            {hasAppends && (
+              <div
+                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-violet-500/40 shadow-sm select-none"
+                title={`Find & Append applied: ${appendedTags.map(a => `${a.from} → ${a.append.join(', ')}`).join(' | ')}`}
+              >
+                <Plus className="w-3.5 h-3.5 text-violet-500" strokeWidth={3} />
               </div>
             )}
             {/* Character Tag Count Indicator — hidden when "Include Characters" is
@@ -478,11 +565,13 @@ export default function ExtensionClient() {
     isWaitingForSlot: false,
     isPausedForVisibility: false,
     isPausedForError: false,
+    isPausedManually: false,
     activeTasks: 0,
     limit: 5,
     platform: "Unknown"
   })
   const [autoDownload, setAutoDownload] = useState(false)
+  const [backgroundGeneration, setBackgroundGeneration] = useState(false)
   
   // Targeting state machine, driven by TARGET_STATUS messages from sidepanel.js
   // "idle" | "arming" | "waiting" | "selected" | "none" | "error" | "cancelled"
@@ -493,6 +582,13 @@ export default function ExtensionClient() {
   const [hasTargetSet, setHasTargetSet] = useState(false)
   // (Fase 5b) Controls the 3-step site setup wizard dialog.
   const [wizardOpen, setWizardOpen] = useState(false)
+
+  // ── Import Prompt List ─────────────────────────────────────────────────────
+  // Pasting a block of prompts (one per line) and enqueueing them all at once,
+  // reusing the same parse → enqueue → toast pipeline as Bulk Send.
+  const [importListOpen, setImportListOpen] = useState(false)
+  const [importListText, setImportListText] = useState("")
+  const importListCount = useMemo(() => parsePromptList(importListText).length, [importListText])
 
   // Responsive column count for the masonry grid, based on the panel width.
   // Chrome side panels are resizable, so we adapt instead of forcing 2 columns.
@@ -529,7 +625,10 @@ export default function ExtensionClient() {
 
       const { state, detail } = event.data
       setTargetState(state)
-      console.log(`[Target UI] state="${state}"`, detail || "")
+      // Pass `state` (from a postMessage payload) as a separate console arg
+      // instead of interpolating it into the format string, so a value like
+      // "%s" can't be interpreted as a format specifier (js/tainted-format-string).
+      console.log("[Target UI] state=%o", state, detail || "")
 
       switch (state) {
         case "arming":
@@ -598,12 +697,16 @@ export default function ExtensionClient() {
           isWaitingForSlot: event.data.isWaitingForSlot ?? false,
           isPausedForVisibility: event.data.isPausedForVisibility ?? false,
           isPausedForError: event.data.isPausedForError ?? false,
+          isPausedManually: event.data.isPausedManually ?? false,
           activeTasks: event.data.currentActiveTasks ?? 0,
           limit: event.data.seaArtLimit ?? 5,
           platform: event.data.platform ?? "Unknown"
         })
         if (typeof event.data.autoDownloadEnabled === "boolean") {
           setAutoDownload(event.data.autoDownloadEnabled)
+        }
+        if (typeof event.data.backgroundGenerationEnabled === "boolean") {
+          setBackgroundGeneration(event.data.backgroundGenerationEnabled)
         }
       }
     }
@@ -616,6 +719,31 @@ export default function ExtensionClient() {
     
     return () => window.removeEventListener("message", handleQueueStatus)
   }, [])
+
+  // "Match image resolution": track whether the ACTIVE tab's origin has both
+  // widthField and heightField configured (via the wizard's "Resolution"
+  // step), so PocketCard can guide the user to configure them once instead of
+  // silently sending prompts with no size adjustment forever.
+  const [resolutionConfigured, setResolutionConfigured] = useState(false)
+  useEffect(() => {
+    function handleSiteProfileStatus(event: MessageEvent) {
+      if (!isTrustedParentMessage(event)) return
+      if (!event.data || event.data.type !== "SITE_PROFILE_STATUS") return
+      setResolutionConfigured(!!event.data.widthConfigured && !!event.data.heightConfigured)
+    }
+    window.addEventListener("message", handleSiteProfileStatus)
+    if (typeof window !== "undefined") {
+      window.parent.postMessage({ type: "REQUEST_SITE_PROFILE_STATUS" }, TARGET_ORIGIN)
+    }
+    return () => window.removeEventListener("message", handleSiteProfileStatus)
+  }, [])
+
+  const guideToResolutionFields = useCallback(() => {
+    toast({
+      title: "Set the width/height fields first",
+      description: "Open Setup and configure the Resolution step so \"Match image resolution\" can adjust the canvas size.",
+    })
+  }, [toast])
 
   const { blacklist, addTag, removeTag, resetBlacklist } = useBlacklist()
 
@@ -652,6 +780,45 @@ export default function ExtensionClient() {
     userPreferences.setFindReplaceReplaceInput,
     "findReplaceReplace",
     STORAGE_KEYS.FIND_REPLACE_REPLACE
+  )
+
+  const [tagAppendRules, setTagAppendRules] = usePersistentState<TagAppendRule[]>(
+    [],
+    userPreferences.getTagAppendRules,
+    userPreferences.setTagAppendRules,
+    "tagAppendRules",
+    STORAGE_KEYS.TAG_APPEND_RULES
+  )
+
+  // "Match image resolution" — extension-only toggle: when enabled, sending a
+  // prompt also computes a generation width/height from the source post's
+  // aspect ratio (capped at maxLongSide) and attaches it to INJECT_PROMPT.
+  const [matchResolution, setMatchResolution] = usePersistentState(
+    false,
+    userPreferences.getMatchResolutionEnabled,
+    userPreferences.setMatchResolutionEnabled,
+    "matchResolutionEnabled",
+    STORAGE_KEYS.MATCH_RESOLUTION_ENABLED
+  )
+
+  const [maxLongSide, setMaxLongSide] = usePersistentState(
+    1536,
+    userPreferences.getMatchResolutionMaxLongSide,
+    userPreferences.setMatchResolutionMaxLongSide,
+    "matchResolutionMaxLongSide",
+    STORAGE_KEYS.MATCH_RESOLUTION_MAX_LONG_SIDE
+  )
+
+  // Toggle between the two capping semantics computeGenerationResolution
+  // supports: "area" budget (default, off) lets a non-square result exceed
+  // maxLongSide on one side as long as total area stays in budget; "strict"
+  // (on) makes maxLongSide a hard per-side ceiling that's never exceeded.
+  const [strictResolutionCap, setStrictResolutionCap] = usePersistentState(
+    false,
+    userPreferences.getMatchResolutionStrictCap,
+    userPreferences.setMatchResolutionStrictCap,
+    "matchResolutionStrictCap",
+    STORAGE_KEYS.MATCH_RESOLUTION_STRICT_CAP
   )
 
   const {
@@ -711,8 +878,10 @@ export default function ExtensionClient() {
   const cardPromptOptions: UseCardPromptOptions = useMemo(() => ({
     excludeInput,
     addInput,
+    searchTags: search.debouncedSearchTags,
     findInput,
     replaceInput,
+    tagAppendRules,
     includeCharacters,
     optimizeTags,
     smartTagExclusion,
@@ -727,8 +896,10 @@ export default function ExtensionClient() {
   }), [
     excludeInput,
     addInput,
+    search.debouncedSearchTags,
     findInput,
     replaceInput,
+    tagAppendRules,
     includeCharacters,
     optimizeTags,
     smartTagExclusion,
@@ -752,10 +923,112 @@ export default function ExtensionClient() {
     includeCharacters,
     appliedCharacterCountFilter: search.appliedCharacterCountFilter,
     tagCounts,
+    appliedTagCountFilter: search.appliedTagCountFilter,
   })
 
+  // ── Bulk Send (docs/superpowers/specs/2026-07-19-extension-bulk-send-design.md) ──
+  // "Send N prompts to generate quickly" for the current search query, in two
+  // modes: real posts (one prompt per fetched post) or synthetic (pack-style
+  // variations seeded from a handful of posts). Both modes reuse the exact
+  // same cleaner pipeline as a single card (cardPromptOptions above).
+  const [bulkSendMode, setBulkSendMode] = usePersistentState<BulkSendMode>(
+    "real",
+    () => userPreferences.getBulkSendMode() as BulkSendMode,
+    (val) => userPreferences.setBulkSendMode(val),
+    "bulkSendMode",
+    STORAGE_KEYS.BULK_SEND_MODE
+  )
+  const [bulkSendConfirmCount, setBulkSendConfirmCount] = useState<number | null>(null)
+
+  const bulkSend = useBulkSend(
+    {
+      allPosts: search.allPosts,
+      isLoadingMore: search.isLoadingMore,
+      noMoreResults: search.noMoreResults,
+      sessionCapReached: search.sessionCapReached,
+      scrollLimited: search.scrollLimited,
+      loadMore: search.loadMore,
+    },
+    {
+      realCleanOptions: cardPromptOptions,
+      syntheticCleanOptions: cardPromptOptions,
+      matchResolution,
+      maxLongSide,
+      strictResolutionCap,
+    }
+  )
+
+  const enqueueBulkPrompts = useCallback((items: { prompt: string; width?: number; height?: number }[]) => {
+    // Micro-stagger so we don't fire N postMessages in the same tick — the
+    // sidepanel's own queue throttles processing, this just avoids bursting
+    // the messaging channel itself.
+    items.forEach((item, index) => {
+      setTimeout(() => {
+        window.parent.postMessage({
+          type: "INJECT_PROMPT",
+          prompt: item.prompt,
+          ...(item.width && item.height ? { width: item.width, height: item.height } : {}),
+        }, TARGET_ORIGIN)
+      }, index * 40)
+    })
+  }, [])
+
+  const runBulkSend = useCallback(async (count: number) => {
+    if (!hasTargetSet) {
+      guideToTarget()
+      return
+    }
+    try {
+      const result = await bulkSend.run(bulkSendMode, count, search.searchTags)
+      if (result.produced === 0) {
+        toastError({
+          title: "No prompts generated",
+          description: "Couldn't find enough posts for this search to build any prompts.",
+          errorSource: "extension_bulk_send_empty",
+        })
+        return
+      }
+      enqueueBulkPrompts(result.items)
+      toast({
+        title: result.produced === result.requested
+          ? `${result.produced} prompts queued`
+          : `${result.produced} of ${result.requested} prompts queued`,
+        description: result.produced < result.requested
+          ? "Fewer posts/variations were available for this search than requested."
+          : `Sent from "${search.searchTags}" (${bulkSendMode === "real" ? "real posts" : "synthetic"} mode).`,
+      })
+    } catch {
+      toastError({
+        title: "Bulk send failed",
+        description: "Something went wrong while preparing the prompts. Please try again.",
+        errorSource: "extension_bulk_send_error",
+      })
+    }
+  }, [hasTargetSet, guideToTarget, bulkSend, bulkSendMode, search.searchTags, enqueueBulkPrompts, toast])
+
+  const handleImportPromptList = useCallback(() => {
+    const prompts = parsePromptList(importListText)
+    if (prompts.length === 0) return
+    if (!hasTargetSet) {
+      guideToTarget()
+      return
+    }
+    enqueueBulkPrompts(prompts.map((prompt) => ({ prompt })))
+    toast({
+      title: `${prompts.length} prompt${prompts.length === 1 ? "" : "s"} imported`,
+      description: "Added to the generation queue.",
+    })
+    setImportListOpen(false)
+    setImportListText("")
+  }, [importListText, hasTargetSet, guideToTarget, enqueueBulkPrompts, toast])
+
   const isRule34 = search.booruProvider === "rule34"
-  const isTagCountSupported = isTagCountSupportedProvider(search.booruProvider)
+  // In the extension (Pocket), the minimum tags slider is always enabled:
+  // providers with server-side `tagcount:>=N` support use it at the API level,
+  // and providers without it (Gelbooru, Rule34) use the client-side fallback
+  // filter in useFilteredPosts. The web app keeps its original behavior
+  // (disabled when unsupported) since it doesn't pass appliedTagCountFilter.
+  const isTagCountSupported = true
   const isTagCountValid = !!search.tagCountFilter && /^\d+$/.test(search.tagCountFilter)
 
   if (!search.isClient) {
@@ -1008,6 +1281,52 @@ export default function ExtensionClient() {
                   </div>
                 </SheetContent>
               </Sheet>
+              <Sheet open={importListOpen} onOpenChange={setImportListOpen}>
+                <SheetTrigger asChild>
+                  <Button type="button" variant="outline" className="h-8 w-8 p-0 shadow-sm" title="Import prompt list" aria-label="Import a list of prompts">
+                    <ListPlus className="w-3.5 h-3.5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="w-full sm:w-[400px] flex flex-col">
+                  <SheetHeader>
+                    <SheetTitle className="text-sm font-bold">Import Prompt List</SheetTitle>
+                    <SheetDescription className="text-xs">
+                      Paste prompts, one per line. Each prompt is a comma-separated tag list that ends without a trailing comma.
+                    </SheetDescription>
+                  </SheetHeader>
+                  <textarea
+                    value={importListText}
+                    onChange={(e) => setImportListText(e.target.value)}
+                    placeholder={"thick thighs, wide hips, ..., explicit\n1girl, solo, ..., full body"}
+                    className="mt-4 w-full flex-1 min-h-[220px] rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                  />
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-muted-foreground">
+                      {importListCount > 0
+                        ? `${importListCount} prompt${importListCount === 1 ? "" : "s"} detected`
+                        : "No prompts yet"}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setImportListOpen(false); setImportListText("") }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={importListCount === 0}
+                        onClick={handleImportPromptList}
+                      >
+                        Import
+                      </Button>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
             </div>
             
             <div className="flex items-center gap-1.5">
@@ -1067,6 +1386,8 @@ export default function ExtensionClient() {
                 setFindInput={setFindInput}
                 replaceInput={replaceInput}
                 setReplaceInput={setReplaceInput}
+                tagAppendRules={tagAppendRules}
+                setTagAppendRules={setTagAppendRules}
                 tagCountFilter={search.tagCountFilter}
                 setTagCountFilter={search.setTagCountFilter}
                 setAppliedTagCountFilter={search.setAppliedTagCountFilter}
@@ -1148,10 +1469,180 @@ export default function ExtensionClient() {
                   />
                 </div>
               </div>
+
+              {/* Keep generating in background */}
+              <div className="flex flex-col gap-1 border-t pt-2">
+                <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+                  <div className="flex flex-col gap-0.5 flex-1">
+                    <Label htmlFor="background-generation" className="text-xs select-none cursor-pointer">Keep generating in background</Label>
+                    <span className="text-[10px] text-muted-foreground leading-none">
+                      Keep the queue running when the generator tab is not focused. Keep its window open (not minimized) for best results.
+                    </span>
+                  </div>
+                  <Switch
+                    id="background-generation"
+                    checked={backgroundGeneration}
+                    onCheckedChange={(val) => {
+                      setBackgroundGeneration(val)
+                      window.parent.postMessage({ type: "QUEUE_ACTION", action: "set_background_generation", value: val }, TARGET_ORIGIN)
+                    }}
+                    className="scale-75 origin-right"
+                  />
+                </div>
+              </div>
+
+              {/* Match image resolution */}
+              <div className="flex flex-col gap-1 border-t pt-2">
+                <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
+                  <div className="flex flex-col gap-0.5 flex-1">
+                    <Label htmlFor="match-resolution" className="text-xs select-none cursor-pointer">Match image resolution</Label>
+                    <span className="text-[10px] text-muted-foreground leading-none">
+                      Set the generator&apos;s width/height from this image&apos;s aspect ratio
+                    </span>
+                  </div>
+                  <Switch
+                    id="match-resolution"
+                    checked={matchResolution}
+                    onCheckedChange={(val) => setMatchResolution(val)}
+                    className="scale-75 origin-right"
+                  />
+                </div>
+                {matchResolution && (
+                  <div className="flex items-center justify-between p-1 pl-2">
+                    <Label htmlFor="max-long-side" className="text-[11px] text-muted-foreground select-none cursor-pointer">
+                      Max long side (px)
+                    </Label>
+                    <Input
+                      id="max-long-side"
+                      type="number"
+                      min={64}
+                      step={64}
+                      inputMode="numeric"
+                      value={maxLongSide}
+                      onChange={(e) => {
+                        const parsed = Number.parseInt(e.target.value, 10)
+                        setMaxLongSide(Number.isFinite(parsed) && parsed > 0 ? parsed : 1536)
+                      }}
+                      className="h-6 w-20 text-[11px] px-2"
+                    />
+                  </div>
+                )}
+                {matchResolution && (
+                  <div className="flex items-center justify-between p-1 pl-2">
+                    <div className="flex flex-col gap-0.5 flex-1">
+                      <Label htmlFor="strict-resolution-cap" className="text-[11px] text-muted-foreground select-none cursor-pointer">
+                        Strict max long side cap
+                      </Label>
+                      <span className="text-[10px] text-muted-foreground/70 leading-none">
+                        {strictResolutionCap
+                          ? "Longest side never exceeds the value above"
+                          : "Longest side may exceed it if total area still fits"}
+                      </span>
+                    </div>
+                    <Switch
+                      id="strict-resolution-cap"
+                      checked={strictResolutionCap}
+                      onCheckedChange={(val) => setStrictResolutionCap(val)}
+                      className="scale-75 origin-right"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
+
+        {/* Bulk Send row — always visible, below the Settings row (see
+            docs/superpowers/specs/2026-07-19-extension-bulk-send-design.md).
+            Sends N prompts to the generation queue in one click, for the
+            current search query, without picking cards one by one. */}
+        <div className="flex flex-col gap-1.5 border-t pt-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground/80 flex items-center gap-1 select-none">
+              <Zap size={10} /> Bulk Send
+            </span>
+            {/* Real | Synthetic segmented toggle */}
+            <div className="bg-muted/50 p-0.5 rounded-md flex gap-0.5">
+              {(["real", "synthetic"] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={bulkSend.isRunning}
+                  onClick={() => setBulkSendMode(mode)}
+                  className={`h-5 px-1.5 text-[10px] rounded-sm ${
+                    bulkSendMode === mode
+                      ? "bg-background shadow-sm text-foreground font-semibold hover:bg-background"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {mode === "real" ? "Real posts" : "Synthetic"}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {bulkSend.isRunning ? (
+            <div className="flex items-center gap-2 h-7 px-1">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+              <span className="text-[11px] text-muted-foreground truncate">{bulkSend.progressLabel}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              {[20, 40, 50].map((count) => (
+                <Button
+                  key={count}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!search.searchTags.trim()}
+                  onClick={() => setBulkSendConfirmCount(count)}
+                  className="h-7 flex-1 text-xs font-semibold shadow-sm"
+                  title={
+                    !search.searchTags.trim()
+                      ? "Type a search query first"
+                      : `Send ${count} prompts (${bulkSendMode === "real" ? "real posts" : "synthetic"}) for "${search.searchTags}"`
+                  }
+                >
+                  {count}
+                </Button>
+              ))}
+            </div>
+          )}
+          {search.searchTags.trim() && !bulkSend.isRunning && (
+            <p className="text-[10px] text-muted-foreground/70 truncate px-0.5" title={search.searchTags}>
+              from &ldquo;{search.searchTags}&rdquo;
+            </p>
+          )}
+        </div>
       </Card>
+
+      {/* Bulk Send confirmation dialog */}
+      <AlertDialog open={bulkSendConfirmCount !== null} onOpenChange={(open) => { if (!open) setBulkSendConfirmCount(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send {bulkSendConfirmCount} prompts?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will queue {bulkSendConfirmCount} {bulkSendMode === "real" ? "real-post" : "synthetic"} prompts
+              from &ldquo;{search.searchTags}&rdquo; to your generator. Fewer may be sent if not enough
+              posts/variations are available.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const count = bulkSendConfirmCount
+                setBulkSendConfirmCount(null)
+                if (count !== null) runBulkSend(count)
+              }}
+            >
+              Send
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Results Grid - Uses actual virtualized MasonryGrid */}
       <main ref={mainScrollRef as React.RefObject<HTMLElement>} className="flex-1 overflow-y-auto relative scrollbar-none pb-20">
@@ -1195,6 +1686,11 @@ export default function ExtensionClient() {
                   isPreviouslyCopied={previouslyCopiedPostIds.has(post.id)}
                   hasTarget={hasTargetSet}
                   onNoTarget={guideToTarget}
+                  matchResolution={matchResolution}
+                  maxLongSide={maxLongSide}
+                  strictResolutionCap={strictResolutionCap}
+                  resolutionConfigured={resolutionConfigured}
+                  onNoResolutionFields={guideToResolutionFields}
                 />
               )}
             />
@@ -1257,6 +1753,7 @@ export default function ExtensionClient() {
           {/* Status Indicator */}
           <div className="flex items-center gap-1.5" title="Queue Status">
             <span className={`w-2 h-2 rounded-full shrink-0 ${
+              queueStatus.isPausedManually ? "bg-slate-400" :
               queueStatus.isPausedForError ? "bg-red-500 animate-pulse" :
               queueStatus.isPausedForVisibility ? "bg-red-500 animate-pulse" :
               queueStatus.isWaitingForSlot ? "bg-orange-500 animate-pulse" :
@@ -1265,7 +1762,8 @@ export default function ExtensionClient() {
               "bg-green-500"
             }`} />
             <span className="text-foreground font-semibold shrink-0">
-              {queueStatus.isPausedForError ? "Error: Paused" :
+              {queueStatus.isPausedManually ? "Paused" :
+               queueStatus.isPausedForError ? "Error: Paused" :
                queueStatus.isPausedForVisibility ? "Paused (Tab hidden)" :
                queueStatus.isWaitingForSlot ? `Waiting (${queueStatus.limit ? `${queueStatus.activeTasks}/${queueStatus.limit}` : `${queueStatus.activeTasks} active`})` :
                queueStatus.isProcessing ? "Generating..." :
@@ -1329,6 +1827,34 @@ export default function ExtensionClient() {
               className="h-6 w-6 p-0 rounded-full text-[11px] bg-transparent hover:bg-primary/10 hover:text-primary hover:border-primary/50"
             >
               <Sparkles className="w-3 h-3" />
+            </Button>
+
+            {/* Manual pause/resume — safety valve to stop the queue from
+                sending more prompts without losing what's already queued
+                (unlike Clear, which drops everything). Always available so
+                the user can pre-emptively pause before a Bulk Send, not just
+                once something is already queued/processing. */}
+            <Button
+              variant="outline"
+              size="sm"
+              title={queueStatus.isPausedManually ? "Resume sending prompts" : "Pause sending prompts"}
+              aria-label={queueStatus.isPausedManually ? "Resume the prompt queue" : "Pause the prompt queue"}
+              onClick={() => window.parent.postMessage({ type: "QUEUE_ACTION", action: queueStatus.isPausedManually ? "resume" : "pause" }, TARGET_ORIGIN)}
+              className={`h-6 px-2.5 rounded-full text-[11px] gap-1 transition-colors ${
+                queueStatus.isPausedManually
+                  ? "bg-slate-500/20 text-slate-500 border-slate-500/50 hover:bg-slate-500/30"
+                  : "bg-transparent hover:bg-amber-500/10 hover:text-amber-600 hover:border-amber-500/50"
+              }`}
+            >
+              {queueStatus.isPausedManually ? (
+                <>
+                  <Play className="w-3 h-3" /> Resume
+                </>
+              ) : (
+                <>
+                  <Pause className="w-3 h-3" /> Pause
+                </>
+              )}
             </Button>
             
             {queueStatus.length > 0 && (

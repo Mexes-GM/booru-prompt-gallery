@@ -27,16 +27,22 @@ function wlog(...args: unknown[]) {
   if (process.env.NODE_ENV !== "production") console.log("%c[TargetWizard]", "color:#f59e0b;font-weight:bold", ...args)
 }
 
-/** targetKind understood by sidepanel.js's startTargeting(targetKind) (Fase 2a). */
-type TargetKind = "prompt" | "generate" | "queue"
+/** targetKind understood by sidepanel.js's startTargeting(targetKind) (Fase 2a,
+ *  extended with width/height for "Match image resolution"). */
+type TargetKind = "prompt" | "generate" | "queue" | "width" | "height"
 
 /** Per-step targeting state, mirrors the TARGET_STATUS values sidepanel.js emits. */
 type StepState = "idle" | "arming" | "waiting" | "selected" | "error"
 
 interface WizardStep {
-  kind: TargetKind
+  /** For the "resolution" step (two sub-targets), kind is a placeholder —
+   *  the actual targeting happens via subKinds below, not this field. */
+  kind: TargetKind | "resolution"
   title: string
   description: string
+  /** Present only for the "resolution" step: the two sub-targets (width,
+   *  height) rendered as separate Start buttons within the same step. */
+  subKinds?: { kind: TargetKind; label: string }[]
 }
 
 const STEPS: WizardStep[] = [
@@ -55,6 +61,15 @@ const STEPS: WizardStep[] = [
     title: "Queue (optional)",
     description: "Point at the container that lists running/queued generations, so the extension knows when it's busy.",
   },
+  {
+    kind: "resolution",
+    title: "Resolution (optional)",
+    description: "Point at the width and height fields so \"Match image resolution\" can set them before generating.",
+    subKinds: [
+      { kind: "width", label: "Target width field" },
+      { kind: "height", label: "Target height field" },
+    ],
+  },
 ]
 
 interface SiteProfileStatus {
@@ -62,6 +77,14 @@ interface SiteProfileStatus {
   builtin: boolean
   promptConfigured: boolean
   generateConfigured: boolean
+  widthConfigured: boolean
+  heightConfigured: boolean
+  /** True when this frame exposes a LiteGraph-style graph (window.app.graph /
+   *  window.graph) with a node carrying both a "width" and "height" widget —
+   *  e.g. SeaArt's ComfyUI canvas. On these sites, width/height are painted on
+   *  a <canvas> and have no DOM to Target at all; the extension instead reads
+   *  and writes the widget values directly, with zero configuration needed. */
+  liteGraphResolutionAvailable: boolean
   queueLevel: 0 | 1 | 2
   queueMode: "none" | "button" | "container"
   hasBusySignal: boolean
@@ -69,10 +92,23 @@ interface SiteProfileStatus {
   unlimited: boolean
 }
 
+/**
+ * True when a message genuinely comes from our embedding parent (the
+ * sidepanel wrapper), not from an arbitrary iframe/page. Extension-page
+ * origins are browser-dependent: `chrome-extension://<id>` on Chrome/
+ * Chromium, `moz-extension://<id>` on Firefox — Gecko never uses the
+ * `chrome-extension://` scheme, so a check for only one of the two silently
+ * drops every parent-origin message on whichever browser isn't covered (this
+ * is what happened here for Firefox before both were accepted).
+ */
 function isTrustedSidepanelMessage(event: MessageEvent): boolean {
   if (event.source !== window.parent) return false
   if (typeof event.origin !== "string") return false
-  return event.origin.startsWith("chrome-extension://") || event.origin === window.location.origin
+  return (
+    event.origin.startsWith("chrome-extension://") ||
+    event.origin.startsWith("moz-extension://") ||
+    event.origin === window.location.origin
+  )
 }
 
 /**
@@ -93,6 +129,9 @@ export function SiteTargetStatusBadge({ onOpenWizard }: { onOpenWizard: () => vo
         builtin: !!event.data.builtin,
         promptConfigured: !!event.data.promptConfigured,
         generateConfigured: !!event.data.generateConfigured,
+        widthConfigured: !!event.data.widthConfigured,
+        heightConfigured: !!event.data.heightConfigured,
+        liteGraphResolutionAvailable: !!event.data.liteGraphResolutionAvailable,
         queueLevel: event.data.queueLevel ?? 0,
         queueMode: event.data.queueMode ?? "none",
         hasBusySignal: !!event.data.hasBusySignal,
@@ -154,6 +193,8 @@ export function TargetSetupWizard({
     prompt: "idle",
     generate: "idle",
     queue: "idle",
+    width: "idle",
+    height: "idle",
   })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [status, setStatus] = useState<SiteProfileStatus | null>(null)
@@ -164,6 +205,8 @@ export function TargetSetupWizard({
     prompt: null,
     generate: null,
     queue: null,
+    width: null,
+    height: null,
   })
   // Fase 5a: "learn the busy signal live" sub-flow for step 3.
   const [captureStage, setCaptureStage] = useState<"idle" | "awaiting_idle" | "awaiting_busy" | "done">("idle")
@@ -218,6 +261,9 @@ export function TargetSetupWizard({
           builtin: !!event.data.builtin,
           promptConfigured: !!event.data.promptConfigured,
           generateConfigured: !!event.data.generateConfigured,
+          widthConfigured: !!event.data.widthConfigured,
+          heightConfigured: !!event.data.heightConfigured,
+          liteGraphResolutionAvailable: !!event.data.liteGraphResolutionAvailable,
           queueLevel: event.data.queueLevel ?? 0,
           queueMode: event.data.queueMode ?? "none",
           hasBusySignal: !!event.data.hasBusySignal,
@@ -229,7 +275,12 @@ export function TargetSetupWizard({
 
       if (event.data.type !== "TARGET_STATUS") return
       const { state, detail } = event.data
-      const kind: TargetKind = detail?.targetKind ?? STEPS[activeStep].kind
+      // STEPS[activeStep].kind can be "resolution" (a step-level placeholder,
+      // not a real targetKind — that step's Start buttons always pass an
+      // explicit width/height via startStep). Fall back to "prompt" in the
+      // (should-never-happen) case detail.targetKind is missing on that step.
+      const stepKind = STEPS[activeStep].kind
+      const kind: TargetKind = detail?.targetKind ?? (stepKind === "resolution" ? "prompt" : stepKind)
       wlog(`[Wizard] received TARGET_STATUS state="${state}" kind="${kind}"`, detail)
 
       switch (state) {
@@ -314,9 +365,16 @@ export function TargetSetupWizard({
   }, [commitConcurrencyLimit])
 
   const current = STEPS[activeStep]
-  const currentState = stepStates[current.kind]
+  const isResolutionStep = current.kind === "resolution"
+  // For the resolution step, "current state" isn't a single kind — treat it
+  // as done once BOTH width and height are selected (or the origin already
+  // has both configured from a prior session).
+  const currentState = isResolutionStep ? stepStates.width : stepStates[current.kind as TargetKind]
   const isLastStep = activeStep === STEPS.length - 1
-  const canAdvance = current.kind === "queue" || currentState === "selected" || !!status?.builtin
+  const resolutionDone = (stepStates.width === "selected" && stepStates.height === "selected")
+    || (!!status?.widthConfigured && !!status?.heightConfigured)
+    || !!status?.liteGraphResolutionAvailable
+  const canAdvance = current.kind === "queue" || isResolutionStep || currentState === "selected" || !!status?.builtin
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -338,7 +396,9 @@ export function TargetSetupWizard({
         {/* Step indicator */}
         <div className="flex items-center gap-1.5" aria-label={`Step ${activeStep + 1} of ${STEPS.length}`}>
           {STEPS.map((step, i) => {
-            const done = stepStates[step.kind] === "selected" || (step.kind === "queue" && (status?.queueLevel ?? 0) >= 2)
+            const done = step.kind === "resolution"
+              ? resolutionDone
+              : stepStates[step.kind as TargetKind] === "selected" || (step.kind === "queue" && (status?.queueLevel ?? 0) >= 2)
             return (
               <button
                 key={step.kind}
@@ -361,7 +421,7 @@ export function TargetSetupWizard({
             <h3 className="text-sm font-semibold">
               Step {activeStep + 1} of {STEPS.length}: {current.title}
             </h3>
-            {currentState === "selected" && (
+            {(isResolutionStep ? resolutionDone : currentState === "selected") && (
               <Badge className="text-[10px] px-1.5 py-0 h-5 gap-1 bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30">
                 <Check className="w-2.5 h-2.5" /> Set
               </Badge>
@@ -372,7 +432,7 @@ export function TargetSetupWizard({
           {/* Built-in sites work without this step, but the button stays idle
               until the user explicitly clicks Start — make that unambiguous
               instead of leaving a blank "Start" button with no context. */}
-          {status?.builtin && currentState === "idle" && current.kind !== "queue" && (
+          {status?.builtin && currentState === "idle" && current.kind !== "queue" && current.kind !== "resolution" && (
             <Alert className="py-2 border-sky-500/30 bg-sky-500/5">
               <AlertDescription className="text-xs text-sky-700 dark:text-sky-400">
                 This site already works out of the box for this step. Nothing is selected yet, only click
@@ -389,10 +449,10 @@ export function TargetSetupWizard({
 
           <Button
             type="button"
-            onClick={() => startStep(current.kind)}
-            disabled={currentState === "arming" || currentState === "waiting"}
+            onClick={() => startStep(current.kind as TargetKind)}
+            disabled={isResolutionStep || currentState === "arming" || currentState === "waiting"}
             variant={currentState === "selected" ? "outline" : "default"}
-            className="h-9 text-xs font-semibold gap-1.5"
+            className={cn("h-9 text-xs font-semibold gap-1.5", isResolutionStep && "hidden")}
           >
             {currentState === "arming" ? (
               <>
@@ -413,14 +473,77 @@ export function TargetSetupWizard({
             )}
           </Button>
 
+          {/* LiteGraph/ComfyUI sites (SeaArt): width/height are painted on a
+              <canvas> with no DOM to Target at all. The extension detects
+              this automatically and reads/writes the graph's own widget
+              values directly — no manual targeting needed or possible. */}
+          {isResolutionStep && status?.liteGraphResolutionAvailable && (
+            <Alert className="py-2 border-sky-500/30 bg-sky-500/5">
+              <AlertDescription className="text-xs text-sky-700 dark:text-sky-400">
+                Detected automatically — this site renders its width/height on a canvas (no clickable
+                field exists), so the extension reads and sets them directly. Nothing to configure here.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Resolution step: two independent sub-targets (width, height)
+              instead of the single Start button above. Each behaves exactly
+              like a normal step — its own arming/waiting/selected state and
+              evidence line — just rendered side by side. Hidden when
+              LiteGraph auto-detection already covers this site. */}
+          {isResolutionStep && current.subKinds && !status?.liteGraphResolutionAvailable && (
+            <div className="flex flex-col gap-2">
+              {current.subKinds.map(({ kind: subKind, label }) => {
+                const subState = stepStates[subKind]
+                const subInfo = selectedInfo[subKind]
+                return (
+                  <div key={subKind} className="flex flex-col gap-1.5">
+                    <Button
+                      type="button"
+                      onClick={() => startStep(subKind)}
+                      disabled={subState === "arming" || subState === "waiting"}
+                      variant={subState === "selected" ? "outline" : "default"}
+                      className="h-9 text-xs font-semibold gap-1.5"
+                    >
+                      {subState === "arming" ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Preparing page...
+                        </>
+                      ) : subState === "waiting" ? (
+                        <>
+                          <MousePointerClick className="w-3.5 h-3.5 animate-nudge" /> Click the {subKind} field...
+                        </>
+                      ) : subState === "selected" ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" /> {label} — Re-select
+                        </>
+                      ) : (
+                        <>
+                          <Crosshair className="w-3.5 h-3.5" /> {label}
+                        </>
+                      )}
+                    </Button>
+                    {subState === "selected" && subInfo && (
+                      <div className="rounded-md border border-green-500/30 bg-green-500/5 px-2.5 py-1.5 text-[11px] text-green-700 dark:text-green-400">
+                        Selected: <code className="font-mono">{`<${(subInfo.tag || "element").toLowerCase()}>`}</code>
+                        {subInfo.text && <> &ldquo;{subInfo.text}&rdquo;</>}
+                        {!subInfo.text && subInfo.placeholder && <> placeholder &ldquo;{subInfo.placeholder}&rdquo;</>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           {/* Concrete evidence of what was actually clicked, so a checkmark is
               never the only signal that something was configured correctly. */}
-          {currentState === "selected" && selectedInfo[current.kind] && (
+          {!isResolutionStep && currentState === "selected" && selectedInfo[current.kind as TargetKind] && (
             <div className="rounded-md border border-green-500/30 bg-green-500/5 px-2.5 py-2 text-[11px] text-green-700 dark:text-green-400">
-              Selected: <code className="font-mono">{`<${(selectedInfo[current.kind]?.tag || "element").toLowerCase()}>`}</code>
-              {selectedInfo[current.kind]?.text && <> &ldquo;{selectedInfo[current.kind]?.text}&rdquo;</>}
-              {!selectedInfo[current.kind]?.text && selectedInfo[current.kind]?.placeholder && (
-                <> placeholder &ldquo;{selectedInfo[current.kind]?.placeholder}&rdquo;</>
+              Selected: <code className="font-mono">{`<${(selectedInfo[current.kind as TargetKind]?.tag || "element").toLowerCase()}>`}</code>
+              {selectedInfo[current.kind as TargetKind]?.text && <> &ldquo;{selectedInfo[current.kind as TargetKind]?.text}&rdquo;</>}
+              {!selectedInfo[current.kind as TargetKind]?.text && selectedInfo[current.kind as TargetKind]?.placeholder && (
+                <> placeholder &ldquo;{selectedInfo[current.kind as TargetKind]?.placeholder}&rdquo;</>
               )}
             </div>
           )}
