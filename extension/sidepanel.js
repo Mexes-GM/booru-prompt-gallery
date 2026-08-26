@@ -21,20 +21,19 @@ try {
   }
 } catch (_) {}
 
-// `update_url` presence used to be how we auto-detected an unpacked/developer
-// install: Chrome Web Store installs have it, unpacked "Load unpacked" loads
-// don't. That heuristic is Chrome-only and actively wrong on Firefox — NO
-// Firefox extension ever has `update_url` in its manifest, not AMO-signed
-// installs and not temporary "about:debugging" loads either. Trusting it made
-// DEV_MODE always true on Firefox, which silently pointed the iframe at
-// http://localhost:3000/extension (see setEnvironment() below) instead of
-// production for every real user on that browser.
-//
-// Cross-browser fix: default to production unconditionally. Dev tooling is
-// opt-in only, via the explicit localStorage flag developers already set by
-// hand (see README/CONTRIBUTING for the dev workflow). No `management`
-// permission needed for this.
-const DEV_MODE = localStorage.getItem("booru_sidebar_devmode") === "1";
+// Unpacked / developer extensions have no `update_url` in their manifest, while
+// Web Store installs do. We use that to auto-detect a developer environment so
+// the dev gets localhost + the env switcher automatically, while end users get
+// production with the switcher hidden. The localStorage flag is an extra manual
+// override (e.g. to force dev tooling on a packaged build).
+function isUnpackedExtension() {
+  try {
+    return !("update_url" in chrome.runtime.getManifest());
+  } catch (_) {
+    return false;
+  }
+}
+const DEV_MODE = isUnpackedExtension() || localStorage.getItem("booru_sidebar_devmode") === "1";
 
 // Verbose debug logging is dev-only so packaged (Web Store) installs stay quiet.
 // Warnings and errors still use console.warn/console.error directly — those
@@ -76,63 +75,18 @@ if (DEV_MODE) {
   setEnvironment(PROD_URL);
 }
 
-/**
- * Single source of truth for "can we (or should we even try to) inject a
- * content script / call chrome.scripting.executeScript into this tab's URL".
- * Used everywhere a tab is filtered before targeting or generation.
- *
- * Cross-browser note: the six call sites this replaces only ever checked
- * `chrome://` and `devtools://`, which are Chrome/Chromium-specific special
- * schemes. On Firefox the equivalent non-injectable pages use different
- * schemes entirely — `about:` (about:newtab, about:blank, about:debugging,
- * about:config, ...) and `view-source:` — and the extension's own pages are
- * `moz-extension://`, not `chrome-extension://`. Without this, `about:newtab`
- * (the single most common tab state when a user opens the sidebar for the
- * first time on Firefox) passed every old filter as "valid", and targeting
- * would proceed straight into an executeScript call that fails on host
- * permission instead of failing fast with a clear "no tab" message.
- *
- * Returns false for falsy/empty `url` too, so callers don't need a separate
- * null check.
- */
-function isInjectableTabUrl(url) {
-  if (!url) return false;
-  return !(
-    url.startsWith("chrome://") ||
-    url.startsWith("chrome-extension://") ||
-    url.startsWith("devtools://") ||
-    url.startsWith("about:") ||
-    url.startsWith("view-source:") ||
-    url.startsWith("moz-extension://") ||
-    url.startsWith("resource://")
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Queue State
 // ─────────────────────────────────────────────────────────────────────────────
-/**
- * Each item is `{ prompt: string, width?: number, height?: number }`.
- * `width`/`height`, when present, come from the "Match image resolution"
- * feature (React side computes them from the source post's aspect ratio) and
- * are applied to the site's configured width/height fields right before
- * Generate is clicked — see injectPromptToTab's size-setting step.
- * @type {{ prompt: string, width?: number, height?: number }[]}
- */
+/** @type {string[]} */
 const promptQueue = [];
 let isProcessing = false;
 let isWaitingForSlot = false; // True when paused due to SeaArt task limit
 let isPausedForVisibility = false; // True when target tab is hidden
-let isPausedManually = false; // True when the user explicitly paused via the queue pill's pause button
 let currentActiveTasks = 0;   // Last known active task count
 let seaArtLimit = 5;          // Default to 5 (Standard plan). Auto-updated if upgrade modal reveals a different number.
 let currentPlatform = "Unknown";
 let autoDownloadEnabled = false; // Auto-download images with metadata when generation completes (SeaArt only)
-// When true, the queue keeps injecting/generating even while the target tab is
-// hidden (backgrounded/tab-switched) instead of pausing for visibility, and a
-// sub-audible audio keep-alive runs in this side panel document to blunt
-// Chrome's background timer throttling of the queue's own polling loops.
-let backgroundGenerationEnabled = false;
 
 // ── Safety: duplicate / stuck-prompt detection ──────────────────────────────
 let lastGeneratedPrompt = null;     // Track the last prompt that was successfully sent to Generate
@@ -153,23 +107,21 @@ const SLOT_POLL_INTERVAL_MS = 3000;
 // to catch the modal before declaring the generation "free".
 const POST_CLICK_MODAL_WATCH_MS = 6000;
 // Grace period (ms) after button becomes clickable before we inject the next prompt
-// (gives SeaArt and other platforms a safe cooldown window — SeaArt has a ~2-3s cooldown)
-const GRACE_PERIOD_MS = 3500;
+// (gives SeaArt a moment to fully settle its UI state)
+const GRACE_PERIOD_MS = 800;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Queue Persistence (chrome.storage.local)
 // ─────────────────────────────────────────────────────────────────────────────
 const QUEUE_STORAGE_KEY = "booru_prompt_queue";
 const AUTODL_STORAGE_KEY = "booru_auto_download_enabled";
-const BACKGROUND_GEN_STORAGE_KEY = "booru_background_generation_enabled";
 
 /** Save the current promptQueue and autoDownload settings to chrome.storage.local */
 function persistQueue() {
   try {
     chrome.storage.local.set({ 
       [QUEUE_STORAGE_KEY]: [...promptQueue],
-      [AUTODL_STORAGE_KEY]: autoDownloadEnabled,
-      [BACKGROUND_GEN_STORAGE_KEY]: backgroundGenerationEnabled
+      [AUTODL_STORAGE_KEY]: autoDownloadEnabled
     });
   } catch (e) {
     console.warn("[Queue] Failed to persist queue:", e);
@@ -180,21 +132,11 @@ function persistQueue() {
 function restoreQueue() {
   return new Promise((resolve) => {
     try {
-      chrome.storage.local.get([QUEUE_STORAGE_KEY, AUTODL_STORAGE_KEY, BACKGROUND_GEN_STORAGE_KEY], (result) => {
+      chrome.storage.local.get([QUEUE_STORAGE_KEY, AUTODL_STORAGE_KEY], (result) => {
         const saved = result[QUEUE_STORAGE_KEY];
         if (Array.isArray(saved) && saved.length > 0) {
-          // Migrate legacy string items (pre width/height support) to the
-          // object shape { prompt, width?, height? }. Mixed arrays (some
-          // legacy, some new) are supported since this maps per-item.
-          const normalized = saved
-            .map((item) => {
-              if (typeof item === "string") return { prompt: item };
-              if (item && typeof item.prompt === "string") return item;
-              return null;
-            })
-            .filter(Boolean);
-          promptQueue.push(...normalized);
-          dlog(`[Queue] Restored ${normalized.length} prompts from storage.`);
+          promptQueue.push(...saved);
+          dlog(`[Queue] Restored ${saved.length} prompts from storage.`);
         }
         
         const savedAutoDL = result[AUTODL_STORAGE_KEY];
@@ -206,17 +148,6 @@ function restoreQueue() {
           }
         }
 
-        const savedBackgroundGen = result[BACKGROUND_GEN_STORAGE_KEY];
-        if (typeof savedBackgroundGen === "boolean") {
-          backgroundGenerationEnabled = savedBackgroundGen;
-          dlog(`[Queue] Restored backgroundGenerationEnabled: ${backgroundGenerationEnabled}`);
-          // NOTE: the audio keep-alive is NOT (re)started here. AudioContext
-          // resume requires a user gesture, and startup runs without one — a
-          // silently-suspended context would give a false sense of protection.
-          // It's (re)armed the next time the user toggles the setting, or best-
-          // effort on the first queue activity while the flag is on.
-        }
-
         updateQueueUI();
         resolve();
       });
@@ -225,78 +156,6 @@ function restoreQueue() {
       resolve();
     }
   });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Background audio keep-alive (Option 3) — blunt background timer throttling
-// ─────────────────────────────────────────────────────────────────────────────
-// The queue's driving loops (processNext, waitForGenerateButtonFree polling,
-// the pacing setTimeouts) all live in THIS side panel document. When its window
-// loses focus or is minimized, Chrome throttles those timers to ~1/sec and,
-// after ~5 min, to ~1/min (intensive throttling), which stalls the queue.
-// Chrome exempts documents that are "playing audible audio" from that
-// throttling, so while background generation is on we play a continuous ~10 Hz
-// tone: below the ~20 Hz human hearing floor (inaudible, and most speakers
-// can't reproduce it) yet carrying real signal energy, which is what Chrome
-// measures to decide a page is producing audio. Best-effort: efficacy varies
-// by Chrome version/OS, and it does NOT un-pause requestAnimationFrame on the
-// *target* tab (a separate limitation that mainly affects canvas/ComfyUI sites
-// like SeaArt when their window is minimized).
-//
-// CROSS-BROWSER NOTE (Firefox/Gecko): this entire mechanism is Chromium-
-// specific and is a documented no-op on Firefox. Gecko's background tab timer
-// throttling model isn't built around an "audible audio" exemption the way
-// Chromium's is, so keeping this oscillator running costs a little CPU/battery
-// on Firefox for zero benefit — but it's also harmless: AudioContext itself is
-// a standard Web Audio API and exists in both engines, so nothing here throws
-// or crashes. This is a documented behavioral limitation, not a bug to
-// silently "fix" — there's no equivalent lightweight always-on hook to
-// substitute for it on Firefox, and disabling it outright would only remove
-// the Chrome benefit without adding anything back for either engine. Users on
-// Firefox/Zen relying on "Background generation" should keep the side panel's
-// window focused (or at least not minimized) for long unattended queue runs.
-let keepAliveAudioCtx = null;
-let keepAliveOscillator = null;
-let keepAliveGain = null;
-
-function startBackgroundAudioKeepAlive() {
-  try {
-    if (!keepAliveAudioCtx) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) { dlog("[KeepAlive] Web Audio API unavailable — skipping audio keep-alive."); return; }
-      keepAliveAudioCtx = new AudioCtx();
-    }
-    // Resume if the autoplay policy left the context suspended. This succeeds
-    // when a user gesture propagated to this document (the settings toggle
-    // click, forwarded via postMessage); otherwise it stays suspended until
-    // the next interaction and the keep-alive is simply inactive until then.
-    if (keepAliveAudioCtx.state === "suspended") {
-      keepAliveAudioCtx.resume().catch(() => {});
-    }
-    if (!keepAliveOscillator) {
-      keepAliveOscillator = keepAliveAudioCtx.createOscillator();
-      keepAliveGain = keepAliveAudioCtx.createGain();
-      keepAliveOscillator.frequency.value = 10; // sub-audible (below ~20 Hz)
-      keepAliveGain.gain.value = 0.02;           // low but non-zero energy
-      keepAliveOscillator.connect(keepAliveGain);
-      keepAliveGain.connect(keepAliveAudioCtx.destination);
-      keepAliveOscillator.start();
-      dlog("[KeepAlive] Background audio keep-alive started (ctx state:", keepAliveAudioCtx.state, ").");
-    }
-  } catch (e) {
-    console.warn("[KeepAlive] Failed to start audio keep-alive:", e);
-  }
-}
-
-function stopBackgroundAudioKeepAlive() {
-  try {
-    if (keepAliveOscillator) { try { keepAliveOscillator.stop(); } catch (_) {} try { keepAliveOscillator.disconnect(); } catch (_) {} keepAliveOscillator = null; }
-    if (keepAliveGain) { try { keepAliveGain.disconnect(); } catch (_) {} keepAliveGain = null; }
-    if (keepAliveAudioCtx) { keepAliveAudioCtx.close().catch(() => {}); keepAliveAudioCtx = null; }
-    dlog("[KeepAlive] Background audio keep-alive stopped.");
-  } catch (e) {
-    console.warn("[KeepAlive] Failed to stop audio keep-alive:", e);
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -342,21 +201,6 @@ const BUILTIN_SITE_PROFILES = {
 /** Normalize any URL/tab URL down to its origin string, used as the profile key. */
 function originFromUrl(url) {
   try { return new URL(url).origin; } catch (_) { return null; }
-}
-
-/**
- * Map a URL (or origin) to a human-readable platform label. Mirrors the
- * mapping in resolveTargetTab so the queue and the Target flow agree on what
- * "SeaArt"/"TensorArt"/… mean. Returns "Unknown" when nothing matches.
- */
-function platformFromUrl(url) {
-  const u = url || "";
-  if (u.includes("seaart.ai")) return "SeaArt";
-  if (u.includes("tensor.art")) return "TensorArt";
-  if (u.includes("tensorhub.net")) return "TensorHub";
-  if (u.includes("yodayo.com")) return "Yodayo";
-  if (u.includes("127.0.0.1") || u.includes("localhost") || u.includes("gradio.live")) return "Local";
-  try { return new URL(u).hostname.replace("www.", ""); } catch (_) { return "Unknown"; }
 }
 
 /** Load siteProfiles from chrome.storage.local into the in-memory cache. */
@@ -446,8 +290,6 @@ function sendSiteProfileStatus() {
     const profile = siteProfiles[origin] || null;
     const hasPrompt = !!(profile && profile.promptField && profile.promptField.locator);
     const hasGenerate = !!(profile && profile.generateButton && profile.generateButton.locator);
-    const hasWidth = !!(profile && profile.widthField && profile.widthField.locator);
-    const hasHeight = !!(profile && profile.heightField && profile.heightField.locator);
     const queueMode = (profile && profile.queue && profile.queue.mode) || "none";
     const hasQueueContainer = !!(profile && profile.queue && profile.queue.container && profile.queue.container.locator);
     const hasBusySignal = !!(profile && profile.queue && profile.queue.busySignal);
@@ -458,158 +300,20 @@ function sendSiteProfileStatus() {
     if (queueMode === "container" && hasQueueContainer) queueLevel = 2;
     else if (queueMode === "button" || hasGenerate) queueLevel = 1;
 
-    const post = (liteGraphResolutionAvailable) => {
-      try {
-        appFrame.contentWindow.postMessage({
-          type: "SITE_PROFILE_STATUS",
-          origin,
-          builtin: !!(profile && profile.builtin),
-          promptConfigured: hasPrompt,
-          generateConfigured: hasGenerate,
-          widthConfigured: hasWidth,
-          heightConfigured: hasHeight,
-          liteGraphResolutionAvailable,
-          queueLevel,
-          queueMode,
-          hasBusySignal,
-          concurrencyLimit,
-          unlimited,
-        }, "*");
-      } catch (_) { /* iframe not ready */ }
-    };
-
-    // "Match image resolution" on LiteGraph/ComfyUI-based sites (SeaArt):
-    // width/height needs NO Target step at all — see detectLiteGraphResolutionNode
-    // below. Probe once per status request so the wizard can skip straight to
-    // "detected automatically" instead of asking the user to click something
-    // that doesn't exist in the DOM.
-    if (!tab || !tab.id) { post(false); return; }
-    chrome.scripting.executeScript(
-      { target: { tabId: tab.id, allFrames: true }, world: "MAIN", func: detectLiteGraphResolutionNode },
-      (results) => {
-        const available = !chrome.runtime.lastError && Array.isArray(results) && results.some((r) => r.result && r.result.found);
-        post(available);
-      }
-    );
-  });
-}
-
-/**
- * Injected probe: true if this frame exposes a LiteGraph-style graph
- * (window.app.graph / window.graph) with at least one node carrying BOTH a
- * "width" and a "height" widget — the same detection trySetLiteGraphSize
- * (injectPromptToTab) uses at inject time. Used only to drive the wizard's
- * "Resolution" step UI (skip manual targeting when this is true); never
- * mutates anything.
- *
- * MUST be injected with { world: "MAIN" } — window.app/window.graph are
- * variables the PAGE's own script defines in its own JS realm. chrome.
- * scripting's default ISOLATED world shares the DOM with the page but NOT
- * its global scope, so these are invisible there even though the exact same
- * code, typed into the page's own DevTools console, sees them fine. This was
- * the root cause of the LiteGraph path silently reporting "no_graph" on
- * SeaArt despite the graph clearly existing (confirmed interactively).
- *
- * General lesson (see docs/extension-configurable-targets-plan.md §6 for the
- * full writeup): whenever a feature needs to read/write a page's own global
- * state (any framework's window.X), pass world:"MAIN" explicitly. Also watch
- * for "named access on the Window object" — window.X can silently resolve to
- * an unrelated <div id="X"> instead of a real variable; verify shape, not
- * just `typeof`.
- */
-function detectLiteGraphResolutionNode() {
-  try {
-    const g = window.app && window.app.graph ? window.app.graph : window.graph;
-    if (!g) return { found: false };
-    const nodes = g._nodes || Object.values(g.nodes || {});
-    if (!Array.isArray(nodes)) return { found: false };
-    const node = nodes.find((n) => {
-      const names = (n.widgets || []).map((w) => w.name);
-      return names.includes("width") && names.includes("height");
-    });
-    return { found: !!node, nodeTitle: node ? (node.title || node.type || null) : null };
-  } catch (_) {
-    return { found: false };
-  }
-}
-
-/**
- * Injected function that actually writes width/height into a LiteGraph
- * node's data model. MUST run with { world: "MAIN" } — same reasoning as
- * detectLiteGraphResolutionNode's doc comment above.
- *
- * `devMode` gates the verbose trace log (mirrors armTargetingInPage's
- * pattern) so packaged installs stay quiet; the page's own console is not
- * ours to spam by default.
- */
-function trySetLiteGraphSizeInPage(width, height, devMode) {
-  const LG = (...a) => { if (devMode) console.log("%c[BooruMatchRes]", "color:#8b5cf6;font-weight:bold", ...a); };
-  try {
-    const g = window.app && window.app.graph ? window.app.graph : window.graph;
-    if (!g) return { success: false, reason: "no_graph" };
-
-    const nodes = g._nodes || Object.values(g.nodes || {});
-    if (!Array.isArray(nodes) || nodes.length === 0) return { success: false, reason: "no_nodes" };
-
-    const node = nodes.find((n) => {
-      const names = (n.widgets || []).map((w) => w.name);
-      return names.includes("width") && names.includes("height");
-    });
-    if (!node) return { success: false, reason: "no_matching_node" };
-
-    const wWidget = node.widgets.find((w) => w.name === "width");
-    const hWidget = node.widgets.find((w) => w.name === "height");
-    if (!wWidget || !hWidget) return { success: false, reason: "widgets_missing" };
-
-    const clamp = (val, opts) => {
-      const min = (opts && typeof opts.min === "number") ? opts.min : -Infinity;
-      const max = (opts && typeof opts.max === "number") ? opts.max : Infinity;
-      return Math.min(max, Math.max(min, val));
-    };
-
-    const targetWidth = clamp(width, wWidget.options);
-    const targetHeight = clamp(height, hWidget.options);
-
-    wWidget.value = targetWidth;
-    hWidget.value = targetHeight;
-    if (typeof wWidget.callback === "function") { try { wWidget.callback(wWidget.value); } catch (_) { /* ignore */ } }
-    if (typeof hWidget.callback === "function") { try { hWidget.callback(hWidget.value); } catch (_) { /* ignore */ } }
-    if (node.setDirtyCanvas) { try { node.setDirtyCanvas(true, true); } catch (_) { /* cosmetic */ } }
-
-    LG(`applied node id=${node.id} title="${node.title || node.type}" → width=${wWidget.value} height=${hWidget.value} (requested ${width}x${height})`);
-    return { success: true, appliedWidth: wWidget.value, appliedHeight: hWidget.value };
-  } catch (e) {
-    LG("threw exception:", e && e.message);
-    return { success: false, reason: "exception", errorMessage: e && e.message };
-  }
-}
-
-/**
- * Runs trySetLiteGraphSizeInPage across all frames of `tabId` with
- * { world: "MAIN" }. Returns { applied, detail }. Never rejects; scripting
- * errors resolve applied:false so callers fall back to the DOM mechanism.
- */
-function tryApplyLiteGraphSize(tabId, width, height) {
-  return new Promise((resolve) => {
-    chrome.scripting.executeScript(
-      { target: { tabId, allFrames: true }, world: "MAIN", func: trySetLiteGraphSizeInPage, args: [width, height, DEV_MODE] },
-      (results) => {
-        if (chrome.runtime.lastError) {
-          dlog(`[Queue][MatchResolution] tryApplyLiteGraphSize MAIN-world error: ${chrome.runtime.lastError.message}`);
-          resolve({ applied: false, detail: { reason: "scripting_error" } });
-          return;
-        }
-        const successFrame = (results || []).find((r) => r.result && r.result.success);
-        if (successFrame) {
-          dlog(`[Queue][MatchResolution] LiteGraph size applied via MAIN world:`, successFrame.result);
-          resolve({ applied: true, detail: successFrame.result });
-          return;
-        }
-        const anyDetail = (results || []).map((r) => r.result).find(Boolean);
-        dlog(`[Queue][MatchResolution] LiteGraph size NOT applied. Sample detail:`, anyDetail);
-        resolve({ applied: false, detail: anyDetail || { reason: "no_result" } });
-      }
-    );
+    try {
+      appFrame.contentWindow.postMessage({
+        type: "SITE_PROFILE_STATUS",
+        origin,
+        builtin: !!(profile && profile.builtin),
+        promptConfigured: hasPrompt,
+        generateConfigured: hasGenerate,
+        queueLevel,
+        queueMode,
+        hasBusySignal,
+        concurrencyLimit,
+        unlimited,
+      }, "*");
+    } catch (_) { /* iframe not ready */ }
   });
 }
 
@@ -641,35 +345,6 @@ function resolveGenerateLocatorForTab(tabId) {
       const origin = originFromUrl(tab.url);
       const profile = origin ? siteProfiles[origin] : null;
       resolve((profile && profile.generateButton && profile.generateButton.locator) || null);
-    });
-  });
-}
-
-/**
- * "Match image resolution" feature: resolve the persisted widthField locator
- * for this tab's origin. Returns null when unconfigured — the caller (see
- * injectPromptToTab's size-setting step) then skips setting the width entirely
- * (graceful degradation: the prompt still sends, just without a resized canvas).
- */
-function resolveWidthLocatorForTab(tabId) {
-  return new Promise((resolve) => {
-    chrome.tabs.get(tabId, (tab) => {
-      if (chrome.runtime.lastError || !tab || !tab.url) { resolve(null); return; }
-      const origin = originFromUrl(tab.url);
-      const profile = origin ? siteProfiles[origin] : null;
-      resolve((profile && profile.widthField && profile.widthField.locator) || null);
-    });
-  });
-}
-
-/** Same as resolveWidthLocatorForTab, but for the persisted heightField locator. */
-function resolveHeightLocatorForTab(tabId) {
-  return new Promise((resolve) => {
-    chrome.tabs.get(tabId, (tab) => {
-      if (chrome.runtime.lastError || !tab || !tab.url) { resolve(null); return; }
-      const origin = originFromUrl(tab.url);
-      const profile = origin ? siteProfiles[origin] : null;
-      resolve((profile && profile.heightField && profile.heightField.locator) || null);
     });
   });
 }
@@ -711,7 +386,7 @@ function updateQueueUI() {
   const count = promptQueue.length;
 
   // Notify the iframe about queue state
-  notifyIframe({ queueLength: count, isProcessing, isWaitingForSlot, isPausedForVisibility, isPausedForError, isPausedManually, currentActiveTasks, seaArtLimit, platform: currentPlatform });
+  notifyIframe({ queueLength: count, isProcessing, isWaitingForSlot, isPausedForVisibility, isPausedForError, currentActiveTasks, seaArtLimit, platform: currentPlatform });
 }
 
 function notifyIframe(payload) {
@@ -719,7 +394,7 @@ function notifyIframe(payload) {
     // Post with "*" — the React app verifies event.source === window.parent.
     // Using a pinned origin fails because the iframe (localhost / vercel) and
     // this sidepanel (chrome-extension://) have different origins.
-    appFrame.contentWindow.postMessage({ type: "QUEUE_STATUS", ...payload, autoDownloadEnabled, backgroundGenerationEnabled }, "*");
+    appFrame.contentWindow.postMessage({ type: "QUEUE_STATUS", ...payload, autoDownloadEnabled }, "*");
   } catch (_) {
     // iframe may not be ready yet
   }
@@ -734,45 +409,11 @@ window.addEventListener("message", (e) => {
     // Lets the React wizard drive which element kind Target selects next.
     if (e.data.action === "target") startTargeting(e.data.targetKind);
     if (e.data.action === "clear") clearQueue();
-    // Manual pause/resume — user-initiated safety valve from the queue pill's
-    // pause button, distinct from the automatic pauses (visibility/error):
-    // it is NOT auto-cleared by enqueueAndProcess when a new prompt arrives,
-    // so the user stays in control until they explicitly resume.
-    if (e.data.action === "pause") {
-      isPausedManually = true;
-      updateQueueUI();
-    }
-    if (e.data.action === "resume") {
-      isPausedManually = false;
-      updateQueueUI();
-      processNext();
-    }
     if (e.data.action === "set_auto_download") {
       autoDownloadEnabled = !!e.data.value;
       persistQueue();
       if (autoDownloadEnabled) startAutoDownloadObserver();
       else stopAutoDownloadObserver();
-    }
-    // (Option 2 + 3) Keep the queue running while the target tab is hidden and
-    // arm the audio keep-alive against background timer throttling. Fired from
-    // the React settings toggle; the toggle click's user gesture propagates
-    // through this postMessage hop, which is what lets AudioContext.resume()
-    // succeed on start (same gesture-forwarding the permission request relies on).
-    if (e.data.action === "set_background_generation") {
-      backgroundGenerationEnabled = !!e.data.value;
-      persistQueue();
-      if (backgroundGenerationEnabled) {
-        startBackgroundAudioKeepAlive();
-        // If the tab was paused purely for visibility, resume processing now.
-        if (isPausedForVisibility) {
-          isPausedForVisibility = false;
-          updateQueueUI();
-          processNext();
-        }
-      } else {
-        stopBackgroundAudioKeepAlive();
-      }
-      updateQueueUI();
     }
     // (Fase 5a) "Learn the busy signal live": snapshot the configured queue
     // container's descendant class list twice — once while idle, once while
@@ -1084,14 +725,14 @@ function resolveTargetTab(allTabs) {
   // again, breaking the catch-22 (can't request a specific origin without
   // knowing the URL; can't see the URL without a permission covering it).
   const activeTabUrlHidden = !!(activeTab && !activeTab.url && typeof activeTab.id === "number");
-  const isValidActiveTab = isInjectableTabUrl(activeTab && activeTab.url);
+  const isValidActiveTab = activeTab && activeTab.url && !activeTab.url.startsWith("chrome") && !activeTab.url.startsWith("devtools") && !activeTab.url.startsWith("chrome-extension://");
   dlog(`[Target][resolveTargetTab] all tabs in currentWindow:`, allTabs.map(t => ({ id: t.id, active: t.active, url: (t.url || "").slice(0, 80) })));
 
   let tab =
     (isValidActiveTab ? activeTab : null) ||
     (activeTabUrlHidden ? null : allTabs.find(t => t.active && t.url && (PLATFORM_DOMAINS.some(d => t.url.includes(d)) || isLocalUi(t.url)))) ||
     (activeTabUrlHidden ? null : allTabs.find(t => t.url && PLATFORM_DOMAINS.some(d => t.url.includes(d)))) ||
-    (activeTabUrlHidden ? null : allTabs.find(t => t.active && isInjectableTabUrl(t.url)));
+    (activeTabUrlHidden ? null : allTabs.find(t => t.active && t.url && !t.url.startsWith("chrome") && !t.url.startsWith("devtools")));
 
   if (isValidActiveTab && tab === activeTab) {
     dlog(`[Target][resolveTargetTab] picked the ACTIVE tab (id=${tab.id}): "${tab.url}"`);
@@ -1136,13 +777,11 @@ function stopTargeting(reason) {
 /**
  * The function injected into every frame to arm selection mode.
  *
- * @param {"prompt"|"generate"|"queue"|"width"|"height"} targetKind (Fase 2a,
- *   extended for "Match image resolution") Which kind of element the user is
- *   selecting. Changes what's selectable/highlighted:
- *     - "prompt"        → textarea / input / contenteditable (unchanged legacy behavior)
- *     - "generate"      → clickables: button, [role=button], a, input[type=submit|button]
- *     - "queue"         → any element (the user is pointing at a queue/status container)
- *     - "width"/"height" → numeric inputs (the generation site's resolution fields)
+ * @param {"prompt"|"generate"|"queue"} targetKind (Fase 2a) Which kind of
+ *   element the user is selecting. Changes what's selectable/highlighted:
+ *     - "prompt"   → textarea / input / contenteditable (unchanged legacy behavior)
+ *     - "generate" → clickables: button, [role=button], a, input[type=submit|button]
+ *     - "queue"    → any element (the user is pointing at a queue/status container)
  *
  * Fase 2b: while armed, ArrowUp/ArrowDown adjust the highlighted candidate to
  * its parent/first-matching-child — useful when the ideal click target is a
@@ -1202,13 +841,6 @@ function armTargetingInPage(targetKind, devMode) {
     prompt: "textarea, [contenteditable='true'], [contenteditable='']",
     generate: "button, [role='button'], a, input[type='submit'], input[type='button'], .work-flow-bottom-btn, .work-flow-bottom-btn-main-text, div[class*='btn'], div[class*='button']",
     queue: "*",
-    // width/height: the "Match image resolution" feature targets a numeric
-    // input (most sites use <input type="number"> or a plain <input> next to
-    // a "Width"/"Height" label; some use a slider+input pair, in which case
-    // the parent/child adjust keys — ArrowUp/ArrowDown — let the user pick the
-    // actual input instead of the slider thumb).
-    width: "input, [contenteditable='true'], [contenteditable=''], [role='spinbutton']",
-    height: "input, [contenteditable='true'], [contenteditable=''], [role='spinbutton']",
   };
   const SELECTOR = SELECTOR_BY_KIND[kind] || SELECTOR_BY_KIND.prompt;
 
@@ -1652,7 +1284,7 @@ function startTargeting(targetKind) {
       dlog(`[Target][startTargeting]   re-resolved after <all_urls> grant → tabId=${tab?.id ?? "none"} platform="${platform}" url="${tab?.url || "n/a"}"`);
     }
 
-    if (!tab || !tab.id || !isInjectableTabUrl(tab.url)) {
+    if (!tab || !tab.id || (tab.url && (tab.url.startsWith("chrome://") || tab.url.startsWith("devtools://")))) {
       console.warn("[Target] ✗ No valid generation tab found", allTabs.map(t => t.url));
       sendTargetStatus("error", { reason: "no_tab", message: "No generation tab found. Open SeaArt/TensorArt and try again." });
       return;
@@ -1753,8 +1385,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     // reloads/navigation, instead of relying solely on the in-page
     // `.booru-target-textarea` class (which is lost on reload). Which field of
     // the profile it lands in depends on targetKind: "prompt" (default, back-
-    // compat) → promptField, "generate" → generateButton, "queue" → queue.container,
-    // "width"/"height" (Match image resolution) → widthField/heightField.
+    // compat) → promptField, "generate" → generateButton, "queue" → queue.container.
     const locator = msg.info && msg.info.locator;
     const targetKind = (msg.info && msg.info.targetKind) || "prompt";
     if (locator) {
@@ -1774,12 +1405,6 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
           const profile = getSiteProfile(origin);
           updateSiteProfile(origin, { queue: { ...(profile.queue || {}), mode: "container", container: fieldDescriptor } });
           dlog(`[SiteProfiles] ◀ Persisted queue container locator for origin "${origin}" (queue.mode → "container").`);
-        } else if (targetKind === "width") {
-          updateSiteProfile(origin, { widthField: fieldDescriptor });
-          dlog(`[SiteProfiles] ◀ Persisted widthField locator for origin "${origin}".`);
-        } else if (targetKind === "height") {
-          updateSiteProfile(origin, { heightField: fieldDescriptor });
-          dlog(`[SiteProfiles] ◀ Persisted heightField locator for origin "${origin}".`);
         } else {
           updateSiteProfile(origin, { promptField: fieldDescriptor });
           dlog(`[SiteProfiles] ◀ Persisted promptField locator for origin "${origin}".`);
@@ -1810,7 +1435,6 @@ function clearQueue() {
   consecutiveSamePrompt = 0;
   currentPromptRetries = 0;
   lastGeneratedPrompt = null;
-  sentPromptsQueue.length = 0;
   persistQueue();
   updateQueueUI();
 }
@@ -2014,21 +1638,18 @@ function waitForGenerateButtonFree(tabId, frameId) {
               return { hitLimit, activeTasks, detectedLimit, taskFailed, taskSucceeded, globalBusy, found: false, busy: false };
             }
 
-            const actualBtn = btn.closest("button") || btn.closest(".work-flow-bottom-btn") || btn;
-            const isDisabled = actualBtn.disabled || actualBtn.getAttribute("aria-disabled") === "true" ||
-              actualBtn.classList.contains("is-disabled") || actualBtn.classList.contains("disabled");
-            const hasSpinner = !!actualBtn.querySelector(
+            const isDisabled = btn.disabled || btn.getAttribute("aria-disabled") === "true";
+            const hasSpinner = !!btn.querySelector(
               ".animate-spin, .loading, [class*='spinner'], [class*='loading']"
             );
-            const computedStyle = window.getComputedStyle(actualBtn);
+            const computedStyle = window.getComputedStyle(btn);
             const hasLowOpacity = parseFloat(computedStyle.opacity) < 0.6;
-            const isPointerDisabled = computedStyle.pointerEvents === "none" || computedStyle.cursor === "not-allowed";
-            const text = actualBtn.textContent?.trim().toLowerCase() || "";
+            const text = btn.textContent?.trim().toLowerCase() || "";
             const isGeneratingText =
               text.includes("generating") || text.includes("generando") ||
               text.includes("processing") || text.includes("procesando");
 
-            const busy = isDisabled || hasSpinner || hasLowOpacity || isPointerDisabled || isGeneratingText;
+            const busy = isDisabled || hasSpinner || hasLowOpacity || isGeneratingText;
             return { hitLimit, activeTasks, detectedLimit, taskFailed, taskSucceeded, globalBusy, found: true, busy };
           },
         },
@@ -2217,16 +1838,13 @@ function waitForGenericButtonFree(tabId, generateLocator, unlimited) {
             }
             if (!btn) return { found: false, busy: false };
 
-            const actualBtn = btn.closest("button") || btn.closest(".work-flow-bottom-btn") || btn;
-            const isDisabled = actualBtn.disabled || actualBtn.getAttribute("aria-disabled") === "true" ||
-              actualBtn.classList.contains("is-disabled") || actualBtn.classList.contains("disabled");
-            const hasSpinner = !!actualBtn.querySelector(".animate-spin, .loading, [class*='spinner'], [class*='loading']");
-            const computedStyle = window.getComputedStyle(actualBtn);
+            const isDisabled = btn.disabled || btn.getAttribute("aria-disabled") === "true";
+            const hasSpinner = !!btn.querySelector(".animate-spin, .loading, [class*='spinner'], [class*='loading']");
+            const computedStyle = window.getComputedStyle(btn);
             const hasLowOpacity = parseFloat(computedStyle.opacity) < 0.6;
-            const isPointerDisabled = computedStyle.pointerEvents === "none" || computedStyle.cursor === "not-allowed";
-            const text = actualBtn.textContent?.trim().toLowerCase() || "";
+            const text = btn.textContent?.trim().toLowerCase() || "";
             const isGeneratingText = text.includes("generating") || text.includes("generando") || text.includes("processing") || text.includes("procesando");
-            return { found: true, busy: isDisabled || hasSpinner || hasLowOpacity || isPointerDisabled || isGeneratingText };
+            return { found: true, busy: isDisabled || hasSpinner || hasLowOpacity || isGeneratingText };
           },
           args: [generateLocator || null],
         },
@@ -2600,29 +2218,13 @@ function setConcurrencyLimitForActiveTab(value, unlimited) {
  *
  * `generateLocator` (Fase 2d) does the same for the Generate button: tried
  * first, falling back to the legacy hardcoded button cascade when absent/stale.
- *
- * `sizeConfig` ("Match image resolution" feature) is optional:
- * `{ width?, height?, widthLocator?, heightLocator?, liteGraphApplied? }`.
- * On LiteGraph/ComfyUI sites (e.g. SeaArt), `liteGraphApplied` is already
- * `true` by the time this runs — the caller (processNext) applies that path
- * separately, BEFORE calling this function, via its own executeScript call
- * with `{ world: "MAIN" }` (see tryApplyLiteGraphSize). That's required
- * because window.app/window.graph live in the page's own JS realm, invisible
- * to the ISOLATED world this function runs in. When `liteGraphApplied` is
- * falsy, this function falls back to the DOM mechanism: if both a dimension
- * and its locator are present, the resolved numeric field is set to that
- * value right after the prompt is verified/blurred and BEFORE the Generate
- * button is resolved/clicked — mirroring requirement "modify them before
- * sending to generate". Any missing piece (no dimension, no locator, or the
- * locator fails to resolve) is skipped silently: this is a best-effort
- * enhancement, never a reason to abort sending the prompt itself.
  */
-function injectPromptToTab(tabId, promptText, promptLocator, generateLocator, sizeConfig) {
+function injectPromptToTab(tabId, promptText, promptLocator, generateLocator) {
   return new Promise((resolve) => {
     chrome.scripting.executeScript(
       {
         target: { tabId, allFrames: true },
-        func: async (text, promptLocator, generateLocator, sizeConfig) => {
+        func: async (text, promptLocator, generateLocator) => {
           // ── 1. Find the prompt field ───────────────────────────────────────
           // Priority order: persisted locator (Fase 1d) > user-targeted legacy
           // class > platform-specific > generic fallback.
@@ -2908,29 +2510,13 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator, si
           // so we can confirm/rule out "this is a Vue-controlled widget whose
           // real state lives outside the DOM value we just wrote" without
           // guessing from outside the page.
-          //
-          // CROSS-BROWSER NOTE: reading `el.__vueParentComponent` directly
-          // only works because Chrome's default ISOLATED world already can't
-          // see page-defined expandos on DOM nodes — this check has always
-          // been a no-op there too (see the comment on the isolated-world
-          // limitation elsewhere in this function). On Firefox the same
-          // Xray-vision isolation applies: a content script's `el` is an Xray
-          // wrapper around the page's real node, and expando properties the
-          // page's own script attached (like Vue's internal refs) are hidden
-          // from that wrapper by design. `el.wrappedJSObject` is Firefox's
-          // (and only Firefox's) escape hatch to reach the underlying
-          // unwrapped object where those expandos are actually visible; it's
-          // undefined on Chrome, so the `?.` fallback keeps this portable
-          // without needing an engine check. Diagnostic-only either way — it
-          // never gates whether the write succeeded, just what gets reported.
           const detectFramework = () => {
             let el = promptTextarea;
             let hasVueMarker = false;
             let hasDataV = false;
             let depth = 0;
             while (el && depth < 6) {
-              const unwrapped = el.wrappedJSObject || el;
-              if (unwrapped.__vueParentComponent || unwrapped.__vnode || unwrapped._vnode) hasVueMarker = true;
+              if (el.__vueParentComponent || el.__vnode || el._vnode) hasVueMarker = true;
               if (el.attributes) {
                 for (const attr of el.attributes) {
                   if (attr.name.startsWith("data-v-")) { hasDataV = true; break; }
@@ -3048,135 +2634,6 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator, si
             await new Promise((r) => setTimeout(r, 250));
           }
 
-          // ── 4b. "Match image resolution": set width/height fields ─────────
-          // Runs after the prompt is verified + blurred, before the Generate
-          // button is resolved/clicked (requirement: modify size before
-          // sending). Each dimension is independent — missing/unresolvable
-          // locators are skipped, never abort the whole injection.
-          let widthSet = false;
-          let heightSet = false;
-          let sizeMethod = "none";
-          if (sizeConfig) {
-            // ── LiteGraph/ComfyUI path ─────────────────────────────────────────
-            // Sites like SeaArt render their node graph on a <canvas> via
-            // LiteGraph.js — the width/height "fields" are NOT DOM elements at
-            // all (no input, no contenteditable, nothing an inspector can even
-            // select in their closed state; clicking them opens a transient
-            // `.graphdialog` that's identical for every numeric widget and
-            // gets destroyed on confirm). The reliable approach is to skip the
-            // view entirely and write straight into the graph's own data
-            // model. IMPORTANT: window.app/window.graph are variables the
-            // PAGE's own script defines in the MAIN world — chrome.scripting's
-            // default ISOLATED world (which the rest of this function runs
-            // in, since it interacts with shared DOM) cannot see them at all.
-            // So that step runs SEPARATELY, in processNext, via its own
-            // executeScript({ world: "MAIN" }) call BEFORE injectPromptToTab —
-            // sizeConfig.liteGraphApplied carries whether that already
-            // succeeded, so this ISOLATED-world function only needs to fall
-            // back to the DOM mechanism when it didn't.
-            if (sizeConfig.liteGraphApplied) {
-              widthSet = true;
-              heightSet = true;
-              sizeMethod = "litegraph";
-            }
-
-            const tryResolveNumericField = (locator) => {
-              if (!locator || !Array.isArray(locator.candidates)) return null;
-              const tryQuery = (root, selector) => { try { return root.querySelector(selector); } catch (_) { return null; } };
-              let field = null;
-              for (const cand of locator.candidates) {
-                try {
-                  if (cand.type === "stable-attribute" || cand.type === "structural-path") {
-                    const found = tryQuery(document, cand.selector);
-                    if (found) { field = found; break; }
-                  } else if (cand.type === "shadow-path" && Array.isArray(cand.selectors)) {
-                    let root = document, el = null;
-                    for (let i = 0; i < cand.selectors.length; i++) {
-                      el = tryQuery(root, cand.selectors[i]);
-                      if (!el) break;
-                      if (i < cand.selectors.length - 1) {
-                        if (!el.shadowRoot) { el = null; break; }
-                        root = el.shadowRoot;
-                      }
-                    }
-                    if (el) { field = el; break; }
-                  }
-                } catch (_) { /* try next candidate */ }
-              }
-              // Fuzzy fallback: same kind ("input"/"contenteditable") + matching
-              // placeholder/aria-label metadata, mirroring the prompt field's
-              // fallback above.
-              if (!field && locator.meta) {
-                const { kind: fieldKind2, placeholder, ariaLabel } = locator.meta;
-                const selector = fieldKind2 === "contenteditable" ? "[contenteditable='true'], [contenteditable='']" : "input";
-                const pool = Array.from(document.querySelectorAll(selector));
-                let best = null, bestScore = 0;
-                for (const cand of pool) {
-                  let score = 0;
-                  if (placeholder && cand.getAttribute && cand.getAttribute("placeholder") === placeholder) score += 3;
-                  if (ariaLabel && cand.getAttribute && cand.getAttribute("aria-label") === ariaLabel) score += 3;
-                  if (score > bestScore) { bestScore = score; best = cand; }
-                }
-                if (best && bestScore >= 3) field = best;
-              }
-              return field;
-            };
-
-            const writeNumericField = (field, value) => {
-              if (!field) return false;
-              try {
-                if (field.tagName === "INPUT") {
-                  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                  field.focus();
-                  nativeSetter.call(field, String(value));
-                  field.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false, inputType: "insertText", data: String(value) }));
-                  field.dispatchEvent(new Event("change", { bubbles: true }));
-                  field.blur();
-                } else if (field.isContentEditable) {
-                  field.focus();
-                  try {
-                    const sel = window.getSelection();
-                    const range = document.createRange();
-                    range.selectNodeContents(field);
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                  } catch (_) { /* selection API unavailable in this frame */ }
-                  if (!(document.execCommand && document.execCommand("insertText", false, String(value)))) {
-                    field.textContent = String(value);
-                    field.dispatchEvent(new Event("input", { bubbles: true }));
-                  }
-                  field.blur();
-                } else {
-                  return false;
-                }
-                return true;
-              } catch (_) {
-                return false;
-              }
-            };
-
-            if (sizeMethod !== "litegraph") {
-              // ── DOM fallback (non-LiteGraph sites) ────────────────────────
-              // Only runs when the LiteGraph path above didn't apply (no graph
-              // exposed, or no matching node) — i.e. a "normal" site whose
-              // width/height are plain <input>/contenteditable fields, using
-              // the user's Target-configured locators.
-              if (typeof sizeConfig.width === "number" && sizeConfig.widthLocator) {
-                const widthField = tryResolveNumericField(sizeConfig.widthLocator);
-                widthSet = writeNumericField(widthField, sizeConfig.width);
-              }
-              if (typeof sizeConfig.height === "number" && sizeConfig.heightLocator) {
-                const heightField = tryResolveNumericField(sizeConfig.heightLocator);
-                heightSet = writeNumericField(heightField, sizeConfig.height);
-              }
-              if (widthSet || heightSet) sizeMethod = "dom";
-            }
-            if (widthSet || heightSet) {
-              // Let the page's own state (React/Vue) settle before Generate.
-              await new Promise((r) => setTimeout(r, 200));
-            }
-          }
-
           // ── 5. Find the Generate button (Fase 2d) ──────────────────────────
           // Priority: persisted generateButton locator for this origin > legacy
           // hardcoded selector cascade (SeaArt/TensorArt/A1111) > text search.
@@ -3276,77 +2733,29 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator, si
             // Clean up old TensorArt toast messages so they don't falsely trigger the fast-track resolve
             document.querySelectorAll(".n-message").forEach(el => el.remove());
 
-            // ── Dismiss STALE TensorArt rejection dialogs BEFORE submitting ───
-            // (Bug: "same prompt generated twice, mostly when the tab is out of
-            // focus".) A "Generation queue is full" / "Generate failed" dialog
-            // (.n-dialog) from a PREVIOUS prompt can still be in the DOM when we
-            // submit this one — its close-click was likely throttled/deferred by
-            // Chrome's background timer throttling while the tab was unfocused.
-            // If it lingers, waitForGenerateButtonFree sees it (it checks
-            // hitLimit BEFORE the success signal) and mis-reads THIS accepted
-            // submission as "queue full", firing the limit_reached retry path
-            // which re-injects and re-clicks the EXACT same prompt → the
-            // duplicate generation. Clearing stale rejection dialogs here means
-            // any dialog seen afterwards genuinely belongs to THIS submission,
-            // so the retry only fires on a real rejection. Only rejection
-            // dialogs are touched (matched by text); other dialogs are left be.
-            document.querySelectorAll(".n-dialog").forEach((dlg) => {
-              const t = dlg.textContent || "";
-              if (t.includes("Generation queue is full") || t.includes("Generate failed")) {
-                const close = dlg.querySelector(".n-dialog__close, .n-base-close");
-                if (close) { try { close.click(); } catch (_) {} }
-                try { dlg.remove(); } catch (_) {}
-              }
-            });
+            // Standard click. NOTE: genBtn.click() ALREADY dispatches a real
+            // "click" event — the synthetic event list below must NOT include
+            // "click" again, or frameworks that listen on both native clicks
+            // and bubbled MouseEvents (Vue/React) see TWO distinct click
+            // events and fire the generate handler twice per prompt. This was
+            // a confirmed bug: every queued prompt sent 2 requests instead of 1.
+            genBtn.click();
 
-            // ── Click exactly ONE element ─────────────────────────────────────
-            // genBtn.click() ALREADY dispatches a real, bubbling "click". The
-            // old code then ALSO called innerText.click() on a descendant "just
-            // in case we selected the parent div" — but that second real click
-            // bubbles right back up to genBtn, so frameworks (Vue/React) that
-            // listen on the button see TWO clicks and fire the generate handler
-            // twice per prompt. That is the same double-submit class this queue
-            // fought before (the synthetic-events list below already excludes
-            // "click" for exactly this reason). Instead, pick the INNERMOST
-            // known target (the button's text node when present, else the
-            // button) and click it once: a click on the inner node still bubbles
-            // UP to the wrapper's handler, so a single click covers both
-            // "handler on the button" and "handler on the wrapper" — never twice.
-            // Wait for button to become clickable if it's currently in cooldown or disabled (e.g. SeaArt 2-3s cooldown)
-            const isButtonBusy = (el) => {
-              if (!el) return false;
-              const b = el.closest("button") || el.closest(".work-flow-bottom-btn") || el;
-              if (b.disabled || b.getAttribute("aria-disabled") === "true") return true;
-              if (b.classList.contains("is-disabled") || b.classList.contains("disabled")) return true;
-              const cs = window.getComputedStyle(b);
-              if (cs.pointerEvents === "none" || cs.cursor === "not-allowed") return true;
-              if (parseFloat(cs.opacity) < 0.6) return true;
-              const t = (b.textContent || "").trim().toLowerCase();
-              if (t.includes("generating") || t.includes("generando") || t.includes("processing") || t.includes("procesando")) return true;
-              return false;
-            };
-
-            const waitStart = Date.now();
-            while (isButtonBusy(genBtn) && Date.now() - waitStart < 6000) {
-              await new Promise((r) => setTimeout(r, 300));
-            }
-
-            const innerText = genBtn.querySelector(".work-flow-bottom-btn-main-text");
-            const clickTarget = innerText || genBtn;
-            clickTarget.click();
-
-            // Non-click pointer/mouse events for frameworks that key press/hover
-            // visual state off them — deliberately excludes "click" itself,
-            // which clickTarget.click() above already covers.
-            // `view` intentionally omitted: from a content script, `window`
-            // refers to the content script's own sandbox global, not the
-            // page's — passing it as MouseEventInit.view is a realm mismatch
-            // (most visible under Firefox's stricter Xray wrapping). Omitting
-            // `view` lets the engine default it sensibly and the event still
-            // bubbles and carries bubbles/cancelable correctly either way.
+            // Dispatch pointer/mouse-down/up events for frameworks that rely
+            // on them for hover/press visual state — deliberately excludes
+            // "click" itself, which genBtn.click() above already covers.
             const events = ["pointerdown", "mousedown", "pointerup", "mouseup"];
             for (const type of events) {
-              clickTarget.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+              genBtn.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+            }
+
+            // If we selected the parent div, try to click the inner text just in case
+            const innerText = genBtn.querySelector(".work-flow-bottom-btn-main-text");
+            if (innerText) {
+              innerText.click();
+              for (const type of events) {
+                innerText.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+              }
             }
           }
           return { 
@@ -3367,12 +2776,9 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator, si
             frameworkInfo,
             comfyGlobals,
             usedRealTyping,
-            widthSet,
-            heightSet,
-            sizeMethod,
           };
         },
-        args: [promptText, promptLocator || null, generateLocator || null, sizeConfig || null],
+        args: [promptText, promptLocator || null, generateLocator || null],
       },
       (results) => {
         if (chrome.runtime.lastError) {
@@ -3385,17 +2791,14 @@ function injectPromptToTab(tabId, promptText, promptLocator, generateLocator, si
         const successfulFrame = results?.find(r => r.result && r.result.success);
         if (successfulFrame) {
           const r = successfulFrame.result;
-          dlog(`[Queue] ✓ Prompt injected (field: ${r.usedPersistedLocator ? "persisted locator" : "legacy heuristic"}[${r.fieldKind}], button: ${r.usedPersistedGenerateLocator ? "persisted locator" : "legacy heuristic"}, size: widthSet=${r.widthSet} heightSet=${r.heightSet} method=${r.sizeMethod}). usedRealTyping=${r.usedRealTyping} firstAttemptMatched=${r.firstAttemptMatched} usedAggressiveRetry=${r.usedAggressiveRetry} frameworkInfo=${JSON.stringify(r.frameworkInfo)} comfyGlobals=${JSON.stringify(r.comfyGlobals)}. Previous: "${r.previousValue}..." → Injected: "${r.injectedValue}..." → ActualAfterClick: "${r.actualValueAfterClick}..."`);
+          dlog(`[Queue] ✓ Prompt injected (field: ${r.usedPersistedLocator ? "persisted locator" : "legacy heuristic"}[${r.fieldKind}], button: ${r.usedPersistedGenerateLocator ? "persisted locator" : "legacy heuristic"}). usedRealTyping=${r.usedRealTyping} firstAttemptMatched=${r.firstAttemptMatched} usedAggressiveRetry=${r.usedAggressiveRetry} frameworkInfo=${JSON.stringify(r.frameworkInfo)} comfyGlobals=${JSON.stringify(r.comfyGlobals)}. Previous: "${r.previousValue}..." → Injected: "${r.injectedValue}..." → ActualAfterClick: "${r.actualValueAfterClick}..."`);
           if (r.actualValueAfterClick && r.injectedValue && !r.actualValueAfterClick.startsWith(r.injectedValue.slice(0, 40))) {
             console.warn(`[Queue] ⚠ Field value AFTER clicking Generate does not match what we injected — the page's own framework likely reset/overwrote it on click. This means Generate may have fired with the WRONG (old/empty) prompt.`, { injected: r.injectedValue, actualAfterClick: r.actualValueAfterClick });
           }
           resolve({ 
             success: true, 
             hasButton: r.hasButton,
-            frameId: successfulFrame.frameId,
-            widthSet: r.widthSet,
-            heightSet: r.heightSet,
-            sizeMethod: r.sizeMethod,
+            frameId: successfulFrame.frameId 
           });
         } else {
           // Log why it failed
@@ -3556,8 +2959,8 @@ async function waitUntilSystemReady(tabId) {
           seaArtLimit = Math.max(1, activeTasks);
         }
 
-        // Pause queue if the tab is hidden — UNLESS background generation is on.
-        if (isHidden && !backgroundGenerationEnabled) {
+        // Pause queue if the tab is hidden
+        if (isHidden) {
           if (!isPausedForVisibility) {
             dlog("[SeaArt Queue] Tab is hidden. Pausing queue to prevent lost prompts.");
             isPausedForVisibility = true;
@@ -3606,118 +3009,6 @@ async function waitUntilSystemReady(tabId) {
 
 /** URLs already downloaded this session (dedupe across observer notifications). */
 const autoDLDownloaded = new Set();
-
-/**
- * Pool of the REAL prompt text sent to SeaArt for each generation that was
- * successfully injected (pushed right where processNext() confirms injection
- * succeeded — see "sentPromptsQueue.push" below).
- *
- * IMPORTANT — why this is a content-matched pool, NOT a FIFO:
- * This used to be consumed strictly in FIFO order (shift() the oldest sent
- * prompt for each completed image), assuming completions arrive in send order.
- * They do NOT: SeaArt runs several generation slots concurrently, and when the
- * tab is backgrounded the images render in a burst on refocus — so a prompt
- * sent later can finish (and be reported) before an earlier one. FIFO then
- * embedded the wrong prompt into an image ("crossed prompts").
- *
- * The page observer already reports, alongside each finished image, the prompt
- * SeaArt shows next to THAT image in its history (`.c-workflow-history-item
- * .c-text-content`). That DOM text is correctly ASSOCIATED with the image but
- * can be truncated/reformatted. So we use it as a matching key: pick the pool
- * entry whose tags best cover the DOM prompt (see matchSentPromptForImage) to
- * recover the exact, complete prompt string while keeping the right pairing.
- */
-const sentPromptsQueue = [];
-
-/**
- * Splits a prompt into a set of normalized tag tokens for fuzzy comparison.
- * Tolerant of the reformatting SeaArt applies when it echoes a prompt back into
- * its history DOM: strips weight syntax (`:1.2`), brackets, and normalizes
- * underscores/whitespace so "long_hair" and "long hair" match.
- */
-function tokenizePrompt(s) {
-  const set = new Set();
-  if (!s) return set;
-  for (const part of String(s).split(",")) {
-    const tag = part
-      .replace(/[()[\]{}<>]/g, " ") // weight/emphasis brackets
-      .replace(/:\s*[\d.]+/g, " ")  // numeric weights like ":1.2"
-      .replace(/_/g, " ")           // underscore <-> space normalization
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-    if (tag) set.add(tag);
-  }
-  return set;
-}
-
-/**
- * Similarity in [0..1] between a DOM-scraped prompt (the ground-truth key for
- * an image, possibly truncated) and a candidate sent prompt. Weighted toward
- * COVERAGE — the fraction of the DOM prompt's tags present in the candidate —
- * so a truncated DOM prompt still scores ~1.0 against the full prompt it was
- * cut from. A small Jaccard term breaks ties toward the tightest-sized match.
- */
-function promptSimilarity(domPrompt, candidate) {
-  const domTokens = tokenizePrompt(domPrompt);
-  const candTokens = tokenizePrompt(candidate);
-  if (domTokens.size === 0 || candTokens.size === 0) return 0;
-  let covered = 0;
-  for (const t of domTokens) if (candTokens.has(t)) covered++;
-  const coverage = covered / domTokens.size;
-  const union = domTokens.size + candTokens.size - covered;
-  const jaccard = union > 0 ? covered / union : 0;
-  return coverage * 0.8 + jaccard * 0.2;
-}
-
-/** Minimum similarity for a DOM prompt to be considered the same generation. */
-const PROMPT_MATCH_THRESHOLD = 0.5;
-
-/**
- * Resolves which prompt to embed into a just-completed image, given the prompt
- * SeaArt renders next to it in the DOM (`domPrompt`, correctly associated but
- * maybe truncated). Strategy, best-to-worst:
- *   1. Best content match in the sent pool above the threshold → return its
- *      exact text and REMOVE it from the pool (correct pairing + full text).
- *   2. A DOM prompt exists but nothing matches (e.g. a generation started
- *      outside our queue) → return the DOM prompt itself; leave the pool intact
- *      so a later, matching image can still claim those entries.
- *   3. No DOM prompt at all → fall back to FIFO (oldest sent), the legacy
- *      best-effort behavior.
- * On ties, the earliest (oldest) matching entry wins because the loop keeps the
- * first max — a harmless, order-stable tiebreaker.
- */
-function matchSentPromptForImage(domPrompt) {
-  const hasDom = !!(domPrompt && domPrompt.trim());
-
-  if (sentPromptsQueue.length === 0) {
-    return { prompt: hasDom ? domPrompt : "", source: hasDom ? "dom-only" : "empty" };
-  }
-
-  if (!hasDom) {
-    // Nothing to match against — best we can do is the oldest sent prompt.
-    return { prompt: sentPromptsQueue.shift(), source: "fifo-fallback" };
-  }
-
-  let bestIdx = -1;
-  let bestScore = 0;
-  for (let i = 0; i < sentPromptsQueue.length; i++) {
-    const score = promptSimilarity(domPrompt, sentPromptsQueue[i]);
-    if (score > bestScore) {
-      bestScore = score;
-      bestIdx = i;
-    }
-  }
-
-  if (bestIdx >= 0 && bestScore >= PROMPT_MATCH_THRESHOLD) {
-    const [matched] = sentPromptsQueue.splice(bestIdx, 1);
-    return { prompt: matched, source: "matched", score: bestScore, index: bestIdx };
-  }
-
-  // No confident match: the DOM prompt is still correctly associated with this
-  // image, so it beats a wrong FIFO guess. Keep the pool untouched.
-  return { prompt: domPrompt, source: "dom-nomatch", score: bestScore };
-}
 
 /**
  * Installed into the SeaArt page. Marks all currently-visible generated images
@@ -3905,34 +3196,17 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!tabId || !fromSeaArt) return;
   if (!msg.src || autoDLDownloaded.has(msg.src)) return;
   autoDLDownloaded.add(msg.src);
-
-  // Pair this finished image with the prompt SeaArt actually generated it from.
-  // msg.prompt is the text SeaArt renders next to THIS image in its history —
-  // correctly associated but sometimes truncated/reformatted. We use it as a
-  // key to recover the exact, complete prompt from the sent pool by content
-  // (matchSentPromptForImage), instead of blindly taking the oldest sent one.
-  // This is what fixes "crossed prompts" when images finish out of send order
-  // (concurrent SeaArt slots, or a burst of renders when the tab regains focus).
-  const match = matchSentPromptForImage(msg.prompt);
-  const promptToEmbed = match.prompt || "";
-  dlog(`[AutoDL] downloading: ${msg.src.slice(0, 80)} | prompt source=${match.source}${match.score !== undefined ? ` (score=${match.score.toFixed(2)})` : ""} | pool left=${sentPromptsQueue.length}`);
-  triggerAutoDownload(tabId, msg.src, promptToEmbed);
+  dlog("[AutoDL] downloading:", msg.src.slice(0, 80));
+  triggerAutoDownload(tabId, msg.src, msg.prompt || "");
 });
 
 
 /**
- * Downloads a completed SeaArt image with embedded PNG metadata (generation
- * params + a minimal ComfyUI workflow carrying the prompt), reusing the same
- * chunk-injection logic as the separate "SeaArt metadata" extension's
- * content.js. Fetches the image via background.js (bypasses CORS), then
- * delegates the PNG-chunk rebuild and the actual save to background.js's
- * "downloadPngWithMetadata" handler (chrome.downloads-based, cross-browser —
- * see that handler's comment for why this isn't done via
- * chrome.scripting.executeScript into the page anymore).
- * `tabId` is accepted for API-shape parity with the caller/onMessage listener
- * but is no longer used directly now that step 3 doesn't inject into the tab.
+ * Downloads a completed SeaArt image with embedded EXIF/PNG metadata.
+ * Reuses the same pipeline as the SeaArt metadata extension's content.js,
+ * but executed via scripting.executeScript so we don't need a separate extension.
  */
-async function triggerAutoDownload(tabId, imageUrl, prompt) { // eslint-disable-line no-unused-vars
+async function triggerAutoDownload(tabId, imageUrl, prompt) {
   if (!autoDownloadEnabled || currentPlatform !== "SeaArt") return;
 
   // Step 1: Get full-res URL via background (background.js already handles this)
@@ -3962,37 +3236,137 @@ async function triggerAutoDownload(tabId, imageUrl, prompt) { // eslint-disable-
     return;
   }
 
-  // Step 3: Embed PNG metadata + save. This runs entirely in the background
-  // script via chrome.downloads (see background.js's "downloadPngWithMetadata"
-  // handler) instead of being injected into the SeaArt tab with
-  // chrome.scripting.executeScript. The old approach built the final Blob
-  // inside a content-script sandbox and had the PAGE's own <a download>
-  // element click it — a cross-principal Blob URL hand-off that Chrome
-  // tolerates but is not reliable on Firefox's stricter model. Delegating to
-  // the background script removes that hand-off entirely and needs no page
-  // injection at all for this step.
-  const now = new Date();
-  const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}-${String(now.getSeconds()).padStart(2, "0")}`;
-  const slug = (prompt || "").toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 10);
-  try {
-    const saveResponse = await chrome.runtime.sendMessage({
-      action: "downloadPngWithMetadata",
-      base64: imageBase64,
-      mimeType,
-      prompt: prompt || "",
-      filename: `SA-${ts}-${slug}.png`,
-    });
-    if (!saveResponse?.success) {
-      console.error("[AutoDL] Background download failed:", saveResponse?.error);
-    }
-  } catch (e) {
-    console.error("[AutoDL] Failed to message background for download:", e);
-  }
+  // Step 3: Process and download via scripting.executeScript in the SeaArt tab
+  chrome.scripting.executeScript({
+    target: { tabId, allFrames: false },
+    func: async (base64, mime, promptText) => {
+      // ── PNG metadata injection (same logic as SeaArt metadata content.js) ──
+
+      function crc32(data) {
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < data.length; i++) {
+          crc ^= data[i];
+          for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+      }
+
+      function createTextChunk(keyword, text) {
+        const kBytes = new TextEncoder().encode(keyword);
+        const tBytes = new TextEncoder().encode(text);
+        const dataLen = kBytes.length + 1 + tBytes.length;
+        const chunk = new Uint8Array(4 + 4 + dataLen + 4);
+        let o = 0;
+        chunk[o++] = (dataLen >> 24) & 0xFF; chunk[o++] = (dataLen >> 16) & 0xFF;
+        chunk[o++] = (dataLen >> 8) & 0xFF;  chunk[o++] = dataLen & 0xFF;
+        chunk[o++] = 0x74; chunk[o++] = 0x45; chunk[o++] = 0x58; chunk[o++] = 0x74; // tEXt
+        chunk.set(kBytes, o); o += kBytes.length;
+        chunk[o++] = 0;
+        chunk.set(tBytes, o); o += tBytes.length;
+        const crc = crc32(chunk.subarray(4, o));
+        chunk[o++] = (crc >> 24) & 0xFF; chunk[o++] = (crc >> 16) & 0xFF;
+        chunk[o++] = (crc >> 8) & 0xFF;  chunk[o++] = crc & 0xFF;
+        return chunk;
+      }
+
+      function injectPngChunks(b64, generationData, workflow) {
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+        const IHDR_END = 33; // 8-byte sig + 4+4+13+4 IHDR
+        const chunks = [
+          createTextChunk("generation_data", JSON.stringify(generationData)),
+          createTextChunk("prompt", JSON.stringify(workflow))
+        ];
+        const extra = chunks.reduce((s, c) => s + c.length, 0);
+        const result = new Uint8Array(bytes.length + extra);
+        result.set(bytes.subarray(0, IHDR_END), 0);
+        let offset = IHDR_END;
+        for (const c of chunks) { result.set(c, offset); offset += c.length; }
+        result.set(bytes.subarray(IHDR_END), offset);
+
+        const CHUNK = 0x8000;
+        let out = "";
+        for (let i = 0; i < result.length; i += CHUNK)
+          out += String.fromCharCode.apply(null, result.subarray(i, i + CHUNK));
+        return btoa(out);
+      }
+
+      async function blobToBase64(blob) {
+        return new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onloadend = () => res(r.result.split(",")[1]);
+          r.onerror = rej;
+          r.readAsDataURL(blob);
+        });
+      }
+
+      async function loadImage(url) {
+        return new Promise((res, rej) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => res(img);
+          img.onerror = rej;
+          img.src = url;
+        });
+      }
+
+      // Build generation_data metadata
+      const generationData = {
+        prompt: promptText, negativePrompt: "",
+        width: 1024, height: 1024, imageCount: 1,
+        samplerName: "Euler a", steps: 30, cfgScale: 4, seed: "-1",
+        clipSkip: 2, sdVae: "Automatic", etaNoiseSeedDelta: 31337
+      };
+
+      // Minimal ComfyUI workflow carrying the prompt
+      const workflow = {
+        "10051": { class_type: "CLIPTextEncode", inputs: { text: promptText } }
+      };
+
+      // Convert base64 to PNG via canvas (handles both PNG and JPEG input)
+      const dataUrl = "data:" + mime + ";base64," + base64;
+      const img = await loadImage(dataUrl);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      const pngBlob = await new Promise(r => canvas.toBlob(r, "image/png"));
+      const pngB64 = await blobToBase64(pngBlob);
+
+      const finalB64 = injectPngChunks(pngB64, generationData, workflow);
+
+      // Download
+      const byteChars = atob(finalB64);
+      const byteArrays = [];
+      for (let i = 0; i < byteChars.length; i += 512) {
+        const sl = byteChars.slice(i, i + 512);
+        byteArrays.push(new Uint8Array([...sl].map(c => c.charCodeAt(0))));
+      }
+      const blob = new Blob(byteArrays, { type: "image/png" });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const now = new Date();
+      const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}-${String(now.getHours()).padStart(2,"0")}-${String(now.getMinutes()).padStart(2,"0")}-${String(now.getSeconds()).padStart(2,"0")}`;
+      const slug = promptText.toLowerCase().replace(/[^a-z0-9]/g,"").substring(0,10);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `SA-${ts}-${slug}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    },
+    args: [imageBase64, mimeType, prompt || ""]
+  }).catch((e) => {
+    console.error("[AutoDL] Script execution inside webpage failed:", e);
+  });
 }
 
 async function processNext() {
   // Guard: only one processNext flow at a time
-  if (isProcessing || isWaitingForSlot || isPausedForError || isPausedManually || promptQueue.length === 0) return;
+  if (isProcessing || isWaitingForSlot || isPausedForError || promptQueue.length === 0) return;
 
   isProcessing = true;
   updateQueueUI();
@@ -4004,46 +3378,11 @@ async function processNext() {
   const WORKFLOW_PATHS = ["/workflow", "/canvas", "/comfyui", "/generate", "/models"];
 
   chrome.tabs.query({ currentWindow: true }, async (allTabs) => {
-    // Peek (do NOT shift yet) the next item so we can honor the origin it was
-    // pinned to at enqueue time — see the INJECT_PROMPT handler's targetOrigin.
-    const pinnedItem = promptQueue[0];
-    const pinnedOrigin = pinnedItem && pinnedItem.targetOrigin ? pinnedItem.targetOrigin : null;
-
     let activeTab = null;
     const currentActive = allTabs.find(t => t.active);
 
-    // 0. HIGHEST priority (bugfix): this prompt was queued for a specific
-    //    origin. Send it to the tab with THAT origin, regardless of which tab
-    //    is active right now. Without this, switching from SeaArt to TensorArt
-    //    mid-queue made the remaining SeaArt prompts get injected into
-    //    TensorArt (the queue "followed" the active tab across platforms).
-    if (pinnedOrigin) {
-      activeTab =
-        allTabs.find(t => t.url && originFromUrl(t.url) === pinnedOrigin) ||
-        // Same-platform fallback: covers www vs non-www origin differences and
-        // the tab being reopened at a slightly different URL. Never leaks to a
-        // DIFFERENT platform.
-        allTabs.find(t => {
-          if (!t.url) return false;
-          const p = platformFromUrl(pinnedOrigin);
-          return p !== "Unknown" && platformFromUrl(t.url) === p;
-        }) ||
-        null;
-
-      if (!activeTab) {
-        // The site this prompt was queued for isn't open anymore. Pause instead
-        // of sending it to whatever else happens to be open. Reopening that
-        // site and adding a prompt (or clearing the queue) resumes processing.
-        console.warn(`[Queue] Target site for the next prompt (${pinnedOrigin}) is not open — pausing so it isn't sent to a different platform.`);
-        isProcessing = false;
-        updateQueueUI();
-        return;
-      }
-      dlog(`[Queue][processNext] Pinned to origin "${pinnedOrigin}" → tab id=${activeTab.id} url="${activeTab.url}"`);
-    }
-
     // 1. HIGHEST priority: If the currently active tab is a supported platform, or looks like a local UI (A1111/ComfyUI)
-    if (!activeTab && currentActive && currentActive.url && (
+    if (currentActive && currentActive.url && (
       PLATFORM_DOMAINS.some(d => currentActive.url.includes(d)) ||
       currentActive.url.includes("127.0.0.1") ||
       currentActive.url.includes("localhost") ||
@@ -4060,7 +3399,7 @@ async function processNext() {
     // on a known platform in steps 2/3 below, silently injecting prompts
     // into the wrong tab. This is the same class of bug fixed in
     // resolveTargetTab for the Target flow itself.
-    if (!activeTab && currentActive && isInjectableTabUrl(currentActive.url)) {
+    if (!activeTab && currentActive && currentActive.url && !currentActive.url.startsWith("chrome") && !currentActive.url.startsWith("devtools") && !currentActive.url.startsWith("chrome-extension://")) {
       const activeOrigin = originFromUrl(currentActive.url);
       if (activeOrigin && siteProfiles[activeOrigin]) {
         activeTab = currentActive;
@@ -4089,7 +3428,10 @@ async function processNext() {
     if (
       !activeTab ||
       !activeTab.id ||
-      !isInjectableTabUrl(activeTab.url)
+      !activeTab.url ||
+      activeTab.url.startsWith("chrome://") ||
+      activeTab.url.startsWith("devtools://") ||
+      activeTab.url.startsWith("chrome-extension://")
     ) {
       console.warn("[Queue] No valid tab found, pausing queue.");
       isProcessing = false;
@@ -4099,20 +3441,12 @@ async function processNext() {
 
     const tabId = activeTab.id;
 
-    // Keep currentPlatform in sync with the tab we actually resolved, so the
-    // platform-specific queue logic (SeaArt/TensorArt paywall/modal handling)
-    // and the auto-download gate reflect the site being used right now instead
-    // of a stale value left over from a previous tab/session. Also prevents a
-    // mismatch where the queue operates on one platform's tab while
-    // currentPlatform still names another.
-    currentPlatform = platformFromUrl(activeTab.url);
-
     // Helper function to block if tab is hidden before we even try to check limit
     async function waitForVisibility() {
       return new Promise(resolve => {
         async function check() {
           const { isHidden } = await countActiveTasks(tabId);
-          if (isHidden && !backgroundGenerationEnabled) {
+          if (isHidden) {
             if (!isPausedForVisibility) {
               dlog("[SeaArt Queue] Tab is hidden. Pausing queue before injection.");
               isPausedForVisibility = true;
@@ -4187,13 +3521,11 @@ async function processNext() {
     } // end usePlatformSpecificQueueLogic pre-flight
 
     // Now safely pull from queue
-    const queueItem = promptQueue.shift();
+    const promptText = promptQueue.shift();
     persistQueue(); // ← Save queue state after removing item
 
-    const promptText = queueItem && typeof queueItem.prompt === "string" ? queueItem.prompt : null;
-
-    if (!promptText || promptText.trim() === "") {
-      console.warn("[Queue] Invalid or empty prompt pulled from queue, skipping:", queueItem);
+    if (!promptText || typeof promptText !== "string" || promptText.trim() === "") {
+      console.warn("[Queue] Invalid or empty prompt pulled from queue, skipping:", promptText);
       isProcessing = false;
       isWaitingForSlot = false;
       updateQueueUI();
@@ -4209,7 +3541,7 @@ async function processNext() {
       console.warn(`[Queue Safety] Same prompt as last generation (${consecutiveSamePrompt}/${MAX_CONSECUTIVE_SAME}): "${promptText.substring(0, 80)}..."`);
       if (consecutiveSamePrompt > MAX_CONSECUTIVE_SAME) {
         console.error(`[Queue Safety] ⚠ PAUSING QUEUE: Same prompt generated ${consecutiveSamePrompt} times in a row. This looks like a bug.`);
-        promptQueue.unshift(queueItem); // Put it back
+        promptQueue.unshift(promptText); // Put it back
         persistQueue();
         isPausedForError = true;
         isProcessing = false;
@@ -4236,40 +3568,8 @@ async function processNext() {
     // resolve unconditionally and let the post-injection branch decide.
     const queueContainerLocator = await resolveQueueContainerLocatorForTab(tabId);
 
-    // "Match image resolution": only resolve width/height locators when this
-    // queue item actually carries dimensions (React only computes them when
-    // the toggle is on AND the source post had usable width/height). Cheap to
-    // resolve unconditionally otherwise-not-needed locators, but skipping
-    // avoids two pointless chrome.tabs.get round-trips per item when unused.
-    const hasSizeRequest = typeof queueItem.width === "number" && typeof queueItem.height === "number";
-    dlog(`[Queue][MatchResolution] queueItem=${JSON.stringify(queueItem)} hasSizeRequest=${hasSizeRequest}`);
-
-    // Try the LiteGraph/ComfyUI path FIRST (see tryApplyLiteGraphSize's doc
-    // comment): this MUST run as its own executeScript call with
-    // { world: "MAIN" } — window.app/window.graph live in the page's own JS
-    // realm, invisible to the ISOLATED world injectPromptToTab's function
-    // runs in (that world only shares the DOM, not globals). Harmless no-op
-    // on non-LiteGraph sites (resolves applied:false quickly).
-    let liteGraphApplied = false;
-    if (hasSizeRequest) {
-      const liteGraphResult = await tryApplyLiteGraphSize(tabId, queueItem.width, queueItem.height);
-      liteGraphApplied = liteGraphResult.applied;
-    }
-
-    const widthLocator = (hasSizeRequest && !liteGraphApplied) ? await resolveWidthLocatorForTab(tabId) : null;
-    const heightLocator = (hasSizeRequest && !liteGraphApplied) ? await resolveHeightLocatorForTab(tabId) : null;
-    const sizeConfig = hasSizeRequest
-      ? { width: queueItem.width, height: queueItem.height, widthLocator, heightLocator, liteGraphApplied }
-      : null;
-    if (hasSizeRequest) {
-      dlog(`[Queue][MatchResolution] sizeConfig for this send: ${JSON.stringify({ width: sizeConfig.width, height: sizeConfig.height, liteGraphApplied })}`);
-    }
-    if (hasSizeRequest && !liteGraphApplied && (!widthLocator || !heightLocator)) {
-      dlog(`[Queue][MatchResolution] Size requested (${queueItem.width}x${queueItem.height}) — LiteGraph path didn't apply and width/height fields aren't Target-configured for this origin. Sending prompt without resizing.`);
-    }
-
     // Inject the prompt and click Generate
-    const injectResult = await injectPromptToTab(tabId, promptText, promptLocator, generateLocator, sizeConfig);
+    const injectResult = await injectPromptToTab(tabId, promptText, promptLocator, generateLocator);
 
     if (!injectResult.success) {
       currentPromptRetries++;
@@ -4291,7 +3591,7 @@ async function processNext() {
       }
 
       // Re-queue for retry
-      promptQueue.unshift(queueItem);
+      promptQueue.unshift(promptText);
       persistQueue();
       isProcessing = false;
       updateQueueUI();
@@ -4305,15 +3605,6 @@ async function processNext() {
     // ── Injection succeeded! Reset retry counter ───────────────────────
     currentPromptRetries = 0;
     lastGeneratedPrompt = promptText;
-    // Record the REAL sent prompt for auto-download's metadata embedding —
-    // but only for paths where injection isn't still subject to a possible
-    // paywall-modal block/retry below (usePlatformSpecificQueueLogic). For
-    // that path the push happens further down, once we know the generation
-    // was actually accepted (not silently rejected + retried), so each
-    // completed image maps to exactly one queue entry.
-    if (!(injectResult.hasButton && usePlatformSpecificQueueLogic)) {
-      sentPromptsQueue.push(promptText);
-    }
 
     // If we found a Generate button and clicked it, wait for it to free up.
     // (Fase 4a/4b) Platform-specific origins (built-in SeaArt/TensorArt
@@ -4355,7 +3646,7 @@ async function processNext() {
 
         // Retry the same prompt directly (not through processNext/queue)
         dlog(`[SeaArt Queue] Retrying blocked prompt: "${promptText.substring(0, 60)}..."`);
-        const retryResult = await injectPromptToTab(tabId, promptText, promptLocator, generateLocator, sizeConfig);
+        const retryResult = await injectPromptToTab(tabId, promptText, promptLocator, generateLocator);
         
         if (!retryResult.success) {
           console.warn(`[SeaArt Queue] Retry injection failed (${retryResult.reason}), skipping prompt.`);
@@ -4382,7 +3673,6 @@ async function processNext() {
         // Retry succeeded! Reset safety counter and continue normally.
         consecutiveSamePrompt = 0;
         lastGeneratedPrompt = promptText; // Mark as generated so next same-prompt detection is fresh
-        sentPromptsQueue.push(promptText); // The retried prompt is what SeaArt actually generated
         await new Promise((r) => setTimeout(r, GRACE_PERIOD_MS));
         isProcessing = false;
         updateQueueUI();
@@ -4393,10 +3683,7 @@ async function processNext() {
       if (waitResult?.status !== "free") {
         console.warn("[Queue] Generate button did not free up within timeout, moving on.");
       }
-
-      // No paywall/limit modal appeared — the generation was accepted.
-      sentPromptsQueue.push(promptText);
-
+      
       // Grace period before next injection
       await new Promise((r) => setTimeout(r, GRACE_PERIOD_MS));
     } else if (queueConfig.mode === "container" && queueContainerLocator) {
@@ -4437,36 +3724,6 @@ async function processNext() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Listener for postMessage events from the Next.js page inside the iframe
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Resolve which generation target a newly-queued prompt should be pinned to.
- * Prefers the tab the user is currently looking at (active tab) when it's a
- * supported platform, a local UI, or a site configured via Target; otherwise
- * falls back to any such tab open in the window. Returns { origin, platform },
- * or null when no generation tab is found (the item then queues unpinned and
- * uses processNext's legacy resolution for backwards compatibility).
- */
-function resolveEnqueueTarget() {
-  return new Promise((resolve) => {
-    chrome.tabs.query({ currentWindow: true }, (allTabs) => {
-      const PLATFORM_DOMAINS = ["seaart.ai", "tensor.art", "tensorhub.net", "yodayo.com"];
-      const isLocalUi = (u) => u && (u.includes("127.0.0.1") || u.includes("localhost") || u.includes("gradio.live"));
-      const isGenerationTab = (t) => {
-        if (!t || !isInjectableTabUrl(t.url)) return false;
-        const origin = originFromUrl(t.url);
-        return PLATFORM_DOMAINS.some(d => t.url.includes(d)) || isLocalUi(t.url) || !!(origin && siteProfiles[origin]);
-      };
-
-      const currentActive = allTabs.find(t => t.active);
-      let tab = (currentActive && isGenerationTab(currentActive)) ? currentActive : null;
-      if (!tab) tab = allTabs.find(isGenerationTab) || null;
-
-      if (!tab || !tab.url) { resolve(null); return; }
-      resolve({ origin: originFromUrl(tab.url), platform: platformFromUrl(tab.url) });
-    });
-  });
-}
-
 window.addEventListener("message", (event) => {
   if (!event.data) return;
 
@@ -4476,53 +3733,22 @@ window.addEventListener("message", (event) => {
     const promptText = event.data.prompt;
     if (!promptText) return;
 
-    // "Match image resolution": React includes width/height when the toggle
-    // is on and the source post had usable dimensions. Both must be finite
-    // positive numbers to be accepted — anything else is dropped (the item
-    // still queues as a plain prompt; resizing degrades gracefully).
-    const rawWidth = event.data.width;
-    const rawHeight = event.data.height;
-    const hasValidSize =
-      typeof rawWidth === "number" && Number.isFinite(rawWidth) && rawWidth > 0 &&
-      typeof rawHeight === "number" && Number.isFinite(rawHeight) && rawHeight > 0;
+    promptQueue.push(promptText);
+    persistQueue(); // ← Save queue state after adding item
 
-    const queueItem = hasValidSize
-      ? { prompt: promptText, width: rawWidth, height: rawHeight }
-      : { prompt: promptText };
+    // If queue was paused for error, resume it (user is actively adding prompts)
+    if (isPausedForError) {
+      dlog("[Queue] Resuming from error pause — user added new prompt.");
+      isPausedForError = false;
+      consecutiveSamePrompt = 0;
+    }
 
-    // ── Pin the target platform at enqueue time (bugfix) ──
-    // Bind this prompt to the origin of the generation tab the user is looking
-    // at RIGHT NOW. processNext used to prefer "whatever tab is active" when
-    // resolving the destination, so switching from SeaArt to TensorArt
-    // mid-queue sent the remaining SeaArt prompts to TensorArt. targetOrigin
-    // makes each prompt stick to the site it was created for.
-    resolveEnqueueTarget().then((target) => {
-      if (target && target.origin) queueItem.targetOrigin = target.origin;
-      dlog(`[Queue] Enqueue pinned to origin="${target?.origin || "none"}" (platform="${target?.platform || "Unknown"}").`);
-      enqueueAndProcess(queueItem);
-    });
+    updateQueueUI();
+
+    // Kick off processing if not already running
+    processNext();
   }
 });
-
-/** Push a (possibly pinned) queue item, persist, resume from error pause if
- *  needed, refresh the UI, and kick processing. Extracted so the INJECT_PROMPT
- *  handler can call it after the async targetOrigin resolution. */
-function enqueueAndProcess(queueItem) {
-  promptQueue.push(queueItem);
-  persistQueue(); // save queue state after adding item
-
-  // If queue was paused for error, resume it (user is actively adding prompts)
-  if (isPausedForError) {
-    dlog("[Queue] Resuming from error pause — user added new prompt.");
-    isPausedForError = false;
-    consecutiveSamePrompt = 0;
-  }
-
-  updateQueueUI();
-
-  // Kick off processing if not already running
-  processNext();
-}
 
 // When the iframe finishes loading, send it the current queue state
 // (the initial notifyIframe call in updateQueueUI fires before the iframe is ready)

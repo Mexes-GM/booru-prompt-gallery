@@ -149,19 +149,7 @@
 
     <!-- The actual hosted app iframe. Defaults to production; sidepanel.js swaps
          to localhost only when dev mode is enabled. The queue / target UI is
-         rendered inside this React app, not by the host page.
-
-         allow="clipboard-write": Chrome/Chromium honors the Permissions
-         Policy `clipboard-write` directive on this attribute — without it,
-         navigator.clipboard.writeText() calls inside the iframe (the app's
-         copy-prompt buttons) are blocked because Chrome does NOT auto-grant
-         clipboard access to iframes. Firefox does not implement this
-         directive at all (Gecko doesn't recognize clipboard-read/-write as
-         Permissions Policy features) and relies purely on transient user
-         activation instead — every clipboard.writeText() call in the app is
-         already inside a click handler, so Firefox needs no equivalent here.
-         The attribute is a harmless no-op on Firefox, so one shared
-         sidepanel.html serves both browsers without a build-time split. -->
+         rendered inside this React app, not by the host page. -->
     <iframe id="app-frame" src="https://booru-prompt-gallery.vercel.app/extension" allow="clipboard-write"></iframe>
 
   </div>
