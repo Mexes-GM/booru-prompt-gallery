@@ -17,7 +17,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog"
-import { Heart, History, FileCheck2, Dices, Sparkles } from "lucide-react"
+import { Heart, History, FileCheck2, Dices, Sparkles, Package, GraduationCap } from "lucide-react"
 import type { BooruProvider } from "@/lib/api-client"
 import { userPreferences } from "@/lib/storage"
 import { shouldConfirmProvider, ADULT_ONLY_PROVIDER } from "@/lib/nsfw-consent"
@@ -49,8 +49,12 @@ interface GalleryToolbarProps {
   disableMergeMode: () => void
   enableMergeMode: () => void
   enableVariationMode: () => void
+  isPackMode: boolean
+  disablePackMode: () => void
+  enablePackMode: () => void
   setSearchTags: (tags: string) => void
   onOpenReverseParser: () => void
+  onOpenQuickTeach: () => void
   onProviderChange: (provider: BooruProvider) => void
 }
 
@@ -74,8 +78,12 @@ export function GalleryToolbar({
   disableMergeMode,
   enableMergeMode,
   enableVariationMode,
+  isPackMode,
+  disablePackMode,
+  enablePackMode,
   setSearchTags,
   onOpenReverseParser,
+  onOpenQuickTeach,
   onProviderChange,
 }: GalleryToolbarProps) {
   // Capa 3: first-time confirmation before switching to the adult-only Rule34
@@ -162,6 +170,7 @@ export function GalleryToolbar({
                 type="button"
                 onClick={() => {
                   if (isMergeMode) disableMergeMode()
+                  if (isPackMode) disablePackMode()
                   if (showHistory) toggleShowHistory()
                   toggleShowFavorites()
                   posthog.capture('favorites_panel_toggled', { action: showFavorites ? 'close' : 'open' })
@@ -203,6 +212,7 @@ export function GalleryToolbar({
                 type="button"
                 onClick={() => {
                   if (isMergeMode) disableMergeMode()
+                  if (isPackMode) disablePackMode()
                   if (showFavorites) toggleShowFavorites()
                   toggleShowHistory()
                   posthog.capture('history_panel_toggled', { action: showHistory ? 'close' : 'open' })
@@ -245,6 +255,7 @@ export function GalleryToolbar({
                 } else {
                   if (showFavorites) toggleShowFavorites()
                   if (showHistory) toggleShowHistory()
+                  if (isPackMode) disablePackMode()
                   enableMergeMode()
                   posthog.capture('merge_mode_toggled', { action: 'enable' })
                 }
@@ -288,6 +299,7 @@ export function GalleryToolbar({
                 } else {
                   if (showFavorites) toggleShowFavorites()
                   if (showHistory) toggleShowHistory()
+                  if (isPackMode) disablePackMode()
                   enableVariationMode()
                   posthog.capture('variation_mode_toggled', { action: 'enable' })
                 }
@@ -300,6 +312,49 @@ export function GalleryToolbar({
             >
               <Dices className="w-4 h-4 fill-current" />
               <span className="text-xs font-medium">Variation</span>
+            </Button>
+          </InfoTooltip>
+
+          {/* Image Pack Builder Button */}
+          <InfoTooltip
+            hideIcon
+            side="bottom"
+            title="Pack Mode"
+            description="Pick one card as a base, lock what should stay constant (e.g. a character or an outfit), and generate a batch of prompts that vary the rest — different poses, scenery, clothing or appearance — sampled from your current results."
+            visual={
+              <div className="w-full flex flex-col gap-2 p-1.5 text-[10px] font-mono">
+                <div className="bg-muted/50 p-2 rounded-md border border-border/50 flex flex-col gap-1">
+                  <div><span className="text-muted-foreground font-medium w-12 inline-block">Base:</span> <span className="text-teal-500 dark:text-teal-400">1girl, mona (genshin impact)</span></div>
+                </div>
+                <div className="flex items-center gap-2 px-1">
+                  <span className="text-muted-foreground font-medium">Result:</span>
+                  <span className="bg-teal-500/10 text-teal-600 dark:text-teal-400 px-2 py-1 rounded border border-teal-500/20">N prompts, varying pose/scenery/clothing</span>
+                </div>
+              </div>
+            }
+          >
+            <Button
+              type="button"
+              onClick={() => {
+                if (isPackMode) {
+                  disablePackMode()
+                  posthog.capture('pack_mode_toggled', { action: 'disable' })
+                } else {
+                  if (showFavorites) toggleShowFavorites()
+                  if (showHistory) toggleShowHistory()
+                  if (isMergeMode) disableMergeMode()
+                  enablePackMode()
+                  posthog.capture('pack_mode_toggled', { action: 'enable' })
+                }
+              }}
+              variant="secondary"
+              className={`h-11 sm:h-9 px-3 gap-1 transition-colors duration-200 ${isPackMode
+                ? "bg-teal-200 text-teal-800 hover:bg-teal-300 dark:bg-teal-800 dark:text-teal-100 dark:hover:bg-teal-700"
+                : "bg-teal-50 text-teal-600 hover:bg-teal-100 dark:bg-teal-900/20 dark:text-teal-400 dark:hover:bg-teal-900/40"
+                }`}
+            >
+              <Package className="w-4 h-4 fill-current" />
+              <span className="text-xs font-medium">Pack</span>
             </Button>
           </InfoTooltip>
 
@@ -317,6 +372,31 @@ export function GalleryToolbar({
             >
               <Sparkles className="w-4 h-4 fill-current" />
               <span className="text-xs font-medium">Import</span>
+            </Button>
+          </InfoTooltip>
+
+          {/* Quick Teach — gamified, image-free tag classification loop */}
+          <InfoTooltip
+            hideIcon
+            side="bottom"
+            title="Quick Teach"
+            description="Rapid-fire classify tags into their correct category to help improve our tag database. No images — just tags pulled from random posts, sorted with a click or number keys (1-4). A faster way to contribute than teaching one card at a time."
+          >
+            <Button
+              type="button"
+              onClick={() => {
+                if (showFavorites) toggleShowFavorites()
+                if (showHistory) toggleShowHistory()
+                if (isMergeMode) disableMergeMode()
+                if (isPackMode) disablePackMode()
+                onOpenQuickTeach()
+                posthog.capture('quick_teach_opened')
+              }}
+              variant="secondary"
+              className="h-11 sm:h-9 px-3 gap-1 transition-colors duration-200 bg-pink-50 text-pink-600 hover:bg-pink-100 dark:bg-pink-900/20 dark:text-pink-400 dark:hover:bg-pink-900/40"
+            >
+              <GraduationCap className="w-4 h-4" />
+              <span className="text-xs font-medium">Teach</span>
             </Button>
           </InfoTooltip>
 

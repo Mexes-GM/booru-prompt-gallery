@@ -1,0 +1,137 @@
+{
+  "_comment": "Curated vocabulary for the Prompt Enrichment axes. Every value was verified against the Danbooru tags API on 2026-08-30: it exists, is tag category 0 (general), and clears a 1000-post floor, so the checkpoints this app targets (ANIMA / Illustrious) actually learned it. See docs/plans/2026-08-30-prompt-enrichment-character-identity.md §19. Regenerate counts before trusting them after a long gap.",
+  "_postCountFloor": 1000,
+  "_verifiedAt": "2026-08-30",
+  "_rules": {
+    "sceneIndependent": "Only axes marked sceneIndependent:true are safe to inject ambiently. They describe how the image is captured, not what is in it, so they cannot contradict the post's own tags.",
+    "emptySlotOnly": "An axis only fires when the prompt has NO value in that axis. The post's own tags always win: the booru annotation is the source of truth.",
+    "mutuallyExclusive": "Within an axis, at most one value applies. `full_body` and `close-up` cannot both be true.",
+    "budget": "Each enabled axis contributes at most 1 tag, so N enabled axes add at most N tags. Keeps prompt dilution bounded and predictable."
+  },
+  "axes": {
+    "framing": {
+      "label": "Framing",
+      "description": "How much of the subject is in shot. Independent of scene content.",
+      "sceneIndependent": true,
+      "values": [
+        { "tag": "full body", "postCount": 1272597 },
+        { "tag": "upper body", "postCount": 1185362 },
+        { "tag": "cowboy shot", "postCount": 846943 },
+        { "tag": "portrait", "postCount": 142042 },
+        { "tag": "close-up", "postCount": 63322 },
+        { "tag": "wide shot", "postCount": 23700 }
+      ]
+    },
+    "angle": {
+      "label": "Camera angle",
+      "description": "Where the camera sits relative to the subject. Independent of scene content.",
+      "sceneIndependent": true,
+      "values": [
+        { "tag": "from side", "postCount": 334801 },
+        { "tag": "from behind", "postCount": 327764 },
+        { "tag": "dutch angle", "postCount": 162488 },
+        { "tag": "from above", "postCount": 145156 },
+        { "tag": "from below", "postCount": 118940 },
+        { "tag": "straight-on", "postCount": 60641 },
+        { "tag": "foreshortening", "postCount": 69370 }
+      ]
+    },
+    "optics": {
+      "label": "Optics",
+      "description": "Lens and film character. Independent of scene content.",
+      "sceneIndependent": true,
+      "values": [
+        { "tag": "blurry background", "postCount": 185338 },
+        { "tag": "depth of field", "postCount": 125176 },
+        { "tag": "blurry foreground", "postCount": 41777 },
+        { "tag": "chromatic aberration", "postCount": 38524 },
+        { "tag": "motion blur", "postCount": 34792 },
+        { "tag": "film grain", "postCount": 26592 },
+        { "tag": "bokeh", "postCount": 10703 },
+        { "tag": "fisheye", "postCount": 6766 },
+        { "tag": "vignetting", "postCount": 2758 }
+      ]
+    },
+    "color": {
+      "label": "Colour treatment",
+      "description": "Whole-image palette. Independent of scene content but a strong aesthetic choice, so off by default.",
+      "sceneIndependent": true,
+      "values": [
+        { "tag": "limited palette", "postCount": 26315 },
+        { "tag": "sepia", "postCount": 10461 },
+        { "tag": "muted colors", "postCount": 9136 },
+        { "tag": "pastel colors", "postCount": 4748 }
+      ]
+    },
+    "lighting": {
+      "label": "Lighting",
+      "description": "NOT scene-independent, so it cannot be injected ambiently from a flat pool. `moonlight` contradicts a daytime post and `dappled sunlight` contradicts a night scene, which is exactly why the 297 presets in detailed-backgrounds.json bundle lighting WITH a location and a time: the preset pre-authors a coherent combination. Enabling this axis standalone requires conditioning on the post's own time and setting tags. Vocabulary is verified and split by dependency so a future implementation has the groundwork.",
+      "sceneIndependent": false,
+      "conditioningRequired": ["time of day", "indoors/outdoors"],
+      "valueGroups": {
+        "unconditional": {
+          "description": "Light quality and effects that hold in any scene.",
+          "values": [
+            { "tag": "backlighting", "postCount": 45420 },
+            { "tag": "sidelighting", "postCount": 13061 },
+            { "tag": "dim lighting", "postCount": 1304 },
+            { "tag": "light particles", "postCount": 80759 },
+            { "tag": "lens flare", "postCount": 50374 },
+            { "tag": "high contrast", "postCount": 4820 }
+          ]
+        },
+        "requiresDaylight": {
+          "description": "Imply the sun. Contradict a night or windowless-interior post.",
+          "values": [
+            { "tag": "sunlight", "postCount": 102125 },
+            { "tag": "light rays", "postCount": 33165 },
+            { "tag": "dappled sunlight", "postCount": 15071 },
+            { "tag": "sunbeam", "postCount": 13295 }
+          ]
+        },
+        "requiresNight": {
+          "description": "Imply darkness. Contradict a daytime post.",
+          "values": [
+            { "tag": "moonlight", "postCount": 4786 },
+            { "tag": "city lights", "postCount": 6884 },
+            { "tag": "neon lights", "postCount": 3550 }
+          ]
+        },
+        "sceneObjects": {
+          "description": "Rejected for this axis: these are light SOURCES or events present in the scene, not lighting treatment. They belong to scenery, and detailed-backgrounds.json already places them coherently.",
+          "values": [
+            { "tag": "lantern", "postCount": 38683 },
+            { "tag": "fireworks", "postCount": 19365 },
+            { "tag": "spotlight", "postCount": 9398 },
+            { "tag": "stage lights", "postCount": 6794 },
+            { "tag": "christmas lights", "postCount": 3190 },
+            { "tag": "candlelight", "postCount": 1343 }
+          ]
+        }
+      }
+    }
+  },
+  "_rejected": {
+    "_comment": "Verified as valid Danbooru tags but deliberately excluded, so a future edit does not re-add them without knowing why.",
+    "subjectGaze": {
+      "reason": "Describe where the subject looks, not where the camera is. Would fight the post's own gaze tags.",
+      "tags": ["profile", "looking up", "looking down", "sideways glance"]
+    },
+    "accidentalCrop": {
+      "reason": "Describe unintended framing artifacts rather than a deliberate choice.",
+      "tags": ["feet out of frame", "head out of frame", "out of frame"]
+    },
+    "wholeImageOverride": {
+      "reason": "monochrome (848,965) greyscales the entire image. Far too strong for an ambient toggle and it destroys every colour tag in the prompt.",
+      "tags": ["monochrome"]
+    },
+    "compositionMode": {
+      "reason": "pov (199,013) restructures the whole composition and implies a first-person subject relationship. Too strong to apply ambiently.",
+      "tags": ["pov"]
+    },
+    "nonexistent": {
+      "reason": "post_count 0 on Danbooru, so never learned by the target checkpoints.",
+      "tags": ["three-quarter view", "dynamic angle", "tilt-shift", "lens distortion", "vibrant colors", "duotone", "high saturation", "desaturated"]
+    }
+  }
+}

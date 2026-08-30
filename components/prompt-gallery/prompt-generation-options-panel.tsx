@@ -23,7 +23,24 @@ import {
 import { cn } from "@/lib/utils"
 import { userPreferences } from "@/lib/storage"
 import type { BackgroundMode } from "@/lib/background-detector"
+import type { MatchStrictness } from "@/lib/background-context"
 
+/**
+ * Labels + tooltip copy for the "Detailed Random" scene-matching strictness.
+ * Shared between the compact (segmented control) and full (Select) renderings
+ * below, so the wording never drifts between the two variants.
+ */
+export const MATCH_STRICTNESS_OPTIONS: { value: MatchStrictness; label: string }[] = [
+  { value: "free", label: "Free" },
+  { value: "balanced", label: "Balanced" },
+  { value: "strict", label: "Strict" },
+]
+
+export const MATCH_STRICTNESS_DESCRIPTIONS: Record<MatchStrictness, string> = {
+  free: "Fully random — scenery may not match the pose or setting.",
+  balanced: "Keeps the scene believable for the pose it's paired with (default).",
+  strict: "Only picks low-traffic, private-feeling settings.",
+}
 interface PromptGenerationOptionsPanelProps {
   isPromptOptionsExpanded: boolean
   setIsPromptOptionsExpanded: (updater: (prev: boolean) => boolean) => void
@@ -55,6 +72,9 @@ interface PromptGenerationOptionsPanelProps {
   setRandomBackgroundPatterns: (val: boolean) => void
   randomBackgroundIncludeGradients: boolean
   setRandomBackgroundIncludeGradients: (val: boolean) => void
+  /** How strictly "Detailed Random" gates its pick against the post's scene. */
+  backgroundMatchStrictness: MatchStrictness
+  setBackgroundMatchStrictness: (val: MatchStrictness) => void
 
   /**
    * "full" (default) is the desktop 2-column panel with InfoTooltip visuals
@@ -101,6 +121,8 @@ export function PromptGenerationOptionsPanel({
   setRandomBackgroundPatterns: _setRandomBackgroundPatterns,
   randomBackgroundIncludeGradients,
   setRandomBackgroundIncludeGradients: _setRandomBackgroundIncludeGradients,
+  backgroundMatchStrictness,
+  setBackgroundMatchStrictness: _setBackgroundMatchStrictness,
   variant = "full",
 }: PromptGenerationOptionsPanelProps) {
   const posthog = usePostHog();
@@ -132,6 +154,7 @@ export function PromptGenerationOptionsPanel({
   const setSimpleBackgroundReplacementTags = (val: string) => { trackBackground('simpleBackgroundReplacementTags', val); _setSimpleBackgroundReplacementTags(val); };
   const setRandomBackgroundPatterns = (val: boolean) => { trackBackground('randomBackgroundPatterns', val); _setRandomBackgroundPatterns(val); };
   const setRandomBackgroundIncludeGradients = (val: boolean) => { trackBackground('randomBackgroundIncludeGradients', val); _setRandomBackgroundIncludeGradients(val); };
+  const setBackgroundMatchStrictness = (val: MatchStrictness) => { trackBackground('backgroundMatchStrictness', val); _setBackgroundMatchStrictness(val); };
 
   if (variant === "compact") {
     return (
@@ -264,6 +287,40 @@ export function PromptGenerationOptionsPanel({
                       className="scale-75 origin-right"
                     />
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {backgroundMode === 'detailed_random' && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
+                <div className="pt-2 pl-3 flex flex-col gap-1.5">
+                  <span className="text-[11px] font-medium">Scene Matching</span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {MATCH_STRICTNESS_OPTIONS.map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setBackgroundMatchStrictness(value)}
+                        className={cn(
+                          "h-6 rounded-md text-[10px] font-medium transition-colors",
+                          backgroundMatchStrictness === value
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-background text-muted-foreground hover:bg-muted"
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground leading-tight">
+                    {MATCH_STRICTNESS_DESCRIPTIONS[backgroundMatchStrictness]}
+                  </span>
                 </div>
               </motion.div>
             )}
@@ -644,6 +701,46 @@ export function PromptGenerationOptionsPanel({
                     </div>
                     <Switch checked={randomBackgroundIncludeGradients} onCheckedChange={setRandomBackgroundIncludeGradients} className="scale-75 origin-right" />
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {backgroundMode === 'detailed_random' && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
+                <div className="pt-3 pl-0 sm:pl-[3.25rem] flex flex-col gap-2">
+                  <InfoTooltip
+                    title="Scene Matching"
+                    description="Controls how closely the randomly-picked scenery has to fit the post. 'Free' ignores the post entirely (old behavior) for maximum variety. 'Balanced' (default) keeps the original location when the post already shows one, and otherwise favors quieter, more private-feeling settings so the scenery matches the mood of the pose. 'Strict' goes further and only picks from secluded, low-traffic settings — useful when you want every generated scene to read as private."
+                  >
+                    <span className="text-xs font-medium text-foreground cursor-pointer">Scene Matching</span>
+                  </InfoTooltip>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {MATCH_STRICTNESS_OPTIONS.map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setBackgroundMatchStrictness(value)}
+                        className={cn(
+                          "h-7 rounded-md text-xs font-medium transition-colors border",
+                          backgroundMatchStrictness === value
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-muted-foreground border-border hover:bg-muted"
+                        )}
+                        aria-pressed={backgroundMatchStrictness === value}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground leading-tight">
+                    {MATCH_STRICTNESS_DESCRIPTIONS[backgroundMatchStrictness]}
+                  </span>
                 </div>
               </motion.div>
             )}

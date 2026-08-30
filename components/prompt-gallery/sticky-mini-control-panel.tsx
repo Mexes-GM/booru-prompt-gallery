@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import type { MatchStrictness } from "@/lib/background-context"
+import { MATCH_STRICTNESS_OPTIONS, MATCH_STRICTNESS_DESCRIPTIONS } from "./prompt-generation-options-panel"
 
 interface StickyMiniControlPanelProps {
   isVisible: boolean;
@@ -36,6 +38,8 @@ interface StickyMiniControlPanelProps {
   setRandomBackgroundPatterns: (val: boolean) => void;
   randomBackgroundIncludeGradients: boolean;
   setRandomBackgroundIncludeGradients: (val: boolean) => void;
+  backgroundMatchStrictness: MatchStrictness;
+  setBackgroundMatchStrictness: (val: MatchStrictness) => void;
   isMergeMode: boolean;
   mergeModeType: string;
   isAiConvertMode: boolean;
@@ -64,6 +68,8 @@ export function StickyMiniControlPanel({
   setRandomBackgroundPatterns,
   randomBackgroundIncludeGradients,
   setRandomBackgroundIncludeGradients,
+  backgroundMatchStrictness,
+  setBackgroundMatchStrictness,
   isMergeMode,
   mergeModeType,
   isAiConvertMode,
@@ -108,7 +114,7 @@ export function StickyMiniControlPanel({
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={exitAnim}
           transition={springTransition}
-          className={`fixed top-6 left-0 right-0 mx-auto z-[60] w-[95%] max-w-4xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
+          className={`fixed top-6 left-0 right-0 mx-auto z-40 w-[95%] max-w-4xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         >
           {/* Border Glow Effect */}
@@ -250,6 +256,30 @@ export function StickyMiniControlPanel({
                             <span className="text-[10px]">Include Gradients</span>
                             <Switch checked={randomBackgroundIncludeGradients} onCheckedChange={setRandomBackgroundIncludeGradients} />
                           </div>
+                        </div>
+                      )}
+
+                      {backgroundMode === 'detailed_random' && (
+                        <div className="mt-2 flex flex-col gap-1.5 bg-muted/50 p-2 rounded-md">
+                          <span className="text-[10px] font-medium">Scene Matching</span>
+                          <div className="grid grid-cols-3 gap-1">
+                            {MATCH_STRICTNESS_OPTIONS.map(({ value, label }) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => setBackgroundMatchStrictness(value)}
+                                className={`h-6 rounded text-[10px] font-medium transition-colors ${backgroundMatchStrictness === value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
+                                  }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground leading-tight">
+                            {MATCH_STRICTNESS_DESCRIPTIONS[backgroundMatchStrictness]}
+                          </span>
                         </div>
                       )}
                     </div>

@@ -15,6 +15,7 @@ import type { ClassifiedTags } from "@/lib/tag-classifier"
 
 const TeachModal = dynamic(() => import("@/components/teach-modal").then(m => m.TeachModal), { ssr: false, loading: () => null })
 const TeachWelcomeModal = dynamic(() => import("@/components/teach-welcome-modal").then(m => m.TeachWelcomeModal), { ssr: false, loading: () => null })
+const QuickTeachModal = dynamic(() => import("@/components/quick-teach-modal").then(m => m.QuickTeachModal), { ssr: false, loading: () => null })
 const ReversePromptParserModal = dynamic(() => import("@/components/prompt-gallery/reverse-prompt-parser-modal").then(m => m.ReversePromptParserModal), { ssr: false, loading: () => null })
 const GlobalWeightsModal = dynamic(() => import("@/components/prompt-gallery/global-weights-modal").then(m => m.GlobalWeightsModal), { ssr: false, loading: () => null })
 
@@ -31,6 +32,11 @@ interface GalleryModalsProps {
   // Teach welcome modal
   showWelcomeModal: boolean
   setShowWelcomeModal: (open: boolean) => void
+
+  // Quick Teach (gamified, image-free tag classification) modal
+  isQuickTeachOpen: boolean
+  setIsQuickTeachOpen: (open: boolean) => void
+  tagOverrides: Record<string, string>
 
   // Global weights modal
   isGlobalWeightsModalOpen: boolean
@@ -64,6 +70,9 @@ export function GalleryModals({
   onTeachSuccess,
   showWelcomeModal,
   setShowWelcomeModal,
+  isQuickTeachOpen,
+  setIsQuickTeachOpen,
+  tagOverrides,
   isGlobalWeightsModalOpen,
   setIsGlobalWeightsModalOpen,
   globalWeights,
@@ -93,6 +102,13 @@ export function GalleryModals({
         onSuccess={onTeachSuccess}
       />
       <TeachWelcomeModal triggerOpen={showWelcomeModal} onOpenChange={setShowWelcomeModal} />
+
+      <QuickTeachModal
+        open={isQuickTeachOpen}
+        onOpenChange={setIsQuickTeachOpen}
+        tagOverrides={tagOverrides}
+        onSuccess={onTeachSuccess}
+      />
 
       <GlobalWeightsModal
         open={isGlobalWeightsModalOpen}

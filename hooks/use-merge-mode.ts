@@ -2,11 +2,14 @@ import { useState, useCallback, useMemo } from 'react'
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory, classifyTags, classifyTag } from '@/lib/tag-classifier'
 import { processBackgroundTags, type BackgroundMode } from '@/lib/background-detector'
-import { META_TAGS_SET, normalize, applyWordReplacementsToList, type WordReplacementRule } from '@/lib/cleanPrompt'
+import { deriveBackgroundContext, type MatchStrictness } from '@/lib/background-context'
+import { applyWordReplacementsToList, buildPostMetaTagSet, isMetaTag, type WordReplacementRule } from '@/lib/cleanPrompt'
 
-// Helper: filter meta tags from raw tag array
-const filterMetaTags = (tags: string[]) =>
-  tags.filter(t => Boolean(t) && !META_TAGS_SET.has(normalize(t)))
+// Helper: filter meta tags from raw tag array. `postMetaTags` is the post's own
+// tag_string_meta (see buildPostMetaTagSet) — passing it catches the meta tags
+// the curated list never enumerated, without any extra request.
+const filterMetaTags = (tags: string[], postMetaTags?: ReadonlySet<string>) =>
+  tags.filter(t => Boolean(t) && !isMetaTag(t, postMetaTags))
 
 // Helper: split a space-delimited tag string into trimmed, non-empty tags in a single pass
 const splitAndTrimTags = (tagString: string): string[] =>
@@ -27,7 +30,8 @@ const classifyPostTags = (
     post.tag_string_character ? splitAndTrimTags(post.tag_string_character) : [],
     wordReplacements,
   )
-  const tags = Array.from(new Set([...charTags, ...applyWordReplacementsToList(filterMetaTags(rawTags), wordReplacements)]))
+  const postMetaTags = buildPostMetaTagSet(post.tag_string_meta)
+  const tags = Array.from(new Set([...charTags, ...applyWordReplacementsToList(filterMetaTags(rawTags, postMetaTags), wordReplacements)]))
   return { charTags, classified: classifyTags(tags, tagOverrides, charTags) }
 }
 
@@ -53,7 +57,12 @@ export function useMergeMode(
     tagOverrides: Record<string, string> = {},
     backgroundMode: BackgroundMode = 'keep',
     simpleBackgroundReplacementTags: string = "simple background, white background",
-    wordReplacements: WordReplacementRule[] = []
+    wordReplacements: WordReplacementRule[] = [],
+    /** Scenery dataset for the 'detailed_random' mode. Without it that mode can
+     *  only STRIP the original background — it has nothing to inject, so Merge
+     *  Mode silently behaved like "Remove All". */
+    detailedBackgroundsList: string[][] = [],
+    backgroundMatchStrictness: MatchStrictness = 'balanced'
 ) {
     const [isMergeMode, setIsMergeMode] = useState(false)
     const [mergeModeType, setMergeModeType] = useState<MergeModeType>('merge')
@@ -312,7 +321,39 @@ export function useMergeMode(
         // 3. Apply Background Processing Mode (Only for simple merge mode)
         if (backgroundMode !== 'keep' && mergeModeType === 'merge') {
             const rawTextArray = segments.map(s => s.text);
-            const processedTextArray = processBackgroundTags(rawTextArray, backgroundMode, simpleBackgroundReplacementTags, tagOverrides);
+            // Deterministic seed derived from the selected post ids, sorted so
+            // selection ORDER doesn't change the outcome. This memo re-runs on
+            // every "Tags to add" keystroke, and processBackgroundTags falls
+            // back to Math.random when no seed is given — which would re-roll
+            // the whole background on each keystroke.
+            const backgroundSeed = Array.from(selectedPosts.keys())
+                .sort((a, b) => a - b)
+                .reduce((acc, id) => (Math.imul(acc, 31) + id) | 0, 0);
+            // Scene context for Detailed Random. Explicitness comes from the
+            // FULL tags of every selected post (the union is naturally the most
+            // restrictive: one post with act tags gates the whole merge), while
+            // location hints come only from the scenery the user actually KEPT
+            // in the merge — deselecting a post's scenery is a request for a new
+            // location, so honouring hints from discarded tags would fight it.
+            const backgroundContext = backgroundMode === 'detailed_random'
+                ? {
+                    explicitness: deriveBackgroundContext({
+                        tags: Array.from(selectedPosts.values()).flatMap(d => splitAndTrimTags(d.post.tag_string)),
+                    }).explicitness,
+                    locationHints: deriveBackgroundContext({ tags: rawTextArray }).locationHints,
+                }
+                : undefined;
+            const processedTextArray = processBackgroundTags(
+                rawTextArray,
+                backgroundMode,
+                simpleBackgroundReplacementTags,
+                tagOverrides,
+                undefined,
+                detailedBackgroundsList,
+                backgroundSeed,
+                backgroundContext,
+                backgroundMatchStrictness,
+            );
 
             // Rebuild segments based on the processed array
             const finalSegments: typeof segments = [];
@@ -342,7 +383,7 @@ export function useMergeMode(
         }
 
         return segments
-    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, mergeModeType])
+    }, [selectedPosts, excludedTags, globalWeights, isGlobalWeightsEnabled, addedTagsInput, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, mergeModeType, detailedBackgroundsList, backgroundMatchStrictness])
 
     const mergedPrompt = useMemo(() => {
         if (mergeModeType === 'merge') {

@@ -23,7 +23,8 @@ import {
     Users,
     Loader2,
     Tag,
-    Sparkles
+    Sparkles,
+    Package
 } from "lucide-react"
 import {
     BooruPost,
@@ -32,7 +33,9 @@ import {
 import { PROVIDER_POST_URLS } from "@/lib/constants"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
+import { type MatchStrictness } from "@/lib/background-context"
 import { type TagCategory, type ClassifiedTags, type RichnessDepth } from "@/lib/tag-classifier"
+import { RICHNESS_AXES, TAG_CATEGORIES } from "@/lib/tag-taxonomy"
 import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { useCardPrompt } from "@/hooks/use-card-prompt"
 
@@ -156,10 +159,17 @@ interface MasonryItemProps {
     selectedParts?: Set<TagCategory>
     onTogglePart?: (post: BooruPost, part: TagCategory) => void
     onMergeSelect: (post: BooruPost) => void
+    /** Whether Pack Mode is currently active — shows the "Use as base" action. */
+    isPackMode?: boolean
+    /** Whether this card is the currently selected Pack Mode base card. */
+    isPackBase?: boolean
+    /** Set this post as the Pack Mode base card. */
+    onSetAsPackBase?: (post: BooruPost) => void
     downloadImage: (post: BooruPost) => void
     copyToClipboard: (text: string, id: number, isPrompt: boolean, thumb?: string) => Promise<void>
     excludeInput: string
     addInput: string
+    searchTags?: string
     /** "Find" side of the Find & Replace list (comma-separated, paired by index with replaceInput). */
     findInput?: string
     /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput). */
@@ -176,6 +186,8 @@ interface MasonryItemProps {
 
     randomBackgroundIncludeGradients?: boolean
     detailedBackgroundsList?: string[][]
+    /** How strictly Detailed Random gates its pick against the post's scene. */
+    backgroundMatchStrictness?: MatchStrictness
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
@@ -217,10 +229,14 @@ export const MasonryItem = memo(function MasonryItem({
     selectedParts,
     onTogglePart,
     onMergeSelect,
+    isPackMode = false,
+    isPackBase = false,
+    onSetAsPackBase,
     downloadImage,
     copyToClipboard,
     excludeInput,
     addInput,
+    searchTags,
     findInput = "",
     replaceInput = "",
     includeCharacters,
@@ -235,6 +251,7 @@ export const MasonryItem = memo(function MasonryItem({
 
     randomBackgroundIncludeGradients = true,
     detailedBackgroundsList,
+    backgroundMatchStrictness,
     tagOverrides,
     copiedId,
     isPreviouslyCopied,
@@ -303,6 +320,7 @@ export const MasonryItem = memo(function MasonryItem({
         tagCounts,
         excludeInput,
         addInput,
+        searchTags,
         findInput,
         replaceInput,
         includeCharacters,
@@ -316,6 +334,7 @@ export const MasonryItem = memo(function MasonryItem({
         randomBackgroundPatterns,
         randomBackgroundIncludeGradients,
         detailedBackgroundsList,
+        backgroundMatchStrictness,
         tagOverrides,
         globalWeights,
         isGlobalWeightsEnabled,
@@ -717,18 +736,11 @@ export const MasonryItem = memo(function MasonryItem({
                                 <TooltipContent side="top" className="text-xs">
                                     <div className="flex flex-col gap-0.5">
                                         <span className="font-medium mb-0.5">Richness: {richnessScore.score.toFixed(1)}/{richnessScore.maxScore}</span>
-                                        <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.pose]}>
-                                            {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.pose]} Pose
-                                        </span>
-                                        <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.clothing]}>
-                                            {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.clothing]} Clothing
-                                        </span>
-                                        <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.scenery]}>
-                                            {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.scenery]} Scenery
-                                        </span>
-                                        <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.appearance]}>
-                                            {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.appearance]} Appearance
-                                        </span>
+                                        {RICHNESS_AXES.map((axis) => (
+                                            <span key={axis} className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown[axis]]}>
+                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown[axis]]} {TAG_CATEGORIES[axis].label}
+                                            </span>
+                                        ))}
                                     </div>
                                 </TooltipContent>
                             </Tooltip>
@@ -905,7 +917,17 @@ export const MasonryItem = memo(function MasonryItem({
                     </div>
 
                     <div className="flex button-group items-stretch isolate shrink-0" {...(index === 0 ? { 'data-tour': 'copy-options' } : {})}>
-                        {isNaturalLanguageMode ? (
+                        {isPackMode ? (
+                            <Button
+                                onClick={() => onSetAsPackBase?.(post)}
+                                className={`flex-1 focus-ring h-auto rounded-r-none border-r-0 border-teal-500 text-teal-600 dark:text-teal-400 ${isPackBase ? "" : "hover:bg-teal-500/10"}`}
+                                variant={isPackBase ? "secondary" : "outline"}
+                                aria-label={isPackBase ? "Pack Mode base card" : "Use as base for Pack Mode"}
+                            >
+                                <Package className={`${getIconClass()} mr-1.5`} />
+                                {isPackBase ? "Base ✓" : "Use as Base"}
+                            </Button>
+                        ) : isNaturalLanguageMode ? (
                             <Button
                                 onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())}
                                 className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
@@ -1173,18 +1195,11 @@ export const MasonryItem = memo(function MasonryItem({
                                     <TooltipContent side="top" className="text-xs">
                                         <div className="flex flex-col gap-0.5">
                                             <span className="font-medium mb-0.5">Richness: {richnessScore.score.toFixed(1)}/{richnessScore.maxScore}</span>
-                                            <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.pose]}>
-                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.pose]} Pose
-                                            </span>
-                                            <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.clothing]}>
-                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.clothing]} Clothing
-                                            </span>
-                                            <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.scenery]}>
-                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.scenery]} Scenery
-                                            </span>
-                                            <span className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown.appearance]}>
-                                                {RICHNESS_DEPTH_LABEL[richnessScore.breakdown.appearance]} Appearance
-                                            </span>
+                                            {RICHNESS_AXES.map((axis) => (
+                                                <span key={axis} className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown[axis]]}>
+                                                    {RICHNESS_DEPTH_LABEL[richnessScore.breakdown[axis]]} {TAG_CATEGORIES[axis].label}
+                                                </span>
+                                            ))}
                                         </div>
                                     </TooltipContent>
                                 </Tooltip>
@@ -1340,7 +1355,17 @@ export const MasonryItem = memo(function MasonryItem({
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-2">
-                            {isNaturalLanguageMode ? (
+                            {isPackMode ? (
+                                <Button
+                                    onClick={() => onSetAsPackBase?.(post)}
+                                    variant={isPackBase ? "secondary" : "outline"}
+                                    className={`focus-ring flex-1 sm:flex-none border-teal-500 text-teal-600 dark:text-teal-400 ${isPackBase ? "" : "hover:bg-teal-500/10"}`}
+                                    aria-label={isPackBase ? "Pack Mode base card" : "Use as base for Pack Mode"}
+                                >
+                                    <Package className="w-4 h-4 mr-2" />
+                                    {isPackBase ? "Base ✓" : "Use as Base"}
+                                </Button>
+                            ) : isNaturalLanguageMode ? (
                                 <Button
                                     onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())}
                                     variant="default"
@@ -1469,8 +1494,11 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.isFavorited !== next.isFavorited) return false
     if (prev.isMergeMode !== next.isMergeMode) return false
     if (prev.isSelected !== next.isSelected) return false
+    if (prev.isPackMode !== next.isPackMode) return false
+    if (prev.isPackBase !== next.isPackBase) return false
     if (prev.excludeInput !== next.excludeInput) return false
     if (prev.addInput !== next.addInput) return false
+    if (prev.searchTags !== next.searchTags) return false
     if (prev.findInput !== next.findInput) return false
     if (prev.replaceInput !== next.replaceInput) return false
     if (prev.includeCharacters !== next.includeCharacters) return false

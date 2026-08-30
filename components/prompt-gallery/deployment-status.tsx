@@ -61,7 +61,7 @@ function StatusPill({
           <span className="relative flex h-2 w-2">
             {meta.ping && (
               <span
-                className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${meta.dot}`}
+                className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 motion-reduce:hidden ${meta.dot}`}
               />
             )}
             <span className={`relative inline-flex h-2 w-2 rounded-full ${meta.dot}`} />
@@ -146,7 +146,7 @@ export function MirrorLink() {
       target="_blank"
       rel="noopener noreferrer"
       onClick={() => trackExternalLink(mirror.href, "mirror")}
-      className="inline-flex items-center px-4 py-2 bg-teal-600 hover:bg-teal-500 dark:bg-teal-700 dark:hover:bg-teal-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+      className="inline-flex items-center px-4 py-2 bg-teal-600 hover:bg-teal-500 dark:bg-teal-700 dark:hover:bg-teal-600 text-white text-sm font-medium rounded-full transition-[transform,background-color,box-shadow] duration-200 hover:scale-105 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
     >
       <Globe className="w-4 h-4 mr-2" />
       {mirror.label}

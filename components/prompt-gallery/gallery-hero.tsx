@@ -23,9 +23,9 @@ interface GalleryHeroProps {
  */
 export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: GalleryHeroProps) {
   return (
-    <div className="text-center space-y-2">
-      <h2 className="text-xl sm:text-3xl font-bold tracking-tight">Discover AI Art Prompts</h2>
-      <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4">
+    <div className="text-center space-y-3">
+      <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-balance">Discover AI Art Prompts</h2>
+      <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4 text-pretty leading-relaxed">
         Generate prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 image collections.
         Extract and format tags from posts or access AI-generated prompts directly,
         creating clean, ready-to-use prompts for your AI art generation.
@@ -33,10 +33,10 @@ export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: Gal
 
       {/* Social Links Section */}
       <div className="pt-2 sm:pt-4 space-y-3">
-        <p className="text-muted-foreground text-sm">
-          More of my work here
+        <p className="text-sm text-muted-foreground">
+          More of my work
         </p>
-        <div className="flex items-center justify-center space-x-4">
+        <div className="flex flex-wrap items-center justify-center gap-4">
           <Tooltip>
             <TooltipTrigger asChild>
               <a
@@ -45,7 +45,7 @@ export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: Gal
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => trackExternalLink(SOCIAL_URLS.CIVITAI_PROFILE, 'social')}
-                className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-[background-color,transform] duration-200 hover:-translate-y-0.5 active:scale-95 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                 aria-label="Visit Mexes on CivitAI"
               >
                 <Image
@@ -68,7 +68,7 @@ export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: Gal
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => trackExternalLink(SOCIAL_URLS.TENSOR_ART, 'social')}
-                className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-[background-color,transform] duration-200 hover:-translate-y-0.5 active:scale-95 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                 aria-label="Visit Mexes on Tensor.Art"
               >
                 <Image
@@ -91,7 +91,7 @@ export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: Gal
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => trackExternalLink(SOCIAL_URLS.SEAART, 'social')}
-                className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted/50 transition-[background-color,transform] duration-200 hover:-translate-y-0.5 active:scale-95 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                 aria-label="Visit Mexes on SeaArt AI"
               >
                 <Image
@@ -122,7 +122,7 @@ export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: Gal
               width={180}
               height={40}
               unoptimized
-              className="h-10 w-auto transition-transform duration-200 transform hover:scale-105"
+              className="h-10 w-auto transition-transform duration-200 hover:scale-105 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none"
             />
           </a>
 
@@ -132,7 +132,7 @@ export function GalleryHero({ isAnnouncementsOpen, onDismissAnnouncements }: Gal
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => trackExternalLink(SOCIAL_URLS.GITHUB, 'github')}
-            className="inline-flex items-center px-4 py-2 bg-gray-800 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium rounded-full transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+            className="inline-flex items-center px-4 py-2 bg-gray-800 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium rounded-full transition-[transform,background-color,box-shadow] duration-200 hover:scale-105 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
           >
             <GithubMono size={16} className="mr-2" />
             View on GitHub

@@ -72,12 +72,14 @@ import { renderIcon } from "@/components/prompt-gallery/save-favorite-button"
 import {
   hasMultipleTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags, BooruPost, BooruProvider, isAibooruPost, apiUrl,
 } from "@/lib/api-client"
+import { urlHasHost } from "@/lib/booru/urls"
 import { favKey } from "@/lib/favorites-logic"
 
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
+import type { TagAppendRule } from "@/lib/cleanPrompt"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
-import { classifyTags, type ClassifiedTags } from "@/lib/tag-classifier"
+import { classifyTags, type ClassifiedTags, type TagCategory } from "@/lib/tag-classifier"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { Switch } from "@/components/ui/switch"
@@ -144,6 +146,12 @@ import { useMergeMode } from "@/hooks/use-merge-mode"
 const MergeStickyFooter = dynamic(() => import("./merge-sticky-footer").then(m => m.MergeStickyFooter), { ssr: false, loading: () => null })
 const AiConvertStickyFooter = dynamic(() => import("./ai-convert-sticky-footer").then(m => m.AiConvertStickyFooter), { ssr: false, loading: () => null })
 import type { ConvertMeta } from "./ai-convert-sticky-footer"
+import { usePackMode } from "@/hooks/use-pack-mode"
+import { usePackSeed, PACK_SEED_TARGET_POSTS } from "@/hooks/use-pack-seed"
+import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
+import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
+import { PackSetupModal, type PackSetupAnswers } from "./pack-setup-modal"
+const PackBuilderStickyFooter = dynamic(() => import("./pack-builder-sticky-footer").then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2 } from "lucide-react"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
@@ -177,6 +185,41 @@ import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useHistoryPosts } from "@/hooks/use-history-posts"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { usePostHog } from 'posthog-js/react'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PackSeedFetcher
+// Thin bridge component whose ONLY job is to own the usePackSeedSearch call
+// so it mounts/unmounts under PromptGallery's control instead of always
+// running. usePackSeedSearch has no internal "enabled" flag — useSWRInfinite
+// always fetches its first page on mount, with no built-in way to suppress
+// that from the outside — so the only way to truly defer its first fetch
+// until the Pack Setup modal is confirmed is to not mount the component that
+// calls it at all until then. Reports its live result up via onReady on every
+// render (cheap: PromptGallery only stores it in a ref, no state churn).
+// ─────────────────────────────────────────────────────────────────────────────
+function PackSeedFetcher({
+  answers,
+  booruProvider,
+  onReady,
+}: {
+  answers: PackSetupAnswers
+  booruProvider: BooruProvider
+  onReady: (result: UsePackSeedSearchResult) => void
+}) {
+  const result = usePackSeedSearch({
+    searchTags: answers.searchTags,
+    ratingMode: answers.ratingMode,
+    soloOnly: answers.soloOnly,
+    booruProvider,
+  })
+  // Effect, not a direct render-body call: onReady eventually triggers state
+  // updates in the parent (reseeding axis pools), which must not happen
+  // during this child's render.
+  useEffect(() => {
+    onReady(result)
+  }, [result, onReady])
+  return null
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UnavailablePostsNotice
@@ -524,6 +567,7 @@ export function PromptGallery() {
     debouncedSimpleBackgroundReplacementTags,
     randomBackgroundPatterns, setRandomBackgroundPatterns,
     randomBackgroundIncludeGradients, setRandomBackgroundIncludeGradients,
+    backgroundMatchStrictness, setBackgroundMatchStrictness,
   } = useBackgroundSettings()
 
   const [excludeInput, setExcludeInput] = usePersistentState(
@@ -548,6 +592,14 @@ export function PromptGallery() {
     userPreferences.setFindReplaceReplaceInput,
     "findReplaceReplace",
     STORAGE_KEYS.FIND_REPLACE_REPLACE
+  )
+
+  const [tagAppendRules, setTagAppendRules] = usePersistentState<TagAppendRule[]>(
+    [],
+    userPreferences.getTagAppendRules,
+    userPreferences.setTagAppendRules,
+    "tagAppendRules",
+    STORAGE_KEYS.TAG_APPEND_RULES
   )
 
   const [addInput, setAddInput] = usePersistentState(
@@ -578,6 +630,7 @@ export function PromptGallery() {
   // Modals
   const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  const [isQuickTeachOpen, setIsQuickTeachOpen] = useState(false)
 
   const {
     presets, setPresets,
@@ -665,7 +718,7 @@ export function PromptGallery() {
     return rules
   }, [debouncedFindInput, debouncedReplaceInput])
 
-  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, mergeModeWordReplacements)
+  const mergeMode = useMergeMode(globalWeights, isGlobalWeightsEnabled, debouncedAddInput, tagOverrides, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, mergeModeWordReplacements, detailedBackgroundsList, backgroundMatchStrictness)
 
   // Extract stable mergeMode pieces to avoid dependency churn
   const mergeModeIsMergeMode = mergeMode.isMergeMode
@@ -673,6 +726,160 @@ export function PromptGallery() {
   const mergeModeToggleMergeMode = mergeMode.toggleMergeMode
   const mergeModeSelectedPosts = mergeMode.selectedPosts
   const mergeModeTogglePostPart = mergeMode.togglePostPart
+
+  // Pack Mode Hook — "batch of prompts sharing a base" workflow (see
+  // docs/image-pack-builder-plan.md). Mirrors useMergeMode's shape.
+  // cleanOptions mirrors the exact prompt settings every real card uses, so
+  // generated pack prompts go through the same cleanPrompt pipeline (Exclude,
+  // Find & Replace, Optimize Tags, Include Characters, Smart Tag Exclusion)
+  // instead of a parallel, simpler path.
+  const packCleanOptions = useMemo(() => ({
+    excludeInput: debouncedExcludeInput,
+    addInput: debouncedAddInput,
+    findInput: debouncedFindInput,
+    replaceInput: debouncedReplaceInput,
+    includeCharacters,
+    optimizeTags,
+    smartTagExclusion,
+  }), [debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion])
+  const packMode = usePackMode(tagOverrides, globalWeights, isGlobalWeightsEnabled, packCleanOptions, search.booruProvider)
+  const packSeed = usePackSeed()
+  const packAxisFallbacks = usePackAxisFallbacks(packMode.isPackMode)
+
+  // Extract stable packMode pieces to avoid dependency churn
+  const packModeIsPackMode = packMode.isPackMode
+  const packModeSetBaseCard = packMode.setBaseCard
+  const packModeReseedAllAxes = packMode.reseedAllAxes
+
+  // Pack Setup modal: the answers gate WHEN usePackSeedSearch's fetch starts.
+  // `packSetupOpen` shows the questionnaire; `packSetupAnswers` (non-null once
+  // confirmed) is what conditionally mounts <PackSeedFetcher> below — see that
+  // component for why this must be a mount decision, not a hook "enabled" flag.
+  const [packSetupOpen, setPackSetupOpen] = useState(false)
+  const [packSetupAnswers, setPackSetupAnswers] = useState<PackSetupAnswers | null>(null)
+  const [pendingPackBase, setPendingPackBase] = useState<BooruPost | null>(null)
+
+  // Latest usePackSeedSearch result, reported up by <PackSeedFetcher> once
+  // mounted. Split in two: a ref (for imperative reads inside callbacks that
+  // fire off-render, like handleLoadMorePacks) and a small state snapshot
+  // (for the UI bits that must re-render live: post count, load-more
+  // availability) — cheaper than re-rendering PromptGallery from the full
+  // result object on every page landing.
+  const packSeedSearchRef = useRef<UsePackSeedSearchResult | null>(null)
+  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ postCount: number; canLoadMore: boolean } | null>(null)
+
+  // Selecting a base card no longer seeds anything directly — it fixes the
+  // base and opens the Pack Setup questionnaire. Nothing is fetched until
+  // the user confirms it (see handlePackSetupConfirm).
+  const handleSetAsPackBase = useCallback((post: BooruPost) => {
+    setPendingPackBase(post)
+    setPackSetupOpen(true)
+  }, [])
+
+  // "Full Setup" — opens the same questionnaire without a base card, for
+  // users who want to configure a pack from scratch (custom/empty tags)
+  // instead of picking a search result via "Use as base". Pack type is
+  // forced to 'custom' since there's no base card to derive
+  // 'character'/'clothing' locked categories from.
+  const handleFullPackSetup = useCallback(() => {
+    setPendingPackBase(null)
+    packMode.setPackKind('custom')
+    setPackSetupOpen(true)
+  }, [packMode])
+
+  const handlePackSetupCancel = useCallback(() => {
+    setPackSetupOpen(false)
+    setPendingPackBase(null)
+  }, [])
+
+  const handlePackSetupConfirm = useCallback((answers: PackSetupAnswers) => {
+    setPackSetupOpen(false)
+    setPackSetupAnswers(answers)
+    hasSeededRef.current = false
+    packSeedSearchRef.current = null
+    setPackSeedSnapshot(null)
+    if (pendingPackBase) {
+      packModeSetBaseCard(pendingPackBase)
+    }
+    setPendingPackBase(null)
+  }, [pendingPackBase, packModeSetBaseCard])
+
+  // Once <PackSeedFetcher> reports its first live result, seed axis pools
+  // right away (whatever's loaded so far), then keep fetching more in the
+  // background and reseed again with the richer pool. Only runs the initial
+  // seed ONCE per pack setup confirmation — packSeedSearchRef itself is kept
+  // fresh on every call so handleLoadMorePacks/handleReseedAxis always see
+  // the latest fetch state, but re-running the seed on every incidental
+  // result update (e.g. a page landing) would fight the user's own edits.
+  const hasSeededRef = useRef(false)
+  const handlePackSeedSearchReady = useCallback(async (seedSearch: UsePackSeedSearchResult) => {
+    packSeedSearchRef.current = seedSearch
+    setPackSeedSnapshot({
+      postCount: seedSearch.allPosts.length,
+      canLoadMore: !seedSearch.noMoreResults && !seedSearch.sessionCapReached,
+    })
+    if (hasSeededRef.current) return
+    hasSeededRef.current = true
+    packModeReseedAllAxes(seedSearch.allPosts, tagOverrides, packAxisFallbacks)
+    const seeded = await packSeed.ensureSeeded(() => packSeedSearchRef.current ?? seedSearch)
+    packModeReseedAllAxes(seeded, tagOverrides, packAxisFallbacks)
+  }, [packModeReseedAllAxes, tagOverrides, packAxisFallbacks, packSeed])
+
+  // Manual "Load more posts" — reuses whatever usePackSeedSearch instance is
+  // currently mounted (same tags/rating/solo answers from the Pack Setup
+  // modal). No-op if nothing has been seeded yet. packSeedSnapshot itself
+  // will also refresh via PackSeedFetcher's own effect once the underlying
+  // fetch's result object changes — this just avoids waiting for that extra
+  // render tick for the visible "N posts loaded" counter.
+  const handleLoadMorePacks = useCallback(async () => {
+    if (!packSeedSearchRef.current) return
+    const target = packSeedSearchRef.current.allPosts.length + PACK_SEED_TARGET_POSTS
+    const seeded = await packSeed.ensureSeeded(() => packSeedSearchRef.current!, target)
+    packModeReseedAllAxes(seeded, tagOverrides, packAxisFallbacks)
+    setPackSeedSnapshot({
+      postCount: seeded.length,
+      canLoadMore: !packSeedSearchRef.current.noMoreResults && !packSeedSearchRef.current.sessionCapReached,
+    })
+  }, [packSeed, packModeReseedAllAxes, tagOverrides, packAxisFallbacks])
+
+  // Stable "Re-sample" handler for a single axis category — MUST be memoized:
+  // PackBuilderStickyFooter passes this straight through to each AxisEditor
+  // (a React.memo component), so a fresh inline arrow here on every
+  // PromptGallery render would defeat that memo and re-render/re-animate
+  // every category's chip list whenever any single one was re-sampled.
+  const packModeReseedAxis = packMode.reseedAxis
+  const handleReseedAxis = useCallback((category: TagCategory) => {
+    if (!packSeedSearchRef.current) return
+    packModeReseedAxis(category, packSeedSearchRef.current.allPosts, tagOverrides, packAxisFallbacks[category])
+  }, [packModeReseedAxis, tagOverrides, packAxisFallbacks])
+
+  // Pack Mode learning instrumentation (docs/pack-mode-learning-plan.md §7.7,
+  // last bullet) — aggregate product events only, so the A/B/T/EPSILON
+  // constants in lib/pack/pack-learning.ts can eventually be calibrated
+  // against real usage instead of guessed. Never carries prompt text or raw
+  // tag values, only category names/counts/provider — same privacy bar as
+  // every other posthog.capture() call in this file.
+  const packModeRemoveAxisValue = packMode.removeAxisValue
+  const handlePackRemoveAxisValue = useCallback((category: TagCategory, value: string) => {
+    packModeRemoveAxisValue(category, value)
+    posthog.capture('pack_axis_value_removed', {
+      category,
+      booru_source: search.booruProvider,
+      pack_kind: packMode.packKind,
+    })
+  }, [packModeRemoveAxisValue, posthog, search.booruProvider, packMode.packKind])
+
+  const packModeRegenerate = packMode.regenerate
+  const handlePackRegenerate = useCallback(() => {
+    packModeRegenerate()
+    posthog.capture('pack_generated', {
+      booru_source: search.booruProvider,
+      pack_kind: packMode.packKind,
+      prompt_count: packMode.promptCount,
+      locked_category_count: packMode.lockedCategories.size,
+      active_axis_count: packMode.activeAxisCategories.length,
+    })
+  }, [packModeRegenerate, posthog, search.booruProvider, packMode.packKind, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
 
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
@@ -686,11 +893,14 @@ export function PromptGallery() {
     if (mergeModeIsMergeMode) {
       mergeModeDisableMergeMode()
     }
+    if (packModeIsPackMode) {
+      packMode.disablePackMode()
+    }
     setAiConvertTags(tagsToSend)
     setAiConvertImage(imageUrl)
     setAiConvertMeta(meta)
     setIsAiConvertMode(true)
-  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode])
+  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packModeIsPackMode, packMode])
 
   // Custom wrapper to enable/disable modes mutually exclusively
   const toggleAiConvertMode = useCallback(() => {
@@ -699,15 +909,30 @@ export function PromptGallery() {
       if (next && mergeModeIsMergeMode) {
         mergeModeDisableMergeMode()
       }
+      if (next && packModeIsPackMode) {
+        packMode.disablePackMode()
+      }
       return next
     })
-  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode])
+  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packModeIsPackMode, packMode])
 
-  // Wrapper for toggling merge mode to automatically disable AI mode
+  // Wrapper for toggling merge mode to automatically disable AI mode + Pack mode
   const handleToggleMergeMode = useCallback(() => {
     setIsAiConvertMode(false)
+    if (packModeIsPackMode) {
+      packMode.disablePackMode()
+    }
     mergeModeToggleMergeMode()
-  }, [mergeModeToggleMergeMode])
+  }, [mergeModeToggleMergeMode, packModeIsPackMode, packMode])
+
+  // Wrapper for toggling pack mode to automatically disable Merge + AI Convert
+  const handleTogglePackMode = useCallback(() => {
+    setIsAiConvertMode(false)
+    if (mergeModeIsMergeMode) {
+      mergeModeDisableMergeMode()
+    }
+    packMode.togglePackMode()
+  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packMode])
 
   const effectiveScale = useMemo(() => {
     if (isMobile) {
@@ -924,10 +1149,10 @@ export function PromptGallery() {
       // Access-Control-Allow-Origin (verified live: mode:'cors' -> TypeError: Failed to
       // fetch, mode:'no-cors' -> opaque 200), so it needs the proxy too despite being
       // viewable directly via <img> (which ignores CORS). Only Aibooru works direct.
-      const needsVercelProxy = imageUrl.includes('donmai.us') ||
-        imageUrl.includes('rule34.xxx') ||
-        imageUrl.includes('gelbooru.com') ||
-        imageUrl.includes('e621.net')
+      const needsVercelProxy = urlHasHost(imageUrl, 'donmai.us') ||
+        urlHasHost(imageUrl, 'rule34.xxx') ||
+        urlHasHost(imageUrl, 'gelbooru.com') ||
+        urlHasHost(imageUrl, 'e621.net')
 
       // Danbooru: prefer the CloudFront proxy (edge cache + CORS) when configured.
       const cdnUrl = getDanbooruCdnUrl(imageUrl)
@@ -1129,8 +1354,10 @@ export function PromptGallery() {
       copyToClipboard={stableCopyToClipboard}
       excludeInput={debouncedExcludeInput}
       addInput={debouncedAddInput}
+      searchTags={search.debouncedSearchTags}
       findInput={debouncedFindInput}
       replaceInput={debouncedReplaceInput}
+      tagAppendRules={tagAppendRules}
       includeCharacters={includeCharacters}
       optimizeTags={optimizeTags}
       smartTagExclusion={smartTagExclusion}
@@ -1143,6 +1370,7 @@ export function PromptGallery() {
 
       randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
       detailedBackgroundsList={detailedBackgroundsList}
+      backgroundMatchStrictness={backgroundMatchStrictness}
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       isExpanded={expandedPostId === post.id}
@@ -1153,6 +1381,9 @@ export function PromptGallery() {
       selectedParts={mergeModeSelectedPosts.get(post.id)?.parts}
       onTogglePart={mergeModeTogglePostPart}
       onMergeSelect={() => { }}
+      isPackMode={packModeIsPackMode}
+      isPackBase={packMode.baseCard?.id === post.id}
+      onSetAsPackBase={handleSetAsPackBase}
       onSkipAnimation={() => setCopiedId(null)}
       globalWeights={globalWeights}
       isGlobalWeightsEnabled={isGlobalWeightsEnabled}
@@ -1163,7 +1394,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={showCategoryTagBadges}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges])
+  }, [viewMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1236,14 +1467,24 @@ export function PromptGallery() {
                     disableMergeMode={mergeMode.disableMergeMode}
                     enableMergeMode={() => {
                       setIsAiConvertMode(false)
+                      if (packModeIsPackMode) packMode.disablePackMode()
                       mergeMode.enableMergeMode()
                     }}
                     enableVariationMode={() => {
                       setIsAiConvertMode(false)
+                      if (packModeIsPackMode) packMode.disablePackMode()
                       mergeMode.enableVariationMode()
+                    }}
+                    isPackMode={packModeIsPackMode}
+                    disablePackMode={packMode.disablePackMode}
+                    enablePackMode={() => {
+                      setIsAiConvertMode(false)
+                      if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
+                      packMode.enablePackMode()
                     }}
                     setSearchTags={search.setSearchTags}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
+                    onOpenQuickTeach={() => setIsQuickTeachOpen(true)}
                     onProviderChange={trackProviderChange}
                   />
 
@@ -1291,6 +1532,8 @@ export function PromptGallery() {
                         setFindInput={setFindInput}
                         replaceInput={replaceInput}
                         setReplaceInput={setReplaceInput}
+                        tagAppendRules={tagAppendRules}
+                        setTagAppendRules={setTagAppendRules}
                         tagCountFilter={search.tagCountFilter}
                         setTagCountFilter={search.setTagCountFilter}
                         setAppliedTagCountFilter={search.setAppliedTagCountFilter}
@@ -1333,6 +1576,8 @@ export function PromptGallery() {
                         setRandomBackgroundPatterns={setRandomBackgroundPatterns}
                         randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
                         setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
+                        backgroundMatchStrictness={backgroundMatchStrictness}
+                        setBackgroundMatchStrictness={setBackgroundMatchStrictness}
                       />
                       </div>
                     </CollapsibleContent>
@@ -1541,6 +1786,9 @@ export function PromptGallery() {
         onTeachSuccess={refreshOverrides}
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
+        isQuickTeachOpen={isQuickTeachOpen}
+        setIsQuickTeachOpen={setIsQuickTeachOpen}
+        tagOverrides={tagOverrides}
         isGlobalWeightsModalOpen={isGlobalWeightsModalOpen}
         setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
         globalWeights={globalWeights}
@@ -1581,6 +1829,8 @@ export function PromptGallery() {
         setRandomBackgroundPatterns={setRandomBackgroundPatterns}
         randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
         setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
+        backgroundMatchStrictness={backgroundMatchStrictness}
+        setBackgroundMatchStrictness={setBackgroundMatchStrictness}
         isMergeMode={mergeMode.isMergeMode}
         mergeModeType={mergeMode.mergeModeType}
         isAiConvertMode={isAiConvertMode}
@@ -1625,6 +1875,74 @@ export function PromptGallery() {
         meta={aiConvertMeta}
         onExit={() => setIsAiConvertMode(false)}
       />
+      {packSetupAnswers && (
+        <PackSeedFetcher
+          key={JSON.stringify(packSetupAnswers)}
+          answers={packSetupAnswers}
+          booruProvider={packSetupAnswers.booruProvider}
+          onReady={handlePackSeedSearchReady}
+        />
+      )}
+      <PackSetupModal
+        isOpen={packSetupOpen}
+        baseCard={pendingPackBase}
+        currentSearchTags={search.searchTags}
+        currentBooruProvider={search.booruProvider}
+        customBaseText={packMode.customBaseText}
+        onCustomBaseTextChange={packMode.setCustomBaseText}
+        onConfirm={handlePackSetupConfirm}
+        onCancel={handlePackSetupCancel}
+      />
+      <PackBuilderStickyFooter
+        isOpen={packModeIsPackMode}
+        baseCard={packMode.baseCard}
+        hasSetupAnswers={!!packSetupAnswers}
+        packKind={packMode.packKind}
+        setPackKind={packMode.setPackKind}
+        lockedCategories={packMode.lockedCategories}
+        toggleLockedCategory={packMode.toggleLockedCategory}
+        baseClassified={packMode.baseClassified}
+        lockedTags={packMode.lockedTags}
+        activeAxisCategories={packMode.activeAxisCategories}
+        axisValues={packMode.axisValues}
+        onAddAxisValue={packMode.addAxisValue}
+        onRemoveAxisValue={handlePackRemoveAxisValue}
+        onReseedAxis={handleReseedAxis}
+        axisMinCounts={packMode.axisMinCounts}
+        onSetAxisMinCount={packMode.setAxisMinCount}
+        customBaseText={packMode.customBaseText}
+        onCustomBaseTextChange={packMode.setCustomBaseText}
+        isSeeding={packSeed.isSeeding}
+        seedProgress={packSeed.seedProgress}
+        loadedPostCount={packSeedSnapshot?.postCount ?? 0}
+        canLoadMorePosts={packSeedSnapshot?.canLoadMore ?? false}
+        onLoadMorePosts={handleLoadMorePacks}
+        promptCount={packMode.promptCount}
+        setPromptCount={packMode.setPromptCount}
+        onRegenerate={handlePackRegenerate}
+        onClearBase={() => {
+          packMode.setBaseCard(null)
+          setPackSetupAnswers(null)
+          packSeedSearchRef.current = null
+          setPackSeedSnapshot(null)
+        }}
+        onExit={() => {
+          packMode.disablePackMode()
+          setPackSetupAnswers(null)
+          packSeedSearchRef.current = null
+          setPackSeedSnapshot(null)
+        }}
+        onFullSetup={handleFullPackSetup}
+        prompts={packMode.generatedPrompts}
+        onCopyPrompt={(prompt) => {
+          copyToClipboard(prompt.prompt, 0, true)
+          packMode.recordPromptCopied(prompt)
+        }}
+        onCopyAll={(text) => copyToClipboard(text, 0, true)}
+        explorationTemperature={packMode.explorationTemperature}
+        onExplorationTemperatureChange={packMode.setExplorationTemperature}
+        onResetLearning={packMode.resetLearning}
+      />
 
       <GalleryModals
         teachModalData={teachModalData}
@@ -1632,6 +1950,9 @@ export function PromptGallery() {
         onTeachSuccess={refreshOverrides}
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
+        isQuickTeachOpen={isQuickTeachOpen}
+        setIsQuickTeachOpen={setIsQuickTeachOpen}
+        tagOverrides={tagOverrides}
         isGlobalWeightsModalOpen={isGlobalWeightsModalOpen}
         setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
         globalWeights={globalWeights}
