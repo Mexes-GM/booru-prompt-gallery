@@ -4,6 +4,7 @@ import { classifyTag } from "./tag-classifier";
 import { BACKGROUND_DICTIONARY } from "./background-dictionary";
 import { extractColorsFromTags, getDominantColor, getCoherentBackgroundColors, getRandomElement, seededRandom } from "./color-theory";
 import { splitCommaSeparatedTags } from "./utils/tag-utils";
+import { selectDetailedPreset, type BackgroundContext, type MatchStrictness } from "./background-context";
 
 // ─── Expanded Background Tag Detection ──────────────────────────────────────
 
@@ -204,6 +205,15 @@ export function processBackgroundTags(
   randomOptions?: RandomBackgroundOptions,
   detailedBackgroundsList?: string[][],
   seed?: number,
+  /**
+   * Scene context for 'detailed_random'. Derive it ONCE per post (see
+   * deriveBackgroundContext) and pass the same value to every pipeline
+   * rendering that post, or the pure and display copies can disagree on which
+   * background they picked. Omitted = the old uniform-random behaviour.
+   */
+  context?: BackgroundContext,
+  /** How strictly the context above gates the pick. Defaults to 'balanced'. */
+  matchStrictness?: MatchStrictness,
 ): string[] {
   if (mode === 'keep') return tags;
 
@@ -242,8 +252,8 @@ export function processBackgroundTags(
 
   // Detailed random mode: generate unique detailed background
   if (mode === 'detailed_random' && detailedBackgroundsList && detailedBackgroundsList.length > 0) {
-    const pickedTags = detailedBackgroundsList[Math.floor(rng() * detailedBackgroundsList.length)];
-    pickedTags.forEach(rt => {
+    const pickedTags = selectDetailedPreset(detailedBackgroundsList, context, rng, matchStrictness);
+    pickedTags?.forEach(rt => {
       if (!newTags.some(t => t.toLowerCase() === rt.toLowerCase())) {
         newTags.push(rt);
       }

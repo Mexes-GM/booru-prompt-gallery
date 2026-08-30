@@ -6,6 +6,7 @@ import { useDebounce } from "@/hooks/use-debounce"
 import { useDetailedBackgrounds } from "@/hooks/use-detailed-backgrounds"
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import { type BackgroundMode } from "@/lib/background-detector"
+import { type MatchStrictness } from "@/lib/background-context"
 
 /**
  * All background-replacement settings for the gallery: the mode (keep / remove /
@@ -53,6 +54,14 @@ export function useBackgroundSettings() {
     STORAGE_KEYS.RANDOM_BACKGROUND_INCLUDE_GRADIENTS
   )
 
+  const [backgroundMatchStrictness, setBackgroundMatchStrictness] = usePersistentState<MatchStrictness>(
+    "balanced",
+    userPreferences.getBackgroundMatchStrictness,
+    userPreferences.setBackgroundMatchStrictness,
+    "backgroundMatchStrictness",
+    STORAGE_KEYS.BACKGROUND_MATCH_STRICTNESS
+  )
+
   return {
     backgroundMode,
     setBackgroundMode,
@@ -65,5 +74,7 @@ export function useBackgroundSettings() {
     setRandomBackgroundPatterns,
     randomBackgroundIncludeGradients,
     setRandomBackgroundIncludeGradients,
+    backgroundMatchStrictness,
+    setBackgroundMatchStrictness,
   }
 }
