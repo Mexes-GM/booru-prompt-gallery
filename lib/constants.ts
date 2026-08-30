@@ -39,6 +39,32 @@ export function getProviderSearchUrl(provider: string, tag: string): string {
   }
 }
 
+// Builds an external URL to a tag's wiki page on the provider's website — the
+// human-written definition/description of what the tag means, as opposed to
+// getProviderSearchUrl (which browses posts carrying the tag). Useful for
+// disambiguating an unfamiliar tag before classifying it.
+export function getProviderWikiUrl(provider: string, tag: string): string {
+  // Wiki page paths use underscores (Danbooru/Gelbooru/e621 wiki slugs mirror
+  // the tag's underscore form), unlike the query-string search URLs above.
+  const slug = encodeURIComponent(tag.trim().replace(/\s+/g, '_'))
+  switch (provider.toLowerCase()) {
+    case 'danbooru':
+      return `${PROVIDER_URLS.DANBOORU}/wiki_pages/${slug}`
+    case 'aibooru':
+      return `${PROVIDER_URLS.AIBOORU}/wiki_pages/${slug}`
+    case 'rule34':
+      // Rule34 has no first-party wiki; Gelbooru's wiki is the closest common
+      // reference for the same tag vocabulary across gelbooru-engine boorus.
+      return `${PROVIDER_URLS.GELBOORU}/index.php?page=wiki&s=view&title=${slug}`
+    case 'e621':
+      return `${PROVIDER_URLS.E621}/wiki_pages/${slug}`
+    case 'gelbooru':
+      return `${PROVIDER_URLS.GELBOORU}/index.php?page=wiki&s=view&title=${slug}`
+    default:
+      return `${PROVIDER_URLS.DANBOORU}/wiki_pages/${slug}`
+  }
+}
+
 // Generic artist tags that aren't useful to save as specific artists
 const GENERIC_ARTIST_TAGS = new Set([
   'unknown_artist',

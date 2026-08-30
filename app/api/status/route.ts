@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { SOCIAL_URLS, USER_AGENT } from '@/lib/constants'
+import { urlHasHost } from '@/lib/booru/urls'
 
 export const runtime = 'edge'
 
@@ -84,7 +85,7 @@ async function fetchFromUptimeRobot(apiKey: string): Promise<StatusPayload['depl
       const isNetlify = netlifyName ? name.includes(netlifyName) : url.includes('netlify')
       const isVercel = vercelName
         ? name.includes(vercelName)
-        : url.includes('vercel') || url.includes('booru-prompt-gallery.com')
+        : url.includes('vercel') || urlHasHost(url, 'booru-prompt-gallery.com')
 
       if (isNetlify) netlify = status
       else if (isVercel) vercel = status

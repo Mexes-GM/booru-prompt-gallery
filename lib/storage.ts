@@ -2,7 +2,10 @@
 import { DEFAULT_BLACKLIST } from '@/lib/constants'
 import { generateId } from '@/lib/utils/id-generator'
 import { broadcastSettingChange } from '@/lib/settings-bridge'
+import type { TagAppendRule } from '@/lib/cleanPrompt'
 import type { BooruProvider, BooruPost } from '@/lib/booru/types'
+import type { TagCategory } from '@/lib/tag-classifier'
+import type { PackLearningModel } from '@/lib/pack/pack-learning'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -73,6 +76,7 @@ export const STORAGE_KEYS = {
   EXCLUDE_TAGS: 'exclude-tags-input',
   FIND_REPLACE_FIND: 'find-replace-find-input',
   FIND_REPLACE_REPLACE: 'find-replace-replace-input',
+  TAG_APPEND_RULES: 'tag-append-rules',
   PROMPT_OPTIONS: 'prompt-options',
   VIEW_MODE: 'view-mode',
   CARD_SCALE: 'card-scale',
@@ -81,6 +85,7 @@ export const STORAGE_KEYS = {
   SMART_TAG_EXCLUSION: 'smart-tag-exclusion',
   RANDOM_BACKGROUND_PATTERNS: 'random-background-patterns',
   RANDOM_BACKGROUND_INCLUDE_GRADIENTS: 'random-background-include-gradients',
+  BACKGROUND_MATCH_STRICTNESS: 'background-match-strictness',
 
   // Search and filter preferences
   SEARCH_TAGS: 'search-tags',
@@ -95,7 +100,45 @@ export const STORAGE_KEYS = {
   // enabling NSFW / entering Rule34 the first time, we remember it so we don't
   // nag on every subsequent toggle/switch.
   NSFW_ACKNOWLEDGED: 'nsfw-acknowledged',
-  RULE34_ACKNOWLEDGED: 'rule34-acknowledged'
+  RULE34_ACKNOWLEDGED: 'rule34-acknowledged',
+
+  // Extension "Match image resolution" toggle (see docs/extension-configurable-targets-plan.md):
+  // when enabled, the Pocket computes a generation width/height from the source
+  // post's aspect ratio (capped at MATCH_RESOLUTION_MAX_LONG_SIDE) and sends it
+  // alongside the prompt in INJECT_PROMPT.
+  MATCH_RESOLUTION_ENABLED: 'extension-match-resolution-enabled',
+  MATCH_RESOLUTION_MAX_LONG_SIDE: 'extension-match-resolution-max-long-side',
+  // When true, MATCH_RESOLUTION_MAX_LONG_SIDE is a hard per-side cap (classic
+  // behavior: max(width, height) never exceeds it) instead of the side of an
+  // equivalent total-pixel-area budget (see lib/extension/generation-resolution.ts).
+  MATCH_RESOLUTION_STRICT_CAP: 'extension-match-resolution-strict-cap',
+
+  // Extension "Bulk Send" mode toggle (real posts vs. synthetic/pack variations).
+  BULK_SEND_MODE: 'extension-bulk-send-mode',
+
+  // Pack Mode (Image Pack Builder) — remembered builder configuration, keyed
+  // by packKind (character/clothing/custom) so switching kinds doesn't clobber
+  // each other's setup. Does NOT persist baseCard or the sampled axisValues —
+  // those are derived from whatever search results are currently loaded and
+  // would go stale the moment they're rehydrated into a different session.
+  PACK_MODE_CONFIG: 'pack-mode-config',
+  // Which packKind tab was last selected — separate from PACK_MODE_CONFIG
+  // (which is keyed BY packKind, one bucket per kind) since this is a
+  // single scalar, not one of those buckets. Without this, usePackMode
+  // always restarted on 'character' every session regardless of which kind
+  // the user actually left off on.
+  PACK_MODE_LAST_KIND: 'pack-mode-last-kind',
+
+  // Pack Mode local learning model (docs/pack-mode-learning-plan.md §7) —
+  // strictly local to this browser, never synced or shared (see §10 of that
+  // plan). Separate key from PACK_MODE_CONFIG since this grows independently
+  // and is pruned on its own budget (see pruneModel in lib/pack/pack-learning.ts).
+  PACK_LEARNING_MODEL: 'pack-learning-model',
+  // Explore/Exploit slider (§7.8) — user-facing control over
+  // weightTemperature, persisted separately from the model itself so
+  // resetting the LEARNING data (Reset learning button) doesn't also reset
+  // this preference.
+  PACK_LEARNING_TEMPERATURE: 'pack-learning-temperature',
 } as const
 
 export interface HistoryItem {
@@ -164,6 +207,28 @@ function fitHistoryToStorageBudget(items: HistoryItem[]): HistoryItem[] {
     used += JSON.stringify(pruned).length
     return pruned
   })
+}
+
+function normalizeTagAppendRules(value: unknown): TagAppendRule[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((rule) => {
+    if (!rule || typeof rule !== 'object') return []
+    const candidate = rule as Partial<TagAppendRule>
+    if (
+      typeof candidate.id !== 'string' ||
+      typeof candidate.find !== 'string' ||
+      !Array.isArray(candidate.append) ||
+      !candidate.append.every((tag) => typeof tag === 'string')
+    ) {
+      return []
+    }
+    return [{ id: candidate.id, find: candidate.find, append: candidate.append }]
+  })
+}
+
+export function createTagAppendRule(): TagAppendRule {
+  return { id: generateId(), find: '', append: [] }
 }
 
 // Type-safe getters and setters for specific preferences
@@ -371,6 +436,12 @@ export const userPreferences = {
   setFindReplaceReplaceInput: (value: string) =>
     storage.set(STORAGE_KEYS.FIND_REPLACE_REPLACE, value),
 
+  getTagAppendRules: (): TagAppendRule[] =>
+    normalizeTagAppendRules(storage.get<unknown>(STORAGE_KEYS.TAG_APPEND_RULES, [])),
+
+  setTagAppendRules: (rules: TagAppendRule[]) =>
+    storage.set(STORAGE_KEYS.TAG_APPEND_RULES, rules),
+
   getViewMode: (): 'grid' | 'list' =>
     storage.get(STORAGE_KEYS.VIEW_MODE, 'grid'),
 
@@ -400,6 +471,20 @@ export const userPreferences = {
 
   setRandomBackgroundIncludeGradients: (enabled: boolean) =>
     storage.set(STORAGE_KEYS.RANDOM_BACKGROUND_INCLUDE_GRADIENTS, enabled),
+
+  /**
+   * How strictly "Detailed Random" gates its location pick against the
+   * post's own explicitness/scenery — see lib/background-context.ts for the
+   * three levels. Defaults to 'balanced'. Kept as an inline union (matching
+   * getBackgroundMode above) instead of importing MatchStrictness, so this
+   * module doesn't pull in the background-context -> background-locations
+   * import chain just for a type.
+   */
+  getBackgroundMatchStrictness: (): 'strict' | 'balanced' | 'free' =>
+    storage.get(STORAGE_KEYS.BACKGROUND_MATCH_STRICTNESS, 'balanced'),
+
+  setBackgroundMatchStrictness: (strictness: 'strict' | 'balanced' | 'free') =>
+    storage.set(STORAGE_KEYS.BACKGROUND_MATCH_STRICTNESS, strictness),
 
   getSimpleBackgroundReplacementTags: (): string =>
     storage.get(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, 'simple background, white background'),
@@ -478,8 +563,108 @@ export const userPreferences = {
     storage.get(STORAGE_KEYS.RULE34_ACKNOWLEDGED, false),
 
   setRule34Acknowledged: (val: boolean) =>
-    storage.set(STORAGE_KEYS.RULE34_ACKNOWLEDGED, val)
+    storage.set(STORAGE_KEYS.RULE34_ACKNOWLEDGED, val),
+
+  // Extension "Match image resolution" toggle
+  getMatchResolutionEnabled: (): boolean =>
+    storage.get(STORAGE_KEYS.MATCH_RESOLUTION_ENABLED, false),
+
+  setMatchResolutionEnabled: (val: boolean) =>
+    storage.set(STORAGE_KEYS.MATCH_RESOLUTION_ENABLED, val),
+
+  getMatchResolutionMaxLongSide: (): number =>
+    storage.get(STORAGE_KEYS.MATCH_RESOLUTION_MAX_LONG_SIDE, 1536),
+
+  setMatchResolutionMaxLongSide: (val: number) =>
+    storage.set(STORAGE_KEYS.MATCH_RESOLUTION_MAX_LONG_SIDE, val),
+
+  getMatchResolutionStrictCap: (): boolean =>
+    storage.get(STORAGE_KEYS.MATCH_RESOLUTION_STRICT_CAP, false),
+
+  setMatchResolutionStrictCap: (val: boolean) =>
+    storage.set(STORAGE_KEYS.MATCH_RESOLUTION_STRICT_CAP, val),
+
+  // Extension "Bulk Send" mode toggle
+  getBulkSendMode: (): string =>
+    storage.get(STORAGE_KEYS.BULK_SEND_MODE, "real"),
+
+  setBulkSendMode: (val: string) =>
+    storage.set(STORAGE_KEYS.BULK_SEND_MODE, val),
+
+  // Pack Mode builder config, keyed by packKind. See PackModeStoredConfig
+  // below for exactly what is (and deliberately isn't) persisted.
+  getPackModeConfig: (): PackModeConfigByKind =>
+    storage.get(STORAGE_KEYS.PACK_MODE_CONFIG, {}),
+
+  setPackModeConfig: (config: PackModeConfigByKind) =>
+    storage.set(STORAGE_KEYS.PACK_MODE_CONFIG, config),
+
+  // Which packKind tab ('character' | 'clothing' | 'custom') was last
+  // selected. Validated against the known literal union on read so a
+  // corrupted/stale value falls back to the default instead of propagating
+  // an invalid packKind into React state.
+  getPackModeLastKind: (): 'character' | 'clothing' | 'custom' => {
+    const stored = storage.get<string>(STORAGE_KEYS.PACK_MODE_LAST_KIND, 'character')
+    return stored === 'character' || stored === 'clothing' || stored === 'custom' ? stored : 'character'
+  },
+
+  setPackModeLastKind: (kind: 'character' | 'clothing' | 'custom') =>
+    storage.set(STORAGE_KEYS.PACK_MODE_LAST_KIND, kind),
+
+  // Pack Mode local learning model (see lib/pack/pack-learning.ts). The
+  // getter validates the stored shape itself (version + contexts object)
+  // rather than importing createEmptyModel from that module at runtime —
+  // storage.ts stays a leaf dependency with no imports from lib/pack/, and
+  // this mirrors the same "migrate/drop silently on corruption" criterion
+  // getHistory and Favorites already use for legacy/malformed data (plan §9.5).
+  getPackLearningModel: (): PackLearningModel => {
+    const stored = storage.get<PackLearningModel | null>(STORAGE_KEYS.PACK_LEARNING_MODEL, null)
+    if (
+      stored &&
+      typeof stored === 'object' &&
+      stored.version === 1 &&
+      stored.contexts &&
+      typeof stored.contexts === 'object' &&
+      !Array.isArray(stored.contexts)
+    ) {
+      return stored
+    }
+    return { version: 1, contexts: {} }
+  },
+
+  setPackLearningModel: (model: PackLearningModel) =>
+    storage.set(STORAGE_KEYS.PACK_LEARNING_MODEL, model),
+
+  // Explore/Exploit control (§7.8) — maps directly to generatePackPrompts'
+  // weightTemperature. 1 = as-learned, >1 flattens toward uniform sampling.
+  getPackLearningTemperature: (): number => {
+    const stored = storage.get<number>(STORAGE_KEYS.PACK_LEARNING_TEMPERATURE, 1)
+    return typeof stored === 'number' && Number.isFinite(stored) && stored > 0 ? stored : 1
+  },
+
+  setPackLearningTemperature: (temperature: number) =>
+    storage.set(STORAGE_KEYS.PACK_LEARNING_TEMPERATURE, temperature),
 }
+
+/**
+ * Remembered Pack Mode builder setup for ONE packKind ('character' |
+ * 'clothing' | 'custom'). Deliberately excludes `baseCard` and the sampled
+ * `axisValues` pools — both are derived from whichever search results happen
+ * to be loaded in the current session and would be stale (or outright invalid
+ * — a value from a post that no longer exists in the new session's pool) the
+ * moment they were rehydrated into a different one. `manualAxisValues` is the
+ * one exception: values the user typed in by hand (via the axis editor's
+ * "Add" input) aren't sampled from search results at all, so they're worth
+ * keeping across sessions the same way lockedCategories/axisMinCounts are.
+ */
+export interface PackModeConfig {
+  lockedCategories: TagCategory[]
+  axisMinCounts: Partial<Record<TagCategory, number>>
+  promptCount: number
+  manualAxisValues: Partial<Record<TagCategory, string[]>>
+}
+
+export type PackModeConfigByKind = Partial<Record<'character' | 'clothing' | 'custom', PackModeConfig>>
 
 export interface SavedArtist {
   provider: string

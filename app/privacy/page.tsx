@@ -139,6 +139,15 @@ export default function PrivacyPage() {
               </a>
               {" "}for details on how they handle this data.
             </p>
+            <p>
+              <strong>Session replay:</strong> we may also record anonymized, visual replays of how the UI is
+              used (clicks, scrolling, layout) to debug interface issues. These replays are configured to protect
+              your privacy: <strong>all images are blocked</strong> from ever being captured (booru thumbnails and
+              full-size images, including any NSFW content, never leave your browser), and <strong>all on-page text
+              is masked</strong> (prompts, tags, search queries, and any input field are replaced with blocked-out
+              placeholders of the same size, never sent to PostHog). Search query strings in the recorded page URL
+              are also stripped before capture.
+            </p>
           </CardContent>
         </Card>
 
