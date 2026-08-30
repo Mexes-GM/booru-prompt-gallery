@@ -4,6 +4,7 @@ import { getSuggestions } from "@/app/actions/admin"
 import { SuggestionsTable } from "./suggestions-table"
 import { Loader2 } from "lucide-react"
 import { AutoSuggestButton } from "@/components/admin/auto-suggest-button"
+import { QuickReviewButton } from "@/components/admin/quick-review-button"
 
 export const metadata = {
   title: "Tag Suggestions | Admin",
@@ -33,7 +34,10 @@ export default async function AdminSuggestionsPage(props: {
             Manage tag category classifications submitted by the community.
             </p>
         </div>
-        <AutoSuggestButton />
+        <div className="flex items-center gap-2">
+          <AutoSuggestButton />
+          <QuickReviewButton />
+        </div>
       </div>
       
       <Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>}>

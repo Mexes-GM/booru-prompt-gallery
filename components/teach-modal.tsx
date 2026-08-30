@@ -40,6 +40,7 @@ import { toastError } from "@/lib/toast-error"
 import { Loader2, GripVertical, Info, Check } from "lucide-react"
 import { submitTagSuggestions, getExistingSuggestions } from '@/app/actions/suggestions'
 import { TagCategory } from '@/lib/tag-classifier'
+import { TAG_CATEGORIES, TAG_CATEGORY_LIST, isTagCategory } from '@/lib/tag-taxonomy'
 import { cn } from "@/lib/utils"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -68,15 +69,20 @@ interface TeachModalProps {
   onSuccess?: () => void
 }
 
-const COLUMNS: { id: ColumnId; title: string; description: string }[] = [
-  { id: 'appearance', title: 'Appearance', description: 'Physical traits like eye color, hair style, skin tone' },
-  { id: 'clothing', title: 'Clothing', description: 'Attire, accessories, and footwear' },
-  { id: 'pose', title: 'Pose', description: 'Body position, gestures, and angles' },
-  { id: 'scenery', title: 'Scenery', description: 'Background, location, and environmental elements' },
-  { id: 'other', title: 'Unclassified', description: 'Tags that need categorization' },
-]
+const COLUMNS: { id: ColumnId; title: string; description: string }[] = TAG_CATEGORY_LIST.map(
+  (category) => ({
+    id: category.id,
+    // This modal presents `other` as work still to do, not as a real axis, so it
+    // uses the taxonomy's alternateLabel ("Unclassified") where one exists.
+    title: category.alternateLabel ?? category.label,
+    description: category.description,
+  })
+)
 
-const CATEGORY_STYLES: Record<string, string> = {
+// Typed by TagCategory (not `string`) on purpose: adding a category to the
+// taxonomy should surface here as a compile error asking for a colour, instead
+// of silently resolving to undefined and rendering an unstyled column.
+const CATEGORY_STYLES: Record<TagCategory, string> = {
   appearance: "border-blue-500/50 bg-blue-500/5 hover:border-blue-500 hover:bg-blue-500/10",
   clothing: "border-green-500/50 bg-green-500/5 hover:border-green-500 hover:bg-green-500/10",
   pose: "border-purple-500/50 bg-purple-500/5 hover:border-purple-500 hover:bg-purple-500/10",
@@ -84,7 +90,7 @@ const CATEGORY_STYLES: Record<string, string> = {
   other: "border-muted-foreground/30 bg-muted/30"
 }
 
-const COLUMN_HEADER_STYLES: Record<string, string> = {
+const COLUMN_HEADER_STYLES: Record<TagCategory, string> = {
   appearance: "border-blue-500/20 bg-blue-500/5 text-blue-700 dark:text-blue-300",
   clothing: "border-green-500/20 bg-green-500/5 text-green-700 dark:text-green-300",
   pose: "border-purple-500/20 bg-purple-500/5 text-purple-700 dark:text-purple-300",
@@ -116,9 +122,15 @@ const SortableItem = memo(function SortableItem({ id, category, suggestedCategor
 
   if (category === 'other' && suggestedCategory && suggestedCategory !== 'other') {
     showSuggestion = true
-    itemStyles = CATEGORY_STYLES[suggestedCategory] || itemStyles
-    // Simple capitalize for label since we removed the map
-    suggestionLabel = suggestedCategory.charAt(0).toUpperCase() + suggestedCategory.slice(1)
+    // suggestedCategory arrives as a plain string (from the suggestions query), so
+    // narrow it against the taxonomy before using it as a key. This also gives a
+    // real label instead of the ad-hoc capitalize this used before there was a map.
+    if (isTagCategory(suggestedCategory)) {
+      itemStyles = CATEGORY_STYLES[suggestedCategory] || itemStyles
+      suggestionLabel = TAG_CATEGORIES[suggestedCategory].label
+    } else {
+      suggestionLabel = suggestedCategory.charAt(0).toUpperCase() + suggestedCategory.slice(1)
+    }
   }
 
   return (

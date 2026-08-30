@@ -3,8 +3,12 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { headers } from 'next/headers'
 import { z } from 'zod'
+import { filterWritableTagNames, toStorageTagName } from '@/lib/tag-write-guard'
+import { TAG_CATEGORY_IDS } from '@/lib/tag-taxonomy'
 
 // --- Schema Validation ---
+
+const CategoryEnum = z.enum(TAG_CATEGORY_IDS)
 
 const TagReclassificationSchema = z.object({
   tagName: z.string()
@@ -15,8 +19,8 @@ const TagReclassificationSchema = z.object({
       // Prevent XSS: blocks "<script", "<div>" etc. but allows "<3" or ">_<"
       return !/<\s*\/?[a-zA-Z]/i.test(val)
     }, "Tag cannot contain HTML elements"),
-  currentCategory: z.enum(['clothing', 'pose', 'scenery', 'appearance', 'other']),
-  suggestedCategory: z.enum(['clothing', 'pose', 'scenery', 'appearance', 'other'])
+  currentCategory: CategoryEnum,
+  suggestedCategory: CategoryEnum
 })
 
 const SuggestionsPayloadSchema = z.array(TagReclassificationSchema).min(1).max(50)
@@ -92,9 +96,42 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
   }
 
   const validatedSuggestions = validation.data
-  const tagNames = validatedSuggestions.map(s => s.tagName)
 
-  // 2. Run rate limit check and tag ID resolution in parallel
+  // 2. Write guard: drop anything that is not descriptive vocabulary (artist,
+  // copyright, character, meta per Danbooru's own taxonomy) before it can create
+  // a row in `tags`, and collapse every name to the space-form storage
+  // convention so this path stops minting underscore duplicates of rows the
+  // mining flow already stores with spaces. On a lookup failure the guard lets
+  // everything through rather than silently discarding a user's contribution.
+  const submittedNames = validatedSuggestions.map(s => s.tagName)
+  const guard = await filterWritableTagNames(supabaseAdmin, submittedNames)
+  const rejectedNames = new Set(guard.rejected.map(r => r.name))
+
+  if (guard.rejected.length > 0) {
+    console.info(
+      `[submitTagSuggestions] rejected ${guard.rejected.length} non-descriptive tag(s):`,
+      guard.rejected.map(r => `${r.name} (${r.reason})`).join(', ')
+    )
+  }
+
+  // Work from here on in storage form, so tag creation, suggestion rows and the
+  // dedup check below all agree on the same name.
+  const acceptedSuggestions = validatedSuggestions
+    .filter(s => !rejectedNames.has(s.tagName))
+    .map(s => ({ ...s, tagName: toStorageTagName(s.tagName) }))
+    .filter(s => s.tagName.length > 0)
+
+  if (acceptedSuggestions.length === 0) {
+    return {
+      success: false,
+      message:
+        "Those tags aren't classifiable: they're artist, character, series or metadata tags, not descriptions of the image.",
+    }
+  }
+
+  const tagNames = Array.from(new Set(acceptedSuggestions.map(s => s.tagName)))
+
+  // 3. Run rate limit check and tag ID resolution in parallel
   const headersList = await headers()
   const ip = headersList.get('x-forwarded-for') || 'unknown'
 
@@ -115,13 +152,13 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
 
   const tagMap = new Map(tags?.map(t => [t.name, t.id]))
 
-  // 3. Auto-create any tags that don't exist yet (sequential — depends on tagMap)
+  // 4. Auto-create any tags that don't exist yet (sequential — depends on tagMap)
   const missingTagNames = tagNames.filter(name => !tagMap.has(name))
 
   if (missingTagNames.length > 0) {
     const newTags = missingTagNames.map(name => ({
       name,
-      category: validatedSuggestions.find(s => s.tagName === name)?.currentCategory ?? 'other'
+      category: acceptedSuggestions.find(s => s.tagName === name)?.currentCategory ?? 'other'
     }))
 
     const { data: insertedTags, error: insertError } = await supabaseAdmin
@@ -136,8 +173,8 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
     }
   }
 
-  // 4. Build suggestions payload
-  const suggestionsToInsert = validatedSuggestions
+  // 5. Build suggestions payload
+  const suggestionsToInsert = acceptedSuggestions
     .filter(s => tagMap.has(s.tagName))
     .map(s => ({
       tag_id: tagMap.get(s.tagName)!,
@@ -151,7 +188,7 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
     return { success: false, message: "No valid tags found to suggest" }
   }
 
-  // 5. Deduplicate against existing pending suggestions
+  // 6. Deduplicate against existing pending suggestions
   const tagIds = suggestionsToInsert.map(s => s.tag_id)
   const { data: existingSuggestions } = await supabaseAdmin
     .from('tag_suggestions')
@@ -170,7 +207,7 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
     return { success: true, message: "Successfully submitted suggestions." }
   }
 
-  // 6. Insert suggestions
+  // 7. Insert suggestions
   const { data: insertedSuggestions, error: insertError } = await supabaseAdmin
     .from('tag_suggestions')
     .insert(finalSuggestions)
@@ -226,6 +263,55 @@ export async function getExistingSuggestions(tagNames: string[]): Promise<Record
     if (tagName && !result[tagName]) {
       result[tagName] = s.suggested_category
     }
+  }
+
+  return result
+}
+
+// --- Query: Suggestion Vote Counts (per-category tally) ---
+
+export type SuggestionVoteCounts = Record<string, number>
+
+/**
+ * For each tag name, returns how many pending suggestions exist per
+ * suggested category — e.g. { appearance: 3, clothing: 1 } — so the UI can
+ * show "Other users suggested: Appearance (3), Clothing (1)" instead of only
+ * the single most-recent suggestion `getExistingSuggestions` returns.
+ * Tags with no pending suggestions are omitted from the result entirely.
+ */
+export async function getSuggestionVoteCounts(tagNames: string[]): Promise<Record<string, SuggestionVoteCounts>> {
+  if (!tagNames.length) return {}
+
+  const { data: tags, error: tagError } = await supabaseAdmin
+    .from('tags')
+    .select('id, name')
+    .in('name', tagNames)
+
+  if (tagError || !tags || tags.length === 0) {
+    if (tagError) console.error("[getSuggestionVoteCounts] Error fetching tags:", tagError)
+    return {}
+  }
+
+  const tagIdToName = new Map(tags.map(t => [t.id, t.name]))
+  const tagIds = tags.map(t => t.id)
+
+  const { data: suggestions, error: suggestionError } = await supabaseAdmin
+    .from('tag_suggestions')
+    .select('tag_id, suggested_category')
+    .in('tag_id', tagIds)
+    .eq('status', 'pending')
+
+  if (suggestionError || !suggestions) {
+    console.error("[getSuggestionVoteCounts] Error fetching suggestions:", suggestionError)
+    return {}
+  }
+
+  const result: Record<string, SuggestionVoteCounts> = {}
+  for (const s of suggestions) {
+    const tagName = tagIdToName.get(s.tag_id)
+    if (!tagName) continue
+    const counts = result[tagName] ?? (result[tagName] = {})
+    counts[s.suggested_category] = (counts[s.suggested_category] ?? 0) + 1
   }
 
   return result

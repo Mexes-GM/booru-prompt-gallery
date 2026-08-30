@@ -5,6 +5,7 @@ import { classifyTag, TagCategory } from '@/lib/tag-classifier'
 import { cookies } from 'next/headers'
 import { normalize } from '@/lib/cleanPrompt'
 import { requireAdmin } from '@/lib/auth/authorization'
+import { filterWritableTagNames } from '@/lib/tag-write-guard'
 import { PROVIDER_URLS, getDanbooruUserAgent } from '@/lib/constants'
 
 // Rate Limit Configuration
@@ -78,19 +79,40 @@ export async function generateAutoSuggestions() {
         });
 
         const allTags = Array.from(uniqueTags);
-        // 3. Filter: Find tags that are NOT in DB or are 'other'
+
+        // 3. Write guard — the reason this table accumulated 492 artist names and
+        // 178 meta tags: `tag_string` carries artist/copyright/character/meta
+        // alongside the descriptive tags, and every one of them used to become a
+        // row. Rejected against Danbooru's own taxonomy so it stays correct as new
+        // artists appear upstream. Unlike the user-facing flow, this path ABORTS
+        // when the lookup fails: it is automated, repeatable, and re-running it
+        // later costs nothing, whereas letting a batch through unchecked is
+        // exactly how the pollution happened.
+        const guard = await filterWritableTagNames(supabaseAdmin, allTags);
+        if (guard.lookupFailed) {
+            throw new Error("Tag taxonomy lookup failed; aborting to avoid writing unvalidated tags.");
+        }
+        if (guard.rejected.length > 0) {
+            console.info(
+                `[generateAutoSuggestions] skipped ${guard.rejected.length} non-descriptive tag(s):`,
+                guard.rejected.map(r => `${r.name} (${r.reason})`).join(', ')
+            );
+        }
+        const writableTags = guard.writable;
+
+        // 4. Filter: Find tags that are NOT in DB or are 'other'
         // We select only "name" from tags where name is in our list
         const { data: existingTags, error: dbError } = await supabaseAdmin
             .from('tags')
             .select('name, category')
-            .in('name', allTags);
+            .in('name', writableTags);
         
         if (dbError) throw dbError;
 
         const existingMap = new Map(existingTags?.map(t => [t.name, t.category]));
         
         // Candidates: Tags that don't exist OR exist but are 'other'
-        const candidates = allTags.filter(tag => {
+        const candidates = writableTags.filter(tag => {
             const cat = existingMap.get(tag);
             return !cat || cat === 'other';
         });
