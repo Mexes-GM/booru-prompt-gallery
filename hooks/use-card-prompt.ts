@@ -5,25 +5,27 @@ import {
   type BooruPost,
   isAibooruPost,
   getPromptFromPost,
-  removeLoRaTags as removeLoRaTagsUtil,
-  removeQualityTags as removeQualityTagsUtil,
 } from "@/lib/api-client"
-import { cleanPrompt, type AppliedWordReplacement } from "@/lib/cleanPrompt"
-import { type BackgroundMode, processBackgroundTags } from "@/lib/background-detector"
-import { applyWeights } from "@/lib/weight-utils"
+import { cleanPrompt, type TagAppendRule } from "@/lib/cleanPrompt"
+import { type BackgroundMode } from "@/lib/background-detector"
+import { type MatchStrictness } from "@/lib/background-context"
 import { classifyTags, computeRichnessScore, type ClassifiedTags, type RichnessScore } from "@/lib/tag-classifier"
-import { resolveTagConflicts } from "@/lib/tag-conflicts"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
+import { derivePostPrompt } from "@/lib/prompt/derive-post-prompt"
 
 export interface UseCardPromptArgs {
   post: BooruPost
   tagCounts?: Record<string, number>
   excludeInput: string
   addInput: string
+  /** Search query entered in the search bar. Missing searched tags are appended after addInput. */
+  searchTags?: string
   /** "Find" side of the Find & Replace list (comma-separated, paired by index with replaceInput). */
   findInput?: string
   /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput). */
   replaceInput?: string
+  /** Grouped exact-match rules that append tags without replacing the source tag. */
+  tagAppendRules?: TagAppendRule[]
   includeCharacters: boolean
   optimizeTags: boolean
   smartTagExclusion?: boolean
@@ -40,6 +42,8 @@ export interface UseCardPromptArgs {
   randomBackgroundPatterns?: boolean
   randomBackgroundIncludeGradients?: boolean
   detailedBackgroundsList?: string[][]
+  /** How strictly Detailed Random gates its pick against the post's scene. */
+  backgroundMatchStrictness?: MatchStrictness
   tagOverrides?: Record<string, string>
   globalWeights?: Record<string, number>
   isGlobalWeightsEnabled?: boolean
@@ -74,8 +78,10 @@ export function useCardPrompt({
   tagCounts,
   excludeInput,
   addInput,
+  searchTags,
   findInput = "",
   replaceInput = "",
+  tagAppendRules,
   includeCharacters,
   optimizeTags,
   smartTagExclusion = true,
@@ -87,17 +93,56 @@ export function useCardPrompt({
   randomBackgroundPatterns = false,
   randomBackgroundIncludeGradients = true,
   detailedBackgroundsList,
+  backgroundMatchStrictness,
   tagOverrides,
   globalWeights = {},
   isGlobalWeightsEnabled = false,
   onBaseContentChange,
 }: UseCardPromptArgs) {
   const excludeList = useMemo(() => splitCommaSeparatedTags(excludeInput), [excludeInput])
-  const addList = useMemo(() => splitCommaSeparatedTags(addInput), [addInput])
 
-  // Find & Replace: "find, find2" / "replace, replace2" paired by index.
-  // Extra entries on either side (mismatched list lengths) are dropped rather
-  // than guessed at, since a wrong pairing could silently corrupt tags.
+  // Prompt derivation itself (cleanPrompt -> Smart Tag Exclusion -> cleanPrompt
+  // with resolved added tags -> global weights) is delegated to the pure,
+  // hook-free derivePostPrompt (lib/prompt/derive-post-prompt.ts) so the exact
+  // same pipeline can be called imperatively in a batch loop (Bulk Send's
+  // "Real posts" mode) without risking the two paths drifting apart.
+  const derived = useMemo(() => derivePostPrompt(post, {
+    excludeInput, addInput, searchTags, findInput, replaceInput, tagAppendRules,
+    includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
+    removeLoRaTags, removeQualityTags,
+    backgroundMode, simpleBackgroundReplacementTags,
+    randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
+    backgroundMatchStrictness,
+    tagOverrides, globalWeights, isGlobalWeightsEnabled,
+  }), [
+    post, excludeInput, addInput, searchTags, findInput, replaceInput, tagAppendRules,
+    includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
+    removeLoRaTags, removeQualityTags,
+    backgroundMode, simpleBackgroundReplacementTags,
+    randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
+    backgroundMatchStrictness,
+    tagOverrides, globalWeights, isGlobalWeightsEnabled,
+  ])
+
+  const {
+    displayContent,
+    pureDisplayContent,
+    baseContent,
+    pureContent,
+    replacedTags,
+    hasReplacements,
+    appendedTags,
+    hasAppends,
+    conflictingTags: conflictResolutionConflictingTags,
+  } = derived
+
+  // Check if this is an Aibooru post with prompt (still needed below for the
+  // lazy Teach-modal pipeline, which uses a different optimizeTags:false pass).
+  const isAiPost = isAibooruPost(post)
+  const aiPromptForTeach = isAiPost ? getPromptFromPost(post) : null
+
+  // Find & Replace rules, recomputed here only for the Teach-modal pipeline
+  // below (derivePostPrompt computes its own copy internally).
   const wordReplacements = useMemo(() => {
     const finds = splitCommaSeparatedTags(findInput)
     const replaces = splitCommaSeparatedTags(replaceInput)
@@ -109,133 +154,32 @@ export function useCardPrompt({
     return rules
   }, [findInput, replaceInput])
 
-  // Check if this is an Aibooru post with prompt
-  const isAiPost = isAibooruPost(post)
-  let aiPrompt = isAiPost ? getPromptFromPost(post) : null
-
-  // Apply LoRa tag removal if option is enabled (only to original prompt)
-  if (aiPrompt && removeLoRaTags) {
-    aiPrompt = removeLoRaTagsUtil(aiPrompt)
-  }
-
-  // Apply quality tag removal if option is enabled (only to original prompt)
-  if (aiPrompt && removeQualityTags) {
-    aiPrompt = removeQualityTagsUtil(aiPrompt)
-  }
-
-  // ponytail: compute cleanPrompt once with common options, derive variants.
-  // pureContent = shared + bg processing. baseContent = shared + addedTags + bg processing.
-  // teachContent stays separate (different optimizeTags: false pipeline).
-  const sharedCleaned = useMemo(() => {
-    const sharedOpts = {
-      includeCharacters, includeCopyrights: false, optimizeTags,
-      exclude: excludeList, addedTags: [] as string[], tagOverrides,
-      backgroundMode: 'keep' as BackgroundMode, simpleBackgroundReplacementTags,
-      escapeOutput: false, metaTags: post.tag_string_meta,
-      wordReplacements,
-    }
-    return aiPrompt
-      ? cleanPrompt(aiPrompt, "", "", "", sharedOpts)
-      : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, sharedOpts)
-  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, optimizeTags, excludeList, tagOverrides, simpleBackgroundReplacementTags, wordReplacements])
-
-  // ---- Background processing helper (applied on top of sharedCleaned) ----
-  const applyBackground = useCallback((content: string) => {
-    if (!content) return content
-    if (backgroundMode === 'keep' || backgroundMode === undefined) return content
-    const tags = content.split(',').map(t => t.trim())
-    const processed = processBackgroundTags(
-      tags, backgroundMode, simpleBackgroundReplacementTags, tagOverrides,
-      { patternsEnabled: randomBackgroundPatterns, includeGradients: randomBackgroundIncludeGradients },
-      detailedBackgroundsList, post.id,
-    )
-    return processed.join(', ')
-  }, [backgroundMode, simpleBackgroundReplacementTags, tagOverrides, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, post.id])
-
-  // ---- Derived outputs ----
-
-  // pureContent: sharedCleaned + background processing, no added tags (for classification/copying)
-  const pureContent = useMemo(() => applyBackground(sharedCleaned), [sharedCleaned, applyBackground])
-
-  const conflictResolution = useMemo(() => {
-    if (!pureContent || addList.length === 0 || !smartTagExclusion) return { validTags: addList, conflictingTags: [] }
-    const baseTags = pureContent.split(',').map(t => t.trim())
-    return resolveTagConflicts(baseTags, addList)
-  }, [pureContent, addList, smartTagExclusion])
-
-  // First artist tag (Anima "@artist" invocation, see prependAnimaArtist).
-  // Only the first artist is used — collabs with multiple artist tags fall
-  // back to that first one, same convention as SaveArtistButton. Aibooru
-  // posts (AI-generated) have no real booru artist, so tag_string_artist is
-  // empty there and this naturally becomes undefined (no-op).
-  const firstArtistTag = useMemo(() => {
-    if (!prependAnimaArtist) return undefined
-    const raw = post.tag_string_artist?.trim().split(/\s+/).filter(Boolean)[0]
-    return raw ? raw.replace(/_/g, " ") : undefined
-  }, [prependAnimaArtist, post.tag_string_artist])
-
-  // baseContent: full cleanPrompt with conflict-resolved addedTags.
-  // Must go through cleanPrompt so addedTags get normalized, exclusion-filtered,
-  // and deduplicated against the rest of the output.
-  // replacedTags is captured alongside it (same computation) so the "Find &
-  // Replace" badge reflects exactly what ended up in the final prompt.
-  const { baseContent, replacedTags } = useMemo(() => {
-    let captured: AppliedWordReplacement[] = []
-    const opts = {
-      includeCharacters, includeCopyrights: false, optimizeTags,
-      exclude: excludeList, addedTags: conflictResolution.validTags, tagOverrides,
-      backgroundMode, simpleBackgroundReplacementTags,
-      randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
-      backgroundSeed: post.id,
-      metaTags: post.tag_string_meta,
-      wordReplacements,
-      prependArtistTag: firstArtistTag,
-      onWordReplacementsApplied: (applied: AppliedWordReplacement[]) => { captured = applied },
-    }
-    const content = aiPrompt
-      ? cleanPrompt(aiPrompt, "", "", "", opts)
-      : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, opts)
-    return { baseContent: content, replacedTags: captured }
-  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, post.id, includeCharacters, optimizeTags, excludeList, conflictResolution.validTags, tagOverrides, backgroundMode, simpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, wordReplacements, firstArtistTag])
-
-  const hasReplacements = replacedTags.length > 0
-
-  const displayContent = useMemo(() => {
-    if (isGlobalWeightsEnabled && baseContent) {
-      return applyWeights(baseContent, globalWeights)
-    }
-    return baseContent
-  }, [baseContent, isGlobalWeightsEnabled, globalWeights])
-
-  const pureDisplayContent = useMemo(() => {
-    if (isGlobalWeightsEnabled && pureContent) {
-      return applyWeights(pureContent, globalWeights)
-    }
-    return pureContent
-  }, [pureContent, isGlobalWeightsEnabled, globalWeights])
-
   // Reset caller's local edit state when BASE content changes substantially
   // (e.g. new post or new filters) — NOT when global weights change/toggle.
   useEffect(() => {
     onBaseContentChange?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseContent])
+  }, [displayContent])
 
-  // Prepare character tags
+  // Prepare character tags. Danbooru's own escaping convention: a literal backslash
+  // must be escaped first (so it isn't later misread as part of an escaped paren),
+  // then literal parens are escaped as \( \) — mirrors how Danbooru itself renders
+  // tags like "hakurei_reimu_(cosplay)" as "hakurei reimu \(cosplay\)".
   const characterTagsArray = useMemo(() => (post.tag_string_character ? post.tag_string_character.split(' ') : [])
-    .map(t => t.replace(/_/g, ' ').toLowerCase().replace(/\(/g, "\\(").replace(/\)/g, "\\)")), [post.tag_string_character])
+    .map(t => t.replace(/_/g, ' ').toLowerCase().replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)")), [post.tag_string_character])
 
   // Lazy: only computed when the Teach modal opens (rare).
   // Combines teachContent → teachTagsForClassification → classifiedTeachTags
   // into a single on-demand pipeline instead of 3 eager useMemos.
   const getClassifiedTeachTags = useCallback(() => {
-    const raw = aiPrompt
-      ? cleanPrompt(aiPrompt, "", "", "", {
+    const raw = aiPromptForTeach
+      ? cleanPrompt(aiPromptForTeach, "", "", "", {
         includeCharacters, includeCopyrights: false, optimizeTags: false,
         exclude: excludeList, tagOverrides,
         backgroundMode: 'keep', simpleBackgroundReplacementTags,
         escapeOutput: false, metaTags: post.tag_string_meta,
         wordReplacements,
+        tagAppendRules,
       })
       : cleanPrompt(post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, {
         includeCharacters, includeCopyrights: false, optimizeTags: false,
@@ -243,13 +187,14 @@ export function useCardPrompt({
         backgroundMode: 'keep', simpleBackgroundReplacementTags,
         escapeOutput: false, metaTags: post.tag_string_meta,
         wordReplacements,
+        tagAppendRules,
       })
     const teachTags = raw ? raw.split(',').map(t => t.trim()) : []
-    const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim()
+    const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()\\])/g, "").trim()
     const charTagsSet = new Set(characterTagsArray.map(normalizeForMatch))
     const filteredTags = teachTags.filter(t => !charTagsSet.has(normalizeForMatch(t)))
     return classifyTags(filteredTags, tagOverrides, [])
-  }, [aiPrompt, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags, characterTagsArray, wordReplacements])
+  }, [aiPromptForTeach, post.tag_string, post.tag_string_artist, post.tag_string_character, post.tag_string_copyright, post.tag_string_meta, includeCharacters, excludeList, tagOverrides, simpleBackgroundReplacementTags, characterTagsArray, wordReplacements, tagAppendRules])
 
   // Pre-classify tags for the dropdown counts (USING PURE DISPLAY CONTENT)
   // This ensures that "added tags" don't inflate the category counts
@@ -295,12 +240,12 @@ export function useCardPrompt({
   // Determine if options are active that affect the prompt
   const hasActiveOptions = useMemo(() => {
     // Only show indicator if Smart Tag Exclusion actively blocked tags from being added
-    return conflictResolution.conflictingTags.length > 0
-  }, [conflictResolution.conflictingTags.length])
+    return conflictResolutionConflictingTags.length > 0
+  }, [conflictResolutionConflictingTags])
 
   return {
     isAiPost,
-    aiPrompt,
+    aiPrompt: aiPromptForTeach,
     pureContent,
     baseContent,
     displayContent,
@@ -312,8 +257,10 @@ export function useCardPrompt({
     classifiedTags,
     richnessScore,
     hasActiveOptions,
-    conflictingTags: conflictResolution.conflictingTags,
+    conflictingTags: conflictResolutionConflictingTags,
     replacedTags,
     hasReplacements,
+    appendedTags,
+    hasAppends,
   }
 }

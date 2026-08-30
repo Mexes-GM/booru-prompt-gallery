@@ -24,6 +24,7 @@ import { PromptImportZone } from "./prompt-import-zone"
 import { motion, AnimatePresence } from "framer-motion"
 import { Copy, Check, Sparkles, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { TAG_CATEGORIES } from "@/lib/tag-taxonomy"
 
 interface ReversePromptParserModalProps {
   open: boolean
@@ -32,24 +33,30 @@ interface ReversePromptParserModalProps {
   tagOverrides?: Record<string, string>
 }
 
+// Labels come from lib/tag-taxonomy.ts. The accent classes stay literal so
+// Tailwind keeps them, but they are now aligned with the taxonomy: this modal
+// used to render clothing in purple and pose in green, the inverse of the five
+// other surfaces that show categories (appearance=blue, clothing=green,
+// pose=purple, scenery=orange). `quality` is not a TagCategory — it is the
+// separate quality bucket reconstructPrompt emits — so it is declared here.
 const categoryConfig = {
   appearance: {
-    label: "Appearance",
+    label: TAG_CATEGORIES.appearance.label,
     color: "bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100",
     borderColor: "border-blue-300 dark:border-blue-700",
   },
   clothing: {
-    label: "Clothing",
-    color: "bg-purple-100 dark:bg-purple-900 text-purple-900 dark:text-purple-100",
-    borderColor: "border-purple-300 dark:border-purple-700",
-  },
-  pose: {
-    label: "Pose",
+    label: TAG_CATEGORIES.clothing.label,
     color: "bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100",
     borderColor: "border-green-300 dark:border-green-700",
   },
+  pose: {
+    label: TAG_CATEGORIES.pose.label,
+    color: "bg-purple-100 dark:bg-purple-900 text-purple-900 dark:text-purple-100",
+    borderColor: "border-purple-300 dark:border-purple-700",
+  },
   scenery: {
-    label: "Scenery",
+    label: TAG_CATEGORIES.scenery.label,
     color: "bg-orange-100 dark:bg-orange-900 text-orange-900 dark:text-orange-100",
     borderColor: "border-orange-300 dark:border-orange-700",
   },
@@ -59,7 +66,7 @@ const categoryConfig = {
     borderColor: "border-amber-300 dark:border-amber-700",
   },
   other: {
-    label: "Other",
+    label: TAG_CATEGORIES.other.label,
     color: "bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100",
     borderColor: "border-slate-400 dark:border-slate-500",
   },

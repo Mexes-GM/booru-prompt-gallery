@@ -7,7 +7,9 @@
  */
 
 import { classifyTags } from "./tag-classifier"
+import { TAG_CATEGORY_IDS } from "./tag-taxonomy"
 import { processBackgroundTags, BackgroundMode } from "./background-detector"
+import { type BackgroundContext, type MatchStrictness } from "./background-context"
 import { splitTags, splitCommaSeparatedTags } from "./utils/tag-utils"
 
 // --------------- Types ---------------
@@ -38,6 +40,18 @@ export interface AppliedWordReplacement {
   to: string
 }
 
+export interface TagAppendRule {
+  id: string
+  find: string
+  append: string[]
+}
+
+/** Tags added after an exact source-tag match while cleaning a prompt. */
+export interface AppliedTagAppend {
+  from: string
+  append: string[]
+}
+
 export interface CleanPromptOptions {
   includeCharacters?: boolean
   includeCopyrights?: boolean
@@ -54,6 +68,16 @@ export interface CleanPromptOptions {
   randomBackgroundIncludeGradients?: boolean
   detailedBackgroundsList?: string[][]
   backgroundSeed?: number
+  /**
+   * Scene context that steers the 'detailed_random' pick toward a background
+   * that fits the post (see lib/background-context.ts). Derive it once per post
+   * and pass the SAME value to every pipeline rendering that post — the pure
+   * and display pipelines run on slightly different tag lists, so deriving it
+   * separately in each would let them pick different backgrounds for one card.
+   */
+  backgroundContext?: BackgroundContext
+  /** How strictly backgroundContext gates the 'detailed_random' pick. */
+  backgroundMatchStrictness?: MatchStrictness
 
   /**
    * "Find & Replace" rules for outdated booru tag renames (e.g. Danbooru
@@ -70,6 +94,14 @@ export interface CleanPromptOptions {
    * know which tags changed without altering cleanPrompt's return type.
    */
   onWordReplacementsApplied?: (applied: AppliedWordReplacement[]) => void
+
+  /**
+   * Exact source-tag rules that add one or more normalized tags without
+   * removing the matching source tag or triggering rule chains.
+   */
+  tagAppendRules?: TagAppendRule[]
+  /** Reports every append rule that matched source tags in this clean pass. */
+  onTagAppendsApplied?: (applied: AppliedTagAppend[]) => void
 
   /**
    * When set, prepends "@<artist>," at the very start of the returned prompt.
@@ -225,6 +257,43 @@ export function applyWordReplacementsToList(
   if (appliedList.length > 0) onApplied?.(appliedList)
 
   return result
+}
+
+/**
+ * Collects tags to append for exact source-tag matches. The returned tags are
+ * never used as further rule sources, so append rules cannot chain or cycle.
+ */
+export function collectTagAppends(
+  tags: string[],
+  rules: TagAppendRule[] | undefined,
+  onApplied?: (applied: AppliedTagAppend[]) => void,
+): string[] {
+  if (!rules || rules.length === 0) return []
+
+  const validRules = rules.flatMap((rule) => {
+    const find = normalize(rule.find)
+    const append = rule.append
+      .map((tag) => normalize(tag))
+      .filter((tag) => tag.length > 0)
+    return find && append.length > 0 ? [{ find, append }] : []
+  })
+  if (validRules.length === 0) return []
+
+  const applied: AppliedTagAppend[] = []
+  const appended: string[] = []
+  for (const tag of tags) {
+    const source = normalize(tag)
+    if (!source) continue
+
+    for (const rule of validRules) {
+      if (source !== rule.find) continue
+      appended.push(...rule.append)
+      applied.push({ from: source, append: rule.append })
+    }
+  }
+
+  if (applied.length > 0) onApplied?.(applied)
+  return appended
 }
 
 export function parseTagList(input: string): string[] {
@@ -637,12 +706,180 @@ const CURATED_META_LIST = withNormalizedVariants([
   "uncompressed file",
   "colorized",
   "pre-rendered 3d",
+
+  // AI provenance. Danbooru marks all of these category 5 (ai-generated: 6,759
+  // posts, ai-assisted: 2,964, stable_diffusion: 208) but they were never in
+  // this list, so they reached prompts as if they described the image. They are
+  // provenance, not content. Listed in the hyphen spelling Danbooru uses; the
+  // underscore/space spellings other providers use are matched too, because
+  // isMetaTag also tests a hyphen-flattened form.
+  "ai-generated",
+  "ai-assisted",
+  "ai-generated background",
+  "stable diffusion",
+
+  // Funding platform / reward provenance. The curated list already covered the
+  // "<platform> username / logo / watermark" variants but not the bare platform
+  // names, nor the "<platform> reward" ones Danbooru does mark as meta
+  // (paid_reward: 15,723 posts, patreon_reward: 8,233, fanbox_reward: 3,512,
+  // fantia_reward: 1,033, pixiv_commission: 24,312). Bare "patreon"/"fanbox"/
+  // "fantia" are not Danbooru tags at all, so they only ever arrive from the
+  // other providers and no upstream taxonomy would flag them.
+  "patreon",
+  "fanbox",
+  "fantia",
+  "skeb",
+  "gumroad",
+  "subscribestar",
+  "paid reward",
+  "patreon reward",
+  "fanbox reward",
+  "fantia reward",
+  "pixiv commission",
+
+  // Upload/provenance metadata native to Gelbooru and Rule34, which
+  // `auto_suggest_tags` cannot be relied on to classify: either the tag does not
+  // exist on Danbooru at all ("2d", "year_request"), or Danbooru spells it with a
+  // hyphen while those providers use an underscore ("self-upload" vs
+  // "self_upload"), so the exact-match category lookup never resolved it.
+  // Listing them here makes the filter independent of that lookup: entries are
+  // written in Danbooru's spelling and withHyphenVariants derives the
+  // space/underscore forms the other providers serve.
+  "self-upload",
+  "year request",
+  "source request",
+  "character request",
+  "third-party edit",
+  "third-party source",
+  "second-party source",
+  "pixel-perfect duplicate",
+  "md5 mismatch",
+  "resolution mismatch",
+  // e621 / Rule34 resolution vocabulary. Same axis as Danbooru's
+  // "highres"/"absurdres", which were already here, just spelled differently.
+  "hi res",
+  "absurd res",
+  "absurd resolution",
+  "high resolution",
+  "superabsurdres",
+  "lowres",
 ])
 
-export const META_TAGS_SET = new Set<string>([
+/**
+ * Hyphens are meaningful in plenty of real tags ("off-shoulder", "t-shirt",
+ * "close-up"), so `normalize` deliberately leaves them alone. Meta lookups are
+ * the one place a hyphen must not decide the match: Danbooru writes
+ * "ai-generated" and "third-party_source", while other providers serve
+ * "ai_generated" (which normalizes to "ai generated") — without flattening
+ * those are three separate keys and the tag leaks into the prompt. Only ever
+ * used to widen matching against the meta sets, never against arbitrary tags.
+ */
+const flattenHyphens = (s: string) => s.replace(/-/g, " ").replace(/\s{2,}/g, " ").trim()
+
+function withHyphenVariants(entries: Iterable<string>): Set<string> {
+  const set = new Set<string>()
+  for (const entry of entries) {
+    set.add(entry)
+    const flat = flattenHyphens(entry)
+    if (flat && flat !== entry) {
+      set.add(flat)
+      set.add(toUnderscore(flat))
+    }
+  }
+  return set
+}
+
+export const META_TAGS_SET = withHyphenVariants([
   ...loadTagsToRemove(5),
   ...CURATED_META_LIST,
 ])
+
+const EMPTY_META_TAG_SET: ReadonlySet<string> = new Set<string>()
+
+/**
+ * Splits a `tag_string_meta` into individual tag names.
+ *
+ * NOT `parseTagList`. That helper has to guess how an arbitrary string was
+ * delimited, and its no-comma branch only splits on whitespace when the string
+ * contains an underscore — a string with neither a comma nor an underscore is
+ * treated as ONE already-cleaned multi-word tag, which is right for a cleaned
+ * prompt ("long white hair") and catastrophically wrong here.
+ *
+ * `tag_string_meta` needs no guessing: it is always the booru wire format —
+ * space-separated, multi-word tags carrying underscores. So under `parseTagList`
+ * whether this set was usable came down to whether some UNRELATED meta tag on
+ * the same post happened to contain an underscore:
+ *
+ *   "hard-translated highres self-upload source_request"  -> split correctly
+ *   "animated highres self-upload video"                  -> one bogus entry,
+ *                                                            whole set useless
+ *
+ * That is why `self-upload` leaked on roughly half of the Gelbooru posts that
+ * carried it, and it silently degraded Danbooru too (masked there because
+ * META_TAGS_SET already covers most of Danbooru's meta vocabulary).
+ *
+ * Commas are tolerated as well so a caller that hands over an already-joined
+ * list is not silently mis-parsed.
+ */
+const splitTagStringMeta = (tagStringMeta: string): string[] =>
+  tagStringMeta.split(/[,\s]+/).filter(Boolean)
+
+/**
+ * Normalized lookup built from a post's own `tag_string_meta` — Danbooru's real
+ * category-5 tags for THAT post.
+ *
+ * Every provider populates it: Danbooru/Aibooru request the field directly
+ * (`only=...,tag_string_meta,...`), and the flat-tag ones (Gelbooru, Rule34)
+ * get it resolved from `auto_suggest_tags` by
+ * `BaseBooruProvider.enrichPostsWithCategories`. So this is a per-post,
+ * always-current meta vocabulary that needs no hardcoded list and no extra
+ * request — the same source a static "category = 5" snapshot would be built
+ * from, minus the staleness.
+ */
+export function buildPostMetaTagSet(tagStringMeta?: string): ReadonlySet<string> {
+  if (!tagStringMeta) return EMPTY_META_TAG_SET
+  const set = new Set<string>()
+  for (const tag of splitTagStringMeta(tagStringMeta)) {
+    const normalized = normalize(tag)
+    if (!normalized) continue
+    set.add(normalized)
+    // Same hyphen tolerance as META_TAGS_SET: a post can carry "ai-generated"
+    // in tag_string_meta while tag_string spells it "ai_generated".
+    const flat = flattenHyphens(normalized)
+    if (flat && flat !== normalized) set.add(flat)
+  }
+  return set
+}
+
+/**
+ * True when `tag` should be stripped from a prompt as metadata.
+ *
+ * Unions two sources that do NOT overlap and cannot replace each other:
+ *
+ * - `META_TAGS_SET` (curated, hand-maintained): mostly tags Danbooru classifies
+ *   as **general**, not meta — `signature`, `artist name`, `watermark`,
+ *   `speech bubble`, `english text`, `censored`/`bar censor`, `web address` —
+ *   plus vocabulary from providers that aren't in `auto_suggest_tags` at all
+ *   (`bad_tiktok_id`, `bad_reddit_id`). Since Danbooru never marks these
+ *   category 5, no query against its taxonomy would ever return them.
+ * - `postMetaTags` (per post, from `buildPostMetaTagSet`): Danbooru's actual
+ *   category-5 tags for the post at hand. Covers the long tail the curated list
+ *   never enumerated (`scan`, `game_cg`, `bad_link`, `resolution_mismatch`,
+ *   `spoilers`, `pixel-perfect_duplicate`, `ugoira`, ...).
+ *
+ * Pass `postMetaTags` whenever a post is in scope. Omitting it falls back to
+ * the curated list alone, which is the correct behavior for tag strings with no
+ * post attached (e.g. tags typed into the search bar).
+ */
+export function isMetaTag(tag: string, postMetaTags?: ReadonlySet<string>): boolean {
+  const normalized = normalize(tag)
+  if (META_TAGS_SET.has(normalized)) return true
+  if (postMetaTags?.has(normalized)) return true
+
+  const flat = flattenHyphens(normalized)
+  if (flat === normalized) return false
+  return META_TAGS_SET.has(flat) || (postMetaTags?.has(flat) ?? false)
+}
 
 // --------------- Optimizations ---------------
 function optimizeTags(tags: string[]): string[] {
@@ -917,10 +1154,16 @@ export function cleanPrompt(
   const collectReplacements = (applied: AppliedWordReplacement[]) => {
     wordReplacementsApplied.push(...applied)
   }
+  const tagAppendsApplied: AppliedTagAppend[] = []
+  const collectAppends = (applied: AppliedTagAppend[]) => {
+    tagAppendsApplied.push(...applied)
+  }
 
   // "Find & Replace" targets the "character (series)" pattern, which lives in
-  // characterTags/copyrightTags (content tags with parentheses are filtered
-  // out below by `invalidBracket`), so it's applied right after parsing/
+  // characterTags/copyrightTags (general tags with a trailing "(qualifier)"
+  // suffix, like e621's "(anatomy)"/"(marking)" tags, are NOT filtered out
+  // below anymore — see invalidBracketOnly/wholeTagWrappedInParens further
+  // down for exactly what still is), so it's applied right after parsing/
   // normalizing those two sources, before classification/exclusion run.
   const characterTagsArray = applyWordReplacementsToList(
     parseTagList(characterTags).map((t) => normalize(t)),
@@ -933,9 +1176,10 @@ export function cleanPrompt(
     collectReplacements,
   )
   
-  // Use meta tags from API if provided (via options), otherwise fallback to curated list
-  const apiMetaTags = options?.metaTags ? parseTagList(options.metaTags) : []
-  const apiMetaTagsSet = new Set(apiMetaTags.map(t => normalize(t)))
+  // Meta tags for THIS post (post.tag_string_meta, passed by callers) unioned
+  // with the curated list inside isMetaTag. Built through buildPostMetaTagSet so
+  // it gets the same hyphen tolerance as META_TAGS_SET.
+  const apiMetaTagsSet = buildPostMetaTagSet(options?.metaTags)
 
   // Sliding-window early removal for multi-word meta sequences when input is space-separated
   try {
@@ -991,7 +1235,21 @@ export function cleanPrompt(
   // Filtering rules
   const numberRegex = /^\d+$/
   const hasUrlLike = /:/ // simple heuristic for schemes
-  const invalidBracket = /[(){}\[\]]/
+  // Square/curly brackets are near-always leftover wildcard/weight syntax
+  // that failed to parse (e.g. "{tag}", "[tag]") rather than real tag
+  // content — booru tag vocabularies don't use them. Parentheses are
+  // different: many real content tags use a trailing "(qualifier)" suffix
+  // for disambiguation that is NOT the "character (series)" pattern this
+  // filter was originally trying to catch — e.g. e621's "(anatomy)" suffix
+  // ("horn (anatomy)", "membrane (anatomy)") or "(marking)"/"(color)" on
+  // creature-marking tags. Rejecting every tag containing ANY parenthesis
+  // silently dropped that legitimate content. Only reject a tag when the
+  // parenthesized part IS THE WHOLE TAG (optionally with a leading/trailing
+  // weight-syntax colon-number, e.g. "(explicit content)" or
+  // "(tag:1.3)") — that shape is never a real qualifier suffix, it's stray
+  // weight/grouping syntax that leaked into a plain tag string.
+  const invalidBracketOnly = /[\[\]{}]/
+  const wholeTagWrappedInParens = /^\(.*\)$/
 
   const filteredTags = allTags.filter((raw) => {
     if (raw.length <= 1) return false
@@ -999,25 +1257,38 @@ export function cleanPrompt(
 
     if (artistTagsSet.has(lower)) return false
     if (artistTagsSet.has(normalize(lower))) return false
-    if (META_TAGS_SET.has(normalize(lower))) return false
-    if (apiMetaTagsSet.has(normalize(lower))) return false
+    if (isMetaTag(lower, apiMetaTagsSet)) return false
     if (numberRegex.test(raw)) return false
     if (raw.includes("@") || raw.includes("#") || hasUrlLike.test(raw)) return false
-    if (invalidBracket.test(raw)) return false
+    if (invalidBracketOnly.test(raw)) return false
+    if (wholeTagWrappedInParens.test(raw.trim())) return false
 
     return true
   })
 
-  // Normalize and apply user exclusions
-  const formatted = applyWordReplacementsToList(
-    filteredTags
-      .map((t) => normalize(t))
-      .filter((t) => !userExcludeSet.has(t)),
+  // Resolve replacements before capturing append-rule sources. The source
+  // snapshot deliberately precedes user exclusions so generated tags pass
+  // through the same final exclusion logic as every other content tag.
+  const normalizedContentTags = applyWordReplacementsToList(
+    filteredTags.map((t) => normalize(t)),
     options?.wordReplacements,
     collectReplacements,
   )
+  const formatted = normalizedContentTags.filter((tag) => !userExcludeSet.has(tag))
 
-  const processed = optimizeAll ? optimizeTags(formatted) : formatted
+  const appendSourceTags = [
+    ...normalizedContentTags,
+    ...characterTagsArray,
+    ...copyrightTagsArray,
+  ]
+  const appendedTags = collectTagAppends(
+    Array.from(new Set(appendSourceTags)),
+    options?.tagAppendRules,
+    collectAppends,
+  ).filter((tag) => !userExcludeSet.has(tag))
+
+  const processedInput = [...formatted, ...appendedTags]
+  const processed = optimizeAll ? optimizeTags(processedInput) : processedInput
 
   // Partition quality vs content
   const qualityTags: string[] = []
@@ -1027,16 +1298,11 @@ export function cleanPrompt(
     else contentTags.push(t)
   }
 
-  // Classify content tags to respect requested order:
-  // Appearance -> Clothing -> Pose -> Scenery -> Other
+  // Classify content tags. Emission order comes from the taxonomy's canonical
+  // order (Appearance -> Clothing -> Pose -> Scenery -> Other), so a new
+  // category slots in without touching this.
   const classified = classifyTags(contentTags, options?.tagOverrides)
-  let sortedContentTags = [
-    ...classified.appearance,
-    ...classified.clothing,
-    ...classified.pose,
-    ...classified.scenery,
-    ...classified.other,
-  ]
+  let sortedContentTags = TAG_CATEGORY_IDS.flatMap((category) => classified[category])
 
   // Optional: Process Backgrounds based on rules
   if (options?.backgroundMode && Array.isArray(sortedContentTags)) {
@@ -1050,7 +1316,9 @@ export function cleanPrompt(
         includeGradients: options.randomBackgroundIncludeGradients,
       },
       options.detailedBackgroundsList,
-      options.backgroundSeed
+      options.backgroundSeed,
+      options.backgroundContext,
+      options.backgroundMatchStrictness,
     )
   }
 
@@ -1097,8 +1365,59 @@ export function cleanPrompt(
   if (wordReplacementsApplied.length > 0) {
     options?.onWordReplacementsApplied?.(wordReplacementsApplied)
   }
+  if (tagAppendsApplied.length > 0) {
+    options?.onTagAppendsApplied?.(tagAppendsApplied)
+  }
 
-  const finalTags = Array.from(allFinal)
+  // Classification determines the canonical order for ordinary tags. Append
+  // targets intentionally override that order so each target stays immediately
+  // after the source tag that generated it. Rules were already evaluated only
+  // against the source snapshot, so this traversal cannot create new matches.
+  const orderedTags = (() => {
+    const baseTags = Array.from(allFinal)
+    if (tagAppendsApplied.length === 0) return baseTags
+
+    const finalTagSet = new Set(baseTags)
+    const appendBySource = new Map<string, string[]>()
+    const appendTargets = new Set<string>()
+
+    for (const { from, append } of tagAppendsApplied) {
+      if (!finalTagSet.has(from)) continue
+
+      const targets = appendBySource.get(from) || []
+      for (const tag of append) {
+        if (!finalTagSet.has(tag) || targets.includes(tag)) continue
+        targets.push(tag)
+        appendTargets.add(tag)
+      }
+      if (targets.length > 0) appendBySource.set(from, targets)
+    }
+
+    if (appendBySource.size === 0) return baseTags
+
+    const ordered: string[] = []
+    const emitted = new Set<string>()
+    const emitWithAppends = (tag: string) => {
+      if (emitted.has(tag) || !finalTagSet.has(tag)) return
+
+      emitted.add(tag)
+      ordered.push(tag)
+      for (const appendedTag of appendBySource.get(tag) || []) {
+        emitWithAppends(appendedTag)
+      }
+    }
+
+    // Do not emit an append target in its canonical position before the source.
+    for (const tag of baseTags) {
+      if (!appendTargets.has(tag)) emitWithAppends(tag)
+    }
+    // Preserves targets whose source was filtered from the final prompt.
+    for (const tag of baseTags) emitWithAppends(tag)
+
+    return ordered
+  })()
+
+  const finalTags = orderedTags
     .map((t) => (shouldEscape && !addedTagsSet.has(t) ? escapeParentheses(t) : t))
 
   // Anima-style "@artist" invocation: prepended raw (never escaped/normalized

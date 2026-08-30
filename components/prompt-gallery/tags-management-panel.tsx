@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
@@ -22,11 +23,192 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Label } from "@/components/ui/label"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { SmoothFilterSlider } from "@/components/ui/smooth-filter-slider"
 import { ScoreTierControl } from "@/components/prompt-gallery/score-tier-control"
-import { Check, ChevronDown, Save, Trash2, X, Replace } from "lucide-react"
-import type { TagPreset } from "@/lib/storage"
+import { Check, ChevronDown, ListPlus, Plus, Save, Trash2, X, Replace } from "lucide-react"
+import { createTagAppendRule, type TagPreset } from "@/lib/storage"
+import type { TagAppendRule } from "@/lib/cleanPrompt"
+import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 import type { ScoreTier } from "@/lib/api-client"
+
+interface TagAppendRulesEditorProps {
+  rules: TagAppendRule[]
+  onChange: (rules: TagAppendRule[]) => void
+  compact?: boolean
+}
+
+/**
+ * "Find & Append" lives entirely inside a modal so the number of rules never
+ * affects the height of the surrounding filters panel: the trigger is a
+ * single fixed-height button, and the rule list scrolls inside the dialog
+ * (ScrollArea with a fixed max height, same pattern as GlobalWeightsModal).
+ */
+function TagAppendRulesEditor({ rules = [], onChange, compact = false }: TagAppendRulesEditorProps) {
+  const [open, setOpen] = useState(false)
+  const safeRules = rules || []
+
+  const updateRule = (id: string, update: Partial<TagAppendRule>) => {
+    onChange(safeRules.map((rule) => rule.id === id ? { ...rule, ...update } : rule))
+  }
+
+  const addRule = () => onChange([...safeRules, createTagAppendRule()])
+  const removeRule = (id: string) => onChange(safeRules.filter((rule) => rule.id !== id))
+  const inputClassName = "h-9 text-sm bg-background/50"
+
+  const activeCount = safeRules.filter((rule) => rule.find.trim() && rule.append.length > 0).length
+
+  return (
+    <div className={compact ? "flex flex-col gap-1" : "space-y-1"}>
+      <Label className={compact ? "text-xs font-semibold" : "text-xs font-medium text-muted-foreground flex items-center gap-2"}>
+        {compact ? (
+          "Find & Append"
+        ) : (
+          <>
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+            <InfoTooltip
+              title="Find & Append"
+              description="Keeps a matching source tag and adds extra tags right after it, enriching prompts without replacing anything. Matching is EXACT (the full plain tag or the full content inside parentheses), never a partial substring. Rules never chain: tags added by one rule can't trigger another. Add as many rules as you need, each with its own source tag and list of tags to append."
+              visual={
+                <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
+                  <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="text-muted-foreground font-medium min-w-[70px]">Find:</span>
+                      <span className="bg-violet-500/10 text-violet-500 border border-violet-500/20 px-1.5 py-0.5 rounded">neko</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="text-muted-foreground font-medium min-w-[70px]">Append:</span>
+                      <span className="bg-violet-500/10 text-violet-500 border border-violet-500/20 px-1.5 py-0.5 rounded">animal ears, cat ears, cat tail</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="text-muted-foreground font-medium min-w-[70px]">Original:</span>
+                      <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, solo, neko</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-1 px-1">
+                    <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
+                    <div className="flex flex-wrap gap-1">
+                      <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, solo, neko</span>
+                      <span className="bg-violet-500/10 border border-violet-500/20 text-violet-500 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Plus className="w-3 h-3" /> animal ears, cat ears, cat tail</span>
+                    </div>
+                  </div>
+                </div>
+              }
+            >
+              Find &amp; Append
+            </InfoTooltip>
+          </>
+        )}
+      </Label>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className={compact ? "h-8 w-full justify-between px-2.5 text-xs bg-background/50" : "h-9 w-full justify-between px-3 text-sm bg-background/50"}
+          >
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <ListPlus className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
+              Manage rules
+            </span>
+            {activeCount > 0 && (
+              <Badge variant="secondary" className={compact ? "h-4 px-1.5 text-[10px]" : "h-5 px-1.5 text-xs"}>
+                {activeCount}
+              </Badge>
+            )}
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[520px] p-0 gap-0 overflow-hidden">
+          <DialogHeader className="p-5 pb-3">
+            <DialogTitle className="text-base font-semibold">Find &amp; Append rules</DialogTitle>
+            <DialogDescription className="text-xs">
+              Each rule keeps one exact source tag and adds its tags right after it, without chaining rules.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="px-5 pb-3">
+            <Button type="button" variant="outline" size="sm" onClick={addRule} className="h-8 px-2.5 text-xs">
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Add rule
+            </Button>
+          </div>
+
+          <ScrollArea className="h-[360px]">
+            <div className="px-5 pb-5 flex flex-col gap-2">
+              {rules.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-6 text-center text-xs text-muted-foreground">
+                  No append rules yet. Add one to enrich matching prompts.
+                </div>
+              ) : (
+                rules.map((rule, index) => {
+                  const isIncomplete = !rule.find.trim() || rule.append.length === 0
+                  return (
+                    <div key={rule.id} className="rounded-lg border border-border/70 bg-background/40 p-2.5 shadow-sm">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Rule {index + 1}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeRule(rule.id)}
+                          className="h-6 w-6 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          aria-label={`Delete append rule ${index + 1}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.5fr)]">
+                        <div className="space-y-1">
+                          <Label htmlFor={`append-find-${rule.id}`} className="text-[10px] font-medium text-muted-foreground">Find tag</Label>
+                          <DebouncedInput
+                            id={`append-find-${rule.id}`}
+                            value={rule.find}
+                            onChange={(find) => updateRule(rule.id, { find })}
+                            debounceTime={400}
+                            placeholder="neko"
+                            className={inputClassName}
+                            aria-label={`Source tag for append rule ${index + 1}`}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`append-tags-${rule.id}`} className="text-[10px] font-medium text-muted-foreground">Tags to append</Label>
+                          <DebouncedInput
+                            id={`append-tags-${rule.id}`}
+                            value={rule.append.join(", ")}
+                            onChange={(value) => updateRule(rule.id, { append: splitCommaSeparatedTags(value) })}
+                            debounceTime={400}
+                            placeholder="animal ears, cat ears, cat tail"
+                            className={inputClassName}
+                            aria-label={`Tags to append for rule ${index + 1}`}
+                          />
+                        </div>
+                      </div>
+                      {isIncomplete && (
+                        <p className="mt-2 text-[10px] text-amber-600 dark:text-amber-400">
+                          Complete both fields before this rule can apply.
+                        </p>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="p-4 bg-secondary/20 border-t border-border/50 flex-row justify-end">
+            <Button size="sm" onClick={() => setOpen(false)} className="px-6">
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
 
 interface TagsManagementPanelProps {
   addInput: string
@@ -49,6 +231,8 @@ interface TagsManagementPanelProps {
   /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput/setFindInput). */
   replaceInput: string
   setReplaceInput: (value: string) => void
+  tagAppendRules: TagAppendRule[]
+  setTagAppendRules: (rules: TagAppendRule[]) => void
 
   tagCountFilter: string
   setTagCountFilter: (value: string) => void
@@ -98,6 +282,8 @@ export function TagsManagementPanel({
   setFindInput,
   replaceInput,
   setReplaceInput,
+  tagAppendRules = [],
+  setTagAppendRules,
   tagCountFilter,
   setTagCountFilter,
   setAppliedTagCountFilter,
@@ -289,6 +475,12 @@ export function TagsManagementPanel({
             </div>
           </div>
         </div>
+
+        <TagAppendRulesEditor
+          rules={tagAppendRules}
+          onChange={setTagAppendRules}
+          compact
+        />
 
         {/* Sliders */}
         <div className="flex flex-col gap-1">
@@ -564,6 +756,10 @@ export function TagsManagementPanel({
               </div>
             </div>
           </div>
+          <TagAppendRulesEditor
+            rules={tagAppendRules}
+            onChange={setTagAppendRules}
+          />
           <SmoothFilterSlider
             min={5}
             max={100}
