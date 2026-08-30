@@ -6,7 +6,7 @@ import { splitCommaSeparatedTags } from './utils/tag-utils'
 import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
 // URL helpers extracted to lib/booru/urls.ts (pure, no React). Re-exported below
 // so existing `@/lib/api-client` consumers keep working.
-import { apiUrl, buildDirectDanbooruUrl } from './booru/urls'
+import { apiUrl, buildDirectDanbooruUrl, urlHasHost } from './booru/urls'
 import { getAuthHeader } from './booru/auth-header'
 import { transformAibooruPost, transformE621Post } from './booru/post-transformers'
 import { relaxScoreFloorInUrl, SCORE_FLOOR_BY_PROVIDER, type BooruProvider as TagLimitsBooruProvider, type ScoreTier } from './booru/tag-limits'
@@ -263,8 +263,8 @@ const RELAX_MIN_RESULTS = 15
 // fallback doesn't need scoreTier/provider threaded through the SWR key function.
 const detectProviderFromUrl = (url: string): TagLimitsBooruProvider | null => {
   if (url.startsWith(PROVIDER_URLS.AIBOORU)) return 'aibooru'
-  if (url.includes('danbooru.donmai.us')) return 'danbooru'
-  if (url.includes('e621.net')) return 'e621'
+  if (urlHasHost(url, 'danbooru.donmai.us')) return 'danbooru'
+  if (urlHasHost(url, 'e621.net')) return 'e621'
   if (url.includes('/api/posts')) {
     if (url.includes('provider=gelbooru')) return 'gelbooru'
     if (url.includes('provider=rule34')) return 'rule34'
@@ -290,14 +290,14 @@ const detectActiveScoreTier = (url: string, provider: TagLimitsBooruProvider): S
   return null
 }
 
-const fetcher = async (url: string) => {
+const fetcher = async (url: string, skipPage1Queue = false) => {
   // Deduplicate identical concurrent requests
   const inflight = inflightRequests.get(url)
   if (inflight) {
     return inflight
   }
 
-  const isDanbooruApi = url.includes('/api/posts') || url.includes('danbooru.donmai.us')
+  const isDanbooruApi = url.includes('/api/posts') || urlHasHost(url, 'danbooru.donmai.us')
   const isDanbooruPage1 = isDanbooruApi && url.includes('page=1')
 
   const doFetch = async (): Promise<BooruPost[]> => {
@@ -372,7 +372,7 @@ const fetcher = async (url: string) => {
           } else {
             resultPosts = []
           }
-        } else if (url.includes('danbooru.donmai.us') && !url.includes('/api/')) {
+        } else if (urlHasHost(url, 'danbooru.donmai.us') && !url.includes('/api/')) {
           // Direct Danbooru API response — raw format, needs transformation
           identifiedProvider = 'danbooru'
           if (Array.isArray(data)) {
@@ -388,7 +388,7 @@ const fetcher = async (url: string) => {
           } else {
             resultPosts = []
           }
-        } else if (url.includes('e621.net')) {
+        } else if (urlHasHost(url, 'e621.net')) {
           // Direct E621 API response — { posts: [...] } format
           // ponytail: direct client fetch, no server enrichment. Tags come pre-categorized from E621.
           identifiedProvider = 'e621'
@@ -436,7 +436,9 @@ const fetcher = async (url: string) => {
             const relaxedUrl = relaxScoreFloorInUrl(url, provider, activeTier)
             if (relaxedUrl && relaxedUrl !== url) {
               try {
-                const relaxedPosts = await fetcher(relaxedUrl)
+                // This fallback runs while the parent page-1 request is still pending.
+                // It must bypass the page-1 queue or it would wait on its own parent.
+                const relaxedPosts = await fetcher(relaxedUrl, true)
                 // Only use the relaxed result if it actually did better — never regress.
                 if (Array.isArray(relaxedPosts) && relaxedPosts.length > resultPosts.length) {
                   return relaxedPosts
@@ -473,7 +475,7 @@ const fetcher = async (url: string) => {
   // each subsequent one waits 1s after the previous one settles. This
   // prevents SWR initialization bursts without delaying the first paint.
   let promise: Promise<BooruPost[]>
-  if (isDanbooruPage1) {
+  if (isDanbooruPage1 && !skipPage1Queue) {
     if (isFirstPage1) {
       isFirstPage1 = false
       const chained = Promise.resolve().then(doFetch)
@@ -675,14 +677,20 @@ export async function fetchBatchTagCounts(
 ): Promise<Record<string, number> | null> {
   if (!tags.length) return {}
   
-  if (provider !== 'danbooru' && provider !== 'aibooru') {
-    return {} // Only supported providers via the api route
+  // Gelbooru/Rule34 lack a native tag count API, but character tags share the
+  // same names across boorus and models are largely trained on Danbooru data.
+  // Redirect to Danbooru as a proxy source of truth for character popularity.
+  const effectiveProvider: BooruProvider =
+    (provider === 'gelbooru' || provider === 'rule34') ? 'danbooru' : provider
+
+  if (effectiveProvider !== 'danbooru' && effectiveProvider !== 'aibooru') {
+    return {} // Only Danbooru-like APIs have a tags endpoint
   }
 
   try {
     const params = new URLSearchParams({
       tags: tags.join(','),
-      provider
+      provider: effectiveProvider
     })
     
     // Uses relative path; apiUrl() prepends CF Worker URL when configured.

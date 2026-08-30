@@ -3,6 +3,7 @@
 import { useMemo } from "react"
 import { type BooruPost, type BooruProvider } from "@/lib/api-client"
 import { favKey } from "@/lib/favorites-logic"
+import { isTagCountSupportedProvider } from "@/lib/booru/tag-limits"
 
 export interface UseFilteredPostsArgs {
   /** All fetched posts for the current query (search.allPosts). */
@@ -15,8 +16,16 @@ export interface UseFilteredPostsArgs {
   includeCharacters: boolean
   /** Applied "Minimum Character Posts" filter value (string, parsed as int). */
   appliedCharacterCountFilter: string
-  /** Per-tag booru post counts (Danbooru/Aibooru only; empty for other providers). */
+  /** Per-tag booru post counts (Danbooru/Aibooru/Gelbooru/Rule34 via proxy; empty for other providers). */
   tagCounts: Record<string, number>
+  /**
+   * Client-side tag count filter (extension only). When set and the provider
+   * does NOT support the `tagcount:>=N` metatag server-side, posts are filtered
+   * client-side by splitting `tag_string` and checking the count. Providers
+   * WITH server-side support already have this enforced at the API level, so
+   * the client-side filter is a no-op for them.
+   */
+  appliedTagCountFilter?: string
   /**
    * Favorites integration (web app only). When omitted, the hook behaves as if
    * favorites mode is always off — which is the Pocket's case, since it has no
@@ -59,6 +68,7 @@ export function useFilteredPosts({
   includeCharacters,
   appliedCharacterCountFilter,
   tagCounts,
+  appliedTagCountFilter,
   favorites,
   activeFavoriteFolder = "all",
   history,
@@ -107,15 +117,13 @@ export function useFilteredPosts({
       // Character count filter
       const minCharPostCount = (includeCharacters && parseInt(appliedCharacterCountFilter)) || 0
       if (minCharPostCount > 0) {
-        // The "Minimum Character Post Count" filter needs per-tag booru post counts,
-        // which are only available for Danbooru/Aibooru (fetchBatchTagCounts / the
-        // /api/booru/tags route). For every other provider (e621, gelbooru, rule34)
-        // `tagCounts` is always empty, so evaluating the filter there would drop EVERY
-        // post — that was the e621 "only 1-3 results" bug. Treat the filter as a no-op
-        // (pass-through) on providers without count support instead of silently
-        // filtering everything out.
+        // The "Minimum Character Post Count" filter needs per-tag booru post counts.
+        // Danbooru/Aibooru have native tag count APIs; Gelbooru/Rule34 use Danbooru
+        // as a proxy (character tags share names across platforms). Only e621 and
+        // other unsupported providers skip this filter entirely.
         const postProvider = post._provider || booruProvider
         const supportsCharCounts = postProvider === 'danbooru' || postProvider === 'aibooru'
+          || postProvider === 'gelbooru' || postProvider === 'rule34'
 
         if (supportsCharCounts) {
           if (!post.tag_string_character) {
@@ -141,6 +149,21 @@ export function useFilteredPosts({
         // else: provider has no per-tag counts — skip this filter entirely.
       }
 
+      // Client-side tag count filter — fallback for providers without server-side
+      // `tagcount:>=N` metatag support (Gelbooru, Rule34). Providers WITH server-side
+      // support (Danbooru, Aibooru, e621) already enforce this at the API level, so
+      // running it again client-side would be redundant. Only the extension passes
+      // appliedTagCountFilter; the web app omits it (undefined → no-op).
+      const minTagCount = parseInt(appliedTagCountFilter || '0') || 0
+      if (minTagCount > 0) {
+        const postProvider = post._provider || booruProvider
+        if (!isTagCountSupportedProvider(postProvider)) {
+          const tagString = (post.tag_string || '').trim()
+          const tagCount = tagString.split(/\s+/).filter(Boolean).length
+          if (tagCount < minTagCount) return false
+        }
+      }
+
       if (showFavorites || showHistory) return true
       const fileUrl = post.large_file_url || post.file_url
       const match = fileUrl?.match(/\.(jpg|jpeg|png|gif|webp|avif)$/i)
@@ -153,6 +176,7 @@ export function useFilteredPosts({
     includeCharacters,
     appliedCharacterCountFilter,
     tagCounts,
+    appliedTagCountFilter,
     favorites,
     favorites?.showFavorites,
     favorites?.favoritePosts,

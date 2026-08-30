@@ -6,6 +6,7 @@ import { checkCircuitOpen } from '../lib/circuit-breaker'
 import { MERGED_RATELIMIT_SCRIPT } from '../lib/constants'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
 import { sleep } from '../utils'
+import { getSupabase } from '../lib/supabase'
 
 interface FavoriteRequestItem {
   id: number
@@ -118,8 +119,15 @@ export async function favoritesHandler(
 
     const allPosts: (BooruPost & { _provider?: string })[] = []
 
+    // Rule34/Gelbooru return flat tags and need the Supabase client to resolve
+    // categories (see BaseBooruProvider.enrichPostsWithCategories). Omitting it
+    // made the provider fall through `if (!supabase) return posts`, so favorites
+    // from those two got no artist/meta classification at all — unlike the search
+    // route, which has always passed it.
+    const supabase = getSupabase(env)
+
     for (const [providerName, ids] of Object.entries(groups)) {
-      const provider = BooruFactory.getProvider(providerName as any, envRecord)
+      const provider = BooruFactory.getProvider(providerName as any, envRecord, supabase)
 
       // Split into batches
       const batches: number[][] = []

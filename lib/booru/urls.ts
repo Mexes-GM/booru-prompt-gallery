@@ -17,6 +17,25 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${path}`
 }
 
+/**
+ * Safely checks whether a URL's host equals `host` or is a subdomain of it.
+ *
+ * Prefer this over `url.includes("example.com")` for host checks. A bare
+ * substring test also matches attacker-shaped URLs such as
+ * `https://evil.com/?x=e621.net` or `https://e621.net.evil.com`
+ * (CodeQL js/incomplete-url-substring-sanitization). Relative or unparseable
+ * URLs resolve against a sentinel host and therefore return false.
+ */
+export function urlHasHost(url: string, host: string): boolean {
+  try {
+    const h = new URL(url, "http://relative.invalid").hostname.toLowerCase()
+    const target = host.toLowerCase()
+    return h === target || h.endsWith("." + target)
+  } catch {
+    return false
+  }
+}
+
 const DANBOORU_ONLY_FIELDS =
   "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,image_width,image_height"
 

@@ -3,6 +3,7 @@ import { smartFetch } from '../network/smart-fetch'
 import { BooruPost, IBooruProvider, SearchOptions } from './types'
 import { supabaseAdmin } from '../supabase-admin'
 import { USER_AGENT, getDanbooruUserAgent } from '../constants'
+import { resolveTagCategories, toTagLookupKey } from './tag-lookup'
 
 interface TagCategoryRow {
   name: string
@@ -83,6 +84,12 @@ export abstract class BaseBooruProvider implements IBooruProvider {
   /**
     * Enriches posts from providers like Gelbooru and Rule34 that return flat tags.
     * It queries the Supabase `auto_suggest_tags` table to classify tags into artist/character/copyright correctly.
+    *
+    * Matching goes through `resolveTagCategories` rather than a raw `in('name', tags)`
+    * because those providers do not spell tags the way `auto_suggest_tags` (Danbooru)
+    * does — `self_upload` vs `self-upload`, `absurd_res` vs `absurdres` — and an exact
+    * match silently returned nothing for those, so the tag was never classified as
+    * meta and reached the prompt as if it described the image. See lib/booru/tag-lookup.ts.
     */
   protected async enrichPostsWithCategories(posts: BooruPost[]): Promise<BooruPost[]> {
     if (!posts || posts.length === 0) return posts
@@ -100,27 +107,15 @@ export abstract class BaseBooruProvider implements IBooruProvider {
     if (allTags.size === 0) return posts
 
     try {
-        const uniqueTagsArray = Array.from(allTags)
-        const CHUNK_SIZE = 100
-        const tagMap = new Map<string, number>()
-
-        // Fetch categories in chunks to avoid URL too long or PostgREST limits.
-        // Each chunk is an independent read, so run them all concurrently.
-        const chunks: string[][] = []
-        for (let i = 0; i < uniqueTagsArray.length; i += CHUNK_SIZE) {
-            chunks.push(uniqueTagsArray.slice(i, i + CHUNK_SIZE))
-        }
-
-        await Promise.all(chunks.map(async (chunk) => {
+        // Keyed by `toTagLookupKey`, so a tag resolves regardless of which
+        // separator spelling the matching row happened to use.
+        const tagMap = await resolveTagCategories(allTags, async (names) => {
             const { data } = await supabaseAdmin
                 .from('auto_suggest_tags')
                 .select('name, category')
-                .in('name', chunk)
-            
-            if (data) {
-                data.forEach((row: TagCategoryRow) => tagMap.set(row.name, row.category))
-            }
-        }))
+                .in('name', names)
+            return (data ?? []) as TagCategoryRow[]
+        })
 
         // Modifica posts en place o crea nuevos arrays
         return posts.map(post => {
@@ -133,7 +128,7 @@ export abstract class BaseBooruProvider implements IBooruProvider {
             const metaTags: string[] = []
 
             tags.forEach(t => {
-                const category = tagMap.get(t)
+                const category = tagMap.get(toTagLookupKey(t))
                 if (category === 1) artistTags.push(t)
                 else if (category === 3) copyrightTags.push(t)
                 else if (category === 4) characterTags.push(t)

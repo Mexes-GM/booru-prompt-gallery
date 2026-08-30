@@ -4,6 +4,7 @@ import { PROVIDER_URLS, PROVIDER_REFERERS, USER_AGENT } from '../../constants'
 import type { ProviderEnv } from '../factory'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '../../../logger'
+import { decodeTagEntities } from '../tag-lookup'
 
 interface Rule34PostResponse {
   id: string | number
@@ -90,7 +91,7 @@ export class Rule34Provider extends BaseBooruProvider {
       file_url: post.file_url,
       large_file_url: post.sample_url || post.file_url,
       preview_file_url: post.preview_url || post.preview_file_url || post.file_url,
-      tag_string: post.tags,
+      tag_string: decodeTagEntities(post.tags),
       tag_string_artist: '',
       tag_string_character: '',
       tag_string_copyright: '',

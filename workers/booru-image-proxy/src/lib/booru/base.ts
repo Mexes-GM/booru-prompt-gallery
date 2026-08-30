@@ -2,6 +2,7 @@ import { BooruPost, SearchOptions } from './types'
 import { getDanbooruUserAgent, USER_AGENT } from '../constants'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '../../logger'
+import { resolveTagCategories, toTagLookupKey } from './tag-lookup'
 
 interface TagCategoryRow {
   name: string
@@ -102,26 +103,18 @@ export abstract class BaseBooruProvider {
     if (allTags.size === 0) return posts
 
     try {
-      const uniqueTagsArray = Array.from(allTags)
-      const CHUNK_SIZE = 100
-      const tagMap = new Map<string, number>()
-
-      // Each chunk is an independent read, so run them all concurrently.
-      const chunks: string[][] = []
-      for (let i = 0; i < uniqueTagsArray.length; i += CHUNK_SIZE) {
-        chunks.push(uniqueTagsArray.slice(i, i + CHUNK_SIZE))
-      }
-
-      await Promise.all(chunks.map(async (chunk) => {
+      // Keyed by `toTagLookupKey`: Gelbooru/Rule34 do not spell tags the way
+      // `auto_suggest_tags` (Danbooru) does — `self_upload` vs `self-upload`,
+      // `absurd_res` vs `absurdres` — and the previous exact `in('name', tags)`
+      // silently missed those, so the tag was never classified as meta and
+      // reached the prompt as content. See ./tag-lookup.ts.
+      const tagMap = await resolveTagCategories(allTags, async (names) => {
         const { data } = await supabase
           .from('auto_suggest_tags')
           .select('name, category')
-          .in('name', chunk)
-
-        if (data) {
-          data.forEach((row: TagCategoryRow) => tagMap.set(row.name, row.category))
-        }
-      }))
+          .in('name', names)
+        return (data ?? []) as TagCategoryRow[]
+      })
 
       return posts.map((post) => {
         if (!post.tag_string) return post
@@ -133,7 +126,7 @@ export abstract class BaseBooruProvider {
         const metaTags: string[] = []
 
         tags.forEach((t) => {
-          const category = tagMap.get(t)
+          const category = tagMap.get(toTagLookupKey(t))
           if (category === 1) artistTags.push(t)
           else if (category === 3) copyrightTags.push(t)
           else if (category === 4) characterTags.push(t)

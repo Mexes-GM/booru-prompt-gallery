@@ -2,6 +2,7 @@
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
 import { PROVIDER_URLS, PROVIDER_REFERERS, USER_AGENT } from '@/lib/constants'
+import { decodeTagEntities } from '../tag-lookup'
 
 interface Rule34PostResponse {
   id: string | number
@@ -90,7 +91,7 @@ export class Rule34Provider extends BaseBooruProvider {
       file_url: post.file_url,
       large_file_url: post.sample_url || post.file_url,
       preview_file_url: post.preview_url || post.preview_file_url || post.file_url,
-      tag_string: post.tags,
+      tag_string: decodeTagEntities(post.tags),
       tag_string_artist: '',
       tag_string_character: '',
       tag_string_copyright: '',

@@ -1,6 +1,7 @@
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
 import { PROVIDER_URLS, PROVIDER_REFERERS } from '@/lib/constants'
+import { decodeTagEntities } from '../tag-lookup'
 
 interface GelbooruPostResponse {
   id: string | number
@@ -106,7 +107,7 @@ export class GelbooruProvider extends BaseBooruProvider {
             file_url: unwrapHotlink(post.file_url),
             large_file_url: unwrapHotlink(post.sample_url || post.file_url),
             preview_file_url: unwrapHotlink(post.preview_url || post.file_url),
-            tag_string: post.tags,
+            tag_string: decodeTagEntities(post.tags),
             tag_string_artist: '',
             tag_string_character: '',
             tag_string_copyright: '',
