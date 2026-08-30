@@ -209,14 +209,25 @@ const nextConfig = {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()',
           },
-          {
-            key: 'Content-Security-Policy',
-            value: 'frame-ancestors https://tensor.art https://seaart.ai',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'ALLOW-FROM https://tensor.art',
-          },
+          // NOTE: Content-Security-Policy (frame-ancestors) and X-Frame-Options
+          // for this route are intentionally NOT set here anymore. This block
+          // used to hardcode `frame-ancestors https://tensor.art https://seaart.ai`
+          // + the long-obsolete `X-Frame-Options: ALLOW-FROM` (a directive no
+          // modern browser honors — Chrome and Firefox both ignore it, falling
+          // back to their default same-origin-only framing behavior wherever
+          // it's the only framing header present). Neither included
+          // `chrome-extension://*`/`moz-extension://*`, so the extension's own
+          // sidepanel — which embeds THIS route in an iframe — could get its
+          // framing blocked outright, or collide with the correct, dynamic CSP
+          // that proxy.ts's applySecurityHeaders() already sets for this same
+          // route (`frame-ancestors 'self' chrome-extension://* moz-extension://*`
+          // when isExtensionRoute is true). Two Content-Security-Policy response
+          // headers for the same resource do not simply "last one wins" — browsers
+          // intersect multiple CSP headers, so the narrower, extension-scheme-blind
+          // policy here could silently override the sidepanel-embedding case even
+          // when proxy.ts's policy was correct. Removing the static, stale
+          // duplicate leaves proxy.ts as the single source of truth for this
+          // route's framing policy.
         ],
       },
     ]
