@@ -1,0 +1,62 @@
+{
+  "_comment": "Pseudo-tags: phrases that try to invoke a booru concept for which a canonical tag already exists. Natural-language prose is NOT listed here and is intentionally allowed, because Illustrious and ANIMA are trained on caption text as well as tags. Consumed by __tests__/detailed-backgrounds-dataset.verify.ts. Maintained alongside scripts/apply-scenery-tag-substitutions.js.",
+  "_generatedAt": "2026-08-30T22:37:47.632Z",
+  "substitutions": [
+    {
+      "from": "blue hour lighting",
+      "to": "twilight"
+    },
+    {
+      "from": "bright natural light",
+      "to": "sunlight"
+    },
+    {
+      "from": "diffused daylight",
+      "to": "sunlight"
+    },
+    {
+      "from": "dust motes in light",
+      "to": "light particles"
+    },
+    {
+      "from": "light fog",
+      "to": "fog"
+    },
+    {
+      "from": "light rain",
+      "to": "rain"
+    },
+    {
+      "from": "light snowfall",
+      "to": "snowing"
+    },
+    {
+      "from": "morning light",
+      "to": "sunlight"
+    },
+    {
+      "from": "natural lighting",
+      "to": "sunlight"
+    },
+    {
+      "from": "neon lighting",
+      "to": "neon lights"
+    },
+    {
+      "from": "pastel color palette",
+      "to": "pastel colors"
+    },
+    {
+      "from": "rim lighting",
+      "to": "backlighting"
+    },
+    {
+      "from": "starlight",
+      "to": "starry sky"
+    },
+    {
+      "from": "sunbeams through canopy",
+      "to": "dappled sunlight"
+    }
+  ]
+}

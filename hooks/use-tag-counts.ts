@@ -52,7 +52,7 @@ export function updateGlobalCache(updates: Record<string, number>) {
  * Headless function to prefetch missing character tags from a list of posts independently of React renders.
  */
 export function prefetchTagCounts(posts: BooruPost[], provider: BooruProvider) {
-  if (!posts.length || (provider !== 'danbooru' && provider !== 'aibooru')) {
+  if (!posts.length || (provider !== 'danbooru' && provider !== 'aibooru' && provider !== 'gelbooru' && provider !== 'rule34')) {
     return
   }
 

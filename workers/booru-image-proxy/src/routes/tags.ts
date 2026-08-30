@@ -12,6 +12,10 @@ let tagsCache: TagData[] | null = null
 let cacheTimestamp = 0
 const CACHE_DURATION = 24 * 60 * 60 * 1000
 
+// Row ceiling for a category-filtered request — same as the unfiltered cache
+// limit below, so the response size never regresses.
+const FILTERED_LIMIT = 3000
+
 function checkRateLimit(clientIp: string): boolean {
   // This route serves a 24h-cached static list — it never touches donmai,
   // so a pure in-memory limiter is enough (Fase 5, redis-optimization-plan.md).
@@ -38,6 +42,43 @@ export async function tagsHandler(
 
   try {
     const now = Date.now()
+
+    // A category filter has to be pushed down into the query, not applied to
+    // the cache. The cache holds an arbitrary, unordered 3000-row slice of
+    // ~145k rows, so filtering it in memory returned a near-random handful of
+    // the matching tags instead of all of them (category=5 has 460 rows
+    // upstream). Filtered requests bypass the shared cache and query directly,
+    // keeping the same 3000-row ceiling and ordering by post_count so the
+    // truncation drops the long tail instead of an arbitrary slice.
+    // Mirrors app/api/tags/route.ts — keep both in sync.
+    const categoryNum = category !== null ? parseInt(category) : NaN
+    if (!isNaN(categoryNum)) {
+      const supabase = getSupabase(env)
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('auto_suggest_tags')
+          .select('name, category')
+          .eq('category', categoryNum)
+          .order('post_count', { ascending: false })
+          .limit(FILTERED_LIMIT)
+
+        if (error) throw error
+
+        const filtered: TagData[] = (data ?? []).map((t: any) => ({
+          name: t.name,
+          category: parseInt(t.category) || 0,
+        }))
+
+        return jsonResponse(filtered, 200, {
+          'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=86400',
+          'CDN-Cache-Control': 'public, s-maxage=86400',
+          'X-Total-Count': String(filtered.length),
+        })
+      }
+      // No Supabase binding: fall through to the hardcoded fallback list below,
+      // which the in-memory filter at the end still narrows by category.
+    }
+
     if (!tagsCache || now - cacheTimestamp > CACHE_DURATION) {
       const supabase = getSupabase(env)
 

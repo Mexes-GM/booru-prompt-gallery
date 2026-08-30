@@ -1,15 +1,17 @@
 
 // cleanPrompt import removed to avoid circular dependency
+import {
+  RICHNESS_AXES,
+  emptyClassifiedTags,
+  isTagCategory,
+  type ClassifiedTags,
+  type RichnessAxis,
+  type TagCategory,
+} from './tag-taxonomy'
 
-export type TagCategory = 'clothing' | 'pose' | 'scenery' | 'appearance' | 'other';
-
-export interface ClassifiedTags {
-  clothing: string[];
-  pose: string[];
-  scenery: string[];
-  appearance: string[];
-  other: string[];
-}
+// Re-exported so the many `import { TagCategory } from '@/lib/tag-classifier'`
+// call sites keep working; lib/tag-taxonomy.ts is the source of truth.
+export type { TagCategory, ClassifiedTags, RichnessAxis }
 
 const CLOTHING_SUFFIXES = [
   "wear", "uniform", "costume", "dress", "bikini", "swimsuit", "lingerie",
@@ -18,7 +20,12 @@ const CLOTHING_SUFFIXES = [
   "shoes", "boots", "sneakers", "socks", "stockings", "pantyhose",
   "leggings", "hat", "cap", "helmet", "glasses", "eyewear", "mask",
   "necklace", "earrings", "jewelry", "ribbon", "tie", "scarf", "belt",
-  "bag", "backpack", "armor", "bodysuit", "leotard", "apron", "kimono", "yukata"
+  "bag", "backpack", "armor", "bodysuit", "leotard", "apron", "kimono", "yukata",
+  // Accessory suffixes added to catch e.g. "star ear ring", "moon pendant" —
+  // without these, an accessory whose name happens to contain an ambiguous
+  // scenery word ("star", "moon") fell through to the Scenery check below
+  // before this Clothing check got a chance to recognize it as jewelry.
+  "ring", "pendant", "bracelet", "anklet", "brooch", "pin", "clip", "band"
 ];
 
 const POSE_KEYWORDS = [
@@ -33,12 +40,32 @@ const POSE_KEYWORDS = [
 
 const SCENERY_KEYWORDS = [
   "indoors", "outdoors", "background", "sky", "cloud", "sun", "moon",
-  "star", "water", "sea", "ocean", "river", "lake", "pool", "beach",
+  "water", "sea", "ocean", "river", "lake", "pool", "beach",
   "mountain", "forest", "tree", "flower", "grass", "plant", "nature",
   "city", "town", "village", "building", "house", "room", "bed",
   "couch", "chair", "table", "window", "door", "floor", "wall",
   "ceiling", "road", "street", "ruins", "scenery", "landscape",
-  "night", "day", "sunset", "sunrise", "rain", "snow"
+  "sunset", "sunrise", "rain", "snow"
+];
+
+/**
+ * Words that are legitimate scenery/setting terms in SOME context ("starry
+ * sky", "night sky", "rainy day") but are ALSO extremely common inside
+ * unrelated tag names — copyright/franchise tags ("friday night funkin"),
+ * accessories ("star ear ring", "moon pendant"), decorative patterns, and
+ * character names. Standalone-word matching on these produced real false
+ * positives (a copyright tag landing in the scenery axis pool, polluting
+ * every Pack Mode prompt that sampled it) — see the 2026-08-27 real-data
+ * audit. Instead of matching the bare word, only match it as part of one of
+ * a short list of actual scenery PHRASES, which is what these words mean
+ * "scenery" in practice — a standalone "star" or "night" tag falls through
+ * to whatever the other rules (clothing suffixes, appearance, etc.) decide,
+ * same as any other unmatched word.
+ */
+const AMBIGUOUS_SCENERY_PHRASES = [
+  "starry sky", "star field", "shooting star", "star filled sky",
+  "night sky", "night time", "at night", "starry night",
+  "day time", "daytime", "clear day", "sunny day",
 ];
 
 const APPEARANCE_KEYWORDS = [
@@ -53,6 +80,7 @@ const APPEARANCE_KEYWORDS = [
 // Precompiled regexes — compiled once at module load, not per tag.
 const POSE_REGEXES = POSE_KEYWORDS.map(k => new RegExp(`\\b${k}\\b`));
 const SCENERY_REGEXES = SCENERY_KEYWORDS.map(k => new RegExp(`\\b${k}\\b`));
+const AMBIGUOUS_SCENERY_REGEXES = AMBIGUOUS_SCENERY_PHRASES.map(k => new RegExp(`\\b${k}\\b`));
 const APPEARANCE_REGEXES = APPEARANCE_KEYWORDS.map(k => new RegExp(`\\b${k}\\b`));
 
 export function classifyTag(tag: string, overrides?: Record<string, string>): TagCategory {
@@ -81,8 +109,11 @@ export function classifyTag(tag: string, overrides?: Record<string, string>): Ta
     }
 
     if (overrideValue) {
-      const dbCategory = overrideValue.toLowerCase().trim() as TagCategory;
-      if (["clothing", "pose", "scenery", "appearance", "other"].includes(dbCategory)) {
+      // `tags.category` is a plain varchar, so a row can hold anything. An
+      // unrecognized value must fall through to the heuristics below rather than
+      // be trusted as a bucket name.
+      const dbCategory = overrideValue.toLowerCase().trim();
+      if (isTagCategory(dbCategory)) {
         return dbCategory;
       }
     }
@@ -103,7 +134,11 @@ export function classifyTag(tag: string, overrides?: Record<string, string>): Ta
   }
 
   // Scenery
-  if (SCENERY_REGEXES.some(r => r.test(subjectForMatching)) || subjectForMatching.endsWith(" background")) {
+  if (
+    SCENERY_REGEXES.some(r => r.test(subjectForMatching)) ||
+    AMBIGUOUS_SCENERY_REGEXES.some(r => r.test(subjectForMatching)) ||
+    subjectForMatching.endsWith(" background")
+  ) {
     return 'scenery';
   }
 
@@ -122,13 +157,7 @@ export function classifyTag(tag: string, overrides?: Record<string, string>): Ta
 }
 
 export function classifyTags(tags: string[], overrides?: Record<string, string>, knownCharacterTags: string[] = []): ClassifiedTags {
-  const result: ClassifiedTags = {
-    clothing: [],
-    pose: [],
-    scenery: [],
-    appearance: [],
-    other: []
-  };
+  const result = emptyClassifiedTags();
 
   const normalizeForMatch = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim();
   const charTagsSet = new Set(knownCharacterTags.map(normalizeForMatch));
@@ -189,13 +218,9 @@ export interface RichnessScore {
   score: number;
   /** Max possible score (10), for rendering "score/max". */
   maxScore: number;
-  /** Per-category depth (none = 0 tags, shallow = 1-2, deep = 3+), for tooltips/breakdowns. */
-  breakdown: Record<'clothing' | 'pose' | 'scenery' | 'appearance', RichnessDepth>;
+  /** Per-axis depth (none = 0 tags, shallow = 1-2, deep = 3+), for tooltips/breakdowns. */
+  breakdown: Record<RichnessAxis, RichnessDepth>;
 }
-
-const RICHNESS_CATEGORIES: Array<'clothing' | 'pose' | 'scenery' | 'appearance'> = [
-  'clothing', 'pose', 'scenery', 'appearance'
-];
 
 const DEPTH_POINTS: Record<RichnessDepth, number> = {
   none: 0,
@@ -210,19 +235,22 @@ function depthFor(count: number): RichnessDepth {
 }
 
 export function computeRichnessScore(classified: ClassifiedTags): RichnessScore {
-  const breakdown = {
-    clothing: depthFor(classified.clothing.length),
-    pose: depthFor(classified.pose.length),
-    scenery: depthFor(classified.scenery.length),
-    appearance: depthFor(classified.appearance.length),
-  };
-  const score = RICHNESS_CATEGORIES.reduce(
-    (total, cat) => total + DEPTH_POINTS[breakdown[cat]],
+  // Axes come from the taxonomy (`isRichnessAxis`), so the score, its maximum and
+  // the breakdown all move together. Note the calibration caveat above: the 0-10
+  // scale was measured over exactly these four axes, so adding a fifth changes
+  // the scale and the empirical tuning has to be redone.
+  const breakdown = Object.fromEntries(
+    RICHNESS_AXES.map((axis) => [axis, depthFor(classified[axis].length)])
+  ) as Record<RichnessAxis, RichnessDepth>;
+
+  const score = RICHNESS_AXES.reduce(
+    (total, axis) => total + DEPTH_POINTS[breakdown[axis]],
     0
   );
+
   return {
     score,
-    maxScore: RICHNESS_CATEGORIES.length * DEPTH_POINTS.deep,
+    maxScore: RICHNESS_AXES.length * DEPTH_POINTS.deep,
     breakdown,
   };
 }
