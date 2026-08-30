@@ -108,3 +108,12 @@ supabase/schema.snapshot.sql
 
 # react-doctor triage working notes (internal process artifacts, not project docs)
 .react-doctor/
+
+tasks/
+
+# Agent tooling working state (per-machine, not project config)
+.codegraph/
+.superpowers/
+
+# Local diff dumps produced while reviewing changes (copies of tracked source)
+*_diffs.txt
