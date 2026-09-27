@@ -20,15 +20,21 @@ import { Slider } from "@/components/ui/slider"
 import { TagAutocompleteTextarea } from "./tag-autocomplete-textarea"
 import { RemovableTagChip } from './removable-tag-chip'
 import { CATEGORY_ACTIVE_CLASS, CATEGORY_CHIP_CLASS, CATEGORY_SLIDER_CLASS, CATEGORY_CONTAINER_CLASS, CATEGORY_TEXT_CLASS } from './category-chip-styles'
+import { PackSourcePopover, summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-popover'
 
 export interface PackBuilderStickyFooterProps {
     isOpen: boolean
     baseCard: BooruPost | null
-    /** True once the Pack Setup questionnaire has been confirmed — including
-     *  a "Full Setup" run with no base card. Lets the builder Dialog open
-     *  without requiring baseCard, while the hint still shows until either
-     *  a base is picked or Full Setup is confirmed. */
+    /** True once a base (card or pasted prompt) exists. Lets the builder
+     *  Dialog open, while the hint bar shows until one is picked. */
     hasSetupAnswers: boolean
+    /** Current "source of variations" answers (rating/solo/tags/provider) and
+     *  its popover, opened from the chip in the header (design spec §2.2). */
+    sourceAnswers: PackSourceAnswers
+    onApplySourceAnswers: (answers: PackSourceAnswers) => void
+    currentSearchTags: string
+    sourcePopoverOpen: boolean
+    onSourcePopoverOpenChange: (open: boolean) => void
     lockedCategories: Set<TagCategory>
     toggleLockedCategory: (category: TagCategory) => void
     /** Slots locked inside a partially locked category (see usePackMode). */
@@ -80,7 +86,6 @@ export interface PackBuilderStickyFooterProps {
     onRegenerate: () => void
     onClearBase: () => void
     onExit: () => void
-    onFullSetup?: () => void
     prompts: PackPrompt[]
     /** Copy a single prompt to the clipboard. Receives the full PackPrompt
      *  (not just its text) so the caller can also credit the local learning
@@ -582,6 +587,11 @@ const PackBuilderStickyFooterComponent = ({
     isOpen,
     baseCard,
     hasSetupAnswers,
+    sourceAnswers,
+    onApplySourceAnswers,
+    currentSearchTags,
+    sourcePopoverOpen,
+    onSourcePopoverOpenChange,
     lockedCategories,
     toggleLockedCategory,
     lockedSlots,
@@ -616,7 +626,6 @@ const PackBuilderStickyFooterComponent = ({
     onRegenerate,
     onClearBase,
     onExit,
-    onFullSetup,
     prompts,
     onCopyPrompt,
     onCopyAll,
@@ -713,11 +722,10 @@ const PackBuilderStickyFooterComponent = ({
 
     return (
         <>
-            {/* Instructional hint while Pack Mode is on but no base is picked yet and no
-                setup has been confirmed — the builder dialog below opens once either a
-                base card is selected ("Use as base") or "Full Setup" is confirmed. */}
+            {/* Instructional hint while Pack Mode is on but no base is picked yet — the
+                builder dialog below opens once a base (card or pasted prompt) exists. */}
             <AnimatePresence>
-                {isOpen && !baseCard && !hasSetupAnswers && (
+                {isOpen && !hasSetupAnswers && (
                     <motion.div
                         key="pack-hint"
                         initial={lowMotion ? { opacity: 0 } : { y: 80, opacity: 0 }}
@@ -732,15 +740,6 @@ const PackBuilderStickyFooterComponent = ({
                                 Hover a card and click <span className="font-medium text-foreground">&quot;Use as base&quot;</span> to build a pack.
                             </p>
                         </div>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={onFullSetup}
-                            className="flex-shrink-0 border-mode-pack-border text-mode-pack-text hover:bg-mode-pack-soft hover:text-mode-pack-text"
-                        >
-                            Full Setup
-                        </Button>
                         <Button variant="ghost" size="icon" onClick={onExit} className="h-8 w-8 rounded-full hover:bg-muted flex-shrink-0" aria-label="Exit pack mode">
                             <X className="w-4 h-4" />
                         </Button>
@@ -748,7 +747,7 @@ const PackBuilderStickyFooterComponent = ({
                 )}
             </AnimatePresence>
 
-            <Dialog open={isOpen && (!!baseCard || hasSetupAnswers)} onOpenChange={handleDialogOpenChange}>
+            <Dialog open={isOpen && hasSetupAnswers} onOpenChange={handleDialogOpenChange}>
                 <DialogContent
                     className="max-w-7xl w-[96vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden"
                     onEscapeKeyDown={onExit}
@@ -771,12 +770,27 @@ const PackBuilderStickyFooterComponent = ({
                                     </span>
                                 ) : (
                                     <span className="text-[11px] font-semibold text-mode-pack-text bg-mode-pack-soft px-2.5 py-0.5 rounded-full border border-mode-pack-border">
-                                        Full Setup
+                                        From prompt
                                     </span>
                                 )}
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            <PackSourcePopover
+                                answers={sourceAnswers}
+                                onApply={onApplySourceAnswers}
+                                currentSearchTags={currentSearchTags}
+                                postCount={loadedPostCount}
+                                open={sourcePopoverOpen}
+                                onOpenChange={onSourcePopoverOpenChange}
+                            >
+                                <button
+                                    type="button"
+                                    className="h-8 px-2.5 rounded-full border border-border/40 bg-muted/60 hover:bg-muted text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                    {summarizePackSourceAnswers(sourceAnswers)} · {loadedPostCount} posts
+                                </button>
+                            </PackSourcePopover>
                             <Button
                                 variant="ghost"
                                 size="sm"

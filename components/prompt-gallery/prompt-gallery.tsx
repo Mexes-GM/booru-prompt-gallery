@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
 import { UpdateNotesTab } from "@/components/prompt-gallery/update-notes-tab"
+import { PanelLinkTabs } from "@/components/prompt-gallery/panel-link-tabs"
 import { getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -149,7 +150,8 @@ import { usePackMode } from "@/hooks/use-pack-mode"
 import { usePackSeed, PACK_SEED_TARGET_POSTS } from "@/hooks/use-pack-seed"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
-import { PackSetupModal, type PackSetupAnswers } from "./pack-setup-modal"
+import { PackSourcePopover, type PackSourceAnswers } from "./pack-source-popover"
+import { PackEntryModal } from "./pack-entry-modal"
 const PackBuilderStickyFooter = dynamic(() => import("./pack-builder-sticky-footer").then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, PenLine, SlidersHorizontal } from "lucide-react"
@@ -204,7 +206,7 @@ function PackSeedFetcher({
   booruProvider,
   onReady,
 }: {
-  answers: PackSetupAnswers
+  answers: PackSourceAnswers
   booruProvider: BooruProvider
   onReady: (result: UsePackSeedSearchResult) => void
 }) {
@@ -739,13 +741,27 @@ export function PromptGallery() {
   const packModeSetBaseCard = packMode.setBaseCard
   const packModeReseedAllAxes = packMode.reseedAllAxes
 
-  // Pack Setup modal: the answers gate WHEN usePackSeedSearch's fetch starts.
-  // `packSetupOpen` shows the questionnaire; `packSetupAnswers` (non-null once
-  // confirmed) is what conditionally mounts <PackSeedFetcher> below — see that
-  // component for why this must be a mount decision, not a hook "enabled" flag.
-  const [packSetupOpen, setPackSetupOpen] = useState(false)
-  const [packSetupAnswers, setPackSetupAnswers] = useState<PackSetupAnswers | null>(null)
-  const [pendingPackBase, setPendingPackBase] = useState<BooruPost | null>(null)
+  // Pack entry modal (design spec §2.1) — replaces the old mandatory Pack
+  // Setup questionnaire. `packEntryOpen` shows the "From a card"/"From my
+  // prompt" choice; `packSourceAnswers` (always populated, unlike the old
+  // nullable packSetupAnswers) is what <PackSeedFetcher> below seeds from.
+  // `needsSourceChoice` tracks whether the user has EVER configured a source
+  // (no `pack-source-answers` in storage yet) — the popover auto-opens once
+  // after their first base pick, then never again on its own (§2.1, §2.2).
+  const [packEntryOpen, setPackEntryOpen] = useState(false)
+  const [packSourceAnswers, setPackSourceAnswers] = useState<PackSourceAnswers>(() => {
+    const stored = userPreferences.getPackSourceAnswers()
+    if (stored) return stored
+    return {
+      ratingMode: 'sfw',
+      soloOnly: true,
+      tagsSource: 'current',
+      searchTags: search.searchTags,
+      booruProvider: search.booruProvider,
+    }
+  })
+  const [needsSourceChoice, setNeedsSourceChoice] = useState(() => !userPreferences.getPackSourceAnswers())
+  const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false)
 
   // Latest usePackSeedSearch result, reported up by <PackSeedFetcher> once
   // mounted. Split in two: a ref (for imperative reads inside callbacks that
@@ -755,41 +771,49 @@ export function PromptGallery() {
   // result object on every page landing.
   const packSeedSearchRef = useRef<UsePackSeedSearchResult | null>(null)
   const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ postCount: number; canLoadMore: boolean } | null>(null)
+  // Only runs the initial axis seed ONCE per base (see handlePackSeedSearchReady) —
+  // re-running it on every incidental result update would fight the user's own edits.
+  const hasSeededRef = useRef(false)
 
-  // Selecting a base card no longer seeds anything directly — it fixes the
-  // base and opens the Pack Setup questionnaire. Nothing is fetched until
-  // the user confirms it (see handlePackSetupConfirm).
-  const handleSetAsPackBase = useCallback((post: BooruPost) => {
-    setPendingPackBase(post)
-    setPackSetupOpen(true)
-  }, [])
-
-  // "Full Setup" — opens the same questionnaire without a base card, for
-  // users who want to configure a pack from scratch (custom/empty tags)
-  // instead of picking a search result via "Use as base". Pack type is
-  // forced to 'custom' since there's no base card to derive
-  // 'character'/'clothing' locked categories from.
-  const handleFullPackSetup = useCallback(() => {
-    setPendingPackBase(null)
-    setPackSetupOpen(true)
-  }, [])
-
-  const handlePackSetupCancel = useCallback(() => {
-    setPackSetupOpen(false)
-    setPendingPackBase(null)
-  }, [])
-
-  const handlePackSetupConfirm = useCallback((answers: PackSetupAnswers) => {
-    setPackSetupOpen(false)
-    setPackSetupAnswers(answers)
+  /** Resets seed-fetch bookkeeping so the next base picked re-seeds from scratch. */
+  const resetPackSeeding = useCallback(() => {
     hasSeededRef.current = false
     packSeedSearchRef.current = null
     setPackSeedSnapshot(null)
-    if (pendingPackBase) {
-      packModeSetBaseCard(pendingPackBase)
+  }, [])
+
+  // Picking a base card no longer opens a modal — it fixes the base directly.
+  // The source popover only opens automatically the very first time (no
+  // stored answers yet); after that, whatever was last applied is reused.
+  const handleSetAsPackBase = useCallback((post: BooruPost) => {
+    packModeSetBaseCard(post)
+    resetPackSeeding()
+    setPackEntryOpen(false)
+    if (needsSourceChoice) setSourcePopoverOpen(true)
+  }, [packModeSetBaseCard, resetPackSeeding, needsSourceChoice])
+
+  const packModeSetBasePrompt = packMode.setBasePrompt
+  const handleSubmitPackPrompt = useCallback((text: string) => {
+    packModeSetBasePrompt(text)
+    resetPackSeeding()
+    setPackEntryOpen(false)
+    if (needsSourceChoice) setSourcePopoverOpen(true)
+  }, [packModeSetBasePrompt, resetPackSeeding, needsSourceChoice])
+
+  const handlePackEntryCancel = useCallback(() => {
+    setPackEntryOpen(false)
+  }, [])
+
+  const handleApplyPackSourceAnswers = useCallback((answers: PackSourceAnswers) => {
+    setPackSourceAnswers(answers)
+    try {
+      userPreferences.setPackSourceAnswers(answers)
+    } catch {
+      // Non-fatal: best-effort, same as every other localStorage write here.
     }
-    setPendingPackBase(null)
-  }, [pendingPackBase, packModeSetBaseCard])
+    setNeedsSourceChoice(false)
+    resetPackSeeding()
+  }, [resetPackSeeding])
 
   // Once <PackSeedFetcher> reports its first live result, seed axis pools
   // right away (whatever's loaded so far), then keep fetching more in the
@@ -798,7 +822,6 @@ export function PromptGallery() {
   // fresh on every call so handleLoadMorePacks/handleReseedAxis always see
   // the latest fetch state, but re-running the seed on every incidental
   // result update (e.g. a page landing) would fight the user's own edits.
-  const hasSeededRef = useRef(false)
   const handlePackSeedSearchReady = useCallback(async (seedSearch: UsePackSeedSearchResult) => {
     packSeedSearchRef.current = seedSearch
     setPackSeedSnapshot({
@@ -1442,13 +1465,16 @@ export function PromptGallery() {
           <div className="w-full max-w-6xl mx-auto mb-4 sm:mb-8 space-y-4 sm:space-y-6">
             <GalleryHero />
 
-            {/* mt-* leaves room above the card for the Update Notes tab (and
-                the mascot peeking over it), which is docked on its top edge. */}
+            {/* mt-* leaves room above the card for the folder tabs docked on
+                its top edge (and the mascot standing on Update Notes). */}
             <Card ref={controlPanelRef} className="glass-effect relative z-20 !mt-14">
-              {/* Overlaps the card's top border by 1px so it reads as a folder
-                  tab rather than a floating chip. */}
-              <div className="absolute bottom-full left-4 sm:left-6 -mb-px">
+              {/* Ends exactly at the card's top edge so the card's border runs
+                  in front of the tabs, making them read as tucked behind it.
+                  bottom-full is measured from inside the card's 1px border,
+                  hence mb-px to clear it. */}
+              <div className="absolute bottom-full inset-x-3 sm:inset-x-6 mb-px flex items-end justify-between gap-2">
                 <UpdateNotesTab version={pkg.version} />
+                <PanelLinkTabs />
               </div>
               <CardContent className="p-4 sm:p-6">
                 <form onSubmit={(e) => {
@@ -1504,8 +1530,6 @@ export function PromptGallery() {
                     />
                   </div>
 
-                  <div className="h-px bg-border/60" />
-
                   {/* Mode bar: Browse / Merge / Pack + Favorites, History, Tools */}
                   <GalleryToolbar
                     showFavorites={favs.showFavorites}
@@ -1527,6 +1551,7 @@ export function PromptGallery() {
                       setIsAiConvertMode(false)
                       if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
                       packMode.enablePackMode()
+                      if (!packMode.hasBase) setPackEntryOpen(true)
                     }}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onOpenQuickTeach={() => setIsQuickTeachOpen(true)}
@@ -1988,29 +2013,25 @@ export function PromptGallery() {
         meta={aiConvertMeta}
         onExit={() => setIsAiConvertMode(false)}
       />
-      {packSetupAnswers && (
+      {packMode.hasBase && (
         <PackSeedFetcher
-          key={JSON.stringify(packSetupAnswers)}
-          answers={packSetupAnswers}
-          booruProvider={packSetupAnswers.booruProvider}
+          key={JSON.stringify(packSourceAnswers)}
+          answers={packSourceAnswers}
+          booruProvider={packSourceAnswers.booruProvider}
           onReady={handlePackSeedSearchReady}
         />
       )}
-      <PackSetupModal
-        isOpen={packSetupOpen}
-        baseCard={pendingPackBase}
-        currentSearchTags={search.searchTags}
-        currentBooruProvider={search.booruProvider}
-        tagOverrides={packMode.effectiveTagOverrides}
-        customBaseText={packMode.customBaseText}
-        onCustomBaseTextChange={packMode.setCustomBaseText}
-        onConfirm={handlePackSetupConfirm}
-        onCancel={handlePackSetupCancel}
+      <PackEntryModal
+        isOpen={packEntryOpen}
+        initialPrompt={packMode.basePrompt || userPreferences.getLastPackBasePrompt()}
+        onChooseCard={() => setPackEntryOpen(false)}
+        onSubmitPrompt={handleSubmitPackPrompt}
+        onCancel={handlePackEntryCancel}
       />
       <PackBuilderStickyFooter
         isOpen={packModeIsPackMode}
         baseCard={packMode.baseCard}
-        hasSetupAnswers={!!packSetupAnswers}
+        hasSetupAnswers={packMode.hasBase}
         lockedCategories={packMode.lockedCategories}
         toggleLockedCategory={packMode.toggleLockedCategory}
         lockedSlots={packMode.lockedSlots}
@@ -2040,22 +2061,25 @@ export function PromptGallery() {
         loadedPostCount={packSeedSnapshot?.postCount ?? 0}
         canLoadMorePosts={packSeedSnapshot?.canLoadMore ?? false}
         onLoadMorePosts={handleLoadMorePacks}
+        sourceAnswers={packSourceAnswers}
+        onApplySourceAnswers={handleApplyPackSourceAnswers}
+        currentSearchTags={search.searchTags}
+        sourcePopoverOpen={sourcePopoverOpen}
+        onSourcePopoverOpenChange={setSourcePopoverOpen}
         promptCount={packMode.promptCount}
         setPromptCount={packMode.setPromptCount}
         onRegenerate={handlePackRegenerate}
         onClearBase={() => {
           packMode.setBaseCard(null)
-          setPackSetupAnswers(null)
-          packSeedSearchRef.current = null
-          setPackSeedSnapshot(null)
+          packMode.setBasePrompt('')
+          resetPackSeeding()
         }}
         onExit={() => {
           packMode.disablePackMode()
-          setPackSetupAnswers(null)
-          packSeedSearchRef.current = null
-          setPackSeedSnapshot(null)
+          packMode.setBaseCard(null)
+          packMode.setBasePrompt('')
+          resetPackSeeding()
         }}
-        onFullSetup={handleFullPackSetup}
         prompts={packMode.generatedPrompts}
         onCopyPrompt={(prompt) => {
           copyToClipboard(prompt.prompt, 0, true)

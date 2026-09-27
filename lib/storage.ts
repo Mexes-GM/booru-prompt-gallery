@@ -749,7 +749,7 @@ function isPackModeConfigV2(value: unknown): value is PackModeConfigV2 {
 }
 
 /**
- * Same fields as `PackSetupAnswers` (components/prompt-gallery/pack-setup-modal.tsx),
+ * Same fields as `PackSourceAnswers` (components/prompt-gallery/pack-source-popover.tsx),
  * duplicated here with local literal types so storage.ts stays a leaf module
  * (no import from components/). "packSourceChosen" (§7.2) is implicit: a
  * non-null value read back from storage means the user already answered once.

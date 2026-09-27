@@ -3,9 +3,9 @@
 /**
  * Pack Mode's OWN post-fetching source for seeding axis pools — deliberately
  * independent from useBooruSearch's global search state (searchTags/rating
- * shown in the main search bar). The Pack Setup modal (see
- * components/prompt-gallery/pack-setup-modal.tsx) asks the user for a rating
- * preference and a "solo character" preference specific to this pack, plus
+ * shown in the main search bar). The source popover (see
+ * components/prompt-gallery/pack-source-popover.tsx) asks the user for a
+ * rating preference and a "solo character" preference specific to this pack, plus
  * which tags to sample from (the current search, a custom query, or none) —
  * none of that should silently change what the user sees in the main gallery,
  * and vice versa: changing the main search bar mid-Pack-Mode-session must not
@@ -24,7 +24,7 @@
  * query syntax across every provider.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useInfinitePosts, type BooruPost } from "@/lib/api-client"
+import { useInfinitePosts, isRandomOrderSafeProvider, type BooruPost } from "@/lib/api-client"
 import type { BooruProvider } from "@/lib/booru/types"
 import { useScrollRateLimiter } from "./use-scroll-rate-limiter"
 import { useToast } from "./use-toast"
@@ -86,23 +86,28 @@ function buildTags(searchTags: string, soloOnly: boolean): string {
 /**
  * One rating's worth of paging state — mirrors the SWR-backed shape
  * useBooruSearch keeps for the main search, scoped down to just what seeding
- * needs (no shuffle/order UI, always "recent" order for stable pagination).
+ * needs (automatically defaults to "random" order on providers where it poses
+ * no tag-count or pagination limitations like Gelbooru/Rule34, and "recent" on
+ * providers with strict limits like Danbooru/Aibooru/e621 for stable pagination).
  */
-function useSingleRatingFeed(tags: string, ratingFilter: string, provider: BooruProvider) {
+function useSingleRatingFeed(tags: string, ratingFilter: string, provider: BooruProvider, seed: number) {
   const [size, setSize] = useState(1)
+  const isRandomSafe = isRandomOrderSafeProvider(provider)
+  const order = isRandomSafe ? "random" : "recent"
+
   const { data: pages, isValidating } = useInfinitePosts(
     tags,
     ratingFilter,
-    "recent",
-    undefined,
+    order,
+    isRandomSafe ? seed : undefined,
     provider,
     false,
   )
 
   // Reset pagination whenever the query itself changes (new tags/rating/
-  // provider) — mirrors useBooruSearch's own reset effect.
+  // provider/seed) — mirrors useBooruSearch's own reset effect.
   const resetKeyRef = useRef("")
-  const resetKey = `${tags}-${ratingFilter}-${provider}`
+  const resetKey = `${tags}-${ratingFilter}-${provider}-${isRandomSafe ? seed : ""}`
   useEffect(() => {
     if (resetKeyRef.current !== resetKey) {
       resetKeyRef.current = resetKey
@@ -110,7 +115,17 @@ function useSingleRatingFeed(tags: string, ratingFilter: string, provider: Booru
     }
   }, [resetKey])
 
-  const allPosts = useMemo(() => (pages ? pages.flat() : []), [pages])
+  const allPosts = useMemo(() => {
+    if (!pages) return []
+    const flat = pages.flat()
+    const seen = new Set<number>()
+    return flat.filter((post) => {
+      if (!post || seen.has(post.id)) return false
+      seen.add(post.id)
+      return true
+    })
+  }, [pages])
+
   const isLoadingMore = isValidating && size > 0
   const lastPage = pages && pages.length > 0 ? pages[pages.length - 1] : null
   const noMoreResults = !!pages && pages.length > 0 && lastPage !== null && lastPage.length === 0
@@ -141,12 +156,14 @@ export function usePackSeedSearch(args: UsePackSeedSearchArgs): UsePackSeedSearc
   const ratingFilters = packRatingToFilters(ratingMode)
   const isBoth = ratingFilters.length > 1
 
-  const feedA = useSingleRatingFeed(tags, ratingFilters[0], booruProvider)
+  const [randomSeed, setRandomSeed] = useState(() => Date.now())
+
+  const feedA = useSingleRatingFeed(tags, ratingFilters[0], booruProvider, randomSeed)
   // Second feed only matters in "both" mode. When not "both" it's given the
-  // EXACT same (tags, rating, provider) key as feedA, so SWR dedupes it
+  // EXACT same (tags, rating, provider, seed) key as feedA, so SWR dedupes it
   // against feedA's own in-flight/cached request instead of firing a second
   // real network call — see useInfinitePosts's dedupingInterval.
-  const feedB = useSingleRatingFeed(tags, ratingFilters[1] ?? ratingFilters[0], booruProvider)
+  const feedB = useSingleRatingFeed(tags, ratingFilters[1] ?? ratingFilters[0], booruProvider, randomSeed)
 
   // Stable callbacks — useScrollRateLimiter memoizes canLoadMore off these
   // (see its own [onSessionCapReached, onScrollLimited] deps), so passing
@@ -178,6 +195,7 @@ export function usePackSeedSearch(args: UsePackSeedSearchArgs): UsePackSeedSearc
     if (rateLimiterResetKeyRef.current !== rateLimiterResetKey) {
       rateLimiterResetKeyRef.current = rateLimiterResetKey
       rateLimiter.reset()
+      setRandomSeed(Date.now())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rateLimiterResetKey])
@@ -204,15 +222,24 @@ export function usePackSeedSearch(args: UsePackSeedSearchArgs): UsePackSeedSearc
   // Interleave so a "both" pack doesn't skew toward whichever rating's page
   // happens to load first — sampling downstream (extractAxisValues) ranks by
   // frequency, so an unbalanced input pool would quietly bias variety.
+  // Also deduplicate posts across feeds to prevent duplicate entries from inflating frequency.
   const allPosts = useMemo(() => {
-    if (!isBoth) return feedA.allPosts
-    const merged: BooruPost[] = []
-    const max = Math.max(feedA.allPosts.length, feedB.allPosts.length)
-    for (let i = 0; i < max; i++) {
-      if (feedA.allPosts[i]) merged.push(feedA.allPosts[i])
-      if (feedB.allPosts[i]) merged.push(feedB.allPosts[i])
+    const raw: BooruPost[] = []
+    if (!isBoth) {
+      raw.push(...feedA.allPosts)
+    } else {
+      const max = Math.max(feedA.allPosts.length, feedB.allPosts.length)
+      for (let i = 0; i < max; i++) {
+        if (feedA.allPosts[i]) raw.push(feedA.allPosts[i])
+        if (feedB.allPosts[i]) raw.push(feedB.allPosts[i])
+      }
     }
-    return merged
+    const seen = new Set<number>()
+    return raw.filter((post) => {
+      if (!post || seen.has(post.id)) return false
+      seen.add(post.id)
+      return true
+    })
   }, [feedA.allPosts, feedB.allPosts, isBoth])
 
   const noMoreResults = isBoth ? (feedA.noMoreResults && feedB.noMoreResults) : feedA.noMoreResults
