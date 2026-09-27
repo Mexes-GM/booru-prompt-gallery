@@ -23,8 +23,9 @@ import {
   type AxisTagMode,
   type SlotGroup,
 } from '@/lib/pack/pack-generator'
-import { cleanSyntheticPrompt, type BulkSendCleanOptions } from '@/lib/pack/bulk-send'
+import { cleanSyntheticPrompt, detectCharacterTags, type BulkSendCleanOptions } from '@/lib/pack/bulk-send'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from '@/lib/pack/prompt-similarity'
+import { classifyBasePrompt } from '@/lib/pack/base-prompt'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
@@ -97,6 +98,12 @@ export interface UsePackModeResult {
 
   baseCard: BooruPost | null
   setBaseCard: (post: BooruPost | null) => void
+
+  /** Free-text "From my prompt" base (§3) — mutually exclusive with baseCard. */
+  basePrompt: string
+  setBasePrompt: (text: string) => void
+  /** True when there's a usable base, either baseCard or a non-empty basePrompt. */
+  hasBase: boolean
 
   /** Variety slider (§5): 1..5 preset level, or 'custom' after a manual Advanced edit. */
   varietyLevel: VarietySetting
@@ -227,6 +234,12 @@ export function usePackMode(
 ): UsePackModeResult {
   const [isPackMode, setIsPackMode] = useState(false)
   const [baseCard, setBaseCardRaw] = useState<BooruPost | null>(null)
+  // Free-text pasted-prompt base ("From my prompt", §3) — mutually exclusive
+  // with baseCard. Character tags for this base can't be known until seed
+  // posts arrive (detectCharacterTags needs them), so they're recomputed in
+  // reseedAllAxes and kept as their own bit of state (see promptCharacterTags).
+  const [basePrompt, setBasePromptRaw] = useState('')
+  const [promptCharacterTags, setPromptCharacterTags] = useState<string[]>([])
   const learning = usePackLearning()
 
   // Lazy-load the persisted builder config ONCE on mount (see
@@ -373,6 +386,8 @@ export function usePackMode(
 
   const setBaseCard = useCallback((post: BooruPost | null) => {
     setBaseCardRaw(post)
+    // A real base card always wins over a pasted prompt base.
+    if (post) setBasePromptRaw('')
     // New base → sampled axis pools no longer make sense as-is; caller should
     // reseed via reseedAllAxes once they have the current post list. Clear
     // here so stale values from a previous base don't leak in. Manual values
@@ -383,6 +398,21 @@ export function usePackMode(
     // Previously generated prompts belong to the old base — clear them so the
     // results list doesn't show stale prompts until the user hits Generate again.
     setGeneratedPrompts([])
+  }, [])
+
+  /** Sets the free-text "From my prompt" base, clearing any base card. */
+  const setBasePrompt = useCallback((text: string) => {
+    setBasePromptRaw(text)
+    setBaseCardRaw(null)
+    setPromptCharacterTags([])
+    setAxisValuesRaw({})
+    setAxisCounts({})
+    setGeneratedPrompts([])
+    try {
+      userPreferences.setLastPackBasePrompt(text)
+    } catch {
+      // Non-fatal: best-effort, same as every other localStorage write here.
+    }
   }, [])
 
   // Whole-category toggle: locked -> varying; varying or partial -> locked.
@@ -403,23 +433,42 @@ export function usePackMode(
     })
   }, [])
 
+  // Normalized, deduped tags of the pasted-prompt base — used both to
+  // classify it and (via detectCharacterTags in reseedAllAxes) to find which
+  // of them are actually a character.
+  const basePromptTags = useMemo(
+    () => Array.from(new Set(splitCommaSeparatedTags(basePrompt).map(normalizeTagForPack).filter(Boolean))),
+    [basePrompt]
+  )
+
   const baseClassified = useMemo<Record<TagCategory, string[]>>(() => {
-    if (!baseCard) return emptyClassifiedTags()
-    return classifyPostForPack(baseCard, effectiveOverrides)
-  }, [baseCard, effectiveOverrides])
+    if (baseCard) return classifyPostForPack(baseCard, effectiveOverrides)
+    if (basePromptTags.length > 0) {
+      return classifyBasePrompt(basePrompt, effectiveOverrides, promptCharacterTags).classified
+    }
+    return emptyClassifiedTags()
+  }, [baseCard, basePrompt, basePromptTags, effectiveOverrides, promptCharacterTags])
 
   useEffect(() => {
-    if (baseCard) void enrichOverrides(collectPostTags([baseCard]))
-  }, [baseCard, enrichOverrides])
+    if (baseCard) {
+      void enrichOverrides(collectPostTags([baseCard]))
+    } else if (basePromptTags.length > 0) {
+      void enrichOverrides(basePromptTags)
+    }
+  }, [baseCard, basePromptTags, enrichOverrides])
 
-  // Raw character tags on the base card, in on-post order — used both to
+  // Raw character tags of the base, in on-post/on-prompt order — used both to
   // detect the multi-character case below and by the learning context
   // hierarchy further down. Declared here (moved up from its original spot)
-  // so lockedTags can reference it.
-  const characterTags = useMemo(
-    () => Array.from(new Set(splitTags(baseCard?.tag_string_character || '').map(normalizeTagForPack).filter(Boolean))),
-    [baseCard]
-  )
+  // so lockedTags can reference it. For a base card these come straight from
+  // tag_string_character; for a pasted prompt they're detected asynchronously
+  // once seed posts arrive (see reseedAllAxes) and kept in promptCharacterTags.
+  const characterTags = useMemo(() => {
+    if (baseCard) {
+      return Array.from(new Set(splitTags(baseCard.tag_string_character || '').map(normalizeTagForPack).filter(Boolean)))
+    }
+    return promptCharacterTags
+  }, [baseCard, promptCharacterTags])
 
   /**
    * True when the base card's own tag_string_character lists more than one
@@ -479,9 +528,12 @@ export function usePackMode(
     return Array.from(new Set(tags.filter(Boolean)))
   }, [baseClassified, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, hasMultipleCharacters, characterTags])
 
+  /** A real base card OR a non-empty pasted prompt — either way there's a base to vary against. */
+  const hasBase = !!baseCard || basePrompt.trim() !== ''
+
   const activeAxisCategories = useMemo(
-    () => PACK_AXES.filter((cat) => (!baseCard ? true : !lockedCategories.has(cat))),
-    [baseCard, lockedCategories]
+    () => PACK_AXES.filter((cat) => (!hasBase ? true : !lockedCategories.has(cat))),
+    [hasBase, lockedCategories]
   )
 
   // Character tags come straight from the base card (Pack Mode always has
@@ -762,8 +814,13 @@ export function usePackMode(
       cachedPostsRef.current = posts
       cachedFallbacksRef.current = fallbacks
       resample(posts, PACK_AXES, axisTagModes, fallbacks, true)
+      // Pasted-prompt base: figure out which of its tags are a character now
+      // that seed posts are available (detectCharacterTags needs them).
+      if (!baseCard && basePromptTags.length > 0) {
+        setPromptCharacterTags(detectCharacterTags(basePromptTags, posts, currentOverrides()))
+      }
     },
-    [resample, axisTagModes]
+    [resample, axisTagModes, baseCard, basePromptTags, currentOverrides]
   )
 
   const setPromptCountClamped = useCallback((count: number) => {
@@ -772,9 +829,9 @@ export function usePackMode(
 
   const regenerate = useCallback(() => {
     // A pack needs SOME constant tags to build prompts around — either a
-    // base card, or (the "From my prompt" flow, no base card) the free-text
+    // base (card or pasted prompt), or (no base at all) the free-text
     // customBaseText merged into lockedTags. Only bail when there's neither.
-    if (!baseCard && lockedTags.length === 0) {
+    if (!hasBase && lockedTags.length === 0) {
       setGeneratedPrompts([])
       return
     }
@@ -908,7 +965,7 @@ export function usePackMode(
       }
     }
   }, [
-    baseCard,
+    hasBase,
     lockedTags,
     activeAxisCategories,
     mergedAxisValues,
@@ -949,6 +1006,8 @@ export function usePackMode(
 
   const clearAll = useCallback(() => {
     setBaseCardRaw(null)
+    setBasePromptRaw('')
+    setPromptCharacterTags([])
     setAxisValuesRaw({})
     setAxisCounts({})
     setManualAxisValues({})
@@ -1010,6 +1069,10 @@ export function usePackMode(
 
     baseCard,
     setBaseCard,
+
+    basePrompt,
+    setBasePrompt,
+    hasBase,
 
     varietyLevel,
     setVarietyLevel,
