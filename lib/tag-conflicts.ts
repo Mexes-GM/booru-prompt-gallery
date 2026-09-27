@@ -1423,6 +1423,423 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
   "6+boys": {
     blocks: ["solo", "1boy", "2boys", "3boys", "4boys", "5boys"],
     exceptions: {}
+  },
+
+  // === MOUTH COVERINGS & LOWER FACE CONCEALMENT (NEW) ===
+  "mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"],
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"],
+      "mask_removed": ["lips", "lipstick", "lip_gloss"],
+      "unworn_mask": ["lips", "lipstick", "lip_gloss"],
+      "see-through_mask": ["lips", "lipstick", "lip_gloss"],
+      "transparent_mask": ["lips", "lipstick", "lip_gloss"],
+      "eye_mask": ["lips", "lipstick", "lip_gloss"],
+      "sleep_mask": ["lips", "lipstick", "lip_gloss"],
+      "domino_mask": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "mouth_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"],
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"],
+      "mask_removed": ["lips", "lipstick", "lip_gloss"],
+      "unworn_mask": ["lips", "lipstick", "lip_gloss"],
+      "see-through_mask": ["lips", "lipstick", "lip_gloss"],
+      "transparent_mask": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "surgical_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"],
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"],
+      "mask_removed": ["lips", "lipstick", "lip_gloss"],
+      "unworn_mask": ["lips", "lipstick", "lip_gloss"],
+      "see-through_mask": ["lips", "lipstick", "lip_gloss"],
+      "transparent_mask": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "face_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"],
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"],
+      "mask_removed": ["lips", "lipstick", "lip_gloss"],
+      "unworn_mask": ["lips", "lipstick", "lip_gloss"],
+      "see-through_mask": ["lips", "lipstick", "lip_gloss"],
+      "transparent_mask": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "gas_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"],
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"],
+      "mask_removed": ["lips", "lipstick", "lip_gloss"],
+      "unworn_mask": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "respirator": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"],
+      "unworn_mask": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "balaclava": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"],
+      "open-mouth_balaclava": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "ski_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "bandana_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "ninja_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "half_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"],
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "plague_doctor_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "oxygen_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "rebreather": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "iron_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "welding_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "hockey_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_pulled_down": ["lips", "lipstick", "lip_gloss"],
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "oni_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"],
+      "mask_around_neck": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "hannya_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "tengu_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "mask_on_head": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "anonymity_mask": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "veil": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "bridal_veil": ["lips", "lipstick", "lip_gloss"],
+      "wedding_veil": ["lips", "lipstick", "lip_gloss"],
+      "see-through_veil": ["lips", "lipstick", "lip_gloss"],
+      "translucent_veil": ["lips", "lipstick", "lip_gloss"],
+      "sheer_veil": ["lips", "lipstick", "lip_gloss"],
+      "transparent_veil": ["lips", "lipstick", "lip_gloss"],
+      "veil_lift": ["lips", "lipstick", "lip_gloss"],
+      "lifted_veil": ["lips", "lipstick", "lip_gloss"],
+      "unworn_veil": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "face_veil": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "see-through_veil": ["lips", "lipstick", "lip_gloss"],
+      "translucent_veil": ["lips", "lipstick", "lip_gloss"],
+      "sheer_veil": ["lips", "lipstick", "lip_gloss"],
+      "transparent_veil": ["lips", "lipstick", "lip_gloss"],
+      "veil_lift": ["lips", "lipstick", "lip_gloss"],
+      "lifted_veil": ["lips", "lipstick", "lip_gloss"],
+      "unworn_veil": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "mouth_veil": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "see-through_veil": ["lips", "lipstick", "lip_gloss"],
+      "translucent_veil": ["lips", "lipstick", "lip_gloss"],
+      "sheer_veil": ["lips", "lipstick", "lip_gloss"],
+      "transparent_veil": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "niqab": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {
+      "see-through_veil": ["lips", "lipstick", "lip_gloss"]
+    }
+  },
+  "gag": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "gagged": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "ball_gag": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "tape_gag": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "cloth_gag": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "bit_gag": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "ring_gag": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "cleave_gag": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "muzzle": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "leather_muzzle": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "scarf_over_mouth": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "covering_mouth": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+  "hand_over_mouth": {
+    blocks: ["lips", "lipstick", "lip_gloss"],
+    exceptions: {}
+  },
+
+  // === SYMMETRY PASS: LIPS & MOUTH COVERINGS (NEW) ===
+  "lips": {
+    blocks: [
+      "mask", "mouth_mask", "surgical_mask", "face_mask", "gas_mask", "respirator",
+      "balaclava", "ski_mask", "bandana_mask", "ninja_mask", "half_mask", "plague_doctor_mask",
+      "oxygen_mask", "rebreather", "iron_mask", "welding_mask", "hockey_mask", "oni_mask",
+      "hannya_mask", "tengu_mask", "anonymity_mask",
+      "veil", "face_veil", "mouth_veil", "niqab",
+      "gag", "gagged", "ball_gag", "tape_gag", "cloth_gag", "bit_gag", "ring_gag", "cleave_gag",
+      "muzzle", "leather_muzzle",
+      "scarf_over_mouth", "covering_mouth", "hand_over_mouth"
+    ],
+    exceptions: {
+      "mask_pulled_down": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_around_neck": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_on_head": ["mask", "mouth_mask", "surgical_mask", "face_mask", "oni_mask", "hannya_mask", "tengu_mask"],
+      "mask_removed": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "unworn_mask": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "see-through_mask": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "transparent_mask": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "eye_mask": ["mask"],
+      "sleep_mask": ["mask"],
+      "domino_mask": ["mask"],
+      "bridal_veil": ["veil", "face_veil"],
+      "wedding_veil": ["veil", "face_veil"],
+      "see-through_veil": ["veil", "face_veil", "mouth_veil", "niqab"],
+      "translucent_veil": ["veil", "face_veil", "mouth_veil"],
+      "sheer_veil": ["veil", "face_veil", "mouth_veil"],
+      "transparent_veil": ["veil", "face_veil", "mouth_veil"],
+      "veil_lift": ["veil", "face_veil", "mouth_veil"],
+      "lifted_veil": ["veil", "face_veil", "mouth_veil"],
+      "unworn_veil": ["veil", "face_veil", "mouth_veil"]
+    }
+  },
+  "parted_lips": {
+    blocks: [
+      "mask", "mouth_mask", "surgical_mask", "face_mask", "gas_mask", "respirator",
+      "balaclava", "ski_mask", "bandana_mask", "ninja_mask", "half_mask", "plague_doctor_mask",
+      "oxygen_mask", "rebreather", "iron_mask", "welding_mask", "hockey_mask", "oni_mask",
+      "hannya_mask", "tengu_mask", "anonymity_mask",
+      "veil", "face_veil", "mouth_veil", "niqab",
+      "gag", "gagged", "ball_gag", "tape_gag", "cloth_gag", "bit_gag", "ring_gag", "cleave_gag",
+      "muzzle", "leather_muzzle",
+      "scarf_over_mouth", "covering_mouth", "hand_over_mouth"
+    ],
+    exceptions: {
+      "mask_pulled_down": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_around_neck": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_on_head": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "bridal_veil": ["veil", "face_veil"],
+      "wedding_veil": ["veil", "face_veil"],
+      "see-through_veil": ["veil", "face_veil", "mouth_veil"]
+    }
+  },
+  "glossy_lips": {
+    blocks: [
+      "mask", "mouth_mask", "surgical_mask", "face_mask", "gas_mask", "respirator",
+      "balaclava", "ski_mask", "bandana_mask", "ninja_mask", "half_mask", "plague_doctor_mask",
+      "oxygen_mask", "rebreather", "iron_mask", "welding_mask", "hockey_mask", "oni_mask",
+      "hannya_mask", "tengu_mask", "anonymity_mask",
+      "veil", "face_veil", "mouth_veil", "niqab",
+      "gag", "gagged", "ball_gag", "tape_gag", "cloth_gag", "bit_gag", "ring_gag", "cleave_gag",
+      "muzzle", "leather_muzzle",
+      "scarf_over_mouth", "covering_mouth", "hand_over_mouth"
+    ],
+    exceptions: {
+      "mask_pulled_down": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_around_neck": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_on_head": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "bridal_veil": ["veil", "face_veil"],
+      "wedding_veil": ["veil", "face_veil"],
+      "see-through_veil": ["veil", "face_veil", "mouth_veil"]
+    }
+  },
+  "puckered_lips": {
+    blocks: [
+      "mask", "mouth_mask", "surgical_mask", "face_mask", "gas_mask", "respirator",
+      "balaclava", "ski_mask", "bandana_mask", "ninja_mask", "half_mask", "plague_doctor_mask",
+      "oxygen_mask", "rebreather", "iron_mask", "welding_mask", "hockey_mask", "oni_mask",
+      "hannya_mask", "tengu_mask", "anonymity_mask",
+      "veil", "face_veil", "mouth_veil", "niqab",
+      "gag", "gagged", "ball_gag", "tape_gag", "cloth_gag", "bit_gag", "ring_gag", "cleave_gag",
+      "muzzle", "leather_muzzle",
+      "scarf_over_mouth", "covering_mouth", "hand_over_mouth"
+    ],
+    exceptions: {}
+  },
+  "biting_lip": {
+    blocks: [
+      "mask", "mouth_mask", "surgical_mask", "face_mask", "gas_mask", "respirator",
+      "balaclava", "ski_mask", "bandana_mask", "ninja_mask", "half_mask", "plague_doctor_mask",
+      "oxygen_mask", "rebreather", "iron_mask", "welding_mask", "hockey_mask", "oni_mask",
+      "hannya_mask", "tengu_mask", "anonymity_mask",
+      "veil", "face_veil", "mouth_veil", "niqab",
+      "gag", "gagged", "ball_gag", "tape_gag", "cloth_gag", "bit_gag", "ring_gag", "cleave_gag",
+      "muzzle", "leather_muzzle",
+      "scarf_over_mouth", "covering_mouth", "hand_over_mouth"
+    ],
+    exceptions: {}
+  },
+  "red_lips": {
+    blocks: [
+      "mask", "mouth_mask", "surgical_mask", "face_mask", "gas_mask", "respirator",
+      "balaclava", "ski_mask", "bandana_mask", "ninja_mask", "half_mask", "plague_doctor_mask",
+      "oxygen_mask", "rebreather", "iron_mask", "welding_mask", "hockey_mask", "oni_mask",
+      "hannya_mask", "tengu_mask", "anonymity_mask",
+      "veil", "face_veil", "mouth_veil", "niqab",
+      "gag", "gagged", "ball_gag", "tape_gag", "cloth_gag", "bit_gag", "ring_gag", "cleave_gag",
+      "muzzle", "leather_muzzle",
+      "scarf_over_mouth", "covering_mouth", "hand_over_mouth"
+    ],
+    exceptions: {
+      "mask_pulled_down": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_around_neck": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_on_head": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "bridal_veil": ["veil", "face_veil"],
+      "wedding_veil": ["veil", "face_veil"],
+      "see-through_veil": ["veil", "face_veil", "mouth_veil"]
+    }
+  },
+  "lipstick": {
+    blocks: [
+      "mask", "mouth_mask", "surgical_mask", "face_mask", "gas_mask", "respirator",
+      "balaclava", "ski_mask", "bandana_mask", "ninja_mask", "half_mask", "plague_doctor_mask",
+      "oxygen_mask", "rebreather", "iron_mask", "welding_mask", "hockey_mask", "oni_mask",
+      "hannya_mask", "tengu_mask", "anonymity_mask",
+      "veil", "face_veil", "mouth_veil", "niqab",
+      "gag", "gagged", "ball_gag", "tape_gag", "cloth_gag", "bit_gag", "ring_gag", "cleave_gag",
+      "muzzle", "leather_muzzle",
+      "scarf_over_mouth", "covering_mouth", "hand_over_mouth"
+    ],
+    exceptions: {
+      "mask_pulled_down": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_around_neck": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_on_head": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_removed": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "unworn_mask": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "bridal_veil": ["veil", "face_veil"],
+      "wedding_veil": ["veil", "face_veil"],
+      "see-through_veil": ["veil", "face_veil", "mouth_veil"]
+    }
+  },
+  "lip_gloss": {
+    blocks: [
+      "mask", "mouth_mask", "surgical_mask", "face_mask", "gas_mask", "respirator",
+      "balaclava", "ski_mask", "bandana_mask", "ninja_mask", "half_mask", "plague_doctor_mask",
+      "oxygen_mask", "rebreather", "iron_mask", "welding_mask", "hockey_mask", "oni_mask",
+      "hannya_mask", "tengu_mask", "anonymity_mask",
+      "veil", "face_veil", "mouth_veil", "niqab",
+      "gag", "gagged", "ball_gag", "tape_gag", "cloth_gag", "bit_gag", "ring_gag", "cleave_gag",
+      "muzzle", "leather_muzzle",
+      "scarf_over_mouth", "covering_mouth", "hand_over_mouth"
+    ],
+    exceptions: {
+      "mask_pulled_down": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_around_neck": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "mask_on_head": ["mask", "mouth_mask", "surgical_mask", "face_mask"],
+      "bridal_veil": ["veil", "face_veil"],
+      "wedding_veil": ["veil", "face_veil"],
+      "see-through_veil": ["veil", "face_veil", "mouth_veil"]
+    }
   }
 }
 
@@ -1461,7 +1878,16 @@ export function isRelatedTag(blockedTag: string, targetTag: string): boolean {
     "teeth": ["teeth", "tooth", "fangs"],
     "tongue": ["tongue", "tongues"],
     "mouth": ["mouth", "mouths"],
-    "lips": ["lips", "lip"],
+    "lips": ["lips", "lip", "lipstick"],
+    "lipstick": ["lipstick"],
+    "lip_gloss": ["lip gloss"],
+    "mouth_mask": ["mouth mask", "mouth masks"],
+    "surgical_mask": ["surgical mask", "surgical masks"],
+    "face_mask": ["face mask", "face masks"],
+    "gas_mask": ["gas mask", "gas masks"],
+    "veil": ["veil", "veils", "niqab"],
+    "gag": ["gag", "gags", "gagged"],
+    "muzzle": ["muzzle", "muzzles"],
     "nose": ["nose", "noses"],
     "eyebrows": ["eyebrows", "eyebrow"],
     "shoulders": ["shoulders", "shoulder"],
@@ -1486,7 +1912,7 @@ export function isRelatedTag(blockedTag: string, targetTag: string): boolean {
   for (const [category, suffixes] of Object.entries(suffixMap)) {
     if (normBlocked === category) {
       for (const suffix of suffixes) {
-        if (normTarget.endsWith(" " + suffix) || normTarget.startsWith(suffix + " ")) {
+        if (normTarget === suffix || normTarget.endsWith(" " + suffix) || normTarget.startsWith(suffix + " ")) {
           return true;
         }
       }
@@ -1544,7 +1970,7 @@ export interface ConflictResolution {
     const hasMultipleCharacters = baseTagsArray.some(t => 
       /^[2-9]+(girls|boys)$/.test(t) || 
       t.includes("multiple ") || 
-      t.includes("and ") || // e.g. "boy and girl"
+      /\band\b/.test(t) || // e.g. "boy and girl"
       t === "girls" || 
       t === "boys" ||
       t === "group"
