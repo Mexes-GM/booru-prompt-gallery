@@ -26,6 +26,7 @@ import {
 import { cleanSyntheticPrompt, detectCharacterTags, type BulkSendCleanOptions } from '@/lib/pack/bulk-send'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from '@/lib/pack/prompt-similarity'
 import { classifyBasePrompt } from '@/lib/pack/base-prompt'
+import { pickReplacement } from '@/lib/pack/reroll'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
@@ -187,6 +188,8 @@ export interface UsePackModeResult {
 
   generatedPrompts: PackPrompt[]
   regenerate: () => void
+  /** Replaces one generated prompt (by index) with a fresh variation (§6). Returns false if none was found. */
+  rerollPrompt: (index: number) => boolean
 
   /**
    * Record that the user copied ONE specific generated prompt — the core
@@ -827,14 +830,10 @@ export function usePackMode(
     setPromptCount(Math.max(1, Math.min(MAX_PACK_PROMPTS, Math.floor(count) || 1)))
   }, [])
 
-  const regenerate = useCallback(() => {
-    // A pack needs SOME constant tags to build prompts around — either a
-    // base (card or pasted prompt), or (no base at all) the free-text
-    // customBaseText merged into lockedTags. Only bail when there's neither.
-    if (!hasBase && lockedTags.length === 0) {
-      setGeneratedPrompts([])
-      return
-    }
+  // Shared arg-assembly for both regenerate() and rerollPrompt(): active
+  // axes' candidate pools, their learned+frequency sampling weights, and the
+  // min-count-per-axis clamped to what the slot constraints actually allow.
+  const buildGenerationArgs = useCallback(() => {
     const axes: Partial<Record<TagCategory, string[]>> = {}
     activeAxisCategories.forEach((cat) => {
       const vals = mergedAxisValues[cat]
@@ -844,9 +843,8 @@ export function usePackMode(
     // Per-axis sampling weights combining booru cross-post frequency with
     // whatever this model has learned for the current character/provider
     // context (docs/pack-mode-learning-plan.md §7.5). Built fresh on every
-    // regenerate() call (not memoized) since the model itself is a mutable
-    // ref inside usePackLearning, not React state — there's nothing to
-    // usefully memoize against.
+    // call (not memoized) since the model itself is a mutable ref inside
+    // usePackLearning, not React state — there's nothing to usefully memoize against.
     const axisWeights: Partial<Record<TagCategory, Record<string, number>>> = {}
     activeAxisCategories.forEach((cat) => {
       const vals = axes[cat]
@@ -856,6 +854,32 @@ export function usePackMode(
       const weights = learning.weightsFor(learningContextKeys, cat, valuesWithCounts)
       axisWeights[cat] = Object.fromEntries(vals.map((v, i) => [v, weights[i]]))
     })
+
+    // A saved count above what the slot constraints allow would only have its
+    // extra picks dropped by them; clamp so sampling asks for what fits.
+    const effectiveAxisMinCounts: Partial<Record<TagCategory, number>> = { ...axisMinCounts }
+    PACK_AXES.forEach((cat) => {
+      const requested = effectiveAxisMinCounts[cat] ?? 1
+      if (axisTagModes[cat] === 'bundle') {
+        if (requested > MAX_MIN_PACKS_SLIDER) effectiveAxisMinCounts[cat] = MAX_MIN_PACKS_SLIDER
+        return
+      }
+      const cap = axisMaxPerPrompt[cat]
+      if (cap !== undefined && cap > 0 && requested > cap) effectiveAxisMinCounts[cat] = cap
+    })
+
+    return { axes, axisWeights, effectiveAxisMinCounts }
+  }, [activeAxisCategories, mergedAxisValues, axisCounts, learning, learningContextKeys, axisMinCounts, axisTagModes, axisMaxPerPrompt])
+
+  const regenerate = useCallback(() => {
+    // A pack needs SOME constant tags to build prompts around — either a
+    // base (card or pasted prompt), or (no base at all) the free-text
+    // customBaseText merged into lockedTags. Only bail when there's neither.
+    if (!hasBase && lockedTags.length === 0) {
+      setGeneratedPrompts([])
+      return
+    }
+    const { axes, axisWeights, effectiveAxisMinCounts } = buildGenerationArgs()
 
     // Over-generate raw candidates (same reasoning as useBulkSend.runSynthetic)
     // so the near-duplicate filter below has room to reject prompts that are
@@ -867,18 +891,6 @@ export function usePackMode(
     // generate pass at the same value left zero headroom for the 3x
     // multiplier whenever promptCount was close to MAX_PACK_PROMPTS (see
     // that constant's docstring in pack-generator.ts).
-    const effectiveAxisMinCounts: Partial<Record<TagCategory, number>> = { ...axisMinCounts }
-    PACK_AXES.forEach((cat) => {
-      const requested = effectiveAxisMinCounts[cat] ?? 1
-      if (axisTagModes[cat] === 'bundle') {
-        if (requested > MAX_MIN_PACKS_SLIDER) effectiveAxisMinCounts[cat] = MAX_MIN_PACKS_SLIDER
-        return
-      }
-      // A saved count above what the slot constraints allow would only have
-      // its extra picks dropped by them; clamp so sampling asks for what fits.
-      const cap = axisMaxPerPrompt[cat]
-      if (cap !== undefined && cap > 0 && requested > cap) effectiveAxisMinCounts[cat] = cap
-    })
     const overGenerateCount = Math.min(promptCount * 3, MAX_PACK_OVERGENERATE)
     const rawPrompts = generatePackPrompts({
       lockedTags,
@@ -968,9 +980,7 @@ export function usePackMode(
     hasBase,
     lockedTags,
     activeAxisCategories,
-    mergedAxisValues,
-    axisCounts,
-    axisMinCounts,
+    buildGenerationArgs,
     promptCount,
     globalWeights,
     isGlobalWeightsEnabled,
@@ -980,9 +990,54 @@ export function usePackMode(
     learning,
     learningContextKeys,
     axisValueCategory,
-    axisTagModes,
-    axisMaxPerPrompt,
   ])
+
+  /**
+   * Replaces ONE generated prompt (by index) with a fresh candidate that
+   * isn't an exact or near-duplicate of the others — §6. Doesn't touch the
+   * learning model (re-rolling isn't a negative signal, just "try again").
+   * Returns false (leaving that row untouched) if no acceptable candidate
+   * was found in this small batch.
+   */
+  const rerollPrompt = useCallback(
+    (index: number): boolean => {
+      if (index < 0 || index >= generatedPrompts.length) return false
+      const { axes, axisWeights, effectiveAxisMinCounts } = buildGenerationArgs()
+      const rawCandidates = generatePackPrompts({
+        lockedTags,
+        axes,
+        axisMinCounts: effectiveAxisMinCounts,
+        axisWeights,
+        count: 12,
+        maxPrompts: 12,
+        globalWeights,
+        isGlobalWeightsEnabled,
+        tagOverrides: effectiveOverrides,
+      })
+      const others = generatedPrompts.filter((_, i) => i !== index).map((p) => p.prompt)
+      const clean = (tags: string[]) =>
+        cleanSyntheticPrompt(
+          tags,
+          characterTags,
+          { ...cleanOptions, tagOverrides: effectiveOverrides, globalWeights, isGlobalWeightsEnabled, lockedTags },
+          lockedTags
+        )
+      const replacement = pickReplacement(rawCandidates, others, clean, lockedTags)
+      if (!replacement) return false
+      setGeneratedPrompts((prev) => prev.map((p, i) => (i === index ? replacement : p)))
+      return true
+    },
+    [
+      generatedPrompts,
+      buildGenerationArgs,
+      lockedTags,
+      globalWeights,
+      isGlobalWeightsEnabled,
+      effectiveOverrides,
+      characterTags,
+      cleanOptions,
+    ]
+  )
 
   const recordPromptCopied = useCallback(
     (prompt: PackPrompt) => {
@@ -1115,6 +1170,7 @@ export function usePackMode(
 
     generatedPrompts,
     regenerate,
+    rerollPrompt,
 
     recordPromptCopied,
     explorationTemperature: learning.explorationTemperature,
