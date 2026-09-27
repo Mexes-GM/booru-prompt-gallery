@@ -2,19 +2,24 @@ import { useState, memo, useCallback, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { Trash2, Check, RefreshCw, Plus, Shirt, User, Mountain, Smile, Package, Shuffle, Copy, CopyCheck, X, Sparkles, RotateCcw } from "lucide-react"
+import { Trash2, Check, RefreshCw, Plus, Smile, Package, Shuffle, Copy, CopyCheck, X, Lock, ChevronDown } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory } from '@/lib/tag-classifier'
-import type { PackKind } from '@/hooks/use-pack-mode'
-import { MAX_PACK_PROMPTS, type PackPrompt } from '@/lib/pack/pack-generator'
+import { MAX_PACK_PROMPTS, MAX_MIN_TAGS_SLIDER, MAX_MIN_PACKS_SLIDER, type PackPrompt, type AxisTagMode, type SlotGroup } from '@/lib/pack/pack-generator'
 import { TAG_CATEGORY_ICONS } from '@/components/tag-category-icon'
+import { PACK_AXES, TAG_CATEGORIES, formatSubcategoryLabel, getTagSlotFromOverrides, slotsOf } from '@/lib/tag-taxonomy'
+import { splitCommaSeparatedTags } from '@/lib/utils/tag-utils'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useLowMotion } from '@/hooks/use-low-motion'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import Image from 'next/image'
 import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { TagAutocompleteTextarea } from "./tag-autocomplete-textarea"
+import { RemovableTagChip } from './removable-tag-chip'
+import { CATEGORY_ACTIVE_CLASS, CATEGORY_CHIP_CLASS, CATEGORY_SLIDER_CLASS, CATEGORY_CONTAINER_CLASS, CATEGORY_TEXT_CLASS } from './category-chip-styles'
 
 export interface PackBuilderStickyFooterProps {
     isOpen: boolean
@@ -24,10 +29,22 @@ export interface PackBuilderStickyFooterProps {
      *  without requiring baseCard, while the hint still shows until either
      *  a base is picked or Full Setup is confirmed. */
     hasSetupAnswers: boolean
-    packKind: PackKind
-    setPackKind: (kind: PackKind) => void
     lockedCategories: Set<TagCategory>
     toggleLockedCategory: (category: TagCategory) => void
+    /** Slots locked inside a partially locked category (see usePackMode). */
+    lockedSlots: Set<string>
+    toggleLockedSlot: (slot: string) => void
+    /** Slots switched off inside varying categories. */
+    mutedSlots: Set<string>
+    toggleMutedSlot: (slot: string) => void
+    /** Visible pool per axis, grouped by slot. */
+    axisSlotGroups: Partial<Record<TagCategory, SlotGroup[]>>
+    /** Pool size per slot before muting, for the slot pills. */
+    axisSlotCounts: Partial<Record<TagCategory, Record<string, number>>>
+    /** Most values one prompt can take per axis under the slot constraints. */
+    axisMaxPerPrompt: Partial<Record<TagCategory, number>>
+    /** Overrides used to resolve each base-card tag's slot. */
+    tagOverrides: Record<string, string>
     /** Classified tags of the base card (5 buckets) — used to color each
      *  locked tag chip by its real category, since lockedTags itself is a
      *  flat array with the category info already stripped out. */
@@ -38,36 +55,32 @@ export interface PackBuilderStickyFooterProps {
      *  are toggled. Not just which categories are on. */
     lockedTags: string[]
     activeAxisCategories: TagCategory[]
+    /** Mode of tag collection for each axis ('individual' tags vs 'bundle' card sets). */
+    axisTagModes?: Partial<Record<TagCategory, AxisTagMode>>
+    onSetAxisTagMode?: (category: TagCategory, mode: AxisTagMode) => void
+    onSetAllAxisTagModes?: (mode: AxisTagMode) => void
     axisValues: Partial<Record<TagCategory, string[]>>
     onAddAxisValue: (category: TagCategory, value: string) => void
     onRemoveAxisValue: (category: TagCategory, value: string) => void
     onReseedAxis: (category: TagCategory) => void
-    /** Minimum distinct values sampled per axis category on each generated prompt. */
     axisMinCounts: Partial<Record<TagCategory, number>>
-    onSetAxisMinCount: (category: TagCategory, minCount: number) => void
-    /** Free-text base prompt for the 'custom' pack kind. */
+    onSetAxisMinCount: (category: TagCategory, count: number) => void
     customBaseText: string
     onCustomBaseTextChange: (text: string) => void
-    /** True while extra pages are being fetched in the background to enrich axis pools. */
+    /** Whether an automatic or manual seed fetch is currently in flight. */
     isSeeding?: boolean
-    /** Live seeding progress (posts loaded / target), for the progress bar. Null when idle. */
     seedProgress?: { current: number; target: number } | null
-    /** Total posts currently loaded in the search results — the pool Pack Mode samples from. */
+    /** How many posts are currently loaded in the seed search pool. */
     loadedPostCount: number
-    /** False once the search has hit noMoreResults or the session's page cap. */
+    /** Whether more pages can be fetched for this search. */
     canLoadMorePosts: boolean
-    /** Manually fetch more pages (same seedPages/rate-limit pipeline as the automatic seed). */
     onLoadMorePosts: () => void
     promptCount: number
     setPromptCount: (count: number) => void
     onRegenerate: () => void
     onClearBase: () => void
     onExit: () => void
-    /** Opens the Pack Setup questionnaire without picking a base card first —
-     *  lets the user configure a pack from scratch (custom/empty tags) instead
-     *  of requiring "Use as base" on a search result. */
-    onFullSetup: () => void
-    /** Generated pack prompts (Task 5 results list). */
+    onFullSetup?: () => void
     prompts: PackPrompt[]
     /** Copy a single prompt to the clipboard. Receives the full PackPrompt
      *  (not just its text) so the caller can also credit the local learning
@@ -75,24 +88,12 @@ export interface PackBuilderStickyFooterProps {
     onCopyPrompt: (prompt: PackPrompt) => void
     /** Copy every generated prompt, one per line, to the clipboard. */
     onCopyAll: (text: string) => void
-    /**
-     * Explore/Exploit control (docs/pack-mode-learning-plan.md §7.8) — 1 =
-     * fully as-learned (favors what's been copied before), higher values
-     * flatten axis sampling back toward uniform. Non-negotiable per the plan:
-     * the user must be able to see and dial back the learning at any time.
-     */
-    explorationTemperature: number
-    onExplorationTemperatureChange: (temperature: number) => void
-    /** Clears all learned data (picks/shows), independent of explorationTemperature. */
-    onResetLearning: () => void
+    /** Optional learning params kept for backwards compatibility; now handled backend-only */
+    explorationTemperature?: number
+    onExplorationTemperatureChange?: (temperature: number) => void
+    onResetLearning?: () => void
     /** Rendered below the controls — extra content slot, if needed. */
     children?: React.ReactNode
-}
-
-const PACK_KIND_LABELS: Record<PackKind, string> = {
-    character: 'Character',
-    clothing: 'Clothing/Outfit',
-    custom: 'Custom',
 }
 
 // Icons come from lib/tag-taxonomy.ts. Note this file previously used `User` for
@@ -100,76 +101,82 @@ const PACK_KIND_LABELS: Record<PackKind, string> = {
 // taxonomy settles on one so both surfaces match.
 const CATEGORY_ICON: Record<TagCategory, typeof Smile> = TAG_CATEGORY_ICONS
 
-const CATEGORY_ACTIVE_CLASS: Record<TagCategory, string> = {
-    appearance: 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400 shadow-sm',
-    pose: 'bg-purple-500/15 border-purple-500/30 text-purple-600 dark:text-purple-400 shadow-sm',
-    clothing: 'bg-green-500/15 border-green-500/30 text-green-600 dark:text-green-400 shadow-sm',
-    scenery: 'bg-orange-500/15 border-orange-500/30 text-orange-600 dark:text-orange-400 shadow-sm',
-    other: 'bg-muted border-muted-foreground/30 text-foreground shadow-sm',
+// Per-category color classes (CATEGORY_ACTIVE_CLASS, CATEGORY_CHIP_CLASS,
+// CATEGORY_SLIDER_CLASS) now live in ./category-chip-styles, shared with the
+// Merge/Variations sticky footer (previously a duplicate copy — see plan U3/3.1).
+
+const CATEGORIES: TagCategory[] = [...PACK_AXES]
+
+const EMPTY_GROUPS: SlotGroup[] = []
+const EMPTY_COUNTS: Record<string, number> = {}
+
+function slotLabel(slot: string | null): string {
+    return slot ? formatSubcategoryLabel(slot.split(':')[1]) : 'unsorted'
 }
 
-const CATEGORY_CHIP_CLASS: Record<TagCategory, string> = {
-    appearance: 'text-blue-500 bg-blue-500/10 border-blue-500/20',
-    pose: 'text-purple-500 bg-purple-500/10 border-purple-500/20',
-    clothing: 'text-green-500 bg-green-500/10 border-green-500/20',
-    scenery: 'text-orange-500 bg-orange-500/10 border-orange-500/20',
-    other: 'text-muted-foreground bg-muted border-transparent',
+/** Bare lowercase tag text of one prompt token (weights/brackets stripped). */
+function bareTag(token: string): string {
+    return token
+        .trim()
+        .replace(/^[([{<]+/, '')
+        .replace(/[)\]}>]+$/, '')
+        .replace(/:\s*-?\d+(\.\d+)?$/, '')
+        .toLowerCase()
+        .replace(/_/g, ' ')
+        .trim()
 }
 
-const CATEGORY_SLIDER_CLASS: Record<TagCategory, string> = {
-    appearance: '[&_[role=slider]]:border-blue-500 [&_[role=slider]]:focus-visible:ring-blue-500/50 [&_.relative>.absolute]:bg-blue-500',
-    pose: '[&_[role=slider]]:border-purple-500 [&_[role=slider]]:focus-visible:ring-purple-500/50 [&_.relative>.absolute]:bg-purple-500',
-    clothing: '[&_[role=slider]]:border-green-500 [&_[role=slider]]:focus-visible:ring-green-500/50 [&_.relative>.absolute]:bg-green-500',
-    scenery: '[&_[role=slider]]:border-orange-500 [&_[role=slider]]:focus-visible:ring-orange-500/50 [&_.relative>.absolute]:bg-orange-500',
-    other: '[&_[role=slider]]:border-muted-foreground [&_.relative>.absolute]:bg-muted-foreground',
-}
-
-const CATEGORIES: TagCategory[] = ['appearance', 'clothing', 'pose', 'scenery']
-
-/** Hard ceiling for the "Min tags" slider — independent of the axis pool
- *  size (which can now hold up to 200 candidate values, see
- *  extractAxisValues in lib/pack/pack-generator.ts). Wanting 200 clothing
- *  tags crammed into a single prompt isn't useful variety, it's noise; 30 is
- *  already a dense, unusual pick for one category. */
-const MAX_MIN_TAGS_SLIDER = 30
-
-/** Single axis editor: label, re-sample button, chip list with remove + add-value input,
- *  and a "minimum tags from this category" slider (how many distinct values from the
- *  pool get sampled into every generated prompt, instead of always exactly one).
- *  onAdd/onRemove/onReseed/onMinCountChange are the STABLE, category-agnostic
- *  callbacks from usePackMode (each already a useCallback with an empty/stable
- *  dep array there) — category is bound locally via useCallback so the parent
- *  never has to mint a new per-category closure on every render. Binding it in
- *  the parent (factory(cat) => fn) defeats this component's memo() on every
- *  parent re-render, which was causing ALL axis editors' chip lists to
- *  re-animate (Framer Motion's layout/AnimatePresence popLayout) whenever ANY
- *  single category was re-sampled, not just the one that changed. */
 const AxisEditor = memo(({
     category,
     values,
+    groups,
+    slotCounts,
+    mutedSlots,
+    maxPerPrompt,
     minCount,
+    mode = 'individual',
     onAdd,
     onRemove,
     onReseed,
     onMinCountChange,
+    onModeChange,
+    onToggleMute,
 }: {
     category: TagCategory
     values: string[]
+    groups: SlotGroup[]
+    slotCounts: Record<string, number>
+    mutedSlots: Set<string>
+    /** Most values one prompt can take under the slot constraints (0 = unknown). */
+    maxPerPrompt: number
     minCount: number
+    mode?: AxisTagMode
     onAdd: (category: TagCategory, value: string) => void
     onRemove: (category: TagCategory, value: string) => void
     onReseed: (category: TagCategory) => void
     onMinCountChange: (category: TagCategory, minCount: number) => void
+    onModeChange?: (category: TagCategory, mode: AxisTagMode) => void
+    onToggleMute: (slot: string) => void
 }) => {
     const [draft, setDraft] = useState('')
     const Icon = CATEGORY_ICON[category]
-    // Clamped to the pool size AND to MAX_MIN_TAGS_SLIDER — the pool itself
-    // can hold up to 200 candidates now, but asking for anywhere near that
-    // many distinct values in a single generated prompt isn't realistic
-    // variety, it's just noise. The pool stays fully sampleable as chips;
-    // only how many of them land in one prompt is capped here.
-    const maxMinCount = Math.max(1, Math.min(values.length, MAX_MIN_TAGS_SLIDER))
-    const clampedMinCount = Math.min(minCount, maxMinCount)
+    const lowMotion = useLowMotion()
+    // Tags: capped by what the slot constraints let one prompt hold (e.g. pose
+    // tops out around 5), so the slider never promises picks that would be
+    // dropped. Packs: pool size, up to MAX_MIN_PACKS_SLIDER.
+    const maxSliderCeiling = mode === 'bundle'
+        ? MAX_MIN_PACKS_SLIDER
+        : Math.min(MAX_MIN_TAGS_SLIDER, maxPerPrompt > 0 ? maxPerPrompt : MAX_MIN_TAGS_SLIDER)
+    const maxMinCount = Math.max(1, Math.min(values.length, maxSliderCeiling))
+
+    // Slot pills: every slot this axis has candidates in (muted ones included,
+    // so they can be switched back on), in taxonomy order.
+    const pillSlots = useMemo(
+        () => slotsOf(category).filter((slot) => (slotCounts[slot] ?? 0) > 0),
+        [category, slotCounts]
+    )
+    const showGrouping = mode === 'individual' && groups.some((g) => g.slot !== null)
+    const clampedMinCount = Math.max(0, Math.min(minCount, maxMinCount))
 
     // Re-sampling swaps the ENTIRE values array at once (unlike Add/Remove,
     // which change it by one entry) — animating that with layout + popLayout
@@ -215,55 +222,170 @@ const AxisEditor = memo(({
         setDraft('')
     }
 
+    const isDeactivated = liveMinCount === 0
+    const containerTheme = CATEGORY_CONTAINER_CLASS[category] || CATEGORY_CONTAINER_CLASS.other
+    const textTheme = CATEGORY_TEXT_CLASS[category] || CATEGORY_TEXT_CLASS.other
+
     return (
-        <div className="rounded-lg border border-border/50 bg-muted/30 p-3 space-y-2 flex flex-col min-h-0">
-            <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                    <Icon className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-xs font-semibold capitalize">{category}</span>
-                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
-                        {values.length}
+        <div
+            className={`rounded-xl border p-3 space-y-2.5 flex flex-col justify-between min-h-0 transition-all duration-200 shadow-xs ${containerTheme} ${
+                isDeactivated ? 'opacity-60 saturate-50 hover:opacity-80 transition-opacity' : ''
+            }`}
+        >
+            <div className="flex items-center justify-between gap-1.5 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                    <div className={`p-1.5 rounded-lg bg-background/80 dark:bg-background/60 border border-border/40 ${textTheme} flex-shrink-0`}>
+                        <Icon className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-semibold capitalize truncate text-foreground">{category}</span>
+                    <span className="text-[10px] font-medium text-muted-foreground bg-background/80 dark:bg-background/60 px-1.5 py-0.5 rounded-full border border-border/40 flex-shrink-0 tabular-nums">
+                        {values.length} {mode === 'bundle' ? (values.length === 1 ? 'pack' : 'packs') : (values.length === 1 ? 'tag' : 'tags')}
                     </span>
+                    {isDeactivated && (
+                        <span className="text-[9px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/50 uppercase tracking-wider flex-shrink-0">
+                            Off
+                        </span>
+                    )}
                 </div>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
+                <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* Toggle between Individual Tags and Card Bundles */}
+                    <div className="flex items-center rounded-md border border-border/60 bg-background/80 dark:bg-background/60 p-0.5 text-[10px]">
+                        <button
                             type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleReseedClick}
-                            className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                            onClick={() => onModeChange?.(category, 'individual')}
+                            className={`px-1.5 py-0.5 rounded transition-all ${
+                                mode === 'individual'
+                                    ? 'bg-muted text-foreground font-semibold shadow-xs'
+                                    : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                            title="Individual tags mode: mix and match loose tags"
                         >
-                            <RefreshCw className="w-3 h-3 mr-1" />
-                            Re-sample
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Re-sample values from the current results</TooltipContent>
-                </Tooltip>
+                            Tags
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                onModeChange?.(category, 'bundle')
+                                if (minCount > MAX_MIN_PACKS_SLIDER) {
+                                    onMinCountChange(category, MAX_MIN_PACKS_SLIDER)
+                                }
+                            }}
+                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-all ${
+                                mode === 'bundle'
+                                    ? 'bg-mode-pack/20 text-mode-pack-text font-semibold shadow-xs'
+                                    : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                            title="Packs mode: keep full card outfits/sets together"
+                        >
+                            <Package className="w-2.5 h-2.5" />
+                            Packs
+                        </button>
+                    </div>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleReseedClick}
+                                className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground hover:bg-background/60 flex items-center justify-center"
+                            >
+                                <RefreshCw className="w-3 h-3" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Re-sample {mode === 'bundle' ? 'packs' : 'values'} from current results</TooltipContent>
+                    </Tooltip>
+                </div>
             </div>
 
-            <div className="relative isolate flex flex-wrap gap-1.5 min-h-[1.75rem] content-start overflow-y-auto overflow-x-hidden max-h-40 pr-1">
+            {/* Slot pills: click to switch a slot off/on for this axis. Only
+                when there's a real choice (2+ slots) or something is muted. */}
+            {mode === 'individual' && (pillSlots.length > 1 || pillSlots.some((s) => mutedSlots.has(s))) && (
+                <div className="flex flex-wrap gap-1" role="group" aria-label={`${category} slots`}>
+                    {pillSlots.map((slot) => {
+                        const muted = mutedSlots.has(slot)
+                        return (
+                            <button
+                                type="button"
+                                key={slot}
+                                onClick={() => onToggleMute(slot)}
+                                aria-pressed={!muted}
+                                title={muted ? `Turn ${slotLabel(slot)} back on` : `Stop varying ${slotLabel(slot)}`}
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                                    muted
+                                        ? 'border-dashed border-border/60 text-muted-foreground/60 line-through hover:text-muted-foreground'
+                                        : `${CATEGORY_CHIP_CLASS[category]} hover:opacity-80`
+                                }`}
+                            >
+                                {slotLabel(slot)}
+                                <span className="tabular-nums opacity-60">{slotCounts[slot]}</span>
+                            </button>
+                        )
+                    })}
+                </div>
+            )}
+
+            <div className="relative isolate flex flex-wrap gap-1.5 h-36 min-h-[9rem] max-h-36 content-start overflow-y-auto overflow-x-hidden p-2 rounded-lg bg-background/80 dark:bg-background/40 border border-border/40 dark:border-border/30">
                 <AnimatePresence mode="popLayout" key={resampleEpoch}>
-                    {values.map((value) => (
-                        <motion.button
-                            key={value}
-                            type="button"
-                            layout
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.8 }}
-                            transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                            onClick={() => handleRemoveClick(value)}
-                            className={`group px-2 py-1 rounded border text-xs font-mono cursor-pointer select-none flex items-center gap-1 max-w-full min-w-0 ${CATEGORY_CHIP_CLASS[category]}`}
-                        >
-                            <span className="truncate max-w-[140px]">{value}</span>
-                            <X className="w-3 h-3 opacity-50 group-hover:opacity-100 flex-shrink-0" />
-                        </motion.button>
-                    ))}
+                    {(showGrouping ? groups : [{ slot: null, values }]).flatMap((group) => [
+                        showGrouping ? (
+                            <motion.div
+                                key={`slot-header:${group.slot ?? 'none'}`}
+                                layout={!lowMotion}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="basis-full flex items-center gap-1.5 pt-1 first:pt-0 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/80"
+                            >
+                                {slotLabel(group.slot)}
+                                <span className="h-px flex-1 bg-border/50" />
+                            </motion.div>
+                        ) : null,
+                        ...group.values.map((value) => {
+                        if (mode === 'bundle') {
+                            return (
+                                <motion.div
+                                    key={value}
+                                    layout={!lowMotion}
+                                    initial={lowMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+                                    animate={lowMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                                    exit={lowMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+                                    transition={lowMotion ? { duration: 0.15 } : { type: "spring", stiffness: 450, damping: 30 }}
+                                    className="group relative flex items-center gap-1.5 rounded-md border border-mode-pack-border bg-mode-pack-soft hover:bg-mode-pack/20 px-2 py-1 text-xs shadow-xs transition-colors max-w-full"
+                                >
+                                    <Package className="w-3 h-3 text-mode-pack-text flex-shrink-0" />
+                                    <span className="font-mono text-[11px] truncate max-w-[190px] text-foreground/90" title={value}>
+                                        {value}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveClick(value)}
+                                        aria-label="Remove pack"
+                                        className="opacity-50 hover:opacity-100 hover:text-destructive-text transition-opacity flex-shrink-0 ml-0.5"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </motion.div>
+                            )
+                        }
+                        return (
+                            <RemovableTagChip
+                                key={value}
+                                text={value}
+                                category={category}
+                                onRemove={() => handleRemoveClick(value)}
+                                exitVariant="fade"
+                                reducedMotion={lowMotion}
+                            />
+                        )
+                    }),
+                    ])}
                 </AnimatePresence>
                 {values.length === 0 && (
                     <span className="text-[11px] text-muted-foreground italic py-1">
-                        No values yet — add one or re-sample from results.
+                        {mode === 'bundle'
+                            ? "No packs yet — add one or re-sample from results."
+                            : "No values yet — add one or re-sample from results."}
                     </span>
                 )}
             </div>
@@ -273,32 +395,31 @@ const AxisEditor = memo(({
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
-                    placeholder={`Add a ${category} value...`}
-                    className="h-7 text-xs"
+                    placeholder={mode === 'bundle' ? `Add a ${category} pack (e.g. tag1, tag2)...` : `Add a ${category} tag...`}
+                    className="h-7 text-xs bg-background/90 dark:bg-background/80 border-border/50 focus-visible:ring-1 focus-visible:ring-mode-pack/50"
                 />
-                <Button type="button" variant="secondary" size="sm" onClick={handleAdd} className="h-7 px-2">
+                <Button type="button" variant="secondary" size="sm" onClick={handleAdd} className="h-7 px-2 border border-border/40 hover:bg-background/60">
                     <Plus className="w-3.5 h-3.5" />
                 </Button>
             </div>
 
-            {/* Min tags from this category per generated prompt — disabled with a
-                single value in the pool, since there's nothing else to combine with. */}
-            <div className="flex items-center gap-2 pt-1">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                    Min tags
+            {/* Min tags from this category per generated prompt — slide to 0 to deactivate. */}
+            <div className="flex items-center gap-2 pt-1.5 border-t border-border/30">
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                    {mode === 'bundle' ? 'Min packs' : 'Min tags'}
                 </span>
                 <Slider
-                    min={1}
+                    min={0}
                     max={maxMinCount}
                     step={1}
                     value={[liveMinCount]}
                     onValueChange={([val]) => setLiveMinCount(val)}
                     onValueCommit={([val]) => handleMinCountCommit(val)}
-                    disabled={maxMinCount <= 1}
+                    disabled={values.length === 0}
                     className={`flex-1 ${CATEGORY_SLIDER_CLASS[category]}`}
                 />
-                <span className="text-[10px] font-bold text-muted-foreground min-w-[1.25rem] text-center">
-                    {liveMinCount}
+                <span className="text-[10px] font-bold text-muted-foreground min-w-[1.25rem] text-center tabular-nums">
+                    {liveMinCount === 0 ? 'Off' : liveMinCount}
                 </span>
             </div>
         </div>
@@ -307,34 +428,63 @@ const AxisEditor = memo(({
 AxisEditor.displayName = "AxisEditor"
 
 /** A single generated prompt row: text + a per-item copy button with its own "Copied!" feedback. */
-const PromptRow = memo(({ prompt, index, onCopy }: { prompt: PackPrompt; index: number; onCopy: (prompt: PackPrompt) => void }) => {
-    const [isCopied, setIsCopied] = useState(false)
+const PromptRow = memo(({
+    prompt,
+    index,
+    onCopy,
+    lockedSet,
+    variedCategory,
+}: {
+    prompt: PackPrompt
+    index: number
+    onCopy: (prompt: PackPrompt) => void
+    /** Bare base tags, shown muted. */
+    lockedSet: ReadonlySet<string>
+    /** Bare varied tag -> its axis, shown in that axis's colour. */
+    variedCategory: ReadonlyMap<string, TagCategory>
+}) => {
+    const tokens = useMemo(() => prompt.prompt.split(',').map((t) => t.trim()).filter(Boolean), [prompt.prompt])
+    const [isCopied, triggerCopyFeedback] = useCopyFeedback()
+    const lowMotion = useLowMotion()
 
     const handleCopy = () => {
         onCopy(prompt)
-        setIsCopied(true)
-        setTimeout(() => setIsCopied(false), 2000)
+        triggerCopyFeedback()
     }
 
     return (
         <motion.div
-            layout
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/30 p-2.5"
+            layout={!lowMotion}
+            initial={lowMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+            animate={lowMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            exit={lowMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+            transition={lowMotion ? { duration: 0.15 } : { type: "spring", stiffness: 400, damping: 30 }}
+            className="group flex items-start gap-2.5 rounded-lg border border-border/50 bg-background/60 hover:bg-background/90 hover:border-border/80 transition-colors p-2.5"
         >
-            <span className="text-[10px] font-mono text-muted-foreground/70 mt-1 min-w-[1.5rem]">
+            <span className="text-[10px] font-mono font-bold text-muted-foreground/80 bg-muted/70 px-1.5 py-0.5 rounded mt-0.5 min-w-[1.75rem] text-center">
                 {String(index + 1).padStart(2, '0')}
             </span>
-            <p className="flex-1 text-xs leading-relaxed font-mono break-words">{prompt.prompt}</p>
+            <p className="flex-1 text-xs leading-relaxed font-mono break-words select-all">
+                {tokens.map((token, i) => {
+                    // Only axis values are coloured; base tags and anything the
+                    // cleaner adds (quality tags, characters) read as constant.
+                    const bare = bareTag(token)
+                    const cat = lockedSet.has(bare) ? undefined : variedCategory.get(bare)
+                    const tone = cat ? `${CATEGORY_TEXT_CLASS[cat]} font-semibold` : 'text-muted-foreground'
+                    return (
+                        <span key={`${i}-${token}`}>
+                            <span className={tone}>{token}</span>
+                            {i < tokens.length - 1 && <span className="text-muted-foreground/60">, </span>}
+                        </span>
+                    )
+                })}
+            </p>
             <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 onClick={handleCopy}
-                className={`h-7 w-7 flex-shrink-0 transition-colors ${isCopied ? 'text-green-600' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`h-7 w-7 flex-shrink-0 transition-colors ${isCopied ? 'text-success-text bg-success-soft' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
                 aria-label={`Copy prompt ${index + 1}`}
             >
                 {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -349,33 +499,51 @@ const PackResultsList = memo(({
     prompts,
     onCopyPrompt,
     onCopyAll,
+    lockedSet,
+    variedCategory,
 }: {
     prompts: PackPrompt[]
     onCopyPrompt: (prompt: PackPrompt) => void
     onCopyAll: (text: string) => void
+    lockedSet: ReadonlySet<string>
+    variedCategory: ReadonlyMap<string, TagCategory>
 }) => {
-    const [isAllCopied, setIsAllCopied] = useState(false)
+    const [isAllCopied, triggerCopyAllFeedback] = useCopyFeedback()
 
     const handleCopyAll = () => {
         if (prompts.length === 0) return
         onCopyAll(prompts.map((p) => p.prompt).join('\n'))
-        setIsAllCopied(true)
-        setTimeout(() => setIsAllCopied(false), 2000)
+        triggerCopyAllFeedback()
     }
 
     return (
-        <div id="pack-results-section" className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Generated prompts {prompts.length > 0 && `(${prompts.length})`}
-                </span>
+        <div id="pack-results-section" className="rounded-xl border border-border/60 bg-card/60 dark:bg-card/40 backdrop-blur-xs p-4 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border/40">
+                <div className="flex items-center gap-2">
+                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-mode-pack text-mode-pack-foreground text-xs font-bold shadow-xs">
+                        3
+                    </span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                        Generated Prompts
+                    </span>
+                    {prompts.length > 0 && (
+                        <span className="text-[10px] font-semibold bg-mode-pack-soft text-mode-pack-text border border-mode-pack-border px-2 py-0.5 rounded-full tabular-nums">
+                            {prompts.length} {prompts.length === 1 ? 'prompt' : 'prompts'}
+                        </span>
+                    )}
+                    {prompts.length > 0 && (
+                        <span className="text-[11px] text-muted-foreground hidden md:inline">
+                            <span className="text-muted-foreground">grey</span> = constant · <span className="font-semibold text-foreground">coloured</span> = varied
+                        </span>
+                    )}
+                </div>
                 <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={handleCopyAll}
                     disabled={prompts.length === 0}
-                    className={`h-7 text-xs transition-colors ${isAllCopied ? 'bg-green-500/10 text-green-600 border-green-500/30' : ''}`}
+                    className={`h-7 text-xs transition-colors ${isAllCopied ? 'bg-success-soft text-success-text border-success-border' : ''}`}
                 >
                     {isAllCopied ? <CopyCheck className="w-3.5 h-3.5 mr-1.5" /> : <Copy className="w-3.5 h-3.5 mr-1.5" />}
                     {isAllCopied ? 'Copied all!' : 'Copy all'}
@@ -383,17 +551,24 @@ const PackResultsList = memo(({
             </div>
 
             {prompts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-1.5 py-6 text-center rounded-lg border border-dashed border-border/50">
-                    <p className="text-xs text-muted-foreground max-w-xs">
-                        No prompts yet — add or re-sample some variation axis values above, then hit
-                        {' '}<span className="font-medium">Generate</span>.
+                <div className="flex flex-col items-center justify-center gap-2 py-8 text-center rounded-lg border border-dashed border-border/50 bg-muted/10">
+                    <Shuffle className="w-6 h-6 text-muted-foreground/40" />
+                    <p className="text-xs text-muted-foreground max-w-sm">
+                        No prompts yet — adjust base tags and variation axes above, then click <span className="font-semibold text-foreground">Generate</span> in the bottom toolbar.
                     </p>
                 </div>
             ) : (
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-2 max-h-[22rem] overflow-y-auto pr-1">
                     <AnimatePresence mode="popLayout">
                         {prompts.map((p, i) => (
-                            <PromptRow key={`${i}-${p.prompt}`} prompt={p} index={i} onCopy={onCopyPrompt} />
+                            <PromptRow
+                                key={`${i}-${p.prompt}`}
+                                prompt={p}
+                                index={i}
+                                onCopy={onCopyPrompt}
+                                lockedSet={lockedSet}
+                                variedCategory={variedCategory}
+                            />
                         ))}
                     </AnimatePresence>
                 </div>
@@ -407,13 +582,22 @@ const PackBuilderStickyFooterComponent = ({
     isOpen,
     baseCard,
     hasSetupAnswers,
-    packKind,
-    setPackKind,
     lockedCategories,
     toggleLockedCategory,
+    lockedSlots,
+    toggleLockedSlot,
+    mutedSlots,
+    toggleMutedSlot,
+    axisSlotGroups,
+    axisSlotCounts,
+    axisMaxPerPrompt,
+    tagOverrides,
     baseClassified,
     lockedTags,
     activeAxisCategories,
+    axisTagModes = {},
+    onSetAxisTagMode,
+    onSetAllAxisTagModes,
     axisValues,
     onAddAxisValue,
     onRemoveAxisValue,
@@ -442,6 +626,8 @@ const PackBuilderStickyFooterComponent = ({
     children,
 }: PackBuilderStickyFooterProps) => {
 
+    const lowMotion = useLowMotion()
+
     // Generate gives no visible feedback on its own — confirm on the button
     // itself and scroll the results into view so the change is unmistakable.
     const [justGenerated, setJustGenerated] = useState(false)
@@ -467,23 +653,6 @@ const PackBuilderStickyFooterComponent = ({
         setLivePromptCount(promptCount)
     }
 
-    // Same live-drag decoupling pattern as livePromptCount above — the
-    // Explore/Exploit slider only commits (and re-triggers weight
-    // recomputation on the NEXT Generate) on release, not on every drag frame.
-    const [liveExplorationTemperature, setLiveExplorationTemperature] = useState(explorationTemperature)
-    const [prevExplorationTemperature, setPrevExplorationTemperature] = useState(explorationTemperature)
-    if (explorationTemperature !== prevExplorationTemperature) {
-        setPrevExplorationTemperature(explorationTemperature)
-        setLiveExplorationTemperature(explorationTemperature)
-    }
-
-    const [justResetLearning, setJustResetLearning] = useState(false)
-    const handleResetLearningClick = useCallback(() => {
-        onResetLearning()
-        setJustResetLearning(true)
-        setTimeout(() => setJustResetLearning(false), 1200)
-    }, [onResetLearning])
-
     const baseThumb = baseCard ? (() => {
         const rawUrl = baseCard.preview_file_url || baseCard.file_url
         const provider = baseCard._provider || 'danbooru'
@@ -503,6 +672,38 @@ const PackBuilderStickyFooterComponent = ({
         return map
     }, [baseClassified])
 
+    // How many base-card tags sit in each slot — shown on the lock pills so
+    // "lock footwear" visibly means "keep these 1 tag(s)" vs "keep none".
+    const baseSlotCounts = useMemo(() => {
+        const counts: Record<string, number> = {}
+        CATEGORIES.forEach((cat) => {
+            baseClassified[cat]?.forEach((tag) => {
+                const slot = getTagSlotFromOverrides(tag, tagOverrides)?.slot
+                if (slot) counts[slot] = (counts[slot] ?? 0) + 1
+            })
+        })
+        return counts
+    }, [baseClassified, tagOverrides])
+
+    const lockedSlotCount = useCallback(
+        (cat: TagCategory) => slotsOf(cat).filter((s) => lockedSlots.has(s)).length,
+        [lockedSlots]
+    )
+    const [showSlotLocks, setShowSlotLocks] = useState(false)
+
+    // Result highlighting: base tags muted, varied tags in their axis colour.
+    const lockedSet = useMemo(() => new Set(lockedTags.map(bareTag)), [lockedTags])
+    const variedCategory = useMemo(() => {
+        const map = new Map<string, TagCategory>()
+        CATEGORIES.forEach((cat) => {
+            axisValues[cat]?.forEach((value) => {
+                const parts = value.includes(',') ? splitCommaSeparatedTags(value) : [value]
+                parts.forEach((tag) => map.set(bareTag(tag), cat))
+            })
+        })
+        return map
+    }, [axisValues])
+
     // Closing the dialog (X, Escape, or backdrop click) clears the base and
     // any confirmed setup answers (via onClearBase) — Pack Mode itself stays
     // active so "Use as base" / "Full Setup" are still available.
@@ -519,14 +720,14 @@ const PackBuilderStickyFooterComponent = ({
                 {isOpen && !baseCard && !hasSetupAnswers && (
                     <motion.div
                         key="pack-hint"
-                        initial={{ y: 80, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        exit={{ y: 80, opacity: 0 }}
-                        transition={{ type: "spring", stiffness: 220, damping: 26 }}
+                        initial={lowMotion ? { opacity: 0 } : { y: 80, opacity: 0 }}
+                        animate={lowMotion ? { opacity: 1 } : { y: 0, opacity: 1 }}
+                        exit={lowMotion ? { opacity: 0 } : { y: 80, opacity: 0 }}
+                        transition={lowMotion ? { duration: 0.15 } : { type: "spring", stiffness: 220, damping: 26 }}
                         className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-lg rounded-2xl border shadow-2xl bg-background/95 backdrop-blur-xl p-4 flex items-center gap-3"
                     >
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <Package className="w-5 h-5 text-teal-600 dark:text-teal-400 flex-shrink-0" />
+                            <Package className="w-5 h-5 text-mode-pack-text flex-shrink-0" />
                             <p className="text-sm text-muted-foreground min-w-0">
                                 Hover a card and click <span className="font-medium text-foreground">&quot;Use as base&quot;</span> to build a pack.
                             </p>
@@ -536,7 +737,7 @@ const PackBuilderStickyFooterComponent = ({
                             variant="outline"
                             size="sm"
                             onClick={onFullSetup}
-                            className="flex-shrink-0 border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-500/10 hover:text-teal-700 dark:hover:text-teal-300"
+                            className="flex-shrink-0 border-mode-pack-border text-mode-pack-text hover:bg-mode-pack-soft hover:text-mode-pack-text"
                         >
                             Full Setup
                         </Button>
@@ -549,7 +750,7 @@ const PackBuilderStickyFooterComponent = ({
 
             <Dialog open={isOpen && (!!baseCard || hasSetupAnswers)} onOpenChange={handleDialogOpenChange}>
                 <DialogContent
-                    className="max-w-4xl w-[95vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden"
+                    className="max-w-7xl w-[96vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden"
                     onEscapeKeyDown={onExit}
                 >
                     <DialogTitle className="sr-only">Pack Builder</DialogTitle>
@@ -557,217 +758,359 @@ const PackBuilderStickyFooterComponent = ({
                     {/* Header — outside the scroll area so it's always visible. The native
                         Dialog close (X, top-right) clears the base and returns to the hint
                         state; "Exit pack mode" here fully leaves Pack Mode. */}
-                    <div className="flex items-center justify-between gap-2 flex-wrap p-4 pb-3 pr-12 border-b border-border/50 flex-shrink-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <Package className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                            <span className="font-bold text-sm sm:text-base">Pack Builder</span>
-                            {baseCard && (
-                                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                                    base #{baseCard.id}
-                                </span>
-                            )}
-                            {/* Post pool counter + manual "Load more" — sampling is drawn from
-                                whatever's loaded in the search results right now; more posts
-                                means richer/more varied axis pools. Same seedPages pipeline
-                                (search.loadMore(), rate-limit-respecting) as the automatic seed
-                                on base selection, just chasing a higher target on demand. */}
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full tabular-nums">
-                                        {loadedPostCount} posts loaded
+                    <div className="flex items-center justify-between gap-2 flex-wrap p-4 pb-3 pr-12 border-b border-border/50 flex-shrink-0 bg-background/95">
+                        <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-mode-pack-soft border border-mode-pack-border text-mode-pack-text">
+                                <Package className="w-4 h-4" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="font-bold text-sm sm:text-base text-foreground">Pack Builder</span>
+                                {baseCard ? (
+                                    <span className="text-[11px] font-medium text-muted-foreground bg-muted/80 px-2 py-0.5 rounded-full border border-border/40">
+                                        base #{baseCard.id}
                                     </span>
-                                </TooltipTrigger>
-                                <TooltipContent>Sampling pool for variation axes — more posts loaded means richer, more varied values.</TooltipContent>
-                            </Tooltip>
-                            {!isSeeding && (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={onLoadMorePosts}
-                                            disabled={!canLoadMorePosts}
-                                            className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40"
-                                        >
-                                            <RefreshCw className="w-3 h-3 mr-1" />
-                                            Load more posts
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        {canLoadMorePosts
-                                            ? "Fetch more posts to sample from (metadata only, no images — same rate limits as normal browsing)"
-                                            : "No more posts available for this search, or the session's page limit was reached"}
-                                    </TooltipContent>
-                                </Tooltip>
-                            )}
-                            {isSeeding && (
-                                <span className="flex items-center gap-1 text-[10px] text-teal-600 dark:text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded-full tabular-nums">
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
-                                    {seedProgress ? `Loading posts… (${seedProgress.current}/${seedProgress.target})` : 'Loading more posts…'}
-                                </span>
-                            )}
+                                ) : (
+                                    <span className="text-[11px] font-semibold text-mode-pack-text bg-mode-pack-soft px-2.5 py-0.5 rounded-full border border-mode-pack-border">
+                                        Full Setup
+                                    </span>
+                                )}
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
                             <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={onClearBase}
-                                className="bg-red-500/10 hover:bg-red-500/20 text-red-600 hover:text-red-700"
+                                className="h-8 px-2.5 text-xs bg-destructive-soft hover:bg-destructive/20 text-destructive-text hover:text-destructive-text"
                             >
-                                <Trash2 className="w-4 h-4 mr-2" />
+                                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                                 <span className="hidden sm:inline">Clear</span>
                             </Button>
-                            <Button variant="ghost" size="sm" onClick={onExit} className="text-muted-foreground hover:text-foreground">
+                            <Button variant="ghost" size="sm" onClick={onExit} className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground">
                                 Exit pack mode
                             </Button>
                         </div>
                     </div>
 
-                    {/* Seeding progress bar — only visible while actively fetching more
-                        pages (automatic on base selection, or manual via "Load more
-                        posts"). Uses seedProgress.current/target since count-based ETAs
-                        via posts loaded are more meaningful here than a page counter. */}
-                    {isSeeding && seedProgress && (
-                        <div className="h-1 bg-muted flex-shrink-0 overflow-hidden">
-                            <motion.div
-                                className="h-full bg-teal-500"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${Math.min(100, (seedProgress.current / seedProgress.target) * 100)}%` }}
-                                transition={{ type: "tween", duration: 0.3 }}
-                            />
-                        </div>
-                    )}
-                    <div className="flex-1 overflow-y-auto min-h-0">
-                        <div className="p-4 flex flex-col gap-4">
+                    <div className="flex-1 overflow-y-auto min-h-0 bg-muted/10">
+                        <div className="p-4 sm:p-5 flex flex-col gap-4">
                             {(baseCard || hasSetupAnswers) && (
                                 <>
-                                    {/* Base card + pack kind selector — only shown when there's an
-                                        actual base card; Full Setup (no base) skips straight to the
-                                        custom base prompt / locked categories below. */}
-                                    {baseCard && (
-                                    <div className="flex items-start gap-3">
-                                        <div className="relative w-16 h-24 flex-shrink-0 rounded-md overflow-hidden bg-muted border">
-                                            {baseThumb && (
-                                                <Image
-                                                    src={baseThumb}
-                                                    alt={`Base post ${baseCard.id}`}
-                                                    fill
-                                                    className="object-cover"
-                                                    unoptimized
-                                                />
-                                            )}
-                                        </div>
-                                        <div className="flex-1 space-y-2">
-                                            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Pack type</span>
-                                            <div className="grid grid-cols-3 gap-1.5">
-                                                {(Object.keys(PACK_KIND_LABELS) as PackKind[]).map((kind) => {
-                                                    const isSelected = packKind === kind
-                                                    return (
-                                                        <button
-                                                            type="button"
-                                                            key={kind}
-                                                            onClick={() => setPackKind(kind)}
-                                                            className={`relative overflow-hidden flex items-center justify-center py-2 text-xs font-medium rounded-md border transition-all duration-200 ${isSelected ? 'bg-teal-500/15 border-teal-500/30 text-teal-600 dark:text-teal-400 shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
-                                                        >
-                                                            {isSelected && <Check className="w-3 h-3 mr-1" />}
-                                                            {PACK_KIND_LABELS[kind]}
-                                                        </button>
-                                                    )
-                                                })}
+                                    {/* STEP 1: Constant Base */}
+                                    <div className="rounded-xl border border-mode-pack-border bg-mode-pack-soft/60 dark:bg-mode-pack-soft hover:border-mode-pack/60 transition-colors p-4 space-y-3 shadow-xs">
+                                        <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-mode-pack/15 dark:border-mode-pack-border">
+                                            <div className="flex items-center gap-2">
+                                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-mode-pack text-mode-pack-foreground text-xs font-bold shadow-xs">
+                                                    1
+                                                </span>
+                                                <span className="text-xs font-bold uppercase tracking-wider text-mode-pack-text">
+                                                    Constant Base
+                                                </span>
+                                                <span className="text-[11px] text-mode-pack-text/80 hidden sm:inline">
+                                                    (always included in every generated prompt)
+                                                </span>
                                             </div>
-                                        </div>
-                                    </div>
-                                    )}
-
-                                    {/* Custom pack kind: free-text invariable base prompt, merged into
-                                        every generated prompt alongside whatever categories are locked. */}
-                                    <AnimatePresence initial={false}>
-                                        {packKind === 'custom' && (
-                                            <motion.div
-                                                key="custom-base-text"
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: 'auto', opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                transition={{ duration: 0.2 }}
-                                                className="overflow-hidden"
-                                            >
-                                                <div className="space-y-1.5 pt-0.5">
-                                                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                                        Custom base prompt (always included)
-                                                    </span>
-                                                    <TagAutocompleteTextarea
-                                                        value={customBaseText}
-                                                        onValueChange={onCustomBaseTextChange}
-                                                        placeholder="e.g. 1girl, mona (genshin impact), masterpiece..."
-                                                        className="text-xs font-mono min-h-[3.5rem] resize-none"
-                                                    />
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-
-                                    {/* Locked categories (constant) — only meaningful with a real
-                                        base card to pull tags from; Full Setup relies solely on the
-                                        custom base prompt above instead. */}
-                                    {baseCard && (
-                                    <div className="space-y-1.5">
-                                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Locked (constant)</span>
-                                        <div className="grid grid-cols-4 gap-1.5">
-                                            {CATEGORIES.map((cat) => {
-                                                const isLocked = lockedCategories.has(cat)
-                                                const Icon = CATEGORY_ICON[cat]
-                                                return (
-                                                    <button
-                                                        type="button"
-                                                        key={cat}
-                                                        onClick={() => toggleLockedCategory(cat)}
-                                                        className={`relative overflow-hidden flex items-center justify-center gap-1 py-2 text-xs font-medium rounded-md border transition-all duration-200 ${isLocked ? CATEGORY_ACTIVE_CLASS[cat] : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
-                                                    >
-                                                        <Icon className="w-3 h-3" />
-                                                        <span className="capitalize">{cat}</span>
-                                                    </button>
-                                                )
-                                            })}
-                                        </div>
-
-                                        {/* Live preview of what's actually locked — the real tags
-                                            behind the toggles above, updated instantly as categories
-                                            are switched on/off. Read-only; edit via the toggles or the
-                                            custom base prompt instead. */}
-                                        <div className="flex flex-wrap gap-1.5 min-h-[1.75rem] content-start rounded-md border border-dashed border-border/50 bg-muted/20 p-2">
-                                            {lockedTags.length > 0 ? (
-                                                lockedTags.map((tag) => {
-                                                    const cat = lockedTagCategory.get(tag) ?? 'other'
-                                                    return (
-                                                        <span
-                                                            key={tag}
-                                                            className={`px-2 py-0.5 rounded border text-[11px] font-mono ${CATEGORY_CHIP_CLASS[cat]}`}
-                                                        >
-                                                            {tag}
-                                                        </span>
-                                                    )
-                                                })
-                                            ) : (
-                                                <span className="text-[11px] text-muted-foreground italic py-1">
-                                                    Nothing locked yet — lock a category above or add a custom base prompt.
+                                            {baseCard && (
+                                                <span className="text-[11px] font-medium text-mode-pack-text bg-mode-pack-soft px-2 py-0.5 rounded-full border border-mode-pack-border">
+                                                    base #{baseCard.id}
                                                 </span>
                                             )}
                                         </div>
-                                    </div>
-                                    )}
 
-                                    {/* Axis editors for the non-locked categories */}
+                                        {/* Base card thumbnail — only shown when there's an actual base card */}
+                                        {baseCard && (
+                                            <div className="flex items-start gap-3 pt-1">
+                                                <div className="relative w-16 h-24 flex-shrink-0 rounded-md overflow-hidden bg-muted border">
+                                                    {baseThumb && (
+                                                        <Image
+                                                            src={baseThumb}
+                                                            alt={`Base post ${baseCard.id}`}
+                                                            fill
+                                                            className="object-cover"
+                                                            unoptimized
+                                                        />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* No base card (the "From my prompt" flow): free-text invariable base prompt */}
+                                        <AnimatePresence initial={false}>
+                                            {!baseCard && (
+                                                <motion.div
+                                                    key="custom-base-text"
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    transition={{ duration: 0.2 }}
+                                                    className="overflow-hidden space-y-1.5 pt-0.5"
+                                                >
+                                                    <div className="flex items-center justify-between text-xs">
+                                                        <span className="font-medium text-mode-pack-text/90 dark:text-mode-pack-text uppercase tracking-wider">
+                                                            Custom base prompt
+                                                        </span>
+                                                        <span className="text-[11px] text-mode-pack-text/80 hidden sm:inline">
+                                                            Autocomplete enabled — type to search booru tags
+                                                        </span>
+                                                    </div>
+                                                    <TagAutocompleteTextarea
+                                                        value={customBaseText}
+                                                        onValueChange={onCustomBaseTextChange}
+                                                        placeholder="e.g. 1girl, mona (genshin impact), masterpiece, solo..."
+                                                        className="text-xs font-mono min-h-[5.5rem] max-h-48 resize-y bg-background/85 dark:bg-background/40 border-mode-pack-border focus-visible:ring-1 focus-visible:ring-mode-pack/40"
+                                                    />
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+
+                                        {/* Locked categories (constant) — only meaningful with a real base card */}
+                                        {baseCard && (
+                                            <div className="space-y-2 pt-1 border-t border-mode-pack-border">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Locked (constant)</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowSlotLocks((v) => !v)}
+                                                        aria-expanded={showSlotLocks}
+                                                        aria-controls="pack-slot-locks"
+                                                        className="inline-flex items-center gap-1 text-[11px] font-medium text-mode-pack-text hover:text-mode-pack-text transition-colors"
+                                                    >
+                                                        Fine-tune by slot
+                                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSlotLocks ? 'rotate-180' : ''}`} />
+                                                    </button>
+                                                </div>
+                                                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                                                    {CATEGORIES.map((cat) => {
+                                                        const isLocked = lockedCategories.has(cat)
+                                                        const partial = !isLocked ? lockedSlotCount(cat) : 0
+                                                        const Icon = CATEGORY_ICON[cat]
+                                                        const stateClass = isLocked
+                                                            ? CATEGORY_ACTIVE_CLASS[cat]
+                                                            : partial > 0
+                                                                ? `${CATEGORY_ACTIVE_CLASS[cat]} border-dashed opacity-80`
+                                                                : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                key={cat}
+                                                                onClick={() => toggleLockedCategory(cat)}
+                                                                aria-pressed={isLocked ? true : partial > 0 ? 'mixed' : false}
+                                                                title={
+                                                                    isLocked
+                                                                        ? `${TAG_CATEGORIES[cat].label} is constant — click to vary it`
+                                                                        : partial > 0
+                                                                            ? `${partial} of ${slotsOf(cat).length} slots locked — click to lock all`
+                                                                            : `${TAG_CATEGORIES[cat].label} varies — click to keep it constant`
+                                                                }
+                                                                className={`relative overflow-hidden flex items-center justify-center gap-1 py-2 text-xs font-medium rounded-md border transition-all duration-200 ${stateClass}`}
+                                                            >
+                                                                <Icon className="w-3 h-3" />
+                                                                <span>{TAG_CATEGORIES[cat].label}</span>
+                                                                {partial > 0 && (
+                                                                    <span className="text-[9px] tabular-nums opacity-80">{partial}/{slotsOf(cat).length}</span>
+                                                                )}
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+
+                                                {/* Per-slot locks: 🔒 keeps the base card's tags for that
+                                                    slot, ↻ lets it vary. Collapsed by default — the
+                                                    category row above already covers the common case. */}
+                                                <AnimatePresence initial={false}>
+                                                    {showSlotLocks && (
+                                                        <motion.div
+                                                            id="pack-slot-locks"
+                                                            key="slot-locks"
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            transition={{ duration: lowMotion ? 0 : 0.2 }}
+                                                            className="overflow-hidden"
+                                                        >
+                                                            <div className="rounded-md border border-border/50 bg-background/40 p-2.5 space-y-1.5">
+                                                                <p className="text-[10px] text-muted-foreground flex items-center gap-2.5 pb-0.5">
+                                                                    <span className="inline-flex items-center gap-1"><Lock className="w-2.5 h-2.5" /> kept from the base card</span>
+                                                                    <span className="inline-flex items-center gap-1"><Shuffle className="w-2.5 h-2.5" /> varies across prompts</span>
+                                                                </p>
+                                                                {CATEGORIES.map((cat) => {
+                                                                    const Icon = CATEGORY_ICON[cat]
+                                                                    const wholeLocked = lockedCategories.has(cat)
+                                                                    return (
+                                                                        <div key={cat} className="flex items-start gap-2">
+                                                                            <div className={`flex items-center gap-1 w-24 flex-shrink-0 pt-0.5 text-[10px] font-medium ${CATEGORY_TEXT_CLASS[cat]}`}>
+                                                                                <Icon className="w-3 h-3" />
+                                                                                {TAG_CATEGORIES[cat].label}
+                                                                            </div>
+                                                                            <div className="flex flex-wrap gap-1 flex-1">
+                                                                                {slotsOf(cat).map((slot) => {
+                                                                                    const locked = wholeLocked || lockedSlots.has(slot)
+                                                                                    const onBase = baseSlotCounts[slot] ?? 0
+                                                                                    return (
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            key={slot}
+                                                                                            onClick={() => toggleLockedSlot(slot)}
+                                                                                            aria-pressed={locked}
+                                                                                            title={`${slotLabel(slot)}: ${locked ? 'kept from the base card' : 'varies'}${onBase ? ` (${onBase} on the base card)` : ''}`}
+                                                                                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                                                                                                locked
+                                                                                                    ? CATEGORY_CHIP_CLASS[cat]
+                                                                                                    : 'border-border/50 bg-muted/20 text-muted-foreground hover:text-foreground'
+                                                                                            }`}
+                                                                                        >
+                                                                                            {locked ? <Lock className="w-2.5 h-2.5" /> : <Shuffle className="w-2.5 h-2.5" />}
+                                                                                            {slotLabel(slot)}
+                                                                                            {onBase > 0 && <span className="tabular-nums opacity-60">{onBase}</span>}
+                                                                                        </button>
+                                                                                    )
+                                                                                })}
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+
+                                                <div className="flex flex-wrap gap-1.5 min-h-[1.75rem] content-start rounded-md border border-dashed border-border/50 bg-background/40 p-2">
+                                                    {lockedTags.length > 0 ? (
+                                                        lockedTags.map((tag) => {
+                                                            const cat = lockedTagCategory.get(tag) ?? 'other'
+                                                            return (
+                                                                <span
+                                                                    key={tag}
+                                                                    className={`px-2 py-0.5 rounded border text-[11px] font-mono ${CATEGORY_CHIP_CLASS[cat]}`}
+                                                                >
+                                                                    {tag}
+                                                                </span>
+                                                            )
+                                                        })
+                                                    ) : (
+                                                        <span className="text-[11px] text-muted-foreground italic py-0.5">
+                                                            Nothing locked yet — lock a category above or add a custom base prompt.
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* STEP 2: Dynamic Variation Axes */}
                                     {activeAxisCategories.length > 0 && (
-                                        <div className="space-y-2">
-                                            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Variation axes</span>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-card/40 backdrop-blur-xs p-4 space-y-3 shadow-xs">
+                                            <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border/40">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-mode-pack text-mode-pack-foreground text-xs font-bold shadow-xs">
+                                                        2
+                                                    </span>
+                                                    <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                                                        Dynamic Variation Axes
+                                                    </span>
+                                                    <span className="text-[11px] text-muted-foreground hidden lg:inline">
+                                                        (sampled values that vary across prompts)
+                                                    </span>
+                                                </div>
+
+                                                {/* Post pool indicator & controls + global tag/pack toggle */}
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    {/* Post pool badge + Load more */}
+                                                    <div className="flex items-center gap-1.5 bg-muted/60 dark:bg-muted/40 border border-border/50 rounded-lg px-2.5 py-1">
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <span className="text-xs font-medium text-foreground/90 tabular-nums flex items-center gap-1.5 cursor-default">
+                                                                    <span className="w-2 h-2 rounded-full bg-success shrink-0" />
+                                                                    {loadedPostCount} posts in pool
+                                                                </span>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                                Sampling pool for variation axes — more posts loaded means richer, more varied values.
+                                                            </TooltipContent>
+                                                        </Tooltip>
+
+                                                        {!isSeeding ? (
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={onLoadMorePosts}
+                                                                        disabled={!canLoadMorePosts}
+                                                                        className="h-5 px-1.5 text-[11px] text-mode-pack-text hover:bg-mode-pack-soft disabled:opacity-40"
+                                                                    >
+                                                                        <RefreshCw className="w-3 h-3 mr-1" />
+                                                                        Load more
+                                                                    </Button>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent>
+                                                                    {canLoadMorePosts
+                                                                        ? "Fetch more posts to sample from (metadata only, no images — same rate limits as normal browsing)"
+                                                                        : "No more posts available for this search, or session limit reached"}
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        ) : (
+                                                            <span className="flex items-center gap-1 text-[11px] text-mode-pack-text bg-mode-pack-soft px-2 py-0.5 rounded-full tabular-nums">
+                                                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                                                {seedProgress ? `${seedProgress.current}/${seedProgress.target}` : 'Loading...'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* All axes mode toggle */}
+                                                    {onSetAllAxisTagModes && (
+                                                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/60 dark:bg-muted/40 border border-border/50 rounded-lg p-0.5">
+                                                            <span className="text-[10px] text-muted-foreground/80 px-1.5 hidden sm:inline">All axes:</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onSetAllAxisTagModes('individual')}
+                                                                className="px-2 py-0.5 text-[10px] font-medium rounded transition-colors hover:text-foreground text-muted-foreground"
+                                                                title="Set all variation axes to individual tags"
+                                                            >
+                                                                Tags
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onSetAllAxisTagModes('bundle')}
+                                                                className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded transition-colors hover:text-foreground text-muted-foreground"
+                                                                title="Set all variation axes to card packs"
+                                                            >
+                                                                <Package className="w-2.5 h-2.5" />
+                                                                Packs
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Seeding progress bar — only visible while actively fetching */}
+                                            {isSeeding && seedProgress && (
+                                                <div className="h-1 bg-muted/60 rounded-full overflow-hidden w-full">
+                                                    <motion.div
+                                                        className="h-full bg-mode-pack"
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: `${Math.min(100, (seedProgress.current / seedProgress.target) * 100)}%` }}
+                                                        transition={{ type: "tween", duration: 0.3 }}
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* 4-column axis grid */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                                                 {activeAxisCategories.map((cat) => (
                                                     <AxisEditor
                                                         key={cat}
                                                         category={cat}
                                                         values={axisValues[cat] || []}
+                                                        groups={axisSlotGroups[cat] ?? EMPTY_GROUPS}
+                                                        slotCounts={axisSlotCounts[cat] ?? EMPTY_COUNTS}
+                                                        mutedSlots={mutedSlots}
+                                                        maxPerPrompt={axisMaxPerPrompt[cat] ?? 0}
+                                                        onToggleMute={toggleMutedSlot}
                                                         minCount={axisMinCounts[cat] ?? 1}
+                                                        mode={axisTagModes[cat] ?? 'individual'}
+                                                        onModeChange={onSetAxisTagMode}
                                                         onAdd={onAddAxisValue}
                                                         onRemove={onRemoveAxisValue}
                                                         onReseed={onReseedAxis}
@@ -780,92 +1123,56 @@ const PackBuilderStickyFooterComponent = ({
 
                                     {children}
 
+                                    {/* STEP 3: Generated Prompts */}
                                     <PackResultsList
                                         prompts={prompts}
                                         onCopyPrompt={onCopyPrompt}
                                         onCopyAll={onCopyAll}
+                                        lockedSet={lockedSet}
+                                        variedCategory={variedCategory}
                                     />
                                 </>
                             )}
                         </div>
                     </div>
 
-                    {/* Prompt count + generate — fixed at the bottom of the modal, always visible */}
-                    {baseCard && (
-                        <div className="flex flex-col gap-3 p-4 pt-3 border-t border-border/50 bg-background/95 supports-[backdrop-filter]:bg-background/80 backdrop-blur-xl flex-shrink-0">
-                            {/* Explore/Exploit control (§7.8, non-negotiable per the plan):
-                                lets the user dial the local learning model's influence on
-                                axis sampling back to uniform at any time, and wipe the
-                                learned data entirely if it ever starts steering somewhere
-                                unwanted. Never hidden behind an extra click — it's exactly
-                                as visible as the Prompts count control it sits next to. */}
-                            <div className="flex items-center gap-3 flex-wrap">
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                                            <Sparkles className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 flex-shrink-0" />
-                                            <Label htmlFor="pack-exploration-temperature" className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                                                Exploit / Explore
-                                            </Label>
-                                            <Slider
-                                                id="pack-exploration-temperature"
-                                                min={1}
-                                                max={10}
-                                                step={0.5}
-                                                value={[liveExplorationTemperature]}
-                                                onValueChange={([val]) => setLiveExplorationTemperature(val)}
-                                                onValueCommit={([val]) => onExplorationTemperatureChange(val)}
-                                                className="[&_[role=slider]]:border-teal-500 [&_[role=slider]]:focus-visible:ring-teal-500/50 [&_.relative>.absolute]:bg-teal-500 cursor-grab active:cursor-grabbing flex-1"
-                                            />
-                                            <span className="text-[10px] font-bold text-muted-foreground min-w-[3rem] text-center">
-                                                {liveExplorationTemperature <= 1.5 ? 'Exploit' : liveExplorationTemperature >= 8.5 ? 'Explore' : 'Mixed'}
-                                            </span>
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="max-w-xs">
-                                        Low = favors axis values you've copied before. High = ignores learning and samples evenly again.
-                                    </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={handleResetLearningClick}
-                                            className={`h-7 px-2 text-[10px] transition-colors flex-shrink-0 ${justResetLearning ? 'text-green-600' : 'text-muted-foreground hover:text-foreground'}`}
-                                        >
-                                            {justResetLearning ? <Check className="w-3 h-3 mr-1" /> : <RotateCcw className="w-3 h-3 mr-1" />}
-                                            {justResetLearning ? 'Reset!' : 'Reset learning'}
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Forget everything learned from copied/removed/added values (does not affect the slider above)</TooltipContent>
-                                </Tooltip>
+                    {/* Prompt count + generate — fixed at the bottom of the modal, centered slider */}
+                    {(baseCard || hasSetupAnswers) && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-3 p-3 sm:px-6 border-t border-border/50 bg-background/95 supports-[backdrop-filter]:bg-background/80 backdrop-blur-xl flex-shrink-0">
+                            {/* Left: Active axes summary pill */}
+                            <div className="hidden sm:flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/60 border border-border/40 text-xs font-medium text-muted-foreground">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-mode-pack animate-pulse" />
+                                    {activeAxisCategories.length} {activeAxisCategories.length === 1 ? 'active axis' : 'active axes'}
+                                </span>
                             </div>
 
-                            <div className="flex items-center gap-3 flex-wrap">
-                                <div className="flex items-center gap-2 flex-1 min-w-[180px]">
-                                    <Label htmlFor="pack-prompt-count" className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                                        Prompts
-                                    </Label>
-                                    <Slider
-                                        id="pack-prompt-count"
-                                        min={1}
-                                        max={MAX_PACK_PROMPTS}
-                                        step={1}
-                                        value={[livePromptCount]}
-                                        onValueChange={([val]) => setLivePromptCount(val)}
-                                        onValueCommit={([val]) => setPromptCount(val)}
-                                        className="[&_[role=slider]]:border-teal-500 [&_[role=slider]]:focus-visible:ring-teal-500/50 [&_.relative>.absolute]:bg-teal-500 cursor-grab active:cursor-grabbing flex-1"
-                                    />
-                                    <span className="text-xs font-bold text-teal-600 bg-teal-500/10 px-2 py-0.5 rounded-full min-w-[2.5rem] text-center">
-                                        {livePromptCount}
-                                    </span>
-                                </div>
+                            {/* Center: Centered Prompts Slider */}
+                            <div className="flex items-center justify-center gap-3 w-full max-w-sm mx-auto">
+                                <Label htmlFor="pack-prompt-count" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                                    Prompts
+                                </Label>
+                                <Slider
+                                    id="pack-prompt-count"
+                                    min={1}
+                                    max={MAX_PACK_PROMPTS}
+                                    step={1}
+                                    value={[livePromptCount]}
+                                    onValueChange={([val]) => setLivePromptCount(val)}
+                                    onValueCommit={([val]) => setPromptCount(val)}
+                                    className="[&_[role=slider]]:border-mode-pack [&_[role=slider]]:focus-visible:ring-mode-pack/50 [&_.relative>.absolute]:bg-mode-pack cursor-grab active:cursor-grabbing flex-1"
+                                />
+                                <span className="text-xs font-bold text-mode-pack-text bg-mode-pack-soft px-2.5 py-0.5 rounded-full border border-mode-pack-border min-w-[2.25rem] text-center tabular-nums">
+                                    {livePromptCount}
+                                </span>
+                            </div>
+
+                            {/* Right: Generate button */}
+                            <div className="flex items-center justify-end">
                                 <Button
                                     type="button"
                                     onClick={handleGenerateClick}
-                                    className={`transition-colors ${justGenerated ? 'bg-green-600 hover:bg-green-700' : 'bg-teal-600 hover:bg-teal-700'} text-white`}
+                                    className={`font-semibold shadow-sm transition-all duration-200 ${justGenerated ? 'bg-success hover:bg-success/90 text-success-foreground' : 'bg-mode-pack hover:bg-mode-pack/90 text-mode-pack-foreground'} px-6`}
                                 >
                                     {justGenerated ? <Check className="w-4 h-4 mr-2" /> : <Shuffle className="w-4 h-4 mr-2" />}
                                     {justGenerated ? 'Generated!' : 'Generate'}

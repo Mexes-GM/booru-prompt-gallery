@@ -6,43 +6,87 @@ import {
   PACK_AXES,
   MAX_PACK_PROMPTS,
   MAX_PACK_OVERGENERATE,
+  MAX_MIN_TAGS_SLIDER,
+  MAX_MIN_PACKS_SLIDER,
   classifyPostForPack,
   filterAppearanceForPrimaryCharacter,
-  extractAxisValuesWithCounts,
   extractAllAxisValuesWithCounts,
+  extractAllAxisBundlesWithCounts,
+  canonicalizeBundleTags,
   generatePackPrompts,
+  filterValuesBySlotState,
+  groupValuesBySlot,
+  maxValuesPerPrompt,
   withAxisFallback,
   normalizeTagForPack,
   type PackPrompt,
+  type AxisTagMode,
+  type SlotGroup,
 } from '@/lib/pack/pack-generator'
 import { cleanSyntheticPrompt, type BulkSendCleanOptions } from '@/lib/pack/bulk-send'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from '@/lib/pack/prompt-similarity'
-import { userPreferences, type PackModeConfig } from '@/lib/storage'
+import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
-
-/** Preconfigured pack "kinds": which categories are locked (constant) vs varied. */
-export type PackKind = 'character' | 'clothing' | 'custom'
-
-const DEFAULT_LOCKED_CATEGORIES: Record<'character' | 'clothing', TagCategory[]> = {
-  // Character pack: lock who they are (appearance carries character identity
-  // here since classifyPostForPack folds tag_string_character into it), vary
-  // clothing/pose/scenery.
-  character: ['appearance'],
-  // Clothing pack: lock the outfit, vary who wears it (appearance) plus pose/scenery.
-  clothing: ['clothing'],
-}
+import { migratePackConfig } from '@/lib/pack/pack-config-migration'
+import { varietyPreset, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
+import {
+  emptyClassifiedTags,
+  slotsOf,
+  categoryOfSlot,
+  getTagSlotFromOverrides,
+} from '@/lib/tag-taxonomy'
+import { fetchTagOverridesForNames } from '@/lib/supabase/client-queries'
 
 const DEFAULT_PROMPT_COUNT = 10
 
-/** Fallback shape for a packKind with no saved config yet. */
-function emptyPackModeConfig(kind: PackKind): PackModeConfig {
-  return {
-    lockedCategories: kind === 'clothing' ? DEFAULT_LOCKED_CATEGORIES.clothing : DEFAULT_LOCKED_CATEGORIES.character,
-    axisMinCounts: {},
-    promptCount: DEFAULT_PROMPT_COUNT,
-    manualAxisValues: {},
+/** General + character tags of the given posts, display-normalized and deduped. */
+function collectPostTags(posts: BooruPost[]): string[] {
+  const out = new Set<string>()
+  for (const post of posts) {
+    for (const raw of [post.tag_string, post.tag_string_character]) {
+      if (!raw) continue
+      for (const tag of splitTags(raw)) {
+        const norm = normalizeTagForPack(tag)
+        if (norm) out.add(norm)
+      }
+    }
   }
+  return Array.from(out)
+}
+
+type AxisSample = { values: string[]; counts: Record<string, number> }
+
+/** Samples candidate pools for `categories`, classifying each post once per mode group. */
+function sampleAxes(
+  posts: BooruPost[],
+  categories: readonly TagCategory[],
+  modes: Partial<Record<TagCategory, AxisTagMode>>,
+  overrides: Record<string, string>,
+  fallbacks: Partial<Record<TagCategory, string[]>>
+): Partial<Record<TagCategory, AxisSample>> {
+  const out: Partial<Record<TagCategory, AxisSample>> = {}
+  const toCounts = (list: Array<{ value: string; count: number }>) =>
+    Object.fromEntries(list.map((v) => [v.value, v.count]))
+
+  const individual = categories.filter((cat) => modes[cat] !== 'bundle')
+  if (individual.length > 0) {
+    const sampled = extractAllAxisValuesWithCounts(posts, individual, overrides)
+    individual.forEach((cat) => {
+      const list = sampled[cat] ?? []
+      out[cat] = { values: withAxisFallback(list.map((v) => v.value), fallbacks[cat]), counts: toCounts(list) }
+    })
+  }
+
+  const bundled = categories.filter((cat) => modes[cat] === 'bundle')
+  if (bundled.length > 0) {
+    const sampled = extractAllAxisBundlesWithCounts(posts, bundled, overrides)
+    bundled.forEach((cat) => {
+      const list = sampled[cat] ?? []
+      out[cat] = { values: list.map((v) => v.value), counts: toCounts(list) }
+    })
+  }
+  return out
 }
 
 export interface UsePackModeResult {
@@ -54,11 +98,37 @@ export interface UsePackModeResult {
   baseCard: BooruPost | null
   setBaseCard: (post: BooruPost | null) => void
 
-  packKind: PackKind
-  setPackKind: (kind: PackKind) => void
+  /** Variety slider (§5): 1..5 preset level, or 'custom' after a manual Advanced edit. */
+  varietyLevel: VarietySetting
+  setVarietyLevel: (level: VarietyLevel) => void
 
   lockedCategories: Set<TagCategory>
   toggleLockedCategory: (category: TagCategory) => void
+
+  /**
+   * Slots locked inside a category that is NOT locked whole ("partial" lock):
+   * their base-card tags join lockedTags and they stop varying. A category
+   * whose every slot is locked is folded into lockedCategories instead.
+   */
+  lockedSlots: Set<string>
+  /** Toggles one slot between locked and varying (switches to 'custom'). */
+  toggleLockedSlot: (slot: string) => void
+  /** Slots switched off: they neither vary nor contribute base-card tags. */
+  mutedSlots: Set<string>
+  toggleMutedSlot: (slot: string) => void
+
+  /**
+   * Visible pool per axis grouped by slot (taxonomy order, unslotted last) —
+   * already filtered by locked/muted slots, manual values included.
+   */
+  axisSlotGroups: Partial<Record<TagCategory, SlotGroup[]>>
+  /** Pool size per slot BEFORE muting, so a muted slot's pill can still show its count. */
+  axisSlotCounts: Partial<Record<TagCategory, Record<string, number>>>
+  /** Most distinct values one prompt can take from each axis under the slot constraints. */
+  axisMaxPerPrompt: Partial<Record<TagCategory, number>>
+
+  /** tagOverrides merged with the per-tag slots fetched for the current pool. */
+  effectiveTagOverrides: Record<string, string>
 
   /** Classified tags of the base card (5 buckets), normalized for display. */
   baseClassified: Record<TagCategory, string[]>
@@ -77,17 +147,25 @@ export interface UsePackModeResult {
   activeAxisCategories: TagCategory[]
 
   /**
+   * Mode of tag sampling per category: 'individual' (single tags scrambled) vs
+   * 'bundle' (cohesive card outfits/sets kept intact). Defaults to 'individual'.
+   */
+  axisTagModes: Partial<Record<TagCategory, AxisTagMode>>
+  setAxisTagMode: (category: TagCategory, mode: AxisTagMode) => void
+  setAllAxisTagModes: (mode: AxisTagMode) => void
+
+  /**
    * Candidate value pool per axis category: booru-sampled values (seeded from
    * the loaded posts, see reseedAxis/reseedAllAxes) merged with any values
    * the user added by hand (addAxisValue) — sampled values first, manual ones
-   * appended after, deduped. Manual values are persisted per packKind (see
-   * lib/storage.ts's PackModeConfig); sampled ones never are.
+   * appended after, deduped. Manual values are persisted (see
+   * lib/storage.ts's PackModeConfigV2); sampled ones never are.
    */
   axisValues: Partial<Record<TagCategory, string[]>>
   addAxisValue: (category: TagCategory, value: string) => void
   removeAxisValue: (category: TagCategory, value: string) => void
-  reseedAxis: (category: TagCategory, posts: BooruPost[], tagOverrides?: Record<string, string>, fallbackValues?: string[]) => void
-  reseedAllAxes: (posts: BooruPost[], tagOverrides?: Record<string, string>, fallbacks?: Partial<Record<TagCategory, string[]>>) => void
+  reseedAxis: (category: TagCategory, posts: BooruPost[], fallbackValues?: string[]) => void
+  reseedAllAxes: (posts: BooruPost[], fallbacks?: Partial<Record<TagCategory, string[]>>) => void
 
   /** Minimum distinct values sampled per axis category on each generated prompt (default 1). */
   axisMinCounts: Partial<Record<TagCategory, number>>
@@ -151,52 +229,110 @@ export function usePackMode(
   const [baseCard, setBaseCardRaw] = useState<BooruPost | null>(null)
   const learning = usePackLearning()
 
-  // Lazy-load the persisted per-packKind config ONCE on mount (see
-  // PackModeConfig in lib/storage.ts). Read once into a ref instead of on
-  // every packKind switch so a config saved under a DIFFERENT session/tab
-  // mid-use can't clobber the user's in-progress edits — switching packKind
-  // only applies the config that was on disk at mount time.
-  const savedConfigsRef = useRef<Record<PackKind, PackModeConfig | undefined>>({
-    character: undefined,
-    clothing: undefined,
-    custom: undefined,
-  })
-  const [hydrated] = useState(() => {
-    if (typeof window === 'undefined') return false
+  // Lazy-load the persisted builder config ONCE on mount (see
+  // PackModeConfigV2 in lib/storage.ts), migrating from the old per-archetype
+  // config if no V2 config was ever saved. Read once via a lazy initializer
+  // so nothing reads storage during render.
+  const [initialConfig] = useState<PackModeConfigV2>(() => {
+    if (typeof window === 'undefined') return migratePackConfig(null, {}, 'character')
     try {
-      const stored = userPreferences.getPackModeConfig()
-      savedConfigsRef.current = {
-        character: stored.character,
-        clothing: stored.clothing,
-        custom: stored.custom,
-      }
-      return true
+      return migratePackConfig(
+        userPreferences.getPackModeConfigV2(),
+        userPreferences.getPackModeConfig(),
+        userPreferences.getPackModeLastKind()
+      )
     } catch {
-      return false
+      return migratePackConfig(null, {}, 'character')
     }
   })
-  // Lazy-hydrate the last-selected packKind ONCE, same timing as
-  // savedConfigsRef above — read directly (not through `hydrated`, which is
-  // a plain boolean) so this survives even if getPackModeConfig() throws
-  // while getPackModeLastKind() doesn't.
-  const [initialPackKind] = useState<PackKind>(() => {
-    if (typeof window === 'undefined') return 'character'
-    try {
-      return userPreferences.getPackModeLastKind()
-    } catch {
-      return 'character'
-    }
-  })
-  const initialConfig = hydrated
-    ? savedConfigsRef.current[initialPackKind] ?? emptyPackModeConfig(initialPackKind)
-    : emptyPackModeConfig(initialPackKind)
 
-  const [packKind, setPackKind] = useState<PackKind>(initialPackKind)
   const [lockedCategories, setLockedCategories] = useState<Set<TagCategory>>(
     new Set(initialConfig.lockedCategories)
   )
+  const [lockedSlots, setLockedSlots] = useState<Set<string>>(() => new Set(initialConfig.lockedSlots))
+  const [mutedSlots, setMutedSlots] = useState<Set<string>>(() => new Set(initialConfig.mutedSlots))
+  const [varietyLevel, setVarietyLevelRaw] = useState<VarietySetting>(initialConfig.varietyLevel)
+
+  // Locking a slot of a whole-locked category turns it into a partial lock of
+  // all its OTHER slots; locking the last varying slot folds the category back
+  // into a whole lock. That keeps one canonical state per category.
+  const toggleLockedSlot = useCallback((slot: string) => {
+    const cat = categoryOfSlot(slot)
+    if (!cat) return
+    const all = slotsOf(cat)
+    const categoryLocked = lockedCategories.has(cat)
+
+    const nextSlots = new Set(lockedSlots)
+    const nextCategories = new Set(lockedCategories)
+    if (categoryLocked) {
+      nextCategories.delete(cat)
+      all.forEach((s) => { if (s !== slot) nextSlots.add(s) })
+    } else if (nextSlots.has(slot)) {
+      nextSlots.delete(slot)
+    } else {
+      nextSlots.add(slot)
+      if (all.every((s) => nextSlots.has(s))) {
+        all.forEach((s) => nextSlots.delete(s))
+        nextCategories.add(cat)
+      }
+    }
+    setLockedSlots(nextSlots)
+    setLockedCategories(nextCategories)
+    setMutedSlots((prev) => {
+      if (!prev.has(slot)) return prev
+      const next = new Set(prev)
+      next.delete(slot)
+      return next
+    })
+  }, [lockedCategories, lockedSlots])
+
+  const toggleMutedSlot = useCallback((slot: string) => {
+    setMutedSlots((prev) => {
+      const next = new Set(prev)
+      if (next.has(slot)) next.delete(slot)
+      else next.add(slot)
+      return next
+    })
+  }, [])
+
+  // Per-tag slots fetched on demand for tags in the current pool/base card
+  // that the static overrides snapshot doesn't cover. The ref mirrors the
+  // state so async reseeds can read the latest value without a re-render.
+  // Global tagOverrides win on conflict (curated source).
+  const [poolOverrides, setPoolOverrides] = useState<Record<string, string>>({})
+  const poolOverridesRef = useRef<Record<string, string>>({})
+  const requestedSlotTagsRef = useRef<Set<string>>(new Set())
+  const effectiveOverrides = useMemo(
+    () => (Object.keys(poolOverrides).length === 0 ? tagOverrides : { ...poolOverrides, ...tagOverrides }),
+    [poolOverrides, tagOverrides]
+  )
+  const currentOverrides = useCallback(
+    () => ({ ...poolOverridesRef.current, ...tagOverrides }),
+    [tagOverrides]
+  )
+
+  /** Fetches slots for tags not yet covered or requested. Resolves true if anything new arrived. */
+  const enrichOverrides = useCallback(async (tags: string[]): Promise<boolean> => {
+    const missing = tags.filter(
+      (t) => !requestedSlotTagsRef.current.has(t) && !tagOverrides[t] && !poolOverridesRef.current[t]
+    )
+    if (missing.length === 0) return false
+    missing.forEach((t) => requestedSlotTagsRef.current.add(t))
+    try {
+      const fetched = await fetchTagOverridesForNames(missing)
+      if (Object.keys(fetched).length === 0) return false
+      poolOverridesRef.current = { ...poolOverridesRef.current, ...fetched }
+      setPoolOverrides(poolOverridesRef.current)
+      return true
+    } catch {
+      // Best-effort: heuristics + snapshot still classify these tags.
+      missing.forEach((t) => requestedSlotTagsRef.current.delete(t))
+      return false
+    }
+  }, [tagOverrides])
+
   // Axis pools sampled from the currently loaded search results — NEVER
-  // persisted (see PackModeConfig's docstring in lib/storage.ts: they'd be
+  // persisted (see PackModeConfigV2's docstring in lib/storage.ts: they'd be
   // stale, or reference tags from posts no longer in the new session's pool).
   const [axisValues, setAxisValuesRaw] = useState<Partial<Record<TagCategory, string[]>>>({})
   // Cross-post frequency count for each sampled value, index-aligned by value
@@ -207,9 +343,9 @@ export function usePackMode(
   // count as 1 (extractAxisValuesWithCounts never returns 0 either way).
   const [axisCounts, setAxisCounts] = useState<Partial<Record<TagCategory, Record<string, number>>>>({})
   // Values the user typed in by hand via the axis editor's "Add" input —
-  // these ARE persisted per packKind, since they don't come from sampling
-  // and represent an explicit, durable preference (e.g. always wanting
-  // "beach" in the scenery pool for a given character pack).
+  // these ARE persisted, since they don't come from sampling and represent
+  // an explicit, durable preference (e.g. always wanting "beach" in the
+  // scenery pool).
   const [manualAxisValues, setManualAxisValues] = useState<Partial<Record<TagCategory, string[]>>>(
     initialConfig.manualAxisValues
   )
@@ -218,6 +354,11 @@ export function usePackMode(
   )
   const [customBaseText, setCustomBaseText] = useState('')
   const [promptCount, setPromptCount] = useState(initialConfig.promptCount)
+  const [axisTagModes, setAxisTagModes] = useState<Partial<Record<TagCategory, AxisTagMode>>>(
+    initialConfig.axisTagModes ?? {}
+  )
+  const cachedPostsRef = useRef<BooruPost[]>([])
+  const cachedFallbacksRef = useRef<Partial<Record<TagCategory, string[]>>>({})
   // Generated prompts are NOT derived reactively (no useMemo over
   // axisValues/lockedTags/etc.) — regenerating on every axis edit was
   // re-running a cartesian-product sample through Smart Tag Exclusion on
@@ -244,27 +385,8 @@ export function usePackMode(
     setGeneratedPrompts([])
   }, [])
 
-  const applyPackKind = useCallback((kind: PackKind) => {
-    setPackKind(kind)
-    // Restore whatever was saved for this kind at mount time (see
-    // savedConfigsRef above) — falls back to the kind's built-in default
-    // locked categories when nothing was ever saved for it. 'custom' has no
-    // built-in default, so an unsaved 'custom' leaves lockedCategories as-is
-    // (matches the pre-persistence behavior of "custom leaves the current
-    // selection untouched").
-    const saved = savedConfigsRef.current[kind]
-    if (kind === 'character') {
-      setLockedCategories(new Set(saved?.lockedCategories ?? DEFAULT_LOCKED_CATEGORIES.character))
-    } else if (kind === 'clothing') {
-      setLockedCategories(new Set(saved?.lockedCategories ?? DEFAULT_LOCKED_CATEGORIES.clothing))
-    } else if (saved) {
-      setLockedCategories(new Set(saved.lockedCategories))
-    }
-    setAxisMinCounts(saved?.axisMinCounts ?? {})
-    setManualAxisValues(saved?.manualAxisValues ?? {})
-    if (saved?.promptCount) setPromptCount(saved.promptCount)
-  }, [])
-
+  // Whole-category toggle: locked -> varying; varying or partial -> locked.
+  // Either way the category's partial slot locks are cleared.
   const toggleLockedCategory = useCallback((category: TagCategory) => {
     setLockedCategories((prev) => {
       const next = new Set(prev)
@@ -272,13 +394,23 @@ export function usePackMode(
       else next.add(category)
       return next
     })
-    setPackKind('custom')
+    setLockedSlots((prev) => {
+      const own = slotsOf(category)
+      if (!own.some((s) => prev.has(s))) return prev
+      const next = new Set(prev)
+      own.forEach((s) => next.delete(s))
+      return next
+    })
   }, [])
 
   const baseClassified = useMemo<Record<TagCategory, string[]>>(() => {
-    if (!baseCard) return { clothing: [], pose: [], scenery: [], appearance: [], other: [] }
-    return classifyPostForPack(baseCard, tagOverrides)
-  }, [baseCard, tagOverrides])
+    if (!baseCard) return emptyClassifiedTags()
+    return classifyPostForPack(baseCard, effectiveOverrides)
+  }, [baseCard, effectiveOverrides])
+
+  useEffect(() => {
+    if (baseCard) void enrichOverrides(collectPostTags([baseCard]))
+  }, [baseCard, enrichOverrides])
 
   // Raw character tags on the base card, in on-post order — used both to
   // detect the multi-character case below and by the learning context
@@ -324,19 +456,32 @@ export function usePackMode(
       // hasMultipleCharacters lets it flag why.
       tags.push(...filterAppearanceForPrimaryCharacter(baseClassified[cat] || [], characterTags))
     })
-    // 'custom' pack kind: the user's own free-text base prompt is merged in
-    // as additional constant tags, on top of whatever categories are locked
-    // (the base card's own tags can still be included if the user also
-    // toggled some categories on — customBaseText is additive, not exclusive).
-    if (packKind === 'custom' && customBaseText.trim()) {
+    // Partially locked categories: base tags in locked slots stay constant.
+    // Tags with no known slot are kept too — they can't vary there (see
+    // filterValuesBySlotState), so dropping them would silently lose them.
+    PACK_AXES.forEach((cat) => {
+      if (lockedCategories.has(cat)) return
+      const own = slotsOf(cat)
+      if (!own.some((s) => lockedSlots.has(s))) return
+      const catTags = cat === 'appearance' && hasMultipleCharacters
+        ? filterAppearanceForPrimaryCharacter(baseClassified[cat] || [], characterTags)
+        : baseClassified[cat] || []
+      catTags.forEach((tag) => {
+        const slot = getTagSlotFromOverrides(tag, effectiveOverrides)?.slot
+        if (!slot || lockedSlots.has(slot)) tags.push(tag)
+      })
+    })
+    // Free-text base prompt ("always included"): merged in as additional constant tags,
+    // on top of whatever categories are locked.
+    if (customBaseText.trim()) {
       tags.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
     }
     return Array.from(new Set(tags.filter(Boolean)))
-  }, [baseClassified, lockedCategories, packKind, customBaseText, hasMultipleCharacters, characterTags])
+  }, [baseClassified, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, hasMultipleCharacters, characterTags])
 
   const activeAxisCategories = useMemo(
-    () => PACK_AXES.filter((cat) => !lockedCategories.has(cat)),
-    [lockedCategories]
+    () => PACK_AXES.filter((cat) => (!baseCard ? true : !lockedCategories.has(cat))),
+    [baseCard, lockedCategories]
   )
 
   // Character tags come straight from the base card (Pack Mode always has
@@ -361,22 +506,90 @@ export function usePackMode(
   // (persisted), deduped, manual values appended after sampled ones so the
   // chip list order stays "sampled first, then whatever you typed" — same
   // ordering withAxisFallback already uses for its own sampled+fallback merge.
-  const mergedAxisValues = useMemo<Partial<Record<TagCategory, string[]>>>(() => {
-    const merged: Partial<Record<TagCategory, string[]>> = {}
-    PACK_AXES.forEach((cat) => {
-      const sampled = axisValues[cat] || []
-      const manual = manualAxisValues[cat] || []
-      if (sampled.length === 0 && manual.length === 0) return
-      const seen = new Set(sampled)
-      const extraManual = manual.filter((v) => {
-        if (seen.has(v)) return false
-        seen.add(v)
-        return true
+  // Sampled values in locked/muted slots are hidden so the chips on screen are
+  // exactly what can be sampled. Manual values bypass the filter: the user
+  // typed them on purpose, and hiding them would look like Add failed.
+  const slotState = useMemo(() => ({ lockedSlots, mutedSlots }), [lockedSlots, mutedSlots])
+  const buildPools = useCallback(
+    (state: { lockedSlots: ReadonlySet<string>; mutedSlots: ReadonlySet<string> }) => {
+      const merged: Partial<Record<TagCategory, string[]>> = {}
+      PACK_AXES.forEach((cat) => {
+        const sampled = filterValuesBySlotState(cat, axisValues[cat] || [], state, effectiveOverrides)
+        const seen = new Set(sampled)
+        const extraManual = (manualAxisValues[cat] || []).filter((v) => {
+          if (seen.has(v)) return false
+          seen.add(v)
+          return true
+        })
+        if (sampled.length === 0 && extraManual.length === 0) return
+        merged[cat] = [...sampled, ...extraManual]
       })
-      merged[cat] = [...sampled, ...extraManual]
+      return merged
+    },
+    [axisValues, manualAxisValues, effectiveOverrides]
+  )
+  const mergedAxisValues = useMemo(() => buildPools(slotState), [buildPools, slotState])
+
+  const axisSlotGroups = useMemo(() => {
+    const out: Partial<Record<TagCategory, SlotGroup[]>> = {}
+    PACK_AXES.forEach((cat) => {
+      const vals = mergedAxisValues[cat]
+      if (vals) out[cat] = groupValuesBySlot(cat, vals, effectiveOverrides)
     })
-    return merged
-  }, [axisValues, manualAxisValues])
+    return out
+  }, [mergedAxisValues, effectiveOverrides])
+
+  const axisSlotCounts = useMemo(() => {
+    const unmuted = buildPools({ lockedSlots, mutedSlots: new Set<string>() })
+    const out: Partial<Record<TagCategory, Record<string, number>>> = {}
+    PACK_AXES.forEach((cat) => {
+      const counts: Record<string, number> = {}
+      groupValuesBySlot(cat, unmuted[cat] || [], effectiveOverrides).forEach(({ slot, values }) => {
+        if (slot) counts[slot] = values.length
+      })
+      out[cat] = counts
+    })
+    return out
+  }, [buildPools, lockedSlots, effectiveOverrides])
+
+  const axisMaxPerPrompt = useMemo(() => {
+    const out: Partial<Record<TagCategory, number>> = {}
+    PACK_AXES.forEach((cat) => {
+      out[cat] = maxValuesPerPrompt(axisSlotGroups[cat] || [])
+    })
+    return out
+  }, [axisSlotGroups])
+
+  /** Applies a Variety preset (§5) to the active axes and discards any 'custom' edits. */
+  const setVarietyLevel = useCallback(
+    (level: VarietyLevel) => {
+      const preset = varietyPreset(level, activeAxisCategories, axisMaxPerPrompt)
+      setAxisTagModes(preset.axisTagModes)
+      setAxisMinCounts(preset.axisMinCounts)
+      learning.setExplorationTemperature(preset.temperature)
+      setVarietyLevelRaw(level)
+    },
+    [activeAxisCategories, axisMaxPerPrompt, learning]
+  )
+
+  // Re-applies the current preset whenever the set of active axes or their
+  // per-prompt ceiling changes (e.g. unlocking a category, or the pool
+  // shrinking/growing) — a newly active axis should get the preset's mode,
+  // not be silently left without one. No-op while 'custom' (manual edits win).
+  /* eslint-disable react-hooks/set-state-in-effect -- axisTagModes/axisMinCounts
+     are independent state (a manual Advanced edit can diverge them from any
+     preset into 'custom'), not something derivable from activeAxisCategories/
+     axisMaxPerPrompt during render; this mirrors those two external-derived
+     values back onto that state whenever they change and varietyLevel isn't 'custom'. */
+  useEffect(() => {
+    if (varietyLevel === 'custom') return
+    const preset = varietyPreset(varietyLevel, activeAxisCategories, axisMaxPerPrompt)
+    setAxisTagModes(preset.axisTagModes)
+    setAxisMinCounts(preset.axisMinCounts)
+    learning.setExplorationTemperature(preset.temperature)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [varietyLevel, activeAxisCategories, axisMaxPerPrompt])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // value -> category lookup over mergedAxisValues, built once per
   // mergedAxisValues change instead of re-scanning every axis's array with
@@ -396,7 +609,12 @@ export function usePackMode(
   }, [mergedAxisValues])
 
   const addAxisValue = useCallback((category: TagCategory, value: string) => {
-    const normalized = value.trim().toLowerCase().replace(/_/g, ' ')
+    let normalized: string
+    if (axisTagModes[category] === 'bundle' || value.includes(',')) {
+      normalized = canonicalizeBundleTags(splitCommaSeparatedTags(value))
+    } else {
+      normalized = value.trim().toLowerCase().replace(/_/g, ' ')
+    }
     if (!normalized) return
     setManualAxisValues((prev) => {
       const existing = prev[category] || []
@@ -410,16 +628,21 @@ export function usePackMode(
       contextKey: learningContextKeys,
       values: [{ category, value: normalized }],
     })
-  }, [learning, learningContextKeys])
+  }, [axisTagModes, learning, learningContextKeys])
 
   const removeAxisValue = useCallback((category: TagCategory, value: string) => {
     // A chip can come from either pool (sampled or manual) — remove it from
     // whichever one currently has it. Removing a manual value also drops it
     // from the persisted manualAxisValues so it doesn't reappear next session.
+    // A bundle chip may be the slot-filtered form of a raw sampled bundle,
+    // so match on that form too.
+    const matches = (v: string) =>
+      v === value ||
+      (v.includes(',') && filterValuesBySlotState(category, [v], slotState, effectiveOverrides)[0] === value)
     setAxisValuesRaw((prev) => {
       const existing = prev[category] || []
-      if (!existing.includes(value)) return prev
-      return { ...prev, [category]: existing.filter((v) => v !== value) }
+      if (!existing.some(matches)) return prev
+      return { ...prev, [category]: existing.filter((v) => !matches(v)) }
     })
     setManualAxisValues((prev) => {
       const existing = prev[category] || []
@@ -434,56 +657,113 @@ export function usePackMode(
       contextKey: learningContextKeys,
       values: [{ category, value }],
     })
-  }, [learning, learningContextKeys])
+  }, [learning, learningContextKeys, slotState, effectiveOverrides])
+
+  // Samples right away with what's known, then once more if the on-demand
+  // slot lookup for the pool's uncovered tags brings anything new (their
+  // category may change from a heuristic guess to the DB's answer). The
+  // generation counter drops that second pass if a newer resample started.
+  const resampleGenRef = useRef(0)
+  const resample = useCallback(
+    (
+      posts: BooruPost[],
+      categories: readonly TagCategory[],
+      modes: Partial<Record<TagCategory, AxisTagMode>>,
+      fallbacks: Partial<Record<TagCategory, string[]>>,
+      replaceAll: boolean
+    ) => {
+      const gen = ++resampleGenRef.current
+      const apply = () => {
+        const samples = sampleAxes(posts, categories, modes, currentOverrides(), fallbacks)
+        const values: Partial<Record<TagCategory, string[]>> = {}
+        const counts: Partial<Record<TagCategory, Record<string, number>>> = {}
+        ;(Object.keys(samples) as TagCategory[]).forEach((cat) => {
+          values[cat] = samples[cat]!.values
+          counts[cat] = samples[cat]!.counts
+        })
+        setAxisValuesRaw((prev) => (replaceAll ? values : { ...prev, ...values }))
+        setAxisCounts((prev) => (replaceAll ? counts : { ...prev, ...counts }))
+      }
+      apply()
+      void enrichOverrides(collectPostTags(posts)).then((changed) => {
+        if (changed && gen === resampleGenRef.current) apply()
+      })
+    },
+    [currentOverrides, enrichOverrides]
+  )
 
   /** Minimum distinct values sampled from `category`'s pool per generated
-   *  prompt (clamped to [1, pool size] downstream in generatePackPrompts). */
+   *  prompt (0 deactivates the category; clamped to pool size downstream in generatePackPrompts). */
   const setAxisMinCount = useCallback((category: TagCategory, minCount: number) => {
-    setAxisMinCounts((prev) => ({ ...prev, [category]: Math.max(1, Math.floor(minCount) || 1) }))
-  }, [])
+    const val = Number.isFinite(minCount) ? Math.floor(minCount) : 1
+    const maxCeiling = axisTagModes[category] === 'bundle' ? MAX_MIN_PACKS_SLIDER : MAX_MIN_TAGS_SLIDER
+    setAxisMinCounts((prev) => ({ ...prev, [category]: Math.max(0, Math.min(maxCeiling, val)) }))
+    setVarietyLevelRaw('custom')
+  }, [axisTagModes])
+
+  const setAxisTagMode = useCallback(
+    (category: TagCategory, mode: AxisTagMode) => {
+      setAxisTagModes((prev) => ({ ...prev, [category]: mode }))
+      if (mode === 'bundle') {
+        setAxisMinCounts((prev) => {
+          if (prev[category] && prev[category]! > MAX_MIN_PACKS_SLIDER) {
+            return { ...prev, [category]: MAX_MIN_PACKS_SLIDER }
+          }
+          return prev
+        })
+      }
+      setVarietyLevelRaw('custom')
+      const posts = cachedPostsRef.current
+      if (!posts || posts.length === 0) return
+      resample(posts, [category], { [category]: mode }, cachedFallbacksRef.current, false)
+    },
+    [resample]
+  )
+
+  const setAllAxisTagModes = useCallback(
+    (mode: AxisTagMode) => {
+      const nextModes: Partial<Record<TagCategory, AxisTagMode>> = {}
+      PACK_AXES.forEach((cat) => {
+        nextModes[cat] = mode
+      })
+      setAxisTagModes(nextModes)
+      if (mode === 'bundle') {
+        setAxisMinCounts((prev) => {
+          let changed = false
+          const next = { ...prev }
+          PACK_AXES.forEach((cat) => {
+            if (next[cat] && next[cat]! > MAX_MIN_PACKS_SLIDER) {
+              next[cat] = MAX_MIN_PACKS_SLIDER
+              changed = true
+            }
+          })
+          return changed ? next : prev
+        })
+      }
+      setVarietyLevelRaw('custom')
+
+      const posts = cachedPostsRef.current
+      if (!posts || posts.length === 0) return
+      resample(posts, PACK_AXES, nextModes, cachedFallbacksRef.current, true)
+    },
+    [resample]
+  )
 
   const reseedAxis = useCallback(
-    (
-      category: TagCategory,
-      posts: BooruPost[],
-      overrides: Record<string, string> = tagOverrides,
-      fallbackValues: string[] = []
-    ) => {
-      const sampledWithCounts = extractAxisValuesWithCounts(posts, category, overrides)
-      const sampled = sampledWithCounts.map((v) => v.value)
-      const topped = withAxisFallback(sampled, fallbackValues)
-      setAxisValuesRaw((prev) => ({ ...prev, [category]: topped }))
-      setAxisCounts((prev) => ({
-        ...prev,
-        [category]: Object.fromEntries(sampledWithCounts.map((v) => [v.value, v.count])),
-      }))
+    (category: TagCategory, posts: BooruPost[], fallbackValues: string[] = []) => {
+      cachedPostsRef.current = posts
+      resample(posts, [category], axisTagModes, { [category]: fallbackValues }, false)
     },
-    [tagOverrides]
+    [resample, axisTagModes]
   )
 
   const reseedAllAxes = useCallback(
-    (
-      posts: BooruPost[],
-      overrides: Record<string, string> = tagOverrides,
-      fallbacks: Partial<Record<TagCategory, string[]>> = {}
-    ) => {
-      // Classifies every post ONCE across all PACK_AXES categories at once
-      // (extractAllAxisValuesWithCounts) instead of the old per-category loop,
-      // which called classifyPostForPack — a full re-split/re-classify of
-      // each post's tag string — once per category, i.e. 4x redundant work
-      // on every "Load more posts" click and every initial seed.
-      const sampledByCategory = extractAllAxisValuesWithCounts(posts, PACK_AXES, overrides)
-      const nextValues: Partial<Record<TagCategory, string[]>> = {}
-      const nextCounts: Partial<Record<TagCategory, Record<string, number>>> = {}
-      PACK_AXES.forEach((cat) => {
-        const sampledWithCounts = sampledByCategory[cat] ?? []
-        nextValues[cat] = withAxisFallback(sampledWithCounts.map((v) => v.value), fallbacks[cat])
-        nextCounts[cat] = Object.fromEntries(sampledWithCounts.map((v) => [v.value, v.count]))
-      })
-      setAxisValuesRaw(nextValues)
-      setAxisCounts(nextCounts)
+    (posts: BooruPost[], fallbacks: Partial<Record<TagCategory, string[]>> = {}) => {
+      cachedPostsRef.current = posts
+      cachedFallbacksRef.current = fallbacks
+      resample(posts, PACK_AXES, axisTagModes, fallbacks, true)
     },
-    [tagOverrides]
+    [resample, axisTagModes]
   )
 
   const setPromptCountClamped = useCallback((count: number) => {
@@ -492,12 +772,8 @@ export function usePackMode(
 
   const regenerate = useCallback(() => {
     // A pack needs SOME constant tags to build prompts around — either a
-    // base card, or (the "Full Setup" flow, no base card) the free-text
-    // customBaseText merged into lockedTags. Only bail when there's neither:
-    // requiring baseCard unconditionally made Full Setup a dead end (it
-    // forces packKind='custom' with baseCard=null, so lockedTags is the ONLY
-    // source of constant tags in that flow — see handleFullPackSetup in
-    // prompt-gallery.tsx).
+    // base card, or (the "From my prompt" flow, no base card) the free-text
+    // customBaseText merged into lockedTags. Only bail when there's neither.
     if (!baseCard && lockedTags.length === 0) {
       setGeneratedPrompts([])
       return
@@ -534,16 +810,31 @@ export function usePackMode(
     // generate pass at the same value left zero headroom for the 3x
     // multiplier whenever promptCount was close to MAX_PACK_PROMPTS (see
     // that constant's docstring in pack-generator.ts).
+    const effectiveAxisMinCounts: Partial<Record<TagCategory, number>> = { ...axisMinCounts }
+    PACK_AXES.forEach((cat) => {
+      const requested = effectiveAxisMinCounts[cat] ?? 1
+      if (axisTagModes[cat] === 'bundle') {
+        if (requested > MAX_MIN_PACKS_SLIDER) effectiveAxisMinCounts[cat] = MAX_MIN_PACKS_SLIDER
+        return
+      }
+      // A saved count above what the slot constraints allow would only have
+      // its extra picks dropped by them; clamp so sampling asks for what fits.
+      const cap = axisMaxPerPrompt[cat]
+      if (cap !== undefined && cap > 0 && requested > cap) effectiveAxisMinCounts[cat] = cap
+    })
     const overGenerateCount = Math.min(promptCount * 3, MAX_PACK_OVERGENERATE)
     const rawPrompts = generatePackPrompts({
       lockedTags,
       axes,
-      axisMinCounts,
+      axisMinCounts: effectiveAxisMinCounts,
       axisWeights,
       count: overGenerateCount,
       maxPrompts: overGenerateCount,
       globalWeights,
       isGlobalWeightsEnabled,
+      // Slot whitelist is already applied to the pools (mergedAxisValues),
+      // where manual values are deliberately exempt — not passed again here.
+      tagOverrides: effectiveOverrides,
     })
 
     // Run each raw combination through the exact same cleaner pipeline every
@@ -569,21 +860,27 @@ export function usePackMode(
     // position bias into a feedback loop on itself (top-scored item sits on
     // top, gets copied for being on top, scores even higher).
     const seen = new Set<string>()
-    const dupFilter = new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD)
+    const dupFilter = new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, lockedTags)
     const cleaned: PackPrompt[] = []
     for (const raw of rawPrompts) {
       if (cleaned.length >= promptCount) break
       const tags = raw.prompt.split(',').map((t) => t.trim()).filter(Boolean)
-      const prompt = cleanSyntheticPrompt(tags, characterTags, {
-        ...cleanOptions,
-        tagOverrides,
-        globalWeights,
-        isGlobalWeightsEnabled,
-      })
+      const prompt = cleanSyntheticPrompt(
+        tags,
+        characterTags,
+        {
+          ...cleanOptions,
+          tagOverrides: effectiveOverrides,
+          globalWeights,
+          isGlobalWeightsEnabled,
+          lockedTags,
+        },
+        lockedTags
+      )
       if (!prompt || seen.has(prompt)) continue
       if (!dupFilter.tryAccept(prompt)) continue
       seen.add(prompt)
-      cleaned.push({ prompt, values: raw.values })
+      cleaned.push({ prompt, values: raw.values, tagSlots: raw.tagSlots })
     }
     setGeneratedPrompts(cleaned)
 
@@ -620,12 +917,14 @@ export function usePackMode(
     promptCount,
     globalWeights,
     isGlobalWeightsEnabled,
-    tagOverrides,
+    effectiveOverrides,
     cleanOptions,
     characterTags,
     learning,
     learningContextKeys,
     axisValueCategory,
+    axisTagModes,
+    axisMaxPerPrompt,
   ])
 
   const recordPromptCopied = useCallback(
@@ -654,19 +953,20 @@ export function usePackMode(
     setAxisCounts({})
     setManualAxisValues({})
     setAxisMinCounts({})
+    setAxisTagModes({})
+    cachedPostsRef.current = []
     setCustomBaseText('')
-    setLockedCategories(new Set(DEFAULT_LOCKED_CATEGORIES.character))
-    setPackKind('character')
+    setLockedCategories(new Set<TagCategory>(['appearance']))
+    setLockedSlots(new Set())
+    setMutedSlots(new Set())
+    setVarietyLevelRaw(DEFAULT_VARIETY_LEVEL)
     setPromptCount(DEFAULT_PROMPT_COUNT)
     setGeneratedPrompts([])
   }, [])
 
-  // Persist the current per-packKind config, debounced (300ms, same idle
-  // window as usePersistentState) so rapid edits (slider drags, repeated
-  // Add-value clicks) coalesce into one write instead of one per keystroke.
-  // Writes into savedConfigsRef's snapshot too, so switching packKind later
-  // in the SAME session sees the latest edits rather than only what was on
-  // disk at mount (applyPackKind reads from this ref).
+  // Persist the current builder config, debounced (300ms, same idle window as
+  // usePersistentState) so rapid edits (slider drags, repeated Add-value
+  // clicks) coalesce into one write instead of one per keystroke.
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const skipFirstPersistRef = useRef(true)
   useEffect(() => {
@@ -678,21 +978,19 @@ export function usePackMode(
       return
     }
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
-    const snapshot: PackModeConfig = {
+    const snapshot: PackModeConfigV2 = {
       lockedCategories: Array.from(lockedCategories),
+      lockedSlots: Array.from(lockedSlots),
+      mutedSlots: Array.from(mutedSlots),
+      varietyLevel,
+      axisTagModes,
       axisMinCounts,
       promptCount,
       manualAxisValues,
     }
     persistTimerRef.current = setTimeout(() => {
-      savedConfigsRef.current = { ...savedConfigsRef.current, [packKind]: snapshot }
       try {
-        const current = userPreferences.getPackModeConfig()
-        userPreferences.setPackModeConfig({ ...current, [packKind]: snapshot })
-        // Also remember which kind this was, so the next session restores
-        // the tab the user actually left off on instead of always
-        // restarting on 'character' (see getPackModeLastKind's docstring).
-        userPreferences.setPackModeLastKind(packKind)
+        userPreferences.setPackModeConfigV2(snapshot)
       } catch {
         // Non-fatal: config persistence is best-effort, same as other
         // localStorage writes in this codebase (see lib/storage.ts's own
@@ -702,7 +1000,7 @@ export function usePackMode(
     return () => {
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
     }
-  }, [packKind, lockedCategories, axisMinCounts, promptCount, manualAxisValues])
+  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModes])
 
   return {
     isPackMode,
@@ -713,16 +1011,29 @@ export function usePackMode(
     baseCard,
     setBaseCard,
 
-    packKind,
-    setPackKind: applyPackKind,
+    varietyLevel,
+    setVarietyLevel,
 
     lockedCategories,
     toggleLockedCategory,
+
+    lockedSlots,
+    toggleLockedSlot,
+    mutedSlots,
+    toggleMutedSlot,
+    axisSlotGroups,
+    axisSlotCounts,
+    axisMaxPerPrompt,
+    effectiveTagOverrides: effectiveOverrides,
 
     baseClassified,
     hasMultipleCharacters,
     lockedTags,
     activeAxisCategories,
+
+    axisTagModes,
+    setAxisTagMode,
+    setAllAxisTagModes,
 
     axisValues: mergedAxisValues,
     addAxisValue,

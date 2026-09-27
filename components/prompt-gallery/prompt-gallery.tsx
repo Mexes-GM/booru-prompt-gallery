@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DebouncedInput, DebouncedHTMLInput } from "@/components/ui/debounced-input"
 import { SearchWithAutocomplete } from "@/components/prompt-gallery/search-with-autocomplete"
-import { AnnouncementsCarousel } from "@/components/prompt-gallery/announcements-carousel"
+import { UpdateNotesTab } from "@/components/prompt-gallery/update-notes-tab"
 import { getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -55,7 +55,6 @@ import dynamic from "next/dynamic"
 import { getCachedTagOverrides } from "@/lib/supabase/client-queries"
 import { DeploymentStatusBadges, MirrorLink } from "@/components/prompt-gallery/deployment-status"
 
-const TrendSheet = dynamic(() => import("@/components/trends/trend-sheet").then(m => m.TrendSheet), { ssr: false, loading: () => null })
 const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
 
 import pkg from "@/package.json"
@@ -153,7 +152,9 @@ import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pac
 import { PackSetupModal, type PackSetupAnswers } from "./pack-setup-modal"
 const PackBuilderStickyFooter = dynamic(() => import("./pack-builder-sticky-footer").then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
-import { FileCheck2 } from "lucide-react"
+import { FileCheck2, PenLine, SlidersHorizontal } from "lucide-react"
+import { ControlSection } from "@/components/prompt-gallery/control-section"
+import { ProviderSelect } from "@/components/prompt-gallery/provider-select"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { SaveFavoriteButton } from "./save-favorite-button"
 import { useDebounce } from "@/hooks/use-debounce"
@@ -163,6 +164,7 @@ import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { GalleryModals } from "@/components/prompt-gallery/gallery-modals"
 import { GalleryHeader } from "@/components/prompt-gallery/gallery-header"
 import { MainTour } from "@/components/prompt-gallery/main-tour"
+import { recordPromptCopy } from "@/lib/support-prompt"
 import { GalleryHero } from "@/components/prompt-gallery/gallery-hero"
 import { TagsManagementPanel } from "@/components/prompt-gallery/tags-management-panel"
 import { PromptGenerationOptionsPanel } from "@/components/prompt-gallery/prompt-generation-options-panel"
@@ -377,10 +379,10 @@ function UnavailablePostsNotice({
           <div className="flex flex-col sm:flex-row items-center gap-4 py-1">
             <div className="flex items-center gap-3 flex-1">
               <div className="bg-destructive/10 p-2 rounded-full">
-                <AlertCircle className="h-5 w-5 text-destructive" />
+                <AlertCircle className="h-5 w-5 text-destructive-text" />
               </div>
               <div className="space-y-1">
-                <AlertTitle className="text-destructive font-medium mb-0">Missing Favorites</AlertTitle>
+                <AlertTitle className="text-destructive-text font-medium mb-0">Missing Favorites</AlertTitle>
                 <AlertDescription className="text-muted-foreground text-xs leading-relaxed">
                   <strong className="text-foreground">{unavailableKeys.length}</strong> posts couldn&apos;t be loaded from the original booru server. They might be temporarily down or deleted by the author.
                 </AlertDescription>
@@ -390,7 +392,7 @@ function UnavailablePostsNotice({
               onClick={handleCheck} 
               variant="outline" 
               size="sm"
-              className="w-full sm:w-auto shrink-0 border-destructive/20 hover:bg-destructive/10 hover:text-destructive transition-colors"
+              className="w-full sm:w-auto shrink-0 border-destructive/20 hover:bg-destructive/10 hover:text-destructive-text transition-colors"
             >
               <Search className="h-4 w-4 mr-2" />
               Check availability
@@ -401,9 +403,9 @@ function UnavailablePostsNotice({
         {state.phase === 'checking' && (
           <div className="flex flex-col gap-2 py-2">
             <div className="flex items-center gap-4">
-              <Loader2 className="h-5 w-5 text-destructive animate-spin shrink-0" />
+              <Loader2 className="h-5 w-5 text-destructive-text animate-spin shrink-0" />
               <div className="space-y-1 flex-1">
-                <AlertTitle className="text-destructive font-medium mb-0">Verifying on booru...</AlertTitle>
+                <AlertTitle className="text-destructive-text font-medium mb-0">Verifying on booru...</AlertTitle>
                 <AlertDescription className="text-muted-foreground text-xs">
                   Querying the original server to see if the posts still exist. This might take a few seconds due to rate limits.
                 </AlertDescription>
@@ -426,7 +428,7 @@ function UnavailablePostsNotice({
         {state.phase === 'done' && (
           <div className="flex flex-col gap-3 py-1 animate-in fade-in duration-300">
             {state.recovered > 0 && (
-              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 p-2 rounded-md border border-emerald-200 dark:border-emerald-500/20">
+              <div className="flex items-center gap-2 text-success-text bg-success-soft p-2 rounded-md border border-success-border">
                 <CheckCircle className="h-4 w-4 shrink-0" />
                 <span className="text-sm font-medium">
                   Success! {state.recovered} {state.recovered === 1 ? 'post was' : 'posts were'} recovered and permanently restored to your gallery.
@@ -438,10 +440,10 @@ function UnavailablePostsNotice({
               <div className="flex flex-col sm:flex-row items-center gap-4 mt-1">
                 <div className="flex items-center gap-3 flex-1">
                   <div className="bg-destructive/10 p-2 rounded-full shrink-0">
-                    <Trash2 className="h-5 w-5 text-destructive" />
+                    <Trash2 className="h-5 w-5 text-destructive-text" />
                   </div>
                   <div className="space-y-1">
-                    <AlertTitle className="text-destructive font-medium mb-0">Posts Deleted</AlertTitle>
+                    <AlertTitle className="text-destructive-text font-medium mb-0">Posts Deleted</AlertTitle>
                     <AlertDescription className="text-muted-foreground text-xs">
                       <strong className="text-foreground">{state.confirmed.length}</strong> posts have been permanently removed from the booru source and cannot be recovered.
                     </AlertDescription>
@@ -554,7 +556,9 @@ export function PromptGallery() {
   const {
     promptOptions, setPromptOptions,
     includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
+    autoAppendSearchTags,
     setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
+    setAutoAppendSearchTags,
   } = usePromptOptions()
 
   const [showCategoryTagBadges, setShowCategoryTagBadges] = useState(true)
@@ -610,7 +614,11 @@ export function PromptGallery() {
     STORAGE_KEYS.ADD_TAGS
   )
 
-  const [showSettings, setShowSettings] = useState(true)
+  // The two option groups of the control panel ("Search filters" /
+  // "Customize prompt"). They open as dropdowns over the page (bottom sheets
+  // on mobile), so they always start closed instead of being remembered.
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [promptOptionsOpen, setPromptOptionsOpen] = useState(false)
   const [tourRunSignal, setTourRunSignal] = useState(0)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   // In-place card expansion: id of the single card currently expanded to reveal
@@ -628,7 +636,6 @@ export function PromptGallery() {
   const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
 
   // Modals
-  const [teachModalData, setTeachModalData] = useState<{ open: boolean, tags: ClassifiedTags | null }>({ open: false, tags: null })
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [isQuickTeachOpen, setIsQuickTeachOpen] = useState(false)
 
@@ -685,25 +692,6 @@ export function PromptGallery() {
       // Storage may be unavailable (private mode); non-fatal.
     }
   }, [isPromptOptionsExpanded])
-
-  // Announcements Panel state: auto-expand on new version
-  const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(true)
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('announcements_state')
-      const parsed = raw ? JSON.parse(raw) : null
-      if (parsed && parsed.version === pkg.version) {
-        setIsAnnouncementsOpen(!parsed.collapsed)
-      } else {
-        setIsAnnouncementsOpen(true)
-        localStorage.setItem('announcements_state', JSON.stringify({ collapsed: false, version: pkg.version }))
-      }
-    } catch {
-      setIsAnnouncementsOpen(true)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   // Merge Mode Hook
   // Find & Replace pairs (find[i] -> replace[i]), same pairing rule as useCardPrompt.
@@ -783,9 +771,8 @@ export function PromptGallery() {
   // 'character'/'clothing' locked categories from.
   const handleFullPackSetup = useCallback(() => {
     setPendingPackBase(null)
-    packMode.setPackKind('custom')
     setPackSetupOpen(true)
-  }, [packMode])
+  }, [])
 
   const handlePackSetupCancel = useCallback(() => {
     setPackSetupOpen(false)
@@ -820,10 +807,10 @@ export function PromptGallery() {
     })
     if (hasSeededRef.current) return
     hasSeededRef.current = true
-    packModeReseedAllAxes(seedSearch.allPosts, tagOverrides, packAxisFallbacks)
+    packModeReseedAllAxes(seedSearch.allPosts, packAxisFallbacks)
     const seeded = await packSeed.ensureSeeded(() => packSeedSearchRef.current ?? seedSearch)
-    packModeReseedAllAxes(seeded, tagOverrides, packAxisFallbacks)
-  }, [packModeReseedAllAxes, tagOverrides, packAxisFallbacks, packSeed])
+    packModeReseedAllAxes(seeded, packAxisFallbacks)
+  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed])
 
   // Manual "Load more posts" — reuses whatever usePackSeedSearch instance is
   // currently mounted (same tags/rating/solo answers from the Pack Setup
@@ -835,12 +822,12 @@ export function PromptGallery() {
     if (!packSeedSearchRef.current) return
     const target = packSeedSearchRef.current.allPosts.length + PACK_SEED_TARGET_POSTS
     const seeded = await packSeed.ensureSeeded(() => packSeedSearchRef.current!, target)
-    packModeReseedAllAxes(seeded, tagOverrides, packAxisFallbacks)
+    packModeReseedAllAxes(seeded, packAxisFallbacks)
     setPackSeedSnapshot({
       postCount: seeded.length,
       canLoadMore: !packSeedSearchRef.current.noMoreResults && !packSeedSearchRef.current.sessionCapReached,
     })
-  }, [packSeed, packModeReseedAllAxes, tagOverrides, packAxisFallbacks])
+  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks])
 
   // Stable "Re-sample" handler for a single axis category — MUST be memoized:
   // PackBuilderStickyFooter passes this straight through to each AxisEditor
@@ -850,8 +837,8 @@ export function PromptGallery() {
   const packModeReseedAxis = packMode.reseedAxis
   const handleReseedAxis = useCallback((category: TagCategory) => {
     if (!packSeedSearchRef.current) return
-    packModeReseedAxis(category, packSeedSearchRef.current.allPosts, tagOverrides, packAxisFallbacks[category])
-  }, [packModeReseedAxis, tagOverrides, packAxisFallbacks])
+    packModeReseedAxis(category, packSeedSearchRef.current.allPosts, packAxisFallbacks[category])
+  }, [packModeReseedAxis, packAxisFallbacks])
 
   // Pack Mode learning instrumentation (docs/pack-mode-learning-plan.md §7.7,
   // last bullet) — aggregate product events only, so the A/B/T/EPSILON
@@ -865,21 +852,22 @@ export function PromptGallery() {
     posthog.capture('pack_axis_value_removed', {
       category,
       booru_source: search.booruProvider,
-      pack_kind: packMode.packKind,
+      variety_level: packMode.varietyLevel,
     })
-  }, [packModeRemoveAxisValue, posthog, search.booruProvider, packMode.packKind])
+  }, [packModeRemoveAxisValue, posthog, search.booruProvider, packMode.varietyLevel])
 
   const packModeRegenerate = packMode.regenerate
   const handlePackRegenerate = useCallback(() => {
     packModeRegenerate()
     posthog.capture('pack_generated', {
       booru_source: search.booruProvider,
-      pack_kind: packMode.packKind,
+      variety_level: packMode.varietyLevel,
+      locked_categories: Array.from(packMode.lockedCategories).join(','),
       prompt_count: packMode.promptCount,
       locked_category_count: packMode.lockedCategories.size,
       active_axis_count: packMode.activeAxisCategories.length,
     })
-  }, [packModeRegenerate, posthog, search.booruProvider, packMode.packKind, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
+  }, [packModeRegenerate, posthog, search.booruProvider, packMode.varietyLevel, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
 
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
@@ -1108,6 +1096,7 @@ export function PromptGallery() {
       })
       setTimeout(() => setCopiedId(null), 2000)
       trackCopy(postId)
+      recordPromptCopy()
     } catch (error) {
       toastError({
         title: "Error",
@@ -1234,11 +1223,26 @@ export function PromptGallery() {
     "large breasts, swimsuit",
   ], [search.isShuffle])
 
+  // Card-facing copies of the prompt options. Toggling one of these re-derives
+  // the prompt of EVERY mounted card (~12ms each), so the cards read deferred
+  // values: the panel control repaints immediately in the urgent render, and
+  // the card recompute runs afterwards as an interruptible background render
+  // (same approach as deferredBackgroundMode) instead of freezing the toggle.
+  const cardIncludeCharacters = useDeferredValue(includeCharacters)
+  const cardOptimizeTags = useDeferredValue(optimizeTags)
+  const cardSmartTagExclusion = useDeferredValue(smartTagExclusion)
+  const cardPrependAnimaArtist = useDeferredValue(prependAnimaArtist)
+  const cardAutoAppendSearchTags = useDeferredValue(autoAppendSearchTags)
+  const cardRemoveLoRaTags = useDeferredValue(search.removeLoRaTags)
+  const cardRemoveQualityTags = useDeferredValue(search.removeQualityTags)
+  const cardIsGlobalWeightsEnabled = useDeferredValue(isGlobalWeightsEnabled)
+  const cardShowCategoryTagBadges = useDeferredValue(showCategoryTagBadges)
+
   const filteredPosts = useFilteredPosts({
     allPosts: search.allPosts,
     booruProvider: search.booruProvider,
     blacklist,
-    includeCharacters,
+    includeCharacters: cardIncludeCharacters,
     appliedCharacterCountFilter: search.appliedCharacterCountFilter,
     tagCounts,
     favorites: {
@@ -1355,15 +1359,16 @@ export function PromptGallery() {
       excludeInput={debouncedExcludeInput}
       addInput={debouncedAddInput}
       searchTags={search.debouncedSearchTags}
+      autoAppendSearchTags={cardAutoAppendSearchTags}
       findInput={debouncedFindInput}
       replaceInput={debouncedReplaceInput}
       tagAppendRules={tagAppendRules}
-      includeCharacters={includeCharacters}
-      optimizeTags={optimizeTags}
-      smartTagExclusion={smartTagExclusion}
-      prependAnimaArtist={prependAnimaArtist}
-      removeLoRaTags={search.removeLoRaTags}
-      removeQualityTags={search.removeQualityTags}
+      includeCharacters={cardIncludeCharacters}
+      optimizeTags={cardOptimizeTags}
+      smartTagExclusion={cardSmartTagExclusion}
+      prependAnimaArtist={cardPrependAnimaArtist}
+      removeLoRaTags={cardRemoveLoRaTags}
+      removeQualityTags={cardRemoveQualityTags}
       backgroundMode={deferredBackgroundMode}
       simpleBackgroundReplacementTags={debouncedSimpleBackgroundReplacementTags}
       randomBackgroundPatterns={randomBackgroundPatterns}
@@ -1375,7 +1380,6 @@ export function PromptGallery() {
       copiedId={copiedId}
       isExpanded={expandedPostId === post.id}
       onToggleExpand={handleToggleExpand}
-      setTeachModalData={setTeachModalData}
       isMergeMode={mergeModeIsMergeMode}
       isSelected={mergeModeSelectedPosts.has(post.id)}
       selectedParts={mergeModeSelectedPosts.get(post.id)?.parts}
@@ -1386,15 +1390,15 @@ export function PromptGallery() {
       onSetAsPackBase={handleSetAsPackBase}
       onSkipAnimation={() => setCopiedId(null)}
       globalWeights={globalWeights}
-      isGlobalWeightsEnabled={isGlobalWeightsEnabled}
+      isGlobalWeightsEnabled={cardIsGlobalWeightsEnabled}
       onGlobalWeightChange={handleGlobalWeightChange}
       onSearch={handleTagSearch}
       onImageError={handleImageError}
       isNaturalLanguageMode={isAiConvertMode}
       onSendToConvert={handleSendToConvert}
-      showCategoryTagBadges={showCategoryTagBadges}
+      showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist, search.removeLoRaTags, search.removeQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, isGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, showCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase])
+  }, [viewMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
@@ -1427,7 +1431,8 @@ export function PromptGallery() {
         <MainTour
           runSignal={tourRunSignal}
           onStart={() => {
-            setShowSettings(true)
+            // Tour steps point at the section headers, which are always
+            // visible — no need to expand (or, on mobile, open sheets).
             setIsPromptOptionsExpanded(true)
           }}
         />
@@ -1435,12 +1440,16 @@ export function PromptGallery() {
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
           <div className="w-full max-w-6xl mx-auto mb-4 sm:mb-8 space-y-4 sm:space-y-6">
-            <GalleryHero
-              isAnnouncementsOpen={isAnnouncementsOpen}
-              onDismissAnnouncements={() => { setIsAnnouncementsOpen(false); localStorage.setItem('announcements_state', JSON.stringify({ collapsed: true, version: pkg.version })) }}
-            />
+            <GalleryHero />
 
-            <Card ref={controlPanelRef} className="glass-effect">
+            {/* mt-* leaves room above the card for the Update Notes tab (and
+                the mascot peeking over it), which is docked on its top edge. */}
+            <Card ref={controlPanelRef} className="glass-effect relative z-20 !mt-14">
+              {/* Overlaps the card's top border by 1px so it reads as a folder
+                  tab rather than a floating chip. */}
+              <div className="absolute bottom-full left-4 sm:left-6 -mb-px">
+                <UpdateNotesTab version={pkg.version} />
+              </div>
               <CardContent className="p-4 sm:p-6">
                 <form onSubmit={(e) => {
                   search.handleSearch(e)
@@ -1450,30 +1459,67 @@ export function PromptGallery() {
                       document.getElementById('results-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                     }, 150)
                   }
-                }} className="space-y-6">
+                }} className="space-y-5">
 
-                  {/* Top Bar: Provider Selection & Quick Actions */}
+                  {/* Search row: provider picker docked to the input, NSFW, Shuffle */}
+                  <div className="space-y-2">
+                    <SearchBar
+                      placeholders={placeholders}
+                      searchTags={search.searchTags}
+                      setSearchTags={search.setSearchTags}
+                      handleSearch={search.handleSearch}
+                      clearSearch={search.clearSearch}
+                      isClient={search.isClient}
+                      booruProvider={search.booruProvider}
+                      ratingFilter={search.ratingFilter}
+                      setRatingFilter={search.setRatingFilter}
+                      isShuffle={search.isShuffle}
+                      toggleShuffle={search.toggleShuffle}
+                      refresh={search.refresh}
+                      isValidating={search.isValidating}
+                      leading={
+                        <ProviderSelect
+                          booruProvider={search.booruProvider}
+                          setBooruProvider={search.setBooruProvider}
+                          onProviderChange={(p) => {
+                            // Switching source leaves the Favorites/History views.
+                            if (favs.showFavorites) favs.toggleShowFavorites()
+                            if (showHistory) toggleShowHistory()
+                            trackProviderChange(p)
+                          }}
+                        />
+                      }
+                    />
+
+                    {/* What's actually sent to the booru, right under the input it describes */}
+                    <QueryStatusPanel
+                      variant="inline"
+                      blacklistCount={blacklist.length}
+                      searchTags={search.searchTags}
+                      ratingFilter={search.ratingFilter}
+                      order={search.order}
+                      appliedTagCountFilter={search.appliedTagCountFilter}
+                      appliedScoreTier={search.appliedScoreTier}
+                      booruProvider={search.booruProvider}
+                    />
+                  </div>
+
+                  <div className="h-px bg-border/60" />
+
+                  {/* Mode bar: Browse / Merge / Pack + Favorites, History, Tools */}
                   <GalleryToolbar
-                    booruProvider={search.booruProvider}
-                    setBooruProvider={search.setBooruProvider}
                     showFavorites={favs.showFavorites}
-                    toggleShowFavorites={favs.toggleShowFavorites}
+                    toggleFavorites={favs.toggleShowFavorites}
                     favoritesCount={favs.favorites.size}
                     showHistory={showHistory}
-                    toggleShowHistory={toggleShowHistory}
+                    toggleHistory={toggleShowHistory}
                     historyCount={historyTotal}
                     isMergeMode={mergeMode.isMergeMode}
-                    mergeModeType={mergeMode.mergeModeType}
                     disableMergeMode={mergeMode.disableMergeMode}
                     enableMergeMode={() => {
                       setIsAiConvertMode(false)
                       if (packModeIsPackMode) packMode.disablePackMode()
                       mergeMode.enableMergeMode()
-                    }}
-                    enableVariationMode={() => {
-                      setIsAiConvertMode(false)
-                      if (packModeIsPackMode) packMode.disablePackMode()
-                      mergeMode.enableVariationMode()
                     }}
                     isPackMode={packModeIsPackMode}
                     disablePackMode={packMode.disablePackMode}
@@ -1482,116 +1528,185 @@ export function PromptGallery() {
                       if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
                       packMode.enablePackMode()
                     }}
-                    setSearchTags={search.setSearchTags}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onOpenQuickTeach={() => setIsQuickTeachOpen(true)}
-                    onProviderChange={trackProviderChange}
                   />
 
-                  {/* Search Bar Section */}
-                  <SearchBar
-                    placeholders={placeholders}
-                    searchTags={search.searchTags}
-                    setSearchTags={search.setSearchTags}
-                    handleSearch={search.handleSearch}
-                    clearSearch={search.clearSearch}
-                    isClient={search.isClient}
-                    booruProvider={search.booruProvider}
-                    ratingFilter={search.ratingFilter}
-                    setRatingFilter={search.setRatingFilter}
-                    isShuffle={search.isShuffle}
-                    toggleShuffle={search.toggleShuffle}
-                    refresh={search.refresh}
-                    isValidating={search.isValidating}
-                    blacklist={blacklist}
-                    addTag={addTag}
-                    removeTag={removeTag}
-                    resetBlacklist={resetBlacklist}
-                    showSettings={showSettings}
-                    setShowSettings={setShowSettings}
-                  />
+                  {/* The two option groups: what gets fetched / how the prompt comes out */}
+                  {(() => {
+                    const tagCount = parseInt(search.tagCountFilter) || 5
+                    const scoreLabel = search.scoreTier === "off" ? "Any score" : `${search.scoreTier.charAt(0).toUpperCase()}${search.scoreTier.slice(1)}+ score`
+                    const filtersSummary = [
+                      isTagCountSupported ? `Min. ${tagCount} tags` : null,
+                      scoreLabel,
+                      includeCharacters && (parseInt(search.characterCountFilter) || 0) > 0 ? `Characters ${search.characterCountFilter}+` : null,
+                      blacklist.length > 0 ? `${blacklist.length} blacklisted` : null,
+                    ].filter(Boolean).join(" · ")
 
-                  {/* Advanced Filters & Options */}
-                  <Collapsible open={showSettings} onOpenChange={setShowSettings}>
-                    <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                      <TagsManagementPanel
-                        addInput={addInput}
-                        setAddInput={setAddInput}
-                        isPresetDialogOpen={isPresetDialogOpen}
-                        setIsPresetDialogOpen={setIsPresetDialogOpen}
-                        presetName={presetName}
-                        setPresetName={setPresetName}
-                        savePreset={savePreset}
-                        presets={presets}
-                        loadPreset={loadPreset}
-                        deletePreset={deletePreset}
-                        excludeInput={excludeInput}
-                        setExcludeInput={setExcludeInput}
-                        findInput={findInput}
-                        setFindInput={setFindInput}
-                        replaceInput={replaceInput}
-                        setReplaceInput={setReplaceInput}
-                        tagAppendRules={tagAppendRules}
-                        setTagAppendRules={setTagAppendRules}
-                        tagCountFilter={search.tagCountFilter}
-                        setTagCountFilter={search.setTagCountFilter}
-                        setAppliedTagCountFilter={search.setAppliedTagCountFilter}
-                        isTagCountSupported={isTagCountSupported}
-                        isTagCountValid={isTagCountValid}
-                        scoreTier={search.scoreTier}
-                        setScoreTier={search.setScoreTier}
-                        setAppliedScoreTier={search.setAppliedScoreTier}
-                        characterCountFilter={search.characterCountFilter}
-                        setCharacterCountFilter={search.setCharacterCountFilter}
-                        setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
-                        includeCharacters={includeCharacters}
-                      />
+                    const addedTagCount = splitCommaSeparatedTags(addInput).length
+                    const outputFlags = search.booruProvider === 'aibooru'
+                      ? [search.removeLoRaTags, search.removeQualityTags, autoAppendSearchTags, isGlobalWeightsEnabled]
+                      : [includeCharacters, optimizeTags, autoAppendSearchTags, prependAnimaArtist, isGlobalWeightsEnabled]
+                    const promptSummary = [
+                      addedTagCount > 0 ? `+${addedTagCount} tag${addedTagCount === 1 ? '' : 's'} added` : "No tags added",
+                      excludeInput.trim() ? `${splitCommaSeparatedTags(excludeInput).length} removed` : null,
+                      `${outputFlags.filter(Boolean).length} of ${outputFlags.length} options on`,
+                      backgroundMode !== 'keep' ? "custom background" : null,
+                    ].filter(Boolean).join(" · ")
 
-                      {/* Prompt Generation Options — right column of the 2-col panel */}
-                      <PromptGenerationOptionsPanel
-                        isPromptOptionsExpanded={isPromptOptionsExpanded}
-                        setIsPromptOptionsExpanded={setIsPromptOptionsExpanded}
-                        booruProvider={search.booruProvider}
-                        includeCharacters={includeCharacters}
-                        setIncludeCharacters={setIncludeCharacters}
-                        optimizeTags={optimizeTags}
-                        setOptimizeTags={setOptimizeTags}
-                        smartTagExclusion={smartTagExclusion}
-                        setSmartTagExclusion={setSmartTagExclusion}
-                        prependAnimaArtist={prependAnimaArtist}
-                        setPrependAnimaArtist={setPrependAnimaArtist}
-                        removeLoRaTags={search.removeLoRaTags}
-                        setRemoveLoRaTags={search.setRemoveLoRaTags}
-                        removeQualityTags={search.removeQualityTags}
-                        setRemoveQualityTags={search.setRemoveQualityTags}
-                        isGlobalWeightsEnabled={isGlobalWeightsEnabled}
-                        toggleGlobalWeights={toggleGlobalWeights}
-                        setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
-                        backgroundMode={backgroundMode}
-                        setBackgroundMode={setBackgroundMode}
-                        simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
-                        setSimpleBackgroundReplacementTags={setSimpleBackgroundReplacementTags}
-                        randomBackgroundPatterns={randomBackgroundPatterns}
-                        setRandomBackgroundPatterns={setRandomBackgroundPatterns}
-                        randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
-                        setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
-                        backgroundMatchStrictness={backgroundMatchStrictness}
-                        setBackgroundMatchStrictness={setBackgroundMatchStrictness}
-                      />
+                    return (
+                      <div className="relative grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start" data-tour="controls">
+                        <ControlSection
+                          title="Search filters"
+                          summary={filtersSummary}
+                          icon={<SlidersHorizontal />}
+                          open={filtersOpen}
+                          onOpenChange={setFiltersOpen}
+                          data-tour="search-filters"
+                        >
+                          <TagsManagementPanel
+                            embedded
+                            section="filters"
+                            blacklistCount={blacklist.length}
+                            blacklistSlot={search.isClient ? (
+                              <BlacklistManager
+                                triggerVariant="edit"
+                                blacklist={blacklist}
+                                onAdd={addTag}
+                                onRemove={removeTag}
+                                onReset={resetBlacklist}
+                              />
+                            ) : null}
+                            addInput={addInput}
+                            setAddInput={setAddInput}
+                            isPresetDialogOpen={isPresetDialogOpen}
+                            setIsPresetDialogOpen={setIsPresetDialogOpen}
+                            presetName={presetName}
+                            setPresetName={setPresetName}
+                            savePreset={savePreset}
+                            presets={presets}
+                            loadPreset={loadPreset}
+                            deletePreset={deletePreset}
+                            excludeInput={excludeInput}
+                            setExcludeInput={setExcludeInput}
+                            findInput={findInput}
+                            setFindInput={setFindInput}
+                            replaceInput={replaceInput}
+                            setReplaceInput={setReplaceInput}
+                            tagAppendRules={tagAppendRules}
+                            setTagAppendRules={setTagAppendRules}
+                            tagCountFilter={search.tagCountFilter}
+                            setTagCountFilter={search.setTagCountFilter}
+                            setAppliedTagCountFilter={search.setAppliedTagCountFilter}
+                            isTagCountSupported={isTagCountSupported}
+                            isTagCountValid={isTagCountValid}
+                            scoreTier={search.scoreTier}
+                            setScoreTier={search.setScoreTier}
+                            setAppliedScoreTier={search.setAppliedScoreTier}
+                            characterCountFilter={search.characterCountFilter}
+                            setCharacterCountFilter={search.setCharacterCountFilter}
+                            setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
+                            includeCharacters={includeCharacters}
+                          />
+                        </ControlSection>
+
+                        <ControlSection
+                          title="Customize prompt"
+                          summary={promptSummary}
+                          icon={<PenLine />}
+                          accent
+                          wide
+                          open={promptOptionsOpen}
+                          onOpenChange={setPromptOptionsOpen}
+                          data-tour="customize-prompt"
+                        >
+                          {/* Two columns on desktop (Tags | Output) so the whole
+                              section fits on screen without an inner scroll. */}
+                          <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-2">
+                            <div className="flex flex-col gap-3">
+                            <span className="text-xs font-semibold text-muted-foreground">Tags</span>
+                            <div>
+                              <TagsManagementPanel
+                                embedded
+                                section="edits"
+                                smartTagExclusion={smartTagExclusion}
+                                setSmartTagExclusion={setSmartTagExclusion}
+                                addInput={addInput}
+                                setAddInput={setAddInput}
+                                isPresetDialogOpen={isPresetDialogOpen}
+                                setIsPresetDialogOpen={setIsPresetDialogOpen}
+                                presetName={presetName}
+                                setPresetName={setPresetName}
+                                savePreset={savePreset}
+                                presets={presets}
+                                loadPreset={loadPreset}
+                                deletePreset={deletePreset}
+                                excludeInput={excludeInput}
+                                setExcludeInput={setExcludeInput}
+                                findInput={findInput}
+                                setFindInput={setFindInput}
+                                replaceInput={replaceInput}
+                                setReplaceInput={setReplaceInput}
+                                tagAppendRules={tagAppendRules}
+                                setTagAppendRules={setTagAppendRules}
+                                tagCountFilter={search.tagCountFilter}
+                                setTagCountFilter={search.setTagCountFilter}
+                                setAppliedTagCountFilter={search.setAppliedTagCountFilter}
+                                isTagCountSupported={isTagCountSupported}
+                                isTagCountValid={isTagCountValid}
+                                scoreTier={search.scoreTier}
+                                setScoreTier={search.setScoreTier}
+                                setAppliedScoreTier={search.setAppliedScoreTier}
+                                characterCountFilter={search.characterCountFilter}
+                                setCharacterCountFilter={search.setCharacterCountFilter}
+                                setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
+                                includeCharacters={includeCharacters}
+                              />
+                            </div>
+                            </div>
+                            <div className="flex flex-col gap-1 border-t border-border/60 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+                            <span className="text-xs font-semibold text-muted-foreground">Output</span>
+                            <div>
+                              <PromptGenerationOptionsPanel
+                                variant="embedded"
+                                isPromptOptionsExpanded={isPromptOptionsExpanded}
+                                setIsPromptOptionsExpanded={setIsPromptOptionsExpanded}
+                                booruProvider={search.booruProvider}
+                                includeCharacters={includeCharacters}
+                                setIncludeCharacters={setIncludeCharacters}
+                                optimizeTags={optimizeTags}
+                                setOptimizeTags={setOptimizeTags}
+                                smartTagExclusion={smartTagExclusion}
+                                setSmartTagExclusion={setSmartTagExclusion}
+                                prependAnimaArtist={prependAnimaArtist}
+                                setPrependAnimaArtist={setPrependAnimaArtist}
+                                autoAppendSearchTags={autoAppendSearchTags}
+                                setAutoAppendSearchTags={setAutoAppendSearchTags}
+                                removeLoRaTags={search.removeLoRaTags}
+                                setRemoveLoRaTags={search.setRemoveLoRaTags}
+                                removeQualityTags={search.removeQualityTags}
+                                setRemoveQualityTags={search.setRemoveQualityTags}
+                                isGlobalWeightsEnabled={isGlobalWeightsEnabled}
+                                toggleGlobalWeights={toggleGlobalWeights}
+                                setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
+                                backgroundMode={backgroundMode}
+                                setBackgroundMode={setBackgroundMode}
+                                simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
+                                setSimpleBackgroundReplacementTags={setSimpleBackgroundReplacementTags}
+                                randomBackgroundPatterns={randomBackgroundPatterns}
+                                setRandomBackgroundPatterns={setRandomBackgroundPatterns}
+                                randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
+                                setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
+                                backgroundMatchStrictness={backgroundMatchStrictness}
+                                setBackgroundMatchStrictness={setBackgroundMatchStrictness}
+                              />
+                            </div>
+                            </div>
+                          </div>
+                        </ControlSection>
                       </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-
-                  {/* Status & Alerts */}
-                  <QueryStatusPanel
-                    searchTags={search.searchTags}
-                    ratingFilter={search.ratingFilter}
-                    order={search.order}
-                    appliedTagCountFilter={search.appliedTagCountFilter}
-                    appliedScoreTier={search.appliedScoreTier}
-                    booruProvider={search.booruProvider}
-                  />
+                    )
+                  })()}
                 </form>
               </CardContent>
             </Card>
@@ -1781,8 +1896,6 @@ export function PromptGallery() {
       </div>
 
       <GalleryModals
-        teachModalData={teachModalData}
-        setTeachModalData={setTeachModalData}
         onTeachSuccess={refreshOverrides}
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
@@ -1888,6 +2001,7 @@ export function PromptGallery() {
         baseCard={pendingPackBase}
         currentSearchTags={search.searchTags}
         currentBooruProvider={search.booruProvider}
+        tagOverrides={packMode.effectiveTagOverrides}
         customBaseText={packMode.customBaseText}
         onCustomBaseTextChange={packMode.setCustomBaseText}
         onConfirm={handlePackSetupConfirm}
@@ -1897,10 +2011,16 @@ export function PromptGallery() {
         isOpen={packModeIsPackMode}
         baseCard={packMode.baseCard}
         hasSetupAnswers={!!packSetupAnswers}
-        packKind={packMode.packKind}
-        setPackKind={packMode.setPackKind}
         lockedCategories={packMode.lockedCategories}
         toggleLockedCategory={packMode.toggleLockedCategory}
+        lockedSlots={packMode.lockedSlots}
+        toggleLockedSlot={packMode.toggleLockedSlot}
+        mutedSlots={packMode.mutedSlots}
+        toggleMutedSlot={packMode.toggleMutedSlot}
+        axisSlotGroups={packMode.axisSlotGroups}
+        axisSlotCounts={packMode.axisSlotCounts}
+        axisMaxPerPrompt={packMode.axisMaxPerPrompt}
+        tagOverrides={packMode.effectiveTagOverrides}
         baseClassified={packMode.baseClassified}
         lockedTags={packMode.lockedTags}
         activeAxisCategories={packMode.activeAxisCategories}
@@ -1908,6 +2028,9 @@ export function PromptGallery() {
         onAddAxisValue={packMode.addAxisValue}
         onRemoveAxisValue={handlePackRemoveAxisValue}
         onReseedAxis={handleReseedAxis}
+        axisTagModes={packMode.axisTagModes}
+        onSetAxisTagMode={packMode.setAxisTagMode}
+        onSetAllAxisTagModes={packMode.setAllAxisTagModes}
         axisMinCounts={packMode.axisMinCounts}
         onSetAxisMinCount={packMode.setAxisMinCount}
         customBaseText={packMode.customBaseText}
@@ -1945,8 +2068,6 @@ export function PromptGallery() {
       />
 
       <GalleryModals
-        teachModalData={teachModalData}
-        setTeachModalData={setTeachModalData}
         onTeachSuccess={refreshOverrides}
         showWelcomeModal={showWelcomeModal}
         setShowWelcomeModal={setShowWelcomeModal}
