@@ -6,6 +6,7 @@ import type { TagAppendRule } from '@/lib/cleanPrompt'
 import type { BooruProvider, BooruPost } from '@/lib/booru/types'
 import type { TagCategory } from '@/lib/tag-classifier'
 import type { PackLearningModel } from '@/lib/pack/pack-learning'
+import type { AxisTagMode } from '@/lib/pack/pack-generator'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -61,13 +62,11 @@ export const STORAGE_KEYS = {
   REMOVE_LORA_TAGS: 'remove-lora-tags',
   REMOVE_QUALITY_TAGS: 'remove-quality-tags',
   RATING_FILTER: 'rating-filter',
-  ORDER: 'order',
   HISTORY: 'prompt-history',
   ADD_TAGS_PRESETS: 'add-tags-presets',
   MINIMUM_TAG_COUNT: 'minimum-tag-count',
   SCORE_TIER: 'scoreTier',
   MINIMUM_CHARACTER_COUNT: 'minimum-character-count',
-  CHARACTER_COUNT_RANGE: 'character-count-range',
   BLACKLIST: 'blacklist',
   GLOBAL_WEIGHTS: 'global-weights',
   GLOBAL_WEIGHTS_ENABLED: 'global-weights-enabled',
@@ -78,7 +77,6 @@ export const STORAGE_KEYS = {
   FIND_REPLACE_REPLACE: 'find-replace-replace-input',
   TAG_APPEND_RULES: 'tag-append-rules',
   PROMPT_OPTIONS: 'prompt-options',
-  VIEW_MODE: 'view-mode',
   CARD_SCALE: 'card-scale',
   BACKGROUND_MODE: 'background-mode',
   SIMPLE_BACKGROUND_REPLACEMENT_TAGS: 'simple-background-replacement-tags',
@@ -112,6 +110,11 @@ export const STORAGE_KEYS = {
   // behavior: max(width, height) never exceeds it) instead of the side of an
   // equivalent total-pixel-area budget (see lib/extension/generation-resolution.ts).
   MATCH_RESOLUTION_STRICT_CAP: 'extension-match-resolution-strict-cap',
+  // When true, the computed resolution snaps to the closest curated "bucket"
+  // aspect ratio (1:1, 2:3/3:2, 3:4/4:3, 9:16/16:9 — see
+  // SUPPORTED_BUCKET_RESOLUTIONS in lib/extension/generation-resolution.ts)
+  // instead of preserving the source post's raw, often-unusual aspect ratio.
+  MATCH_RESOLUTION_SNAP_TO_BUCKET: 'extension-match-resolution-snap-to-bucket',
 
   // Extension "Bulk Send" mode toggle (real posts vs. synthetic/pack variations).
   BULK_SEND_MODE: 'extension-bulk-send-mode',
@@ -129,6 +132,16 @@ export const STORAGE_KEYS = {
   // the user actually left off on.
   PACK_MODE_LAST_KIND: 'pack-mode-last-kind',
 
+  // Pack Mode simplification (docs/superpowers/specs/2026-09-27-pack-mode-simplification-design.md):
+  // a single config replaces the per-archetype PACK_MODE_CONFIG map above.
+  // V1 keys are kept (read-only) so migratePackConfig can still translate them.
+  PACK_MODE_CONFIG_V2: 'pack-mode-config-v2',
+  // Last-used "source of variations" answers (rating/solo/tags/provider),
+  // reused as the popover's default and to detect first use.
+  PACK_SOURCE_ANSWERS: 'pack-source-answers',
+  // Last prompt pasted in "From my prompt", restored as the textarea's value.
+  PACK_LAST_BASE_PROMPT: 'pack-last-base-prompt',
+
   // Pack Mode local learning model (docs/pack-mode-learning-plan.md §7) —
   // strictly local to this browser, never synced or shared (see §10 of that
   // plan). Separate key from PACK_MODE_CONFIG since this grows independently
@@ -139,6 +152,13 @@ export const STORAGE_KEYS = {
   // resetting the LEARNING data (Reset learning button) doesn't also reset
   // this preference.
   PACK_LEARNING_TEMPERATURE: 'pack-learning-temperature',
+
+  // One-time donation appeal (see lib/support-prompt.ts): running count of
+  // copies, the distinct days on which the user copied something, and a flag
+  // set the moment the modal is shown so it never repeats.
+  SUPPORT_COPY_COUNT: 'support-copy-count',
+  SUPPORT_ACTIVE_DAYS: 'support-active-days',
+  SUPPORT_MODAL_SEEN: 'support-modal-seen',
 } as const
 
 export interface HistoryItem {
@@ -177,6 +197,13 @@ export interface PromptOptions {
    * checkpoints will just see it as a literal, meaningless tag.
    */
   prependAnimaArtist?: boolean
+  /**
+   * Whether tags typed in the search bar but missing from a post's own
+   * prompt get silently appended to the final prompt. Defaults to true
+   * (preserves the historical behavior) — exposed as a real switch so this
+   * is no longer an invisible always-on transformation (plan task 2.5 / E3).
+   */
+  autoAppendSearchTags?: boolean
 }
 
 // History entries embed a self-contained snapshot of the copied post
@@ -234,7 +261,7 @@ export function createTagAppendRule(): TagAppendRule {
 // Type-safe getters and setters for specific preferences
 export const userPreferences = {
   getPromptOptions: (): PromptOptions =>
-    storage.get(STORAGE_KEYS.PROMPT_OPTIONS, { includeCharacters: true, optimizeTags: true, smartTagExclusion: true, prependAnimaArtist: false }),
+    storage.get(STORAGE_KEYS.PROMPT_OPTIONS, { includeCharacters: true, optimizeTags: true, smartTagExclusion: true, prependAnimaArtist: false, autoAppendSearchTags: true }),
 
   setPromptOptions: (options: PromptOptions) =>
     storage.set(STORAGE_KEYS.PROMPT_OPTIONS, options),
@@ -305,21 +332,6 @@ export const userPreferences = {
 
   setMinimumCharacterCount: (count: string) =>
     storage.set(STORAGE_KEYS.MINIMUM_CHARACTER_COUNT, count),
-
-  getCharacterCountRange: (): [number, number] => {
-    const raw = storage.get(STORAGE_KEYS.CHARACTER_COUNT_RANGE, "0_10000")
-    const [min, max] = raw.split('_').map(Number)
-    return [min || 0, max || 10000]
-  },
-
-  setCharacterCountRange: (range: [number, number]) =>
-    storage.set(STORAGE_KEYS.CHARACTER_COUNT_RANGE, `${range[0]}_${range[1]}`),
-
-  getOrder: (): 'popular' | 'recent' | 'random' =>
-    storage.get(STORAGE_KEYS.ORDER, 'popular'),
-
-  setOrder: (order: 'popular' | 'recent' | 'random') =>
-    storage.set(STORAGE_KEYS.ORDER, order),
 
   // Reads history and, on the first read after this change, migrates it in
   // place: legacy items (pre-`provider` field) that cannot be reconstructed
@@ -441,12 +453,6 @@ export const userPreferences = {
 
   setTagAppendRules: (rules: TagAppendRule[]) =>
     storage.set(STORAGE_KEYS.TAG_APPEND_RULES, rules),
-
-  getViewMode: (): 'grid' | 'list' =>
-    storage.get(STORAGE_KEYS.VIEW_MODE, 'grid'),
-
-  setViewMode: (mode: 'grid' | 'list') =>
-    storage.set(STORAGE_KEYS.VIEW_MODE, mode),
 
   getCardScale: (): 'small' | 'medium' | 'large' =>
     storage.get(STORAGE_KEYS.CARD_SCALE, 'medium'),
@@ -584,6 +590,12 @@ export const userPreferences = {
   setMatchResolutionStrictCap: (val: boolean) =>
     storage.set(STORAGE_KEYS.MATCH_RESOLUTION_STRICT_CAP, val),
 
+  getMatchResolutionSnapToBucket: (): boolean =>
+    storage.get(STORAGE_KEYS.MATCH_RESOLUTION_SNAP_TO_BUCKET, false),
+
+  setMatchResolutionSnapToBucket: (val: boolean) =>
+    storage.set(STORAGE_KEYS.MATCH_RESOLUTION_SNAP_TO_BUCKET, val),
+
   // Extension "Bulk Send" mode toggle
   getBulkSendMode: (): string =>
     storage.get(STORAGE_KEYS.BULK_SEND_MODE, "real"),
@@ -599,16 +611,16 @@ export const userPreferences = {
   setPackModeConfig: (config: PackModeConfigByKind) =>
     storage.set(STORAGE_KEYS.PACK_MODE_CONFIG, config),
 
-  // Which packKind tab ('character' | 'clothing' | 'custom') was last
-  // selected. Validated against the known literal union on read so a
-  // corrupted/stale value falls back to the default instead of propagating
-  // an invalid packKind into React state.
-  getPackModeLastKind: (): 'character' | 'clothing' | 'custom' => {
+  // Which pack archetype was last selected. Validated against the known
+  // literal union on read so a corrupted/stale value falls back to the
+  // default; the legacy 'clothing' value maps to its successor 'wardrobe'.
+  getPackModeLastKind: (): PackModeKind => {
     const stored = storage.get<string>(STORAGE_KEYS.PACK_MODE_LAST_KIND, 'character')
-    return stored === 'character' || stored === 'clothing' || stored === 'custom' ? stored : 'character'
+    if (stored === 'clothing') return 'wardrobe'
+    return (PACK_MODE_KINDS as readonly string[]).includes(stored) ? (stored as PackModeKind) : 'character'
   },
 
-  setPackModeLastKind: (kind: 'character' | 'clothing' | 'custom') =>
+  setPackModeLastKind: (kind: PackModeKind) =>
     storage.set(STORAGE_KEYS.PACK_MODE_LAST_KIND, kind),
 
   // Pack Mode local learning model (see lib/pack/pack-learning.ts). The
@@ -644,6 +656,31 @@ export const userPreferences = {
 
   setPackLearningTemperature: (temperature: number) =>
     storage.set(STORAGE_KEYS.PACK_LEARNING_TEMPERATURE, temperature),
+
+  // Pack Mode simplification (§7): single config replacing the per-archetype
+  // map. Validated on read — a corrupted/legacy-shaped value reads back as
+  // null so migratePackConfig falls through to the V1 migration path.
+  getPackModeConfigV2: (): PackModeConfigV2 | null => {
+    const stored = storage.get<unknown>(STORAGE_KEYS.PACK_MODE_CONFIG_V2, null)
+    return isPackModeConfigV2(stored) ? stored : null
+  },
+
+  setPackModeConfigV2: (config: PackModeConfigV2) =>
+    storage.set(STORAGE_KEYS.PACK_MODE_CONFIG_V2, config),
+
+  getPackSourceAnswers: (): StoredPackSourceAnswers | null => {
+    const stored = storage.get<unknown>(STORAGE_KEYS.PACK_SOURCE_ANSWERS, null)
+    return isStoredPackSourceAnswers(stored) ? stored : null
+  },
+
+  setPackSourceAnswers: (answers: StoredPackSourceAnswers) =>
+    storage.set(STORAGE_KEYS.PACK_SOURCE_ANSWERS, answers),
+
+  getLastPackBasePrompt: (): string =>
+    storage.get(STORAGE_KEYS.PACK_LAST_BASE_PROMPT, ''),
+
+  setLastPackBasePrompt: (prompt: string) =>
+    storage.set(STORAGE_KEYS.PACK_LAST_BASE_PROMPT, prompt),
 }
 
 /**
@@ -662,9 +699,80 @@ export interface PackModeConfig {
   axisMinCounts: Partial<Record<TagCategory, number>>
   promptCount: number
   manualAxisValues: Partial<Record<TagCategory, string[]>>
+  axisTagModes?: Partial<Record<TagCategory, AxisTagMode>>
+  /** Slots locked inside a partially locked category ("category:subcategory"). */
+  lockedSlots?: string[]
+  /** Slots switched off in a varying category. */
+  mutedSlots?: string[]
 }
 
-export type PackModeConfigByKind = Partial<Record<'character' | 'clothing' | 'custom', PackModeConfig>>
+// Mirrors PackArchetypeId in lib/tag-taxonomy.ts (kept literal so storage stays a leaf module).
+export const PACK_MODE_KINDS = ['character', 'wardrobe', 'expressions', 'atmosphere', 'custom'] as const
+export type PackModeKind = (typeof PACK_MODE_KINDS)[number]
+
+export type PackModeConfigByKind = Partial<Record<PackModeKind | 'clothing' | string, PackModeConfig>>
+
+/**
+ * Single Pack Mode builder config (Pack Mode simplification, see
+ * docs/superpowers/specs/2026-09-27-pack-mode-simplification-design.md §7.1).
+ * Replaces the per-archetype `PackModeConfigByKind` map above: archetypes are
+ * gone, so there is exactly one config, not one per kind. Same exclusions as
+ * `PackModeConfig` (no baseCard, no sampled axisValues — only
+ * `manualAxisValues` survives a session).
+ */
+export interface PackModeConfigV2 {
+  lockedCategories: TagCategory[]
+  lockedSlots: string[]
+  mutedSlots: string[]
+  varietyLevel: 1 | 2 | 3 | 4 | 5 | 'custom'
+  /** Only meaningful when varietyLevel === 'custom'. */
+  axisTagModes: Partial<Record<TagCategory, AxisTagMode>>
+  /** Only meaningful when varietyLevel === 'custom'. */
+  axisMinCounts: Partial<Record<TagCategory, number>>
+  promptCount: number
+  manualAxisValues: Partial<Record<TagCategory, string[]>>
+}
+
+function isPackModeConfigV2(value: unknown): value is PackModeConfigV2 {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Partial<PackModeConfigV2>
+  return (
+    Array.isArray(v.lockedCategories) &&
+    Array.isArray(v.lockedSlots) &&
+    Array.isArray(v.mutedSlots) &&
+    (v.varietyLevel === 'custom' || (typeof v.varietyLevel === 'number' && v.varietyLevel >= 1 && v.varietyLevel <= 5)) &&
+    typeof v.axisTagModes === 'object' && v.axisTagModes !== null &&
+    typeof v.axisMinCounts === 'object' && v.axisMinCounts !== null &&
+    typeof v.promptCount === 'number' &&
+    typeof v.manualAxisValues === 'object' && v.manualAxisValues !== null
+  )
+}
+
+/**
+ * Same fields as `PackSetupAnswers` (components/prompt-gallery/pack-setup-modal.tsx),
+ * duplicated here with local literal types so storage.ts stays a leaf module
+ * (no import from components/). "packSourceChosen" (§7.2) is implicit: a
+ * non-null value read back from storage means the user already answered once.
+ */
+export interface StoredPackSourceAnswers {
+  ratingMode: 'sfw' | 'questionable' | 'explicit' | 'both'
+  soloOnly: boolean
+  tagsSource: 'current' | 'custom' | 'empty'
+  searchTags: string
+  booruProvider: BooruProvider
+}
+
+function isStoredPackSourceAnswers(value: unknown): value is StoredPackSourceAnswers {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Partial<StoredPackSourceAnswers>
+  return (
+    (['sfw', 'questionable', 'explicit', 'both'] as const).includes(v.ratingMode as 'sfw') &&
+    typeof v.soloOnly === 'boolean' &&
+    (['current', 'custom', 'empty'] as const).includes(v.tagsSource as 'current') &&
+    typeof v.searchTags === 'string' &&
+    typeof v.booruProvider === 'string'
+  )
+}
 
 export interface SavedArtist {
   provider: string
