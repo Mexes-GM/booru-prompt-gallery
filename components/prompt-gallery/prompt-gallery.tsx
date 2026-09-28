@@ -957,6 +957,15 @@ export function PromptGallery() {
     packMode.togglePackMode()
   }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packMode])
 
+  // "Make pack" card shortcut (task 8) — activates Pack Mode with this post as
+  // the base directly, skipping the entry modal entirely.
+  const handleMakePack = useCallback((post: BooruPost) => {
+    setIsAiConvertMode(false)
+    if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
+    packMode.enablePackMode()
+    handleSetAsPackBase(post)
+  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packMode, handleSetAsPackBase])
+
   const effectiveScale = useMemo(() => {
     if (isMobile) {
       if (cardScale === 'small') return 'large'
@@ -1423,6 +1432,7 @@ export function PromptGallery() {
       isPackMode={packModeIsPackMode}
       isPackBase={packMode.baseCard?.id === post.id}
       onSetAsPackBase={handleSetAsPackBase}
+      onMakePack={handleMakePack}
       onSkipAnimation={() => setCopiedId(null)}
       globalWeights={globalWeights}
       isGlobalWeightsEnabled={cardIsGlobalWeightsEnabled}
@@ -1433,7 +1443,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase])
+  }, [viewMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
 
   const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
   const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])

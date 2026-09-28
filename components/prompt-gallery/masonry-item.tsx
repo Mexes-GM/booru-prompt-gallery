@@ -1,25 +1,19 @@
-import { useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
+import { Fragment, useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { isDanbooruCircuitOpen, openDanbooruCircuit } from "@/lib/booru/danbooru-circuit"
-import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
     Copy,
     Check,
-    ExternalLink,
     Heart,
-    Download,
     ChevronDown,
     Shirt,
     User,
     Mountain,
     Smile,
-    GraduationCap,
     AlertCircle,
-    Sliders,
-    Replace,
     Users,
     Loader2,
     Tag,
@@ -49,8 +43,8 @@ const RICHNESS_DEPTH_LABEL: Record<RichnessDepth, string> = {
 }
 const RICHNESS_DEPTH_CLASS: Record<RichnessDepth, string> = {
     none: "text-muted-foreground",
-    shallow: "text-amber-400",
-    deep: "text-emerald-400",
+    shallow: "text-warning-text",
+    deep: "text-success-text",
 }
 
 // Temporary kill-switch (2026-07-16): the richness badge was judged not useful enough
@@ -59,18 +53,20 @@ const RICHNESS_DEPTH_CLASS: Record<RichnessDepth, string> = {
 // without redoing any of the plumbing.
 const SHOW_RICHNESS_BADGE = false
 
+// Per-category breakdown shown inside the tag-count chip's tooltip (these used to be
+// four always-visible colored chips on the image).
+const CATEGORY_BREAKDOWN = [
+    { key: "appearance", label: "Appearance", Icon: Smile, className: "text-cat-appearance-text" },
+    { key: "clothing", label: "Outfit", Icon: Shirt, className: "text-cat-clothing-text" },
+    { key: "pose", label: "Pose", Icon: User, className: "text-cat-pose-text" },
+    { key: "scenery", label: "Scene", Icon: Mountain, className: "text-cat-scenery-text" },
+] as const
+
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger
-} from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { SaveFavoriteButton } from "./save-favorite-button"
-import { SaveArtistButton } from "./save-artist-button"
+import { CardActionsMenu } from "./card-actions-menu"
+import { CopyOptionsDropdown } from "./copy-options-dropdown"
 import { FavoriteFolder } from "@/hooks/use-booru-favorites"
 import { trackExternalLink } from "@/lib/analytics"
 import { usePostHog } from 'posthog-js/react'
@@ -86,7 +82,7 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] rounded-xl cursor-pointer"
+            className="absolute inset-0 z-50 flex items-center justify-center bg-overlay/60 backdrop-blur-[2px] rounded-xl cursor-pointer"
             role="button"
             aria-label="Close success overlay"
             tabIndex={0}
@@ -113,7 +109,7 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
                             opacity: [1, 1, 0]
                         }}
                         transition={{ duration: 0.6, ease: "easeOut" }}
-                        className="absolute w-1.5 h-1.5 bg-green-400 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.8)]"
+                        className="absolute w-1.5 h-1.5 bg-success rounded-full shadow-[0_0_8px_var(--success)]"
                     />
                 ))}
 
@@ -121,16 +117,16 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
                     initial={lowMotion ? { scale: 1, rotate: 0 } : { scale: 0.95, rotate: -45, opacity: 0 }}
                     animate={{ scale: 1, rotate: 0, opacity: 1 }}
                     transition={lowMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 20 }}
-                    className="bg-gradient-to-br from-green-400 to-green-600 rounded-full p-4 shadow-[0_0_20px_rgba(74,222,128,0.4)] relative z-10"
+                    className="bg-success rounded-full p-4 shadow-[0_0_20px_color-mix(in_oklab,var(--success)_40%,transparent)] relative z-10"
                 >
-                    <Check className="h-8 w-8 text-white stroke-[3px]" />
+                    <Check className="h-8 w-8 text-success-foreground stroke-[3px]" />
                 </motion.div>
 
                 <motion.span
                     initial={lowMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={lowMotion ? { duration: 0 } : { delay: 0.1 }}
-                    className="mt-3 text-white font-bold tracking-widest text-sm uppercase drop-shadow-lg"
+                    className="mt-3 text-overlay-foreground font-bold tracking-widest text-sm uppercase drop-shadow-lg"
                 >
                     Copied
                 </motion.span>
@@ -146,7 +142,6 @@ interface MasonryItemProps {
     width: number
     height: number
     index?: number
-    viewMode?: "grid" | "list"
     effectiveScale: "small" | "medium" | "large"
     booruProvider: BooruProvider
     isFavorited: boolean
@@ -165,11 +160,15 @@ interface MasonryItemProps {
     isPackBase?: boolean
     /** Set this post as the Pack Mode base card. */
     onSetAsPackBase?: (post: BooruPost) => void
+    /** Outside Pack Mode only — activates it with this post as the base, no entry modal. */
+    onMakePack?: (post: BooruPost) => void
     downloadImage: (post: BooruPost) => void
     copyToClipboard: (text: string, id: number, isPrompt: boolean, thumb?: string) => Promise<void>
     excludeInput: string
     addInput: string
     searchTags?: string
+    /** Whether missing search-bar tags get auto-appended (see searchTags). Defaults to true. */
+    autoAppendSearchTags?: boolean
     /** "Find" side of the Find & Replace list (comma-separated, paired by index with replaceInput). */
     findInput?: string
     /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput). */
@@ -191,7 +190,6 @@ interface MasonryItemProps {
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
-    setTeachModalData: (data: { open: boolean, tags: ClassifiedTags }) => void
     onSkipAnimation?: () => void
     globalWeights?: Record<string, number>
     isGlobalWeightsEnabled?: boolean
@@ -216,7 +214,6 @@ export const MasonryItem = memo(function MasonryItem({
     width,
     height,
     index = 999,
-    viewMode = "grid",
     effectiveScale,
     booruProvider,
     isFavorited,
@@ -232,11 +229,13 @@ export const MasonryItem = memo(function MasonryItem({
     isPackMode = false,
     isPackBase = false,
     onSetAsPackBase,
+    onMakePack,
     downloadImage,
     copyToClipboard,
     excludeInput,
     addInput,
     searchTags,
+    autoAppendSearchTags = true,
     findInput = "",
     replaceInput = "",
     includeCharacters,
@@ -255,7 +254,6 @@ export const MasonryItem = memo(function MasonryItem({
     tagOverrides,
     copiedId,
     isPreviouslyCopied,
-    setTeachModalData,
     onSkipAnimation,
     globalWeights = {},
     isGlobalWeightsEnabled = false,
@@ -306,7 +304,6 @@ export const MasonryItem = memo(function MasonryItem({
         displayContent,
         pureDisplayContent,
         characterTagsArray,
-        getClassifiedTeachTags,
         totalTagsCount,
         tagCountIndicator,
         classifiedTags,
@@ -321,6 +318,7 @@ export const MasonryItem = memo(function MasonryItem({
         excludeInput,
         addInput,
         searchTags,
+        autoAppendSearchTags,
         findInput,
         replaceInput,
         includeCharacters,
@@ -478,17 +476,8 @@ export const MasonryItem = memo(function MasonryItem({
 
     // hasActiveOptions now comes from useCardPrompt()
 
-    // Landscape posts get a short, wide image cell. The bottom-right badge stack
-    // (category tag counts + total tag count) normally stacks vertically (flex-col),
-    // which needs more height than a landscape cell has and ends up overlapping the
-    // top-right hover action buttons. For landscape posts, lay those badges out
-    // horizontally instead so they stay a single short row.
-    const isLandscape = !!(post.width && post.height && post.width > post.height)
-    const badgeStackDirection = isLandscape ? "flex-row items-center" : "flex-col items-end"
-
-    // Grid View
+    // Grid is now the only card layout — list view was removed (plan U6/3.4).
     const renderCard = () => {
-    if (viewMode === "grid") {
         const footerHeight = SCALE_CONFIG[effectiveScale].footerHeight
         const imageHeight = height - footerHeight
 
@@ -518,14 +507,9 @@ export const MasonryItem = memo(function MasonryItem({
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-green-500/40 shadow-sm"
+                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-success-border shadow-sm"
                             >
-                                <motion.div
-                                   animate={lowMotion ? undefined : { scale: [1, 1.2, 1] }}
-                                   transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
-                                >
-                                    <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
-                                </motion.div>
+                                <Check className="w-3.5 h-3.5 text-success-text" strokeWidth={3} />
                             </motion.div>
                         </div>
                     )}
@@ -541,12 +525,12 @@ export const MasonryItem = memo(function MasonryItem({
                                     stiffness: 400,
                                     damping: 30
                                 }}
-                                className={`absolute inset-0 z-20 flex flex-col justify-end p-2 transition-colors ${isSelected ? 'bg-black/20' : 'bg-transparent'}`}
+                                className={`absolute inset-0 z-20 flex flex-col justify-end p-2 transition-colors ${isSelected ? 'bg-overlay/20' : 'bg-transparent'}`}
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 {/* Inline Selection Bar */}
                                 <motion.div
-                                    className="flex items-center justify-between w-full max-w-[220px] mx-auto bg-background/85 border border-white/10 shadow-2xl rounded-2xl p-1.5 gap-1.5 ring-1 ring-black/5"
+                                    className="flex items-center justify-between w-full max-w-[220px] mx-auto bg-background/85 border border-border/40 shadow-2xl rounded-2xl p-1.5 gap-1.5 ring-1 ring-foreground/5"
                                     initial={{ scale: 0.9, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 25 }}
@@ -562,15 +546,15 @@ export const MasonryItem = memo(function MasonryItem({
                                                     Mountain
 
                                         // Colors mapping
-                                        const activeColorClass = part === 'appearance' ? 'bg-blue-500 shadow-blue-500/50' :
-                                            part === 'pose' ? 'bg-purple-500 shadow-purple-500/50' :
-                                                part === 'clothing' ? 'bg-green-500 shadow-green-500/50' :
-                                                    'bg-orange-500 shadow-orange-500/50'
+                                        const activeColorClass = part === 'appearance' ? 'bg-cat-appearance text-cat-appearance-foreground shadow-cat-appearance/30' :
+                                            part === 'pose' ? 'bg-cat-pose text-cat-pose-foreground shadow-cat-pose/30' :
+                                                part === 'clothing' ? 'bg-cat-clothing text-cat-clothing-foreground shadow-cat-clothing/30' :
+                                                    'bg-cat-scenery text-cat-scenery-foreground shadow-cat-scenery/30'
 
-                                        const inactiveColorClass = part === 'appearance' ? 'hover:text-blue-500 hover:bg-blue-500/10' :
-                                            part === 'pose' ? 'hover:text-purple-500 hover:bg-purple-500/10' :
-                                                part === 'clothing' ? 'hover:text-green-500 hover:bg-green-500/10' :
-                                                    'hover:text-orange-500 hover:bg-orange-500/10'
+                                        const inactiveColorClass = part === 'appearance' ? 'hover:text-cat-appearance-text hover:bg-cat-appearance-soft' :
+                                            part === 'pose' ? 'hover:text-cat-pose-text hover:bg-cat-pose-soft' :
+                                                part === 'clothing' ? 'hover:text-cat-clothing-text hover:bg-cat-clothing-soft' :
+                                                    'hover:text-cat-scenery-text hover:bg-cat-scenery-soft'
 
                                         return (
                                             <Tooltip key={part}>
@@ -590,15 +574,15 @@ export const MasonryItem = memo(function MasonryItem({
                                                               ${!hasTags
                                                                     ? `opacity-40 cursor-not-allowed bg-muted/50 text-muted-foreground`
                                                                     : isChecked
-                                                                        ? `${activeColorClass} text-white shadow-lg shadow-${part === 'appearance' ? 'blue' : part === 'pose' ? 'purple' : part === 'clothing' ? 'green' : 'orange'}-500/20`
-                                                                        : `text-muted-foreground hover:bg-white/10 hover:text-foreground`
+                                                                        ? `${activeColorClass} shadow-lg`
+                                                                        : `text-muted-foreground hover:bg-foreground/10 hover:text-foreground`
                                                                 }
                                                             `}
                                                         >
                                                             {isChecked && (
                                                                 <motion.div
                                                                     layoutId={`active-bg-${part}-${post.id}`}
-                                                                    className="absolute inset-0 rounded-xl bg-gradient-to-b from-white/20 to-transparent"
+                                                                    className="absolute inset-0 rounded-xl bg-gradient-to-b from-overlay-foreground/20 to-transparent"
                                                                     initial={{ opacity: 0 }}
                                                                     animate={{ opacity: 1 }}
                                                                     exit={{ opacity: 0 }}
@@ -633,7 +617,7 @@ export const MasonryItem = memo(function MasonryItem({
                         key={retryKey}
                         src={displayFileUrl || ''}
                         alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
-                        className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
+                        className="absolute inset-0 w-full h-full object-cover object-top"
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw"
                         loading={index < 8 ? "eager" : "lazy"}
                         fetchPriority={index < 8 ? "high" : "low"}
@@ -648,71 +632,36 @@ export const MasonryItem = memo(function MasonryItem({
                         </div>
                     )}
 
-                    {/* Bottom-left stack: options/replacement indicators above the character post count */}
-                    {(
+                    {/* Bottom-left: one static "prompt adjusted" dot. Smart Tag Exclusion
+                        and Find & Replace used to be two separately animated badges; the
+                        tooltip now carries the detail so the image stays clean. */}
+                    {(hasActiveOptions || hasReplacements || SHOW_RICHNESS_BADGE) && (
                         <div className="absolute bottom-2 left-2 z-20 flex flex-col items-start gap-1">
-                            {hasActiveOptions && (
+                            {(hasActiveOptions || hasReplacements) && (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
-                                        <div className="pointer-events-auto" aria-label="Options affecting prompt">
-                                            <motion.div
-                                                initial={{ opacity: 0, scale: 0.8 }}
-                                                animate={{ opacity: 1, scale: 1 }}
-                                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm cursor-help"
-                                            >
-                                                <motion.div
-                                                   animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
-                                                   transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                                >
-                                                    <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
-                                                </motion.div>
-                                            </motion.div>
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top" className="text-xs">
-                                        Smart Tag Exclusion
-                                    </TooltipContent>
-                                </Tooltip>
-                            )}
-                            {hasReplacements && (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div
-                                            className="pointer-events-auto"
-                                            aria-label={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
+                                        <span
+                                            tabIndex={0}
+                                            className="flex h-5 w-5 items-center justify-center rounded-full bg-overlay/60 shadow-sm cursor-help focus-ring"
+                                            aria-label={[
+                                                "Prompt adjusted",
+                                                hasActiveOptions ? "Smart Tag Exclusion" : null,
+                                                hasReplacements ? `Find & Replace: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}` : null,
+                                            ].filter(Boolean).join(". ")}
                                         >
-                                            <motion.div
-                                                initial={{ opacity: 0, scale: 0.8 }}
-                                                animate={{ opacity: 1, scale: 1 }}
-                                                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                                className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm cursor-help"
-                                            >
-                                                <motion.div
-                                                   animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
-                                                   transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                                >
-                                                    <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
-                                                </motion.div>
-                                            </motion.div>
-                                        </div>
+                                            <span className="h-2 w-2 rounded-full bg-info" aria-hidden="true" />
+                                        </span>
                                     </TooltipTrigger>
                                     <TooltipContent side="top" className="text-xs">
-                                        Find &amp; Replace
-                                    </TooltipContent>
-                                </Tooltip>
-                            )}
-                            {/* Character Tag Count Indicator */}
-                            {tagCountIndicator && includeCharacters && (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help">
-                                            <Users className="w-3.5 h-3.5 opacity-70" />
-                                            {tagCountIndicator}
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="font-medium">Prompt adjusted</span>
+                                            {hasActiveOptions && <span className="text-muted-foreground">Smart Tag Exclusion</span>}
+                                            {hasReplacements && replacedTags.map(r => (
+                                                <span key={`${r.from}-${r.to}`} className="text-muted-foreground">
+                                                    {r.from} → {r.to}
+                                                </span>
+                                            ))}
                                         </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top" className="text-xs">
-                                        Character Post Count
                                     </TooltipContent>
                                 </Tooltip>
                             )}
@@ -721,11 +670,11 @@ export const MasonryItem = memo(function MasonryItem({
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <div
-                                        className={`px-1.5 py-0.5 rounded-md bg-black/60 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help pointer-events-auto ${richnessScore.score >= 8
-                                            ? "text-emerald-400"
+                                        className={`px-1.5 py-0.5 dark rounded-md bg-overlay/60 text-xs font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help pointer-events-auto ${richnessScore.score >= 8
+                                            ? "text-success-text"
                                             : richnessScore.score <= 3
-                                                ? "text-red-400"
-                                                : "text-amber-400"
+                                                ? "text-destructive-text"
+                                                : "text-warning-text"
                                             }`}
                                         aria-label={`Richness score: ${richnessScore.score.toFixed(1)} of ${richnessScore.maxScore}`}
                                     >
@@ -748,84 +697,52 @@ export const MasonryItem = memo(function MasonryItem({
                         </div>
                     )}
 
-                    <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1 z-10">
-                        {/* Category Tag Count Badges */}
-                        {showCategoryTagBadges && effectiveScale !== 'small' && (
-                            <div className={`flex ${badgeStackDirection} gap-1`}>
-                                {classifiedTags.appearance.length > 0 && (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
-                                                <Smile className="w-2.5 h-2.5 opacity-70" />
-                                                {classifiedTags.appearance.length}
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                            {classifiedTags.appearance.length} appearance tags
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
-                                {classifiedTags.clothing.length > 0 && (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
-                                                <Shirt className="w-2.5 h-2.5 opacity-70" />
-                                                {classifiedTags.clothing.length}
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                            {classifiedTags.clothing.length} outfit tags
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
-                                {classifiedTags.pose.length > 0 && (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
-                                                <User className="w-2.5 h-2.5 opacity-70" />
-                                                {classifiedTags.pose.length}
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                            {classifiedTags.pose.length} pose tags
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
-                                {classifiedTags.scenery.length > 0 && (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
-                                                <Mountain className="w-2.5 h-2.5 opacity-70" />
-                                                {classifiedTags.scenery.length}
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                            {classifiedTags.scenery.length} scene tags
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Total Tag Count Indicator */}
-                        {totalTagsCount > 0 && (
+                    {/* Bottom-right: a single tag-count chip. The per-category counts and the
+                        character post count live in its tooltip instead of four colored chips
+                        plus a separate "1K" chip competing with the artwork. */}
+                    {totalTagsCount > 0 && (
+                        <div className="absolute bottom-2 right-2 z-10">
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-xs font-medium tabular-nums tracking-wide flex items-center gap-1 shadow-sm cursor-help">
-                                        <Tag className="w-3.5 h-3.5 opacity-70" />
+                                    <span
+                                        tabIndex={0}
+                                        className="px-1.5 py-0.5 rounded-md bg-overlay/60 text-overlay-foreground/90 text-xs font-medium tabular-nums flex items-center gap-1 shadow-sm cursor-help focus-ring"
+                                        aria-label={`${totalTagsCount} tags`}
+                                    >
+                                        <Tag className="w-3.5 h-3.5 opacity-70" aria-hidden="true" />
                                         {totalTagsCount}
-                                    </div>
+                                    </span>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="text-xs">
-                                    Total Tags
+                                    <div className="flex flex-col gap-1 min-w-[8.5rem]">
+                                        <span className="font-medium">{totalTagsCount} tags</span>
+                                        {showCategoryTagBadges && (
+                                            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-1.5 gap-y-0.5">
+                                                {CATEGORY_BREAKDOWN.map(({ key, label, Icon, className }) => (
+                                                    <Fragment key={key}>
+                                                        <Icon className={`w-3 h-3 ${className}`} aria-hidden="true" />
+                                                        <span className="text-muted-foreground">{label}</span>
+                                                        <span className="tabular-nums text-right">{classifiedTags[key].length}</span>
+                                                    </Fragment>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {tagCountIndicator && includeCharacters && (
+                                            <span className="flex items-center gap-1.5 border-t border-border pt-1 text-muted-foreground">
+                                                <Users className="w-3 h-3" aria-hidden="true" />
+                                                Character posts: <span className="text-popover-foreground tabular-nums">{tagCountIndicator}</span>
+                                            </span>
+                                        )}
+                                    </div>
                                 </TooltipContent>
                             </Tooltip>
-                        )}
-                    </div>
+                        </div>
+                    )}
 
-                    {/* Overlay actions */}
+                    {/* Overlay actions: favorite stays one tap away; everything else lives
+                        behind "⋯". Stays visible while either popover/menu is open. */}
                     <div
-                        className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                        className="absolute top-2 right-2 flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 sm:has-[[data-state=open]]:opacity-100 transition-opacity"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <SaveFavoriteButton
@@ -835,52 +752,16 @@ export const MasonryItem = memo(function MasonryItem({
                             onToggleFavorite={handleToggleFavorite}
                             onCreateFolder={createFolder}
                         />
-                        <SaveArtistButton
+                        <CardActionsMenu
                             post={post}
                             booruProvider={itemProvider}
+                            postUrl={postUrl}
                             size={effectiveScale === "small" ? "sm" : "md"}
+                            onConvert={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())}
+                            onDownload={() => downloadImage(post)}
+                            onOpenOriginal={() => trackExternalLink(postUrl, 'post')}
+                            onMakePack={!isPackMode && onMakePack ? () => onMakePack(post) : undefined}
                         />
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    size="icon"
-                                    variant="secondary"
-                                    className={`bg-background/80 border border-border/50 ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
-                                    onClick={(e) => {
-                                        e.preventDefault()
-                                        e.stopPropagation()
-                                        onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())
-                                    }}
-                                    aria-label="Convert to Natural Language"
-                                >
-                                    <Sparkles
-                                        className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"} text-primary`}
-                                        aria-hidden="true"
-                                    />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                Convert to Natural Language
-                            </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    size="icon"
-                                    variant="secondary"
-                                    className={`bg-background/80 border border-border/50 ${effectiveScale === "small" ? "h-7 w-7" : "h-8 w-8"}`}
-                                    onClick={() => downloadImage(post)}
-                                    aria-label="Download image"
-                                >
-                                    <Download
-                                        className={`${effectiveScale === "small" ? "w-3 h-3" : "w-3.5 h-3.5"}`}
-                                    />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                Download image (best quality)
-                            </TooltipContent>
-                        </Tooltip>
                     </div>
 
                     {/* Expand / collapse affordance — makes the click-to-expand
@@ -888,7 +769,7 @@ export const MasonryItem = memo(function MasonryItem({
                         to the image container's toggle handler. */}
                     {!isMergeMode && (
                         <div className="absolute inset-x-0 bottom-2 flex justify-center pointer-events-none z-10">
-                            <div className={`flex items-center gap-1 rounded-full bg-black/65 text-white/95 px-2 py-0.5 text-[10px] font-medium shadow-sm backdrop-blur-sm transition-opacity duration-200 ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
+                            <div className={`flex items-center gap-1 rounded-full bg-overlay/65 text-overlay-foreground/95 px-2 py-0.5 text-[10px] font-medium shadow-sm backdrop-blur-sm transition-opacity duration-200 ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
                                 <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
                                 {isExpanded ? "Collapse" : "Full prompt"}
                             </div>
@@ -903,7 +784,11 @@ export const MasonryItem = memo(function MasonryItem({
                     transition={lowMotion ? { duration: 0 } : { type: "tween", duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
                 >
                     <div
-                        className="bg-muted/50 rounded-lg overflow-y-auto prompt-container min-h-0"
+                        className={`bg-muted/50 rounded-lg overflow-y-auto prompt-container min-h-0 ${isExpanded
+                            ? ""
+                            // Collapsed: a scrollbar in a 3-line box is just noise. Still
+                            // wheel-scrollable; "Full prompt" is the real way to read it all.
+                            : "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"}`}
                         style={isExpanded ? { maxHeight: "65vh" } : undefined}
                     >
                         <InteractivePrompt
@@ -920,7 +805,7 @@ export const MasonryItem = memo(function MasonryItem({
                         {isPackMode ? (
                             <Button
                                 onClick={() => onSetAsPackBase?.(post)}
-                                className={`flex-1 focus-ring h-auto rounded-r-none border-r-0 border-teal-500 text-teal-600 dark:text-teal-400 ${isPackBase ? "" : "hover:bg-teal-500/10"}`}
+                                className={`flex-1 focus-ring h-auto rounded-r-none border-r-0 border-mode-pack text-mode-pack-text ${isPackBase ? "" : "hover:bg-mode-pack-soft"}`}
                                 variant={isPackBase ? "secondary" : "outline"}
                                 aria-label={isPackBase ? "Pack Mode base card" : "Use as base for Pack Mode"}
                             >
@@ -942,7 +827,7 @@ export const MasonryItem = memo(function MasonryItem({
                             <Button
                                 onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
                                 className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
-                                variant={copiedId === post.id ? "default" : "outline"}
+                                variant={copiedId === post.id ? "default" : "secondary"}
                                 disabled={!displayContent}
                                 aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
                             >
@@ -960,83 +845,23 @@ export const MasonryItem = memo(function MasonryItem({
                             </Button>
                         )}
 
-                        <DropdownMenu modal={false}>
-                            <DropdownMenuTrigger asChild>
+                        <CopyOptionsDropdown
+                            classifiedTags={classifiedTags}
+                            onCopyCategory={copyCategory}
+                            disabled={!displayContent}
+                            contentClassName="z-[10005]"
+                            trigger={
                                 <Button
-                                    variant={isNaturalLanguageMode ? "outline" : (copiedId === post.id ? "default" : "outline")}
-                                    className="px-2 focus-ring h-auto rounded-l-none"
+                                    // Matches the primary half of the split button so both read as one control.
+                                    variant={isPackMode ? "outline" : (isNaturalLanguageMode || copiedId === post.id ? "default" : "secondary")}
+                                    className={`px-2 focus-ring h-auto rounded-l-none ${isPackMode ? "" : "border-l border-foreground/10"}`}
                                     disabled={!displayContent}
                                     aria-label="Copy options"
                                 >
                                     <ChevronDown className="h-4 w-4" aria-hidden="true" />
                                 </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="z-[10005]">
-                                <DropdownMenuLabel>Copy Options</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => copyCategory('scenery')}>
-                                    <Mountain className="mr-2 h-4 w-4" />
-                                    <span className="flex-1">Scenery</span>
-                                    <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
-                                        {classifiedTags.scenery.length}
-                                    </span>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => copyCategory('pose')}>
-                                    <User className="mr-2 h-4 w-4" />
-                                    <span className="flex-1">Pose</span>
-                                    <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
-                                        {classifiedTags.pose.length}
-                                    </span>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => copyCategory('clothing')}>
-                                    <Shirt className="mr-2 h-4 w-4" />
-                                    <span className="flex-1">Clothing</span>
-                                    <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
-                                        {classifiedTags.clothing.length}
-                                    </span>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => copyCategory('appearance')}>
-                                    <Smile className="mr-2 h-4 w-4" />
-                                    <span className="flex-1">Appearance</span>
-                                    <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
-                                        {classifiedTags.appearance.length}
-                                    </span>
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                    onSelect={(e) => {
-                                        e.preventDefault()
-                                        posthog.capture('teach_modal_opened')
-                                        setTeachModalData({ open: true, tags: getClassifiedTeachTags() })
-                                    }}
-                                >
-                                    <GraduationCap className="mr-2 h-4 w-4" />
-                                    Teach
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    asChild
-                                    className={`focus-ring bg-transparent h-auto ${effectiveScale === "small" ? "w-7" : ""}`}
-                                >
-                                    <a
-                                        href={postUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={() => trackExternalLink(postUrl, 'post')}
-                                        aria-label="View original post"
-                                    >
-                                        <ExternalLink className={getIconClass()} />
-                                    </a>
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>View original post</TooltipContent>
-                        </Tooltip>
+                            }
+                        />
                     </div>
                 </motion.div>
                 <AnimatePresence>
@@ -1046,439 +871,8 @@ export const MasonryItem = memo(function MasonryItem({
         )
     }
 
-    // List View
-    return (
-        <Card className="overflow-hidden card-hover relative transition-colors duration-300 border-transparent shadow-none">
-            <CardContent className="p-4 sm:p-6">
-                <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
-                    <div
-                        className="image-container-list-2-3 mx-auto sm:mx-0 relative group cursor-pointer"
-                        onDoubleClick={() => handleToggleFavorite(null)}
-                    >
-                        {isPreviouslyCopied && (
-                            <div className="absolute top-1.5 right-1.5 z-20 pointer-events-none" aria-label="Previously copied">
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.8 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-green-500/40 shadow-sm"
-                                >
-                                    <motion.div
-                                       animate={lowMotion ? undefined : { scale: [1, 1.2, 1] }}
-                                       transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
-                                    >
-                                        <Check className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
-                                    </motion.div>
-                                </motion.div>
-                            </div>
-                        )}
-
-                        <div className="absolute top-1 left-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                            <SaveFavoriteButton
-                                folders={folders}
-                                selectedFolderIds={currentFolderIds}
-                                isFavorited={isFavorited}
-                                onToggleFavorite={handleToggleFavorite}
-                                onCreateFolder={createFolder}
-                            />
-                            <SaveArtistButton
-                                post={post}
-                                booruProvider={itemProvider}
-                                size="sm"
-                            />
-                        </div>
-                        {/* ponytail: plain <img> — see grid-view comment above */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                            key={retryKey}
-                            src={displayFileUrl!}
-                            alt={`${itemProvider} post ${post.id} - ${post.tag_string ? post.tag_string.slice(0, 150) : 'anime art'}`}
-                            className="absolute inset-0 w-full h-full object-cover"
-                            sizes="128px"
-                            loading="lazy"
-                            decoding="async"
-                            referrerPolicy={isAibooru ? undefined : "no-referrer"}
-                            onError={handleImageError}
-                            onLoad={() => setImageError(false)}
-                        />
-                        {imageError && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
-                                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                            </div>
-                        )}
-
-                        {/* Bottom-left stack: options/replacement indicators above the character post count */}
-                        {(
-                            <div className="absolute bottom-1 left-1 z-20 flex flex-col items-start gap-1">
-                                {hasActiveOptions && (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="pointer-events-auto" aria-label="Options affecting prompt">
-                                                <motion.div
-                                                    initial={{ opacity: 0, scale: 0.8 }}
-                                                    animate={{ opacity: 1, scale: 1 }}
-                                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-blue-500/40 shadow-sm cursor-help"
-                                                >
-                                                    <motion.div
-                                                       animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
-                                                       transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                                    >
-                                                        <Sliders className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
-                                                    </motion.div>
-                                                </motion.div>
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                            Smart Tag Exclusion
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
-                                {hasReplacements && (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div
-                                                className="pointer-events-auto"
-                                                aria-label={`Find & Replace applied: ${replacedTags.map(r => `${r.from} → ${r.to}`).join(', ')}`}
-                                            >
-                                                <motion.div
-                                                    initial={{ opacity: 0, scale: 0.8 }}
-                                                    animate={{ opacity: 1, scale: 1 }}
-                                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                                    className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-amber-500/40 shadow-sm cursor-help"
-                                                >
-                                                    <motion.div
-                                                       animate={lowMotion ? undefined : { rotate: [0, 10, -10, 0] }}
-                                                       transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                                    >
-                                                        <Replace className="w-3.5 h-3.5 text-amber-500" strokeWidth={3} />
-                                                    </motion.div>
-                                                </motion.div>
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                            Find &amp; Replace
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
-                                {/* Character Tag Count Indicator */}
-                                {tagCountIndicator && includeCharacters && (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help">
-                                                <Users className="w-3 h-3 opacity-70" />
-                                                {tagCountIndicator}
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="text-xs">
-                                            Character Post Count
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
-                                {/* Richness Score Indicator: category coverage (clothing/pose/scenery/appearance) */}
-                                {SHOW_RICHNESS_BADGE && (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div
-                                            className={`px-1.5 py-0.5 rounded-md bg-black/60 text-[10px] font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help pointer-events-auto ${richnessScore.score >= 8
-                                                ? "text-emerald-400"
-                                                : richnessScore.score <= 3
-                                                    ? "text-red-400"
-                                                    : "text-amber-400"
-                                                }`}
-                                            aria-label={`Richness score: ${richnessScore.score.toFixed(1)} of ${richnessScore.maxScore}`}
-                                        >
-                                            <Sparkles className="w-3 h-3" />
-                                            {richnessScore.score.toFixed(1)}/{richnessScore.maxScore}
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top" className="text-xs">
-                                        <div className="flex flex-col gap-0.5">
-                                            <span className="font-medium mb-0.5">Richness: {richnessScore.score.toFixed(1)}/{richnessScore.maxScore}</span>
-                                            {RICHNESS_AXES.map((axis) => (
-                                                <span key={axis} className={RICHNESS_DEPTH_CLASS[richnessScore.breakdown[axis]]}>
-                                                    {RICHNESS_DEPTH_LABEL[richnessScore.breakdown[axis]]} {TAG_CATEGORIES[axis].label}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </TooltipContent>
-                                </Tooltip>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="absolute bottom-1 right-1 flex flex-col items-end gap-1 z-10">
-                            {/* Category Tag Count Badges */}
-                            {showCategoryTagBadges && effectiveScale !== 'small' && (
-                                <div className="flex flex-col items-end gap-1">
-                                    {classifiedTags.appearance.length > 0 && (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-blue-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
-                                                    <Smile className="w-2.5 h-2.5 opacity-70" />
-                                                    {classifiedTags.appearance.length}
-                                                </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="top" className="text-xs">
-                                                {classifiedTags.appearance.length} appearance tags
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    )}
-                                    {classifiedTags.clothing.length > 0 && (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-green-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
-                                                    <Shirt className="w-2.5 h-2.5 opacity-70" />
-                                                    {classifiedTags.clothing.length}
-                                                </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="top" className="text-xs">
-                                                {classifiedTags.clothing.length} outfit tags
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    )}
-                                    {classifiedTags.pose.length > 0 && (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-purple-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
-                                                    <User className="w-2.5 h-2.5 opacity-70" />
-                                                    {classifiedTags.pose.length}
-                                                </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="top" className="text-xs">
-                                                {classifiedTags.pose.length} pose tags
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    )}
-                                    {classifiedTags.scenery.length > 0 && (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <div className="px-1 py-0.5 rounded-md bg-black/60 text-orange-300 text-[10px] font-medium tabular-nums flex items-center gap-0.5 shadow-sm cursor-help">
-                                                    <Mountain className="w-2.5 h-2.5 opacity-70" />
-                                                    {classifiedTags.scenery.length}
-                                                </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="top" className="text-xs">
-                                                {classifiedTags.scenery.length} scene tags
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Total Tag Count Indicator */}
-                            {totalTagsCount > 0 && (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="px-1.5 py-0.5 rounded-md bg-black/60 text-white/90 text-[10px] font-medium tracking-wide flex items-center gap-1 shadow-sm cursor-help">
-                                            <Tag className="w-3 h-3 opacity-70" />
-                                            {totalTagsCount}
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top" className="text-xs">
-                                        Total Tags
-                                    </TooltipContent>
-                                </Tooltip>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="flex-1 space-y-3">
-                        <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                    <Badge variant="outline" className="text-xs">ID: {post.id}</Badge>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-2">
-                                <SaveFavoriteButton
-                                    folders={folders}
-                                    selectedFolderIds={currentFolderIds}
-                                    isFavorited={isFavorited}
-                                    onToggleFavorite={handleToggleFavorite}
-                                    onCreateFolder={createFolder}
-                                />
-                                <SaveArtistButton
-                                    post={post}
-                                    booruProvider={itemProvider}
-                                    size="md"
-                                />
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            onClick={(e) => {
-                                                e.preventDefault()
-                                                e.stopPropagation()
-                                                onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())
-                                            }}
-                                            className="focus-ring h-8 w-8"
-                                            aria-label="Convert to Natural Language"
-                                        >
-                                            <Sparkles className="h-4 w-4 text-primary" />
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        Convert to Natural Language
-                                    </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            onClick={() => downloadImage(post)}
-                                            className="focus-ring h-8 w-8"
-                                            aria-label="Download image"
-                                        >
-                                            <Download className="h-4 w-4" />
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        Download image (best quality)
-                                    </TooltipContent>
-                                </Tooltip>
-                            </div>
-                        </div>
-
-                        <div className="bg-muted/50 p-3 rounded-lg max-h-20 overflow-y-auto">
-                            <InteractivePrompt
-                                initialPrompt={displayContent}
-                                onUpdate={setModifiedContent}
-                                onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
-                                globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
-                                onSearch={onSearch}
-                                conflictingTags={conflictingTags}
-                            />
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-2">
-                            {isPackMode ? (
-                                <Button
-                                    onClick={() => onSetAsPackBase?.(post)}
-                                    variant={isPackBase ? "secondary" : "outline"}
-                                    className={`focus-ring flex-1 sm:flex-none border-teal-500 text-teal-600 dark:text-teal-400 ${isPackBase ? "" : "hover:bg-teal-500/10"}`}
-                                    aria-label={isPackBase ? "Pack Mode base card" : "Use as base for Pack Mode"}
-                                >
-                                    <Package className="w-4 h-4 mr-2" />
-                                    {isPackBase ? "Base ✓" : "Use as Base"}
-                                </Button>
-                            ) : isNaturalLanguageMode ? (
-                                <Button
-                                    onClick={() => onSendToConvert?.(modifiedContent ?? displayContent, post.large_file_url, buildConvertMeta())}
-                                    variant="default"
-                                    disabled={!displayContent}
-                                    className="focus-ring flex-1 sm:flex-none"
-                                    aria-label="Convert tags to Natural Language"
-                                >
-                                    <Sparkles className="w-4 h-4 mr-2 text-primary-foreground" />
-                                    Convert
-                                </Button>
-                            ) : (
-                                <Button
-                                    onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
-                                    variant={copiedId === post.id ? "default" : "outline"}
-                                    disabled={!displayContent}
-                                    className="focus-ring flex-1 sm:flex-none"
-                                    aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
-                                >
-                                    {copiedId === post.id ? (
-                                        <>
-                                            <Check className="w-4 h-4 mr-2" />
-                                            Copied!
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Copy className="w-4 h-4 mr-2" />
-                                            {isPreviouslyCopied ? "Copy Again" : "Copy Prompt"}
-                                        </>
-                                    )}
-                                </Button>
-                            )}
-
-                            <DropdownMenu modal={false}>
-                                <DropdownMenuTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        className="px-3 focus-ring"
-                                        disabled={!displayContent}
-                                        aria-label="Copy options"
-                                    >
-                                        <ChevronDown className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuLabel>Copy Options</DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => copyCategory('scenery')}>
-                                        <Mountain className="mr-2 h-4 w-4" />
-                                        <span className="flex-1">Scenery</span>
-                                        <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
-                                            {classifiedTags.scenery.length}
-                                        </span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => copyCategory('pose')}>
-                                        <User className="mr-2 h-4 w-4" />
-                                        <span className="flex-1">Pose</span>
-                                        <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
-                                            {classifiedTags.pose.length}
-                                        </span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => copyCategory('clothing')}>
-                                        <Shirt className="mr-2 h-4 w-4" />
-                                        <span className="flex-1">Clothing</span>
-                                        <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
-                                            {classifiedTags.clothing.length}
-                                        </span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => copyCategory('appearance')}>
-                                        <Smile className="mr-2 h-4 w-4" />
-                                        <span className="flex-1">Appearance</span>
-                                        <span className="ml-2 text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full min-w-[1.5rem] text-center">
-                                            {classifiedTags.appearance.length}
-                                        </span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        onSelect={(e) => {
-                                            e.preventDefault()
-                                            posthog.capture('teach_modal_opened')
-                                            setTeachModalData({ open: true, tags: getClassifiedTeachTags() })
-                                        }}
-                                    >
-                                        <GraduationCap className="mr-2 h-4 w-4" />
-                                        Teach
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-
-                            <Button variant="outline" asChild className="focus-ring bg-transparent flex-1 sm:flex-none">
-                                <a
-                                    href={postUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={() => trackExternalLink(postUrl, 'post')}
-                                    aria-label="View original post on source site"
-                                >
-                                    <ExternalLink className="w-4 h-4 mr-2" />
-                                    View Original
-                                </a>
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </CardContent>
-            <AnimatePresence>
-                {copiedId === post.id && <SuccessOverlay onSkip={onSkipAnimation} />}
-            </AnimatePresence>
-        </Card>
-    )}
-
     return renderCard()
 }, arePropsEqual)
-
 // Custom comparison function for React.memo to prevent deep unnecessary re-renders.
 // Specifically targets the expensive tagOverrides and globalWeights objects.
 function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
@@ -1488,7 +882,6 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.width !== next.width) return false
     if (prev.height !== next.height) return false
     if (prev.index !== next.index) return false
-    if (prev.viewMode !== next.viewMode) return false
     if (prev.effectiveScale !== next.effectiveScale) return false
     if (prev.booruProvider !== next.booruProvider) return false
     if (prev.isFavorited !== next.isFavorited) return false
@@ -1499,6 +892,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.excludeInput !== next.excludeInput) return false
     if (prev.addInput !== next.addInput) return false
     if (prev.searchTags !== next.searchTags) return false
+    if (prev.autoAppendSearchTags !== next.autoAppendSearchTags) return false
     if (prev.findInput !== next.findInput) return false
     if (prev.replaceInput !== next.replaceInput) return false
     if (prev.includeCharacters !== next.includeCharacters) return false
@@ -1511,6 +905,8 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.simpleBackgroundReplacementTags !== next.simpleBackgroundReplacementTags) return false
     if (prev.randomBackgroundPatterns !== next.randomBackgroundPatterns) return false
     if (prev.randomBackgroundIncludeGradients !== next.randomBackgroundIncludeGradients) return false
+    if (prev.detailedBackgroundsList !== next.detailedBackgroundsList) return false
+    if (prev.backgroundMatchStrictness !== next.backgroundMatchStrictness) return false
     if (prev.isGlobalWeightsEnabled !== next.isGlobalWeightsEnabled) return false
     if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false
     if (prev.showCategoryTagBadges !== next.showCategoryTagBadges) return false
@@ -1529,6 +925,20 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
 
     if (prev.copiedId !== next.copiedId && (prev.copiedId === prev.post.id || next.copiedId === next.post.id)) {
         return false
+    }
+
+    // tagCounts gets a new reference whenever a page loads, but the card only
+    // reads the counts of its own character tags (tag count indicator), so
+    // compare just those instead of re-rendering every card on each page load.
+    if (prev.tagCounts !== next.tagCounts && next.post.tag_string_character) {
+        for (const rawTag of next.post.tag_string_character.split(' ')) {
+            if (!rawTag) continue
+            // Same keys useCardPrompt's tagCountIndicator looks up
+            const tag = rawTag.toLowerCase()
+            const spaced = tag.replace(/_/g, ' ')
+            if (prev.tagCounts?.[tag] !== next.tagCounts?.[tag]) return false
+            if (prev.tagCounts?.[spaced] !== next.tagCounts?.[spaced]) return false
+        }
     }
 
     const postTags = next.post.tag_string.split(' ')
