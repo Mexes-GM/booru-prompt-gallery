@@ -749,6 +749,10 @@ export function PromptGallery() {
   // (no `pack-source-answers` in storage yet) — the popover auto-opens once
   // after their first base pick, then never again on its own (§2.1, §2.2).
   const [packEntryOpen, setPackEntryOpen] = useState(false)
+  // True when the entry modal should open straight into the prompt-editing
+  // view (the builder's "Edit" button on an existing prompt base) instead of
+  // the "From a card"/"From my prompt" choice screen.
+  const [packEntryStartInPrompt, setPackEntryStartInPrompt] = useState(false)
   const [packSourceAnswers, setPackSourceAnswers] = useState<PackSourceAnswers>(() => {
     const stored = userPreferences.getPackSourceAnswers()
     if (stored) return stored
@@ -789,6 +793,7 @@ export function PromptGallery() {
     packModeSetBaseCard(post)
     resetPackSeeding()
     setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
     if (needsSourceChoice) setSourcePopoverOpen(true)
   }, [packModeSetBaseCard, resetPackSeeding, needsSourceChoice])
 
@@ -797,11 +802,18 @@ export function PromptGallery() {
     packModeSetBasePrompt(text)
     resetPackSeeding()
     setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
     if (needsSourceChoice) setSourcePopoverOpen(true)
   }, [packModeSetBasePrompt, resetPackSeeding, needsSourceChoice])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
+  }, [])
+
+  const handleEditBasePrompt = useCallback(() => {
+    setPackEntryStartInPrompt(true)
+    setPackEntryOpen(true)
   }, [])
 
   const handleApplyPackSourceAnswers = useCallback((answers: PackSourceAnswers) => {
@@ -1551,7 +1563,10 @@ export function PromptGallery() {
                       setIsAiConvertMode(false)
                       if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
                       packMode.enablePackMode()
-                      if (!packMode.hasBase) setPackEntryOpen(true)
+                      if (!packMode.hasBase) {
+                        setPackEntryStartInPrompt(false)
+                        setPackEntryOpen(true)
+                      }
                     }}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onOpenQuickTeach={() => setIsQuickTeachOpen(true)}
@@ -2024,6 +2039,7 @@ export function PromptGallery() {
       <PackEntryModal
         isOpen={packEntryOpen}
         initialPrompt={packMode.basePrompt || userPreferences.getLastPackBasePrompt()}
+        startInPromptView={packEntryStartInPrompt}
         onChooseCard={() => setPackEntryOpen(false)}
         onSubmitPrompt={handleSubmitPackPrompt}
         onCancel={handlePackEntryCancel}
@@ -2031,6 +2047,9 @@ export function PromptGallery() {
       <PackBuilderStickyFooter
         isOpen={packModeIsPackMode}
         baseCard={packMode.baseCard}
+        basePrompt={packMode.basePrompt}
+        onEditBasePrompt={handleEditBasePrompt}
+        hasMultipleCharacters={packMode.hasMultipleCharacters}
         hasSetupAnswers={packMode.hasBase}
         lockedCategories={packMode.lockedCategories}
         toggleLockedCategory={packMode.toggleLockedCategory}
@@ -2066,9 +2085,12 @@ export function PromptGallery() {
         currentSearchTags={search.searchTags}
         sourcePopoverOpen={sourcePopoverOpen}
         onSourcePopoverOpenChange={setSourcePopoverOpen}
+        varietyLevel={packMode.varietyLevel}
+        onVarietyLevelChange={packMode.setVarietyLevel}
         promptCount={packMode.promptCount}
         setPromptCount={packMode.setPromptCount}
         onRegenerate={handlePackRegenerate}
+        onRerollPrompt={packMode.rerollPrompt}
         onClearBase={() => {
           packMode.setBaseCard(null)
           packMode.setBasePrompt('')
@@ -2086,8 +2108,6 @@ export function PromptGallery() {
           packMode.recordPromptCopied(prompt)
         }}
         onCopyAll={(text) => copyToClipboard(text, 0, true)}
-        explorationTemperature={packMode.explorationTemperature}
-        onExplorationTemperatureChange={packMode.setExplorationTemperature}
         onResetLearning={packMode.resetLearning}
       />
 

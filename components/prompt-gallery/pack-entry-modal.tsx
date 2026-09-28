@@ -17,23 +17,26 @@ export interface PackEntryModalProps {
   isOpen: boolean
   /** Initial value for the "From my prompt" textarea (usePreferences.getLastPackBasePrompt()). */
   initialPrompt: string
+  /** Opens straight into the prompt-editing view instead of the choice
+   *  screen — used by the builder's "Edit" button on an existing prompt base. */
+  startInPromptView?: boolean
   onChooseCard: () => void
   onSubmitPrompt: (text: string) => void
   onCancel: () => void
 }
 
-export function PackEntryModal({ isOpen, initialPrompt, onChooseCard, onSubmitPrompt, onCancel }: PackEntryModalProps) {
+export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = false, onChooseCard, onSubmitPrompt, onCancel }: PackEntryModalProps) {
   const [view, setView] = useState<"choose" | "prompt">("choose")
   const [promptText, setPromptText] = useState(initialPrompt)
 
-  // Reset to the choice screen (and the remembered prompt) every time the
+  // Reset to the right screen (and the remembered prompt) every time the
   // modal is (re)opened, so a previous "Back" doesn't leak into the next use.
   /* eslint-disable react-hooks/set-state-in-effect -- mirrors external state
      (the modal's open/closed prop and the last-remembered prompt from
      storage) into local UI state on open, not derived from render inputs. */
   useEffect(() => {
     if (isOpen) {
-      setView("choose")
+      setView(startInPromptView ? "prompt" : "choose")
       setPromptText(initialPrompt)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,9 +105,9 @@ export function PackEntryModal({ isOpen, initialPrompt, onChooseCard, onSubmitPr
               />
             </div>
             <DialogFooter className="flex items-center justify-between sm:justify-between">
-              <Button type="button" variant="ghost" onClick={() => setView("choose")}>
+              <Button type="button" variant="ghost" onClick={startInPromptView ? onCancel : () => setView("choose")}>
                 <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-                Back
+                {startInPromptView ? "Cancel" : "Back"}
               </Button>
               <Button type="button" onClick={handleContinue} disabled={!promptText.trim()}>
                 Continue
