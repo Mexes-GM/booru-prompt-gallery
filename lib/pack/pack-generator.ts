@@ -20,10 +20,26 @@
 import { BooruPost } from "../booru/types"
 import { TagCategory, classifyTags } from "../tag-classifier"
 import { resolveTagConflicts } from "../tag-conflicts"
+import { conflictsWithBackground } from "./background-coherence"
 import { applyWeights } from "../weight-utils"
 import { normalize, buildPostMetaTagSet, isMetaTag } from "../cleanPrompt"
-import { PACK_AXES } from "../tag-taxonomy"
-import { splitTags, joinTags } from "../utils/tag-utils"
+import {
+  PACK_AXES,
+  SLOT_CONSTRAINTS,
+  SLOT_GROUP_CONSTRAINTS,
+  getTagSlotFromOverrides,
+  slotsOf,
+} from "../tag-taxonomy"
+import { splitTags, splitCommaSeparatedTags, joinTags } from "../utils/tag-utils"
+
+/** Mode of tag collection for a variation axis: individual tags vs card-cohesive bundles. */
+export type AxisTagMode = 'individual' | 'bundle'
+
+/** Maximum values per axis allowed in "Min tags" slider when sampling individual tags. */
+export const MAX_MIN_TAGS_SLIDER = 30
+
+/** Maximum values per axis allowed in "Min packs" slider when sampling card tag bundles. */
+export const MAX_MIN_PACKS_SLIDER = 10
 
 /** Hard ceiling on how many prompts a single generation can emit — the
  *  user-facing cap (slider max, promptCount clamp). */
@@ -267,6 +283,95 @@ export function extractAllAxisValuesWithCounts(
   return result
 }
 
+/**
+ * Format an array of tags into a canonical bundle string:
+ * lowercase, spaces, trimmed, deduped, and sorted alphabetically for deterministic matching.
+ */
+export function canonicalizeBundleTags(tags: string[]): string {
+  const normalized = Array.from(new Set(tags.map(normalizeTagForPack).filter(Boolean)))
+  normalized.sort()
+  return normalized.join(", ")
+}
+
+/**
+ * Extract candidate tag bundles for one axis from the loaded posts, where all tags
+ * of that category on a single post stay together as a cohesive unit (e.g. an entire outfit).
+ * Deduplicated canonically (same tags in different order = same bundle) and ranked by frequency.
+ */
+export function extractAxisBundlesWithCounts(
+  posts: BooruPost[],
+  category: TagCategory,
+  tagOverrides: Record<string, string> = {},
+  limit = 200
+): Array<{ value: string; count: number }> {
+  const counts = new Map<string, number>()
+  const firstSeen = new Map<string, number>()
+  let order = 0
+
+  for (const post of posts) {
+    const classified = classifyPostForPack(post, tagOverrides)
+    const rawTags = classified[category] ?? []
+    if (rawTags.length === 0) continue
+
+    const bundleKey = canonicalizeBundleTags(rawTags)
+    if (!bundleKey) continue
+
+    counts.set(bundleKey, (counts.get(bundleKey) ?? 0) + 1)
+    if (!firstSeen.has(bundleKey)) {
+      firstSeen.set(bundleKey, order++)
+    }
+  }
+
+  return rankAxisCounts(counts, firstSeen, limit)
+}
+
+/**
+ * Same as extractAxisBundlesWithCounts, but classifies each post ONCE across
+ * all requested categories simultaneously.
+ */
+export function extractAllAxisBundlesWithCounts(
+  posts: BooruPost[],
+  categories: readonly TagCategory[],
+  tagOverrides: Record<string, string> = {},
+  limit = 200
+): Partial<Record<TagCategory, Array<{ value: string; count: number }>>> {
+  const countsByCategory = new Map<TagCategory, Map<string, number>>()
+  const firstSeenByCategory = new Map<TagCategory, Map<string, number>>()
+  const orderByCategory = new Map<TagCategory, number>()
+
+  categories.forEach((cat) => {
+    countsByCategory.set(cat, new Map())
+    firstSeenByCategory.set(cat, new Map())
+    orderByCategory.set(cat, 0)
+  })
+
+  for (const post of posts) {
+    const classified = classifyPostForPack(post, tagOverrides)
+    for (const cat of categories) {
+      const rawTags = classified[cat] ?? []
+      if (rawTags.length === 0) continue
+
+      const bundleKey = canonicalizeBundleTags(rawTags)
+      if (!bundleKey) continue
+
+      const counts = countsByCategory.get(cat)!
+      const firstSeen = firstSeenByCategory.get(cat)!
+
+      counts.set(bundleKey, (counts.get(bundleKey) ?? 0) + 1)
+      if (!firstSeen.has(bundleKey)) {
+        firstSeen.set(bundleKey, orderByCategory.get(cat)!)
+        orderByCategory.set(cat, orderByCategory.get(cat)! + 1)
+      }
+    }
+  }
+
+  const result: Partial<Record<TagCategory, Array<{ value: string; count: number }>>> = {}
+  categories.forEach((cat) => {
+    result[cat] = rankAxisCounts(countsByCategory.get(cat)!, firstSeenByCategory.get(cat)!, limit)
+  })
+  return result
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Seeded RNG (mulberry32) — deterministic sampling for tests / reproducibility.
 // ────────────────────────────────────────────────────────────────────────────
@@ -474,6 +579,8 @@ export interface GeneratePackPromptsArgs {
   rng?: () => number
   /** Hard ceiling override (defaults to MAX_PACK_PROMPTS). */
   maxPrompts?: number
+  /** Tag overrides mapping tag names to category or category:subcategory for slot constraint enforcement. */
+  tagOverrides?: Record<string, string>
 }
 
 export interface PackPrompt {
@@ -481,16 +588,173 @@ export interface PackPrompt {
   prompt: string
   /** The sampled axis values that produced it (post-conflict-resolution). */
   values: string[]
+  /** Map of tag -> slot ("category:subcategory") for UI diff highlighting. */
+  tagSlots?: Record<string, string>
+}
+
+/**
+ * Evaluates whether a candidate tag satisfies the 33 orthogonal slot constraints
+ * against a list of already-accepted tags, using the slot definitions in lib/tag-taxonomy.ts.
+ */
+export function checkSlotConstraints(
+  candidateTag: string,
+  existingTags: string[],
+  tagOverrides?: Record<string, string>
+): boolean {
+  if (!tagOverrides) return true
+  const candidateSlotInfo = getTagSlotFromOverrides(candidateTag, tagOverrides)
+  if (!candidateSlotInfo?.slot) return true
+
+  const candidateSlot = candidateSlotInfo.slot
+  const candidateConstraint = SLOT_CONSTRAINTS[candidateSlot]
+
+  // Map existing tags to their slots
+  const existingSlots: string[] = []
+  for (const t of existingTags) {
+    const info = getTagSlotFromOverrides(t, tagOverrides)
+    if (info?.slot) existingSlots.push(info.slot)
+  }
+
+  // 1. Incompatibility: Does candidate forbid an existing slot?
+  if (candidateConstraint?.incompatibleWith) {
+    for (const inc of candidateConstraint.incompatibleWith) {
+      if (existingSlots.includes(inc)) return false
+    }
+  }
+
+  // Incompatibility: Does an existing slot forbid the candidate?
+  for (const exSlot of existingSlots) {
+    const exConstraint = SLOT_CONSTRAINTS[exSlot]
+    if (exConstraint?.incompatibleWith?.includes(candidateSlot)) {
+      return false
+    }
+  }
+
+  // 2. Cardinality: Does this candidate exceed the max count for its slot?
+  if (candidateConstraint?.maxCount !== undefined) {
+    const currentCount = existingSlots.filter((s) => s === candidateSlot).length
+    if (currentCount >= candidateConstraint.maxCount) {
+      return false
+    }
+  }
+
+  // 3. Action budgets (SLOT_GROUP_CONSTRAINTS)
+  for (const group of Object.values(SLOT_GROUP_CONSTRAINTS)) {
+    if (group.slots.includes(candidateSlot)) {
+      const currentGroupCount = existingSlots.filter((s) => group.slots.includes(s)).length
+      if (currentGroupCount >= group.maxTotal) {
+        return false
+      }
+    }
+  }
+
+  return true
+}
+
+/** Per-slot state: locked slots are constant (from the base card), muted slots are simply off. */
+export interface SlotState {
+  lockedSlots: ReadonlySet<string>
+  mutedSlots: ReadonlySet<string>
+}
+
+/**
+ * Drops values that must not vary: tags in a locked or muted slot, and — when
+ * the category is partially locked — tags whose slot is unknown, since they
+ * can't be shown not to belong to a locked slot. Bundles keep only their
+ * surviving tags (re-canonicalized) and vanish if none remain.
+ */
+export function filterValuesBySlotState(
+  category: TagCategory,
+  values: string[],
+  state: SlotState,
+  tagOverrides?: Record<string, string>
+): string[] {
+  const partiallyLocked = slotsOf(category).some((s) => state.lockedSlots.has(s))
+  if (!partiallyLocked && state.mutedSlots.size === 0) return values
+  const keep = (tag: string) => {
+    const slot = getTagSlotFromOverrides(tag, tagOverrides)?.slot
+    if (!slot) return !partiallyLocked
+    return !state.lockedSlots.has(slot) && !state.mutedSlots.has(slot)
+  }
+  const out = new Set<string>()
+  for (const value of values) {
+    if (!value.includes(',')) {
+      if (keep(value)) out.add(value)
+      continue
+    }
+    const kept = splitCommaSeparatedTags(value).filter(keep)
+    if (kept.length > 0) out.add(canonicalizeBundleTags(kept))
+  }
+  return Array.from(out)
+}
+
+export interface SlotGroup {
+  /** "category:subcategory", or null for bundles and tags with no known slot. */
+  slot: string | null
+  values: string[]
+}
+
+/** Groups an axis's values by slot, in taxonomy order, with the unslotted group last. */
+export function groupValuesBySlot(
+  category: TagCategory,
+  values: string[],
+  tagOverrides?: Record<string, string>
+): SlotGroup[] {
+  const order = slotsOf(category)
+  const bySlot = new Map<string | null, string[]>()
+  for (const value of values) {
+    const slot = value.includes(',') ? null : getTagSlotFromOverrides(value, tagOverrides)?.slot ?? null
+    const list = bySlot.get(slot)
+    if (list) list.push(value)
+    else bySlot.set(slot, [value])
+  }
+  const rank = (slot: string | null) => {
+    if (slot === null) return Number.MAX_SAFE_INTEGER
+    const i = order.indexOf(slot)
+    return i === -1 ? order.length : i
+  }
+  return Array.from(bySlot, ([slot, vals]) => ({ slot, values: vals })).sort((a, b) => rank(a.slot) - rank(b.slot))
+}
+
+/**
+ * Most distinct values one prompt can actually take from these groups once
+ * SLOT_CONSTRAINTS / SLOT_GROUP_CONSTRAINTS apply. Unslotted values carry no
+ * constraint, so they count in full. This is what the "Min tags" slider tops
+ * out at: asking for more would just be dropped by the constraint checks.
+ */
+export function maxValuesPerPrompt(groups: SlotGroup[]): number {
+  const perSlot = new Map<string, number>()
+  let total = 0
+  for (const { slot, values } of groups) {
+    if (slot === null) {
+      total += values.length
+      continue
+    }
+    perSlot.set(slot, Math.min(values.length, SLOT_CONSTRAINTS[slot]?.maxCount ?? values.length))
+  }
+  const budgeted = new Set<string>()
+  for (const group of Object.values(SLOT_GROUP_CONSTRAINTS)) {
+    let sum = 0
+    for (const slot of group.slots) {
+      sum += perSlot.get(slot) ?? 0
+      budgeted.add(slot)
+    }
+    total += Math.min(sum, group.maxTotal)
+  }
+  perSlot.forEach((n, slot) => {
+    if (!budgeted.has(slot)) total += n
+  })
+  return total
 }
 
 /**
  * Generate up to `count` distinct pack prompts. Each prompt is:
  *   lockedTags + (axisMinCounts[category] sampled values per active axis,
  *   conflict-resolved) — axisMinCounts defaults to 1 per axis (one value per
- *   category, the original behavior); a category set to e.g. 3 contributes 3
- *   distinct values from its pool to every generated prompt instead of just
- *   one, for users who want a denser/more-described category (clamped to the
- *   axis's own pool size).
+ *   category, the original behavior); a category set to 0 deactivates the axis
+ *   completely; a category set to e.g. 3 contributes 3 distinct values from
+ *   its pool to every generated prompt instead of just one, for users who want
+ *   a denser/more-described category (clamped to the axis's own pool size).
  * Optional global weights are applied afterwards. Distinctness is enforced on
  * the final prompt string. When the theoretical combination space fits under
  * a small threshold, the product is enumerated + shuffled so the result is
@@ -508,6 +772,7 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     isGlobalWeightsEnabled = false,
     rng = Math.random,
     maxPrompts = MAX_PACK_PROMPTS,
+    tagOverrides,
   } = args
 
   const normalizedLocked = Array.from(
@@ -530,7 +795,9 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     if (!Array.isArray(rawVals) || rawVals.length === 0) return null
     const vals = Array.from(new Set(rawVals.map(normalizeTagForPack).filter(Boolean)))
     if (vals.length === 0) return null
+
     const requestedMin = axisMinCounts[cat] ?? 1
+    if (requestedMin <= 0) return null
     const k = Math.max(1, Math.min(requestedMin, vals.length))
     // Per-value sampling weight for this axis, aligned index-for-index with
     // `vals`. Missing/absent entries default to 1 (neutral) rather than 0, so
@@ -557,7 +824,7 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
   // No axes to vary → a single prompt of just the base (if any).
   if (activeAxes.length === 0) {
     if (normalizedLocked.length === 0) return []
-    const built = buildPrompt(normalizedLocked, [], globalWeights, isGlobalWeightsEnabled)
+    const built = buildPrompt(normalizedLocked, [], globalWeights, isGlobalWeightsEnabled, tagOverrides)
     return built ? [built] : []
   }
 
@@ -618,7 +885,7 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
 
   const trySelection = (picked: string[][]) => {
     const flatValues = picked.flat()
-    const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled)
+    const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled, tagOverrides)
     if (!built) return
     if (seenPrompts.has(built.prompt)) return
     seenPrompts.add(built.prompt)
@@ -651,43 +918,57 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
  * Combine base + sampled values into one conflict-resolved, optionally-weighted
  * prompt. Returns null if the result is empty. Runs Smart Tag Exclusion twice:
  * once against the locked base, then incrementally within the picked values
- * themselves — necessary because axisMinCounts > 1 can put multiple values
- * from the same axis into one prompt, and those can contradict each other
- * even when each is individually fine against the base (e.g. pose axis
- * yielding both "standing" and "sitting" for the same prompt).
+ * themselves — augmented by orthogonal slot constraints from lib/tag-taxonomy.ts.
  */
 function buildPrompt(
   lockedTags: string[],
   pickedValues: string[],
   globalWeights: Record<string, number>,
-  isGlobalWeightsEnabled: boolean
+  isGlobalWeightsEnabled: boolean,
+  tagOverrides?: Record<string, string>
 ): PackPrompt | null {
-  // Dedupe picked values, and drop any already present in the base.
   const lockedSet = new Set(lockedTags.map(normalize))
-  const uniquePicked = Array.from(new Set(pickedValues.map(normalizeTagForPack).filter(Boolean)))
-    .filter((v) => !lockedSet.has(normalize(v)))
 
-  // Smart Tag Exclusion: drop values that contradict the locked base.
-  const { validTags: validAgainstBase } = resolveTagConflicts(lockedTags, uniquePicked)
+  // Unpack any bundles (comma-separated tags) into individual tags while tracking
+  // which original picked value each tag came from.
+  const itemToTags = new Map<string, string[]>()
+  const flatPickedTags: string[] = []
 
-  // Smart Tag Exclusion, pass 2: axisMinCounts > 1 can put multiple values
-  // from the SAME axis into one prompt (e.g. pose: ["standing", "sitting"]),
-  // which never happened with the original one-value-per-axis behavior and
-  // can itself be contradictory. Accept values incrementally, growing the
-  // conflict-check "base" with each accepted value — so a later pick is
-  // checked against both the real base AND every value already accepted
-  // this round, catching axis-internal contradictions the base-only check
-  // above can't see.
+  for (const item of pickedValues) {
+    const rawTags = item.includes(",") ? splitCommaSeparatedTags(item) : [item]
+    const cleanTags = Array.from(
+      new Set(rawTags.map(normalizeTagForPack).filter(Boolean))
+    ).filter((t) => !lockedSet.has(normalize(t)))
+
+    itemToTags.set(item, cleanTags)
+    for (const t of cleanTags) {
+      if (!flatPickedTags.includes(t)) {
+        flatPickedTags.push(t)
+      }
+    }
+  }
+
+  // Pass 1: Smart Tag Exclusion: drop values that contradict the locked base.
+  const { validTags: validAgainstBase } = resolveTagConflicts(lockedTags, flatPickedTags)
+
+  // Pass 2: Smart Tag Exclusion, pass 2: incremental contradiction check
+  // across remaining tags so mutually contradictory picks don't co-exist,
+  // augmented with physical slot constraint checking.
   const validTags: string[] = []
   let contextTags = lockedTags
   for (const candidate of validAgainstBase) {
     const { validTags: stillValid } = resolveTagConflicts(contextTags, [candidate])
-    if (stillValid.length > 0) {
+    if (
+      stillValid.length > 0 &&
+      checkSlotConstraints(candidate, contextTags, tagOverrides) &&
+      !conflictsWithBackground(candidate, contextTags, tagOverrides)
+    ) {
       validTags.push(candidate)
       contextTags = [...contextTags, candidate]
     }
   }
 
+  const validTagsSet = new Set(validTags.map(normalize))
   const finalTags = Array.from(new Set([...lockedTags, ...validTags]))
   if (finalTags.length === 0) return null
 
@@ -697,5 +978,28 @@ function buildPrompt(
   }
   if (!prompt) return null
 
-  return { prompt, values: validTags }
+  // Report surviving picked values (both original bundle values and individual tags)
+  // so downstream learning and categorization can resolve them.
+  const survivingValues = new Set<string>()
+  for (const item of pickedValues) {
+    const itemTags = itemToTags.get(item) ?? []
+    if (itemTags.some((t) => validTagsSet.has(normalize(t)))) {
+      survivingValues.add(item)
+    }
+  }
+  for (const tag of validTags) {
+    survivingValues.add(tag)
+  }
+
+  const tagSlots: Record<string, string> = {}
+  if (tagOverrides) {
+    for (const tag of finalTags) {
+      const slotInfo = getTagSlotFromOverrides(tag, tagOverrides)
+      if (slotInfo?.slot) {
+        tagSlots[tag] = slotInfo.slot
+      }
+    }
+  }
+
+  return { prompt, values: Array.from(survivingValues), tagSlots }
 }

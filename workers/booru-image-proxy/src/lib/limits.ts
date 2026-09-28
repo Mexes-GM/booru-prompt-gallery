@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Unified rate-limit configuration — WORKER side (F3, rate-limit-antiabuse plan)
+// Unified rate-limit configuration — WORKER side
 //
 // SINGLE SOURCE OF TRUTH for every rate-limit threshold enforced by the
 // Cloudflare Worker. Before this module the numbers (15, 600, 90, 480, 60, 30,
@@ -15,12 +15,12 @@
 // value that is still allowed. These values are an EXACT extraction of the
 // pre-refactor behavior — no effective change.
 //
-// BUDGET NOTE (for F4): the `global` caps bound total outbound pressure on a
+// BUDGET NOTE: the `global` caps bound total outbound pressure on a
 // shared origin (donmai's ~10 req/s per shared egress IP). The `perIp` caps
 // bound a single client. Keep the sum of globals within the Upstash free tier
 // (500K commands/month ≈ 16.6K/day) and Workers free tier (100K req/day).
 //
-// F4 — explicit budget calculation (2026-07-03, ~500 users/day baseline):
+// Explicit budget calculation (2026-07-03, ~500 users/day baseline):
 //
 // TIGHTENED (2026-07-03, second pass): the original global caps below were
 // sized for a much larger concurrent user base than this app actually has.
@@ -56,13 +56,13 @@
 //   (~77K/day was the ABUSE incident this whole plan responds to, already cut
 //   by Fase 1 short-circuiting + Fase 2 edge rules pending manual WAF setup).
 //
-// F4 — authedMultiplier: when ADAPTIVE_LIMITS='1' and a request carries a
+// AuthedMultiplier: when ADAPTIVE_LIMITS='1' and a request carries a
 // verified Supabase access token (Authorization: Bearer <jwt>, checked by
 // rate-limit-identity.ts), the PER-IP max for that surface is multiplied by
 // `authedMultiplier` and the limiter key switches from `anon:<ip>` to
 // `authed:<userId>`. The `global` cap is NEVER scaled — it is the shared
 // origin budget and must hold regardless of how many callers are logged in.
-// Flag off (default) → key and limit are IDENTICAL to pre-F4 behavior.
+// Flag off (default) → key and limit are IDENTICAL to non-adaptive behavior.
 // ---------------------------------------------------------------------------
 
 export interface WindowLimit {
@@ -77,16 +77,25 @@ export interface SurfaceLimits {
   perIp: WindowLimit
   /** Optional shared/global window across all clients. */
   global?: WindowLimit
-  /** F4 (flag-gated): multiplier applied to `perIp.max` for authed users. */
+  /** Flag-gated: multiplier applied to `perIp.max` for authed users. */
   authedMultiplier?: number
 }
 
 /** All worker rate-limit thresholds, grouped by surface + origin sensitivity. */
 export const WORKER_LIMITS = {
-  /** Image proxy (Gelbooru/Rule34 bytes) — cache-miss only. */
+  /**
+   * Image proxy (Gelbooru/Rule34 bytes) — cache-miss only.
+   *
+   * RETUNED (2026-09-28): the previous 10 per 10s per IP was below a single
+   * masonry page (~60 cards, 8 eager + every lazy card in view), so the first
+   * page alone tripped it; the 429'd <img> tags counted as image errors and the
+   * gallery paused infinite scroll. Sized now for ~2 pages/minute per client
+   * (the client-side scroll limiter's burst cap) and a realistic concurrent
+   * peak globally. Mirrors NEXT_LIMITS.image on the Next side.
+   */
   image: {
-    perIp: { max: 10, windowS: 10 },
-    global: { max: 150, windowS: 60 },
+    perIp: { max: 120, windowS: 60 },
+    global: { max: 600, windowS: 60 },
     authedMultiplier: 2,
   },
   /** Posts search — Danbooru (most origin-sensitive: per-IP + global). */
@@ -116,4 +125,35 @@ export const WORKER_LIMITS = {
     perIp: { max: 20, windowS: 60 },
     authedMultiplier: 2,
   },
+  /**
+   * Favorites hydration — counted in UPSTREAM CALLS, not in requests to us.
+   * One POST can fan out to several provider calls (a Danbooru `id:` batch of
+   * 100 is 1 call, a Gelbooru id is 1 call each), and the old per-request
+   * count let a single client drive thousands of calls/minute at Gelbooru and
+   * >10 req/s at Danbooru. `perIp` bounds one client across all providers;
+   * `global` is charged only for Danbooru calls (≤ 1 req/s from this surface).
+   */
+  favorites: {
+    perIp: { max: 120, windowS: 60 },
+    global: { max: 60, windowS: 60 },
+  },
+  /** Static tag list (/api/tags) — in-memory only, never touches donmai. */
+  tagsList: {
+    perIp: { max: 60, windowS: 60 },
+  },
+  /** Health check (hits Supabase) — in-memory only. */
+  health: {
+    perIp: { max: 30, windowS: 60 },
+  },
 } as const satisfies Record<string, SurfaceLimits>
+
+/**
+ * AI Convert (/api/llm/convert) — Upstash sliding windows keyed by IP.
+ * Free tier spends OUR shared Cloudflare Workers AI quota (burst + daily
+ * budget); the paid tier (caller's own API key) only needs a burst guard.
+ */
+export const AI_CONVERT_LIMITS = {
+  freeMinute: { max: 15, windowS: 60 },
+  freeDaily: { max: 10, windowS: 24 * 60 * 60 },
+  paidMinute: { max: 60, windowS: 60 },
+} as const satisfies Record<string, WindowLimit>

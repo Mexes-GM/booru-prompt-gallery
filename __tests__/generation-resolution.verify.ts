@@ -5,6 +5,10 @@
  *     ceiling, a non-square result CAN exceed maxLongSide on one side.
  *   - "strict" cap (strictCap: true) — maxLongSide is a hard per-side ceiling,
  *     max(width, height) must never exceed it, regardless of aspect ratio.
+ * ...and the `snapToBucket` option, which replaces the source's raw aspect
+ * ratio with the closest entry from SUPPORTED_BUCKET_RESOLUTIONS (common
+ * ratios the model was actually trained on: 1:1, 2:3/3:2, 3:4/4:3, 9:16/16:9)
+ * before applying the same capping logic.
  *
  * This file specifically covers the bug report: "auto resolution takes the
  * longest side and applies a higher resolution than maxLongSide allows,
@@ -105,6 +109,56 @@ function assert(condition: boolean, label: string) {
   if (res) {
     assert(res.width % 8 === 0 && res.height % 8 === 0, "both dimensions are multiples of the custom `multiple` (8)")
     assert(Math.max(res.width, res.height) <= 1536, "the per-side cap still holds with a custom multiple")
+  }
+}
+
+// ── 7) snapToBucket: a near-16:9 source snaps to the 16:9 bucket, not its raw ratio ──
+{
+  // 1920x1080 is exactly 16:9. The closest bucket is 1344x768 (also 16:9).
+  const res = computeGenerationResolution(1920, 1080, { maxLongSide: 1536, snapToBucket: true })
+  assert(res !== null, "snapToBucket produces a result")
+  if (res) {
+    const ratio = res.width / res.height
+    assert(Math.abs(ratio - 16 / 9) < 0.01, `snapToBucket result (${res.width}x${res.height}, ratio ${ratio.toFixed(3)}) matches the 16:9 bucket exactly`)
+    assert(res.width % 64 === 0 && res.height % 64 === 0, "both dimensions are multiples of 64")
+  }
+}
+
+// ── 8) snapToBucket: an odd/unusual source ratio still snaps to the closest bucket ──
+{
+  // 1000x1400 (5:7 ≈ 0.714) is closest to 2:3 (≈0.667) among the buckets,
+  // not to 3:4 (0.75) or 9:16 (0.5625) — verifies "closest", not "first match".
+  // Compare distance-to-2:3 vs distance-to-3:4 directly (rather than
+  // asserting an exact final ratio) since post-bucket capping/snapping can
+  // nudge the reported ratio slightly off the bucket's exact value — this
+  // still unambiguously confirms which bucket won.
+  const res = computeGenerationResolution(1000, 1400, { maxLongSide: 1536, snapToBucket: true })
+  assert(res !== null, "snapToBucket produces a result for an odd source ratio")
+  if (res) {
+    const ratio = res.width / res.height
+    const distTo2_3 = Math.abs(ratio - 2 / 3)
+    const distTo3_4 = Math.abs(ratio - 3 / 4)
+    assert(distTo2_3 < distTo3_4, `odd source ratio (5:7=${(5/7).toFixed(3)}) snaps closer to 2:3 (${(2/3).toFixed(3)}, dist=${distTo2_3.toFixed(3)}) than to 3:4 (${(3/4).toFixed(3)}, dist=${distTo3_4.toFixed(3)}); got ratio ${ratio.toFixed(3)} (${res.width}x${res.height})`)
+  }
+}
+
+// ── 9) snapToBucket: orientation is preserved (landscape source never snaps to a portrait bucket) ──
+{
+  const landscape = computeGenerationResolution(1600, 900, { maxLongSide: 1536, snapToBucket: true, strictCap: true })
+  const portrait = computeGenerationResolution(900, 1600, { maxLongSide: 1536, snapToBucket: true, strictCap: true })
+  assert(landscape !== null && portrait !== null, "snapToBucket produces results for both orientations")
+  if (landscape && portrait) {
+    assert(landscape.width > landscape.height, `landscape source (1600x900) snaps to a landscape bucket (got ${landscape.width}x${landscape.height})`)
+    assert(portrait.height > portrait.width, `portrait source (900x1600) snaps to a portrait bucket (got ${portrait.width}x${portrait.height})`)
+  }
+}
+
+// ── 10) snapToBucket: a square-ish source snaps to the 1:1 bucket ──
+{
+  const res = computeGenerationResolution(1050, 950, { maxLongSide: 1536, snapToBucket: true, strictCap: true })
+  assert(res !== null, "snapToBucket produces a result for a near-square source")
+  if (res) {
+    assert(res.width === res.height, `near-square source (1050x950) snaps to the 1:1 bucket (got ${res.width}x${res.height})`)
   }
 }
 

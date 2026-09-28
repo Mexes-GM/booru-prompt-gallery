@@ -4,7 +4,8 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Loader2, Sparkles } from "lucide-react"
 import { generateAutoSuggestions } from "@/app/actions/auto-suggestions"
-import { toast } from "sonner"
+import { toast } from "@/hooks/use-toast"
+import { toastError } from "@/lib/toast-error"
 import { useRouter } from "next/navigation"
 
 export function AutoSuggestButton() {
@@ -14,17 +15,17 @@ export function AutoSuggestButton() {
     const handleGenerate = async () => {
         setLoading(true)
         try {
-            toast.info("Mining new tags from Danbooru randomly...")
+            toast({ title: "Mining new tags from Danbooru randomly..." })
             const result = await generateAutoSuggestions()
             
             if (result.success) {
-                toast.success(`Generated ${result.count} new suggestions!`)
+                toast({ title: `Generated ${result.count} new suggestions!` })
                 router.refresh()
             } else {
-                toast.error(`Error: ${result.error}`)
+                toastError({ title: "Error", description: String(result.error), errorSource: "admin_auto_suggest", reportable: false })
             }
         } catch (e) {
-            toast.error("Failed to generate suggestions")
+            toastError({ title: "Error", description: "Failed to generate suggestions", errorSource: "admin_auto_suggest", reportable: false })
         } finally {
             setLoading(false)
         }

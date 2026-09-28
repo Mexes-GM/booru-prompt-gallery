@@ -16,7 +16,7 @@ export interface ApiStatusInfo {
 }
 
 interface UseApiStatusOptions {
-  maxConsecutiveErrors?: number // Máximo de errores consecutivos antes de marcar como offline
+  maxConsecutiveErrors?: number // Maximum consecutive errors before marking as offline
 }
 
 const DEFAULT_OPTIONS: UseApiStatusOptions = {
@@ -32,7 +32,7 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
   
   const [apiStatus, setApiStatus] = useState<ApiStatusInfo>({
     status: 'healthy',
-    message: 'API funcionando correctamente',
+    message: 'API is working correctly',
     consecutiveErrors: 0
   })
   
@@ -41,7 +41,7 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
 
 
 
-  // Función para reportar errores desde otros componentes
+  // Reports an error from other components
   const reportError = useCallback((error: Error, responseTime?: number) => {
     consecutiveErrorsRef.current += 1
     
@@ -50,7 +50,7 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
     if (isOffline) {
       setApiStatus({
         status: 'offline',
-        message: 'API no disponible - Múltiples errores reportados',
+        message: 'API unavailable - multiple errors reported',
         lastError: error,
         responseTime,
         consecutiveErrors: consecutiveErrorsRef.current,
@@ -59,7 +59,7 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
     } else {
       setApiStatus({
         status: 'error',
-        message: `Error en la API: ${error.message}`,
+        message: `API error: ${error.message}`,
         lastError: error,
         responseTime,
         consecutiveErrors: consecutiveErrorsRef.current,
@@ -67,44 +67,44 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
       })
     }
     
-    // Mostrar toast solo para errores críticos (offline)
+    // Only show a toast for critical (offline) errors
     if (isOffline) {
       toastError({
-        title: "API sin conexión",
-        description: "La API no está respondiendo. Verifica tu conexión a internet.",
+        title: "API offline",
+        description: "The API is not responding. Check your internet connection.",
         errorSource: "api_status_offline",
       })
     }
   }, [toast])
 
-  // Función para reportar respuesta lenta
+  // Reports a slow response
   const reportSlowResponse = useCallback((responseTime: number) => {
     setApiStatus({
       status: 'slow',
-      message: `API respondiendo lentamente (${responseTime}ms)`,
+      message: `API responding slowly (${responseTime}ms)`,
       responseTime,
       consecutiveErrors: consecutiveErrorsRef.current,
       lastSuccessfulRequest: lastSuccessfulRequestRef.current
     })
     
-    // Mostrar toast solo si es extremadamente lento (>10 segundos)
+    // Only show a toast if it's extremely slow (>10 seconds)
     if (responseTime > 10000) {
       toast({
-        title: "Conexión muy lenta",
-        description: `La API está tardando mucho en responder (${Math.round(responseTime/1000)}s).`,
+        title: "Very slow connection",
+        description: `The API is taking a long time to respond (${Math.round(responseTime/1000)}s).`,
         variant: "default",
       })
     }
   }, [toast])
 
-  // Función para reportar respuesta exitosa
+  // Reports a successful response
   const reportSuccess = useCallback((responseTime?: number) => {
     consecutiveErrorsRef.current = 0
     lastSuccessfulRequestRef.current = new Date()
     
     setApiStatus({
       status: 'healthy',
-      message: 'API funcionando correctamente',
+      message: 'API is working correctly',
       responseTime,
       consecutiveErrors: 0,
       lastSuccessfulRequest: lastSuccessfulRequestRef.current
@@ -119,7 +119,7 @@ export function useApiStatus(options: UseApiStatusOptions = {}) {
   }
 }
 
-// Hook simplificado para usar en componentes que solo necesitan el estado
+// Simplified hook for components that only need the state
 export function useApiStatusSimple() {
   const { apiStatus } = useApiStatus()
   return apiStatus

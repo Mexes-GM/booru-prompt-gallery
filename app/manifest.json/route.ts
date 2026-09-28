@@ -1,4 +1,5 @@
 import { MetadataRoute } from 'next'
+import { themeHex } from '@/lib/theme/tokens.generated'
 
 export async function GET(): Promise<Response> {
   const manifest: MetadataRoute.Manifest = {
@@ -7,8 +8,8 @@ export async function GET(): Promise<Response> {
     description: 'Generate prompts from Booru image tags. Extract and format tags from posts, removing unnecessary metadata to create clean, ready-to-use prompts for AI art generation.',
     start_url: '/',
     display: 'standalone',
-    background_color: '#ffffff',
-    theme_color: '#000000',
+    background_color: themeHex.light.background,
+    theme_color: themeHex.light.background,
     orientation: 'portrait-primary',
     categories: ['productivity', 'utilities', 'art'],
     lang: 'en',

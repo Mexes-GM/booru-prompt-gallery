@@ -20,6 +20,20 @@ export const PROVIDER_POST_URLS = {
   GELBOORU: (id: number | string) => `${PROVIDER_URLS.GELBOORU}/index.php?page=post&s=view&id=${id}`,
 } as const
 
+// Builds the "view original post" URL for a post. The provider is the source of
+// truth; `isAiPost` (ai_metadata presence) is only a fallback for Danbooru-shaped
+// posts that actually live on Aibooru. Shared by the web card and the Pocket card.
+export function getPostUrl(provider: string, id: number | string, isAiPost = false): string {
+  switch (provider) {
+    case 'aibooru': return PROVIDER_POST_URLS.AIBOORU(id)
+    case 'rule34': return PROVIDER_POST_URLS.RULE34(id)
+    case 'e621': return PROVIDER_POST_URLS.E621(id)
+    case 'gelbooru': return PROVIDER_POST_URLS.GELBOORU(id)
+    case 'danbooru': return isAiPost ? PROVIDER_POST_URLS.AIBOORU(id) : PROVIDER_POST_URLS.DANBOORU(id)
+    default: return PROVIDER_POST_URLS.DANBOORU(id)
+  }
+}
+
 // Builds an external URL to browse posts tagged with a specific tag on the provider's website
 export function getProviderSearchUrl(provider: string, tag: string): string {
   const encoded = encodeURIComponent(tag)
@@ -92,16 +106,64 @@ export function isValidArtistTag(tag: string): boolean {
   return !GENERIC_ARTIST_TAGS.has(tag.trim().toLowerCase())
 }
 
-// Centralized User-Agent for all API requests
-export const USER_AGENT = 'Boorugallery/9.2'
+// Centralized outbound identity for every booru request. Danbooru asks API
+// clients for a descriptive User-Agent and e621 requires a way to contact the
+// operator (browsers cannot set User-Agent, so direct e621 calls send it as the
+// `_client` param instead). Mirror of workers/booru-image-proxy/src/lib/constants.ts.
+export const APP_CONTACT_URL = 'https://booru-prompt-gallery.com'
+export const USER_AGENT = `Boorugallery/10.0 (+${APP_CONTACT_URL})`
 
 // Danbooru-specific User-Agent — identifies the Danbooru account so admins can contact us.
 // Set DANBOORU_USERNAME env var to include your account name in the User-Agent.
 export function getDanbooruUserAgent(): string {
   const username = process.env.DANBOORU_USERNAME
   return username
-    ? `Boorugallery/9.2 (Danbooru user: ${username})`
-    : 'Boorugallery/9.2'
+    ? `Boorugallery/10.0 (+${APP_CONTACT_URL}; Danbooru user: ${username})`
+    : USER_AGENT
+}
+
+/**
+ * Headers for a server-side Danbooru **API** request. The only place the
+ * Danbooru API key is attached, so it can never reach another host.
+ */
+export function danbooruApiHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'User-Agent': getDanbooruUserAgent(),
+    Accept: 'application/json',
+  }
+  const username = process.env.DANBOORU_USERNAME
+  const apiKey = process.env.DANBOORU_API_KEY
+  if (username && apiKey) {
+    headers['Authorization'] = `Basic ${btoa(`${username}:${apiKey}`)}`
+  }
+  return headers
+}
+
+// Image/file CDN hosts the download proxy may fetch — never API/site hosts, so
+// the proxy cannot be used to read provider API pages. Mirror of the Worker's
+// isAllowedImageHost (workers/booru-image-proxy/src/lib/constants.ts).
+const IMAGE_HOSTS = new Set([
+  'cdn.donmai.us',
+  'cdn.aibooru.download',
+  'static1.e621.net',
+  'static1.e926.net',
+  'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com',
+  'img4.gelbooru.com', 'img5.gelbooru.com', 'video-cdn1.gelbooru.com',
+  'video-cdn2.gelbooru.com', 'video-cdn3.gelbooru.com', 'video-cdn4.gelbooru.com',
+])
+const NON_IMAGE_RULE34_HOSTS = new Set(['api.rule34.xxx', 'rule34.xxx', 'www.rule34.xxx'])
+
+export function isAllowedImageHost(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  if (NON_IMAGE_RULE34_HOSTS.has(host)) return false
+  return IMAGE_HOSTS.has(host) || host.endsWith('.rule34.xxx')
+}
+
+/** True for a Content-Type the download proxy may relay. */
+export function isMediaContentType(contentType: string | null): boolean {
+  if (!contentType) return false
+  const type = contentType.split(';')[0].trim().toLowerCase()
+  return type.startsWith('image/') || type.startsWith('video/')
 }
 
 // Provider referer URLs (for API requests)

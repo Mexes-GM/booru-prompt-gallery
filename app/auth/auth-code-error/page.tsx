@@ -11,7 +11,7 @@ export default function AuthCodeErrorPage() {
       <div className="max-w-md w-full space-y-6">
         <div className="text-center space-y-2">
           <div className="mx-auto h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
+            <AlertTriangle className="h-8 w-8 text-destructive-text" />
           </div>
           <h1 className="text-2xl font-bold">Authentication Error</h1>
         </div>

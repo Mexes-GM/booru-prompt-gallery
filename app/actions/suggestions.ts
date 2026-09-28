@@ -2,6 +2,8 @@
 
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { headers } from 'next/headers'
+import { getClientIp } from '@/lib/client-ip'
+import { getSuggestionAuthorId, isMissingColumnError } from '@/lib/tag-suggestion-author'
 import { z } from 'zod'
 import { filterWritableTagNames, toStorageTagName } from '@/lib/tag-write-guard'
 import { TAG_CATEGORY_IDS } from '@/lib/tag-taxonomy'
@@ -29,6 +31,16 @@ export type SubmitSuggestionResult = {
   success: boolean
   message: string
   errors?: any[]
+  /**
+   * The `tag_suggestions.id` of the inserted row, when the caller submitted
+   * exactly one suggestion (Quick Teach's immediate-write mode — see plan
+   * 3.8). `null` when nothing was actually inserted for that single
+   * suggestion (deduplicated against an existing pending suggestion, or the
+   * tag was rejected by the write guard) — in that case there's nothing of
+   * the caller's own to revert later. Always `null` for multi-item batches,
+   * since there's no single id to report.
+   */
+  insertedId?: string | null
 }
 
 export type TagReclassification = z.infer<typeof TagReclassificationSchema>
@@ -133,7 +145,7 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
 
   // 3. Run rate limit check and tag ID resolution in parallel
   const headersList = await headers()
-  const ip = headersList.get('x-forwarded-for') || 'unknown'
+  const ip = getClientIp(headersList, 'unknown')
 
   const [rateLimitResult, tagsResult] = await Promise.all([
     ip !== 'unknown' ? checkRateLimit(ip) : Promise.resolve({ allowed: true }),
@@ -204,27 +216,84 @@ export async function submitTagSuggestions(suggestions: TagReclassification[]): 
   )
 
   if (finalSuggestions.length === 0) {
-    return { success: true, message: "Successfully submitted suggestions." }
+    return { success: true, message: "Successfully submitted suggestions.", insertedId: null }
   }
 
   // 7. Insert suggestions
-  const { data: insertedSuggestions, error: insertError } = await supabaseAdmin
-    .from('tag_suggestions')
-    .insert(finalSuggestions)
-    .select('id, suggested_category, tags (name)')
+  const authorId = await getSuggestionAuthorId()
+  const insertRows = (rows: Record<string, unknown>[]) =>
+    supabaseAdmin.from('tag_suggestions').insert(rows).select('id, suggested_category, tags (name)')
+
+  let { data: insertedSuggestions, error: insertError } = await insertRows(
+    authorId ? finalSuggestions.map(s => ({ ...s, user_id: authorId })) : finalSuggestions
+  )
+  if (authorId && isMissingColumnError(insertError)) {
+    ;({ data: insertedSuggestions, error: insertError } = await insertRows(finalSuggestions))
+  }
 
   if (insertError) {
     console.error("[submitTagSuggestions] Error inserting suggestions:", insertError)
     if (insertError.code === '23505') {
-      return { success: true, message: "Successfully submitted suggestions." }
+      return { success: true, message: "Successfully submitted suggestions.", insertedId: null }
     }
     return { success: false, message: "Failed to submit suggestions" }
   }
 
-  return { success: true, message: "Successfully submitted suggestions." }
+  // Only meaningful for single-suggestion calls (Quick Teach's immediate-write
+  // mode) — a multi-item batch inserts several rows and there's no single id
+  // to report, so this is intentionally the first (only, in that case) row.
+  const insertedId = suggestions.length === 1 ? insertedSuggestions?.[0]?.id ?? null : null
+
+  return { success: true, message: "Successfully submitted suggestions.", insertedId }
 }
 
-// --- Query: Existing Suggestions for Tag Names ---
+/**
+ * Deletes a suggestion the caller just created, but ONLY while it's still
+ * `pending` — this is Quick Teach's "Undo" for its immediate-write mode (plan
+ * 3.8: each classification is submitted right away instead of batched until
+ * the end, mirroring Quick Review's admin-only immediate-write behavior).
+ *
+ * Deliberately unauthenticated (unlike `revertSuggestionDecision` in
+ * `app/actions/admin.ts`, which requires admin and RESTORES a moderated
+ * decision): any visitor can submit a suggestion, so any visitor must be
+ * able to undo their own within the same session. The pending-only guard is
+ * the actual safety boundary — once an admin has approved/rejected a row (or
+ * another submission got deduplicated onto it), it can no longer be deleted
+ * this way, so this can never be used to erase moderation history or someone
+ * else's already-decided contribution. There's no ownership column to check
+ * (suggestions aren't tied to an account), so "pending" is the only signal
+ * available that nothing has acted on this row yet.
+ */
+export async function revertOwnPendingSuggestion(id: string): Promise<{ success: boolean; message?: string }> {
+  // Server actions are publicly callable endpoints: scope the delete to the IP
+  // that created the row (the same header submitTagSuggestions stores), so a
+  // leaked id can't be used to delete someone else's suggestion.
+  // A signed-in submitter owns the row by user id too, so undo keeps working
+  // after their IP changes mid-session.
+  const ip = getClientIp(await headers(), 'unknown')
+  const authorId = await getSuggestionAuthorId()
+  if (ip === 'unknown' && !authorId) return { success: false, message: "Failed to undo that suggestion" }
+
+  const deletePending = (byUser: boolean) => {
+    const query = supabaseAdmin.from('tag_suggestions').delete().eq('id', id).eq('status', 'pending')
+    if (!byUser) return query.eq('user_ip', ip)
+    return ip === 'unknown'
+      ? query.eq('user_id', authorId!)
+      : query.or(`user_ip.eq."${ip}",user_id.eq.${authorId}`)
+  }
+
+  let { error } = await deletePending(Boolean(authorId))
+  if (authorId && isMissingColumnError(error) && ip !== 'unknown') {
+    ;({ error } = await deletePending(false))
+  }
+
+  if (error) {
+    console.error("[revertOwnPendingSuggestion] Error deleting suggestion:", error)
+    return { success: false, message: "Failed to undo that suggestion" }
+  }
+
+  return { success: true }
+}
 
 export async function getExistingSuggestions(tagNames: string[]): Promise<Record<string, string>> {
   if (!tagNames.length) return {}

@@ -1,0 +1,65 @@
+# Blocking quality gate: type-checks, runs the verification suite and builds the
+# app exactly as Vercel/Netlify would, plus a type-check of the Cloudflare Worker.
+# next.config.mjs no longer sets `ignoreBuildErrors`, so a type error fails both
+# this workflow and the real deploys.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Verification suite
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Public, non-secret placeholders: prerendering /admin/login creates a
+          # Supabase client, which throws without a URL + key. Nothing is fetched
+          # at build time, so no real project is needed.
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/booru-image-proxy
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: workers/booru-image-proxy/package-lock.json
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit

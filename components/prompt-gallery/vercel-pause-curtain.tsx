@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Globe, ExternalLink, ShieldAlert } from "lucide-react"
-import GithubMono from '@lobehub/icons/es/Github/components/Mono'
+import { GithubIcon } from "@/components/icons/brand-icons"
 
 /**
  * Full-screen pause curtain for the Vercel deployment.
@@ -26,13 +26,13 @@ export function VercelPauseCurtain() {
       
       {/* Decorative ambient elements */}
       <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-[300px] w-[600px] -translate-x-1/2 rounded-full bg-primary/20 opacity-20 blur-[100px]" />
-      <div className="pointer-events-none absolute bottom-0 left-0 -z-10 h-[300px] w-[300px] rounded-full bg-teal-500/10 opacity-20 blur-[100px]" />
+      <div className="pointer-events-none absolute bottom-0 left-0 -z-10 h-[300px] w-[300px] rounded-full bg-primary/10 opacity-20 blur-[100px]" />
 
       <div className="relative z-10 w-full max-w-lg">
         {/* Site branding */}
         <div className="mb-8 text-center space-y-2">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20 mb-2">
-            <ShieldAlert className="h-6 w-6 text-primary" />
+            <ShieldAlert className="h-6 w-6 text-primary-text" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight gradient-text">
             Booru Prompt Gallery
@@ -59,7 +59,7 @@ export function VercelPauseCurtain() {
           <CardContent className="space-y-5 pb-6">
             <div className="rounded-xl border border-primary/10 bg-primary/5 p-4 sm:p-5 relative overflow-hidden flex items-start gap-3">
               <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary/50 to-primary/10" />
-              <div className="mt-0.5 shrink-0 text-primary">
+              <div className="mt-0.5 shrink-0 text-primary-text">
                 <Globe className="h-5 w-5" />
               </div>
               <p className="text-sm leading-relaxed text-foreground/90">
@@ -94,7 +94,7 @@ export function VercelPauseCurtain() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <GithubMono size={16} className="mr-2" />
+                <GithubIcon size={16} className="mr-2" />
                 View GitHub
               </a>
             </Button>

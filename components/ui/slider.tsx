@@ -105,12 +105,12 @@ const Slider = React.forwardRef<
       <SliderPrimitive.Track
         className={cn(
           "relative h-1.5 w-full grow overflow-hidden rounded-full bg-secondary",
-          "shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.09)]",
+          "shadow-[inset_0_1px_2px_color-mix(in_oklab,var(--foreground)_9%,transparent)]",
           !staticTrack && "transition-[height] duration-150 ease-[cubic-bezier(0.4,0,0.2,1)]",
           !staticTrack && "group-focus-within:h-2 group-data-[dragging]:h-2"
         )}
       >
-        <SliderPrimitive.Range className="absolute h-full rounded-full bg-[linear-gradient(90deg,hsl(var(--primary)/0.7),hsl(var(--primary)))]" />
+        <SliderPrimitive.Range className="absolute h-full rounded-full bg-linear-to-r from-primary/70 to-primary" />
       </SliderPrimitive.Track>
       {/* Radix positions this thumb by writing the inset property
           (`left`/`right`, e.g. `left: calc(50% + 0px)`) on an
@@ -131,11 +131,11 @@ const Slider = React.forwardRef<
         aria-valuemax={props.max}
         className={cn(
           "relative grid h-5 w-5 place-items-center rounded-full border border-primary/50",
-          "bg-[radial-gradient(circle_at_50%_30%,hsl(var(--background)),hsl(var(--secondary)))]",
-          "shadow-[0_1px_3px_hsl(var(--foreground)/0.12),0_0_0_3px_hsl(var(--primary)/0.1)]",
+          "bg-[radial-gradient(circle_at_50%_30%,var(--background),var(--secondary))]",
+          "shadow-[0_1px_3px_color-mix(in_oklab,var(--foreground)_12%,transparent),0_0_0_3px_color-mix(in_oklab,var(--primary)_10%,transparent)]",
           "transition-[transform,box-shadow] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]",
           "group-data-[dragging]:transition-none",
-          "group-data-[dragging]:scale-125 group-data-[dragging]:shadow-[0_2px_8px_hsl(var(--foreground)/0.16),0_0_0_6px_hsl(var(--primary)/0.18)]",
+          "group-data-[dragging]:scale-125 group-data-[dragging]:shadow-[0_2px_8px_color-mix(in_oklab,var(--foreground)_16%,transparent),0_0_0_6px_color-mix(in_oklab,var(--primary)_18%,transparent)]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:pointer-events-none disabled:opacity-50"
         )}

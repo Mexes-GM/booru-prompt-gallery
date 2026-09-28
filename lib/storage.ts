@@ -70,7 +70,6 @@ export const STORAGE_KEYS = {
   BLACKLIST: 'blacklist',
   GLOBAL_WEIGHTS: 'global-weights',
   GLOBAL_WEIGHTS_ENABLED: 'global-weights-enabled',
-  // New keys for audit fix
   ADD_TAGS: 'add-tags-input',
   EXCLUDE_TAGS: 'exclude-tags-input',
   FIND_REPLACE_FIND: 'find-replace-find-input',
@@ -200,8 +199,7 @@ export interface PromptOptions {
   /**
    * Whether tags typed in the search bar but missing from a post's own
    * prompt get silently appended to the final prompt. Defaults to true
-   * (preserves the historical behavior) — exposed as a real switch so this
-   * is no longer an invisible always-on transformation (plan task 2.5 / E3).
+   * — exposed as a switch in the options panel.
    */
   autoAppendSearchTags?: boolean
 }
@@ -417,10 +415,8 @@ export const userPreferences = {
   setGlobalWeightsEnabled: (enabled: boolean) =>
     storage.set(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, enabled),
 
-  // Audit Fix: Persistent Inputs
+  // Persistent inputs
   getAddTagsInput: (): string => {
-    // Migration check: check old key if new one is empty?
-    // Use the new key directly.
     return storage.get(STORAGE_KEYS.ADD_TAGS, "")
   },
 
@@ -731,6 +727,10 @@ export interface PackModeConfigV2 {
   axisMinCounts: Partial<Record<TagCategory, number>>
   promptCount: number
   manualAxisValues: Partial<Record<TagCategory, string[]>>
+  /** Minimum tags per generated prompt; 0 or absent = no minimum. */
+  minTotalTags?: number
+  /** Per-category minimum tags for a sampled "full set" to count (default 3). */
+  minSetTags?: Partial<Record<TagCategory, number>>
 }
 
 function isPackModeConfigV2(value: unknown): value is PackModeConfigV2 {
@@ -749,14 +749,13 @@ function isPackModeConfigV2(value: unknown): value is PackModeConfigV2 {
 }
 
 /**
- * Same fields as `PackSourceAnswers` (components/prompt-gallery/pack-source-popover.tsx),
+ * Same fields as `PackSourceAnswers` (components/prompt-gallery/pack-source-modal.tsx),
  * duplicated here with local literal types so storage.ts stays a leaf module
  * (no import from components/). "packSourceChosen" (§7.2) is implicit: a
  * non-null value read back from storage means the user already answered once.
  */
 export interface StoredPackSourceAnswers {
   ratingMode: 'sfw' | 'questionable' | 'explicit' | 'both'
-  soloOnly: boolean
   tagsSource: 'current' | 'custom' | 'empty'
   searchTags: string
   booruProvider: BooruProvider
@@ -767,7 +766,6 @@ function isStoredPackSourceAnswers(value: unknown): value is StoredPackSourceAns
   const v = value as Partial<StoredPackSourceAnswers>
   return (
     (['sfw', 'questionable', 'explicit', 'both'] as const).includes(v.ratingMode as 'sfw') &&
-    typeof v.soloOnly === 'boolean' &&
     (['current', 'custom', 'empty'] as const).includes(v.tagsSource as 'current') &&
     typeof v.searchTags === 'string' &&
     typeof v.booruProvider === 'string'

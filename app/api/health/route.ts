@@ -19,7 +19,7 @@ export async function GET() {
     // Check Supabase connectivity (our actual backend dependency)
     // instead of hammering external booru APIs.
     const { data, error } = await supabaseAdmin
-      .from('trend_cache')
+      .from('booru_posts_cache')
       .select('id')
       .limit(1)
 

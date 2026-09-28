@@ -1,16 +1,15 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { useInfinitePosts, BooruProvider, BooruPost, apiUrl } from "@/lib/api-client"
+import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
 import type { ScoreTier } from "@/lib/api-client"
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
-  trackSearch,
   trackLoadMore,
   trackRefresh,
   trackProviderChange,
-  trackRatingChange,
 } from '@/lib/analytics'
 import { useToast } from "@/hooks/use-toast"
+import { useScrollRateLimiter, MAX_SESSION_PAGE_LOADS } from "@/hooks/use-scroll-rate-limiter"
 
 function shallowEqual(objA: any, objB: any): boolean {
   if (Object.is(objA, objB)) return true;
@@ -88,7 +87,7 @@ export function useBooruSearch() {
     STORAGE_KEYS.BOORU_PROVIDER
   )
 
-  const [hasPromptFilter, setHasPromptFilter] = usePersistentState(
+  const [hasPromptFilter, _setHasPromptFilter] = usePersistentState(
     false,
     userPreferences.getHasPromptFilter,
     userPreferences.setHasPromptFilter,
@@ -136,14 +135,6 @@ export function useBooruSearch() {
     STORAGE_KEYS.MINIMUM_CHARACTER_COUNT
   )
 
-  const [characterCountRange, _setCharacterCountRange] = usePersistentState<[number, number]>(
-    [0, 10000],
-    userPreferences.getCharacterCountRange,
-    userPreferences.setCharacterCountRange,
-    "characterCountRange",
-    STORAGE_KEYS.CHARACTER_COUNT_RANGE
-  )
-
   const userInteractionRef = useRef(false)
 
   const setTagCountFilter = useCallback((value: string | ((prev: string) => string)) => {
@@ -161,15 +152,9 @@ export function useBooruSearch() {
     _setCharacterCountFilter(value)
   }, [_setCharacterCountFilter])
 
-  const setCharacterCountRange = useCallback((value: [number, number] | ((prev: [number, number]) => [number, number])) => {
-    userInteractionRef.current = true
-    _setCharacterCountRange(value)
-  }, [_setCharacterCountRange])
-
   const [appliedTagCountFilter, setAppliedTagCountFilter] = useState("5")
   const [appliedScoreTier, setAppliedScoreTier] = useState<ScoreTier>("off")
   const [appliedCharacterCountFilter, setAppliedCharacterCountFilter] = useState("0")
-  const [appliedCharacterCountRange, setAppliedCharacterCountRange] = useState<[number, number]>([0, 10000])
   const [isClient, setIsClient] = useState(false)
 
   // Sync applied filter with persistent state on load (when no user interaction has occurred)
@@ -178,9 +163,8 @@ export function useBooruSearch() {
       setAppliedTagCountFilter(tagCountFilter)
       setAppliedScoreTier(scoreTier)
       setAppliedCharacterCountFilter(characterCountFilter)
-      setAppliedCharacterCountRange(characterCountRange)
     }
-  }, [tagCountFilter, scoreTier, characterCountFilter, characterCountRange])
+  }, [tagCountFilter, scoreTier, characterCountFilter])
 
  // Loading states
  const [loadMoreError, setLoadMoreError] = useState(false)
@@ -208,7 +192,37 @@ export function useBooruSearch() {
 
   const { toast } = useToast()
 
-
+  // Client-side scroll rate limiter — proactive, not reactive.
+  //
+  // Every existing protection (Danbooru's own per-IP limit, our Redis-backed
+  // limiters for Gelbooru/Rule34) only reacts AFTER a request lands. Fast,
+  // sustained scrolling can fire many page loads before any of those kick in
+  // — and those limiters are irrelevant for Danbooru/e621/Aibooru, which never
+  // touch /api/posts at all (direct browser→provider fetch).
+  // This runs in the browser, for every provider, in every environment —
+  // it doesn't depend on any backend deciding to reject us.
+  //
+  // Guard logic (sliding-window burst cap + hard per-session page cap) lives
+  // in the shared useScrollRateLimiter hook so Pack Mode's own seeding fetch
+  // (hooks/use-pack-seed-search.ts) enforces the exact same numbers instead
+  // of a second, potentially-drifting copy. See that hook for the full
+  // rationale behind the specific constants.
+  const rateLimiter = useScrollRateLimiter({
+    onSessionCapReached: () => {
+      toast({
+        title: "Session Limit Reached",
+        description: `You've loaded ${MAX_SESSION_PAGE_LOADS} pages for this search. Try a new search or filter to keep browsing.`,
+        variant: "default",
+      })
+    },
+    onScrollLimited: () => {
+      toast({
+        title: "Scrolling Too Fast",
+        description: `Loading is paused for 5s to avoid overloading the provider. Please slow down.`,
+        variant: "default",
+      })
+    },
+  })
 
   // --- Initialization ---
 
@@ -232,7 +246,7 @@ export function useBooruSearch() {
   // Auto-disable NSFW filter when Rule34 is selected (default to allowed)
   // Restore previous rating when leaving Rule34 if it was forced
   useEffect(() => {
-    setHasPromptFilter(booruProvider === 'aibooru')
+    _setHasPromptFilter(booruProvider === 'aibooru')
 
     if (booruProvider === 'rule34') {
       if (ratingFilter === 'rating:general') {
@@ -297,22 +311,28 @@ export function useBooruSearch() {
    setLoadMoreError(false)
    setLastLoadAttempt(0)
    setCircuitOpen(false)
-   setSessionCapReached(false)
+   rateLimiter.reset()
    loadMoreGuardRef.current = false
    duplicatePagesRef.current = 0
    if (autoAdvanceTimerRef.current) {
      clearTimeout(autoAdvanceTimerRef.current)
      autoAdvanceTimerRef.current = null
    }
- }, [booruProvider, order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedScoreTier, appliedCharacterCountFilter, setSize])
+   // rateLimiter.reset is stable (useCallback with no deps in the shared hook)
+   // appliedCharacterCountFilter is deliberately absent: it's a client-side
+   // filter (useFilteredPosts) that never reaches the fetch, so changing it
+   // must not throw away the pages already loaded.
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [booruProvider, order, ratingFilter, debouncedSearchTags, appliedTagCountFilter, appliedScoreTier, setSize])
 
   // --- Derived Data ---
 
   const stablePostsRef = useRef<BooruPost[]>([])
   const lastSearchKeyRef = useRef<string>('')
 
-  // Create a stable key for the current search parameters
-  const currentSearchKey = `${booruProvider}-${debouncedSearchTags}-${ratingFilter}-${order}-${randomSeed}-${appliedTagCountFilter}-${appliedScoreTier}-${appliedCharacterCountFilter}`
+  // Create a stable key for the current search parameters (fetch inputs only —
+  // client-side filters like appliedCharacterCountFilter are applied downstream)
+  const currentSearchKey = `${booruProvider}-${debouncedSearchTags}-${ratingFilter}-${order}-${randomSeed}-${appliedTagCountFilter}-${appliedScoreTier}`
 
   const allPosts = useMemo(() => {
     if (!pages) return []
@@ -371,89 +391,7 @@ export function useBooruSearch() {
   const lastPageFromAPI = pages && pages.length > 0 ? pages[pages.length - 1] : null
   const isReachingEnd = isEmpty || (lastPageFromAPI !== null && lastPageFromAPI.length === 0)
 
-  // Prefetch next page API response when new data arrives.
-  // Skip random order — each seed produces a unique URL so there is no
-  // cache to warm, and the extra request only consumes rate-limit budget.
-  useEffect(() => {
-    if (!pages || pages.length === 0) return
-    if (noMoreResults || isReachingEnd) return
-    if (order === 'random') return
-
-    const nextPage = size + 1
-    const encodedQuery = encodeURIComponent(debouncedSearchTags || '')
-
-    let apiEndpoint = '/api/posts'
-    // All providers now use /api/posts?provider=X (consolidated route)
-    let provider = booruProvider
-    if (booruProvider === 'rule34') provider = 'rule34'
-    else if (booruProvider === 'e621') provider = 'e621'
-    else if (booruProvider === 'gelbooru') provider = 'gelbooru'
-
-    const nextUrl = apiUrl(`${apiEndpoint}?page=${nextPage}&tags=${encodedQuery}&order=${order}&provider=${provider}`)
-
-    const link = document.createElement('link')
-    link.rel = 'prefetch'
-    link.href = nextUrl
-    link.as = 'fetch'
-    document.head.appendChild(link)
-
-    return () => {
-      if (link.parentNode) link.parentNode.removeChild(link)
-    }
-  }, [pages, size, noMoreResults, isReachingEnd, debouncedSearchTags, order, booruProvider, randomSeed])
-
   // --- Actions ---
-
-  // Client-side scroll rate limiter — proactive, not reactive.
-  //
-  // Every existing protection (Danbooru's own per-IP limit, our Redis-backed
-  // limiters for Gelbooru/Rule34) only reacts AFTER a request lands. Fast,
-  // sustained scrolling can fire many page loads before any of those kick in
-  // — worse in dev, where our own /api/posts limiter is intentionally
-  // disabled (NODE_ENV==='development'), and irrelevant for Danbooru/e621,
-  // which never touch /api/posts at all (direct browser→provider fetch).
-  // This runs in the browser, for every provider, in every environment —
-  // it doesn't depend on any backend deciding to reject us.
-  //
-  // A plain "minimum X ms between calls" throttle only spaces out individual
-  // calls — it doesn't bound total volume. A user who keeps the trigger
-  // re-firing at exactly that interval can still pull unlimited pages over
-  // time. This is a real sliding-window cap: at most MAX_LOADS_PER_WINDOW
-  // page loads within WINDOW_MS. Once hit, further loads are refused (with
-  // user-visible feedback) until the oldest load in the window expires.
-  //
-  // TIGHTENED (2026-07-03, real ~500 users/day sizing): 5/10s was more burst
-  // room than natural human scroll needs (reading/looking at each page takes
-  // longer than 2s in practice). 3/10s still feels fluid for normal scrolling
-  // but cuts automated/scripted scrolling off sooner, reducing the aggregate
-  // request volume a normal day of traffic generates.
-  const WINDOW_MS = 10_000
-  const MAX_LOADS_PER_WINDOW = 2
-  // Fixed cooldown once the burst cap trips (see SIMPLIFIED note below) —
-  // predictable and easy to show in the UI, instead of a variable wait
-  // computed from the sliding window's exact expiry.
-  const SCROLL_COOLDOWN_MS = 5_000
-  const loadTimestampsRef = useRef<number[]>([])
-  const throttleRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const scrollLimitedRef = useRef(false)
-  const [scrollLimited, setScrollLimited] = useState(false)
-
-  // Hard per-session page cap (F5 — rate-limit-antiabuse plan). Bounds
-  // automated scroll-scraping: a bot that keeps the infinite-scroll trigger
-  // firing can otherwise pull unlimited pages. `size` is the SWR page count
-  // for the CURRENT search and resets to 1 on any new search/provider/filter
-  // change, so this cap is naturally per-search-session.
-  //
-  // TIGHTENED (2026-07-03, real ~500 users/day sizing): 100 pages (~3000
-  // posts) was sized to never bother a human, but that also meant it did
-  // nothing to reduce the aggregate request volume of normal browsing — only
-  // stopped extreme scraping. 35 pages (~1050 posts) is still generous for a
-  // real browsing session (few users scroll that deep in one sitting) while
-  // meaningfully lowering the ceiling per search session. Changing search,
-  // provider, order, or any filter resets this cap immediately — a full page
-  // refresh is NOT required to keep browsing.
-  const MAX_SESSION_PAGE_LOADS = 35
-  const [sessionCapReached, setSessionCapReached] = useState(false)
 
   // How many consecutive all-duplicate pages to tolerate before concluding the
   // result pool is genuinely exhausted. Small enough to stop wasting requests
@@ -472,64 +410,13 @@ export function useBooruSearch() {
       return
     }
 
-    // Hard per-session cap (F5): refuse further auto/manual loads once the
-    // session has pulled MAX_SESSION_PAGE_LOADS pages. Bounds scroll-scraping
-    // without hurting humans (who effectively never reach it); changing the
-    // search/provider/filters resets `size` and lets browsing continue.
-    if (size >= MAX_SESSION_PAGE_LOADS) {
-      if (!sessionCapReached) {
-        setSessionCapReached(true)
-        toast({
-          title: "Session Limit Reached",
-          description: `You've loaded ${MAX_SESSION_PAGE_LOADS} pages for this search. Try a new search or filter to keep browsing.`,
-          variant: "default",
-        })
-      }
+    // canLoadMore enforces both the hard per-session page cap and the
+    // sliding-window burst cap, firing the toasts above via callbacks when
+    // either newly trips. It also registers this load against the burst
+    // window when it returns true, so no separate "register" call is needed.
+    if (!rateLimiter.canLoadMore(size)) {
       return
     }
-
-    const now = Date.now()
-    // Drop timestamps outside the window before evaluating the cap.
-    loadTimestampsRef.current = loadTimestampsRef.current.filter(t => now - t < WINDOW_MS)
-
-    if (loadTimestampsRef.current.length >= MAX_LOADS_PER_WINDOW) {
-      // Cap hit: refuse this load and surface it to the user instead of
-      // silently queuing forever — sustained scrolling should visibly
-      // pause, not just get quietly delayed.
-      //
-      // SIMPLIFIED (2026-07-03): previously the cooldown was computed from
-      // the sliding window itself (time until the oldest load ages out),
-      // which was mathematically precise but gave the user an unpredictable
-      // wait (anywhere from ~0 to ~10s) with no way to communicate a real
-      // number in the UI. A fixed, short cooldown is easier to reason about
-      // and to show ("pausing for 3s") at the cost of being slightly less
-      // precise about the exact moment the window would allow a retry.
-      const wasAlreadyLimited = scrollLimitedRef.current
-      scrollLimitedRef.current = true
-      setScrollLimited(true)
-      if (!wasAlreadyLimited) {
-        toast({
-          title: "Scrolling Too Fast",
-          description: `Loading is paused for ${SCROLL_COOLDOWN_MS / 1000}s to avoid overloading the provider. Please slow down.`,
-          variant: "default",
-        })
-      }
-      if (throttleRetryRef.current) clearTimeout(throttleRetryRef.current)
-      throttleRetryRef.current = setTimeout(() => {
-        throttleRetryRef.current = null
-        scrollLimitedRef.current = false
-        setScrollLimited(false)
-        // Clear the burst window on cooldown expiry so the user gets a full
-        // fresh allowance instead of immediately re-tripping the cap with
-        // whatever timestamps are still inside WINDOW_MS.
-        loadTimestampsRef.current = []
-      }, SCROLL_COOLDOWN_MS)
-      return
-    }
-
-    scrollLimitedRef.current = false
-    setScrollLimited(false)
-    loadTimestampsRef.current.push(now)
 
     loadMoreGuardRef.current = true
     setLoadMoreError(false)
@@ -541,7 +428,7 @@ export function useBooruSearch() {
     const nextSize = size + 1
     setSize(nextSize)
     trackLoadMore({ order, nextPage: nextSize, currentCount: allPosts.length })
-  }, [size, order, setSize, allPosts.length, toast, sessionCapReached])
+  }, [size, order, setSize, allPosts.length, rateLimiter])
 
   // Stable ref to loadMore so the auto-advance effect can trigger the next
   // page without listing loadMore in its deps (which would churn on every
@@ -549,11 +436,11 @@ export function useBooruSearch() {
   const loadMoreRef = useRef(loadMore)
   useEffect(() => { loadMoreRef.current = loadMore }, [loadMore])
 
-  // Cancel any pending throttle retry on unmount to avoid calling a stale
-  // closure after the component is gone.
+  // Cancel any pending auto-advance timer on unmount to avoid calling a stale
+  // closure after the component is gone (the burst-cooldown timer is now
+  // cleaned up internally by useScrollRateLimiter).
   useEffect(() => {
     return () => {
-      if (throttleRetryRef.current) clearTimeout(throttleRetryRef.current)
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current)
     }
   }, [])
@@ -597,14 +484,8 @@ export function useBooruSearch() {
       clearTimeout(autoAdvanceTimerRef.current)
       autoAdvanceTimerRef.current = null
     }
-    
-    // NOTE: This uses searchTags, not debouncedSearchTags, because the form
-    // submission should execute immediately with whatever is in the input box,
-    // rather than waiting for the debounce interval to settle.
-    const query = searchTags.trim()
-    const tagCount = query ? query.split(',').reduce((count, t) => t.trim() ? count + 1 : count, 0) : 0
-    trackSearch({ query: query || '(empty)', rating: ratingFilter, order, tagCount })
-  }, [order, ratingFilter, searchTags, setSize])
+    // search_executed is captured by search-bar.tsx (with provider + is_shuffle).
+  }, [setSize])
 
   const clearSearch = useCallback(() => {
     setSearchTags("")
@@ -718,7 +599,7 @@ export function useBooruSearch() {
     isShuffle, toggleShuffle,
     order,
     booruProvider, setBooruProvider,
-    hasPromptFilter, setHasPromptFilter,
+    hasPromptFilter,
     removeLoRaTags, setRemoveLoRaTags,
     removeQualityTags, setRemoveQualityTags,
     tagCountFilter, setTagCountFilter,
@@ -727,8 +608,6 @@ export function useBooruSearch() {
     appliedScoreTier, setAppliedScoreTier,
     characterCountFilter, setCharacterCountFilter,
     appliedCharacterCountFilter, setAppliedCharacterCountFilter,
-    characterCountRange, setCharacterCountRange,
-    appliedCharacterCountRange, setAppliedCharacterCountRange,
     isClient,
 
     pages,
@@ -741,8 +620,8 @@ export function useBooruSearch() {
     noMoreResults,
  loadMoreError,
  circuitOpen,
- scrollLimited,
- sessionCapReached,
+ scrollLimited: rateLimiter.scrollLimited,
+ sessionCapReached: rateLimiter.sessionCapReached,
 
     loadMore,
     refresh,
@@ -751,6 +630,5 @@ export function useBooruSearch() {
 
     // Trackers
     trackProviderChange,
-    trackRatingChange,
   }
 }

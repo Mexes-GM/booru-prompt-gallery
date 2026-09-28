@@ -114,7 +114,16 @@ export interface CleanPromptOptions {
 }
 
 // --------------- Utilities ---------------
-export const toSpace = (s: string) => s.replace(/_/g, " ")
+export const toSpace = (s: string): string => {
+  if (!s || !s.includes("_")) return s
+  return s.replace(
+    /(<[^>]+>|\b(?:score|source|rating)_[a-zA-Z0-9_]+)|_/gi,
+    (match, protectedGroup) => {
+      if (protectedGroup) return protectedGroup
+      return " "
+    }
+  )
+}
 export const toUnderscore = (s: string) => s.replace(/\s+/g, "_")
 
 // Diccionario de auto-correcciones rapidas

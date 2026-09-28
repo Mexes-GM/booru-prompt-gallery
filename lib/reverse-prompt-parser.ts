@@ -5,6 +5,7 @@
 
 import { normalize, toSpace, toUnderscore, parseTagList, QUALITY_TAGS_SET } from "./cleanPrompt"
 import { classifyTags, type ClassifiedTags } from "./tag-classifier"
+import { emptyClassifiedTags } from "./tag-taxonomy"
 
 export interface ParsedRawPrompt {
   rawTags: string[]
@@ -83,13 +84,7 @@ export function parseRawPrompt(
     return {
       rawTags: [],
       cleanedTags: [],
-      classified: {
-        appearance: [],
-        clothing: [],
-        pose: [],
-        scenery: [],
-        other: [],
-      },
+      classified: emptyClassifiedTags(),
       quality: [],
     }
   }

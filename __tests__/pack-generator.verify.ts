@@ -21,11 +21,20 @@ import {
   extractAxisValues,
   extractAxisValuesWithCounts,
   extractAllAxisValuesWithCounts,
+  canonicalizeBundleTags,
+  extractAxisBundlesWithCounts,
+  extractAllAxisBundlesWithCounts,
   classifyPostForPack,
   filterAppearanceForPrimaryCharacter,
   generatePackPrompts,
+  checkSlotConstraints,
+  filterValuesBySlotState,
+  groupValuesBySlot,
+  maxValuesPerPrompt,
   createSeededRng,
   withAxisFallback,
+  MAX_MIN_TAGS_SLIDER,
+  MAX_MIN_PACKS_SLIDER,
 } from "../lib/pack/pack-generator"
 
 let passed = 0
@@ -261,6 +270,38 @@ const POSTS: BooruPost[] = [
   const poseHits = ["standing", "sitting", "kneeling"].filter((v) => withDefault[0]?.prompt.includes(v))
   assert(poseHits.length === 1, `no axisMinCounts defaults to 1 value per axis (got ${poseHits.length})`)
 }
+{
+  // axisMinCounts=0 deactivates the axis completely (zero tags sampled from this axis).
+  const result = generatePackPrompts({
+    lockedTags: ["1girl"],
+    axes: {
+      scenery: ["scenery-a", "scenery-b"],
+      pose: ["standing", "sitting"],
+    },
+    axisMinCounts: { scenery: 0 },
+    count: 1,
+    rng: createSeededRng(4),
+  })
+  assert(result.length === 1, "axisMinCounts=0: emits a prompt")
+  const sceneryHits = ["scenery-a", "scenery-b"].filter((v) => result[0]?.prompt.includes(v))
+  assert(sceneryHits.length === 0, `axisMinCounts=0 emits no scenery tags (got ${sceneryHits.length})`)
+  const poseHits = ["standing", "sitting"].filter((v) => result[0]?.prompt.includes(v))
+  assert(poseHits.length === 1, `active axis still emits tags normally (got ${poseHits.length})`)
+}
+{
+  // When all axes are deactivated (minCount=0), only base tags are emitted.
+  const result = generatePackPrompts({
+    lockedTags: ["1girl", "solo"],
+    axes: {
+      scenery: ["beach"],
+      pose: ["standing"],
+    },
+    axisMinCounts: { scenery: 0, pose: 0 },
+    count: 1,
+  })
+  assert(result.length === 1, "emits base prompt when all axes deactivated")
+  assert(result[0]?.prompt === "1girl, solo", `only base tags are emitted (got ${result[0]?.prompt})`)
+}
 
 // ── 13) axisMinCounts + Smart Tag Exclusion: same-axis contradictions ──
 // "standing" blocks "sitting" (tag-conflicts.ts POSES rule) — with
@@ -485,6 +526,215 @@ const POSTS: BooruPost[] = [
     rate > 0.15,
     `axisWeights on a huge space: heavily-weighted 'pose0' appears well above uniform baseline (rate=${rate.toFixed(2)}, expected >0.15, uniform~0.033)`
   )
+}
+
+// ── 19) Full Setup (baseless pack): custom base prompt + sampled axes produces valid prompts ──
+{
+  const customBasePrompt = "1girl, solo, masterpiece"
+  const lockedTags = customBasePrompt.split(",").map((t) => t.trim()).filter(Boolean)
+  const result = generatePackPrompts({
+    lockedTags,
+    axes: {
+      clothing: ["shirt", "dress"],
+      pose: ["standing", "sitting"],
+      scenery: ["indoors", "outdoors"],
+    },
+    count: 4,
+    rng: createSeededRng(123),
+  })
+  assert(result.length === 4, `Full Setup generates requested count (got ${result.length})`)
+  result.forEach((p) => {
+    assert(p.prompt.includes("1girl"), "Prompt includes custom base tag 1girl")
+    assert(p.prompt.includes("masterpiece"), "Prompt includes custom base tag masterpiece")
+  })
+}
+
+// ── 20) canonicalizeBundleTags: normalizes, dedupes, sorts tags ──
+{
+  const tags = ["pleated_skirt", "serafuku", "pleated skirt", "white_socks"]
+  const canonical = canonicalizeBundleTags(tags)
+  assert(canonical === "pleated skirt, serafuku, white socks",
+    `canonicalizeBundleTags produces sorted, normalized, deduped string (got '${canonical}')`)
+}
+
+// ── 21) extractAxisBundlesWithCounts: extracts cohesive sets per card ──
+{
+  const bundlePosts: BooruPost[] = [
+    makePost(10, "1girl solo red_dress boots"),
+    makePost(11, "1girl solo boots red_dress"), // same bundle in different order
+    makePost(12, "1girl solo shirt pleated_skirt white_socks"),
+  ]
+  const bundles = extractAxisBundlesWithCounts(bundlePosts, "clothing")
+  assert(bundles.length === 2, `extractAxisBundlesWithCounts dedupes identical card bundles (got ${bundles.length})`)
+  assert(bundles[0].value === "boots, red dress", `first bundle is 'boots, red dress' (got '${bundles[0].value}')`)
+  assert(bundles[0].count === 2, `first bundle count is 2 (got ${bundles[0].count})`)
+  assert(bundles[1].value === "pleated skirt, shirt, white socks", `second bundle is 'pleated skirt, shirt, white socks' (got '${bundles[1].value}')`)
+  assert(bundles[1].count === 1, `second bundle count is 1 (got ${bundles[1].count})`)
+
+  // extractAllAxisBundlesWithCounts matches
+  const allBundles = extractAllAxisBundlesWithCounts(bundlePosts, ["clothing"])
+  assert(JSON.stringify(allBundles.clothing) === JSON.stringify(bundles),
+    "extractAllAxisBundlesWithCounts matches extractAxisBundlesWithCounts")
+}
+
+// ── 22) generatePackPrompts with bundle values: includes entire bundle without scrambling ──
+{
+  const result = generatePackPrompts({
+    lockedTags: ["1girl", "mona (genshin impact)"],
+    axes: {
+      clothing: ["serafuku, pleated skirt, white socks", "bikini, straw hat, sunglasses"],
+    },
+    count: 2,
+    rng: createSeededRng(777),
+  })
+  assert(result.length === 2, `generates 2 prompts with clothing bundles (got ${result.length})`)
+  const hasSerafukuOutfit = result.some((r) =>
+    r.prompt.includes("serafuku") && r.prompt.includes("pleated skirt") && r.prompt.includes("white socks")
+  )
+  const hasBikiniOutfit = result.some((r) =>
+    r.prompt.includes("bikini") && r.prompt.includes("straw hat") && r.prompt.includes("sunglasses")
+  )
+  assert(hasSerafukuOutfit && hasBikiniOutfit, "each prompt includes a complete outfit bundle intact")
+  // Check that prompt values include the bundle string so learning can track it
+  assert(
+    result.some((r) => r.values.includes("serafuku, pleated skirt, white socks")),
+    "prompt.values preserves the selected bundle string for learning tracking"
+  )
+}
+
+// ── 23) Smart Tag Exclusion with bundle values: only conflicting tag is dropped from bundle ──
+{
+  // Base card has "from behind". Clothing bundle has "bikini, straw hat, cleavage".
+  // "cleavage" conflicts with "from behind" (Smart Tag Exclusion).
+  // "cleavage" must be dropped, while "bikini" and "straw hat" are preserved!
+  const result = generatePackPrompts({
+    lockedTags: ["1girl", "from behind"],
+    axes: {
+      clothing: ["bikini, straw hat, cleavage"],
+    },
+    count: 1,
+    rng: createSeededRng(888),
+  })
+  assert(result.length === 1, "prompt generated with conflicting bundle")
+  assert(!result[0].prompt.includes("cleavage"), "'cleavage' dropped by Smart Tag Exclusion from bundle")
+  assert(result[0].prompt.includes("bikini"), "'bikini' kept in prompt")
+  assert(result[0].prompt.includes("straw hat"), "'straw hat' kept in prompt")
+}
+
+// ── 24) Slider threshold limits: individual tags cap at 30, bundles cap at 10 ──
+{
+  assert(MAX_MIN_TAGS_SLIDER === 30, `MAX_MIN_TAGS_SLIDER is 30 (got ${MAX_MIN_TAGS_SLIDER})`)
+  assert(MAX_MIN_PACKS_SLIDER === 10, `MAX_MIN_PACKS_SLIDER is 10 (got ${MAX_MIN_PACKS_SLIDER})`)
+}
+
+// ── 25) Orthogonal slot constraints: checkSlotConstraints blocks outfit + bottom ──
+{
+  const overrides: Record<string, string> = {
+    dress: "clothing:outfit",
+    skirt: "clothing:bottom",
+    shirt: "clothing:top",
+    beach: "scenery:setting",
+    forest: "scenery:setting",
+  }
+  // Outfit + bottom incompatibility
+  assert(!checkSlotConstraints("dress", ["skirt"], overrides), "dress rejected when skirt is present")
+  assert(!checkSlotConstraints("skirt", ["dress"], overrides), "skirt rejected when dress is present")
+  assert(checkSlotConstraints("shirt", ["skirt"], overrides), "shirt allowed when skirt is present")
+
+  // Max count constraint (setting allows max 1)
+  assert(!checkSlotConstraints("forest", ["beach"], overrides), "second setting rejected by maxCount=1")
+  assert(checkSlotConstraints("forest", ["shirt"], overrides), "setting allowed when no setting is present")
+}
+
+// ── 26) generatePackPrompts with orthogonal slot constraints & tagSlots output ──
+{
+  const overrides: Record<string, string> = {
+    dress: "clothing:outfit",
+    skirt: "clothing:bottom",
+    shirt: "clothing:top",
+    smile: "pose:expression",
+    standing: "pose:posture",
+  }
+  const result = generatePackPrompts({
+    lockedTags: ["1girl", "dress"],
+    axes: {
+      clothing: ["skirt", "shirt"],
+      pose: ["smile", "standing"],
+    },
+    count: 2,
+    rng: createSeededRng(999),
+    tagOverrides: overrides,
+  })
+  assert(result.length > 0, "generates prompts with slot constraints")
+  for (const r of result) {
+    // Because base has "dress" (clothing:outfit), "skirt" (clothing:bottom) must never be in the prompt!
+    assert(!r.prompt.includes("skirt"), "prompt does not include conflicting bottom when outfit is locked")
+    assert(r.tagSlots !== undefined, "tagSlots is populated")
+    if (r.tagSlots) {
+      assert(r.tagSlots["dress"] === "clothing:outfit", "dress mapped to clothing:outfit")
+    }
+  }
+}
+
+// ── 27) filterValuesBySlotState: locked and muted slots drop out ──
+{
+  const overrides: Record<string, string> = {
+    smile: "pose:expression",
+    standing: "pose:posture",
+    running: "pose:kinetic",
+  }
+  const state = { lockedSlots: new Set(["pose:posture"]), mutedSlots: new Set(["pose:kinetic"]) }
+  const filtered = filterValuesBySlotState("pose", ["smile", "standing", "running", "mystery pose"], state, overrides)
+  assert(filtered.length === 1 && filtered[0] === "smile", "only the varying slot survives")
+  assert(!filtered.includes("mystery pose"), "unknown slot dropped when the category is partially locked")
+
+  const mutedOnly = { lockedSlots: new Set<string>(), mutedSlots: new Set(["pose:kinetic"]) }
+  const kept = filterValuesBySlotState("pose", ["smile", "running", "mystery pose"], mutedOnly, overrides)
+  assert(kept.includes("mystery pose"), "unknown slot kept when nothing in the category is locked")
+  assert(!kept.includes("running"), "muted slot dropped")
+
+  const none = { lockedSlots: new Set<string>(), mutedSlots: new Set<string>() }
+  const values = ["smile", "running"]
+  assert(filterValuesBySlotState("pose", values, none, overrides) === values, "no slot state is a no-op")
+}
+
+// ── 28) filterValuesBySlotState strips locked tags out of bundles ──
+{
+  const overrides: Record<string, string> = { smile: "pose:expression", standing: "pose:posture", wink: "pose:expression" }
+  const state = { lockedSlots: new Set(["pose:posture"]), mutedSlots: new Set<string>() }
+  const filtered = filterValuesBySlotState("pose", ["smile, standing", "standing", "wink"], state, overrides)
+  assert(filtered.includes("smile"), "bundle reduced to its varying tag")
+  assert(!filtered.some((v: string) => v.includes("standing")), "locked slot stripped from bundles and singles")
+  assert(filtered.includes("wink"), "varying single kept")
+}
+
+// ── 29) groupValuesBySlot + maxValuesPerPrompt ──
+{
+  const overrides: Record<string, string> = {
+    smile: "pose:expression",
+    grin: "pose:expression",
+    standing: "pose:posture",
+    running: "pose:kinetic",
+    punching: "pose:combat",
+    hugging: "pose:interaction",
+  }
+  const groups = groupValuesBySlot("pose", ["mystery pose", "running", "smile", "standing", "grin", "punching", "hugging"], overrides)
+  assert(groups[0].slot === "pose:posture", "groups follow taxonomy order")
+  assert(groups[groups.length - 1].slot === null, "unslotted group comes last")
+  const expression = groups.find((g) => g.slot === "pose:expression")
+  assert(expression?.values.length === 2, "values of one slot share a group")
+  // posture 1 + expression min(2,1)=1 + active actions min(1+1+1, 2)=2 + unslotted 1
+  assert(maxValuesPerPrompt(groups) === 5, `cap respects maxCount and the action budget (got ${maxValuesPerPrompt(groups)})`)
+}
+
+// ── 30) Slot constraints apply to suffix-derived variants ("blue skirt" -> skirt) ──
+{
+  const overrides: Record<string, string> = {
+    dress: "clothing:outfit",
+    skirt: "clothing:bottom",
+  }
+  assert(!checkSlotConstraints("blue skirt", ["dress"], overrides), "derived bottom rejected against a locked outfit")
+  assert(!checkSlotConstraints("red dress", ["skirt"], overrides), "derived outfit rejected against a bottom")
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

@@ -71,7 +71,7 @@ export function RangeSlider({
   ariaLabel,
   dotColor,
   tickInterval = 0,
-  trackColor = "bg-[linear-gradient(90deg,hsl(var(--primary)/0.7),hsl(var(--primary)))]",
+  trackColor = "bg-linear-to-r from-primary/70 to-primary",
 }: RangeSliderProps) {
   const [localMin, setLocalMin] = useState(value[0])
   const [localMax, setLocalMax] = useState(value[1])
@@ -170,7 +170,7 @@ export function RangeSlider({
           disabled={disabled}
           className={cn(
             "h-8 w-16 text-xs text-center bg-background/50",
-            !isInputValid && "border-red-500 focus-visible:ring-red-500",
+            !isInputValid && "border-destructive focus-visible:ring-destructive",
             disabled && "opacity-50 cursor-not-allowed"
           )}
           aria-label={`${ariaLabel} minimum input`}
@@ -211,7 +211,7 @@ export function RangeSlider({
           )}
 
           <SliderPrimitive.Track
-            className="relative h-1.5 w-full grow overflow-visible rounded-full bg-secondary shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.09)] transition-[height] duration-150 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            className="relative h-1.5 w-full grow overflow-visible rounded-full bg-secondary shadow-[inset_0_1px_2px_color-mix(in_oklab,var(--foreground)_9%,transparent)] transition-[height] duration-150 ease-[cubic-bezier(0.4,0,0.2,1)]"
             onPointerEnter={() => setIsHovering(true)}
             onPointerLeave={() => setIsHovering(false)}
           >
@@ -223,12 +223,12 @@ export function RangeSlider({
             <motion.span
               className={cn(
                 "relative grid h-5 w-5 place-items-center rounded-full border border-primary/50",
-                "bg-[radial-gradient(circle_at_50%_30%,hsl(var(--background)),hsl(var(--secondary)))]",
-                "shadow-[0_1px_3px_hsl(var(--foreground)/0.12),0_0_0_3px_hsl(var(--primary)/0.1)]",
+                "bg-[radial-gradient(circle_at_50%_30%,var(--background),var(--secondary))]",
+                "shadow-[0_1px_3px_color-mix(in_oklab,var(--foreground)_12%,transparent),0_0_0_3px_color-mix(in_oklab,var(--primary)_10%,transparent)]",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 "disabled:pointer-events-none disabled:opacity-50",
               )}
-              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 2px 8px hsl(var(--foreground) / 0.16), 0 0 0 6px hsl(var(--primary) / 0.18)" }}
+              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 2px 8px color-mix(in oklab, var(--foreground) 16%, transparent), 0 0 0 6px color-mix(in oklab, var(--primary) 18%, transparent)" }}
               transition={{ type: "spring", stiffness: 420, damping: 26 }}
             >
               <span
@@ -264,12 +264,12 @@ export function RangeSlider({
             <motion.span
               className={cn(
                 "relative grid h-5 w-5 place-items-center rounded-full border border-primary/50",
-                "bg-[radial-gradient(circle_at_50%_30%,hsl(var(--background)),hsl(var(--secondary)))]",
-                "shadow-[0_1px_3px_hsl(var(--foreground)/0.12),0_0_0_3px_hsl(var(--primary)/0.1)]",
+                "bg-[radial-gradient(circle_at_50%_30%,var(--background),var(--secondary))]",
+                "shadow-[0_1px_3px_color-mix(in_oklab,var(--foreground)_12%,transparent),0_0_0_3px_color-mix(in_oklab,var(--primary)_10%,transparent)]",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 "disabled:pointer-events-none disabled:opacity-50",
               )}
-              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 2px 8px hsl(var(--foreground) / 0.16), 0 0 0 6px hsl(var(--primary) / 0.18)" }}
+              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 2px 8px color-mix(in oklab, var(--foreground) 16%, transparent), 0 0 0 6px color-mix(in oklab, var(--primary) 18%, transparent)" }}
               transition={{ type: "spring", stiffness: 420, damping: 26 }}
             >
               <span
@@ -312,7 +312,7 @@ export function RangeSlider({
           disabled={disabled}
           className={cn(
             "h-8 w-16 text-xs text-center bg-background/50",
-            !isInputValid && "border-red-500 focus-visible:ring-red-500",
+            !isInputValid && "border-destructive focus-visible:ring-destructive",
             disabled && "opacity-50 cursor-not-allowed"
           )}
           aria-label={`${ariaLabel} maximum input`}

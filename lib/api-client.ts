@@ -8,7 +8,7 @@ import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
 // so existing `@/lib/api-client` consumers keep working.
 import { apiUrl, buildDirectDanbooruUrl, urlHasHost } from './booru/urls'
 import { getAuthHeader } from './booru/auth-header'
-import { transformAibooruPost, transformE621Post } from './booru/post-transformers'
+import { transformAibooruPost, transformDanbooruPost, transformE621Post } from './booru/post-transformers'
 import { relaxScoreFloorInUrl, SCORE_FLOOR_BY_PROVIDER, type BooruProvider as TagLimitsBooruProvider, type ScoreTier } from './booru/tag-limits'
 
 export { transformAibooruPost, transformE621Post }
@@ -103,7 +103,9 @@ export const removeQualityTags = (prompt: string): string => {
     'score_7_up',
     'score_6_up',
     'score_5_up',
-    'score_4_up'
+    'score_4_up',
+    'score_8',
+    'score_7'
   ]
 
   // First, remove quality tags with parentheses and weights like (masterpiece:1) or (highest quality:1.)
@@ -127,7 +129,6 @@ export const removeQualityTags = (prompt: string): string => {
   tags = tags.filter(tag => {
     const lowerTag = tag.toLowerCase()
 
-    // Check if the entire tag is a quality tag
     if (qualityTags.some(qualityTag => lowerTag === qualityTag.toLowerCase())) {
       return false
     }
@@ -197,7 +198,6 @@ export const getPromptFromPost = (post: BooruPost): string | null => {
     // Clean malformed prompt data
     prompt = cleanPromptData(prompt)
 
-    // Remove duplicate tags
     prompt = removeDuplicateTags(prompt)
 
     return prompt
@@ -206,33 +206,9 @@ export const getPromptFromPost = (post: BooruPost): string | null => {
 }
 
 // transformAibooruPost / transformE621Post moved to lib/booru/post-transformers.ts
-// (Fase 2b del refactor de sostenibilidad) so hooks/use-favorite-posts.ts can import
+// so hooks/use-favorite-posts.ts can import
 // them without creating an api-client.ts <-> hooks/use-favorite-posts.ts cycle.
 // Re-exported below so existing consumers of `@/lib/api-client` keep working.
-
-// Helper to transform raw Danbooru posts to BooruPost (for direct client fetches bypassing the Worker)
-const transformDanbooruPost = (post: unknown): BooruPost => {
-  if (!post || typeof post !== 'object') {
-    throw new Error('Invalid post data from Danbooru')
-  }
-  const typedPost = post as Record<string, unknown>
-  return {
-    id: (typedPost.id as number) || 0,
-    file_url: (typedPost.file_url as string) || '',
-    large_file_url: (typedPost.large_file_url as string) || (typedPost.file_url as string) || '',
-    preview_file_url: (typedPost.preview_file_url as string) || (typedPost.file_url as string) || '',
-    tag_string: (typedPost.tag_string as string) || '',
-    tag_string_artist: (typedPost.tag_string_artist as string) || '',
-    tag_string_character: (typedPost.tag_string_character as string) || '',
-    tag_string_copyright: (typedPost.tag_string_copyright as string) || '',
-    tag_string_meta: (typedPost.tag_string_meta as string) || undefined,
-    rating: (typedPost.rating as string) || 'q',
-    score: (typedPost.score as number) || 0,
-    width: (typedPost.image_width as number) || (typedPost.width as number) || 0,
-    height: (typedPost.image_height as number) || (typedPost.height as number) || 0,
-    _provider: 'danbooru',
-  }
-}
 
 // Client-side request deduplication: prevents SWR from firing multiple
 // identical requests in rapid succession (React Strict Mode double-render,
@@ -290,6 +266,21 @@ const detectActiveScoreTier = (url: string, provider: TagLimitsBooruProvider): S
   return null
 }
 
+// Seconds to wait before retrying a 429: the standard Retry-After header first
+// (the Worker exposes it via Access-Control-Expose-Headers), then a JSON
+// `retryAfter` body field, else 5s. Capped so a UI never stalls for minutes.
+const getRetryAfterSeconds = async (res: Response): Promise<number> => {
+  const header = Number(res.headers.get('Retry-After'))
+  if (Number.isFinite(header) && header > 0) return Math.min(header, 30)
+  try {
+    const body = await res.json()
+    if (typeof body?.retryAfter === 'number' && body.retryAfter > 0) return Math.min(body.retryAfter, 30)
+  } catch { /* not JSON */ }
+  return 5
+}
+
+const TRANSIENT_STATUSES = new Set([502, 503, 504])
+
 const fetcher = async (url: string, skipPage1Queue = false) => {
   // Deduplicate identical concurrent requests
   const inflight = inflightRequests.get(url)
@@ -301,12 +292,17 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
   const isDanbooruPage1 = isDanbooruApi && url.includes('page=1')
 
   const doFetch = async (): Promise<BooruPost[]> => {
-    const MAX_RETRIES = 2
+    // This fetcher is the ONLY client-side retry layer (SWR's own error retry
+    // is disabled below): one retry for a network error, a 429 (after its
+    // Retry-After) or — for direct provider calls only — a transient 5xx.
+    // Worker (/api/*) 5xx are not retried here: the Worker already retried
+    // the provider, and stacking layers multiplied upstream calls.
+    const MAX_RETRIES = 1
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         const isDirectAibooru = url.startsWith(PROVIDER_URLS.AIBOORU)
-        // F4 (rate-limit-antiabuse plan): only attach the Supabase access
+        // only attach the Supabase access
         // token to requests that actually reach OUR infrastructure
         // (/api/posts — same-origin Next.js or our Cloudflare Worker).
         // Direct cross-origin fetches to third-party boorus (Danbooru,
@@ -315,7 +311,7 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
         // which those APIs don't handle and rejects the whole request.
         const isOwnInfra = url.includes('/api/posts')
 
-        // F4 (rate-limit-antiabuse plan): attach the Supabase access token
+        // attach the Supabase access token
         // (if any) so the Worker can key adaptive limits by authed user
         // instead of IP. No-op when there's no session or the flag is off.
         const authHeader = isOwnInfra ? await getAuthHeader() : {}
@@ -336,12 +332,14 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
 
         // Retry 429 responses after the server-suggested delay
         if (res.status === 429 && attempt < MAX_RETRIES) {
-          let retryAfter = 5
-          try {
-            const body = await res.json()
-            retryAfter = Math.min(body.retryAfter || 5, 30)
-          } catch { /* use default */ }
+          const retryAfter = await getRetryAfterSeconds(res)
           await new Promise(r => setTimeout(r, retryAfter * 1000))
+          continue
+        }
+
+        // Direct provider calls have no server-side retry layer.
+        if (!isOwnInfra && TRANSIENT_STATUSES.has(res.status) && attempt < MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, 2000))
           continue
         }
 
@@ -505,7 +503,7 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
 // hasMultipleTags/processTagsForAPI/getProviderTagLimit helpers now live in a dependency-free
 // module (lib/booru/tag-limits.ts) so they can be unit-tested without pulling in React/Next.
 // See that file for the full empirical/documentation rationale behind each provider's limit.
-export { hasMultipleTags, getProviderTagLimit, isTagCountSupportedProvider, getScoreFloor } from './booru/tag-limits'
+export { hasMultipleTags, getProviderTagLimit, isTagCountSupportedProvider, isRandomOrderSafeProvider, getScoreFloor } from './booru/tag-limits'
 import { processTagsForAPI, mapRatingForProvider, isTagCountSupportedProvider, getScoreFloor } from './booru/tag-limits'
 
 // Function to check if user entered more than 2 search terms total
@@ -577,7 +575,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
 
         const params = new URLSearchParams({
           limit: "60",
-          only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,ai_metadata,image_width,image_height",
+          only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
           page: effectivePage,
           tags: finalTags
         })
@@ -608,7 +606,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
           limit: "60",
           page: effectivePage,
           tags: query,
-          _client: 'Boorugallery/9.2',
+          _client: USER_AGENT,
         })
         if (isRandom) {
           params.append("seed", `${randomSeed}_${pageIndex}`)
@@ -632,40 +630,35 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
     },
     fetcher,
     {
-      revalidateFirstPage: false, // FIXED: Don't revalidate first page when loading more
+      revalidateFirstPage: false, // Don't revalidate first page when loading more
       revalidateAll: false,
       persistSize: false,
       revalidateOnFocus: false,
-      revalidateOnReconnect: false, // FIXED: Prevent reconnect from triggering revalidation
+      revalidateOnReconnect: false, // Prevent reconnect from triggering revalidation
       dedupingInterval: 15000, // 15s dedup window; random uses unique seed keys so it's unaffected
-      shouldRetryOnError: (error) => {
-        // Don't retry on 422 errors (invalid tags/search parameters)
-        // Don't retry on 4xx client errors in general
-        return error.status >= 500
-      },
-      errorRetryCount: 3,
-      errorRetryInterval: 1000,
-      parallel: false, // CRITICAL: Ensure pages are fetched sequentially, not in parallel
+      // Retries live in the fetcher (one layer only). SWR's error retry used to
+      // stack 3 more attempts on top of the fetcher's and the Worker's, turning
+      // one failing page into up to ~36 upstream calls.
+      shouldRetryOnError: false,
+      parallel: false, // Pages are fetched sequentially
     }
   )
 }
 
-// Hook to fetch favorite posts by their IDs (supports mixed providers).
-// The pure cache helpers and the useFavoritePosts hook itself now live in
-// lib/favorites/cache.ts and hooks/use-favorite-posts.ts respectively
-// (Fase 2b del refactor de sostenibilidad — see docs/plans). Re-exported below
-// so existing `@/lib/api-client` consumers keep working without changes.
+// The favorites cache helpers and useBooruPostsByIds live in
+// lib/favorites/cache.ts and hooks/use-booru-posts-by-ids.ts; re-exported here
+// so existing `@/lib/api-client` consumers keep working.
 export {
   getFavoritesCacheKey,
   getCachedFavorites,
   setCachedFavorites,
   getMergedCachedFavorites,
   cachedRowToBooruPost,
-  booruPostToCacheRow,
   persistToCache,
 } from './favorites/cache'
+export { booruPostToCacheRow } from './cache-utils'
 export type { FavoriteItem, CachedPostRow } from './favorites/cache'
-export { useFavoritePosts } from '@/hooks/use-favorite-posts'
+export { useBooruPostsByIds, useBooruPostsByIds as useFavoritePosts } from '@/hooks/use-booru-posts-by-ids'
 
 /**
  * Fetch post counts for a batch of character tags.
@@ -694,7 +687,7 @@ export async function fetchBatchTagCounts(
     })
     
     // Uses relative path; apiUrl() prepends CF Worker URL when configured.
-    // F4: attach the Supabase access token (if any) for adaptive limits.
+    // Attach the Supabase access token (if any) for adaptive limits.
     const authHeader = await getAuthHeader()
     const response = await fetch(apiUrl(`/api/booru/tags?${params.toString()}`), { headers: authHeader })
     

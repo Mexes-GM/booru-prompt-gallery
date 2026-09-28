@@ -6,7 +6,7 @@ import { cookies } from 'next/headers'
 import { normalize } from '@/lib/cleanPrompt'
 import { requireAdmin } from '@/lib/auth/authorization'
 import { filterWritableTagNames } from '@/lib/tag-write-guard'
-import { PROVIDER_URLS, getDanbooruUserAgent } from '@/lib/constants'
+import { PROVIDER_URLS, danbooruApiHeaders } from '@/lib/constants'
 
 // Rate Limit Configuration
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -43,19 +43,10 @@ export async function generateAutoSuggestions() {
 
         // 3. Fetch Random Posts from Danbooru
         // Using "random:5" optimized tag to avoid DB timeouts
-        const headers: Record<string, string> = {
-            "User-Agent": getDanbooruUserAgent(),
-            "Accept": "application/json",
-        }
-
-        // Add Danbooru authentication if credentials are available
-        if (process.env.DANBOORU_USERNAME && process.env.DANBOORU_API_KEY) {
-            const credentials = btoa(`${process.env.DANBOORU_USERNAME}:${process.env.DANBOORU_API_KEY}`)
-            headers["Authorization"] = `Basic ${credentials}`
-        }
-
-        const response = await fetch(`${PROVIDER_URLS.DANBOORU}/posts.json?tags=random:5`, {
-            headers
+        const params = new URLSearchParams({ tags: 'random:5', limit: '5', only: 'id,tag_string' })
+        const response = await fetch(`${PROVIDER_URLS.DANBOORU}/posts.json?${params}`, {
+            headers: danbooruApiHeaders(),
+            signal: AbortSignal.timeout(12_000),
         });
 
         if (!response.ok) {
@@ -145,7 +136,7 @@ export async function generateAutoSuggestions() {
                  const currentCategory = existingMap.get(tagName) || 'other';
 
                  if (currentCategory === 'other' && aiResultCategory !== 'other') {
-                    // Update or Insert directly
+                    // Update or Insert directly in tags
                      if (existingMap.has(tagName)) {
                         // Update existing tag
                         await supabaseAdmin.from('tags').update({ category: aiResultCategory }).eq('name', tagName);
@@ -153,6 +144,14 @@ export async function generateAutoSuggestions() {
                         // Insert new tag
                         await supabaseAdmin.from('tags').insert({ name: tagName, category: aiResultCategory });
                      }
+
+                     // Keep auto_suggest_tags in sync
+                     const normName = tagName.toLowerCase().trim().replace(/ /g, '_');
+                     await supabaseAdmin
+                        .from('auto_suggest_tags')
+                        .update({ category_name: aiResultCategory, status: 'approved' })
+                        .eq('name', normName);
+
                      processedCount++;
                      // Skip creating a suggestion
                      continue;

@@ -36,8 +36,23 @@ export function urlHasHost(url: string, host: string): boolean {
   }
 }
 
-const DANBOORU_ONLY_FIELDS =
-  "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,image_width,image_height"
+export const DANBOORU_ONLY_FIELDS =
+  "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,tag_string_meta,rating,score,image_width,image_height"
+
+/**
+ * Direct Danbooru lookup of up to 100 posts by id in ONE request (`id:a,b,c`
+ * counts as a single tag). Used for favorites/history hydration from the
+ * browser, so it spends the user's own Danbooru quota instead of the shared
+ * Worker egress.
+ */
+export function buildDanbooruIdsUrl(ids: number[]): string {
+  const params = new URLSearchParams({
+    limit: String(ids.length),
+    only: DANBOORU_ONLY_FIELDS,
+    tags: `id:${ids.join(",")}`,
+  })
+  return `${PROVIDER_URLS.DANBOORU}/posts.json?${params.toString()}`
+}
 
 /**
  * Builds a direct Danbooru `posts.json` URL (bypassing our worker) with the

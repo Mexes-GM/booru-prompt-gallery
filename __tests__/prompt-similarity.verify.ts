@@ -95,5 +95,18 @@ function assert(condition: boolean, label: string) {
   assert(!filter.tryAccept("a, b, c, x"), "candidate near-duplicate of prompt #1 (not the most recent) is rejected")
 }
 
+// ── NearDuplicateFilter ignores a shared base when asked ──
+{
+  const base = Array.from({ length: 30 }, (_, i) => `base_tag_${i}`)
+  const withoutIgnore = new NearDuplicateFilter(0.85)
+  assert(withoutIgnore.tryAccept([...base, "smile"].join(", ")), "first prompt accepted")
+  assert(!withoutIgnore.tryAccept([...base, "grin"].join(", ")), "large shared base makes one-tag variants look duplicate")
+
+  const ignoringBase = new NearDuplicateFilter(0.85, base)
+  assert(ignoringBase.tryAccept([...base, "smile"].join(", ")), "first prompt accepted (base ignored)")
+  assert(ignoringBase.tryAccept([...base, "grin"].join(", ")), "one-tag variant accepted once the base is ignored")
+  assert(!ignoringBase.tryAccept([...base, "smile"].join(", ")), "identical varying part still rejected")
+}
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

@@ -2,53 +2,24 @@
 // Handles Danbooru/Gelbooru image proxying with CF edge caching
 import { getRedis } from '../lib/redis'
 import { isBlocked, markBlocked, clearBlocked } from '../lib/rate-limit-cache'
-import { MERGED_RATELIMIT_SCRIPT_2TTL } from '../lib/constants'
+import {
+  MERGED_RATELIMIT_SCRIPT_2TTL,
+  USER_AGENT,
+  getDanbooruUserAgent,
+  isAllowedImageHost,
+  isDanbooruHost,
+  isMediaContentType,
+  refererForImageHost,
+} from '../lib/constants'
 import { logRateLimitBlock } from '../logger'
 import { WORKER_LIMITS } from '../lib/limits'
+import { ALLOWED_ORIGINS, isAllowedOrigin } from '../utils'
 
 
-const ALLOWED_DOMAINS = [
-  // Gelbooru
-  'gelbooru.com',
-  'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com',
-  'img4.gelbooru.com', 'img5.gelbooru.com',
-  // Danbooru
-  'danbooru.donmai.us',
-  'cdn.donmai.us',
-  // Aibooru
-  'aibooru.online',
-  'cdn.aibooru.download',
-  // Rule34
-  'rule34.xxx',
-  'api.rule34.xxx',
-  // E621 / E926
-  'e621.net',
-  'static1.e621.net',
-  'e926.net',
-]
-
-const ALLOWED_ORIGINS = [
-  'https://booru-prompt-gallery.com',
-  'https://www.booru-prompt-gallery.com',
-  'https://booru-prompt-gallery.netlify.app',
-  'https://booru-prompt-gallery.vercel.app',
-  'http://localhost:3000',
-  'http://localhost:3001',
-]
+const UPSTREAM_TIMEOUT_MS = 15_000
 
 function isOriginAllowed(origin: string, referer: string): boolean {
-  const extractHost = (url: string): string => {
-    if (!url) return ''
-    try { return new URL(url).hostname } catch { return url }
-  }
-  const check = (url: string) => {
-    const host = extractHost(url)
-    if (!host) return false
-    return ALLOWED_ORIGINS.some(allowed => {
-      try { return new URL(allowed).hostname === host } catch { return false }
-    }) || host.endsWith('.vercel.app') || host.endsWith('.netlify.app') || host.startsWith('localhost')
-  }
-  return check(origin) || check(referer)
+  return isAllowedOrigin(origin) || isAllowedOrigin(referer)
 }
 
 const RATE_LIMIT_MAX = WORKER_LIMITS.image.perIp.max
@@ -81,7 +52,9 @@ export async function imageProxyHandler(
   // ponytail: Sec-Fetch-Dest: image replaces the old isDirect bypass.
   // <img> tags with referrerPolicy="no-referrer" (used by the gallery frontend)
   // don't send Origin or Referer, but browsers ALWAYS send Sec-Fetch-Dest.
-  // This header cannot be spoofed by fetch()/XHR — only real browser image loads.
+  // Page scripts cannot forge it via fetch()/XHR, but non-browser clients
+  // (curl, scrapers) can send any value — so this is a CORS-style gate for
+  // other websites, not an access control; the rate limits below are.
   const origin = request.headers.get('Origin') || ''
   const referer = request.headers.get('Referer') || ''
   const secFetchDest = request.headers.get('Sec-Fetch-Dest') || ''
@@ -106,16 +79,20 @@ export async function imageProxyHandler(
     })
   }
 
-  if (!ALLOWED_DOMAINS.some(d => parsedUrl.hostname === d || parsedUrl.hostname.endsWith(`.${d}`))) {
+  // Image CDN hosts only (see isAllowedImageHost) — API/site hosts are refused.
+  if (parsedUrl.protocol !== 'https:' || !isAllowedImageHost(parsedUrl.hostname)) {
     return new Response(JSON.stringify({ error: 'Domain not allowed' }), {
       status: 403,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
     })
   }
 
-  // Cache check
+  // Cache check — keyed on the target URL only, so extra query params added
+  // to the proxy URL cannot bypass the cache and force an upstream fetch.
   const cache = caches.default
-  const cacheKey = new URL(request.url).toString()
+  const cacheUrl = new URL(request.url)
+  cacheUrl.search = new URLSearchParams({ url: parsedUrl.toString() }).toString()
+  const cacheKey = cacheUrl.toString()
   const cached = await cache.match(cacheKey)
   if (cached) return cached
 
@@ -123,7 +100,7 @@ export async function imageProxyHandler(
   const clientId = getClientId(request)
   const redis = getRedis(env as any)
   let remaining: number = RATE_LIMIT_MAX
-  let reset = Date.now() + 10000
+  let reset = Date.now() + PER_IP_RATE_WINDOW * 1000
 
   if (redis) {
     const globalKey = 'ratelimit:imageproxy:global'
@@ -146,12 +123,12 @@ export async function imageProxyHandler(
       })
     }
     if (isBlocked(key)) {
-      return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: 10 }), {
+      return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: PER_IP_RATE_WINDOW }), {
         status: 429,
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': allowedOrigin,
-          'Retry-After': '10',
+          'Retry-After': String(PER_IP_RATE_WINDOW),
           'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
           'X-RateLimit-Remaining': '0',
         },
@@ -159,7 +136,7 @@ export async function imageProxyHandler(
     }
 
     // Fase 2: 1 eval instead of 2 incrWithExpire round-trips — independent
-    // TTLs (global=60s, per-IP=10s).
+    // TTLs per key (WORKER_LIMITS.image.global / .perIp).
     const result = await redis.eval(
       MERGED_RATELIMIT_SCRIPT_2TTL,
       [globalKey, key],
@@ -192,12 +169,12 @@ export async function imageProxyHandler(
     if (count > RATE_LIMIT_MAX) {
       markBlocked(key, PER_IP_RATE_WINDOW)
       logRateLimitBlock(request, { surface: 'image', keyType: 'anon', scope: 'per-ip', origin: parsedUrl.hostname })
-      return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: 10 }), {
+      return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: PER_IP_RATE_WINDOW }), {
         status: 429,
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': allowedOrigin,
-          'Retry-After': '10',
+          'Retry-After': String(PER_IP_RATE_WINDOW),
           'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
           'X-RateLimit-Remaining': '0',
         },
@@ -207,14 +184,12 @@ export async function imageProxyHandler(
   }
 
   try {
-    const isDanbooru = parsedUrl.hostname.includes('danbooru') || parsedUrl.hostname.includes('donmai')
+    const isDanbooru = isDanbooruHost(parsedUrl.hostname)
 
+    // Image files need no credentials: the Danbooru API key is never sent here.
     const headers: Record<string, string> = {
-      'User-Agent': isDanbooru
-        ? `Boorugallery/9.2 (Danbooru user: ${env.DANBOORU_USERNAME || 'anonymous'})`
-        : 'Boorugallery/9.2',
+      'User-Agent': isDanbooru ? getDanbooruUserAgent(env.DANBOORU_USERNAME) : USER_AGENT,
       'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      'Referer': isDanbooru ? 'https://danbooru.donmai.us/' : 'https://gelbooru.com/',
       // CDN-Loop tells Cloudflare to NOT process this request through its CDN
       // stack and pass it directly to the origin. This prevents cross-Cloudflare
       // WAF blocking when the Worker (Cloudflare IP) fetches cdn.donmai.us (also
@@ -228,38 +203,50 @@ export async function imageProxyHandler(
       'Sec-Fetch-Mode': 'no-cors',
       'Sec-Fetch-Site': 'same-origin',
     }
+    const referer = refererForImageHost(parsedUrl.hostname)
+    if (referer) headers['Referer'] = referer
 
-    if (isDanbooru && env.DANBOORU_USERNAME && env.DANBOORU_API_KEY) {
-      headers['Authorization'] = `Basic ${btoa(`${env.DANBOORU_USERNAME}:${env.DANBOORU_API_KEY}`)}`
-    }
+    const fetchImage = (target: string) =>
+      fetch(target, {
+        headers,
+        redirect: 'follow',
+        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+        // cf options: attempt to bypass Cloudflare's CDN layer for the upstream.
+        // cdn.donmai.us is behind Cloudflare, and Worker fetches from Cloudflare
+        // IPs get 403'd by the upstream's WAF (cross-Cloudflare blocking).
+        // cacheTtl: 0 + cacheEverything: false tells the runtime to fetch from
+        // origin, potentially using a different egress path.
+        // ponytail: best-effort bypass. Add when: Workers support explicit
+        // origin-only egress for Cloudflare-proxied upstreams.
+        cf: {
+          cacheEverything: false,
+          cacheTtl: 0,
+        },
+      })
 
-    let response = await fetch(imageUrl, {
-      headers,
-      redirect: 'follow',
-      // cf options: attempt to bypass Cloudflare's CDN layer for the upstream.
-      // cdn.donmai.us is behind Cloudflare, and Worker fetches from Cloudflare
-      // IPs get 403'd by the upstream's WAF (cross-Cloudflare blocking).
-      // cacheTtl: 0 + cacheEverything: false tells the runtime to fetch from
-      // origin, potentially using a different egress path.
-      // ponytail: best-effort bypass. Add when: Workers support explicit
-      // origin-only egress for Cloudflare-proxied upstreams.
-      cf: {
-        cacheEverything: false,
-        cacheTtl: 0,
-      },
-    })
+    let response = await fetchImage(parsedUrl.toString())
 
-    // Fallback: /samples/ → /images/
-    if (!response.ok && imageUrl.includes('/samples/')) {
-      const fallbackUrl = imageUrl
+    // Fallback: /samples/ → /images/ (same host, so still on the allow-list)
+    if (!response.ok && parsedUrl.pathname.includes('/samples/')) {
+      await response.body?.cancel()
+      const fallbackUrl = parsedUrl.toString()
         .replace('/samples/', '/images/')
         .replace(/\/sample_([^/]+)$/, '/$1')
-      response = await fetch(fallbackUrl, { headers, redirect: 'follow' })
+      response = await fetchImage(fallbackUrl)
     }
 
     if (!response.ok) {
+      await response.body?.cancel()
       return new Response(JSON.stringify({ error: `Upstream error: ${response.status}` }), {
-        status: response.status,
+        status: response.status >= 500 ? 502 : response.status,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
+      })
+    }
+
+    if (!isMediaContentType(response.headers.get('content-type'))) {
+      await response.body?.cancel()
+      return new Response(JSON.stringify({ error: 'Upstream did not return an image' }), {
+        status: 502,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
       })
     }
@@ -277,14 +264,16 @@ export async function imageProxyHandler(
         'Access-Control-Allow-Origin': allowedOrigin,
         'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
         'X-RateLimit-Remaining': String(remaining),
+        'X-Content-Type-Options': 'nosniff',
       },
     })
 
     ctx.waitUntil(cache.put(cacheKey, proxyResponse.clone()))
     return proxyResponse
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: 'Failed to fetch image' }), {
-      status: 502,
+  } catch (err) {
+    const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+    return new Response(JSON.stringify({ error: timedOut ? 'Image fetch timed out' : 'Failed to fetch image' }), {
+      status: timedOut ? 504 : 502,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin },
     })
   }

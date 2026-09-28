@@ -1,6 +1,8 @@
 import { Separator } from "@/components/ui/separator"
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
+import { isAdminMfaRequired } from "@/lib/auth/mfa"
+import { hasAal2 } from "@/lib/auth/authorization"
 
 import { LogoutButton } from "@/components/admin-logout-button"
 import Link from "next/link"
@@ -27,6 +29,10 @@ export default async function AdminLayout({
 
   if (profile?.role !== 'admin') {
      return redirect('/')
+  }
+
+  if (isAdminMfaRequired() && !(await hasAal2())) {
+    return redirect('/admin/mfa')
   }
 
   return (

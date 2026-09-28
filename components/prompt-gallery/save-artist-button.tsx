@@ -53,8 +53,8 @@ export function SaveArtistButton({ post, booruProvider, size = "md" }: SaveArtis
                         "glass-effect transition-all",
                         isSmall ? "h-7 w-7" : "h-8 w-8",
                         saved
-                            ? "text-purple-400 hover:text-purple-500"
-                            : "text-muted-foreground hover:text-purple-400",
+                            ? "text-primary-text hover:text-primary-text/80"
+                            : "text-muted-foreground hover:text-primary-text",
                     )}
                 >
                     <Palette className={isSmall ? "w-3 h-3" : "w-3.5 h-3.5"} />

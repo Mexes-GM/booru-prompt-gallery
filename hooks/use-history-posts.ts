@@ -1,10 +1,11 @@
 "use client"
 
 import { useMemo, useRef, useEffect } from "react"
-import { useFavoritePosts, type FavoriteItem } from "@/hooks/use-favorite-posts"
+import { useBooruPostsByIds, type FavoriteItem } from "@/hooks/use-booru-posts-by-ids"
 import type { HistoryItem } from "@/lib/storage"
 import type { BooruPost } from "@/lib/booru/types"
 import { dedupeHistoryKeys } from "@/lib/history-order"
+import { favKey } from "@/lib/favorites-logic"
 
 /**
  * Hydrates full `BooruPost[]` for a list of copy-history entries.
@@ -18,7 +19,7 @@ import { dedupeHistoryKeys } from "@/lib/history-order"
  *     as "could not be loaded".
  *  2. **Network fallback (legacy only).** Entries WITHOUT a snapshot (written
  *     before the redesign, or whose snapshot was dropped to fit the storage
- *     budget) are hydrated on demand through `useFavoritePosts`, reusing the
+ *     budget) are hydrated on demand through `useBooruPostsByIds`, reusing the
  *     exact same layered cache (SWR → localStorage → Supabase → booru API) that
  *     Favorites relies on. This subset also gets a bounded auto-retry below.
  *
@@ -54,7 +55,7 @@ export function useHistoryPosts(history: HistoryItem[]) {
     [history]
   )
 
-  const fetched = useFavoritePosts(needsFetch)
+  const fetched = useBooruPostsByIds(needsFetch)
 
   // ── Bounded auto-retry for the legacy (network) subset ──
   // Snapshots never fail, but legacy entries still depend on the booru. If the
@@ -108,10 +109,10 @@ export function useHistoryPosts(history: HistoryItem[]) {
   const posts = useMemo<BooruPost[]>(() => {
     const byKey = new Map<string, BooruPost>()
     for (const p of snapshotPosts) {
-      byKey.set(`${(p._provider || '').toLowerCase()}:${p.id}`, p)
+      byKey.set(favKey(p._provider || '', p.id), p)
     }
     for (const p of fetched.posts) {
-      byKey.set(`${(p._provider || '').toLowerCase()}:${p.id}`, p)
+      byKey.set(favKey(p._provider || '', p.id), p)
     }
     return dedupedKeys
       .map(key => byKey.get(key))

@@ -11,7 +11,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Trash2, Plus, Minus, Tag, Scale, Sparkles, X, Check } from "lucide-react"
+import { Trash2, Plus, Minus, Tag, Scale, Sparkles, X, Check, AlertTriangle } from "lucide-react"
 import { motion, AnimatePresence, Variants } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -23,6 +23,10 @@ interface GlobalWeightsModalProps {
     onRemoveWeight: (tag: string) => void
     onClearWeights: () => void
     onSaveWeight: (tag: string, weight: number) => void
+    /** Whether the "Global Tag Weights" switch (outside this modal) is on.
+     *  When it's off, every weight defined here is inert — nothing gets
+     *  applied to any prompt, so the modal says so. */
+    isEnabled: boolean
 }
 
 // Animation Variants
@@ -59,6 +63,7 @@ export function GlobalWeightsModal({
     onRemoveWeight,
     onClearWeights,
     onSaveWeight,
+    isEnabled,
 }: GlobalWeightsModalProps) {
     const hasWeights = Object.keys(weights).length > 0
     const [newTag, setNewTag] = useState("")
@@ -93,7 +98,7 @@ export function GlobalWeightsModal({
                 <div className="relative p-6 pb-6 overflow-hidden z-10">
                     <DialogHeader className="relative z-10">
                         <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2.5 bg-background/80 backdrop-blur-sm shadow-sm rounded-xl border border-primary/10 text-primary">
+                            <div className="p-2.5 bg-background/80 backdrop-blur-sm shadow-sm rounded-xl border border-primary/10 text-primary-text">
                                 <Scale className="h-5 w-5" />
                             </div>
                             <DialogTitle className="text-xl font-bold tracking-tight">Global Weights</DialogTitle>
@@ -102,6 +107,16 @@ export function GlobalWeightsModal({
                             Define tags that should be automatically emphasized or de-emphasized across all generated images.
                         </DialogDescription>
                     </DialogHeader>
+
+                    {!isEnabled && (
+                        <div className="relative z-10 mt-4 flex items-start gap-2.5 rounded-lg border border-warning-border bg-warning-soft p-3 text-warning-text">
+                            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                            <p className="text-xs leading-relaxed">
+                                <span className="font-semibold">Global Tag Weights is off.</span>{" "}
+                                Anything you add or edit here is saved but has no effect on any prompt until you turn the switch back on.
+                            </p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Input Section */}
@@ -177,7 +192,7 @@ export function GlobalWeightsModal({
                                     <div className="flex items-center gap-3 min-w-0 flex-1">
                                         <div className={cn(
                                             "w-1 h-8 rounded-full transition-colors",
-                                            weight > 1 ? "bg-blue-500/50" : weight < 1 ? "bg-red-500/50" : "bg-muted"
+                                            weight > 1 ? "bg-info/50" : weight < 1 ? "bg-destructive/50" : "bg-muted"
                                         )} />
                                         <span className="font-medium text-sm truncate" title={tag}>
                                             {tag}
@@ -195,7 +210,7 @@ export function GlobalWeightsModal({
                                         <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-8 w-8 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                                            className="h-8 w-8 text-muted-foreground/50 hover:text-destructive-text hover:bg-destructive/10 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                                             onClick={() => onRemoveWeight(tag)}
                                             aria-label={`Remove weight for ${tag}`}
                                         >
@@ -215,7 +230,7 @@ export function GlobalWeightsModal({
                         size="sm"
                         onClick={onClearWeights}
                         disabled={!hasWeights}
-                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-8 px-3 text-xs font-medium"
+                        className="text-muted-foreground hover:text-destructive-text hover:bg-destructive/10 h-8 px-3 text-xs font-medium"
                     >
                         <Trash2 className="w-3.5 h-3.5 mr-2" />
                         Clear All
@@ -279,8 +294,8 @@ function WeightStepper({
                 <span className={cn(
                     "font-mono font-semibold",
                     isSmall ? "text-xs" : "text-sm",
-                    value > 1 ? "text-blue-600 dark:text-blue-400" :
-                        value < 1 ? "text-red-600 dark:text-red-400" :
+                    value > 1 ? "text-info-text" :
+                        value < 1 ? "text-destructive-text" :
                             "text-foreground"
                 )} aria-hidden="true">
                     {value.toFixed(1)}

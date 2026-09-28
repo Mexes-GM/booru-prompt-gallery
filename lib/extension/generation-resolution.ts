@@ -37,6 +37,71 @@ export interface ComputeGenerationResolutionOptions {
   /** When true, `maxLongSide` is a hard per-side cap (classic behavior)
    *  instead of the side of an equivalent total-area budget. Default false. */
   strictCap?: boolean
+  /** When true, ignore the source's raw aspect ratio and instead pick the
+   *  closest entry from `SUPPORTED_BUCKET_RESOLUTIONS` (see below). Default false. */
+  snapToBucket?: boolean
+}
+
+/**
+ * Curated "bucket" resolutions the model was actually trained/tested on
+ * (Illustrious/Anima-class SDXL checkpoints), covering the common aspect
+ * ratios — 1:1, 2:3 / 3:2 (portrait/landscape "poster"), 3:4 / 4:3, and
+ * 9:16 / 16:9 (phone/widescreen) — within Anima's documented working range
+ * of roughly 512^2 to 1536^2 total pixels. Using one of these instead of an
+ * arbitrary aspect ratio derived from a booru post's raw dimensions avoids
+ * feeding the model a ratio it wasn't trained on (which tends to produce
+ * warped anatomy/composition), at the cost of a slight crop/pad vs. the
+ * source image's exact proportions.
+ *
+ * `1536x1536` is included but documented upstream as "iffy" (Anima's ceiling
+ * is a total-area budget of 1536^2 px; a full 1536x1536 square sits exactly
+ * at that ceiling and edges into unreliable territory for some workflows) —
+ * kept as an option rather than omitted since it's still within the stated
+ * working range.
+ */
+export const SUPPORTED_BUCKET_RESOLUTIONS: readonly GenerationResolution[] = [
+  // 1:1
+  { width: 1024, height: 1024 },
+  { width: 1536, height: 1536 }, // iffy — see doc comment above
+  // 2:3 / 3:2 (portrait / landscape "poster")
+  { width: 832, height: 1216 },
+  { width: 1216, height: 832 },
+  // 3:4 / 4:3
+  { width: 1152, height: 1536 },
+  { width: 1536, height: 1152 },
+  // 9:16 / 16:9
+  { width: 768, height: 1344 },
+  { width: 1344, height: 768 },
+]
+
+/**
+ * Picks the entry from `SUPPORTED_BUCKET_RESOLUTIONS` whose aspect ratio is
+ * closest to the source's, then rescales that bucket (preserving ITS aspect
+ * ratio, not the source's) to respect the caller's cap — same two capping
+ * semantics as the free-form path (`strictCap`: hard per-side ceiling vs.
+ * total-area budget) — and snaps to `multiple`.
+ *
+ * Comparing aspect ratios in log-space (`Math.log(w/h)`) rather than raw
+ * ratio makes "distance" symmetric between portrait and landscape (e.g. 2:3
+ * and 3:2 are equally "one step" from 1:1), so a source's orientation always
+ * matches the winning bucket's orientation — a landscape source can never
+ * snap to a portrait bucket, and vice versa, since flipping orientation
+ * would always be a larger log-distance than the closest same-orientation
+ * bucket (verified by construction: the bucket list is orientation-paired).
+ */
+function pickClosestBucketResolution(srcWidth: number, srcHeight: number): GenerationResolution {
+  const srcLogRatio = Math.log(srcWidth / srcHeight)
+  let best = SUPPORTED_BUCKET_RESOLUTIONS[0]
+  let bestDistance = Infinity
+  for (const bucket of SUPPORTED_BUCKET_RESOLUTIONS) {
+    const bucketLogRatio = Math.log(bucket.width / bucket.height)
+    const distance = Math.abs(bucketLogRatio - srcLogRatio)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = bucket
+    }
+  }
+  return best
 }
 
 /**
@@ -47,6 +112,13 @@ export interface ComputeGenerationResolutionOptions {
  * 2,359,296 px for Anima) — then rounds both dimensions down to a multiple of
  * `multiple` (never below one multiple) so the result never overshoots the
  * budget after snapping.
+ *
+ * When `options.snapToBucket` is true, the SOURCE aspect ratio is ignored in
+ * favor of the closest entry in `SUPPORTED_BUCKET_RESOLUTIONS` (see
+ * `pickClosestBucketResolution`) — trading a slight crop/pad vs. the source
+ * image's exact proportions for staying on an aspect ratio the model
+ * actually knows well, instead of an arbitrary ratio derived from whatever
+ * the booru post happened to be.
  *
  * Returns null when the source dimensions are missing/invalid — callers
  * should treat that as "nothing to adjust, send the prompt as-is" rather
@@ -64,6 +136,16 @@ export function computeGenerationResolution(
   const strictCap = options?.strictCap ?? false
   // Normalize the cap itself to a valid multiple so it never overshoots after snapping.
   const budgetSide = Math.max(multiple, Math.floor(rawMax / multiple) * multiple)
+
+  // `snapToBucket` swaps the source's raw aspect ratio for the closest
+  // curated bucket, then continues through the SAME scaling/capping logic
+  // below (using the bucket's ratio in place of srcWidth/srcHeight) so the
+  // result still respects maxLongSide/strictCap/multiple exactly as before.
+  if (options?.snapToBucket) {
+    const bucket = pickClosestBucketResolution(srcWidth, srcHeight)
+    srcWidth = bucket.width
+    srcHeight = bucket.height
+  }
 
   if (strictCap) {
     // Strict behavior: scale so the LONGEST source side maps exactly to

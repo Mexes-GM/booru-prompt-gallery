@@ -10,56 +10,18 @@
       margin: 0;
       padding: 0;
     }
-    /* ── Theme tokens ───────────────────────────────────────────────────────
-       Values mirror the app design tokens in globals.css so the native wrapper
-       feels like the same app, not a different shell. Resolution order:
-         1. :root defaults → DARK (matches app default on dark OS)
-         2. @media (prefers-color-scheme: light) → LIGHT first-paint fallback
-         3. :root[data-theme="dark|light"] → EXPLICIT override pushed by the app
-            via postMessage (THEME_CHANGE). Attribute selectors out-specify the
-            bare :root rules above, so a manual in-app theme choice always wins. */
-    :root {
-      --w-bg: #20283C;        /* --background 222 30% 18% */
-      --w-fg: #E6EBF0;        /* --foreground 210 25% 92% */
-      --w-bar-bg: #283248;    /* --card 222 28% 22% */
-      --w-border: #434C60;    /* --border 222 18% 32% */
-      --w-muted-fg: #C2C9D6;  /* --muted-foreground 214 18% 80% */
-      --w-btn-bg: #353F54;    /* --secondary 222 22% 28% */
-      --w-btn-fg: #E6EBF0;
-      --w-btn-hover-bg: #434C60;
-      --w-btn-hover-fg: #ffffff;
-      --w-accent: #7E5BD6;    /* --primary (dark) 265 60% 63% */
-      --w-accent-border: #9A7DE0;
-    }
-    /* First-paint fallback before the app reports its resolved theme. */
+    /* @theme-sync:start — generado por scripts/build-theme.mjs, no editar a mano.
+       Copia en hex de los tokens de lib/theme/palette.mjs. Orden de resolución:
+         1. :root → oscuro por defecto (coincide con la app en un SO oscuro)
+         2. prefers-color-scheme: light → claro como primer pintado
+         3. :root[data-theme] → elección explícita que envía la app (THEME_CHANGE) */
+    :root { --w-bg: #1E2731; --w-fg: #E4ECF4; --w-bar-bg: #26303B; --w-border: #3E4954; --w-muted-fg: #AEB9C4; --w-btn-bg: #323C46; --w-btn-fg: #E4ECF4; --w-btn-hover-bg: #3E4954; --w-btn-hover-fg: #E4ECF4; --w-accent: #579F68; --w-accent-border: #6FB880; --w-accent-fg: #0F171F; }
     @media (prefers-color-scheme: light) {
-      :root:not([data-theme="dark"]) {
-        --w-bg: #F6F9FB;        /* --background 210 25% 98% */
-        --w-fg: #0F172A;        /* --foreground 222 47% 11% */
-        --w-bar-bg: #E9EDF2;    /* --secondary 220 14% 92% */
-        --w-border: #CCD5E0;    /* --border 215 22% 85% */
-        --w-muted-fg: #5B6472;  /* --muted-foreground 220 9% 40% */
-        --w-btn-bg: #E9EDF2;
-        --w-btn-fg: #1E293B;    /* --secondary-foreground 222 47% 17% */
-        --w-btn-hover-bg: #DCE2EB;
-        --w-btn-hover-fg: #0F172A;
-        --w-accent: #7842D7;    /* --primary (light) 262 65% 55% */
-        --w-accent-border: #946CE0;
-      }
+      :root:not([data-theme="dark"]) { --w-bg: #E9EFF6; --w-fg: #121B26; --w-bar-bg: #D7DFE7; --w-border: #BEC9D4; --w-muted-fg: #4F5964; --w-btn-bg: #D7DFE7; --w-btn-fg: #192029; --w-btn-hover-bg: #BEC9D4; --w-btn-hover-fg: #121B26; --w-accent: #154222; --w-accent-border: #2C5837; --w-accent-fg: #FFFFFF; }
     }
-    /* Explicit overrides from the app (win over OS preference). */
-    :root[data-theme="dark"] {
-      --w-bg: #20283C; --w-fg: #E6EBF0; --w-bar-bg: #283248; --w-border: #434C60;
-      --w-muted-fg: #C2C9D6; --w-btn-bg: #353F54; --w-btn-fg: #E6EBF0;
-      --w-btn-hover-bg: #434C60; --w-btn-hover-fg: #ffffff;
-      --w-accent: #7E5BD6; --w-accent-border: #9A7DE0;
-    }
-    :root[data-theme="light"] {
-      --w-bg: #F6F9FB; --w-fg: #0F172A; --w-bar-bg: #E9EDF2; --w-border: #CCD5E0;
-      --w-muted-fg: #5B6472; --w-btn-bg: #E9EDF2; --w-btn-fg: #1E293B;
-      --w-btn-hover-bg: #DCE2EB; --w-btn-hover-fg: #0F172A;
-      --w-accent: #7842D7; --w-accent-border: #946CE0;
-    }
+    :root[data-theme="dark"] { --w-bg: #1E2731; --w-fg: #E4ECF4; --w-bar-bg: #26303B; --w-border: #3E4954; --w-muted-fg: #AEB9C4; --w-btn-bg: #323C46; --w-btn-fg: #E4ECF4; --w-btn-hover-bg: #3E4954; --w-btn-hover-fg: #E4ECF4; --w-accent: #579F68; --w-accent-border: #6FB880; --w-accent-fg: #0F171F; }
+    :root[data-theme="light"] { --w-bg: #E9EFF6; --w-fg: #121B26; --w-bar-bg: #D7DFE7; --w-border: #BEC9D4; --w-muted-fg: #4F5964; --w-btn-bg: #D7DFE7; --w-btn-fg: #192029; --w-btn-hover-bg: #BEC9D4; --w-btn-hover-fg: #121B26; --w-accent: #154222; --w-accent-border: #2C5837; --w-accent-fg: #FFFFFF; }
+    /* @theme-sync:end */
 
     html, body {
       width: 100%;
@@ -119,18 +81,84 @@
     .btn.active {
       background-color: var(--w-accent);
       border-color: var(--w-accent-border);
-      color: #fff;
+      color: var(--w-accent-fg);
       font-weight: 600;
     }
 
     /* ── App iframe ────────────────────────────────────────────────────────── */
+    .frame-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0; /* allow flex shrink */
+      display: flex;
+    }
     iframe {
       flex: 1;
       width: 100%;
       height: 100%;
       border: none;
       background-color: transparent;
-      min-height: 0; /* allow flex shrink */
+    }
+
+    /* ── Boot screen (shown until the app reports POCKET_READY) ─────────────── */
+    .boot {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 24px;
+      text-align: center;
+      background-color: var(--w-bg);
+      color: var(--w-muted-fg);
+      font-size: 12px;
+      opacity: 1;
+      transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    .boot[data-state="hidden"] {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .boot-title {
+      color: var(--w-fg);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .spinner {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--w-border);
+      border-top-color: var(--w-accent);
+      animation: spin 800ms linear infinite;
+    }
+    .boot[data-state="error"] .spinner { display: none; }
+    .boot:not([data-state="error"]) .boot-error { display: none; }
+    .boot-error {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      max-width: 260px;
+      line-height: 1.45;
+    }
+    .boot-retry {
+      background-color: var(--w-accent);
+      border: 1px solid var(--w-accent-border);
+      color: var(--w-accent-fg);
+      font-weight: 600;
+      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .boot-retry:focus-visible { outline: 2px solid var(--w-accent-border); outline-offset: 2px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation-duration: 2400ms; }
+      .boot { transition: none; }
     }
   </style>
 </head>
@@ -138,7 +166,7 @@
   <div class="container">
 
     <!-- Dev/Prod environment switcher. Hidden for end users; revealed by
-         sidepanel.js only when localStorage "booru_sidebar_devmode" === "1". -->
+         sidepanel/01-env.js only when localStorage "booru_sidebar_devmode" === "1". -->
     <div id="config-bar" class="config-bar" hidden>
       <span>Environment:</span>
       <div class="btn-group">
@@ -147,8 +175,8 @@
       </div>
     </div>
 
-    <!-- The actual hosted app iframe. Defaults to production; sidepanel.js swaps
-         to localhost only when dev mode is enabled. The queue / target UI is
+    <!-- The actual hosted app iframe. sidepanel/15-main.js loads production (with
+         failover to the secondary host) or localhost when dev mode is enabled. The queue / target UI is
          rendered inside this React app, not by the host page.
 
          allow="clipboard-write": Chrome/Chromium honors the Permissions
@@ -162,9 +190,42 @@
          already inside a click handler, so Firefox needs no equivalent here.
          The attribute is a harmless no-op on Firefox, so one shared
          sidepanel.html serves both browsers without a build-time split. -->
-    <iframe id="app-frame" src="https://booru-prompt-gallery.vercel.app/extension" allow="clipboard-write"></iframe>
+    <div class="frame-wrap">
+      <!-- No src here: sidepanel/15-main.js picks the host (primary / fallback / dev)
+           so a failover never double-loads the primary first. -->
+      <iframe id="app-frame" title="Booru Prompt Gallery" allow="clipboard-write"></iframe>
+
+      <!-- Boot screen: covers the iframe until the app posts POCKET_READY.
+           If the primary host doesn't answer, sidepanel/01-env.js fails over to the
+           secondary host; if neither loads, it shows the error + Retry. -->
+      <div id="boot" class="boot" role="status" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <span id="boot-label">Loading Booru Prompt Gallery…</span>
+        <div class="boot-error">
+          <span class="boot-title">Couldn't reach Booru Prompt Gallery</span>
+          <span>Check your connection. The app may also be temporarily down.</span>
+          <button id="boot-retry" class="boot-retry" type="button">Retry</button>
+        </div>
+      </div>
+    </div>
 
   </div>
-  <script src="sidepanel.js"></script>
+  <!-- Host logic, split by concern. Classic scripts sharing one global scope;
+       order matters (see the header of each file). -->
+  <script src="sidepanel/01-env.js"></script>
+  <script src="sidepanel/02-queue-state.js"></script>
+  <script src="sidepanel/03-keepalive.js"></script>
+  <script src="sidepanel/04-site-profiles.js"></script>
+  <script src="sidepanel/05-host-bridge.js"></script>
+  <script src="sidepanel/06-locator.js"></script>
+  <script src="sidepanel/07-targeting.js"></script>
+  <script src="sidepanel/08-queue-wait.js"></script>
+  <script src="sidepanel/09-inject.js"></script>
+  <script src="sidepanel/10-slots.js"></script>
+  <script src="sidepanel/11-ledger.js"></script>
+  <script src="sidepanel/12-autodl.js"></script>
+  <script src="sidepanel/13-process-queue.js"></script>
+  <script src="sidepanel/14-enqueue.js"></script>
+  <script src="sidepanel/15-main.js"></script>
 </body>
 </html>

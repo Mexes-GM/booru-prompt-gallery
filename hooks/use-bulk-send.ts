@@ -10,8 +10,9 @@
  *     one prompt per post, with per-post generation resolution when the post
  *     has valid width/height.
  *   - "synthetic": a handful of seed posts feed lib/pack/bulk-send.ts's
- *     buildSyntheticPrompts, which locks the search bar tags and varies the
- *     rest, then cleans every result through the same cleaner pipeline.
+ *     generateAndFilterPrompts (shared with Pack Mode), which
+ *     locks the search bar tags and varies the rest, then cleans every
+ *     result through the same cleaner pipeline.
  *
  * Fetching more pages is done exclusively through `search.loadMore()` (never
  * by reaching into SWR's `setSize` directly) so this reuses — instead of
@@ -25,7 +26,7 @@ import type { BooruPost } from "@/lib/booru/types"
 import { seedPages as seedPagesShared, type SeedPagesSearchSlice } from "@/lib/booru/seed-pages"
 import { computeGenerationResolution } from "@/lib/extension/generation-resolution"
 import { derivePostPrompt, type DerivePostPromptOptions } from "@/lib/prompt/derive-post-prompt"
-import { buildSyntheticPrompts, type BulkSendCleanOptions } from "@/lib/pack/bulk-send"
+import { extractLockedTagsFromSearch, buildAxesFromSeedPosts, detectCharacterTags, generateAndFilterPrompts, type BulkSendCleanOptions } from "@/lib/pack/bulk-send"
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from "@/lib/pack/prompt-similarity"
 
 export type BulkSendMode = "real" | "synthetic"
@@ -65,6 +66,9 @@ export interface UseBulkSendOptions {
   matchResolution?: boolean
   maxLongSide?: number
   strictResolutionCap?: boolean
+  /** When true, snap to the closest curated aspect-ratio bucket instead of
+   *  each post's raw (often unusual) aspect ratio. */
+  snapToBucket?: boolean
   /** Skip prompts too similar (Jaccard over tag sets) to one already accepted
    *  in this batch. Defaults to true — set false to restore the old "one
    *  prompt per post/combination, no similarity check" behavior. */
@@ -110,6 +114,7 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
     matchResolution = false,
     maxLongSide,
     strictResolutionCap = false,
+    snapToBucket = false,
     avoidSimilarPrompts = true,
     similarityThreshold = DEFAULT_SIMILARITY_THRESHOLD,
   } = options
@@ -149,10 +154,10 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
           if (!prompt) continue
           if (dupFilter && !dupFilter.tryAccept(prompt)) continue
           const resolution = matchResolution
-            ? computeGenerationResolution(post.width, post.height, { maxLongSide, strictCap: strictResolutionCap })
+            ? computeGenerationResolution(post.width, post.height, { maxLongSide, strictCap: strictResolutionCap, snapToBucket })
             : null
           if (process.env.NODE_ENV !== "production") {
-            console.log("%c[BooruMatchRes:BulkSend]", "color:#8b5cf6;font-weight:bold", `post.width=${post.width} post.height=${post.height} maxLongSide=${maxLongSide} strictResolutionCap=${strictResolutionCap} -> resolution=${resolution ? `${resolution.width}x${resolution.height}` : "null"}`)
+            console.log("%c[BooruMatchRes:BulkSend]", "color:#8b5cf6;font-weight:bold", `post.width=${post.width} post.height=${post.height} maxLongSide=${maxLongSide} strictResolutionCap=${strictResolutionCap} snapToBucket=${snapToBucket} -> resolution=${resolution ? `${resolution.width}x${resolution.height}` : "null"}`)
           }
           built.push({
             prompt,
@@ -195,20 +200,30 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
 
       setStatus("generating")
       setProgressLabel("Generating variations…")
-      // Over-generate candidates so the similarity filter has room to reject
-      // near-duplicates and still reach `count` — buildSyntheticPrompts already
-      // dedupes EXACT string matches, but two distinct combinations can still
-      // land extremely close in tag-set terms (e.g. only a filler tag differs).
-      const overGenerateCount = avoidSimilarPrompts ? Math.min(count * 3, 300) : count
-      const packPrompts = buildSyntheticPrompts(posts, searchTags, overGenerateCount, syntheticCleanOptions)
 
-      const dupFilter = avoidSimilarPrompts ? new NearDuplicateFilter(similarityThreshold) : null
-      const items: BulkSendQueueItem[] = []
-      for (const p of packPrompts) {
-        if (items.length >= count) break
-        if (dupFilter && !dupFilter.tryAccept(p.prompt)) continue
-        items.push({ prompt: p.prompt })
-      }
+      const lockedTags = extractLockedTagsFromSearch(searchTags)
+      const tagOverrides = syntheticCleanOptions.tagOverrides ?? {}
+      const axes = buildAxesFromSeedPosts(posts, lockedTags, tagOverrides)
+      const characterTags = detectCharacterTags(lockedTags, posts, tagOverrides)
+
+      // Over-generate candidates so the similarity filter has room to reject
+      // near-duplicates and still reach `count` — generateAndFilterPrompts
+      // already dedupes EXACT string matches on its own, but two distinct
+      // combinations can still land extremely close in tag-set terms (e.g.
+      // only a filler tag differs).
+      const overGenerateCount = avoidSimilarPrompts ? Math.min(count * 3, 300) : count
+      const prompts = generateAndFilterPrompts({
+        lockedTags,
+        axes,
+        characterTags,
+        count,
+        cleanOptions: syntheticCleanOptions,
+        overGenerateCount,
+        filterNearDuplicates: avoidSimilarPrompts,
+        similarityThreshold,
+      })
+
+      const items: BulkSendQueueItem[] = prompts.map((p) => ({ prompt: p.prompt }))
 
       return { items, requested: count, produced: items.length }
     },

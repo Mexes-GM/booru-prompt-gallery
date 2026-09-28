@@ -90,10 +90,10 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
     onPromoteToGlobal?.(tagText, weight)
   }, [onPromoteToGlobal])
 
-  if (!tags.length && !conflictingTags.length) return <p className="text-foreground/80 leading-relaxed italic">No prompt content</p>
+  if (!tags.length && !conflictingTags.length) return <p className="text-foreground leading-relaxed italic">No prompt content</p>
 
   return (
-    <div className="text-sm text-foreground/80 leading-relaxed break-all text-left">
+    <div className="text-sm text-foreground leading-relaxed wrap-anywhere text-left">
       <TooltipProvider>
         {tags.map((tag, i) => {
           // Check if this tag is globally weighted
@@ -124,7 +124,7 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
           <React.Fragment key={`conflict-${i}`}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive line-through decoration-destructive/50 cursor-help border border-destructive/20 transition-colors hover:bg-destructive/20 font-medium">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive-text line-through decoration-destructive/50 cursor-help border border-destructive/20 transition-colors hover:bg-destructive/20 font-medium">
                   <AlertCircle className="w-3 h-3 flex-shrink-0" />
                   {conflict.tag}
                 </span>
@@ -235,13 +235,13 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
   const isHeavy = currentWeight > 1.0
 
   // Text colors
-  let textClass = "text-foreground/80"
+  let textClass = "text-foreground"
   if (isGlobal) {
-    textClass = "text-purple-600 dark:text-purple-400 font-medium"
+    textClass = "text-primary-text font-medium"
   } else if (isModified) {
     textClass = isHeavy
-      ? "text-blue-600 dark:text-blue-400 font-medium"
-      : "text-red-600 dark:text-red-400 font-medium"
+      ? "text-info-text font-medium"
+      : "text-destructive-text font-medium"
   }
 
   // Backgrounds
@@ -249,9 +249,9 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
   if (isOpen) {
     bgClass = "bg-muted shadow-sm ring-1 ring-ring/20 font-semibold"
   } else if (isGlobal) {
-    bgClass = "bg-purple-500/10 border-b border-purple-500/30"
+    bgClass = "bg-primary/10 border-b border-primary/30"
   } else if (isModified) {
-    bgClass = isHeavy ? "bg-blue-500/10" : "bg-red-500/10"
+    bgClass = isHeavy ? "bg-info-soft" : "bg-destructive-soft"
   }
 
   return (
@@ -264,7 +264,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
           className={cn(
             "cursor-pointer px-0.5 -mx-0.5 rounded transition-colors duration-200 decoration-clone select-text outline-none inline relative border-none bg-transparent font-inherit whitespace-normal text-left break-words",
             textClass,
-            justCopied ? "!bg-emerald-500/25 ring-1 ring-emerald-500/50" : bgClass
+            justCopied ? "!bg-success/25 ring-1 ring-success/50" : bgClass
           )}
           animate={
             justCopied
@@ -293,7 +293,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
         >
           {displayText}
           {isGlobal && (
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full shadow-sm" />
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-primary rounded-full shadow-sm" />
           )}
         </motion.span>
       </PopoverTrigger>
@@ -314,7 +314,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
                   left: badgePos.left,
                   transform: "translate(-50%, -100%)",
                 }}
-                className="pointer-events-none z-[100] flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow-lg shadow-emerald-500/30 whitespace-nowrap"
+                className="pointer-events-none z-[100] flex items-center gap-1 rounded-full bg-success px-2 py-0.5 text-[10px] font-semibold text-success-foreground shadow-lg shadow-success/30 whitespace-nowrap"
                 aria-hidden="true"
               >
                 <Check className="h-2.5 w-2.5" />
@@ -335,7 +335,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
         >
           <div className="flex flex-col gap-1">
             {isGlobal && (
-              <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 rounded-sm mb-0.5">
+              <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-primary-text bg-primary/10 rounded-sm mb-0.5">
                 <Globe className="h-3 w-3" />
                 <span className="font-medium">Global Weight</span>
               </div>
@@ -371,7 +371,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 hover:text-blue-500 hover:bg-blue-500/10"
+                className="h-7 w-7 hover:text-info-text hover:bg-info-soft"
                 onClick={() => {
                   setDraftWeight(1.0)
                   // Keep open
@@ -392,8 +392,8 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
                     className={cn(
                       "h-7 w-7 transition-colors",
                       isGlobal
-                        ? "text-destructive hover:text-destructive hover:bg-destructive/10"
-                        : "text-purple-600 hover:text-purple-700 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-900/30"
+                        ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/10"
+                        : "text-primary-text hover:text-primary-text hover:bg-primary/10"
                     )}
                     onClick={() => {
                       // If currently global, toggle OFF by setting weight to 1.0 (which removes it in the handler)

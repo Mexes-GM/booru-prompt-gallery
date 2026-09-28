@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef, type Dispatch, type SetStateA
 import { useUser } from "@/hooks/use-user"
 import { createClient } from "@/lib/supabase/client"
 import { favKey } from "@/lib/favorites-logic"
-import * as Sentry from "@sentry/nextjs"
+import { fetchAllPages } from "@/lib/supabase/fetch-all-pages"
+import { reportError, reportMessage } from "@/lib/error-reporting"
 
 export interface FavoriteFolder {
   id: string
@@ -47,7 +48,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
   const [error, setError] = useState<string | null>(null)
 
   const syncVersionRef = useRef(0)
-  // F6: detect local toggles that race the initial load, so the DB snapshot does
+  // Detect local toggles that race the initial load, so the DB snapshot does
   // not silently revert a mutation that was in flight while the load ran.
   const loadingRef = useRef(false)
   const mutationDuringLoadRef = useRef(false)
@@ -140,7 +141,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
                   folderIdMap[folder.id] = data.id
                 }
               } catch (e) {
-                Sentry.captureException(e, {
+                reportError(e, {
                   level: "warning",
                   tags: { context: "use-favorites-core", action: "migrate_folder" }
                 })
@@ -175,26 +176,26 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
               .upsert(rows, { onConflict: "user_id,provider,post_id" })
 
             if (insertErr) {
-              Sentry.captureMessage(
+              reportMessage(
                 `Migration insert failed: ${insertErr.message}`,
                 { level: "warning", tags: { context: "use-favorites-core", action: "migrate_insert" } }
               )
             } else {
-              // F11: migration to Supabase succeeded — remove the local copies so a
+              // Migration to Supabase succeeded — remove the local copies so a
               // future logout can't resurrect stale anonymous favorites.
               try {
                 localStorage.removeItem("booruFavoritesV3")
                 localStorage.removeItem("booruFavoritesV2")
                 localStorage.removeItem("globalBooruFavorites")
               } catch (e) {
-                Sentry.captureException(e, {
+                reportError(e, {
                   level: "warning",
                   tags: { context: "use-favorites-core", action: "migrate_cleanup_localstorage" },
                 })
               }
             }
           } catch (e) {
-            Sentry.captureException(e, {
+            reportError(e, {
               level: "warning",
               tags: { context: "use-favorites-core", action: "migrate_localstorage" }
             })
@@ -218,13 +219,13 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
                     data: { favorites_migrated: 'v2' }
                   })
                   if (updateErr) {
-                    Sentry.captureMessage(
+                    reportMessage(
                       `Failed to set favorites_migrated flag: ${updateErr.message}`,
                       { level: "warning", tags: { context: "use-favorites-core", action: "set_migration_flag" } }
                     )
                   }
                 } catch (updateEx) {
-                  Sentry.captureException(updateEx, {
+                  reportError(updateEx, {
                     level: "warning",
                     tags: { context: "use-favorites-core", action: "set_migration_flag" }
                   })
@@ -238,13 +239,13 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
                     data: { favorites_migrated: 'v2' }
                   })
                   if (updateErr) {
-                    Sentry.captureMessage(
+                    reportMessage(
                       `Failed to set favorites_migrated flag after migration: ${updateErr.message}`,
                       { level: "warning", tags: { context: "use-favorites-core", action: "set_migration_flag_post_migrate" } }
                     )
                   }
                 } catch (updateEx) {
-                  Sentry.captureException(updateEx, {
+                  reportError(updateEx, {
                     level: "warning",
                     tags: { context: "use-favorites-core", action: "set_migration_flag_post_migrate" }
                   })
@@ -252,7 +253,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
               }
             }
           } catch (countEx) {
-            Sentry.captureException(countEx, {
+            reportError(countEx, {
               level: "warning",
               tags: { context: "use-favorites-core", action: "check_migration_count" }
             })
@@ -261,18 +262,30 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
 
         // Authenticated: load from Supabase
         try {
-          const { data: dbFolders, error: foldersErr } = await supabase
-            .from("favorite_folders")
-            .select("id, name, icon")
-            .order("created_at", { ascending: true })
-            .limit(10000)
-
-          const { data: dbFavorites, error: favsErr } = await supabase
-            .from("favorites")
-            .select("provider, post_id, folder_ids")
-            .order("position", { ascending: true, nullsLast: true })
-        .order("post_id", { ascending: true })
-            .limit(10000)
+          const [
+            { data: dbFolders, error: foldersErr },
+            { data: dbFavorites, error: favsErr },
+          ] = await Promise.all([
+            fetchAllPages<FavoriteFolder>((from, to) =>
+              supabase
+                .from("favorite_folders")
+                .select("id, name, icon")
+                .eq("user_id", user.id)
+                .order("created_at", { ascending: true })
+                .order("id", { ascending: true })
+                .range(from, to)
+            ),
+            fetchAllPages<DbFavoriteRow>((from, to) =>
+              supabase
+                .from("favorites")
+                .select("provider, post_id, folder_ids")
+                .eq("user_id", user.id)
+                .order("position", { ascending: true, nullsLast: true })
+                .order("provider", { ascending: true })
+                .order("post_id", { ascending: true })
+                .range(from, to)
+            ),
+          ])
 
           if (cancelled) return
 
@@ -297,7 +310,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
           setFolderMap(newMap)
           setLoaded(true)
 
-          // F6: if a local toggle happened while this load was running, the DB
+          // If a local toggle happened while this load was running, the DB
           // snapshot we just applied may have reverted it. Reconcile from the DB
           // (the toggle also persisted there) so the final state is correct.
           loadingRef.current = false

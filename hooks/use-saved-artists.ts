@@ -1,5 +1,6 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { fetchAllPages } from "@/lib/supabase/fetch-all-pages"
 import { useUser } from "@/hooks/use-user"
 import { userPreferences, type SavedArtist } from "@/lib/storage"
 import { toast } from "@/hooks/use-toast"
@@ -26,8 +27,6 @@ export interface UseSavedArtistsReturn {
   isSaved: (provider: string, artistTag: string) => boolean
   saveArtist: (artist: Omit<SavedArtist, "timestamp">) => Promise<void>
   removeArtist: (provider: string, artistTag: string) => Promise<void>
-  clearAll: () => Promise<void>
-  refresh: () => Promise<void>
 }
 
 const buildKey = (provider: string, tag: string) => `${provider.toLowerCase()}:${tag.toLowerCase()}`
@@ -53,15 +52,20 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
 
   const loadFromSupabase = useCallback(async () => {
     if (!userId) return [] as SavedArtist[]
-    const { data, error } = await supabase
-      .from("saved_artists")
-      .select("provider, artist_tag, thumbnail_url, thumbnail_post_id, created_at")
-      .order("created_at", { ascending: false })
+    const { data, error } = await fetchAllPages<DbSavedArtistRow>((from, to) =>
+      supabase
+        .from("saved_artists")
+        .select("provider, artist_tag, thumbnail_url, thumbnail_post_id, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .order("artist_tag", { ascending: true })
+        .range(from, to)
+    )
     if (error) {
       console.error("[useSavedArtists] fetch error:", error)
       return []
     }
-    return (data || []).map((r: DbSavedArtistRow) => rowToArtist(r))
+    return data.map((r) => rowToArtist(r))
   }, [userId, supabase])
 
   const loadFromLocal = useCallback((): SavedArtist[] => {
@@ -96,22 +100,6 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
     }
     _migrationCompleted = true
   }, [userId, supabase])
-
-  const refresh = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      if (userId) {
-        await migrateLocalToCloud()
-        const cloud = await loadFromSupabase()
-        setSavedArtists(cloud)
-      } else {
-        setSavedArtists(loadFromLocal())
-      }
-      setLoaded(true)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [userId, loadFromSupabase, loadFromLocal, migrateLocalToCloud])
 
   useEffect(() => {
     if (userLoading) return
@@ -210,22 +198,6 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
     [userId, supabase, savedArtists],
   )
 
-  const clearAll = useCallback(async () => {
-    const before = savedArtists
-    setSavedArtists([])
-    if (userId) {
-      const { error } = await supabase.from("saved_artists").delete().eq("user_id", userId)
-      if (error) {
-        setSavedArtists(before)
-        toastError({ title: "Error clearing artists", description: error.message, errorSource: "clear_artists" })
-        return
-      }
-    } else {
-      userPreferences.clearSavedArtists()
-    }
-    toast({ title: "All artists removed" })
-  }, [userId, supabase, savedArtists])
-
   return {
     savedArtists,
     isLoading,
@@ -233,8 +205,6 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
     isSaved,
     saveArtist,
     removeArtist,
-    clearAll,
-    refresh,
   }
 }
 

@@ -4,12 +4,9 @@ import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
-// Vercel Analytics — only collects data on Vercel deployments.
-import { Analytics } from '@vercel/analytics/next'
-// Cloudflare Web Analytics — privacy-friendly, works on Netlify and any host.
-import { CloudflareAnalytics } from '@/components/analytics/cloudflare-analytics'
 import ErrorBoundary from '@/components/error-boundary'
 import { PostHogProvider } from '@/components/analytics/posthog-provider'
+import { themeHex } from '@/lib/theme/tokens.generated'
 
 // Neutral, technical sans with character (anti-slop, not "toon"). Exposed as a
 // CSS variable so Tailwind's `font-sans` (= var(--font-sans)) picks it up.
@@ -126,7 +123,7 @@ export const metadata: Metadata = {
     title: 'Booru Gallery',
   },
   other: {
-    'msapplication-TileColor': '#000000',
+    'msapplication-TileColor': themeHex.light.primary,
     'msapplication-config': '/browserconfig.xml',
     // Emits <meta name="google" content="notranslate"> — reinforces the
     // translate="no" attribute so Chrome/Google Translate never rewrites the
@@ -143,8 +140,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: dark)', color: '#212936' },
-    { media: '(prefers-color-scheme: light)', color: '#f6f9fb' },
+    { media: '(prefers-color-scheme: dark)', color: themeHex.dark.background },
+    { media: '(prefers-color-scheme: light)', color: themeHex.light.background },
   ],
 }
 
@@ -198,10 +195,6 @@ export default function RootLayout({
             <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
               {children}
               <Toaster />
-              {/* Vercel Analytics only reports data on Vercel; render it only there. */}
-              {process.env.VERCEL === "1" && <Analytics />}
-              {/* Cloudflare Web Analytics covers Netlify (and any other host). */}
-              <CloudflareAnalytics />
             </ThemeProvider>
           </ErrorBoundary>
         </PostHogProvider>

@@ -11,14 +11,14 @@ import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
  */
 export function usePromptOptions() {
   const [promptOptions, setPromptOptions] = usePersistentState(
-    { includeCharacters: true, optimizeTags: true, smartTagExclusion: true, prependAnimaArtist: false },
+    { includeCharacters: true, optimizeTags: true, smartTagExclusion: true, prependAnimaArtist: false, autoAppendSearchTags: true },
     userPreferences.getPromptOptions,
     userPreferences.setPromptOptions,
     "promptOptions",
     STORAGE_KEYS.PROMPT_OPTIONS
   )
 
-  const { includeCharacters, optimizeTags, smartTagExclusion = true, prependAnimaArtist = false } = promptOptions
+  const { includeCharacters, optimizeTags, smartTagExclusion = true, prependAnimaArtist = false, autoAppendSearchTags = true } = promptOptions
 
   const setIncludeCharacters = (val: boolean) =>
     setPromptOptions(prev => ({ ...prev, includeCharacters: val }))
@@ -32,6 +32,9 @@ export function usePromptOptions() {
   const setPrependAnimaArtist = (val: boolean) =>
     setPromptOptions(prev => ({ ...prev, prependAnimaArtist: val }))
 
+  const setAutoAppendSearchTags = (val: boolean) =>
+    setPromptOptions(prev => ({ ...prev, autoAppendSearchTags: val }))
+
   return {
     promptOptions,
     setPromptOptions,
@@ -39,9 +42,11 @@ export function usePromptOptions() {
     optimizeTags,
     smartTagExclusion,
     prependAnimaArtist,
+    autoAppendSearchTags,
     setIncludeCharacters,
     setOptimizeTags,
     setSmartTagExclusion,
     setPrependAnimaArtist,
+    setAutoAppendSearchTags,
   }
 }

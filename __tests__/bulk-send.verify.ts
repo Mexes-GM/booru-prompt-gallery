@@ -24,6 +24,7 @@ import {
   buildAxesFromSeedPosts,
   detectCharacterTags,
   buildSyntheticPrompts,
+  generateAndFilterPrompts,
   type BulkSendCleanOptions,
 } from "../lib/pack/bulk-send"
 
@@ -132,6 +133,45 @@ const SEED_POSTS: BooruPost[] = [
   const result = buildSyntheticPrompts(single, "rare_character", 10, BASE_CLEAN_OPTS)
   assert(result.length >= 1, `narrow query still yields at least 1 prompt (got ${result.length})`)
   assert(result.every((r) => r.prompt.toLowerCase().includes("rare character")), "every prompt keeps the locked rare character tag")
+}
+
+/**
+ * How many UNIQUE prompts generateAndFilterPrompts (the real, exported
+ * function — not a reimplementation) yields for a given `count` +
+ * `overGenerateCount`, using a large single-axis pool with
+ * filterNearDuplicates:false so the only source of rejection is EXACT-STRING
+ * dedup (deterministic, unlike the near-duplicate Jaccard filter) — isolating
+ * the ceiling bug from the near-duplicate filter's own behavior entirely.
+ */
+function syntheticYield(count: number, overGenerateCount: number): number {
+  const poses = Array.from({ length: 300 }, (_, i) => `pose${i}`)
+  const result = generateAndFilterPrompts({
+    lockedTags: ["widecharacter3"],
+    axes: { pose: poses },
+    characterTags: [],
+    count,
+    cleanOptions: BASE_CLEAN_OPTS,
+    overGenerateCount,
+    filterNearDuplicates: false,
+    rng: createSeededRng(999),
+  })
+  return result.length
+}
+
+// ── 8) generateAndFilterPrompts must not clamp its internal
+//      generatePackPrompts call to MAX_PACK_PROMPTS (100): it must use the
+//      full overGenerateCount headroom (up to MAX_PACK_OVERGENERATE).
+//      useBulkSend's runSynthetic requests count*3 so a near-duplicate-heavy
+//      batch still has candidates left after filtering. A single axis with
+//      300 distinct values can supply more than 100 unique prompts.
+{
+  const requestedCount = 150
+  const overGenerateCount = requestedCount * 3 // useBulkSend's own multiplier (450, itself clamped elsewhere)
+  const yielded = syntheticYield(requestedCount, overGenerateCount)
+  assert(
+    yielded === requestedCount,
+    `requesting ${requestedCount} synthetic prompts from a single-axis pool of 300 values yields all ${requestedCount} (got ${yielded})`
+  )
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

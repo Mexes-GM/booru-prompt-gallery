@@ -18,13 +18,14 @@ import {
     Loader2,
     Tag,
     Sparkles,
-    Package
+    Package,
+    ImageOff
 } from "lucide-react"
 import {
     BooruPost,
     BooruProvider
 } from "@/lib/api-client"
-import { PROVIDER_POST_URLS } from "@/lib/constants"
+import { getPostUrl } from "@/lib/constants"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
@@ -53,8 +54,14 @@ const RICHNESS_DEPTH_CLASS: Record<RichnessDepth, string> = {
 // without redoing any of the plumbing.
 const SHOW_RICHNESS_BADGE = false
 
-// Per-category breakdown shown inside the tag-count chip's tooltip (these used to be
-// four always-visible colored chips on the image).
+// A failed image is retried this many times (10s, then 20s) before the card
+// gives up. Unbounded retries turned one deleted/broken file into a request
+// every 10s forever, and each failure counted toward the gallery's image-error
+// threshold — so a single broken card eventually paused infinite scroll.
+const MAX_IMAGE_RETRIES = 2
+const IMAGE_RETRY_BASE_MS = 10_000
+
+// Per-category breakdown shown inside the tag-count chip's tooltip.
 const CATEGORY_BREAKDOWN = [
     { key: "appearance", label: "Appearance", Icon: Smile, className: "text-cat-appearance-text" },
     { key: "clothing", label: "Outfit", Icon: Shirt, className: "text-cat-clothing-text" },
@@ -72,6 +79,7 @@ import { trackExternalLink } from "@/lib/analytics"
 import { usePostHog } from 'posthog-js/react'
 import { toast } from "@/hooks/use-toast"
 import { SCALE_CONFIG } from "@/components/masonry-grid"
+import type { TagAppendRule } from "@/lib/cleanPrompt"
 
 const PARTICLES = Array.from({ length: 12 })
 
@@ -173,6 +181,8 @@ interface MasonryItemProps {
     findInput?: string
     /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput). */
     replaceInput?: string
+    /** Find & Append rules (applied after Find & Replace). */
+    tagAppendRules?: TagAppendRule[]
     includeCharacters: boolean
     optimizeTags: boolean
     smartTagExclusion?: boolean
@@ -238,6 +248,7 @@ export const MasonryItem = memo(function MasonryItem({
     autoAppendSearchTags = true,
     findInput = "",
     replaceInput = "",
+    tagAppendRules,
     includeCharacters,
     optimizeTags,
     smartTagExclusion = true,
@@ -275,7 +286,9 @@ export const MasonryItem = memo(function MasonryItem({
     const [imageError, setImageError] = useState(false)
     const [retryKey, setRetryKey] = useState(0)
     const [useFallbackUrl, setUseFallbackUrl] = useState(false)
+    const [imageGaveUp, setImageGaveUp] = useState(false)
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const retryCountRef = useRef(0)
 
     useEffect(() => {
         return () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current) }
@@ -321,6 +334,7 @@ export const MasonryItem = memo(function MasonryItem({
         autoAppendSearchTags,
         findInput,
         replaceInput,
+        tagAppendRules,
         includeCharacters,
         optimizeTags,
         smartTagExclusion,
@@ -429,10 +443,16 @@ export const MasonryItem = memo(function MasonryItem({
         setImageError(true)
         onImageError?.()
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+        if (retryCountRef.current >= MAX_IMAGE_RETRIES) {
+            setImageGaveUp(true)
+            return
+        }
+        const delay = IMAGE_RETRY_BASE_MS * 2 ** retryCountRef.current
+        retryCountRef.current++
         retryTimerRef.current = setTimeout(() => {
             setImageError(false)
             setRetryKey(k => k + 1)
-        }, 10_000)
+        }, delay)
     }, [onImageError, isDanbooruImg, danbooruCdnUrl, danbooruCircuitOpen, useFallbackUrl])
 
     // Provider is the source of truth for the link — content heuristics like
@@ -442,19 +462,7 @@ export const MasonryItem = memo(function MasonryItem({
     // FIRST, unconditionally sending those posts to aibooru.com/<id> — a post
     // that only exists on Gelbooru/Rule34/etc. `isAiPost` is now only used as
     // a fallback for the truly ambiguous case (no explicit provider at all).
-    let postUrl = PROVIDER_POST_URLS.DANBOORU(post.id)
-
-    if (itemProvider === 'aibooru') {
-        postUrl = PROVIDER_POST_URLS.AIBOORU(post.id)
-    } else if (itemProvider === 'rule34') {
-        postUrl = PROVIDER_POST_URLS.RULE34(post.id)
-    } else if (itemProvider === 'e621') {
-        postUrl = PROVIDER_POST_URLS.E621(post.id)
-    } else if (itemProvider === 'gelbooru') {
-        postUrl = PROVIDER_POST_URLS.GELBOORU(post.id)
-    } else if (itemProvider === 'danbooru' && isAiPost) {
-        postUrl = PROVIDER_POST_URLS.AIBOORU(post.id)
-    }
+    const postUrl = getPostUrl(itemProvider, post.id, isAiPost)
 
     const getCardContentClass = () => {
         switch (effectiveScale) {
@@ -476,7 +484,7 @@ export const MasonryItem = memo(function MasonryItem({
 
     // hasActiveOptions now comes from useCardPrompt()
 
-    // Grid is now the only card layout — list view was removed (plan U6/3.4).
+    // Grid is now the only card layout — list view was removed.
     const renderCard = () => {
         const footerHeight = SCALE_CONFIG[effectiveScale].footerHeight
         const imageHeight = height - footerHeight
@@ -624,11 +632,19 @@ export const MasonryItem = memo(function MasonryItem({
                         decoding={index < 8 ? "sync" : "async"}
                         referrerPolicy={isAibooru ? undefined : "no-referrer"}
                         onError={handleImageError}
-                        onLoad={() => setImageError(false)}
+                        onLoad={() => {
+                            setImageError(false)
+                            setImageGaveUp(false)
+                            retryCountRef.current = 0
+                        }}
                     />
                     {imageError && (
                         <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
-                            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                            {imageGaveUp ? (
+                                <ImageOff className="w-6 h-6 text-muted-foreground" aria-label="Image unavailable" />
+                            ) : (
+                                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                            )}
                         </div>
                     )}
 
@@ -895,6 +911,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.autoAppendSearchTags !== next.autoAppendSearchTags) return false
     if (prev.findInput !== next.findInput) return false
     if (prev.replaceInput !== next.replaceInput) return false
+    if (prev.tagAppendRules !== next.tagAppendRules) return false
     if (prev.includeCharacters !== next.includeCharacters) return false
     if (prev.optimizeTags !== next.optimizeTags) return false
     if (prev.smartTagExclusion !== next.smartTagExclusion) return false

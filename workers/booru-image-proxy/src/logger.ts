@@ -107,7 +107,7 @@ export function reqLogger(request: Request, route: string): Logger {
 }
 
 // ---------------------------------------------------------------------------
-// Standardized rate-limit block telemetry (F0 — rate-limit-antiabuse plan).
+// Standardized rate-limit block telemetry.
 // Mirror of lib/observability.ts logRateLimitBlock so worker rejections share
 // the same schema (surface / keyType / scope / origin) as the Next side.
 // ---------------------------------------------------------------------------
@@ -116,7 +116,6 @@ export type RateLimitSurface =
   | "image"
   | "download"
   | "tags"
-  | "trends"
   | "ai"
   | "auth"
   | "feedback"

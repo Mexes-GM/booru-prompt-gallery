@@ -1,201 +1,181 @@
 # Booru Prompt Gallery
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat&logo=next.js)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat&logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
 
-**A multi-provider image gallery that extracts and cleans booru tags into ready-to-use prompts for AI art generation (Illustrious, Pony, SDXL).**
+**Pick a post, get a prompt you can paste straight into your generator.**
 
-[🌐 Live](https://booru-prompt-gallery.netlify.app) · [📝 Changelog](https://civitai.com/articles/17747) · [☕ Support](https://buymeacoffee.com/Mexes)
+[🌐 Open the app](https://booru-prompt-gallery.vercel.app) · [🪞 Mirror](https://booru-prompt-gallery.netlify.app) · [📝 Changelog](https://civitai.com/articles/17747) · [☕ Buy me a coffee](https://buymeacoffee.com/Mexes)
+
+![Booru Prompt Gallery home screen](.github/assets/home.jpg)
 
 ---
 
 ## What is this?
 
-Booru Prompt Gallery takes posts from digital art websites (Danbooru, Gelbooru, e621, Aibooru, Rule34), extracts their tags, cleans them, and formats them into ready-to-copy prompts. It's designed for LoRA trainers and AI artists who need varied, high-quality prompts quickly.
+I make LoRAs and checkpoints, and I was spending way too much time writing prompts to test them. Booru sites like Danbooru already have millions of images described tag by tag, so I built a tool that grabs those tags and turns them into clean, ready-to-use prompts.
 
-Instead of manually copying tags from a booru post and cleaning them by hand, you search for a character or concept, browse the results, and copy a clean prompt in one click.
+You search for a character, an outfit, a pose or anything else, scroll through real posts, and copy a prompt with one click. The app throws away the stuff that hurts your generations (artist names, metadata, "white background", watermarks...), merges redundant tags and avoids contradictions, so what you copy is something your model can actually use.
 
-### Screenshots
+It works with Illustrious, Pony, SDXL, Anima and pretty much any tag-based checkpoint.
 
-![Main panel controls](main_panel_control_preview.jpeg)
-
-![Prompt cards with categorized tags](demo_prompt_cards_preview.jpeg)
+![Gallery with prompt cards](.github/assets/gallery.jpg)
 
 ---
 
-## Features
+## What you can do with it
 
-### 🔍 Search & Discovery
+### Browse and copy
 
-- **Multi-provider support** — Danbooru, Gelbooru, e621, Aibooru, and Rule34. Switch between them to access different content pools.
-- **Tag search** — Search by character, action, clothing, or any booru tag. Autocomplete helps you find the correct tag format.
-- **Random mode** — Get varied results instead of always seeing the latest posts.
-- **Blacklist** — Exclude tags you don't want to see.
-- **Content filter** — Toggle explicit content on/off with one click.
+- **Five sites in one place**: Danbooru, Gelbooru, e621, Aibooru and Rule34.
+- **Tag autocomplete**: covers ~145,000 Danbooru tags, aliases included.
+- **Score Floor**: skip low-score posts, which tend to be tagged worse.
+- **Blacklist and Shuffle**: hide tags you never want to see, or get random results instead of the latest posts.
+- **Copy by category**: copy the whole prompt, or only the character, the clothing, the pose or the background.
 
-### 🧹 Prompt Cleaning
+### Clean prompts
 
-- **Tag extraction** — Removes irrelevant metadata, artist tags, rating tags, and redundant information.
-- **Smart Tag Exclusion** — 180+ rules that prevent contradictory tags (e.g., a character seen "from behind" won't have "lips" or "cleavage").
-- **Category filtering** — Tags are categorized into: **Appearance, Clothing, Pose, Background, Character**. Copy only the categories you need.
-- **Smart tag combination** — Merges redundant tags: "hair, long hair, white hair" → "long white hair".
-- **Tag removal** — Remove persistent unwanted tags from all prompts (e.g., "solo", "realistic").
-- **Minimum tag count** — Only show prompts with enough detail (recommended: 20-30 tags).
+- **Tag cleaning**: removes artist names, ratings, metadata and tags that restrict the generation.
+- **Smart Tag Combination**: `hair, long hair, white hair` becomes `long white hair`.
+- **Smart Tag Exclusion**: 180+ conflict rules, so a character seen "from behind" doesn't also get tags that only make sense from the front.
+- **Background Options**: keep the original background, remove it, replace it with your own tags, or randomize it (simple colors and gradients, or full detailed scenes).
 
-### 🎨 Prompt Customization
+### Make them yours
 
-- **Tags to add** — Inject tags into every prompt. Perfect for LoRA trigger words or style tags ("sketch", "photorealistic").
-- **Presets** — Save and load multiple tag packs for different LoRAs or styles.
-- **Global Tag Weights** — Assign weights to tags globally. A tag weighted at 1.5 will automatically apply `(tag:1.5)` across all cards.
-- **Per-tag weights** — Click any tag to increase or decrease its weight individually.
-- **Include/Exclude Character** — Toggle whether character tags appear in the final prompt.
+- **Tags to Add / Exclude**: put your LoRA triggers or quality tags at the start of every prompt, or drop tags you never want. Save your setups as **Tag Presets**.
+- **Find & Replace / Find & Append**: swap tags for others, or build rules like "when a prompt has X, append Y" with a visual block editor.
+- **Weights**: set a tag's weight once and it applies to every card.
+- **Prepend Artist (@artist)**: start the prompt with the post's artist to copy their style (Anima only).
 
-### 📋 Modes
+### Modes
 
-- **Favorites** — Save posts to folders. Syncs across devices via Supabase.
-- **Trending** — See what's popular today. Click cards to send them to the search engine.
-- **Merge** — Combine categories across multiple posts. Mix character from card A + clothing from card B + background from card C.
-- **Feedback** — Report bugs or request features directly from the app.
+- **Merge**: character from one card, outfit from another, background from a third. Includes Variations (`{ a | b }` wildcards).
+- **Pack Mode**: pick a base card or paste your own prompt and get a whole batch around it. Choose what stays fixed, how much the rest varies, and re-roll any prompt you don't like.
+- **AI Convert**: turn tag prompts into natural language. 10 free requests a day, or unlimited with your own API key.
+- **Favorites and History**: save posts into folders (synced if you sign in) and find anything you copied.
 
-### 🖼️ Background Options
-
-- **Keep Original** — Leave background tags as-is.
-- **Remove All** — Strip all background tags (simple colors + detailed scenery).
-- **Replace** — Remove backgrounds, inject your own custom replacement tags.
-- **Simple Random** — Generate a unique, coherent simple background per card (color/gradient/pattern) derived from the image's dominant colors via color theory.
-- **Detailed Random** — Swap the background for a full scenery set (e.g. `indoors, night, window`) sampled from a curated dataset.
-
-> Random modes are **seeded per card** (by post id), so each card gets a stable background that stays consistent between the on-card preview and every copy action.
-
-### ⚡ Quick Actions
-
-- **Random button** — Fetch random content to avoid seeing the same results.
-- **Refresh button** — Reload results for new posts.
-- **History panel** — Timeline of all tags you've copied.
-- **Image download** — Download images directly for ControlNet or IP-Adapter.
-- **One-click copy** — Copy full prompt or specific categories with a single click.
-
-### 👥 Community
-
-- **Teach Panel** — Help categorize tags. Suggestions go through an LLM verification system before human review.
+![Pack Mode building a batch of prompts](.github/assets/pack-mode.jpg)
 
 ---
 
-## Tech Stack
+## How tags get their categories
 
-| Category | Technology |
-|----------|-----------|
-| Framework | Next.js 15 (App Router) |
-| Language | TypeScript (strict mode) |
-| Styling | Tailwind CSS + shadcn/ui |
-| Data Fetching | SWR with infinite scroll |
-| Database | Supabase (PostgreSQL) |
-| Image Proxy | Cloudflare Workers (edge cache) |
-| Error Tracking | Sentry |
-| Auth | Supabase Auth (magic links) |
-| Animation | Framer Motion |
+Every tag in a prompt belongs to one of **7 categories**: Appearance, Clothing, Equipment, Pose, Scenery, Creature and Other. Each category is split into subcategories, **33 in total**: hair, eyes, top, bottom, footwear, weapon, handheld, expression, camera angle, setting, props, style and so on.
+
+Copy by category, Merge, Background Options and Pack Mode all rely on it. It's how Pack Mode knows not to give a character two skirts or three weapons.
+
+The ~145,000 Danbooru tags were classified with [Jev](https://typesafe.ai), an AI model from TypeSafe. The ambiguous ones (is `flower` in her hair, in her hand or in the background?) go to **Quick Teach**, where users confirm or correct Jev's guess.
 
 ---
 
-## Quick Start
+## Supported sites
+
+| Site | Content |
+|------|---------|
+| Danbooru | Anime / illustration (best tagging, recommended) |
+| Gelbooru | Anime / illustration |
+| e621 | Furry |
+| Aibooru | AI-generated art (prompts come from the image metadata) |
+| Rule34 | Mixed |
+
+---
+
+## Running it yourself
+
+You'll need **Node.js 24.12+** and **npm**.
 
 ```bash
 git clone https://github.com/Mexes-GM/booru-prompt-gallery.git
 cd booru-prompt-gallery
 npm install
+cp .env.example .env.local
+```
+
+The app gets its data (posts, tags, favorites, AI Convert) from a small Cloudflare Worker that lives in `workers/booru-image-proxy`. Run it in a second terminal:
+
+```bash
+cd workers/booru-image-proxy
+npm install
+npx wrangler dev
+```
+
+Then open `.env.local`, point `NEXT_PUBLIC_IMAGE_PROXY_URL` at the worker (`http://localhost:8787` by default) and start the app:
+
+```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). That's it — no `.env` file needed.
+Open [http://localhost:3000](http://localhost:3000).
 
-> **You don't need to configure anything for local use.** The app fetches directly from public booru APIs (Danbooru, AIBooru, etc.) from your browser. Search, browse, copy prompts, and save favorites (stored in your browser's localStorage) all work out of the box with zero setup.
+### Environment variables
 
-## Environment Variables (production deployment only)
+Only the worker URL is required. Everything else switches itself off when missing:
 
-All environment variables are **optional for local development**. They are only needed when deploying to production (Vercel, Netlify) to enable multi-user features.
+| Variable | What it enables | Without it |
+|----------|-----------------|------------|
+| `NEXT_PUBLIC_IMAGE_PROXY_URL` | Data API + image proxy (the worker) | **Required.** Nothing loads. |
+| `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sign in, synced favorites, tag categories, Teach | Favorites stay in your browser; no account features. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Admin panel and server-side writes | Admin panel disabled. |
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Rate limiting | In-memory fallback. |
+| `DANBOORU_USERNAME` + `DANBOORU_API_KEY` | Higher Danbooru rate limits | Public API limits. |
+| `NEXT_PUBLIC_CDN_PROXY_URL` | CDN for Danbooru images | Images go through the app's own download route. |
+| `NEXT_PUBLIC_POSTHOG_KEY` | Analytics | Disabled. |
+| `DISCORD_FEEDBACK_WEBHOOK_URL` | Feedback form | Feedback form disabled. |
 
-See [`.env.example`](.env.example) for the full list. Here's what each one does and what happens without it:
+Full list with comments in [`.env.example`](.env.example). The worker's own (optional) secrets are listed in `workers/booru-image-proxy/wrangler.toml`, and the database schema is in `supabase/migrations/`.
 
-| Variable | Purpose | What happens without it |
-|----------|---------|------------------------|
-| `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Multi-device favorites sync + auth | Favorites save to localStorage (anonymous mode); admin panel disabled |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-side admin operations | Admin panel disabled; graceful no-op fallback |
-| `NEXT_PUBLIC_IMAGE_PROXY_URL` | Cloudflare Worker for image proxying and API routes | Uses same-origin `/api/*` routes — works fine locally |
-| `NEXT_PUBLIC_CDN_PROXY_URL` | AWS CloudFront distribution fronting `cdn.donmai.us` — serves Danbooru images via edge cache + Referer injection, keeping image bandwidth off Netlify/Vercel | Falls back to the same-origin `/api/download` route |
-| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Server-side rate limiting | In-memory fallback (production); disabled entirely in dev mode |
-| `NEXT_PUBLIC_SENTRY_DSN` + `SENTRY_AUTH_TOKEN` | Error tracking | Disabled — Sentry only activates when `NODE_ENV=production` |
-| `DANBOORU_USERNAME` + `DANBOORU_API_KEY` | Higher Danbooru rate limits (server-side) | Client fetches directly from Danbooru's public API — works without keys |
-| `OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY` | AI-powered tag classification | Manual tag classification still works |
-| `DISCORD_FEEDBACK_WEBHOOK_URL` | Feedback form submissions | Feedback form silently disabled |
-| `ADMIN_PASSWORD` | Admin panel access | Admin panel inaccessible (irrelevant for local use) |
+### Useful commands
 
-**Bottom line**: `npm install && npm run dev` is all you need.
-
-## Project Structure
-
-```
-app/               → Next.js App Router (pages + API routes)
-components/
-  ui/              → shadcn/ui primitives
-  prompt-gallery/  → Gallery-specific components
-lib/
-  booru/           → Provider implementations (strategy pattern)
-  network/         → HTTP client with retries + rate limiting
-hooks/             → Custom React hooks
-scripts/           → Utilities (seeding, tag analysis)
-workers/           → Cloudflare Workers (image proxy)
-supabase/          → Database schema + migrations
-__tests__/         → Test suite
-```
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server |
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Start the dev server |
 | `npm run build` | Production build |
-| `npm run lint` | Run linter |
-| `npx ts-node --project __tests__/tsconfig.json __tests__/<name>.verify.ts` | Run a test suite (e.g. `background-options.verify.ts`) |
+| `npm test` | Run the tests |
 
-## Architecture
+---
 
-### Provider System
-Each booru provider implements `IBooruProvider` (Strategy pattern). `lib/booru/factory.ts` instantiates the correct provider based on user selection.
+## Under the hood
 
-### Smart Tag Exclusion
-`lib/tag-conflicts.ts` — 180+ trigger rules preventing contradictory tag combinations. 95.3% coverage across 43 tag families.
+| | |
+|---|---|
+| Framework | Next.js 16 (App Router), React 19 |
+| Language | TypeScript 6 (strict) |
+| Styling | Tailwind CSS 4 + shadcn/ui, Framer Motion |
+| Data | SWR, Cloudflare Worker (data API + image proxy) |
+| Database & auth | Supabase (PostgreSQL, magic-link login) |
 
-### Image Proxy
-Danbooru + Gelbooru images route through a Cloudflare Worker for caching and hotlink protection. Other providers serve directly from their CDNs to avoid bandwidth costs.
-
-### Prompt Pipeline
-1. Raw post tags → `cleanPrompt()` removes metadata, ratings, deprecated tags
-2. Category system separates tags into Appearance / Clothing / Pose / Background / Character
-3. Smart tag combination merges redundant modifiers
-4. Tag conflicts resolved (e.g., "from behind" blocks frontal anatomy tags)
-5. Background options applied
-6. Global and per-tag weights applied
-7. Final prompt ready to copy
-
-## API Providers
-
-| Provider | Content | Status |
-|----------|---------|--------|
-| Danbooru | Anime/illustration (best tagging) | ✅ Recommended |
-| Gelbooru | Anime/illustration | ✅ |
-| e621 | Furry | ✅ |
-| Aibooru | AI-generated art | ✅ |
-| Rule34 | Explicit content | ✅ |
+```
+app/                  → pages, admin panel and server actions
+components/
+  prompt-gallery/     → the gallery, cards, panels and modes
+  ui/                 → shadcn/ui primitives
+lib/
+  cleanPrompt.ts      → prompt cleaning and tag combination
+  tag-conflicts.ts    → Smart Tag Exclusion rules
+  tag-taxonomy.ts     → the 7 categories and 33 subcategories
+  prompt/             → how a post becomes a prompt
+  pack/               → Pack Mode generator and learning
+  booru/              → site URLs, tag limits and helpers
+hooks/                → React hooks (search, favorites, modes...)
+workers/              → the Cloudflare Worker
+supabase/             → database migrations
+scripts/              → data and classification scripts
+__tests__/            → verification tests
+```
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
+Found a bug or have an idea? Open an issue or leave a comment on the [Civitai article](https://civitai.com/articles/17747). PRs are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Support
+
+The app runs on free hosting, so if it's ever down, that's probably why. If you want to help keep it running, you can [buy me a coffee](https://buymeacoffee.com/Mexes).
 
 ## License
 
-AGPL-3.0 — see [LICENSE](LICENSE).
+AGPL-3.0, see [LICENSE](LICENSE).
 
-This project is free and open source. You can use, modify, and self-host it — but if you run a modified version as a network service, you must make the modified source code available to your users under the same license. This prevents closed-source forks from monetizing this project without giving back to the community.
+You're free to use, modify and self-host it. If you run a modified version as a public service, you have to share your changes under the same license.

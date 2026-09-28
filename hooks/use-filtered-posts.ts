@@ -121,7 +121,7 @@ export function useFilteredPosts({
         // Danbooru/Aibooru have native tag count APIs; Gelbooru/Rule34 use Danbooru
         // as a proxy (character tags share names across platforms). Only e621 and
         // other unsupported providers skip this filter entirely.
-        const postProvider = post._provider || booruProvider
+        const postProvider = (post._provider as BooruProvider | undefined) || booruProvider
         const supportsCharCounts = postProvider === 'danbooru' || postProvider === 'aibooru'
           || postProvider === 'gelbooru' || postProvider === 'rule34'
 
@@ -156,7 +156,7 @@ export function useFilteredPosts({
       // appliedTagCountFilter; the web app omits it (undefined → no-op).
       const minTagCount = parseInt(appliedTagCountFilter || '0') || 0
       if (minTagCount > 0) {
-        const postProvider = post._provider || booruProvider
+        const postProvider = (post._provider as BooruProvider | undefined) || booruProvider
         if (!isTagCountSupportedProvider(postProvider)) {
           const tagString = (post.tag_string || '').trim()
           const tagCount = tagString.split(/\s+/).filter(Boolean).length

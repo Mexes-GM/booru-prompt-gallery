@@ -40,6 +40,9 @@ const mockPost = (tags: { general?: string; artist?: string; character?: string;
   rating: "g",
   width: 1000,
   height: 1000,
+  file_url: "https://example.com/file.jpg",
+  large_file_url: "https://example.com/large.jpg",
+  preview_file_url: "https://example.com/preview.jpg",
 })
 
 // ── 1. extractSearchPromptTags unit tests ──

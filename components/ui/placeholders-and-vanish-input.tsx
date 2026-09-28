@@ -257,7 +257,7 @@ export function PlaceholdersAndVanishInput({
         type="text"
         aria-label={ariaLabel || "Search"}
         className={cn(
-          "w-full relative text-sm sm:text-base z-50 border-none dark:text-white bg-transparent text-black h-full focus:outline-none focus:ring-0 pl-0 pr-0",
+          "w-full relative text-sm sm:text-base z-50 border-none bg-transparent text-foreground h-full focus:outline-none focus:ring-0 pl-0 pr-0",
           animating && "text-transparent dark:text-transparent"
         )}
       />
@@ -268,7 +268,7 @@ export function PlaceholdersAndVanishInput({
           type="button"
           aria-label="Submit search"
           onClick={handleSubmit}
-          className="absolute right-2 top-1/2 z-50 -translate-y-1/2 h-8 w-8 rounded-full disabled:bg-gray-100 bg-black dark:bg-zinc-900 dark:disabled:bg-zinc-800 transition duration-200 flex items-center justify-center"
+          className="absolute right-2 top-1/2 z-50 -translate-y-1/2 h-8 w-8 rounded-full disabled:bg-muted bg-foreground transition duration-200 flex items-center justify-center"
         >
           <motion.svg
             xmlns="http://www.w3.org/2000/svg"
@@ -280,7 +280,7 @@ export function PlaceholdersAndVanishInput({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="text-gray-300 h-4 w-4"
+            className="text-background h-4 w-4"
           >
             <path stroke="none" d="M0 0h24v24H0z" fill="none" />
             <motion.path

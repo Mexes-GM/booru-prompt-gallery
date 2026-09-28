@@ -24,7 +24,13 @@ interface BlacklistManagerProps {
   onAdd: (tag: string) => void
   onRemove: (tag: string) => void
   onReset: () => void
+  /** Extra classes for the trigger button. Used by the extension sidepanel
+   *  to match its compact toolbar sizing; the main web app's search-bar
+   *  doesn't need it and omits it. */
   className?: string
+  /** "attached" (default) is the icon + label + count button docked to a
+   *  search input; "edit" is a plain "Edit" button for a settings row. */
+  triggerVariant?: "attached" | "edit"
 }
 
 // --- Animation Variants ---
@@ -53,12 +59,12 @@ const itemVariants: Variants = {
 }
 
 const badgeVariants: Variants = {
-  initial: { opacity: 0, scale: 0.8 },
+  initial: { opacity: 0, scale: 0.95 },
   animate: { opacity: 1, scale: 1 },
-  exit: { opacity: 0, scale: 0.8, transition: { duration: 0.15 } }
+  exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15 } }
 }
 
-export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, className }: BlacklistManagerProps) {
+export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, className, triggerVariant = "attached" }: BlacklistManagerProps) {
   const [inputValue, setInputValue] = useState("")
   const [isOpen, setIsOpen] = useState(false)
 
@@ -82,6 +88,13 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      {triggerVariant === "edit" ? (
+        <DialogTrigger asChild>
+          <Button type="button" variant="outline" size="sm" aria-label="Edit blacklisted tags" className={cn("h-10 px-3.5 sm:h-8", className)}>
+            Edit
+          </Button>
+        </DialogTrigger>
+      ) : (
       <Tooltip>
         {/* Tooltip anchors to a span wrapper, NOT the same node as DialogTrigger.
             Nesting two `asChild` triggers on one element composes 3 refs and triggers a
@@ -97,7 +110,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                 <Tag className="w-3.5 h-3.5 sm:mr-1.5" />
                 <span className="hidden sm:inline text-xs font-medium">Blacklist</span>
                 {blacklist.length > 0 && (
-                  <span className="ml-1.5 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold px-1 h-4 min-w-[1rem] flex items-center justify-center rounded-full">
+                  <span className="ml-1.5 bg-muted text-muted-foreground text-[10px] font-bold px-1 h-4 min-w-[1rem] flex items-center justify-center rounded-full">
                     {blacklist.length}
                   </span>
                 )}
@@ -107,6 +120,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
         </TooltipTrigger>
         <TooltipContent>Manage blacklisted tags</TooltipContent>
       </Tooltip>
+      )}
 
       <DialogContent className="sm:max-w-[460px] p-0 overflow-hidden gap-0 border-0 shadow-2xl bg-background/95 backdrop-blur-md">
         <div className="relative flex flex-col h-full">
@@ -116,7 +130,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
           <DialogHeader className="p-6 pb-4 z-10">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2.5 bg-destructive/10 rounded-xl shadow-inner">
-                <AlertOctagon className="w-5 h-5 text-destructive" />
+                <AlertOctagon className="w-5 h-5 text-destructive-text" />
               </div>
               <DialogTitle className="text-xl font-bold tracking-tight">Content Blacklist</DialogTitle>
             </div>
@@ -125,19 +139,19 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
             </DialogDescription>
             
             {/* Info Section */}
-            <div className="mt-4 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20 flex gap-3">
-              <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
+            <div className="mt-4 p-3 rounded-lg bg-info/5 border border-info-border flex gap-3">
+              <Info className="w-4 h-4 text-info-text mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-info-text space-y-1">
                 <p className="font-semibold">Client-side filtering</p>
-                <p>Blacklisted tags are filtered after results load. Blocking very common tags may result in few or no images.</p>
+                <p>Blacklisted tags are filtered after results load. Blocking very common tags may result in few or no images. Different from typing -tag in search (server-side, consumes a tag slot) or &quot;Tags to Exclude&quot; in the options panel (keeps the post, edits the prompt text).</p>
               </div>
             </div>
             
             {/* Warning if many tags are blocked */}
             {blacklist.length > 8 && (
-              <div className="mt-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 flex gap-3">
-                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                <div className="text-xs text-amber-700 dark:text-amber-300 space-y-1">
+              <div className="mt-3 p-3 rounded-lg bg-warning/5 border border-warning-border flex gap-3">
+                <AlertCircle className="w-4 h-4 text-warning-text mt-0.5 flex-shrink-0" />
+                <div className="text-xs text-warning-text space-y-1">
                   <p className="font-semibold">Many tags blocked</p>
                   <p>You have {blacklist.length} tags filtered. This may significantly reduce available images.</p>
                 </div>
@@ -164,7 +178,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
                   className={cn(
-                    "pr-12 h-11 bg-secondary/30 focus:bg-background transition-all duration-200",
+                    "pr-12 h-11 bg-secondary/30 focus:bg-background transition-[background-color,border-color,box-shadow] duration-200",
                     "border-transparent focus:border-destructive/30 focus:ring-4 focus:ring-destructive/5",
                     "rounded-xl font-medium"
                   )}
@@ -173,7 +187,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                   onClick={handleAdd}
                   size="icon"
                   disabled={!inputValue.trim()}
-                  className="absolute right-1 top-1 h-9 w-9 rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-30"
+                  className="absolute right-1 top-1 h-9 w-9 rounded-lg transition-transform duration-150 ease-out [@media(hover:hover)_and_(pointer:fine)]:hover:scale-105 active:scale-95 motion-reduce:transform-none disabled:opacity-30"
                   aria-label="Add tag"
                 >
                   <Plus className="w-5 h-5" />
@@ -192,7 +206,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                     variant="ghost"
                     size="sm"
                     onClick={onReset}
-                    className="h-6 px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                    className="h-6 px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-destructive-text hover:bg-destructive/5"
                   >
                     <RotateCcw className="w-3 h-3 mr-1.5" />
                     Reset
@@ -229,8 +243,8 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                               <Badge
                                 variant="secondary"
                                 className={cn(
-                                  "pl-3 pr-1 py-1.5 h-8 flex items-center gap-2 transition-all duration-200",
-                                  "bg-background hover:bg-destructive/10 hover:text-destructive group/badge border shadow-sm",
+                                  "pl-3 pr-1 py-1.5 h-8 flex items-center gap-2 transition-colors duration-200",
+                                  "bg-background hover:bg-destructive/10 hover:text-destructive-text group/badge border shadow-sm",
                                   "rounded-lg font-mono text-[11px]"
                                 )}
                               >
@@ -238,7 +252,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                                 <button
                                   type="button"
                                   onClick={() => onRemove(tag)}
-                                  className="rounded-md p-1 opacity-40 group-hover/badge:opacity-100 hover:bg-destructive/20 transition-all"
+                                  className="rounded-md p-1 opacity-40 group-hover/badge:opacity-100 hover:bg-destructive/20 transition-[opacity,background-color]"
                                   aria-label={`Remove ${tag}`}
                                 >
                                   <X className="w-3 h-3" />
@@ -259,7 +273,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
               <Button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="w-full h-11 text-sm font-semibold shadow-lg shadow-zinc-500/10 hover:shadow-zinc-500/20 transition-all hover:-translate-y-0.5 rounded-xl"
+                className="w-full h-11 text-sm font-semibold shadow-lg shadow-foreground/10 hover:shadow-foreground/20 transition-[color,background-color,box-shadow,transform] duration-200 ease-out [@media(hover:hover)_and_(pointer:fine)]:hover:-translate-y-0.5 motion-reduce:transform-none rounded-xl"
               >
                 Close Manager
               </Button>

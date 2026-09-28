@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { TagSuggestion, approveSuggestion, rejectSuggestion } from "@/app/actions/admin"
+import { formatSubcategoryLabel } from "@/lib/tag-taxonomy"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -24,7 +25,6 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { toastError } from "@/lib/toast-error"
-import { format } from "date-fns"
 import { Check, X, Filter, Loader2 } from "lucide-react"
 
 interface SuggestionsTableProps {
@@ -137,9 +137,16 @@ export function SuggestionsTable({
                         <Badge variant="outline">{suggestion.current_category}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={suggestion.suggested_category === suggestion.current_category ? "outline" : "secondary"} className="bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-100">
-                          {suggestion.suggested_category}
-                        </Badge>
+                        <div className="flex flex-col gap-1 items-start">
+                          <Badge variant={suggestion.suggested_category === suggestion.current_category ? "outline" : "secondary"} className="bg-info-soft text-info-text hover:bg-info/25">
+                            {suggestion.suggested_category}
+                          </Badge>
+                          {suggestion.suggested_subcategory && (
+                            <span className="text-[11px] text-muted-foreground font-mono">
+                              › {formatSubcategoryLabel(suggestion.suggested_subcategory)}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Badge 
@@ -147,13 +154,13 @@ export function SuggestionsTable({
                             suggestion.status === 'approved' ? 'default' : 
                             suggestion.status === 'rejected' ? 'destructive' : 'outline'
                           }
-                          className={suggestion.status === 'approved' ? 'bg-green-600 hover:bg-green-700' : ''}
+                          className={suggestion.status === 'approved' ? 'bg-success hover:bg-success/90 text-success-foreground' : ''}
                         >
                           {suggestion.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {format(new Date(suggestion.created_at), 'MMM d, yyyy')}
+                        {new Date(suggestion.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </TableCell>
                       <TableCell className="text-right">
                         {suggestion.status === 'pending' && (
@@ -161,7 +168,7 @@ export function SuggestionsTable({
                             <Button 
                               size="sm" 
                               variant="outline" 
-                              className="h-8 w-8 p-0 text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700 dark:border-green-900 dark:hover:bg-green-900/50"
+                              className="h-8 w-8 p-0 text-success-text border-success-border hover:bg-success-soft hover:text-success-text"
                               onClick={() => handleAction('approve', suggestion.id)}
                               disabled={!!isProcessing}
                             >
@@ -170,7 +177,7 @@ export function SuggestionsTable({
                             <Button 
                               size="sm" 
                               variant="outline" 
-                              className="h-8 w-8 p-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-red-900 dark:hover:bg-red-900/50"
+                              className="h-8 w-8 p-0 text-destructive-text border-destructive-border hover:bg-destructive-soft hover:text-destructive-text"
                               onClick={() => handleAction('reject', suggestion.id)}
                               disabled={!!isProcessing}
                             >

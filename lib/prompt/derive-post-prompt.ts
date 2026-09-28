@@ -35,9 +35,15 @@ export interface DerivePostPromptOptions {
   /**
    * Search query entered in the search bar (e.g. "spirit blossom syndra, 1girl, solo").
    * Any searched prompt tag that is not present in the post's cleaned prompt will
-   * automatically be appended after the user's "Tags to add" (addInput).
+   * automatically be appended after the user's "Tags to add" (addInput), UNLESS
+   * autoAppendSearchTags is explicitly set to false.
    */
   searchTags?: string
+  /**
+   * Whether search-tag auto-append (see `searchTags` above) is active. Defaults
+   * to true. Exposed as a switch in the options panel.
+   */
+  autoAppendSearchTags?: boolean
   findInput?: string
   replaceInput?: string
   tagAppendRules?: TagAppendRule[]
@@ -135,6 +141,7 @@ export function derivePostPrompt(
     excludeInput,
     addInput,
     searchTags,
+    autoAppendSearchTags = true,
     findInput = "",
     replaceInput = "",
     tagAppendRules = [],
@@ -146,7 +153,7 @@ export function derivePostPrompt(
     removeQualityTags,
     backgroundMode,
     simpleBackgroundReplacementTags,
-    randomBackgroundPatterns = false,
+    randomBackgroundPatterns = true,
     randomBackgroundIncludeGradients = true,
     detailedBackgroundsList,
     backgroundMatchStrictness,
@@ -158,17 +165,31 @@ export function derivePostPrompt(
   const excludeList = splitCommaSeparatedTags(excludeInput)
   const addList = splitCommaSeparatedTags(addInput)
   const wordReplacements = buildWordReplacements(findInput, replaceInput)
-  const searchPromptTags = extractSearchPromptTags(searchTags)
+  const searchPromptTags = autoAppendSearchTags ? extractSearchPromptTags(searchTags) : []
 
   const isAiPost = isAibooruPost(post)
   let aiPrompt = isAiPost ? getPromptFromPost(post) : null
   if (aiPrompt && removeLoRaTags) aiPrompt = removeLoRaTagsUtil(aiPrompt)
   if (aiPrompt && removeQualityTags) aiPrompt = removeQualityTagsUtil(aiPrompt)
 
+  // Include Characters, Smart Tag Combination, Smart Tag Exclusion and
+  // Prepend Artist are hidden from the UI on Aibooru posts (which show
+  // Remove LoRa/Quality Tags instead — see prompt-generation-options-panel.tsx's
+  // `booruProvider !== 'aibooru'` branch). Before this gate they were still
+  // silently applied using whatever value was last persisted, so a user could
+  // have 4 active options invisibly reshaping their prompt with no way to see
+  // or turn them off. Gating here — the single pipeline
+  // every card/Bulk Send/Pack Mode call goes through — makes the applied
+  // behavior always match what the UI actually shows, regardless of call site.
+  const effectiveIncludeCharacters = isAiPost ? false : includeCharacters
+  const effectiveOptimizeTags = isAiPost ? false : optimizeTags
+  const effectiveSmartTagExclusion = isAiPost ? false : smartTagExclusion
+  const effectivePrependAnimaArtist = isAiPost ? false : prependAnimaArtist
+
   // sharedCleaned: base pipeline with 'keep' background, no added tags — used
   // to resolve conflicts against the tags the user wants to add.
   const sharedOpts = {
-    includeCharacters, includeCopyrights: false, optimizeTags,
+    includeCharacters: effectiveIncludeCharacters, includeCopyrights: false, optimizeTags: effectiveOptimizeTags,
     exclude: excludeList, addedTags: [] as string[], tagOverrides,
     backgroundMode: "keep" as BackgroundMode, simpleBackgroundReplacementTags,
     escapeOutput: false, metaTags: post.tag_string_meta,
@@ -228,12 +249,12 @@ export function derivePostPrompt(
 
   const effectiveAddedTags = [...addList, ...missingSearchTags]
 
-  const conflictResolution = (!pureContent || effectiveAddedTags.length === 0 || !smartTagExclusion)
+  const conflictResolution = (!pureContent || effectiveAddedTags.length === 0 || !effectiveSmartTagExclusion)
     ? { validTags: effectiveAddedTags, conflictingTags: [] }
     : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()), effectiveAddedTags)
 
   const firstArtistTag = (() => {
-    if (!prependAnimaArtist) return undefined
+    if (!effectivePrependAnimaArtist) return undefined
     const raw = post.tag_string_artist?.trim().split(/\s+/).filter(Boolean)[0]
     return raw ? raw.replace(/_/g, " ") : undefined
   })()

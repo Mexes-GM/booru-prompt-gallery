@@ -1,15 +1,15 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  QuickFlowModal,
+  QuickFlowWelcomeScreen,
+  QuickFlowSummaryScreen,
+  QuickFlowStatBlock,
+  type QuickFlowPhase,
+} from "@/components/quick-flow-modal"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   ClipboardCheck,
@@ -17,7 +17,6 @@ import {
   Loader2,
   Undo2,
   SkipForward,
-  PartyPopper,
   Check,
   X,
   Wrench,
@@ -50,7 +49,7 @@ interface QuickReviewModalProps {
   onDecision?: () => void
 }
 
-type Phase = "welcome" | "playing" | "summary"
+type Phase = QuickFlowPhase
 type Verdict = "approved" | "rejected" | "corrected"
 
 const CATEGORY_CONFIG: Array<{
@@ -59,11 +58,11 @@ const CATEGORY_CONFIG: Array<{
   icon: typeof Shirt
   accent: string
 }> = [
-  { id: "appearance", label: "Appearance", icon: Smile, accent: "border-blue-500/40 bg-blue-500/5 text-blue-600 dark:text-blue-300 hover:border-blue-500 hover:bg-blue-500/10" },
-  { id: "clothing", label: "Clothing", icon: Shirt, accent: "border-green-500/40 bg-green-500/5 text-green-600 dark:text-green-300 hover:border-green-500 hover:bg-green-500/10" },
-  { id: "pose", label: "Pose", icon: PersonStanding, accent: "border-purple-500/40 bg-purple-500/5 text-purple-600 dark:text-purple-300 hover:border-purple-500 hover:bg-purple-500/10" },
-  { id: "scenery", label: "Scenery", icon: Mountain, accent: "border-orange-500/40 bg-orange-500/5 text-orange-600 dark:text-orange-300 hover:border-orange-500 hover:bg-orange-500/10" },
-  { id: "other", label: "Unclassified", icon: TagIcon, accent: "border-zinc-500/40 bg-zinc-500/5 text-zinc-600 dark:text-zinc-300 hover:border-zinc-500 hover:bg-zinc-500/10" },
+  { id: "appearance", label: "Appearance", icon: Smile, accent: "border-cat-appearance-border bg-cat-appearance/5 text-cat-appearance-text hover:border-cat-appearance hover:bg-cat-appearance-soft" },
+  { id: "clothing", label: "Clothing", icon: Shirt, accent: "border-cat-clothing-border bg-cat-clothing/5 text-cat-clothing-text hover:border-cat-clothing hover:bg-cat-clothing-soft" },
+  { id: "pose", label: "Pose", icon: PersonStanding, accent: "border-cat-pose-border bg-cat-pose/5 text-cat-pose-text hover:border-cat-pose hover:bg-cat-pose-soft" },
+  { id: "scenery", label: "Scenery", icon: Mountain, accent: "border-cat-scenery-border bg-cat-scenery/5 text-cat-scenery-text hover:border-cat-scenery hover:bg-cat-scenery-soft" },
+  { id: "other", label: "Unclassified", icon: TagIcon, accent: "border-border bg-muted/40 text-muted-foreground hover:border-muted-foreground/60 hover:bg-muted" },
 ]
 
 const REFILL_THRESHOLD = 4
@@ -261,63 +260,50 @@ export function QuickReviewModal({ open, onOpenChange, onDecision }: QuickReview
     return () => clearTimeout(timer)
   }, [flashVerdict])
 
-  const handleClose = useCallback((val: boolean) => {
-    if (!val && phase === "playing" && decisions.length > 0) {
-      setPhase("summary")
-      return
-    }
-    onOpenChange(val)
-  }, [phase, decisions.length, onOpenChange])
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent
-        overlayClassName="backdrop-blur-none bg-background/60"
-        className="max-w-lg w-full max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl"
-        showCloseButton={false}
-      >
-        {phase === "welcome" && (
-          <WelcomeScreen totalPending={totalPending} onStart={startReview} />
-        )}
-
-        {phase === "playing" && (
-          <PlayingScreen
-            suggestion={current}
-            isLoading={isLoading && !current}
-            isExhausted={isExhausted}
-            error={error}
-            reviewedCount={reviewedCount}
-            approvedCount={approvedCount}
-            rejectedCount={rejectedCount}
-            correctedCount={correctedCount}
-            flashVerdict={flashVerdict}
-            isLocked={!!flashVerdict || isActing}
-            isCorrecting={isCorrecting}
-            lowMotion={lowMotion}
-            canUndo={decisions.length > 0}
-            onApprove={() => runDecision("approved")}
-            onReject={() => runDecision("rejected")}
-            onStartCorrect={() => setIsCorrecting(true)}
-            onCancelCorrect={() => setIsCorrecting(false)}
-            onCorrect={(cat) => runDecision("corrected", cat)}
-            onSkip={skip}
-            onUndo={handleUndo}
-            onFinish={() => setPhase("summary")}
-          />
-        )}
-
-        {phase === "summary" && (
-          <SummaryScreen
-            reviewedCount={reviewedCount}
-            approvedCount={approvedCount}
-            rejectedCount={rejectedCount}
-            correctedCount={correctedCount}
-            onKeepGoing={() => setPhase("playing")}
-            onDone={() => onOpenChange(false)}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
+    <QuickFlowModal
+      open={open}
+      phase={phase}
+      onPhaseChange={setPhase}
+      onOpenChange={onOpenChange}
+      hasProgress={decisions.length > 0}
+      welcome={<WelcomeScreen totalPending={totalPending} onStart={startReview} />}
+      playing={
+        <PlayingScreen
+          suggestion={current}
+          isLoading={isLoading && !current}
+          isExhausted={isExhausted}
+          error={error}
+          reviewedCount={reviewedCount}
+          approvedCount={approvedCount}
+          rejectedCount={rejectedCount}
+          correctedCount={correctedCount}
+          flashVerdict={flashVerdict}
+          isLocked={!!flashVerdict || isActing}
+          isCorrecting={isCorrecting}
+          lowMotion={lowMotion}
+          canUndo={decisions.length > 0}
+          onApprove={() => runDecision("approved")}
+          onReject={() => runDecision("rejected")}
+          onStartCorrect={() => setIsCorrecting(true)}
+          onCancelCorrect={() => setIsCorrecting(false)}
+          onCorrect={(cat) => runDecision("corrected", cat)}
+          onSkip={skip}
+          onUndo={handleUndo}
+          onFinish={() => setPhase("summary")}
+        />
+      }
+      summary={
+        <SummaryScreen
+          reviewedCount={reviewedCount}
+          approvedCount={approvedCount}
+          rejectedCount={rejectedCount}
+          correctedCount={correctedCount}
+          onKeepGoing={() => setPhase("playing")}
+          onDone={() => onOpenChange(false)}
+        />
+      }
+    />
   )
 }
 
@@ -325,50 +311,40 @@ export function QuickReviewModal({ open, onOpenChange, onDecision }: QuickReview
 
 function WelcomeScreen({ totalPending, onStart }: { totalPending: number | null; onStart: () => void }) {
   return (
-    <div className="flex flex-col items-center text-center p-6 sm:p-8 gap-6">
-      <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-        <ClipboardCheck className="w-8 h-8 text-primary" />
-      </div>
-
-      <DialogHeader className="items-center gap-2">
-        <DialogTitle className="text-xl sm:text-2xl">Quick Review</DialogTitle>
-        <DialogDescription className="text-sm sm:text-base max-w-sm">
+    <QuickFlowWelcomeScreen
+      icon={ClipboardCheck}
+      title="Quick Review"
+      description={
+        <>
           Rip through the pending suggestion backlog one at a time.
           {typeof totalPending === "number" && totalPending > 0 && (
             <> There {totalPending === 1 ? "is" : "are"} currently <strong>{totalPending}</strong> pending.</>
           )}
-        </DialogDescription>
-      </DialogHeader>
-
-      <div className="grid grid-cols-1 gap-2 w-full max-w-xs">
-        <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium border-green-500/40 bg-green-500/5 text-green-600 dark:text-green-300">
-          <Check className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Approve</span>
-          <kbd className="ml-auto text-[10px] font-mono bg-background/70 rounded px-1.5 py-0.5 border">A</kbd>
+        </>
+      }
+      middle={
+        <div className="grid grid-cols-1 gap-2 w-full max-w-xs">
+          <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium border-success-border bg-success/5 text-success-text">
+            <Check className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Approve</span>
+            <kbd className="ml-auto text-[10px] font-mono bg-background/70 rounded px-1.5 py-0.5 border">A</kbd>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium border-destructive-border bg-destructive/5 text-destructive-text">
+            <X className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Reject</span>
+            <kbd className="ml-auto text-[10px] font-mono bg-background/70 rounded px-1.5 py-0.5 border">R</kbd>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium border-warning-border bg-warning/5 text-warning-text">
+            <Wrench className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Correct the category, then approve</span>
+            <kbd className="ml-auto text-[10px] font-mono bg-background/70 rounded px-1.5 py-0.5 border">C</kbd>
+          </div>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium border-red-500/40 bg-red-500/5 text-red-600 dark:text-red-300">
-          <X className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Reject</span>
-          <kbd className="ml-auto text-[10px] font-mono bg-background/70 rounded px-1.5 py-0.5 border">R</kbd>
-        </div>
-        <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium border-amber-500/40 bg-amber-500/5 text-amber-600 dark:text-amber-300">
-          <Wrench className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Correct the category, then approve</span>
-          <kbd className="ml-auto text-[10px] font-mono bg-background/70 rounded px-1.5 py-0.5 border">C</kbd>
-        </div>
-      </div>
-
-      <div className="text-xs text-muted-foreground flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-        <span className="inline-flex items-center gap-1"><kbd className="font-mono bg-muted rounded px-1.5 py-0.5 border">Space</kbd> Skip</span>
-        <span className="inline-flex items-center gap-1"><kbd className="font-mono bg-muted rounded px-1.5 py-0.5 border">Z</kbd> Undo</span>
-        <span className="inline-flex items-center gap-1"><kbd className="font-mono bg-muted rounded px-1.5 py-0.5 border">Esc</kbd> Finish</span>
-      </div>
-
-      <Button size="lg" onClick={onStart} className="w-full max-w-xs gap-2 active:scale-[0.96] transition-transform duration-150">
-        <Sparkles className="w-4 h-4" />
-        Start Reviewing
-      </Button>
-    </div>
+      }
+      onStart={onStart}
+      startLabel="Start Reviewing"
+      startIcon={Sparkles}
+    />
   )
 }
 
@@ -399,9 +375,9 @@ interface PlayingScreenProps {
 }
 
 const VERDICT_ACCENT: Record<Verdict, string> = {
-  approved: "border-green-500 bg-green-500/15",
-  rejected: "border-red-500 bg-red-500/15",
-  corrected: "border-amber-500 bg-amber-500/15",
+  approved: "border-success bg-success-soft",
+  rejected: "border-destructive bg-destructive-soft",
+  corrected: "border-warning bg-warning-soft",
 }
 
 function PlayingScreen({
@@ -436,10 +412,10 @@ function PlayingScreen({
       <div className="flex items-center justify-between gap-3 p-4 pb-3 border-b bg-muted/20 shrink-0">
         <div className="flex items-center gap-1.5 text-sm flex-wrap">
           <Badge variant="secondary" className="font-mono">{reviewedCount} reviewed</Badge>
-          <Badge variant="secondary" className="font-mono text-green-600 dark:text-green-400">{approvedCount} approved</Badge>
-          <Badge variant="secondary" className="font-mono text-red-600 dark:text-red-400">{rejectedCount} rejected</Badge>
+          <Badge variant="secondary" className="font-mono text-success-text">{approvedCount} approved</Badge>
+          <Badge variant="secondary" className="font-mono text-destructive-text">{rejectedCount} rejected</Badge>
           {correctedCount > 0 && (
-            <Badge variant="secondary" className="font-mono text-amber-600 dark:text-amber-400">{correctedCount} corrected</Badge>
+            <Badge variant="secondary" className="font-mono text-warning-text">{correctedCount} corrected</Badge>
           )}
         </div>
         <Button variant="ghost" size="sm" onClick={onFinish} className="h-7 text-xs text-muted-foreground active:scale-[0.96] transition-transform duration-150">
@@ -482,7 +458,7 @@ function PlayingScreen({
                 <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
                 <Badge
                   variant={categoryChanged ? "secondary" : "outline"}
-                  className={categoryChanged ? "bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-100" : ""}
+                  className={categoryChanged ? "bg-info-soft text-info-text hover:bg-info/25" : ""}
                 >
                   {suggestion.suggested_category}
                 </Badge>
@@ -569,7 +545,7 @@ function PlayingScreen({
               variant="outline"
               disabled={!suggestion || isLocked}
               onClick={onApprove}
-              className="h-14 flex-col gap-1 border-green-500/40 bg-green-500/5 text-green-600 dark:text-green-300 hover:border-green-500 hover:bg-green-500/10 transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.96]"
+              className="h-14 flex-col gap-1 border-success-border bg-success/5 text-success-text hover:border-success hover:bg-success-soft transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.96]"
             >
               <div className="flex items-center gap-1.5">
                 <Check className="w-4 h-4" />
@@ -582,7 +558,7 @@ function PlayingScreen({
               variant="outline"
               disabled={!suggestion || isLocked}
               onClick={onReject}
-              className="h-14 flex-col gap-1 border-red-500/40 bg-red-500/5 text-red-600 dark:text-red-300 hover:border-red-500 hover:bg-red-500/10 transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.96]"
+              className="h-14 flex-col gap-1 border-destructive-border bg-destructive/5 text-destructive-text hover:border-destructive hover:bg-destructive-soft transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.96]"
             >
               <div className="flex items-center gap-1.5">
                 <X className="w-4 h-4" />
@@ -595,7 +571,7 @@ function PlayingScreen({
               variant="outline"
               disabled={!suggestion || isLocked}
               onClick={onStartCorrect}
-              className="h-14 flex-col gap-1 border-amber-500/40 bg-amber-500/5 text-amber-600 dark:text-amber-300 hover:border-amber-500 hover:bg-amber-500/10 transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.96]"
+              className="h-14 flex-col gap-1 border-warning-border bg-warning/5 text-warning-text hover:border-warning hover:bg-warning-soft transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.96]"
             >
               <div className="flex items-center gap-1.5">
                 <Wrench className="w-4 h-4" />
@@ -641,42 +617,20 @@ function SummaryScreen({
   onDone: () => void
 }) {
   return (
-    <div className="flex flex-col items-center text-center p-6 sm:p-8 gap-6">
-      <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-        <PartyPopper className="w-8 h-8 text-primary" />
-      </div>
-
-      <DialogHeader className="items-center gap-2">
-        <DialogTitle className="text-xl sm:text-2xl">Nice work!</DialogTitle>
-        <DialogDescription className="text-sm sm:text-base">
-          Here&apos;s what you got through this session.
-        </DialogDescription>
-      </DialogHeader>
-
-      <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
-        <StatBlock value={reviewedCount} label="Reviewed" />
-        <StatBlock value={approvedCount} label="Approved" highlight />
-        <StatBlock value={rejectedCount} label="Rejected" />
-        <StatBlock value={correctedCount} label="Corrected" />
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-2 w-full">
-        <Button variant="outline" onClick={onKeepGoing} className="flex-1 active:scale-[0.96] transition-transform duration-150">
-          Keep Reviewing
-        </Button>
-        <Button onClick={onDone} className="flex-1 active:scale-[0.97] transition-transform duration-150">
-          Done
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function StatBlock({ value, label, highlight }: { value: number; label: string; highlight?: boolean }) {
-  return (
-    <div className={cn("rounded-lg border p-3 flex flex-col items-center gap-0.5", highlight ? "border-primary/40 bg-primary/5" : "bg-muted/30")}>
-      <span className={cn("text-2xl font-bold tabular-nums", highlight && "text-primary")}>{value}</span>
-      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</span>
-    </div>
+    <QuickFlowSummaryScreen
+      title="Nice work!"
+      description="Here's what you got through this session."
+      stats={
+        <>
+          <QuickFlowStatBlock value={reviewedCount} label="Reviewed" />
+          <QuickFlowStatBlock value={approvedCount} label="Approved" highlight />
+          <QuickFlowStatBlock value={rejectedCount} label="Rejected" />
+          <QuickFlowStatBlock value={correctedCount} label="Corrected" />
+        </>
+      }
+      onKeepGoing={onKeepGoing}
+      keepGoingLabel="Keep Reviewing"
+      onDone={onDone}
+    />
   )
 }

@@ -15,6 +15,10 @@
 
 const blockedUntil = new Map<string, number>()
 
+// Isolates can live for hours; prune expired entries once a map grows past
+// this so per-client keys (IPs, user ids) can't accumulate without bound.
+const MAX_TRACKED_KEYS = 5_000
+
 /** Returns true if `key` is currently known-blocked (skip Redis entirely). */
 export function isBlocked(key: string): boolean {
   const reset = blockedUntil.get(key)
@@ -31,6 +35,7 @@ export function isBlocked(key: string): boolean {
  * short-circuited locally until `windowSeconds` from now.
  */
 export function markBlocked(key: string, windowSeconds: number): void {
+  if (blockedUntil.size > MAX_TRACKED_KEYS) cleanupBlocked()
   blockedUntil.set(key, Date.now() + windowSeconds * 1000)
 }
 
@@ -67,6 +72,11 @@ export function memoryRateLimit(key: string, maxRequests: number, windowMs: numb
   let entry = memoryWindows.get(key)
 
   if (!entry || now - entry.windowStart > windowMs) {
+    if (!entry && memoryWindows.size > MAX_TRACKED_KEYS) {
+      for (const [k, e] of memoryWindows) {
+        if (now - e.windowStart > windowMs) memoryWindows.delete(k)
+      }
+    }
     memoryWindows.set(key, { count: 1, windowStart: now })
     return true
   }

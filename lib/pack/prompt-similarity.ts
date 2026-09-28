@@ -79,15 +79,24 @@ export const DEFAULT_SIMILARITY_THRESHOLD = 0.85
 export class NearDuplicateFilter {
   private readonly threshold: number
   private readonly acceptedTagSets: Set<string>[] = []
+  private readonly ignored: Set<string>
 
-  constructor(threshold: number = DEFAULT_SIMILARITY_THRESHOLD) {
+  /**
+   * `ignoreTags` are left out of the comparison — pass the tags every
+   * candidate shares (e.g. Pack Mode's locked base). Otherwise a large shared
+   * base drowns the varying part: 30 shared tags + 1 differing tag scores
+   * ~0.94 and every prompt after the first is rejected.
+   */
+  constructor(threshold: number = DEFAULT_SIMILARITY_THRESHOLD, ignoreTags: Iterable<string> = []) {
     this.threshold = threshold
+    this.ignored = new Set(Array.from(ignoreTags, normalizeTagForSimilarity))
   }
 
   /** Returns true and records the prompt if it's NOT a near-duplicate of any
    *  previously accepted prompt; returns false (and does not record it) otherwise. */
   tryAccept(prompt: string): boolean {
     const tagSet = promptToTagSet(prompt)
+    this.ignored.forEach((tag) => tagSet.delete(tag))
     for (const existing of this.acceptedTagSets) {
       if (jaccardSimilarity(tagSet, existing) >= this.threshold) return false
     }

@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { mutate } from "swr"
-import * as Sentry from "@sentry/nextjs"
+import { reportError } from "@/lib/error-reporting"
 import {
   BooruProvider,
   FavoriteItem,
-  useFavoritePosts,
+  useBooruPostsByIds,
   BooruPost,
   getFavoritesCacheKey,
   apiUrl,
@@ -46,18 +46,15 @@ export interface UseBooruFavoritesReturn {
   createFolder: (name: string, icon?: string | null) => Promise<FavoriteFolder | null>
   deleteFolder: (folderId: string) => Promise<void>
   toggleShowFavorites: () => void
-  clearFavorites: () => Promise<void>
   syncFavorites: () => Promise<void>
   retryLoadFavorites: () => void
   injectRecoveredPosts: (posts: BooruPost[]) => Promise<void>
-  isFavorite: (provider: string, id: number) => boolean
   favoriteItems: FavoriteItem[]
   isLoading: boolean
 }
 
 export function useBooruFavorites(
   booruProvider: BooruProvider,
-  activeFolderId?: string | "all" | null,
 ): UseBooruFavoritesReturn {
   const { user } = useUser()
   const supabase = createClient()
@@ -90,7 +87,7 @@ export function useBooruFavorites(
 
   // ── Auto-save localStorage for anonymous users ──
   useEffect(() => {
-    // F5: never persist when the load errored. On a parse failure the in-memory
+    // Never persist when the load errored. On a parse failure the in-memory
     // state is empty while localStorage still holds the (recoverable) data;
     // writing empty over it would permanently wipe the user's favorites.
     if (!user && core.loaded && !core.error && typeof window !== "undefined") {
@@ -192,7 +189,7 @@ export function useBooruFavorites(
             .match({ id: folderId })
           if (deleteErr) throw deleteErr
         } catch (e: any) {
-          Sentry.captureException(e, {
+          reportError(e, {
             level: "warning",
             tags: { context: "use-booru-favorites", action: "delete_folder" },
           })
@@ -334,24 +331,33 @@ export function useBooruFavorites(
       core.setFolderMap(newMap)
 
       // ── Fire-and-forget: cache post metadata for future instant loads ──
+      // The caller usually hands us the post it is showing (postData), so it is
+      // cached directly — no booru request needed. Only when it is absent do we
+      // hydrate it through /api/favorites.
       if (isAddingNewFavorite) {
-        fetch(apiUrl("/api/favorites"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ favorites: [{ id: postId, provider: targetProvider }] }),
-        })
-          .then((res) => (res.ok ? res.json() : null))
-          .then((posts) => {
-            if (posts?.[0]) {
-              const row = booruPostToCacheRow(posts[0], targetProvider)
-              supabase.from("booru_posts_cache").upsert(row, {
-                onConflict: "provider,post_id",
-              }).then(() => {}, () => {})
-            }
+        const cachePost = (post: BooruPost) => {
+          const row = booruPostToCacheRow(post, targetProvider)
+          supabase.from("booru_posts_cache").upsert(row, {
+            onConflict: "provider,post_id",
+          }).then(() => {}, () => {})
+        }
+
+        if (postData) {
+          cachePost(postData)
+        } else {
+          fetch(apiUrl("/api/favorites"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ favorites: [{ id: postId, provider: targetProvider }] }),
           })
-          .catch(() => {
-            // Silent — post metadata will be cached on next lazy load
-          })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((posts) => {
+              if (posts?.[0]) cachePost(posts[0])
+            })
+            .catch(() => {
+              // Silent — post metadata will be cached on next lazy load
+            })
+        }
       }
 
       // ── Persist to Supabase ──
@@ -365,7 +371,7 @@ export function useBooruFavorites(
             if (error) throw error
           } else {
             const targetFolderIds = newMap[uniqueKey] || []
-            // F2: only stamp `position` when the favorite is newly created.
+            // Only stamp `position` when the favorite is newly created.
             // For folder-only edits we omit it so the PostgREST upsert preserves
             // the existing ordering instead of jumping the item to the top.
             const row = buildFavoriteUpsertRow({
@@ -398,7 +404,7 @@ export function useBooruFavorites(
             }
           }
 
-          // F3: on a failed ADD, revert the optimistic SWR cache mutation too.
+          // On a failed ADD, revert the optimistic SWR cache mutation too.
           // The add optimistically prepended the post to BOTH the new-set cache
           // key and the current-set cache key; restore both to the pre-add list
           // so a phantom post does not linger in the favorites grid.
@@ -411,7 +417,7 @@ export function useBooruFavorites(
           return
         }
       } else {
-        // F4: anonymous users have no Supabase row, and the debounced auto-save
+        // Anonymous users have no Supabase row, and the debounced auto-save
         // effect may not fire before a fast tab close / navigation. Persist the
         // new state to localStorage synchronously so the toggle is never lost.
         if (typeof window !== "undefined") {
@@ -439,29 +445,6 @@ export function useBooruFavorites(
     })
   }, [core.favorites.size])
 
-  const clearFavorites = useCallback(async () => {
-    core.setFavorites(new Set())
-    core.setFolderMap({})
-    core.setFolders([]) // F10: "clear all" must also drop the folders
-    if (user) {
-      await supabase.from("favorites").delete().eq("user_id", user.id)
-      await supabase.from("favorite_folders").delete().eq("user_id", user.id)
-    } else if (typeof window !== "undefined") {
-      // F10/F4: persist the cleared state for anonymous users immediately.
-      try {
-        localStorage.setItem("booruFavoritesV3", JSON.stringify({ folders: [], favorites: {} }))
-      } catch (e) {
-        console.warn("Error clearing favorites in localStorage:", e)
-      }
-    }
-    toast({ title: "Favorites cleared", description: "All favorites have been removed" })
-  }, [user, supabase, core.setFavorites, core.setFolderMap, core.setFolders])
-
-  const isFavorite = useCallback(
-    (provider: string, id: number) => core.favorites.has(favKey(provider, id)),
-    [core.favorites],
-  )
-
   const retryLoadFavorites = useCallback(() => {
     setFavoritesError(null)
     core.syncFavorites()
@@ -469,7 +452,7 @@ export function useBooruFavorites(
 
   // ═══════════════════════════════════════════
   // favoriteItems: ALL favorites (no folder filter — filtering is done in UI)
-  // Passing all items to useFavoritePosts keeps SWR cache stable across folder switches.
+  // Passing all items to useBooruPostsByIds keeps SWR cache stable across folder switches.
   // ═══════════════════════════════════════════
 
   const favoriteItems: FavoriteItem[] = useMemo(() => {
@@ -483,7 +466,7 @@ export function useBooruFavorites(
   }, [core.favorites])
 
   // ═══════════════════════════════════════════
-  // useFavoritePosts (existing, no changes needed)
+  // useBooruPostsByIds (existing, no changes needed)
   // ═══════════════════════════════════════════
 
   const {
@@ -492,7 +475,7 @@ export function useBooruFavorites(
     isValidating: isRefreshing,
     progress: favoritesProgress,
     mutate: mutateFavoritePosts,
-  } = useFavoritePosts(favoriteItems)
+  } = useBooruPostsByIds(favoriteItems)
 
   // ═══════════════════════════════════════════
   // Inject Recovered Posts
@@ -546,11 +529,9 @@ export function useBooruFavorites(
     createFolder,
     deleteFolder,
     toggleShowFavorites,
-    clearFavorites,
     syncFavorites: core.syncFavorites,
     retryLoadFavorites,
     injectRecoveredPosts,
-    isFavorite,
     favoriteItems,
     isLoading: favoritesLoading,
   }

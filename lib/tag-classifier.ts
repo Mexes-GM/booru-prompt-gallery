@@ -4,6 +4,7 @@ import {
   RICHNESS_AXES,
   emptyClassifiedTags,
   isTagCategory,
+  resolveOverrideValue,
   type ClassifiedTags,
   type RichnessAxis,
   type TagCategory,
@@ -55,8 +56,7 @@ const SCENERY_KEYWORDS = [
  * accessories ("star ear ring", "moon pendant"), decorative patterns, and
  * character names. Standalone-word matching on these produced real false
  * positives (a copyright tag landing in the scenery axis pool, polluting
- * every Pack Mode prompt that sampled it) — see the 2026-08-27 real-data
- * audit. Instead of matching the bare word, only match it as part of one of
+ * every Pack Mode prompt that sampled it). Instead of matching the bare word, only match it as part of one of
  * a short list of actual scenery PHRASES, which is what these words mean
  * "scenery" in practice — a standalone "star" or "night" tag falls through
  * to whatever the other rules (clothing suffixes, appearance, etc.) decide,
@@ -88,31 +88,16 @@ export function classifyTag(tag: string, overrides?: Record<string, string>): Ta
 
   // 1. Check overrides first
   if (overrides) {
-    // We normalize keys from DB to lowercase and spaces, so check against lowerWithSpaces
-    let overrideValue = overrides[lowerWithSpaces] || overrides[tag.toLowerCase()];
-
-    // 1.5 Derivations: if tag is "blue skirt", check if "skirt" is in overrides
-    if (!overrideValue && lowerWithSpaces.includes(" ")) {
-      const cleanedForSuffix = lowerWithSpaces.replace(/[<>[\](){}]/g, "").replace(/:\s*\d+(\.\d+)?\s*$/, "").replace(/\s{2,}/g, " ").trim();
-      const parts = cleanedForSuffix.split(" ");
-      
-      let currentSuffix = "";
-      for (let i = parts.length - 1; i >= 0; i--) {
-        currentSuffix = currentSuffix === "" ? parts[i] : parts[i] + " " + currentSuffix;
-        if (currentSuffix === cleanedForSuffix) continue;
-        
-        if (overrides[currentSuffix]) {
-          overrideValue = overrides[currentSuffix];
-          break;
-        }
-      }
-    }
+    // Exact match, then suffix derivation ("blue skirt" -> "skirt").
+    const overrideValue = resolveOverrideValue(tag, overrides);
 
     if (overrideValue) {
       // `tags.category` is a plain varchar, so a row can hold anything. An
       // unrecognized value must fall through to the heuristics below rather than
       // be trusted as a bucket name.
-      const dbCategory = overrideValue.toLowerCase().trim();
+      const colonIdx = overrideValue.indexOf(':');
+      const rawCategory = colonIdx === -1 ? overrideValue : overrideValue.slice(0, colonIdx);
+      const dbCategory = rawCategory.toLowerCase().trim();
       if (isTagCategory(dbCategory)) {
         return dbCategory;
       }

@@ -8,6 +8,7 @@ import { TagCategory } from '@/lib/tag-classifier'
 import { usePostHog } from 'posthog-js/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import Image from 'next/image'
 import { getDanbooruProxyUrl } from "@/lib/proxy-url"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -15,6 +16,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
+import { RemovableTagChip } from './removable-tag-chip'
+import { CATEGORY_TEXT_CLASS, CATEGORY_BORDER_CLASS, CATEGORY_ACTIVE_CLASS } from './category-chip-styles'
+import { PACK_AXES, TAG_CATEGORY_IDS } from '@/lib/tag-taxonomy'
 
 interface MergeStickyFooterProps {
     isOpen: boolean
@@ -36,60 +40,12 @@ interface MergeStickyFooterProps {
     setRandomSettings: (settings: RandomSettings | ((prev: RandomSettings) => RandomSettings)) => void
 }
 
-const ExplodingTag = memo(({
-    text,
-    category,
-    onRemove,
-    getCategoryClass
-}: {
-    text: string
-    category: TagCategory
-    onRemove: () => void
-    getCategoryClass: (c: TagCategory) => string
-}) => {
-    return (
-        <motion.div
-            layout
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{
-                opacity: 0,
-                scale: 2,
-                filter: "blur(4px)",
-                transition: { duration: 0.3 }
-            }}
-            transition={{ type: "spring", stiffness: 500, damping: 30 }}
-            className="relative z-0 hover:z-10"
-        >
-            <motion.button
-                onClick={onRemove}
-                className={`transform-gpu hover:scale-110 active:scale-95 transition-all duration-200 px-2.5 py-1.5 sm:py-0.5 rounded border text-xs font-medium font-mono cursor-pointer select-none relative overflow-hidden group ${getCategoryClass(category)}`}
-            >
-                <span className="block relative z-10 transition-transform duration-300 group-hover:-translate-x-1.5 truncate max-w-[150px]">
-                    {text}
-                </span>
-
-                <span className="absolute inset-0 bg-red-500/20 sm:opacity-0 opacity-100 group-hover:opacity-100 transition-opacity duration-200" />
-
-                <span className="absolute right-1 top-1/2 -translate-y-1/2 sm:opacity-0 opacity-100 group-hover:opacity-100 transition-opacity duration-200 z-10">
-                    <X className="w-3 h-3" />
-                </span>
-            </motion.button>
-        </motion.div>
-    )
-})
-ExplodingTag.displayName = "ExplodingTag"
-
 const SymbolTag = memo(({ 
     symbol, 
     category, 
-    getCategoryTextColor, 
-    getCategoryBorderColor 
 }: { 
     symbol: string
     category: TagCategory
-    getCategoryTextColor: (c: TagCategory) => string
-    getCategoryBorderColor: (c: TagCategory) => string 
 }) => {
     return (
         <motion.div
@@ -98,7 +54,7 @@ const SymbolTag = memo(({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.5, filter: "blur(4px)" }}
             transition={{ type: "spring", stiffness: 500, damping: 30 }}
-            className={`flex items-center justify-center px-1.5 py-1.5 sm:py-0.5 rounded border border-dashed ${getCategoryBorderColor(category)} bg-background/30 font-mono text-xs font-medium opacity-80 ${getCategoryTextColor(category)} select-none`}
+            className={`flex items-center justify-center px-1.5 py-1.5 sm:py-0.5 rounded border border-dashed ${CATEGORY_BORDER_CLASS[category]} bg-background/30 font-mono text-xs font-medium opacity-80 ${CATEGORY_TEXT_CLASS[category]} select-none`}
         >
             <span className="relative">{symbol}</span>
         </motion.div>
@@ -107,8 +63,8 @@ const SymbolTag = memo(({
 SymbolTag.displayName = "SymbolTag"
 
 const PARTICLES_MAP = {
-    green: "bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.8)]",
-    red: "bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]"
+    green: "bg-success",
+    red: "bg-destructive"
 }
 const PARTICLES = Array.from({ length: 12 })
 
@@ -157,14 +113,13 @@ const MergeStickyFooterComponent = ({
 }: MergeStickyFooterProps) => {
 
     const lowMotion = useLowMotion()
-    const [isCopied, setIsCopied] = useState(false)
+    const [isCopied, triggerCopyFeedback] = useCopyFeedback()
     const [isCleared, setIsCleared] = useState(false)
     const posthog = usePostHog()
     
     const handleCopy = (text: string) => {
         onCopy(text)
-        setIsCopied(true)
-        setTimeout(() => setIsCopied(false), 2000)
+        triggerCopyFeedback()
         
         if (mergeModeType === 'variations') {
             posthog.capture('variant_mode_used', {
@@ -184,43 +139,12 @@ const MergeStickyFooterComponent = ({
         setTimeout(() => setIsCleared(false), 2000)
     }
 
-    // Helper for category colors
-    const getCategoryClass = useCallback((category: TagCategory) => {
-        switch (category) {
-            case 'appearance': return 'text-blue-500 bg-blue-500/10 border-blue-500/20'
-            case 'pose': return 'text-purple-500 bg-purple-500/10 border-purple-500/20'
-            case 'clothing': return 'text-green-500 bg-green-500/10 border-green-500/20'
-            case 'scenery': return 'text-orange-500 bg-orange-500/10 border-orange-500/20'
-            default: return 'text-muted-foreground bg-muted border-transparent'
-        }
-    }, [])
-
-    const getCategoryTextColor = useCallback((category: TagCategory) => {
-        switch (category) {
-            case 'appearance': return 'text-blue-500'
-            case 'pose': return 'text-purple-500'
-            case 'clothing': return 'text-green-500'
-            case 'scenery': return 'text-orange-500'
-            default: return 'text-muted-foreground'
-        }
-    }, [])
-
-    const getCategoryBorderColor = useCallback((category: TagCategory) => {
-        switch (category) {
-            case 'appearance': return 'border-blue-500/30 bg-blue-500/5'
-            case 'pose': return 'border-purple-500/30 bg-purple-500/5'
-            case 'clothing': return 'border-green-500/30 bg-green-500/5'
-            case 'scenery': return 'border-orange-500/30 bg-orange-500/5'
-            default: return 'border-border/50 bg-muted/30'
-        }
-    }, [])
-
     // Process variations data structure for UI rendering
     const variationsOutput = useMemo(() => {
         if (mergeModeType !== 'variations') return null;
 
         const commonTags = mergedPromptSegments.filter(s => !s.postId);
-        const categories: TagCategory[] = ['appearance', 'clothing', 'pose', 'scenery', 'other'];
+        const categories = TAG_CATEGORY_IDS;
         const dynamicBlocks: { category: TagCategory, variations: { postId: number, tags: typeof mergedPromptSegments }[] }[] = [];
         
         categories.forEach(cat => {
@@ -256,23 +180,17 @@ const MergeStickyFooterComponent = ({
                         damping: 25,
                         mass: 0.8
                     }}
-                    className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 sm:max-h-[400px] max-h-[320px] ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
+                    className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-foreground/5 sm:max-h-[400px] max-h-[320px] ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
                     style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
                     {/* Border Glow Effect */}
                     <div className="absolute inset-0 z-[-1] overflow-hidden rounded-2xl pointer-events-none">
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-50" />
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] bg-gradient-to-r from-transparent via-foreground/20 to-transparent opacity-50" />
                         {!lowMotion && (
                             <motion.div
-                                animate={{
-                                    background: [
-                                        "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.1) 0%, transparent 50%)",
-                                        "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.15) 0%, transparent 70%)",
-                                        "radial-gradient(circle at 50% 0%, rgba(120,119,198,0.1) 0%, transparent 50%)"
-                                    ]
-                                }}
+                                animate={{ opacity: [0.6, 1, 0.6] }}
                                 transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                                className="absolute inset-0"
+                                className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--primary)_14%,transparent)_0%,transparent_65%)]"
                             />
                         )}
                     </div>
@@ -315,26 +233,27 @@ const MergeStickyFooterComponent = ({
                                         variant="outline"
                                         size="sm"
                                         onClick={onRandomize}
-                                        className="relative overflow-visible h-8 text-xs font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 hover:text-amber-700 border-amber-500/20 rounded-r-none border-r-0"
+                                        className="relative overflow-visible h-8 text-xs font-medium bg-primary/10 text-primary-text hover:bg-primary/20 border-primary/20 rounded-r-none border-r-0"
                                         title="Randomize selections from visible posts"
                                     >
                                         <Dices className="w-3.5 h-3.5 mr-1.5" />
                                         Random
                                     </Button>
-                                    <Popover>
+                                    {/* closeOnScroll off: the footer is fixed, so the trigger never moves with the page. */}
+                                    <Popover closeOnScroll={false}>
                                         <PopoverTrigger asChild>
                                             <Button
                                                 variant="outline"
                                                 size="sm"
-                                                className="h-8 px-2 rounded-l-none bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/20 text-amber-600"
+                                                className="h-8 px-2 rounded-l-none bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary-text"
                                             >
                                                 <Settings2 className="w-3.5 h-3.5" />
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-72 p-0 overflow-hidden border-amber-500/20 shadow-2xl" align="end" sideOffset={8}>
-                                            <div className="bg-gradient-to-r from-amber-500/10 to-transparent p-3 border-b border-amber-500/10 flex items-center gap-2">
-                                                <Dices className="w-4 h-4 text-amber-600" />
-                                                <span className="text-sm font-semibold text-amber-700 dark:text-amber-500">Randomizer Settings</span>
+                                        <PopoverContent className="w-72 p-0 overflow-hidden border-primary/20 shadow-2xl" align="end" sideOffset={8}>
+                                            <div className="bg-gradient-to-r from-primary/10 to-transparent p-3 border-b border-primary/10 flex items-center gap-2">
+                                                <Dices className="w-4 h-4 text-primary-text" />
+                                                <span className="text-sm font-semibold text-primary-text">Randomizer Settings</span>
                                             </div>
                                             
                                             <div className="p-4 space-y-6">
@@ -345,7 +264,7 @@ const MergeStickyFooterComponent = ({
                                                             key={randomSettings.postCount}
                                                             initial={{ scale: 0.8, opacity: 0 }}
                                                             animate={{ scale: 1, opacity: 1 }}
-                                                            className="text-xs font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full"
+                                                            className="text-xs font-bold text-primary-text bg-primary/10 px-2 py-0.5 rounded-full"
                                                         >
                                                             {randomSettings.postCount}
                                                         </motion.span>
@@ -357,7 +276,7 @@ const MergeStickyFooterComponent = ({
                                                             step={1}
                                                             value={[randomSettings.postCount]}
                                                             onValueChange={([val]) => setRandomSettings(prev => ({ ...prev, postCount: val }))}
-                                                            className="[&_[role=slider]]:border-amber-500 [&_[role=slider]]:focus-visible:ring-amber-500/50 [&_.relative>.absolute]:bg-amber-500 cursor-grab active:cursor-grabbing"
+                                                            className="[&_[role=slider]]:border-primary [&_[role=slider]]:focus-visible:ring-primary/50 [&_.relative>.absolute]:bg-primary cursor-grab active:cursor-grabbing"
                                                         />
                                                     </div>
                                                     <div className="flex justify-between text-[10px] text-muted-foreground font-mono px-1">
@@ -369,31 +288,8 @@ const MergeStickyFooterComponent = ({
                                                 <div className="space-y-3">
                                                     <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Categories to roll</Label>
                                                     <div className="grid grid-cols-2 gap-2">
-                                                        {(['appearance', 'clothing', 'pose', 'scenery'] as TagCategory[]).map(cat => {
+                                                        {PACK_AXES.map(cat => {
                                                             const isSelected = randomSettings.allowedCategories.includes(cat);
-                                                            
-                                                            const catStyles = {
-                                                                appearance: {
-                                                                    active: 'bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400 shadow-sm',
-                                                                    border: 'border-blue-500/50'
-                                                                },
-                                                                clothing: {
-                                                                    active: 'bg-green-500/15 border-green-500/30 text-green-600 dark:text-green-400 shadow-sm',
-                                                                    border: 'border-green-500/50'
-                                                                },
-                                                                pose: {
-                                                                    active: 'bg-purple-500/15 border-purple-500/30 text-purple-600 dark:text-purple-400 shadow-sm',
-                                                                    border: 'border-purple-500/50'
-                                                                },
-                                                                scenery: {
-                                                                    active: 'bg-orange-500/15 border-orange-500/30 text-orange-600 dark:text-orange-400 shadow-sm',
-                                                                    border: 'border-orange-500/50'
-                                                                },
-                                                                other: {
-                                                                    active: 'bg-muted border-muted-foreground/30 text-foreground shadow-sm',
-                                                                    border: 'border-muted-foreground/50'
-                                                                }
-                                                            }[cat] || { active: '', border: '' };
 
                                                             return (
                                                                 <button
@@ -409,19 +305,10 @@ const MergeStickyFooterComponent = ({
                                                                     }}
                                                                     className={`relative overflow-hidden flex items-center justify-center py-2.5 text-xs font-medium rounded-md border transition-all duration-200 ${
                                                                         isSelected 
-                                                                            ? catStyles.active 
+                                                                            ? CATEGORY_ACTIVE_CLASS[cat] 
                                                                             : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                                                                     }`}
                                                                 >
-                                                                    {isSelected && (
-                                                                        <motion.div
-                                                                            layoutId={`active-cat-bg-${cat}`}
-                                                                            className={`absolute inset-0 border ${catStyles.border} rounded-md`}
-                                                                            initial={{ opacity: 0 }}
-                                                                            animate={{ opacity: 1 }}
-                                                                            transition={{ duration: 0.2 }}
-                                                                        />
-                                                                    )}
                                                                     <span className="capitalize z-10 flex items-center gap-1.5">
                                                                         {isSelected && <Check className="w-3 h-3" />}
                                                                         {cat}
@@ -440,7 +327,7 @@ const MergeStickyFooterComponent = ({
                                     size="sm"
                                     onClick={handleClear}
                                     disabled={selectedPosts.size === 0 || isCleared}
-                                    className={`relative overflow-visible transition-all duration-300 ${isCleared ? 'bg-red-500 text-white ring-2 ring-red-500/50' : 'bg-red-500/10 hover:bg-red-500/20 text-red-600 hover:text-red-700'}`}
+                                    className={`relative overflow-visible transition-all duration-300 ${isCleared ? 'bg-destructive text-destructive-foreground ring-2 ring-destructive/50' : 'bg-destructive-soft hover:bg-destructive/20 text-destructive-text'}`}
                                 >
                                     <AnimatePresence>
                                         {isCleared && <Particles color="red" />}
@@ -513,16 +400,18 @@ const MergeStickyFooterComponent = ({
                                                     whileHover={lowMotion ? undefined : { scale: 1.1 }}
                                                     whileTap={{ scale: 0.9 }}
                                                     onClick={() => onRemovePost(post.id)}
-                                                    className="absolute top-1 right-1 bg-black/60 hover:bg-red-500 text-white rounded-full p-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10 backdrop-blur-sm"
+                                                    className="absolute top-1 right-1 bg-overlay/60 hover:bg-destructive text-overlay-foreground hover:text-destructive-foreground rounded-full p-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10 backdrop-blur-sm"
                                                 >
                                                     <X className="w-3 h-3" />
                                                 </motion.button>
-                                                <div className="absolute bottom-0 left-0 right-0 flex gap-0.5 justify-center p-1 bg-gradient-to-t from-black/80 to-transparent">
+                                                <div className="absolute bottom-0 left-0 right-0 flex gap-0.5 dark justify-center p-1 bg-gradient-to-t from-overlay/80 to-transparent">
                                                     {/* Tiny indicators for what parts are selected */}
-                                                    {parts.has('appearance') && <motion.span layoutId={`dot-app-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_4px_rgba(96,165,250,0.8)]" title="Appearance" />}
-                                                    {parts.has('clothing') && <motion.span layoutId={`dot-clo-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.8)]" title="Attire" />}
-                                                    {parts.has('pose') && <motion.span layoutId={`dot-pos-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_4px_rgba(192,132,252,0.8)]" title="Pose" />}
-                                                    {parts.has('scenery') && <motion.span layoutId={`dot-sce-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-orange-400 shadow-[0_0_4px_rgba(251,146,60,0.8)]" title="Scene" />}
+                                                    {parts.has('appearance') && <motion.span layoutId={`dot-app-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-appearance" title="Appearance" />}
+                                                    {parts.has('clothing') && <motion.span layoutId={`dot-clo-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-clothing" title="Attire" />}
+                                                    {parts.has('equipment') && <motion.span layoutId={`dot-eqp-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-equipment" title="Equipment" />}
+                                                    {parts.has('pose') && <motion.span layoutId={`dot-pos-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-pose" title="Pose" />}
+                                                    {parts.has('scenery') && <motion.span layoutId={`dot-sce-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-scenery" title="Scene" />}
+                                                    {parts.has('creature') && <motion.span layoutId={`dot-cre-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-creature" title="Creature" />}
                                                 </div>
                                             </motion.div>
                                         ))}
@@ -539,12 +428,11 @@ const MergeStickyFooterComponent = ({
                                     <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start items-center">
                                         <AnimatePresence mode="popLayout">
                                             {variationsOutput.commonTags.map((segment, index) => (
-                                                <ExplodingTag
+                                                <RemovableTagChip
                                                     key={`common-${segment.text}-${index}`}
                                                     text={segment.display}
                                                     category={segment.category}
                                                     onRemove={() => onRemoveTag(segment.text)}
-                                                    getCategoryClass={getCategoryClass}
                                                 />
                                             ))}
 
@@ -558,8 +446,6 @@ const MergeStickyFooterComponent = ({
                                                             key={`start-${block.category}-${blockIndex}`} 
                                                             symbol="{" 
                                                             category={block.category} 
-                                                            getCategoryTextColor={getCategoryTextColor}
-                                                            getCategoryBorderColor={getCategoryBorderColor}
                                                         />
                                                     );
                                                 }
@@ -571,20 +457,17 @@ const MergeStickyFooterComponent = ({
                                                                 key={`pipe-${block.category}-${blockIndex}-${varIndex}`} 
                                                                 symbol="|" 
                                                                 category={block.category} 
-                                                                getCategoryTextColor={getCategoryTextColor}
-                                                                getCategoryBorderColor={getCategoryBorderColor}
                                                             />
                                                         );
                                                     }
 
                                                     variation.tags.forEach((segment, tagIndex) => {
                                                         elements.push(
-                                                            <ExplodingTag
+                                                            <RemovableTagChip
                                                                 key={`var-${variation.postId}-${segment.text}-${tagIndex}`}
                                                                 text={segment.display}
                                                                 category={segment.category}
                                                                 onRemove={() => onRemoveTag(segment.text)}
-                                                                getCategoryClass={getCategoryClass}
                                                             />
                                                         );
                                                     });
@@ -596,8 +479,6 @@ const MergeStickyFooterComponent = ({
                                                             key={`end-${block.category}-${blockIndex}`} 
                                                             symbol="}" 
                                                             category={block.category} 
-                                                            getCategoryTextColor={getCategoryTextColor}
-                                                            getCategoryBorderColor={getCategoryBorderColor}
                                                         />
                                                     );
                                                 }
@@ -622,12 +503,11 @@ const MergeStickyFooterComponent = ({
                                         <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start">
                                             <AnimatePresence mode="popLayout">
                                                 {mergedPromptSegments.map((segment, index) => (
-                                                    <ExplodingTag
+                                                    <RemovableTagChip
                                                         key={`${segment.text}-${index}`}
                                                         text={segment.display}
                                                         category={segment.category}
                                                         onRemove={() => onRemoveTag(segment.text)}
-                                                        getCategoryClass={getCategoryClass}
                                                     />
                                                 ))}
                                             </AnimatePresence>
@@ -650,7 +530,7 @@ const MergeStickyFooterComponent = ({
                                     size="sm"
                                     onClick={() => handleCopy(mergedPrompt)}
                                     disabled={!mergedPrompt}
-                                    className={`relative overflow-visible shadow-sm transition-all duration-300 ${isCopied ? 'bg-green-500 hover:bg-green-600 text-white ring-2 ring-green-500/50' : 'opacity-90 hover:opacity-100'}`}
+                                    className={`relative overflow-visible shadow-sm transition-all duration-300 ${isCopied ? 'bg-success hover:bg-success/90 text-success-foreground ring-2 ring-success/50' : 'opacity-90 hover:opacity-100'}`}
                                 >
                                     <div className="grid place-items-center">
                                         <motion.div

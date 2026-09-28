@@ -1,10 +1,11 @@
 import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
-import { PROVIDER_URLS, PROVIDER_REFERERS, USER_AGENT } from '../../constants'
+import { PROVIDER_URLS, PROVIDER_REFERERS } from '../../constants'
 import type { ProviderEnv } from '../factory'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '../../../logger'
 import { decodeTagEntities } from '../tag-lookup'
+import { UpstreamError } from '../../upstream'
 
 interface Rule34PostResponse {
   id: string | number
@@ -64,15 +65,23 @@ export class Rule34Provider extends BaseBooruProvider {
     try {
       const urlParams = new URLSearchParams(params)
       rawPosts = await this.fetchJson<unknown>(`${this.baseUrl}/index.php`, urlParams, {
-        'User-Agent': USER_AGENT,
         Referer: PROVIDER_REFERERS.RULE34,
         Origin: PROVIDER_REFERERS.RULE34.replace(/\/$/, ''),
       })
     } catch (e) {
+      // Rethrow (see gelbooru.ts): an empty array would be cached and read by
+      // the client as "no more results".
       logger.warn('rule34_fetch_error', {
         error: e instanceof Error ? e.message : String(e),
       })
-      return []
+      throw e
+    }
+
+    // Rule34 reports auth/quota problems as a 200 with a bare JSON string
+    // ("Missing authentication. …") — treat it as a failure, not an empty page.
+    if (typeof rawPosts === 'string') {
+      logger.warn('rule34_fetch_error', { error: rawPosts.slice(0, 200) })
+      throw new UpstreamError('Rule34 rejected the request', 401)
     }
 
     let postsList: Rule34PostResponse[] = []
@@ -101,6 +110,6 @@ export class Rule34Provider extends BaseBooruProvider {
       height: parseInt(String(post.height)),
     }))
 
-    return this.enrichPostsWithCategories(finalPosts, this.supabase)
+    return this.enrichPostsWithCategories(finalPosts, this.supabase, 'rule34')
   }
 }

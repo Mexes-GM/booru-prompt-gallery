@@ -4,7 +4,7 @@
  * Pack Mode's OWN post-fetching source for seeding axis pools — deliberately
  * independent from useBooruSearch's global search state (searchTags/rating
  * shown in the main search bar). The source popover (see
- * components/prompt-gallery/pack-source-popover.tsx) asks the user for a
+ * components/prompt-gallery/pack-source-modal.tsx) asks the user for a
  * rating preference and a "solo character" preference specific to this pack, plus
  * which tags to sample from (the current search, a custom query, or none) —
  * none of that should silently change what the user sees in the main gallery,
@@ -47,9 +47,6 @@ export interface UsePackSeedSearchArgs {
   /** Raw tags to search (e.g. "mona (genshin impact)"), or "" for none. */
   searchTags: string
   ratingMode: PackRatingMode
-  /** Adds the `solo` metatag when true — per the user's request, this is the
-   *  ONLY effect of "Solo character": no extra client-side tag filtering. */
-  soloOnly: boolean
   booruProvider: BooruProvider
 }
 
@@ -62,25 +59,8 @@ export interface UsePackSeedSearchResult {
   loadMore: () => void
 }
 
-/** Normalizes a single raw tag the same way booru APIs treat it for
- *  equality purposes: lowercase, spaces collapsed to underscores. Used only
- *  to detect "the user already typed solo" — not a general tag formatter. */
-function normalizeForDedup(tag: string): string {
-  return tag.trim().toLowerCase().replace(/\s+/g, "_")
-}
-
-function buildTags(searchTags: string, soloOnly: boolean): string {
-  const userTags = searchTags.split(",").map((t) => t.trim()).filter(Boolean)
-  if (!soloOnly) return userTags.join(", ")
-
-  // Don't append "solo" if the user already typed it themselves (e.g. in the
-  // Custom search field) — a duplicate tag wastes one of the provider's
-  // limited tag slots for nothing (Danbooru's 2-tag limit in particular makes
-  // this expensive) and would double-count against the tag-limit warning
-  // shown in the Pack Setup modal.
-  const alreadyHasSolo = userTags.some((t) => normalizeForDedup(t) === "solo")
-  const parts = alreadyHasSolo ? userTags : [...userTags, "solo"]
-  return parts.join(", ")
+function buildTags(searchTags: string): string {
+  return searchTags.split(",").map((t) => t.trim()).filter(Boolean).join(", ")
 }
 
 /**
@@ -150,9 +130,9 @@ function useSingleRatingFeed(tags: string, ratingFilter: string, provider: Booru
  * "conditional hooks": conditionally mount the component, never the hook.
  */
 export function usePackSeedSearch(args: UsePackSeedSearchArgs): UsePackSeedSearchResult {
-  const { searchTags, ratingMode, soloOnly, booruProvider } = args
+  const { searchTags, ratingMode, booruProvider } = args
   const { toast } = useToast()
-  const tags = buildTags(searchTags, soloOnly)
+  const tags = buildTags(searchTags)
   const ratingFilters = packRatingToFilters(ratingMode)
   const isBoth = ratingFilters.length > 1
 

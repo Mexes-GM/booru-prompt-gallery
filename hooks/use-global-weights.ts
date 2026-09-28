@@ -58,9 +58,9 @@ export function useGlobalWeights(toast: ToastFn) {
     })
   }, [setGlobalWeights])
 
-  const toggleGlobalWeights = (enabled: boolean) => {
+  const toggleGlobalWeights = useCallback((enabled: boolean) => {
     setIsGlobalWeightsEnabled(enabled)
-  }
+  }, [setIsGlobalWeightsEnabled])
 
   return {
     globalWeights,

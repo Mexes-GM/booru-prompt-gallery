@@ -8,6 +8,7 @@ en el proyecto Supabase remoto (hallazgo F8 de la auditoría de favoritos).
 | Archivo | Contenido |
 |---|---|
 | `migrations/20260630000000_favorites_schema.sql` | Tablas `favorites`, `favorite_folders`, `booru_posts_cache`; índices únicos que respaldan los `onConflict` del cliente; políticas RLS; y el registro en la publicación `supabase_realtime`. **Verificado contra producción el 2026-07-01** (ver abajo). |
+| `migrations/20260928000000_user_data_hardening.sql` | Versiona `profiles` y `saved_artists`; privilegios por columna + trigger para que un usuario **no pueda cambiar su `role`**; límite de tamaño de `profiles.preferences`; `tag_suggestions.user_id`; purga diaria de IPs (`rate_limits` > 7 días, `tag_suggestions.user_ip` > 90 días) vía `pg_cron`. |
 
 ## Estado de verificación (2026-07-01)
 
@@ -83,3 +84,35 @@ O pegando el contenido del `.sql` en el SQL Editor del dashboard.
 - `favorites` presente en la publicación `supabase_realtime`. ✅ Confirmado.
 - `favorite_folders` presente en la publicación `supabase_realtime`.
   ❌ **No confirmado — corregido en esta migración, pendiente de aplicar a producción.**
+
+## Datos de usuario y login — pasos manuales en el dashboard
+
+El código ya está preparado; estos ajustes viven en el dashboard de Supabase y
+no se pueden aplicar desde el repo:
+
+1. **Aplicar `20260928000000_user_data_hardening.sql`** y correr las consultas
+   de verificación del final del archivo. La prueba 3 (`update({ role: 'admin' })`
+   desde un usuario normal) debe fallar con *permission denied*.
+2. **Habilitar `pg_cron`** (Database → Extensions) antes de aplicar la
+   migración, para que programe `purge_stale_ip_data()`. Si se habilita después,
+   vuelve a correr el bloque `do $$ … cron.schedule … $$`.
+3. **SMTP propio** (Authentication → Emails → SMTP Settings): el SMTP incluido
+   de Supabase solo envía un puñado de correos por hora y es para desarrollo;
+   con usuarios reales los magic links dejan de llegar. Resend, Postmark o SES.
+   Después, sube el límite en Authentication → Rate Limits → *emails per hour*.
+4. **Plantilla "Magic Link"** (Authentication → Emails → Templates): añade el
+   código junto al enlace para que funcione el campo de 6 dígitos del login
+   (`components/auth/login-dialog.tsx`), útil al abrir el correo en otro
+   dispositivo:
+   ```html
+   <p><a href="{{ .ConfirmationURL }}">Sign in</a></p>
+   <p>Or enter this code: <strong>{{ .Token }}</strong></p>
+   ```
+   Comprueba que *Email OTP Length* sea 6 (Authentication → Providers → Email).
+5. **MFA para admin**: TOTP viene activo por defecto en proyectos hosted
+   (Authentication → Multi-Factor). Define `ADMIN_REQUIRE_MFA=1` en Vercel y
+   Netlify; el siguiente login de admin pasará por `/admin/mfa` para enrolar la
+   app autenticadora.
+6. **(Opcional) Claves de firma asimétricas** (Settings → JWT Keys): con ellas
+   `getClaims()` en `proxy.ts` verifica la sesión localmente sin llamar al
+   servidor de Auth en cada navegación. El código ya soporta ambos esquemas.

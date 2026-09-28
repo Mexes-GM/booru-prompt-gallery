@@ -1,8 +1,9 @@
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { isAdminMfaRequired } from '@/lib/auth/mfa'
 
-export type UserRole = 'user' | 'admin' | 'moderator'
+export type UserRole = 'user' | 'admin'
 
 export interface ProfileRecord {
   id: string
@@ -53,6 +54,13 @@ export async function getUserProfile(userId: string): Promise<ProfileRecord | nu
   return profile as ProfileRecord | null
 }
 
+/** Whether the current session has completed a second factor (aal2). */
+export async function hasAal2(): Promise<boolean> {
+  const supabase = await createClient()
+  const { data } = await supabase.auth.getClaims()
+  return data?.claims?.aal === 'aal2'
+}
+
 export async function requireAdmin(): Promise<User> {
   const user = await requireAuth()
   
@@ -61,28 +69,17 @@ export async function requireAdmin(): Promise<User> {
   if (!profile || profile.role !== 'admin') {
     throw new ForbiddenError('Admin access required')
   }
-  
-  return user
-}
 
-export async function requireRole(allowedRoles: UserRole[]): Promise<User> {
-  const user = await requireAuth()
-  
-  const profile = await getUserProfile(user.id)
-  
-  if (!profile || !allowedRoles.includes(profile.role)) {
-    throw new ForbiddenError(`Role ${profile?.role ?? 'none'} not authorized`)
+  // Server actions are callable directly, so the proxy's /admin/mfa redirect
+  // isn't enough on its own — re-check the session's assurance level here.
+  if (isAdminMfaRequired() && !(await hasAal2())) {
+    throw new ForbiddenError('Two-factor verification required')
   }
-  
+
   return user
 }
 
 export async function isAdmin(userId: string): Promise<boolean> {
   const profile = await getUserProfile(userId)
   return profile?.role === 'admin'
-}
-
-export async function hasRole(userId: string, role: UserRole): Promise<boolean> {
-  const profile = await getUserProfile(userId)
-  return profile?.role === role
 }

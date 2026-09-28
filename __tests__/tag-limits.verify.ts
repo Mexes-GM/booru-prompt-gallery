@@ -10,7 +10,7 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/tag-limits.verify.ts
  */
-import { hasMultipleTags, getFinalQueryTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags, getScoreFloor, relaxScoreTier, relaxScoreFloorInUrl } from '../lib/booru/tag-limits'
+import { hasMultipleTags, getFinalQueryTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, isRandomOrderSafeProvider, detectMisusedMetatags, getScoreFloor, relaxScoreTier, relaxScoreFloorInUrl } from '../lib/booru/tag-limits'
 
 let passed = 0
 let failed = 0
@@ -30,6 +30,13 @@ assert(getProviderTagLimit('aibooru') === 4, 'Aibooru limit is 4')
 assert(getProviderTagLimit('e621') === 40, 'e621 limit is 40')
 assert(getProviderTagLimit('gelbooru') === Infinity, 'Gelbooru has no limit')
 assert(getProviderTagLimit('rule34') === Infinity, 'Rule34 has no limit')
+
+// ── Random order safety (providers without tag-count or pagination limits) ──
+assert(isRandomOrderSafeProvider('gelbooru') === true, 'Gelbooru supports unrestricted random')
+assert(isRandomOrderSafeProvider('rule34') === true, 'Rule34 supports unrestricted random')
+assert(isRandomOrderSafeProvider('danbooru') === false, 'Danbooru has strict tag limit and cannot use unrestricted random')
+assert(isRandomOrderSafeProvider('aibooru') === false, 'Aibooru has strict tag limit and cannot use unrestricted random')
+assert(isRandomOrderSafeProvider('e621') === false, 'e621 does not support paginated random order')
 
 // ── Danbooru: 2 normal tags OK, 3 tags over limit ──
 assert(hasMultipleTags('1girl, solo', 'danbooru', 0) === false, 'Danbooru: 2 normal tags is within limit')

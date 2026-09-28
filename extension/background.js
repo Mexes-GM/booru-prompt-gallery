@@ -67,5 +67,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // URL for the download threw "URL.createObjectURL is not a function" and the
   // whole step failed silently. It now runs in the side panel document, which is
   // a real extension page in both Chrome and Firefox — see
-  // sidepanel.js's autoDLSavePngWithMetadata.
+  // sidepanel/12-autodl.js's autoDLSavePngWithMetadata.
 });

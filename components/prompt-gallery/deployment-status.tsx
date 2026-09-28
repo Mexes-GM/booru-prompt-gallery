@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/tooltip"
 import { SOCIAL_URLS } from "@/lib/constants"
 import { trackExternalLink } from "@/lib/analytics"
+import { PANEL_TAB_CLASS } from "@/components/prompt-gallery/panel-tab-styles"
 
 type DeploymentStatus = "up" | "down" | "paused" | "unknown"
 
@@ -29,9 +30,9 @@ const STATUS_META: Record<
   DeploymentStatus,
   { dot: string; label: string; ping: boolean }
 > = {
-  up: { dot: "bg-emerald-500", label: "Operational", ping: true },
-  down: { dot: "bg-red-500", label: "Down", ping: false },
-  paused: { dot: "bg-amber-500", label: "Paused", ping: false },
+  up: { dot: "bg-success", label: "Operational", ping: true },
+  down: { dot: "bg-destructive", label: "Down", ping: false },
+  paused: { dot: "bg-warning", label: "Paused", ping: false },
   unknown: { dot: "bg-muted-foreground/50", label: "Checking…", ping: false },
 }
 
@@ -119,7 +120,7 @@ export function DeploymentStatusBadges() {
 }
 
 /**
- * "Mirror" button that always points to the *other* deployment.
+ * "Mirror" tab (search panel's top edge) that always points to the *other* deployment.
  * On Netlify it links to the Vercel deployment, and vice versa.
  * Defaults to the Netlify mirror during SSR / before hydration, matching the
  * primary (Vercel) deployment.
@@ -146,10 +147,11 @@ export function MirrorLink() {
       target="_blank"
       rel="noopener noreferrer"
       onClick={() => trackExternalLink(mirror.href, "mirror")}
-      className="inline-flex items-center px-4 py-2 bg-teal-600 hover:bg-teal-500 dark:bg-teal-700 dark:hover:bg-teal-600 text-white text-sm font-medium rounded-full transition-[transform,background-color,box-shadow] duration-200 hover:scale-105 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+      aria-label={mirror.label}
+      className={PANEL_TAB_CLASS}
     >
-      <Globe className="w-4 h-4 mr-2" />
-      {mirror.label}
+      <Globe className="h-3.5 w-3.5 text-info-text" aria-hidden="true" />
+      <span className="hidden sm:inline">{mirror.label}</span>
     </a>
   )
 }

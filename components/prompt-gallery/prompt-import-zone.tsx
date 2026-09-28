@@ -104,14 +104,14 @@ export function PromptImportZone({
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               className="px-3 py-2 bg-destructive/10 border border-destructive/30 rounded-lg flex items-start gap-3 text-sm"
             >
-              <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+              <AlertCircle className="h-4 w-4 text-destructive-text flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="font-medium text-destructive text-sm">{error}</p>
+                <p className="font-medium text-destructive-text text-sm">{error}</p>
               </div>
               <button
                 type="button"
                 onClick={onErrorDismiss}
-                className="text-destructive hover:opacity-70 transition-opacity flex-shrink-0"
+                className="text-destructive-text hover:opacity-70 transition-opacity flex-shrink-0"
               >
                 ✕
               </button>
@@ -146,7 +146,7 @@ export function PromptImportZone({
                 className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-sm z-20 rounded-lg"
               >
                 <div className="flex flex-col items-center gap-2">
-                  <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                  <Loader2 className="h-5 w-5 text-primary-text animate-spin" />
                   <div className="text-center">
                     <p className="text-xs font-semibold text-foreground">
                       Extracting metadata...
@@ -202,7 +202,7 @@ export function PromptImportZone({
                 
                 {/* Hover overlay text */}
                 <div className="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 bg-background/80 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-border pointer-events-none shadow-sm">
-                  <Upload className="h-4 w-4 text-foreground text-emerald-500" />
+                  <Upload className="h-4 w-4 text-success-text" />
                   <span className="text-xs font-semibold text-foreground">
                     Replace Image
                   </span>

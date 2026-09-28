@@ -76,6 +76,7 @@ import { urlHasHost } from "@/lib/booru/urls"
 import { favKey } from "@/lib/favorites-logic"
 
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
+import { SAFE_RATING, ALL_RATING } from "@/lib/nsfw-consent"
 import type { TagAppendRule } from "@/lib/cleanPrompt"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Slider } from "@/components/ui/slider"
@@ -121,8 +122,6 @@ import {
   initScrollDepthTracking,
   trackTimeOnPage,
   trackExternalLink,
-  trackCopy,
-  trackViewMode,
   trackProviderChange,
 } from '@/lib/analytics'
 import { SOCIAL_URLS } from '@/lib/constants'
@@ -147,10 +146,11 @@ const MergeStickyFooter = dynamic(() => import("./merge-sticky-footer").then(m =
 const AiConvertStickyFooter = dynamic(() => import("./ai-convert-sticky-footer").then(m => m.AiConvertStickyFooter), { ssr: false, loading: () => null })
 import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { usePackMode } from "@/hooks/use-pack-mode"
-import { usePackSeed, PACK_SEED_TARGET_POSTS } from "@/hooks/use-pack-seed"
+import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/use-pack-seed"
+import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
-import { PackSourcePopover, type PackSourceAnswers } from "./pack-source-popover"
+import { PackSourceModal, type PackSourceAnswers } from "./pack-source-modal"
 import { PackEntryModal } from "./pack-entry-modal"
 const PackBuilderStickyFooter = dynamic(() => import("./pack-builder-sticky-footer").then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
@@ -164,7 +164,7 @@ import { useDebounce } from "@/hooks/use-debounce"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { GalleryModals } from "@/components/prompt-gallery/gallery-modals"
-import { GalleryHeader } from "@/components/prompt-gallery/gallery-header"
+import { SiteCornerMenu } from "@/components/prompt-gallery/site-corner-menu"
 import { MainTour } from "@/components/prompt-gallery/main-tour"
 import { recordPromptCopy } from "@/lib/support-prompt"
 import { GalleryHero } from "@/components/prompt-gallery/gallery-hero"
@@ -213,7 +213,6 @@ function PackSeedFetcher({
   const result = usePackSeedSearch({
     searchTags: answers.searchTags,
     ratingMode: answers.ratingMode,
-    soloOnly: answers.soloOnly,
     booruProvider,
   })
   // Effect, not a direct render-body call: onReady eventually triggers state
@@ -282,10 +281,11 @@ function UnavailablePostsNotice({
     let checkedCount = 0
 
     // Batch client-side (like the main favorites loader) so we can report live
-    // progress. Danbooru is rate-limited, so its batches run sequentially with a
-    // delay; other providers run in parallel.
+    // progress. Batches run sequentially with a delay for every provider: the
+    // Worker meters favorites per upstream call, so firing them in parallel
+    // only turns into 429s.
     const BATCH = 20
-    const DANBOORU_DELAY = 1100
+    const BATCH_DELAY = 1100
 
     const bumpProgress = (n: number) => {
       checkedCount += n
@@ -294,15 +294,20 @@ function UnavailablePostsNotice({
 
     const fetchBatch = async (provider: string, ids: number[]) => {
       try {
-        const res = await fetch('/api/favorites', {
+        const res = await fetch(apiUrl('/api/favorites'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ favorites: ids.map(id => ({ id, provider })) }),
         })
-        // Non-OK (rate limit / server error) → inconclusive for this batch:
-        // leave these ids out of foundIds so the original delete semantics are
-        // preserved (still counted as missing), but never crash the flow.
-        if (!res.ok) return
+        // Rate limit / server error → inconclusive: count these ids as found so
+        // a throttled re-check can never offer to delete favorites that still
+        // exist. Other non-OK statuses keep them as missing.
+        if (!res.ok) {
+          if (res.status === 429 || res.status >= 500) {
+            for (const id of ids) foundIds.add(`${provider}:${id}`)
+          }
+          return
+        }
         const posts: BooruPost[] = await res.json()
         for (const p of posts) {
           if (p?.id) {
@@ -323,15 +328,11 @@ function UnavailablePostsNotice({
         const batches: number[][] = []
         for (let i = 0; i < ids.length; i += BATCH) batches.push(ids.slice(i, i + BATCH))
 
-        if (provider === 'danbooru') {
-          for (let i = 0; i < batches.length; i++) {
-            await fetchBatch(provider, batches[i])
-            if (i < batches.length - 1) {
-              await new Promise(r => setTimeout(r, DANBOORU_DELAY))
-            }
+        for (let i = 0; i < batches.length; i++) {
+          await fetchBatch(provider, batches[i])
+          if (i < batches.length - 1) {
+            await new Promise(r => setTimeout(r, BATCH_DELAY))
           }
-        } else {
-          await Promise.allSettled(batches.map(b => fetchBatch(provider, b)))
         }
       }
     } catch {
@@ -488,10 +489,10 @@ function UnavailablePostsNotice({
 export function PromptGallery() {
   // 1. Core Logic Hooks
   const search = useBooruSearch()
-  const { blacklist, addTag, removeTag, resetBlacklist } = useBlacklist()
+  const { blacklist, addTag, removeTag, resetBlacklist, clearBlacklist } = useBlacklist()
   // Folder filter state ('artists' is a reserved virtual folder for saved artists)
   const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null | 'all' | 'artists'>('all')
-  const favs = useBooruFavorites(search.booruProvider, activeFavoriteFolder)
+  const favs = useBooruFavorites(search.booruProvider)
   const savedArtists = useSavedArtists()
   const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
@@ -503,13 +504,21 @@ export function PromptGallery() {
   const [showHistory, setShowHistory] = useState(false)
   const toggleShowHistory = useCallback(() => setShowHistory(prev => !prev), [])
 
+  // Pause infinite scroll only on a BURST of image failures (the provider or
+  // our proxy is shedding load), not on the lifetime total: a plain counter
+  // meant a handful of deleted/broken files spread over a long session paused
+  // scrolling even though nothing was being rate-limited.
   const [imageRateLimited, setImageRateLimited] = useState(false)
-  const imageErrorCountRef = useRef(0)
+  const imageErrorTimesRef = useRef<number[]>([])
   const IMAGE_ERROR_THRESHOLD = 8
+  const IMAGE_ERROR_WINDOW_MS = 30_000
 
   const handleImageError = useCallback(() => {
-    imageErrorCountRef.current++
-    if (imageErrorCountRef.current >= IMAGE_ERROR_THRESHOLD && !imageRateLimited) {
+    const now = Date.now()
+    const recent = imageErrorTimesRef.current.filter(t => now - t < IMAGE_ERROR_WINDOW_MS)
+    recent.push(now)
+    imageErrorTimesRef.current = recent
+    if (recent.length >= IMAGE_ERROR_THRESHOLD && !imageRateLimited) {
       setImageRateLimited(true)
     }
   }, [imageRateLimited])
@@ -517,7 +526,7 @@ export function PromptGallery() {
   // Reset rate limiting when search query or provider changes
   useEffect(() => {
     setImageRateLimited(false)
-    imageErrorCountRef.current = 0
+    imageErrorTimesRef.current = []
   }, [search.booruProvider, search.debouncedSearchTags])
 
   // Sync preferences with cloud
@@ -525,7 +534,6 @@ export function PromptGallery() {
 
   // 2. Local UI State & Persistence
   const {
-    viewMode, setViewMode,
     cardScale,
     scaleValue, setScaleValue,
   } = useGalleryViewState()
@@ -638,7 +646,6 @@ export function PromptGallery() {
   const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
 
   // Modals
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [isQuickTeachOpen, setIsQuickTeachOpen] = useState(false)
 
   const {
@@ -734,7 +741,6 @@ export function PromptGallery() {
   }), [debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion])
   const packMode = usePackMode(tagOverrides, globalWeights, isGlobalWeightsEnabled, packCleanOptions, search.booruProvider)
   const packSeed = usePackSeed()
-  const packAxisFallbacks = usePackAxisFallbacks(packMode.isPackMode)
 
   // Extract stable packMode pieces to avoid dependency churn
   const packModeIsPackMode = packMode.isPackMode
@@ -745,9 +751,9 @@ export function PromptGallery() {
   // Setup questionnaire. `packEntryOpen` shows the "From a card"/"From my
   // prompt" choice; `packSourceAnswers` (always populated, unlike the old
   // nullable packSetupAnswers) is what <PackSeedFetcher> below seeds from.
-  // `needsSourceChoice` tracks whether the user has EVER configured a source
-  // (no `pack-source-answers` in storage yet) — the popover auto-opens once
-  // after their first base pick, then never again on its own (§2.1, §2.2).
+  // `sourceStep` drives the "Source of variations" modal: "setup" is the
+  // step shown right after picking a new base (builder and seeding wait for
+  // it), "edit" is reopening it from the builder header's chip.
   const [packEntryOpen, setPackEntryOpen] = useState(false)
   // True when the entry modal should open straight into the prompt-editing
   // view (the builder's "Edit" button on an existing prompt base) instead of
@@ -758,53 +764,90 @@ export function PromptGallery() {
     if (stored) return stored
     return {
       ratingMode: 'sfw',
-      soloOnly: true,
       tagsSource: 'current',
       searchTags: search.searchTags,
       booruProvider: search.booruProvider,
     }
   })
-  const [needsSourceChoice, setNeedsSourceChoice] = useState(() => !userPreferences.getPackSourceAnswers())
-  const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false)
+  const [sourceStep, setSourceStep] = useState<'setup' | 'edit' | null>(null)
+  // Curated per-slot vocabulary that tops up sparse pools (rating-aware).
+  const packAxisFallbacks = usePackAxisFallbacks(packMode.isPackMode, packSourceAnswers.ratingMode)
 
-  // Latest usePackSeedSearch result, reported up by <PackSeedFetcher> once
-  // mounted. Split in two: a ref (for imperative reads inside callbacks that
-  // fire off-render, like handleLoadMorePacks) and a small state snapshot
-  // (for the UI bits that must re-render live: post count, load-more
-  // availability) — cheaper than re-rendering PromptGallery from the full
-  // result object on every page landing.
+  // Where Pack Mode's posts come from (provider + rating + tags) — also the
+  // key of the persistent pool cache (lib/pack/pool-cache.ts).
+  const packSourceKey = useMemo(
+    () => poolCacheKey(packSourceAnswers.booruProvider, packSourceAnswers.ratingMode, packSourceAnswers.searchTags),
+    [packSourceAnswers]
+  )
+  const packSourceKeyRef = useRef(packSourceKey)
+  useEffect(() => { packSourceKeyRef.current = packSourceKey }, [packSourceKey])
+
+  // Latest usePackSeedSearch result (freshly fetched posts), reported up by
+  // <PackSeedFetcher>, plus the posts saved for this source in earlier
+  // sessions. Pools are always sampled from both, merged. A small state
+  // snapshot carries what the UI shows (counts, load-more availability) so
+  // PromptGallery doesn't re-render from the full result on every page.
   const packSeedSearchRef = useRef<UsePackSeedSearchResult | null>(null)
-  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ postCount: number; canLoadMore: boolean } | null>(null)
-  // Only runs the initial axis seed ONCE per base (see handlePackSeedSearchReady) —
-  // re-running it on every incidental result update would fight the user's own edits.
+  const packCachedRef = useRef<{ key: string; posts: BooruPost[] } | null>(null)
+  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ postCount: number; savedCount: number; canLoadMore: boolean } | null>(null)
+  // Only seeds pools ONCE per base — re-running it on every incidental result
+  // update would fight the user's own edits.
   const hasSeededRef = useRef(false)
+  // Sources that already fetched fresh posts this session: picking another
+  // base on the same source reuses what's in memory instead of refetching.
+  const enrichedSourcesRef = useRef<Set<string>>(new Set())
+  const [seedRequest, setSeedRequest] = useState(0)
+  // The fetcher mounts once the first source is confirmed and stays mounted
+  // for the rest of the Pack Mode session (unmounting it drops its posts).
+  const [packFetcherActive, setPackFetcherActive] = useState(false)
 
-  /** Resets seed-fetch bookkeeping so the next base picked re-seeds from scratch. */
+  const packPoolPosts = useCallback((): BooruPost[] => {
+    const cached = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts : []
+    return mergePostLists(packSeedSearchRef.current?.allPosts ?? [], cached)
+  }, [])
+
+  const updatePackSnapshot = useCallback(() => {
+    const search = packSeedSearchRef.current
+    const saved = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts.length : 0
+    setPackSeedSnapshot({
+      postCount: packPoolPosts().length,
+      savedCount: saved,
+      canLoadMore: search ? !search.noMoreResults && !search.sessionCapReached : true,
+    })
+  }, [packPoolPosts])
+
+  /** Base changed, same source: re-seed pools from the posts already at hand. */
+  const rebasePackSeeding = useCallback(() => {
+    hasSeededRef.current = false
+    setSeedRequest((n) => n + 1)
+  }, [])
+
+  /** Source changed or Pack Mode left: forget the fetched posts entirely. */
   const resetPackSeeding = useCallback(() => {
     hasSeededRef.current = false
     packSeedSearchRef.current = null
     setPackSeedSnapshot(null)
   }, [])
 
-  // Picking a base card no longer opens a modal — it fixes the base directly.
-  // The source popover only opens automatically the very first time (no
-  // stored answers yet); after that, whatever was last applied is reused.
+  // Picking a new base (card or pasted prompt) always goes through the
+  // "Source of variations" step before the builder opens. Editing an
+  // existing prompt base skips it — the source is already chosen.
   const handleSetAsPackBase = useCallback((post: BooruPost) => {
     packModeSetBaseCard(post)
-    resetPackSeeding()
+    rebasePackSeeding()
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
-    if (needsSourceChoice) setSourcePopoverOpen(true)
-  }, [packModeSetBaseCard, resetPackSeeding, needsSourceChoice])
+    setSourceStep('setup')
+  }, [packModeSetBaseCard, rebasePackSeeding])
 
   const packModeSetBasePrompt = packMode.setBasePrompt
   const handleSubmitPackPrompt = useCallback((text: string) => {
     packModeSetBasePrompt(text)
-    resetPackSeeding()
+    rebasePackSeeding()
     setPackEntryOpen(false)
+    if (!packEntryStartInPrompt) setSourceStep('setup')
     setPackEntryStartInPrompt(false)
-    if (needsSourceChoice) setSourcePopoverOpen(true)
-  }, [packModeSetBasePrompt, resetPackSeeding, needsSourceChoice])
+  }, [packModeSetBasePrompt, rebasePackSeeding, packEntryStartInPrompt])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
@@ -817,52 +860,125 @@ export function PromptGallery() {
   }, [])
 
   const handleApplyPackSourceAnswers = useCallback((answers: PackSourceAnswers) => {
+    const nextKey = poolCacheKey(answers.booruProvider, answers.ratingMode, answers.searchTags)
     setPackSourceAnswers(answers)
     try {
       userPreferences.setPackSourceAnswers(answers)
     } catch {
       // Non-fatal: best-effort, same as every other localStorage write here.
     }
-    setNeedsSourceChoice(false)
-    resetPackSeeding()
-  }, [resetPackSeeding])
+    setSourceStep(null)
+    setPackFetcherActive(true)
+    // A different source remounts <PackSeedFetcher> (keyed by the answers);
+    // the same one keeps its posts and only needs the pools re-seeded.
+    if (nextKey !== packSourceKeyRef.current) resetPackSeeding()
+    else rebasePackSeeding()
+  }, [resetPackSeeding, rebasePackSeeding])
 
-  // Once <PackSeedFetcher> reports its first live result, seed axis pools
-  // right away (whatever's loaded so far), then keep fetching more in the
-  // background and reseed again with the richer pool. Only runs the initial
-  // seed ONCE per pack setup confirmation — packSeedSearchRef itself is kept
-  // fresh on every call so handleLoadMorePacks/handleReseedAxis always see
-  // the latest fetch state, but re-running the seed on every incidental
-  // result update (e.g. a page landing) would fight the user's own edits.
-  const handlePackSeedSearchReady = useCallback(async (seedSearch: UsePackSeedSearchResult) => {
-    packSeedSearchRef.current = seedSearch
-    setPackSeedSnapshot({
-      postCount: seedSearch.allPosts.length,
-      canLoadMore: !seedSearch.noMoreResults && !seedSearch.sessionCapReached,
-    })
-    if (hasSeededRef.current) return
+  // Cancelling the setup step abandons the freshly-picked base (back to
+  // picking one); cancelling an edit just closes the modal.
+  const handleCancelPackSource = useCallback(() => {
+    if (sourceStep === 'setup') {
+      packModeSetBaseCard(null)
+      packModeSetBasePrompt('')
+      hasSeededRef.current = false
+    }
+    setSourceStep(null)
+  }, [sourceStep, packModeSetBaseCard, packModeSetBasePrompt])
+
+  // Refills the pools while pages are still landing (not just once at the
+  // end), so chips visibly appear as posts arrive. Throttled by post count:
+  // ensureSeeded reports every poll tick, most of which bring nothing new.
+  const makeLiveReseed = useCallback((startCount: number) => {
+    let lastCount = startCount
+    return (posts: BooruPost[]) => {
+      if (posts.length - lastCount < 15) return
+      lastCount = posts.length
+      packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
+      updatePackSnapshot()
+    }
+  }, [packModeReseedAllAxes, packAxisFallbacks, packPoolPosts, updatePackSnapshot])
+
+  /** Saves this session's fetched posts into the source's persistent cache. */
+  const persistPackPool = useCallback(async (key: string) => {
+    const fetched = packSeedSearchRef.current?.allPosts ?? []
+    if (fetched.length === 0) return
+    await savePoolCache(key, fetched)
+    const posts = await loadPoolCache(key)
+    if (packSourceKeyRef.current !== key) return
+    packCachedRef.current = { key, posts }
+    updatePackSnapshot()
+  }, [updatePackSnapshot])
+
+  // Seeds the pools for the current base: saved posts first (instant), then —
+  // once per source per session — a batch of fresh posts on top, growing the cache.
+  const seedPackPools = useCallback(async () => {
+    const search = packSeedSearchRef.current
+    if (!search || hasSeededRef.current) return
     hasSeededRef.current = true
-    packModeReseedAllAxes(seedSearch.allPosts, packAxisFallbacks)
-    const seeded = await packSeed.ensureSeeded(() => packSeedSearchRef.current ?? seedSearch)
-    packModeReseedAllAxes(seeded, packAxisFallbacks)
-  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed])
+    const key = packSourceKeyRef.current
 
-  // Manual "Load more posts" — reuses whatever usePackSeedSearch instance is
-  // currently mounted (same tags/rating/solo answers from the Pack Setup
-  // modal). No-op if nothing has been seeded yet. packSeedSnapshot itself
-  // will also refresh via PackSeedFetcher's own effect once the underlying
-  // fetch's result object changes — this just avoids waiting for that extra
-  // render tick for the visible "N posts loaded" counter.
+    if (packCachedRef.current?.key !== key) {
+      const posts = await loadPoolCache(key)
+      if (packSourceKeyRef.current !== key) return
+      packCachedRef.current = { key, posts }
+    }
+    packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
+    updatePackSnapshot()
+
+    if (enrichedSourcesRef.current.has(key)) {
+      void persistPackPool(key)
+      return
+    }
+    enrichedSourcesRef.current.add(key)
+    const saved = packCachedRef.current?.posts.length ?? 0
+    const fetchedNow = packSeedSearchRef.current?.allPosts.length ?? 0
+    // Plenty saved already: just add one batch of new posts. Otherwise fill up to the target.
+    const target = saved >= PACK_SEED_TARGET_POSTS
+      ? Math.max(fetchedNow, PACK_ENRICH_POSTS)
+      : Math.max(PACK_ENRICH_POSTS, PACK_SEED_TARGET_POSTS - saved)
+    await packSeed.ensureSeeded(() => packSeedSearchRef.current ?? search, target, makeLiveReseed(fetchedNow))
+    if (packSourceKeyRef.current !== key) return
+    packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
+    await persistPackPool(key)
+  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed, makeLiveReseed, packPoolPosts, updatePackSnapshot, persistPackPool])
+
+  // Runs a pending seed once a base, a confirmed source and fetched results all exist.
+  const packHasBase = packMode.hasBase
+  useEffect(() => {
+    if (hasSeededRef.current || !packSeedSearchRef.current || !packHasBase || sourceStep === 'setup') return
+    void seedPackPools()
+  }, [seedRequest, packHasBase, sourceStep, seedPackPools])
+
+  const handlePackSeedSearchReady = useCallback((seedSearch: UsePackSeedSearchResult) => {
+    packSeedSearchRef.current = seedSearch
+    updatePackSnapshot()
+    if (!hasSeededRef.current) setSeedRequest((n) => n + 1)
+  }, [updatePackSnapshot])
+
+  // Manual "Collect more" — another batch of fresh posts for the same source.
   const handleLoadMorePacks = useCallback(async () => {
     if (!packSeedSearchRef.current) return
-    const target = packSeedSearchRef.current.allPosts.length + PACK_SEED_TARGET_POSTS
-    const seeded = await packSeed.ensureSeeded(() => packSeedSearchRef.current!, target)
-    packModeReseedAllAxes(seeded, packAxisFallbacks)
-    setPackSeedSnapshot({
-      postCount: seeded.length,
-      canLoadMore: !packSeedSearchRef.current.noMoreResults && !packSeedSearchRef.current.sessionCapReached,
-    })
-  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks])
+    const key = packSourceKeyRef.current
+    const start = packSeedSearchRef.current.allPosts.length
+    await packSeed.ensureSeeded(
+      () => packSeedSearchRef.current!,
+      start + PACK_SEED_TARGET_POSTS,
+      makeLiveReseed(start)
+    )
+    if (packSourceKeyRef.current !== key) return
+    packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
+    await persistPackPool(key)
+  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks, makeLiveReseed, packPoolPosts, persistPackPool])
+
+  /** Forgets the posts saved for the current source (fresh ones stay). */
+  const handleClearSavedPackPosts = useCallback(async () => {
+    const key = packSourceKeyRef.current
+    await clearPoolCache(key)
+    packCachedRef.current = { key, posts: [] }
+    packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
+    updatePackSnapshot()
+  }, [packModeReseedAllAxes, packAxisFallbacks, packPoolPosts, updatePackSnapshot])
 
   // Stable "Re-sample" handler for a single axis category — MUST be memoized:
   // PackBuilderStickyFooter passes this straight through to each AxisEditor
@@ -872,8 +988,8 @@ export function PromptGallery() {
   const packModeReseedAxis = packMode.reseedAxis
   const handleReseedAxis = useCallback((category: TagCategory) => {
     if (!packSeedSearchRef.current) return
-    packModeReseedAxis(category, packSeedSearchRef.current.allPosts, packAxisFallbacks[category])
-  }, [packModeReseedAxis, packAxisFallbacks])
+    packModeReseedAxis(category, packPoolPosts(), packAxisFallbacks[category])
+  }, [packModeReseedAxis, packAxisFallbacks, packPoolPosts])
 
   // Pack Mode learning instrumentation (docs/pack-mode-learning-plan.md §7.7,
   // last bullet) — aggregate product events only, so the A/B/T/EPSILON
@@ -1139,7 +1255,6 @@ export function PromptGallery() {
         description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
       })
       setTimeout(() => setCopiedId(null), 2000)
-      trackCopy(postId)
       recordPromptCopy()
     } catch (error) {
       toastError({
@@ -1389,7 +1504,6 @@ export function PromptGallery() {
       isPreviouslyCopied={isPreviouslyCopied}
       width={width}
       height={height}
-      viewMode={viewMode}
       effectiveScale={effectiveScale}
       index={index}
       booruProvider={search.booruProvider}
@@ -1443,10 +1557,8 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [viewMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
 
-  const decreaseScale = () => setScaleValue([Math.max(1, scaleValue[0] - 1)])
-  const increaseScale = () => setScaleValue([Math.min(3, scaleValue[0] + 1)])
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
   const finalPosts = filteredPosts
@@ -1461,15 +1573,10 @@ export function PromptGallery() {
       {search.searchTags?.trim() ? (
         <title>{`${search.searchTags.trim()} | Booru Prompt Gallery`}</title>
       ) : null}
-      <div className="min-h-screen bg-background">
-        <GalleryHeader
-          viewMode={viewMode}
-          setViewMode={setViewMode}
+      <div className="relative min-h-screen bg-background">
+        <SiteCornerMenu
           scaleValue={scaleValue}
           setScaleValue={setScaleValue}
-          decreaseScale={decreaseScale}
-          increaseScale={increaseScale}
-          setShowWelcomeModal={setShowWelcomeModal}
           onOpenTour={() => setTourRunSignal((n) => n + 1)}
         />
 
@@ -1580,6 +1687,8 @@ export function PromptGallery() {
                     }}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onOpenQuickTeach={() => setIsQuickTeachOpen(true)}
+                    scaleValue={scaleValue}
+                    setScaleValue={setScaleValue}
                   />
 
                   {/* The two option groups: what gets fetched / how the prompt comes out */}
@@ -1896,7 +2005,6 @@ export function PromptGallery() {
           {filteredPosts.length > 0 && activeFavoriteFolder !== 'artists' && (
             <ResultsGrid
               posts={filteredPosts}
-              viewMode={viewMode}
               effectiveScale={effectiveScale}
               renderItem={renderMasonryItem}
               expandedItemId={expandedPostId}
@@ -1926,8 +2034,20 @@ export function PromptGallery() {
             imageRateLimited={imageRateLimited}
             onResumeScroll={() => {
               setImageRateLimited(false)
-              imageErrorCountRef.current = 0
+              imageErrorTimesRef.current = []
             }}
+            // One-click "Show all content" is only offered once the user has
+            // already confirmed NSFW via the SearchBar age dialog — otherwise
+            // the card falls back to "try changing the rating filter", so the
+            // consent gate is never bypassed.
+            isSafeFilterActive={search.ratingFilter === SAFE_RATING && userPreferences.getNsfwAcknowledged()}
+            onToggleRatingFilter={() => {
+              posthog.capture('nsfw_preference_changed', { rating_filter: ALL_RATING, source: 'no_results' })
+              search.setRatingFilter(ALL_RATING)
+            }}
+            blacklistCount={blacklist.length}
+            onClearBlacklist={clearBlacklist}
+            onRetrySearch={search.refresh}
           />
 
           {/* Footer Links for E-E-A-T and Legal */}
@@ -1947,10 +2067,9 @@ export function PromptGallery() {
 
       <GalleryModals
         onTeachSuccess={refreshOverrides}
-        showWelcomeModal={showWelcomeModal}
-        setShowWelcomeModal={setShowWelcomeModal}
         isQuickTeachOpen={isQuickTeachOpen}
         setIsQuickTeachOpen={setIsQuickTeachOpen}
+        isGlobalWeightsEnabled={isGlobalWeightsEnabled}
         tagOverrides={tagOverrides}
         isGlobalWeightsModalOpen={isGlobalWeightsModalOpen}
         setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
@@ -1976,26 +2095,7 @@ export function PromptGallery() {
         isVisible={showStickyPanel}
         addInput={addInput}
         setAddInput={setAddInput}
-        includeCharacters={includeCharacters}
-        setIncludeCharacters={setIncludeCharacters}
-        optimizeTags={optimizeTags}
-        setOptimizeTags={setOptimizeTags}
-        smartTagExclusion={smartTagExclusion}
-        setSmartTagExclusion={setSmartTagExclusion}
-        prependAnimaArtist={prependAnimaArtist}
-        setPrependAnimaArtist={setPrependAnimaArtist}
-        backgroundMode={backgroundMode}
-        setBackgroundMode={setBackgroundMode}
-        simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
-        setSimpleBackgroundReplacementTags={setSimpleBackgroundReplacementTags}
-        randomBackgroundPatterns={randomBackgroundPatterns}
-        setRandomBackgroundPatterns={setRandomBackgroundPatterns}
-        randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
-        setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
-        backgroundMatchStrictness={backgroundMatchStrictness}
-        setBackgroundMatchStrictness={setBackgroundMatchStrictness}
         isMergeMode={mergeMode.isMergeMode}
-        mergeModeType={mergeMode.mergeModeType}
         isAiConvertMode={isAiConvertMode}
         onToggleAiConvertMode={toggleAiConvertMode}
         onToggleMergeMode={() => {
@@ -2004,14 +2104,6 @@ export function PromptGallery() {
           } else {
             setIsAiConvertMode(false)
             mergeMode.enableMergeMode()
-          }
-        }}
-        onToggleVariationMode={() => {
-          if (mergeMode.isMergeMode && mergeMode.mergeModeType === 'variations') {
-            mergeMode.disableMergeMode()
-          } else {
-            setIsAiConvertMode(false)
-            mergeMode.enableVariationMode()
           }
         }}
       />
@@ -2038,7 +2130,7 @@ export function PromptGallery() {
         meta={aiConvertMeta}
         onExit={() => setIsAiConvertMode(false)}
       />
-      {packMode.hasBase && (
+      {packModeIsPackMode && packFetcherActive && (
         <PackSeedFetcher
           key={JSON.stringify(packSourceAnswers)}
           answers={packSourceAnswers}
@@ -2054,26 +2146,35 @@ export function PromptGallery() {
         onSubmitPrompt={handleSubmitPackPrompt}
         onCancel={handlePackEntryCancel}
       />
+      <PackSourceModal
+        open={packModeIsPackMode && packMode.hasBase && sourceStep !== null}
+        answers={packSourceAnswers}
+        onApply={handleApplyPackSourceAnswers}
+        onCancel={handleCancelPackSource}
+        currentSearchTags={search.searchTags}
+        postCount={sourceStep === 'edit' ? (packSeedSnapshot?.postCount ?? 0) : null}
+        confirmLabel={sourceStep === 'setup' ? 'Continue' : 'Apply'}
+      />
       <PackBuilderStickyFooter
         isOpen={packModeIsPackMode}
         baseCard={packMode.baseCard}
         basePrompt={packMode.basePrompt}
         onEditBasePrompt={handleEditBasePrompt}
         hasMultipleCharacters={packMode.hasMultipleCharacters}
-        hasSetupAnswers={packMode.hasBase}
-        lockedCategories={packMode.lockedCategories}
-        toggleLockedCategory={packMode.toggleLockedCategory}
-        lockedSlots={packMode.lockedSlots}
-        toggleLockedSlot={packMode.toggleLockedSlot}
-        mutedSlots={packMode.mutedSlots}
-        toggleMutedSlot={packMode.toggleMutedSlot}
+        hasSetupAnswers={packMode.hasBase && sourceStep !== 'setup'}
+        categoryStates={packMode.categoryStates}
+        onSetCategoryState={packMode.setCategoryState}
+        slotStateOf={packMode.slotStateOf}
+        onSetSlotState={packMode.setSlotState}
+        excludedBaseTags={packMode.excludedBaseTags}
+        onToggleExcludedBaseTag={packMode.toggleExcludedBaseTag}
+        onRestoreExcludedBaseTags={packMode.restoreExcludedBaseTags}
         axisSlotGroups={packMode.axisSlotGroups}
         axisSlotCounts={packMode.axisSlotCounts}
         axisMaxPerPrompt={packMode.axisMaxPerPrompt}
         tagOverrides={packMode.effectiveTagOverrides}
         baseClassified={packMode.baseClassified}
         lockedTags={packMode.lockedTags}
-        activeAxisCategories={packMode.activeAxisCategories}
         axisValues={packMode.axisValues}
         onAddAxisValue={packMode.addAxisValue}
         onRemoveAxisValue={handlePackRemoveAxisValue}
@@ -2088,15 +2189,19 @@ export function PromptGallery() {
         isSeeding={packSeed.isSeeding}
         seedProgress={packSeed.seedProgress}
         loadedPostCount={packSeedSnapshot?.postCount ?? 0}
-        canLoadMorePosts={packSeedSnapshot?.canLoadMore ?? false}
+        // No snapshot yet = the first page is still on its way, so more can load.
+        canLoadMorePosts={packSeedSnapshot?.canLoadMore ?? true}
         onLoadMorePosts={handleLoadMorePacks}
         sourceAnswers={packSourceAnswers}
-        onApplySourceAnswers={handleApplyPackSourceAnswers}
-        currentSearchTags={search.searchTags}
-        sourcePopoverOpen={sourcePopoverOpen}
-        onSourcePopoverOpenChange={setSourcePopoverOpen}
+        onOpenSource={() => setSourceStep('edit')}
         varietyLevel={packMode.varietyLevel}
         onVarietyLevelChange={packMode.setVarietyLevel}
+        minTotalTags={packMode.minTotalTags}
+        onMinTotalTagsChange={packMode.setMinTotalTags}
+        estimatedTagsPerPrompt={packMode.estimatedTagsPerPrompt}
+        minSetTags={packMode.minSetTags}
+        onSetMinSetTags={packMode.setMinSetTags}
+        hiddenThinSets={packMode.hiddenThinSets}
         promptCount={packMode.promptCount}
         setPromptCount={packMode.setPromptCount}
         onRegenerate={handlePackRegenerate}
@@ -2104,14 +2209,18 @@ export function PromptGallery() {
         onClearBase={() => {
           packMode.setBaseCard(null)
           packMode.setBasePrompt('')
-          resetPackSeeding()
+          // Keep the fetched posts: the next base on this source reuses them.
+          hasSeededRef.current = false
         }}
         onExit={() => {
           packMode.disablePackMode()
           packMode.setBaseCard(null)
           packMode.setBasePrompt('')
           resetPackSeeding()
+          setPackFetcherActive(false)
         }}
+        savedPostCount={packSeedSnapshot?.savedCount ?? 0}
+        onClearSavedPosts={handleClearSavedPackPosts}
         prompts={packMode.generatedPrompts}
         onCopyPrompt={(prompt) => {
           copyToClipboard(prompt.prompt, 0, true)
@@ -2123,10 +2232,9 @@ export function PromptGallery() {
 
       <GalleryModals
         onTeachSuccess={refreshOverrides}
-        showWelcomeModal={showWelcomeModal}
-        setShowWelcomeModal={setShowWelcomeModal}
         isQuickTeachOpen={isQuickTeachOpen}
         setIsQuickTeachOpen={setIsQuickTeachOpen}
+        isGlobalWeightsEnabled={isGlobalWeightsEnabled}
         tagOverrides={tagOverrides}
         isGlobalWeightsModalOpen={isGlobalWeightsModalOpen}
         setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}

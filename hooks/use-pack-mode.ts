@@ -27,11 +27,13 @@ import { cleanSyntheticPrompt, detectCharacterTags, type BulkSendCleanOptions } 
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from '@/lib/pack/prompt-similarity'
 import { classifyBasePrompt } from '@/lib/pack/base-prompt'
 import { pickReplacement } from '@/lib/pack/reroll'
+import { finalizePackPrompt, parseAlwaysAddTags } from '@/lib/pack/always-add'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { migratePackConfig } from '@/lib/pack/pack-config-migration'
 import { varietyPreset, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
+import { estimateTagsPerPrompt, raiseCountsForMinTotal, type AxisBudget } from '@/lib/pack/min-tags'
 import {
   emptyClassifiedTags,
   slotsOf,
@@ -41,6 +43,21 @@ import {
 import { fetchTagOverridesForNames } from '@/lib/supabase/client-queries'
 
 const DEFAULT_PROMPT_COUNT = 10
+/** Upper bound for the "Min tags per prompt" control. */
+export const MAX_MIN_TOTAL_TAGS = 60
+/** Sampled full sets smaller than this are too thin to be worth a pick ("sword" alone isn't a set). */
+export const DEFAULT_MIN_SET_TAGS = 3
+export const MAX_MIN_SET_TAGS = 8
+
+/** Per-category role in the pack: kept from the base, varied, or left out entirely. */
+export type PackCategoryState = 'keep' | 'vary' | 'off'
+/** Per-subcategory (slot) role: base tags kept, values varied, or left out entirely. */
+export type PackSlotState = 'base' | 'vary' | 'off'
+
+/** Number of comma-separated tags in a prompt string. */
+function countPromptTags(prompt: string): number {
+  return prompt.split(',').filter((t) => t.trim()).length
+}
 
 /** General + character tags of the given posts, display-normalized and deduped. */
 function collectPostTags(posts: BooruPost[]): string[] {
@@ -182,6 +199,30 @@ export interface UsePackModeResult {
   /** Free-text base prompt for the 'custom' pack kind — merged into lockedTags. */
   customBaseText: string
   setCustomBaseText: (text: string) => void
+
+  /** Base tags the user removed from this base — never kept, whatever the locks say. Reset on a new base. */
+  excludedBaseTags: Set<string>
+  toggleExcludedBaseTag: (tag: string) => void
+  restoreExcludedBaseTags: (category?: TagCategory) => void
+
+  /** Role of each pack category, derived from locks + min counts. */
+  categoryStates: Record<TagCategory, PackCategoryState>
+  setCategoryState: (category: TagCategory, state: PackCategoryState) => void
+  /** Role of one "category:subcategory" slot. */
+  slotStateOf: (slot: string) => PackSlotState
+  setSlotState: (slot: string, state: PackSlotState) => void
+
+  /** Minimum tags per generated prompt (0 = no minimum); raises per-axis counts to reach it. */
+  minTotalTags: number
+  setMinTotalTags: (count: number) => void
+  /** Expected tags per prompt with the current settings (after the minimum is applied). */
+  estimatedTagsPerPrompt: number
+
+  /** Per-category minimum tags for a sampled full set (bundle mode); thinner ones are hidden. */
+  minSetTags: Partial<Record<TagCategory, number>>
+  setMinSetTags: (category: TagCategory, count: number) => void
+  /** Sampled full sets currently hidden for being under the minimum, per category. */
+  hiddenThinSets: Partial<Record<TagCategory, number>>
 
   promptCount: number
   setPromptCount: (count: number) => void
@@ -369,6 +410,10 @@ export function usePackMode(
     initialConfig.axisMinCounts
   )
   const [customBaseText, setCustomBaseText] = useState('')
+  // Base tags the user deleted from the current base — per-base, never persisted.
+  const [excludedBaseTags, setExcludedBaseTags] = useState<Set<string>>(() => new Set())
+  const [minTotalTags, setMinTotalTagsRaw] = useState(initialConfig.minTotalTags ?? 0)
+  const [minSetTags, setMinSetTagsRaw] = useState<Partial<Record<TagCategory, number>>>(initialConfig.minSetTags ?? {})
   const [promptCount, setPromptCount] = useState(initialConfig.promptCount)
   const [axisTagModes, setAxisTagModes] = useState<Partial<Record<TagCategory, AxisTagMode>>>(
     initialConfig.axisTagModes ?? {}
@@ -398,6 +443,7 @@ export function usePackMode(
     // which base card is selected.
     setAxisValuesRaw({})
     setAxisCounts({})
+    setExcludedBaseTags(new Set())
     // Previously generated prompts belong to the old base — clear them so the
     // results list doesn't show stale prompts until the user hits Generate again.
     setGeneratedPrompts([])
@@ -410,6 +456,7 @@ export function usePackMode(
     setPromptCharacterTags([])
     setAxisValuesRaw({})
     setAxisCounts({})
+    setExcludedBaseTags(new Set())
     setGeneratedPrompts([])
     try {
       userPreferences.setLastPackBasePrompt(text)
@@ -490,8 +537,41 @@ export function usePackMode(
    */
   const hasMultipleCharacters = characterTags.length > 1
 
+  // Base tags minus the ones the user removed — what locks actually draw from.
+  const keptBaseClassified = useMemo<Record<TagCategory, string[]>>(() => {
+    if (excludedBaseTags.size === 0) return baseClassified
+    const out = { ...baseClassified }
+    ;(Object.keys(out) as TagCategory[]).forEach((cat) => {
+      out[cat] = (out[cat] || []).filter((tag) => !excludedBaseTags.has(tag))
+    })
+    return out
+  }, [baseClassified, excludedBaseTags])
+
+  const toggleExcludedBaseTag = useCallback((tag: string) => {
+    setExcludedBaseTags((prev) => {
+      const next = new Set(prev)
+      if (next.has(tag)) next.delete(tag)
+      else next.add(tag)
+      return next
+    })
+  }, [])
+
+  const restoreExcludedBaseTags = useCallback((category?: TagCategory) => {
+    setExcludedBaseTags((prev) => {
+      if (prev.size === 0) return prev
+      if (!category) return new Set()
+      const own = new Set(baseClassified[category] || [])
+      return new Set(Array.from(prev).filter((tag) => !own.has(tag)))
+    })
+  }, [baseClassified])
+
   const lockedTags = useMemo(() => {
     const tags: string[] = []
+    const baseClassified = keptBaseClassified
+    // A pasted prompt's tags outside every pack category (a character the
+    // source's posts don't know, quality/style tags…) were typed on purpose:
+    // always keep them. A card's "other" bucket is unclassified noise instead.
+    if (!baseCard) tags.push(...(baseClassified.other || []))
     lockedCategories.forEach((cat) => {
       if (cat !== 'appearance' || !hasMultipleCharacters) {
         tags.push(...(baseClassified[cat] || []))
@@ -529,7 +609,10 @@ export function usePackMode(
       tags.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
     }
     return Array.from(new Set(tags.filter(Boolean)))
-  }, [baseClassified, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, hasMultipleCharacters, characterTags])
+  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, hasMultipleCharacters, characterTags])
+
+  /** "Always add" tags as typed — finalizePackPrompt puts them first, underscores intact. */
+  const alwaysAddTags = useMemo(() => parseAlwaysAddTags(customBaseText), [customBaseText])
 
   /** A real base card OR a non-empty pasted prompt — either way there's a base to vary against. */
   const hasBase = !!baseCard || basePrompt.trim() !== ''
@@ -565,11 +648,26 @@ export function usePackMode(
   // exactly what can be sampled. Manual values bypass the filter: the user
   // typed them on purpose, and hiding them would look like Add failed.
   const slotState = useMemo(() => ({ lockedSlots, mutedSlots }), [lockedSlots, mutedSlots])
+  // Which categories are in full-set mode, as a stable string. The pools must
+  // not depend on axisTagModes' identity: the Variety preset effect rewrites
+  // that object whenever axisMaxPerPrompt changes, and axisMaxPerPrompt is
+  // derived from the pools — depending on the object would loop forever.
+  const bundleCategoriesKey = PACK_AXES.filter((cat) => axisTagModes[cat] === 'bundle').join(',')
+  const bundleCategories = useMemo(
+    () => new Set(bundleCategoriesKey ? bundleCategoriesKey.split(',') : []),
+    [bundleCategoriesKey]
+  )
   const buildPools = useCallback(
     (state: { lockedSlots: ReadonlySet<string>; mutedSlots: ReadonlySet<string> }) => {
       const merged: Partial<Record<TagCategory, string[]>> = {}
       PACK_AXES.forEach((cat) => {
-        const sampled = filterValuesBySlotState(cat, axisValues[cat] || [], state, effectiveOverrides)
+        let sampled = filterValuesBySlotState(cat, axisValues[cat] || [], state, effectiveOverrides)
+        // Full sets under the category's minimum are dropped (after slot
+        // trimming, which can thin a set out too). Typed-in sets are exempt.
+        if (bundleCategories.has(cat)) {
+          const min = minSetTags[cat] ?? DEFAULT_MIN_SET_TAGS
+          sampled = sampled.filter((v) => splitCommaSeparatedTags(v).length >= min)
+        }
         const seen = new Set(sampled)
         const extraManual = (manualAxisValues[cat] || []).filter((v) => {
           if (seen.has(v)) return false
@@ -581,9 +679,26 @@ export function usePackMode(
       })
       return merged
     },
-    [axisValues, manualAxisValues, effectiveOverrides]
+    [axisValues, manualAxisValues, effectiveOverrides, bundleCategories, minSetTags]
   )
   const mergedAxisValues = useMemo(() => buildPools(slotState), [buildPools, slotState])
+
+  const hiddenThinSets = useMemo(() => {
+    const out: Partial<Record<TagCategory, number>> = {}
+    PACK_AXES.forEach((cat) => {
+      if (!bundleCategories.has(cat)) return
+      const min = minSetTags[cat] ?? DEFAULT_MIN_SET_TAGS
+      const trimmed = filterValuesBySlotState(cat, axisValues[cat] || [], slotState, effectiveOverrides)
+      const hidden = trimmed.filter((v) => splitCommaSeparatedTags(v).length < min).length
+      if (hidden > 0) out[cat] = hidden
+    })
+    return out
+  }, [bundleCategories, minSetTags, axisValues, slotState, effectiveOverrides])
+
+  const setMinSetTags = useCallback((category: TagCategory, count: number) => {
+    const n = Math.max(1, Math.min(MAX_MIN_SET_TAGS, Math.floor(count) || 1))
+    setMinSetTagsRaw((prev) => ({ ...prev, [category]: n }))
+  }, [])
 
   const axisSlotGroups = useMemo(() => {
     const out: Partial<Record<TagCategory, SlotGroup[]>> = {}
@@ -820,7 +935,16 @@ export function usePackMode(
       // Pasted-prompt base: figure out which of its tags are a character now
       // that seed posts are available (detectCharacterTags needs them).
       if (!baseCard && basePromptTags.length > 0) {
-        setPromptCharacterTags(detectCharacterTags(basePromptTags, posts, currentOverrides()))
+        // Only tags booru itself lists as characters count. detectCharacterTags
+        // also accepts anything in a post's appearance bucket (1girl, long hair…),
+        // which made the multi-character filter drop every appearance tag but one.
+        const booruCharacters = new Set<string>()
+        posts.forEach((post) => {
+          splitTags(post.tag_string_character || '').forEach((t) => booruCharacters.add(normalizeTagForPack(t)))
+        })
+        setPromptCharacterTags(
+          detectCharacterTags(basePromptTags, posts, currentOverrides()).filter((t) => booruCharacters.has(t))
+        )
       }
     },
     [resample, axisTagModes, baseCard, basePromptTags, currentOverrides]
@@ -829,6 +953,97 @@ export function usePackMode(
   const setPromptCountClamped = useCallback((count: number) => {
     setPromptCount(Math.max(1, Math.min(MAX_PACK_PROMPTS, Math.floor(count) || 1)))
   }, [])
+
+  const setMinTotalTags = useCallback((count: number) => {
+    setMinTotalTagsRaw(Math.max(0, Math.min(MAX_MIN_TOTAL_TAGS, Math.floor(count) || 0)))
+  }, [])
+
+  // Category role, derived: a locked category is "keep"; an unlocked one with
+  // a min count of 0 is "off" (neither kept nor varied); anything else varies.
+  const categoryStates = useMemo(() => {
+    const out = {} as Record<TagCategory, PackCategoryState>
+    PACK_AXES.forEach((cat) => {
+      out[cat] = lockedCategories.has(cat) ? 'keep' : (axisMinCounts[cat] ?? 1) === 0 ? 'off' : 'vary'
+    })
+    return out
+  }, [lockedCategories, axisMinCounts])
+
+  const setCategoryState = useCallback((category: TagCategory, state: PackCategoryState) => {
+    if (state === 'keep') {
+      if (!lockedCategories.has(category)) toggleLockedCategory(category)
+      return
+    }
+    if (lockedCategories.has(category)) toggleLockedCategory(category)
+    // "Off" also drops partial slot locks, so no base tag of this category survives.
+    setLockedSlots((prev) => {
+      if (state !== 'off') return prev
+      const own = slotsOf(category)
+      if (!own.some((s) => prev.has(s))) return prev
+      const next = new Set(prev)
+      own.forEach((s) => next.delete(s))
+      return next
+    })
+    const current = axisMinCounts[category] ?? 1
+    if (state === 'off' && current !== 0) setAxisMinCount(category, 0)
+    if (state === 'vary' && current === 0) setAxisMinCount(category, 1)
+  }, [lockedCategories, toggleLockedCategory, axisMinCounts, setAxisMinCount])
+
+  const slotStateOf = useCallback((slot: string): PackSlotState => {
+    const cat = categoryOfSlot(slot)
+    if (cat && lockedCategories.has(cat)) return 'base'
+    if (lockedSlots.has(slot)) return 'base'
+    if (mutedSlots.has(slot)) return 'off'
+    return 'vary'
+  }, [lockedCategories, lockedSlots, mutedSlots])
+
+  const setSlotState = useCallback((slot: string, state: PackSlotState) => {
+    const current = slotStateOf(slot)
+    if (current === state) return
+    // toggleLockedSlot flips base <-> not-base (and un-mutes the slot).
+    if (current === 'base' || state === 'base') toggleLockedSlot(slot)
+    if (state === 'off') {
+      setMutedSlots((prev) => (prev.has(slot) ? prev : new Set(prev).add(slot)))
+    } else if (current === 'off') {
+      setMutedSlots((prev) => {
+        if (!prev.has(slot)) return prev
+        const next = new Set(prev)
+        next.delete(slot)
+        return next
+      })
+    }
+  }, [slotStateOf, toggleLockedSlot])
+
+  // What each varying axis can contribute to one prompt — shared by the
+  // estimate shown in the UI and the min-tags raise in buildGenerationArgs.
+  const axisBudgets = useMemo(() => {
+    const out: Partial<Record<TagCategory, AxisBudget>> = {}
+    activeAxisCategories.forEach((cat) => {
+      const vals = mergedAxisValues[cat]
+      if (!vals || vals.length === 0) return
+      const bundle = axisTagModes[cat] === 'bundle'
+      const cap = bundle
+        ? Math.min(MAX_MIN_PACKS_SLIDER, vals.length)
+        : Math.min(vals.length, axisMaxPerPrompt[cat] || vals.length)
+      const tagsPerPick = bundle
+        ? vals.reduce((sum, v) => sum + splitCommaSeparatedTags(v).length, 0) / vals.length
+        : 1
+      out[cat] = { count: axisMinCounts[cat] ?? 1, cap, tagsPerPick }
+    })
+    return out
+  }, [activeAxisCategories, mergedAxisValues, axisTagModes, axisMaxPerPrompt, axisMinCounts])
+
+  const raisedAxisCounts = useMemo(
+    () => raiseCountsForMinTotal(minTotalTags, lockedTags.length, axisBudgets),
+    [minTotalTags, lockedTags.length, axisBudgets]
+  )
+
+  const estimatedTagsPerPrompt = useMemo(() => {
+    const raised: Partial<Record<TagCategory, AxisBudget>> = {}
+    ;(Object.keys(axisBudgets) as TagCategory[]).forEach((cat) => {
+      raised[cat] = { ...axisBudgets[cat]!, count: raisedAxisCounts[cat] ?? axisBudgets[cat]!.count }
+    })
+    return estimateTagsPerPrompt(lockedTags.length, raised)
+  }, [axisBudgets, raisedAxisCounts, lockedTags.length])
 
   // Shared arg-assembly for both regenerate() and rerollPrompt(): active
   // axes' candidate pools, their learned+frequency sampling weights, and the
@@ -855,21 +1070,13 @@ export function usePackMode(
       axisWeights[cat] = Object.fromEntries(vals.map((v, i) => [v, weights[i]]))
     })
 
-    // A saved count above what the slot constraints allow would only have its
-    // extra picks dropped by them; clamp so sampling asks for what fits.
-    const effectiveAxisMinCounts: Partial<Record<TagCategory, number>> = { ...axisMinCounts }
-    PACK_AXES.forEach((cat) => {
-      const requested = effectiveAxisMinCounts[cat] ?? 1
-      if (axisTagModes[cat] === 'bundle') {
-        if (requested > MAX_MIN_PACKS_SLIDER) effectiveAxisMinCounts[cat] = MAX_MIN_PACKS_SLIDER
-        return
-      }
-      const cap = axisMaxPerPrompt[cat]
-      if (cap !== undefined && cap > 0 && requested > cap) effectiveAxisMinCounts[cat] = cap
-    })
+    // Per-axis counts clamped to what the slot constraints allow (a higher
+    // count would only have its extra picks dropped), then raised toward the
+    // "Min tags per prompt" target — see axisBudgets/raisedAxisCounts.
+    const effectiveAxisMinCounts: Partial<Record<TagCategory, number>> = { ...axisMinCounts, ...raisedAxisCounts }
 
     return { axes, axisWeights, effectiveAxisMinCounts }
-  }, [activeAxisCategories, mergedAxisValues, axisCounts, learning, learningContextKeys, axisMinCounts, axisTagModes, axisMaxPerPrompt])
+  }, [activeAxisCategories, mergedAxisValues, axisCounts, learning, learningContextKeys, axisMinCounts, raisedAxisCounts])
 
   const regenerate = useCallback(() => {
     // A pack needs SOME constant tags to build prompts around — either a
@@ -931,10 +1138,13 @@ export function usePackMode(
     const seen = new Set<string>()
     const dupFilter = new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, lockedTags)
     const cleaned: PackPrompt[] = []
+    // Prompts the cleaner shrank below "Min tags per prompt" — only used to
+    // top the list up (longest first) if not enough full-size ones survive.
+    const short: PackPrompt[] = []
     for (const raw of rawPrompts) {
       if (cleaned.length >= promptCount) break
       const tags = raw.prompt.split(',').map((t) => t.trim()).filter(Boolean)
-      const prompt = cleanSyntheticPrompt(
+      const cleanedPrompt = cleanSyntheticPrompt(
         tags,
         characterTags,
         {
@@ -946,10 +1156,24 @@ export function usePackMode(
         },
         lockedTags
       )
+      const prompt = cleanedPrompt && finalizePackPrompt(cleanedPrompt, alwaysAddTags)
       if (!prompt || seen.has(prompt)) continue
+      if (minTotalTags > 0 && countPromptTags(prompt) < minTotalTags) {
+        short.push({ prompt, values: raw.values, tagSlots: raw.tagSlots })
+        continue
+      }
       if (!dupFilter.tryAccept(prompt)) continue
       seen.add(prompt)
       cleaned.push({ prompt, values: raw.values, tagSlots: raw.tagSlots })
+    }
+    if (cleaned.length < promptCount && short.length > 0) {
+      short.sort((a, b) => countPromptTags(b.prompt) - countPromptTags(a.prompt))
+      for (const p of short) {
+        if (cleaned.length >= promptCount) break
+        if (seen.has(p.prompt) || !dupFilter.tryAccept(p.prompt)) continue
+        seen.add(p.prompt)
+        cleaned.push(p)
+      }
     }
     setGeneratedPrompts(cleaned)
 
@@ -982,6 +1206,7 @@ export function usePackMode(
     activeAxisCategories,
     buildGenerationArgs,
     promptCount,
+    minTotalTags,
     globalWeights,
     isGlobalWeightsEnabled,
     effectiveOverrides,
@@ -990,6 +1215,7 @@ export function usePackMode(
     learning,
     learningContextKeys,
     axisValueCategory,
+    alwaysAddTags,
   ])
 
   /**
@@ -1015,13 +1241,15 @@ export function usePackMode(
         tagOverrides: effectiveOverrides,
       })
       const others = generatedPrompts.filter((_, i) => i !== index).map((p) => p.prompt)
-      const clean = (tags: string[]) =>
-        cleanSyntheticPrompt(
+      const clean = (tags: string[]) => {
+        const cleaned = cleanSyntheticPrompt(
           tags,
           characterTags,
           { ...cleanOptions, tagOverrides: effectiveOverrides, globalWeights, isGlobalWeightsEnabled, lockedTags },
           lockedTags
         )
+        return cleaned && finalizePackPrompt(cleaned, alwaysAddTags)
+      }
       const replacement = pickReplacement(rawCandidates, others, clean, lockedTags)
       if (!replacement) return false
       setGeneratedPrompts((prev) => prev.map((p, i) => (i === index ? replacement : p)))
@@ -1036,6 +1264,7 @@ export function usePackMode(
       effectiveOverrides,
       characterTags,
       cleanOptions,
+      alwaysAddTags,
     ]
   )
 
@@ -1070,6 +1299,8 @@ export function usePackMode(
     setAxisTagModes({})
     cachedPostsRef.current = []
     setCustomBaseText('')
+    setExcludedBaseTags(new Set())
+    setMinTotalTagsRaw(0)
     setLockedCategories(new Set<TagCategory>(['appearance']))
     setLockedSlots(new Set())
     setMutedSlots(new Set())
@@ -1101,6 +1332,8 @@ export function usePackMode(
       axisMinCounts,
       promptCount,
       manualAxisValues,
+      minTotalTags,
+      minSetTags,
     }
     persistTimerRef.current = setTimeout(() => {
       try {
@@ -1114,7 +1347,7 @@ export function usePackMode(
     return () => {
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
     }
-  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModes])
+  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModes, minTotalTags, minSetTags])
 
   return {
     isPackMode,
@@ -1164,6 +1397,23 @@ export function usePackMode(
 
     customBaseText,
     setCustomBaseText,
+
+    excludedBaseTags,
+    toggleExcludedBaseTag,
+    restoreExcludedBaseTags,
+
+    categoryStates,
+    setCategoryState,
+    slotStateOf,
+    setSlotState,
+
+    minTotalTags,
+    setMinTotalTags,
+    estimatedTagsPerPrompt,
+
+    minSetTags,
+    setMinSetTags,
+    hiddenThinSets,
 
     promptCount,
     setPromptCount: setPromptCountClamped,

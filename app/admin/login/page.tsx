@@ -121,7 +121,7 @@ export default function AdminLoginPage() {
         <Card className="border-border/50 bg-background/60 backdrop-blur-xl shadow-2xl">
           <CardHeader className="space-y-1 text-center pb-8">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <Lock className="h-6 w-6 text-primary" />
+              <Lock className="h-6 w-6 text-primary-text" />
             </div>
             <CardTitle className="text-2xl font-bold tracking-tight">Admin Access</CardTitle>
             <CardDescription>
@@ -144,7 +144,7 @@ export default function AdminLoginPage() {
                     className="pl-10"
                     required
                   />
-                  <Mail className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <Mail className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground group-focus-within:text-primary-text transition-colors" />
                 </div>
               </div>
 
@@ -168,7 +168,7 @@ export default function AdminLoginPage() {
                       error && "border-destructive/50 focus:border-destructive"
                     )}
                   />
-                  <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground group-focus-within:text-primary-text transition-colors" />
                 </div>
               </div>
 
@@ -177,7 +177,7 @@ export default function AdminLoginPage() {
                 animate={{ height: error ? 'auto' : 0, opacity: error ? 1 : 0 }}
                 className="overflow-hidden"
               >
-                <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                <div className="flex items-center gap-2 text-sm text-destructive-text bg-destructive/10 p-3 rounded-md">
                   <AlertCircle className="h-4 w-4" />
                   <p>{error}</p>
                 </div>

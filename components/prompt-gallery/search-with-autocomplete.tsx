@@ -143,11 +143,11 @@ export function SearchWithAutocomplete({
 
   const getCategoryColor = (category: number) => {
     switch (category) {
-      case 0: return "text-blue-500 dark:text-blue-400" // General
-      case 1: return "text-red-500 dark:text-red-400" // Artist
-      case 3: return "text-purple-500 dark:text-purple-400" // Copyright
-      case 4: return "text-green-500 dark:text-green-400" // Character
-      case 5: return "text-orange-500 dark:text-orange-400" // Meta
+      case 0: return "text-tag-general-text" // General
+      case 1: return "text-tag-artist-text" // Artist
+      case 3: return "text-tag-copyright-text" // Copyright
+      case 4: return "text-tag-character-text" // Character
+      case 5: return "text-tag-meta-text" // Meta
       default: return "text-foreground"
     }
   }

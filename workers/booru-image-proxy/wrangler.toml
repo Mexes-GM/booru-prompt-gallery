@@ -2,14 +2,8 @@ name = "booru-image-proxy"
 main = "src/index.ts"
 compatibility_date = "2025-06-07"
 
-# Cron Triggers (free on the Workers free plan).
-# Refreshes the trends cache every 6 hours so users never hit a cold fetch.
-# Adjust the schedule as needed: https://developers.cloudflare.com/workers/configuration/cron-triggers/
-[triggers]
-crons = ["0 */6 * * *"]
-
 [vars]
-APP_VERSION = "9.5.0"
+APP_VERSION = "10.0.0"
 
 # Secrets set via `wrangler secret put`:
 # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,

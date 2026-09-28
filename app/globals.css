@@ -2,21 +2,347 @@
 @import "tw-animate-css";
 @config "../tailwind.config.ts";
 
+/* @theme-tokens:start — GENERADO por scripts/build-theme.mjs desde lib/theme/palette.mjs — no editar a mano. */
+
+/* `.light` / `.dark` también funcionan en un subárbol (p. ej. la página /dev/colors). */
+:root,
+.light {
+  --background: oklch(0.95 0.012 250);
+  --foreground: oklch(0.22 0.025 253);
+  --card: oklch(0.97 0.014 250);
+  --card-foreground: oklch(0.22 0.025 253);
+  --popover: oklch(0.97 0.014 250);
+  --popover-foreground: oklch(0.22 0.025 253);
+  --primary: oklch(0.34 0.075 150);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.9 0.014 250);
+  --secondary-foreground: oklch(0.24 0.02 253);
+  --muted: oklch(0.885 0.016 250);
+  --muted-foreground: oklch(0.46 0.022 252);
+  --accent: oklch(0.885 0.016 250);
+  --accent-foreground: oklch(0.24 0.02 253);
+  --border: oklch(0.83 0.02 248);
+  --input: oklch(0.83 0.02 248);
+  --ring: oklch(0.34 0.075 150);
+  --primary-text: oklch(0.34 0.075 150);
+  --mix-soft: 10%;
+  --mix-border: 30%;
+  --destructive: oklch(0.56 0.16 35);
+  --destructive-foreground: oklch(1 0 0);
+  --destructive-text: oklch(0.41 0.1441 35);
+  --success: oklch(0.62 0.1322 164);
+  --success-foreground: oklch(0.22 0.025 253);
+  --success-text: oklch(0.41 0.0875 164);
+  --warning: oklch(0.78 0.16 81);
+  --warning-foreground: oklch(0.22 0.025 253);
+  --warning-text: oklch(0.41 0.0849 81);
+  --info: oklch(0.62 0.1595 246);
+  --info-foreground: oklch(0.22 0.025 253);
+  --info-text: oklch(0.41 0.1056 246);
+  --tag-general: oklch(0.62 0.16 255);
+  --tag-general-foreground: oklch(0.22 0.025 253);
+  --tag-general-text: oklch(0.41 0.1353 255);
+  --tag-artist: oklch(0.56 0.16 25);
+  --tag-artist-foreground: oklch(1 0 0);
+  --tag-artist-text: oklch(0.41 0.1664 25);
+  --tag-copyright: oklch(0.56 0.16 325);
+  --tag-copyright-foreground: oklch(1 0 0);
+  --tag-copyright-text: oklch(0.41 0.17 325);
+  --tag-character: oklch(0.62 0.16 145);
+  --tag-character-foreground: oklch(0.22 0.025 253);
+  --tag-character-text: oklch(0.41 0.1292 145);
+  --tag-meta: oklch(0.56 0.1314 60);
+  --tag-meta-foreground: oklch(1 0 0);
+  --tag-meta-text: oklch(0.41 0.0964 60);
+  --cat-appearance: oklch(0.56 0.16 45);
+  --cat-appearance-foreground: oklch(1 0 0);
+  --cat-appearance-text: oklch(0.41 0.1175 45);
+  --cat-scenery: oklch(0.62 0.1522 123);
+  --cat-scenery-foreground: oklch(0.22 0.025 253);
+  --cat-scenery-text: oklch(0.41 0.1008 123);
+  --cat-clothing: oklch(0.62 0.1141 178);
+  --cat-clothing-foreground: oklch(0.22 0.025 253);
+  --cat-clothing-text: oklch(0.41 0.0756 178);
+  --cat-equipment: oklch(0.62 0.1065 192);
+  --cat-equipment-foreground: oklch(0.22 0.025 253);
+  --cat-equipment-text: oklch(0.41 0.0705 192);
+  --cat-creature: oklch(0.62 0.1061 206);
+  --cat-creature-foreground: oklch(0.22 0.025 253);
+  --cat-creature-text: oklch(0.41 0.0703 206);
+  --cat-pose: oklch(0.62 0.1129 220);
+  --cat-pose-foreground: oklch(0.22 0.025 253);
+  --cat-pose-text: oklch(0.41 0.0748 220);
+  --mode-favorites: oklch(0.56 0.16 5);
+  --mode-favorites-foreground: oklch(1 0 0);
+  --mode-favorites-text: oklch(0.41 0.165 5);
+  --mode-merge: oklch(0.62 0.1223 229);
+  --mode-merge-foreground: oklch(0.22 0.025 253);
+  --mode-merge-text: oklch(0.41 0.0809 229);
+  --mode-pack: oklch(0.62 0.1375 238);
+  --mode-pack-foreground: oklch(0.22 0.025 253);
+  --mode-pack-text: oklch(0.41 0.0911 238);
+  --mode-reverse: oklch(0.56 0.16 15);
+  --mode-reverse-foreground: oklch(1 0 0);
+  --mode-reverse-text: oklch(0.41 0.1641 15);
+  --mode-teach: oklch(0.56 0.16 355);
+  --mode-teach-foreground: oklch(1 0 0);
+  --mode-teach-text: oklch(0.41 0.1686 355);
+  --mode-convert: oklch(0.78 0.16 102);
+  --mode-convert-foreground: oklch(0.22 0.025 253);
+  --mode-convert-text: oklch(0.41 0.086 102);
+  --overlay: oklch(0.18 0.02 265);
+  --overlay-foreground: oklch(1 0 0);
+}
+
+.dark {
+  --background: oklch(0.27 0.022 250);
+  --foreground: oklch(0.94 0.014 248);
+  --card: oklch(0.305 0.024 250);
+  --card-foreground: oklch(0.94 0.014 248);
+  --popover: oklch(0.305 0.024 250);
+  --popover-foreground: oklch(0.94 0.014 248);
+  --primary: oklch(0.64 0.11 150);
+  --primary-foreground: oklch(0.2 0.02 250);
+  --secondary: oklch(0.35 0.022 250);
+  --secondary-foreground: oklch(0.94 0.014 248);
+  --muted: oklch(0.37 0.022 250);
+  --muted-foreground: oklch(0.78 0.02 250);
+  --accent: oklch(0.37 0.022 250);
+  --accent-foreground: oklch(0.94 0.014 248);
+  --border: oklch(0.4 0.024 250);
+  --input: oklch(0.4 0.024 250);
+  --ring: oklch(0.58 0.09 150);
+  --primary-text: oklch(0.66 0.11 150);
+  --mix-soft: 16%;
+  --mix-border: 40%;
+  --destructive: oklch(0.68 0.16 35);
+  --destructive-foreground: oklch(0.22 0.025 253);
+  --destructive-text: oklch(0.79 0.1235 35);
+  --success: oklch(0.71 0.1513 164);
+  --success-foreground: oklch(0.22 0.025 253);
+  --success-text: oklch(0.79 0.15 164);
+  --warning: oklch(0.78 0.16 81);
+  --warning-foreground: oklch(0.22 0.025 253);
+  --warning-text: oklch(0.79 0.15 81);
+  --info: oklch(0.71 0.16 246);
+  --info-foreground: oklch(0.22 0.025 253);
+  --info-text: oklch(0.79 0.1133 246);
+  --tag-general: oklch(0.71 0.1539 255);
+  --tag-general-foreground: oklch(0.22 0.025 253);
+  --tag-general-text: oklch(0.79 0.108 255);
+  --tag-artist: oklch(0.68 0.16 25);
+  --tag-artist-foreground: oklch(0.22 0.025 253);
+  --tag-artist-text: oklch(0.79 0.1213 25);
+  --tag-copyright: oklch(0.68 0.16 325);
+  --tag-copyright-foreground: oklch(0.22 0.025 253);
+  --tag-copyright-text: oklch(0.79 0.15 325);
+  --tag-character: oklch(0.71 0.16 145);
+  --tag-character-foreground: oklch(0.22 0.025 253);
+  --tag-character-text: oklch(0.79 0.15 145);
+  --tag-meta: oklch(0.68 0.1595 60);
+  --tag-meta-foreground: oklch(0.22 0.025 253);
+  --tag-meta-text: oklch(0.79 0.1486 60);
+  --cat-appearance: oklch(0.68 0.16 45);
+  --cat-appearance-foreground: oklch(0.22 0.025 253);
+  --cat-appearance-text: oklch(0.79 0.1296 45);
+  --cat-scenery: oklch(0.71 0.16 123);
+  --cat-scenery-foreground: oklch(0.22 0.025 253);
+  --cat-scenery-text: oklch(0.79 0.15 123);
+  --cat-clothing: oklch(0.71 0.1307 178);
+  --cat-clothing-foreground: oklch(0.22 0.025 253);
+  --cat-clothing-text: oklch(0.79 0.1454 178);
+  --cat-equipment: oklch(0.71 0.1219 192);
+  --cat-equipment-foreground: oklch(0.22 0.025 253);
+  --cat-equipment-text: oklch(0.79 0.1357 192);
+  --cat-creature: oklch(0.71 0.1215 206);
+  --cat-creature-foreground: oklch(0.22 0.025 253);
+  --cat-creature-text: oklch(0.79 0.1352 206);
+  --cat-pose: oklch(0.71 0.1293 220);
+  --cat-pose-foreground: oklch(0.22 0.025 253);
+  --cat-pose-text: oklch(0.79 0.1439 220);
+  --mode-favorites: oklch(0.68 0.16 5);
+  --mode-favorites-foreground: oklch(0.22 0.025 253);
+  --mode-favorites-text: oklch(0.79 0.128 5);
+  --mode-merge: oklch(0.71 0.14 229);
+  --mode-merge-foreground: oklch(0.22 0.025 253);
+  --mode-merge-text: oklch(0.79 0.1347 229);
+  --mode-pack: oklch(0.71 0.1575 238);
+  --mode-pack-foreground: oklch(0.22 0.025 253);
+  --mode-pack-text: oklch(0.79 0.1211 238);
+  --mode-reverse: oklch(0.68 0.16 15);
+  --mode-reverse-foreground: oklch(0.22 0.025 253);
+  --mode-reverse-text: oklch(0.79 0.1227 15);
+  --mode-teach: oklch(0.68 0.16 355);
+  --mode-teach-foreground: oklch(0.22 0.025 253);
+  --mode-teach-text: oklch(0.79 0.1378 355);
+  --mode-convert: oklch(0.78 0.16 102);
+  --mode-convert-foreground: oklch(0.22 0.025 253);
+  --mode-convert-text: oklch(0.79 0.15 102);
+  --overlay: oklch(0.18 0.02 265);
+  --overlay-foreground: oklch(1 0 0);
+}
+
+/* Registra los tokens como colores de Tailwind: bg-X, text-X-text, bg-X-soft, border-X-border… */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary-text: var(--primary-text);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
+  --color-destructive-soft: color-mix(in oklab, var(--destructive) var(--mix-soft), transparent);
+  --color-destructive-border: color-mix(in oklab, var(--destructive) var(--mix-border), transparent);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-text: var(--success-text);
+  --color-success-soft: color-mix(in oklab, var(--success) var(--mix-soft), transparent);
+  --color-success-border: color-mix(in oklab, var(--success) var(--mix-border), transparent);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-text: var(--warning-text);
+  --color-warning-soft: color-mix(in oklab, var(--warning) var(--mix-soft), transparent);
+  --color-warning-border: color-mix(in oklab, var(--warning) var(--mix-border), transparent);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-text: var(--info-text);
+  --color-info-soft: color-mix(in oklab, var(--info) var(--mix-soft), transparent);
+  --color-info-border: color-mix(in oklab, var(--info) var(--mix-border), transparent);
+  --color-tag-general: var(--tag-general);
+  --color-tag-general-foreground: var(--tag-general-foreground);
+  --color-tag-general-text: var(--tag-general-text);
+  --color-tag-general-soft: color-mix(in oklab, var(--tag-general) var(--mix-soft), transparent);
+  --color-tag-general-border: color-mix(in oklab, var(--tag-general) var(--mix-border), transparent);
+  --color-tag-artist: var(--tag-artist);
+  --color-tag-artist-foreground: var(--tag-artist-foreground);
+  --color-tag-artist-text: var(--tag-artist-text);
+  --color-tag-artist-soft: color-mix(in oklab, var(--tag-artist) var(--mix-soft), transparent);
+  --color-tag-artist-border: color-mix(in oklab, var(--tag-artist) var(--mix-border), transparent);
+  --color-tag-copyright: var(--tag-copyright);
+  --color-tag-copyright-foreground: var(--tag-copyright-foreground);
+  --color-tag-copyright-text: var(--tag-copyright-text);
+  --color-tag-copyright-soft: color-mix(in oklab, var(--tag-copyright) var(--mix-soft), transparent);
+  --color-tag-copyright-border: color-mix(in oklab, var(--tag-copyright) var(--mix-border), transparent);
+  --color-tag-character: var(--tag-character);
+  --color-tag-character-foreground: var(--tag-character-foreground);
+  --color-tag-character-text: var(--tag-character-text);
+  --color-tag-character-soft: color-mix(in oklab, var(--tag-character) var(--mix-soft), transparent);
+  --color-tag-character-border: color-mix(in oklab, var(--tag-character) var(--mix-border), transparent);
+  --color-tag-meta: var(--tag-meta);
+  --color-tag-meta-foreground: var(--tag-meta-foreground);
+  --color-tag-meta-text: var(--tag-meta-text);
+  --color-tag-meta-soft: color-mix(in oklab, var(--tag-meta) var(--mix-soft), transparent);
+  --color-tag-meta-border: color-mix(in oklab, var(--tag-meta) var(--mix-border), transparent);
+  --color-cat-appearance: var(--cat-appearance);
+  --color-cat-appearance-foreground: var(--cat-appearance-foreground);
+  --color-cat-appearance-text: var(--cat-appearance-text);
+  --color-cat-appearance-soft: color-mix(in oklab, var(--cat-appearance) var(--mix-soft), transparent);
+  --color-cat-appearance-border: color-mix(in oklab, var(--cat-appearance) var(--mix-border), transparent);
+  --color-cat-scenery: var(--cat-scenery);
+  --color-cat-scenery-foreground: var(--cat-scenery-foreground);
+  --color-cat-scenery-text: var(--cat-scenery-text);
+  --color-cat-scenery-soft: color-mix(in oklab, var(--cat-scenery) var(--mix-soft), transparent);
+  --color-cat-scenery-border: color-mix(in oklab, var(--cat-scenery) var(--mix-border), transparent);
+  --color-cat-clothing: var(--cat-clothing);
+  --color-cat-clothing-foreground: var(--cat-clothing-foreground);
+  --color-cat-clothing-text: var(--cat-clothing-text);
+  --color-cat-clothing-soft: color-mix(in oklab, var(--cat-clothing) var(--mix-soft), transparent);
+  --color-cat-clothing-border: color-mix(in oklab, var(--cat-clothing) var(--mix-border), transparent);
+  --color-cat-equipment: var(--cat-equipment);
+  --color-cat-equipment-foreground: var(--cat-equipment-foreground);
+  --color-cat-equipment-text: var(--cat-equipment-text);
+  --color-cat-equipment-soft: color-mix(in oklab, var(--cat-equipment) var(--mix-soft), transparent);
+  --color-cat-equipment-border: color-mix(in oklab, var(--cat-equipment) var(--mix-border), transparent);
+  --color-cat-creature: var(--cat-creature);
+  --color-cat-creature-foreground: var(--cat-creature-foreground);
+  --color-cat-creature-text: var(--cat-creature-text);
+  --color-cat-creature-soft: color-mix(in oklab, var(--cat-creature) var(--mix-soft), transparent);
+  --color-cat-creature-border: color-mix(in oklab, var(--cat-creature) var(--mix-border), transparent);
+  --color-cat-pose: var(--cat-pose);
+  --color-cat-pose-foreground: var(--cat-pose-foreground);
+  --color-cat-pose-text: var(--cat-pose-text);
+  --color-cat-pose-soft: color-mix(in oklab, var(--cat-pose) var(--mix-soft), transparent);
+  --color-cat-pose-border: color-mix(in oklab, var(--cat-pose) var(--mix-border), transparent);
+  --color-mode-favorites: var(--mode-favorites);
+  --color-mode-favorites-foreground: var(--mode-favorites-foreground);
+  --color-mode-favorites-text: var(--mode-favorites-text);
+  --color-mode-favorites-soft: color-mix(in oklab, var(--mode-favorites) var(--mix-soft), transparent);
+  --color-mode-favorites-border: color-mix(in oklab, var(--mode-favorites) var(--mix-border), transparent);
+  --color-mode-merge: var(--mode-merge);
+  --color-mode-merge-foreground: var(--mode-merge-foreground);
+  --color-mode-merge-text: var(--mode-merge-text);
+  --color-mode-merge-soft: color-mix(in oklab, var(--mode-merge) var(--mix-soft), transparent);
+  --color-mode-merge-border: color-mix(in oklab, var(--mode-merge) var(--mix-border), transparent);
+  --color-mode-pack: var(--mode-pack);
+  --color-mode-pack-foreground: var(--mode-pack-foreground);
+  --color-mode-pack-text: var(--mode-pack-text);
+  --color-mode-pack-soft: color-mix(in oklab, var(--mode-pack) var(--mix-soft), transparent);
+  --color-mode-pack-border: color-mix(in oklab, var(--mode-pack) var(--mix-border), transparent);
+  --color-mode-reverse: var(--mode-reverse);
+  --color-mode-reverse-foreground: var(--mode-reverse-foreground);
+  --color-mode-reverse-text: var(--mode-reverse-text);
+  --color-mode-reverse-soft: color-mix(in oklab, var(--mode-reverse) var(--mix-soft), transparent);
+  --color-mode-reverse-border: color-mix(in oklab, var(--mode-reverse) var(--mix-border), transparent);
+  --color-mode-teach: var(--mode-teach);
+  --color-mode-teach-foreground: var(--mode-teach-foreground);
+  --color-mode-teach-text: var(--mode-teach-text);
+  --color-mode-teach-soft: color-mix(in oklab, var(--mode-teach) var(--mix-soft), transparent);
+  --color-mode-teach-border: color-mix(in oklab, var(--mode-teach) var(--mix-border), transparent);
+  --color-mode-convert: var(--mode-convert);
+  --color-mode-convert-foreground: var(--mode-convert-foreground);
+  --color-mode-convert-text: var(--mode-convert-text);
+  --color-mode-convert-soft: color-mix(in oklab, var(--mode-convert) var(--mix-soft), transparent);
+  --color-mode-convert-border: color-mix(in oklab, var(--mode-convert) var(--mix-border), transparent);
+  --color-overlay: var(--overlay);
+  --color-overlay-foreground: var(--overlay-foreground);
+}
+/* @theme-tokens:end */
+
 /*
  * Tailwind v4 compatibility shims — preserve v3 default behavior that the
  * project's UI was designed around, since tailwind.config.ts (bridged via
  * @config above) does not carry these v3-only defaults automatically:
  *   - border and divide utilities defaulted to gray-200 in v3, now default
- *     to currentColor in v4.
- *   - ring defaulted to a 3px blue-500 ring in v3, now 1px currentColor.
- *   - placeholder text used gray-400 in v3, now text color at 50% opacity.
+ *     to currentColor in v4 → mapped to the --border token.
+ *   - ring defaulted to a 3px blue-500 ring in v3, now 1px currentColor
+ *     → 3px, mapped to the --ring token.
+ *   - placeholder text used gray-400 in v3, now text color at 50% opacity
+ *     → mapped to a softened --muted-foreground.
  *   - buttons used cursor: pointer in v3, now cursor: default (browser
  *     default) in v4.
  * See https://tailwindcss.com/docs/upgrade-guide for each of these.
  */
-@theme {
+@theme inline {
   --default-ring-width: 3px;
-  --default-ring-color: var(--color-blue-500);
+  --default-ring-color: var(--ring);
+}
+
+/*
+ * Motion curves (JS mirror: lib/motion.ts). Utilities: ease-out-strong,
+ * ease-in-out-strong, ease-drawer. Tailwind's own ease-out is too weak for
+ * deliberate UI motion.
+ *   - out-strong: anything entering/exiting (popovers, panels, toggles)
+ *   - in-out-strong: something moving/morphing while on screen
+ *   - drawer: sheets/drawers traveling in from a screen edge (iOS-like)
+ */
+@theme {
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @layer base {
@@ -25,12 +351,12 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentColor);
+    border-color: var(--border);
   }
 
   input::placeholder,
   textarea::placeholder {
-    color: var(--color-gray-400);
+    color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
   }
 
   button:not(:disabled),
@@ -40,87 +366,28 @@
 }
 
 @layer base {
+  /* Los colores están en el bloque @theme-tokens de arriba (fuente: lib/theme/palette.mjs). */
   :root {
-  /* Light (Claro) – fondo muy claro neutro para reducir brillo puro del blanco */
-  --background: 210 25% 98%; /* #F6F9FB */
-  --foreground: 222 47% 11%; /* Texto principal #0F172A equivalente, alto contraste > 15:1 */
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --primary: 262 48% 54%; /* Violeta desaturado (<80% sat) — menos "AI neon", mantiene identidad */
-  --primary-foreground: 0 0% 100%; /* Blanco, contraste > 4.5:1 */
-  --secondary: 220 14% 92%; /* Gris suave */
-  --secondary-foreground: 222 47% 17%;
-  --muted: 220 15% 90%;
-  --muted-foreground: 220 9% 40%; /* Contraste > 4.5 sobre fondo muted */
-  --accent: 220 14% 90%; /* Acento neutro — hovers de ghost/outline en gris (un solo acento cromático) */
-  --accent-foreground: 222 47% 17%;
-  --destructive: 0 72% 50%; /* Rojo accesible */
-  --destructive-foreground: 0 0% 100%;
-  --border: 215 22% 85%;
-  --input: 215 22% 85%;
-  --ring: 262 48% 54%;
-  --radius: 0.75rem;
-  /* Paleta de gráficos con diferenciación de tono y luminosidad suficiente */
-  --chart-1: 262 65% 55%;
-  --chart-2: 173 65% 42%;
-  --chart-3: 31 85% 55%;
-  --chart-4: 199 80% 48%;
-  --chart-5: 340 70% 52%;
-  }
-
-  .dark {
-  /* Dark suave (no negro puro) – mantiene contraste sin fatiga visual */
-  --background: 222 30% 18%; /* #1F2631 aprox */
-  --foreground: 210 25% 92%; /* Texto principal claro, contraste > 10:1 */
-  --card: 222 28% 22%;
-  --card-foreground: 210 25% 92%;
-  --popover: 222 28% 22%;
-  --popover-foreground: 210 25% 92%;
-  --primary: 265 50% 64%; /* Violeta desaturado para dark (menos neon) */
-  --primary-foreground: 0 0% 100%;
-  --secondary: 222 22% 28%;
-  --secondary-foreground: 210 25% 92%;
-  --muted: 222 20% 30%;
-  --muted-foreground: 214 18% 80%;
-  --accent: 222 22% 30%; /* Acento neutro para hovers en dark (un solo acento cromático) */
-  --accent-foreground: 210 25% 92%;
-  --destructive: 0 65% 50%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 222 18% 32%;
-  --input: 222 18% 32%;
-  --ring: 265 50% 64%;
-  --chart-1: 265 60% 63%;
-  --chart-2: 173 60% 46%;
-  --chart-3: 31 85% 58%;
-  --chart-4: 199 75% 55%;
-  --chart-5: 340 70% 60%;
-  }
-}
-
-@layer base {
-  * {
-    border-color: hsl(var(--border));
+    --radius: 0.75rem;
   }
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: var(--background);
+    color: var(--foreground);
   }
 }
 
 @layer components {
   .glass-effect {
     backdrop-filter: blur(12px);
-    background-color: hsl(var(--background) / 0.8);
-    border: 1px solid hsl(var(--border) / 0.5);
+    background-color: color-mix(in oklab, var(--background) 80%, transparent);
+    border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
   }
 
   .card-hover {
     transition: transform 300ms, box-shadow 300ms;
   }
   .card-hover:hover {
-    box-shadow: 0 10px 15px -3px hsl(var(--primary) / 0.05), 0 4px 6px -2px hsl(var(--primary) / 0.05);
+    box-shadow: 0 10px 15px -3px color-mix(in oklab, var(--primary) 5%, transparent), 0 4px 6px -2px color-mix(in oklab, var(--primary) 5%, transparent);
     transform: translateY(-0.25rem);
   }
 
@@ -128,29 +395,18 @@
     @apply focus-visible:outline-none;
   }
   .focus-ring:focus-visible {
-    box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring));
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
   }
 
   .gradient-text {
-    color: hsl(var(--foreground));
+    color: var(--foreground);
   }
 
   /* Image container with 2:3 aspect ratio */
   .image-container-2-3 {
     position: relative;
-    background-color: hsl(var(--muted));
+    background-color: var(--muted);
     overflow: hidden;
-    aspect-ratio: 2 / 3;
-  }
-
-  /* List view image container with 2:3 aspect ratio */
-  .image-container-list-2-3 {
-    position: relative;
-    background-color: hsl(var(--muted));
-    border-radius: 0.5rem;
-    overflow: hidden;
-    flex-shrink: 0;
-    width: 128px;
     aspect-ratio: 2 / 3;
   }
 
@@ -327,16 +583,16 @@ html.extension-mode {
 }
 
 ::-webkit-scrollbar-track {
-  background-color: hsl(var(--muted) / 0.3);
+  background-color: color-mix(in oklab, var(--muted) 30%, transparent);
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground) / 0.3);
+  background-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--muted-foreground) / 0.5);
+  background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
 }
 
 /* Loading animation */
@@ -396,6 +652,49 @@ html.extension-mode {
   content-visibility: auto;
 }
 
+/* Pixel-art mascot idle bob: two discrete frames (steps) instead of a smooth
+   tween, so it moves like a sprite — one sprite pixel (2px) at a time. */
+@keyframes mascot-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.animate-mascot-bob {
+  animation: mascot-bob 1.2s steps(1, end) infinite;
+}
+
+/* Sticker-style outline for pixel sprites (one sprite pixel = 2px). Chained
+   drop-shadows compound, so four axis offsets also fill the corners. */
+.pixel-sticker {
+  filter: drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff) drop-shadow(0 2px 0 #fff) drop-shadow(0 -2px 0 #fff);
+}
+
+@keyframes mascot-alert {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.animate-mascot-alert {
+  animation: mascot-alert 0.9s steps(1, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-mascot-bob,
+  .animate-mascot-alert {
+    animation: none;
+  }
+}
+
 .animate-pulse-slow {
   animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   content-visibility: auto;
@@ -407,7 +706,7 @@ html.extension-mode {
 
 /* Image loading placeholder */
 .image-placeholder {
-  background-image: linear-gradient(to bottom right, hsl(var(--muted)), hsl(var(--muted) / 0.5));
+  background-image: linear-gradient(to bottom right, var(--muted), color-mix(in oklab, var(--muted) 50%, transparent));
   animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
@@ -415,11 +714,6 @@ html.extension-mode {
 .focus-visible\:ring-2:focus-visible {
   outline: 2px solid transparent;
   outline-offset: 2px;
-}
-
-/* Better contrast for dark mode */
-.dark .text-muted-foreground {
-  color: hsl(var(--muted-foreground));
 }
 
 /* Smooth transitions — scoped to interactive elements only.
@@ -577,4 +871,15 @@ input[type="number"] {
    que esta transition anime el `transform` hacia la posición nueva. */
 .masonry-item-move {
   transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Hero specimen: the clean prompt line is revealed once, left to right. */
+@media (prefers-reduced-motion: no-preference) {
+  .hero-reveal {
+    animation: hero-reveal 900ms steps(48, end) 350ms both;
+  }
+}
+@keyframes hero-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
 }

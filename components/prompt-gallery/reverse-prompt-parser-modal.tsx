@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { useCopyFeedback } from "@/hooks/use-copy-feedback"
 import {
   Dialog,
   DialogContent,
@@ -42,33 +43,33 @@ interface ReversePromptParserModalProps {
 const categoryConfig = {
   appearance: {
     label: TAG_CATEGORIES.appearance.label,
-    color: "bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100",
-    borderColor: "border-blue-300 dark:border-blue-700",
+    color: "bg-cat-appearance-soft text-cat-appearance-text",
+    borderColor: "border-cat-appearance-border",
   },
   clothing: {
     label: TAG_CATEGORIES.clothing.label,
-    color: "bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100",
-    borderColor: "border-green-300 dark:border-green-700",
+    color: "bg-cat-clothing-soft text-cat-clothing-text",
+    borderColor: "border-cat-clothing-border",
   },
   pose: {
     label: TAG_CATEGORIES.pose.label,
-    color: "bg-purple-100 dark:bg-purple-900 text-purple-900 dark:text-purple-100",
-    borderColor: "border-purple-300 dark:border-purple-700",
+    color: "bg-cat-pose-soft text-cat-pose-text",
+    borderColor: "border-cat-pose-border",
   },
   scenery: {
     label: TAG_CATEGORIES.scenery.label,
-    color: "bg-orange-100 dark:bg-orange-900 text-orange-900 dark:text-orange-100",
-    borderColor: "border-orange-300 dark:border-orange-700",
+    color: "bg-cat-scenery-soft text-cat-scenery-text",
+    borderColor: "border-cat-scenery-border",
   },
   quality: {
     label: "Quality",
-    color: "bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-100",
-    borderColor: "border-amber-300 dark:border-amber-700",
+    color: "bg-tag-meta-soft text-tag-meta-text",
+    borderColor: "border-tag-meta-border",
   },
   other: {
     label: TAG_CATEGORIES.other.label,
-    color: "bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100",
-    borderColor: "border-slate-400 dark:border-slate-500",
+    color: "bg-muted text-foreground",
+    borderColor: "border-border",
   },
 }
 
@@ -104,7 +105,7 @@ export function ReversePromptParserModal({
   tagOverrides
 }: ReversePromptParserModalProps) {
   const [rawInput, setRawInput] = useState("")
-  const [copied, setCopied] = useState(false)
+  const [copied, triggerCopyFeedback] = useCopyFeedback()
   const [selectedCategories, setSelectedCategories] = useState<Record<string, boolean>>({
     appearance: true,
     clothing: true,
@@ -163,8 +164,7 @@ export function ReversePromptParserModal({
   const handleCopy = () => {
     if (!outputPrompt) return
     navigator.clipboard.writeText(outputPrompt)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    triggerCopyFeedback()
   }
 
   const handleImport = () => {
@@ -185,13 +185,13 @@ export function ReversePromptParserModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl p-0 gap-0 overflow-hidden border-0 shadow-2xl bg-background">
         {/* Gradient Background */}
-        <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-emerald-500/10 via-emerald-500/5 to-transparent pointer-events-none z-0" />
+        <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-mode-reverse/10 via-mode-reverse/5 to-transparent pointer-events-none z-0" />
 
         {/* Header */}
         <div className="relative p-5 pb-3 overflow-hidden z-10 border-b border-border">
           <DialogHeader className="relative z-10">
             <div className="flex items-center gap-3 mb-1">
-              <div className="p-2 bg-background/80 backdrop-blur-sm shadow-sm rounded-lg border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+              <div className="p-2 bg-background/80 backdrop-blur-sm shadow-sm rounded-lg border border-mode-reverse-border text-mode-reverse-text">
                 <Zap className="h-5 w-5" />
               </div>
               <DialogTitle className="text-xl font-bold tracking-tight">
@@ -237,7 +237,7 @@ export function ReversePromptParserModal({
                   className={cn(
                     "px-3 py-2 rounded-lg border-2 text-xs transition-all flex flex-col items-start gap-0.5 text-left",
                     parserOptions.removeWeights
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                      ? "bg-mode-reverse-soft text-mode-reverse-text border-mode-reverse-border"
                       : "bg-muted text-muted-foreground border-transparent opacity-50"
                   )}
                 >
@@ -253,7 +253,7 @@ export function ReversePromptParserModal({
                   className={cn(
                     "px-3 py-2 rounded-lg border-2 text-xs transition-all flex flex-col items-start gap-0.5 text-left",
                     parserOptions.removeLoras
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                      ? "bg-mode-reverse-soft text-mode-reverse-text border-mode-reverse-border"
                       : "bg-muted text-muted-foreground border-transparent opacity-50"
                   )}
                 >
@@ -360,7 +360,7 @@ export function ReversePromptParserModal({
                   className={cn(
                     "absolute right-2 top-1/2 -translate-y-1/2 px-3 py-2 rounded-md font-medium text-xs transition-all",
                     copied
-                      ? "bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100"
+                      ? "bg-success-soft text-success-text"
                       : "bg-primary text-primary-foreground hover:bg-primary/90"
                   )}
                   title={copied ? "Copied!" : "Copy to clipboard"}

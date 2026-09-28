@@ -21,17 +21,17 @@ import { cn } from "@/lib/utils"
 const TARGET_ORIGIN = "*"
 
 // Verbose logging for the setup wizard, gated to non-production builds so end
-// users' consoles stay quiet (mirrors sidepanel.js's dlog() dev-only pattern,
+// users' consoles stay quiet (mirrors extension/sidepanel/'s dlog() dev-only pattern,
 // but that flag lives in the parent frame and isn't reachable from here).
 function wlog(...args: unknown[]) {
   if (process.env.NODE_ENV !== "production") console.log("%c[TargetWizard]", "color:#f59e0b;font-weight:bold", ...args)
 }
 
-/** targetKind understood by sidepanel.js's startTargeting(targetKind) (Fase 2a,
+/** targetKind understood by extension/sidepanel/07-targeting.js's startTargeting(targetKind) (Fase 2a,
  *  extended with width/height for "Match image resolution"). */
 type TargetKind = "prompt" | "generate" | "queue" | "width" | "height"
 
-/** Per-step targeting state, mirrors the TARGET_STATUS values sidepanel.js emits. */
+/** Per-step targeting state, mirrors the TARGET_STATUS values the sidepanel host emits. */
 type StepState = "idle" | "arming" | "waiting" | "selected" | "error"
 
 interface WizardStep {
@@ -113,7 +113,7 @@ function isTrustedSidepanelMessage(event: MessageEvent): boolean {
 
 /**
  * Compact status pill shown in the main panel. Reflects the active tab's
- * SiteProfile (requested from sidepanel.js on mount and refreshed live after
+ * SiteProfile (requested from the sidepanel host on mount and refreshed live after
  * every successful Target selection). Opens the setup wizard on click.
  */
 export function SiteTargetStatusBadge({ onOpenWizard }: { onOpenWizard: () => void }) {
@@ -163,9 +163,9 @@ export function SiteTargetStatusBadge({ onOpenWizard }: { onOpenWizard: () => vo
       title="Configure where prompts go on this site"
       className={cn(
         "h-6 px-2.5 rounded-full text-[11px] gap-1.5 shadow-sm border-dashed",
-        tone === "success" && "border-green-500/40 text-green-600 dark:text-green-400",
-        tone === "warning" && "border-amber-500/40 text-amber-600 dark:text-amber-400",
-        tone === "info" && "border-sky-500/40 text-sky-600 dark:text-sky-400",
+        tone === "success" && "border-success-border text-success-text",
+        tone === "warning" && "border-warning-border text-warning-text",
+        tone === "info" && "border-info-border text-info-text",
         tone === "muted" && "text-muted-foreground"
       )}
     >
@@ -177,7 +177,7 @@ export function SiteTargetStatusBadge({ onOpenWizard }: { onOpenWizard: () => vo
 
 /**
  * 3-step setup wizard: prompt field → generate button → queue (optional).
- * Each step drives sidepanel.js's Target flow with a specific targetKind
+ * Each step drives the sidepanel host's Target flow with a specific targetKind
  * (Fase 2a) and shows live feedback from TARGET_STATUS. Configuring a site
  * persists into its SiteProfile (Fase 1c/2a/2d) so it survives reloads.
  */
@@ -214,7 +214,7 @@ export function TargetSetupWizard({
   // How many simultaneous generations this site's queue tolerates before
   // being treated as "busy" (persisted as queue.concurrencyLimit). Local
   // input state mirrors status.concurrencyLimit once it arrives, then is
-  // edited freely and pushed to sidepanel.js on blur/Enter — permissive/
+  // edited freely and pushed to the sidepanel host on blur/Enter — permissive/
   // parallel queues (e.g. TensorArt) need this raised above the 1-slot
   // default, while strict single-slot queues (SeaArt) keep it at 1.
   const [concurrencyInput, setConcurrencyInput] = useState("1")
@@ -406,7 +406,7 @@ export function TargetSetupWizard({
                 onClick={() => setActiveStep(i)}
                 className={cn(
                   "flex-1 h-1.5 rounded-full transition-colors",
-                  i === activeStep ? "bg-primary" : done ? "bg-green-500/70" : "bg-muted"
+                  i === activeStep ? "bg-primary" : done ? "bg-success/70" : "bg-muted"
                 )}
                 aria-label={`Go to step ${i + 1}: ${step.title}`}
                 aria-current={i === activeStep}
@@ -422,7 +422,7 @@ export function TargetSetupWizard({
               Step {activeStep + 1} of {STEPS.length}: {current.title}
             </h3>
             {(isResolutionStep ? resolutionDone : currentState === "selected") && (
-              <Badge className="text-[10px] px-1.5 py-0 h-5 gap-1 bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30">
+              <Badge className="text-[10px] px-1.5 py-0 h-5 gap-1 bg-success-soft text-success-text border-success-border">
                 <Check className="w-2.5 h-2.5" /> Set
               </Badge>
             )}
@@ -433,8 +433,8 @@ export function TargetSetupWizard({
               until the user explicitly clicks Start — make that unambiguous
               instead of leaving a blank "Start" button with no context. */}
           {status?.builtin && currentState === "idle" && current.kind !== "queue" && current.kind !== "resolution" && (
-            <Alert className="py-2 border-sky-500/30 bg-sky-500/5">
-              <AlertDescription className="text-xs text-sky-700 dark:text-sky-400">
+            <Alert className="py-2 border-info-border bg-info/5">
+              <AlertDescription className="text-xs text-info-text">
                 This site already works out of the box for this step. Nothing is selected yet, only click
                 Start if the default detection stops working and you need to point it manually.
               </AlertDescription>
@@ -478,8 +478,8 @@ export function TargetSetupWizard({
               this automatically and reads/writes the graph's own widget
               values directly — no manual targeting needed or possible. */}
           {isResolutionStep && status?.liteGraphResolutionAvailable && (
-            <Alert className="py-2 border-sky-500/30 bg-sky-500/5">
-              <AlertDescription className="text-xs text-sky-700 dark:text-sky-400">
+            <Alert className="py-2 border-info-border bg-info/5">
+              <AlertDescription className="text-xs text-info-text">
                 Detected automatically — this site renders its width/height on a canvas (no clickable
                 field exists), so the extension reads and sets them directly. Nothing to configure here.
               </AlertDescription>
@@ -524,7 +524,7 @@ export function TargetSetupWizard({
                       )}
                     </Button>
                     {subState === "selected" && subInfo && (
-                      <div className="rounded-md border border-green-500/30 bg-green-500/5 px-2.5 py-1.5 text-[11px] text-green-700 dark:text-green-400">
+                      <div className="rounded-md border border-success-border bg-success/5 px-2.5 py-1.5 text-[11px] text-success-text">
                         Selected: <code className="font-mono">{`<${(subInfo.tag || "element").toLowerCase()}>`}</code>
                         {subInfo.text && <> &ldquo;{subInfo.text}&rdquo;</>}
                         {!subInfo.text && subInfo.placeholder && <> placeholder &ldquo;{subInfo.placeholder}&rdquo;</>}
@@ -539,7 +539,7 @@ export function TargetSetupWizard({
           {/* Concrete evidence of what was actually clicked, so a checkmark is
               never the only signal that something was configured correctly. */}
           {!isResolutionStep && currentState === "selected" && selectedInfo[current.kind as TargetKind] && (
-            <div className="rounded-md border border-green-500/30 bg-green-500/5 px-2.5 py-2 text-[11px] text-green-700 dark:text-green-400">
+            <div className="rounded-md border border-success-border bg-success/5 px-2.5 py-2 text-[11px] text-success-text">
               Selected: <code className="font-mono">{`<${(selectedInfo[current.kind as TargetKind]?.tag || "element").toLowerCase()}>`}</code>
               {selectedInfo[current.kind as TargetKind]?.text && <> &ldquo;{selectedInfo[current.kind as TargetKind]?.text}&rdquo;</>}
               {!selectedInfo[current.kind as TargetKind]?.text && selectedInfo[current.kind as TargetKind]?.placeholder && (
@@ -639,13 +639,13 @@ export function TargetSetupWizard({
               {captureMessage && (
                 <p className={cn(
                   "text-[11px] leading-relaxed",
-                  captureStage === "done" ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                  captureStage === "done" ? "text-success-text" : "text-muted-foreground"
                 )}>
                   {captureMessage}
                 </p>
               )}
               {status?.hasBusySignal && captureStage === "idle" && (
-                <p className="text-[11px] text-green-600 dark:text-green-400">
+                <p className="text-[11px] text-success-text">
                   A busy signal is already saved for this site.
                 </p>
               )}

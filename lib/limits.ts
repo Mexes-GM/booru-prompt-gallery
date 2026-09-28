@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Unified rate-limit configuration — NEXT.js side (F3, rate-limit-antiabuse plan)
+// Unified rate-limit configuration — NEXT.js side
 //
 // SINGLE SOURCE OF TRUTH for the rate-limit thresholds enforced by the Next.js
 // API routes and lib/rate-limit.ts. Before this module the numbers were bare
@@ -12,7 +12,7 @@
 // SEMANTICS:
 //  - `@upstash/ratelimit` sliding-window limiters use (max, "N s|m") and reject
 //    when the window is exceeded.
-//  - The merged Danbooru EVAL (getDanbooruCombinedLimit) compares
+//  - The merged Danbooru EVAL (getCombinedLimit) compares
 //    `count > max` → reject, like the worker.
 // These values are an EXACT extraction of the pre-refactor behavior.
 // ---------------------------------------------------------------------------
@@ -26,22 +26,18 @@ export interface WindowLimit {
 
 /** Thresholds for the Next.js API surface. */
 export const NEXT_LIMITS = {
-  /** Generic per-IP limiter (feedback + misc). */
-  general: { max: 10, windowS: 10 },
-  /** Auth attempts. */
-  auth: { max: 5, windowS: 15 * 60 },
-  /** Magic-link email sends. */
-  magicLink: { max: 3, windowS: 10 * 60 },
   /**
-   * Non-Danbooru providers via /api/posts + /api/download (Upstash sliding
-   * window). In-memory fallback is intentionally stricter (see rate-limit.ts).
+   * Non-Danbooru explicit downloads via /api/download (Upstash sliding
+   * window). The in-memory fallback used while Redis is down is intentionally
+   * stricter (`danbooruApiFallback`).
    */
   danbooruApi: { max: 15, windowS: 10 },
+  danbooruApiFallback: { max: 10, windowS: 10 },
   /**
-   * Danbooru hot path (getDanbooruCombinedLimit merged EVAL): a per-IP window
+   * Danbooru hot path (getCombinedLimit merged EVAL): a per-IP window
    * and a tighter 1s global burst cap. Reject when `count > max`.
    *
-   * `authedMultiplier` (F4, flag-gated): when ADAPTIVE_LIMITS is on and a
+   * `authedMultiplier` (flag-gated): when ADAPTIVE_LIMITS is on and a
    * request carries a verified Supabase session, the per-IP `max` is multiplied
    * by this and the limit is keyed by user id instead of IP. Anonymous traffic
    * is unchanged. Purely additive — logged-in users get more headroom, nobody
@@ -59,5 +55,20 @@ export const NEXT_LIMITS = {
     perIp: { max: 10, windowS: 10 },
     global: { max: 4, windowS: 1 },
     authedMultiplier: 3,
+  },
+  /**
+   * Inline image fallback (/api/download?inline=1): Danbooru CDN images the
+   * gallery grid couldn't load directly/through CloudFront. A masonry page is
+   * ~60 cards and a fast scroller can reach 2 pages per 10s (the client-side
+   * scroll limiter's burst cap), so the per-IP bucket must hold a couple of
+   * pages per minute. Kept separate from `danbooruCombined` (API budget): CDN
+   * image bytes don't count against Danbooru's 10 req/s API limit, and sharing
+   * that 4/s global cap made one page of images trip the limiter for everyone.
+   * Responses are CDN-cached for a year, so only first-time misses land here.
+   */
+  image: {
+    perIp: { max: 120, windowS: 60 },
+    global: { max: 600, windowS: 60 },
+    authedMultiplier: 2,
   },
 } as const

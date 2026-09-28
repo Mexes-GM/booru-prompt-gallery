@@ -79,8 +79,6 @@ skills/
 docs/
 plans/
 
-# Sentry Config File
-.env.sentry-build-plugin
 
 # Cloudflare Workers config (contains account_id)
 workers/image-proxy/wrangler.toml
@@ -114,6 +112,13 @@ tasks/
 # Agent tooling working state (per-machine, not project config)
 .codegraph/
 .superpowers/
+.impeccable/
+CLAUDE.md
+DESIGN.md
+PRODUCT.md
 
 # Local diff dumps produced while reviewing changes (copies of tracked source)
 *_diffs.txt
+
+# Tag classifier scripts (scripts/classify-*.ts): checkpoint, review and benchmark output
+data/

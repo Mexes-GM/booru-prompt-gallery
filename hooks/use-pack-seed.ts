@@ -20,6 +20,10 @@ import { seedPages, type SeedPagesSearchSlice } from "@/lib/booru/seed-pages"
  *  CDN/image cost, so this is comparatively cheap to fetch upfront. */
 export const PACK_SEED_TARGET_POSTS = 100
 
+/** Fresh posts fetched per session for a source that already has a saved
+ *  pool (lib/pack/pool-cache.ts) — enough to keep it growing, cheap to fetch. */
+export const PACK_ENRICH_POSTS = 40
+
 export interface UsePackSeedResult {
   /** True while actively requesting extra pages for the current base selection. */
   isSeeding: boolean
@@ -41,7 +45,13 @@ export interface UsePackSeedResult {
    * loadMore() fetches while it's running instead of reading a stale
    * snapshot from the render that kicked off the call.
    */
-  ensureSeeded: (getSearch: () => SeedPagesSearchSlice, targetCount?: number) => Promise<BooruPost[]>
+  ensureSeeded: (
+    getSearch: () => SeedPagesSearchSlice,
+    targetCount?: number,
+    /** Called with the posts loaded so far on every poll tick — lets the caller
+     *  refill pools live while pages land instead of only once at the end. */
+    onPosts?: (posts: BooruPost[]) => void
+  ) => Promise<BooruPost[]>
 }
 
 /**
@@ -54,7 +64,11 @@ export function usePackSeed(): UsePackSeedResult {
   const runningRef = useRef(false)
 
   const ensureSeeded = useCallback(
-    async (getSearch: () => SeedPagesSearchSlice, targetCount: number = PACK_SEED_TARGET_POSTS): Promise<BooruPost[]> => {
+    async (
+      getSearch: () => SeedPagesSearchSlice,
+      targetCount: number = PACK_SEED_TARGET_POSTS,
+      onPosts?: (posts: BooruPost[]) => void
+    ): Promise<BooruPost[]> => {
       if (getSearch().allPosts.length >= targetCount) return getSearch().allPosts
       if (runningRef.current) return getSearch().allPosts
       runningRef.current = true
@@ -63,6 +77,7 @@ export function usePackSeed(): UsePackSeedResult {
       try {
         return await seedPages(getSearch, (posts) => {
           setSeedProgress({ current: posts.length, target: targetCount })
+          onPosts?.(posts)
           return posts.length >= targetCount
         })
       } finally {

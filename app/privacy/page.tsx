@@ -76,7 +76,7 @@ export default function PrivacyPage() {
                 href="https://supabase.com/privacy"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="underline hover:text-primary"
+                className="underline hover:text-primary-text"
               >
                 Supabase&apos;s privacy policy
               </a>
@@ -95,10 +95,6 @@ export default function PrivacyPage() {
               this data, use it for advertising, or track you across other websites.
             </p>
             <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
-              <li>
-                <strong>Cloudflare Web Analytics:</strong> Aggregate, cookieless page views and performance
-                metrics. Does not fingerprint or track you across sites.
-              </li>
               <li>
                 <strong>PostHog (Product Analytics):</strong> We record specific in-app behavioral events to
                 understand feature usage. PostHog stores an anonymous session identifier in your browser&apos;s
@@ -133,7 +129,7 @@ export default function PrivacyPage() {
                 href="https://posthog.com/privacy"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="underline hover:text-primary"
+                className="underline hover:text-primary-text"
               >
                 privacy policy
               </a>
@@ -157,9 +153,9 @@ export default function PrivacyPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              To diagnose crashes we use <strong>Sentry</strong>. Diagnostic data (such as the error, a technical
-              breadcrumb trail of in-app actions, and basic device/browser info) is only transmitted{" "}
-              <strong>when an error actually occurs</strong>. We do not send your prompts, favorites, or browsing content
+              To diagnose crashes we use PostHog&apos;s <strong>error tracking</strong>, the same service described
+              above. Diagnostic data (such as the error, its stack trace, and basic device/browser info) is only
+              transmitted <strong>when an error actually occurs</strong>. We do not send your prompts, favorites, or browsing content
               as part of normal use.
             </p>
           </CardContent>
@@ -205,9 +201,11 @@ export default function PrivacyPage() {
               to <strong>access, correct, or delete</strong> your data.
             </p>
             <p>
-              <strong>Deleting your account:</strong> request deletion through the in-app Feedback tool. On deletion we
-              remove your account record and associated synced favorites/preferences from Supabase. You can also stop
-              syncing at any time by signing out and clearing your local site data.
+              <strong>Exporting or deleting your account:</strong> open your account menu (your avatar) and choose
+              &ldquo;Export my data&rdquo; to download everything we store about you as JSON, or &ldquo;Delete
+              account&rdquo; to permanently remove your account record, favorites, folders, saved artists and synced
+              preferences. Signing out removes your synced preferences from that browser. IP addresses kept for abuse
+              prevention are deleted after 7 days (rate limiting) or 90 days (tag suggestions).
             </p>
             <p>
               <strong>Opting out of product analytics:</strong> PostHog respects the browser&apos;s{" "}
@@ -239,7 +237,7 @@ export default function PrivacyPage() {
             <p>
               We may update this policy; material changes will be reflected in the &quot;Last updated&quot; date above.
               See also our{" "}
-              <Link href="/terms" className="underline hover:text-primary">
+              <Link href="/terms" className="underline hover:text-primary-text">
                 Terms of Service
               </Link>
               .

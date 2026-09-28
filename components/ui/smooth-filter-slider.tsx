@@ -6,6 +6,8 @@ import * as SliderPrimitive from "@radix-ui/react-slider"
 import { motion, AnimatePresence } from "framer-motion"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { DebouncedInput } from "@/components/ui/debounced-input"
+import { useDeferredCallback } from "@/hooks/use-deferred-callback"
+import { FILTER_COMMIT_DELAY_MS } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 export interface SmoothFilterSliderProps {
@@ -25,6 +27,19 @@ export interface SmoothFilterSliderProps {
   maxInput?: number
   ariaLabel: string
   dotColor?: string
+  /** Shown under the label while `disabled`, so the user knows how to enable the filter. */
+  disabledReason?: string
+  /**
+   * Quick-pick values rendered as a segmented row INSTEAD of the slider track.
+   * Use for heavy-tailed ranges (e.g. character post counts) where a linear
+   * slider wastes most of its travel. The numeric input stays for custom values.
+   */
+  presets?: { label: string; value: number }[]
+  /** With `presets`, drop the numeric input so the quick picks are the only
+   *  control (the main panel avoids two controls for one value). */
+  hideInput?: boolean
+  /** Replaces the InfoTooltip label with a plain label + one-line hint. */
+  hint?: string
   /**
    * Visual density. "default" matches the main gallery panel; "compact" matches
    * the smaller extension side-panel. Only affects Tailwind sizing classes — the
@@ -37,11 +52,11 @@ const VARIANT_CLASSES = {
   default: {
     wrapper: "space-y-2",
     label: "text-xs font-medium text-muted-foreground flex items-center gap-2",
-    row: "flex items-center",
+    row: "flex items-center gap-3",
     input: "h-8 w-16 text-xs text-center bg-background/50",
   },
   compact: {
-    wrapper: "space-y-1 mt-2",
+    wrapper: "space-y-1",
     label: "text-[11px] font-medium text-muted-foreground flex items-center gap-1.5",
     row: "flex items-center gap-3",
     input: "h-7 w-14 text-[10px] text-center bg-background/50",
@@ -77,6 +92,10 @@ export function SmoothFilterSlider({
   maxInput = 1000000,
   ariaLabel,
   dotColor,
+  disabledReason,
+  presets,
+  hideInput = false,
+  hint,
   variant = "default",
 }: SmoothFilterSliderProps) {
   const [localValue, setLocalValue] = useState(value)
@@ -93,12 +112,20 @@ export function SmoothFilterSlider({
     setLocalValue(val[0].toString())
   }, [])
 
-  const handleSliderCommit = useCallback((val: number[]) => {
-    const stringVal = val[0].toString()
+  // Committing re-renders the whole gallery and refetches, so presets and
+  // slider releases update localValue at once and commit once the control's
+  // own animation has settled (rapid picks collapse into a single commit).
+  const { schedule: scheduleCommit } = useDeferredCallback((stringVal: string) => {
     onChange(stringVal)
     onCommit(stringVal)
+  }, FILTER_COMMIT_DELAY_MS)
+
+  const handleSliderCommit = useCallback((val: number[]) => {
+    const stringVal = val[0].toString()
+    setLocalValue(stringVal)
+    scheduleCommit(stringVal)
     setIsDragging(false)
-  }, [onChange, onCommit])
+  }, [scheduleCommit])
 
   const handleInputChange = useCallback((newVal: string) => {
     setLocalValue(newVal)
@@ -109,12 +136,26 @@ export function SmoothFilterSlider({
     onCommit(localValue)
   }, [onCommit, localValue])
 
+  const handlePresetSelect = useCallback((preset: number) => {
+    const stringVal = preset.toString()
+    setLocalValue(stringVal)
+    scheduleCommit(stringVal)
+  }, [scheduleCommit])
+
   const numericValue = parseInt(localValue) || min
   const isActive = numericValue !== min
   const showBadge = (isDragging || isHovering) && !disabled
 
   return (
     <div className={classes.wrapper}>
+      {hint !== undefined ? (
+        <div className="flex items-baseline justify-between gap-3">
+          <span id={`${inputId}-label`} className="text-sm font-medium text-foreground">{labelPrefix}</span>
+          <span className="truncate text-xs text-muted-foreground">
+            {disabled && disabledReason ? `Off — ${disabledReason}` : hint}
+          </span>
+        </div>
+      ) : (
       <label htmlFor={inputId} className={classes.label}>
         {dotColor && <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></span>}
         <InfoTooltip
@@ -122,10 +163,46 @@ export function SmoothFilterSlider({
           description={tooltipDescription}
           visual={tooltipVisual}
         >
-          {labelPrefix} ({`>=`} {localValue})
+          {labelPrefix}
         </InfoTooltip>
+        {disabled && disabledReason && (
+          <span className="text-[10px] font-normal text-muted-foreground/70">— {disabledReason}</span>
+        )}
       </label>
+      )}
       <div className={classes.row}>
+        {presets ? (
+          <div
+            role="group"
+            aria-label={`${ariaLabel} presets`}
+            className={cn(
+              "grid flex-1 gap-0.5 rounded-md border border-input bg-muted/50 p-0.5",
+              variant === "compact" ? "h-7" : hideInput ? "h-10 sm:h-9 rounded-lg p-[3px]" : "h-8",
+              disabled && "opacity-50 cursor-not-allowed"
+            )}
+            style={{ gridTemplateColumns: `repeat(${presets.length}, minmax(0, 1fr))` }}
+          >
+            {presets.map((preset) => {
+              const active = numericValue === preset.value
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={active}
+                  onClick={() => handlePresetSelect(preset.value)}
+                  className={cn(
+                    "rounded-[5px] font-medium transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none",
+                    variant === "compact" ? "text-[10px]" : hideInput ? "text-sm rounded-md" : "text-xs",
+                    active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-background/40"
+                  )}
+                >
+                  {preset.label}
+                </button>
+              )
+            })}
+          </div>
+        ) : (
         <SliderPrimitive.Root
           min={min}
           max={max}
@@ -141,23 +218,23 @@ export function SmoothFilterSlider({
           )}
         >
           <SliderPrimitive.Track
-            className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-secondary shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.09)] transition-[height] duration-150 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-secondary shadow-[inset_0_1px_2px_color-mix(in_oklab,var(--foreground)_9%,transparent)] transition-[height] duration-150 ease-[cubic-bezier(0.4,0,0.2,1)]"
             onPointerEnter={() => setIsHovering(true)}
             onPointerLeave={() => setIsHovering(false)}
           >
-            <SliderPrimitive.Range className="absolute h-full rounded-full bg-[linear-gradient(90deg,hsl(var(--primary)/0.7),hsl(var(--primary)))]" />
+            <SliderPrimitive.Range className="absolute h-full rounded-full bg-linear-to-r from-primary/70 to-primary" />
           </SliderPrimitive.Track>
 
           <SliderPrimitive.Thumb asChild>
             <motion.span
               className={cn(
                 "relative grid h-5 w-5 place-items-center rounded-full border border-primary/50",
-                "bg-[radial-gradient(circle_at_50%_30%,hsl(var(--background)),hsl(var(--secondary)))]",
-                "shadow-[0_1px_3px_hsl(var(--foreground)/0.12),0_0_0_3px_hsl(var(--primary)/0.1)]",
+                "bg-[radial-gradient(circle_at_50%_30%,var(--background),var(--secondary))]",
+                "shadow-[0_1px_3px_color-mix(in_oklab,var(--foreground)_12%,transparent),0_0_0_3px_color-mix(in_oklab,var(--primary)_10%,transparent)]",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 "disabled:pointer-events-none disabled:opacity-50",
               )}
-              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 2px 8px hsl(var(--foreground) / 0.16), 0 0 0 6px hsl(var(--primary) / 0.18)" }}
+              whileDrag={disabled ? undefined : { scale: 1.25, boxShadow: "0 2px 8px color-mix(in oklab, var(--foreground) 16%, transparent), 0 0 0 6px color-mix(in oklab, var(--primary) 18%, transparent)" }}
               transition={{ type: "spring", stiffness: 420, damping: 26 }}
             >
               {/* Aperture dot — brightens to full primary once active, dim
@@ -190,6 +267,8 @@ export function SmoothFilterSlider({
             </motion.span>
           </SliderPrimitive.Thumb>
         </SliderPrimitive.Root>
+        )}
+        {!(presets && hideInput) && (
         <DebouncedInput
           id={inputId}
           type="number"
@@ -200,9 +279,10 @@ export function SmoothFilterSlider({
           debounceTime={500}
           onBlur={handleInputBlur}
           disabled={disabled}
-          className={`${classes.input} ${!isInputValid ? "border-red-500 focus-visible:ring-red-500" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+          className={`${classes.input} ${!isInputValid ? "border-destructive focus-visible:ring-destructive" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
           aria-label={`${ariaLabel} input`}
         />
+        )}
       </div>
     </div>
   )

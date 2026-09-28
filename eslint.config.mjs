@@ -55,5 +55,15 @@ export default defineConfig([{
         "@typescript-eslint/no-explicit-any": "off",
         "@typescript-eslint/ban-ts-comment": "off",
         "@typescript-eslint/no-unused-vars": "off",
+        // React Compiler-oriented rules bundled in eslint-plugin-react-hooks v6+.
+        // The app does not enable the React Compiler, and several hot paths
+        // (masonry virtualization, search hooks) rely on deliberate ref reads in
+        // render / mount-flag effects. Kept as warnings so they stay visible
+        // without blocking the lint gate.
+        "react-hooks/refs": "warn",
+        "react-hooks/set-state-in-effect": "warn",
+        "react-hooks/immutability": "warn",
+        "react-hooks/preserve-manual-memoization": "warn",
+
     },
 }]);

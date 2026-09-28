@@ -122,8 +122,21 @@ const SuccessAnimation = memo(function SuccessAnimation() {
     )
 })
 
-export function FeedbackDialog() {
-    const [open, setOpen] = useState(false)
+interface FeedbackDialogProps {
+    /** "pill" is the standalone tinted button; "header" is a quiet ghost
+     *  button sized for a toolbar (label hidden on small screens); "none"
+     *  renders no trigger, for when the dialog is opened from a menu via
+     *  `open`/`onOpenChange`. */
+    triggerVariant?: "pill" | "header" | "none"
+    /** Optional controlled open state; uncontrolled when omitted. */
+    open?: boolean
+    onOpenChange?: (open: boolean) => void
+}
+
+export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpenChange }: FeedbackDialogProps = {}) {
+    const [internalOpen, setInternalOpen] = useState(false)
+    const open = openProp ?? internalOpen
+    const setOpen = onOpenChange ?? setInternalOpen
     const [loading, setLoading] = useState(false)
     const [success, setSuccess] = useState(false)
     const [type, setType] = useState<string>("bug")
@@ -226,9 +239,9 @@ export function FeedbackDialog() {
     }
 
     const feedbackTypes = [
-        { id: "bug", label: "Bug Report", icon: Bug, color: "text-red-500", bg: "bg-red-500/10", borderColor: "#ef4444" },
-        { id: "feature", label: "Feature", icon: Lightbulb, color: "text-amber-500", bg: "bg-amber-500/10", borderColor: "#f59e0b" },
-        { id: "general", label: "General", icon: MessageSquare, color: "text-blue-500", bg: "bg-blue-500/10", borderColor: "#3b82f6" },
+        { id: "bug", label: "Bug Report", icon: Bug, color: "text-destructive-text", bg: "bg-destructive-soft", borderColor: "var(--destructive)" },
+        { id: "feature", label: "Feature", icon: Lightbulb, color: "text-warning-text", bg: "bg-warning-soft", borderColor: "var(--warning)" },
+        { id: "general", label: "General", icon: MessageSquare, color: "text-info-text", bg: "bg-info-soft", borderColor: "var(--info)" },
     ]
 
     return (
@@ -238,6 +251,7 @@ export function FeedbackDialog() {
                 That previous wrapper received aria-haspopup/type=button on a
                 non-interactive div (aria-allowed-attr failure) and the icon-only
                 button had no name on mobile (button-name failure). */}
+            {triggerVariant !== "none" && (
             <InfoTooltip
                 hideIcon
                 side="bottom"
@@ -248,14 +262,17 @@ export function FeedbackDialog() {
                     type="button"
                     onClick={() => setOpen(true)}
                     aria-label="Feedback"
-                    variant="secondary"
+                    variant={triggerVariant === "header" ? "ghost" : "secondary"}
                     size="sm"
-                    className="gap-1 h-9 px-4 transition-all bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+                    className={triggerVariant === "header"
+                        ? "focus-ring gap-1.5 px-2"
+                        : "gap-1 h-9 px-4 transition-all bg-primary/10 text-primary-text hover:bg-primary/20"}
                 >
                     <MessageSquarePlus className="h-4 w-4" />
-                    <span className="font-medium">Feedback</span>
+                    <span className={cn("font-medium", triggerVariant === "header" && "hidden lg:inline")}>Feedback</span>
                 </Button>
             </InfoTooltip>
+            )}
             <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden gap-0 border-0 shadow-2xl">
                 <AnimatePresence mode="wait">
                     {success ? (
@@ -268,7 +285,7 @@ export function FeedbackDialog() {
                             <DialogHeader className="p-6 pb-2 z-10">
                                 <div className="flex items-center gap-2 mb-2">
                                     <div className="p-2 bg-primary/10 rounded-lg">
-                                        <Sparkles className="w-5 h-5 text-primary" />
+                                        <Sparkles className="w-5 h-5 text-primary-text" />
                                     </div>
                                     <DialogTitle className="text-xl">Feedback & Suggestions</DialogTitle>
                                 </div>

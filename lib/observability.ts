@@ -24,16 +24,8 @@ export type { LogEntry, LogLevel } from "./logger"
 
 const log = rootLogger.child({ module: "observability" })
 
-// Rate limit hits
-export function logRateLimitHit(
-  layer: string,
-  details: Record<string, unknown> = {}
-): void {
-  log.warn("rate_limit_hit", { layer, ...details })
-}
-
 // ---------------------------------------------------------------------------
-// Standardized rate-limit block telemetry (F0 — rate-limit-antiabuse plan).
+// Standardized rate-limit block telemetry.
 //
 // Every rejection (429) on a cost-bearing surface emits ONE structured line
 // with a stable schema so blocks can be graphed by surface / identity / origin
@@ -45,7 +37,6 @@ export type RateLimitSurface =
   | "image"
   | "download"
   | "tags"
-  | "trends"
   | "ai"
   | "auth"
   | "feedback"

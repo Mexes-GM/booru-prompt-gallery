@@ -75,56 +75,100 @@ export async function searchTags(query: string): Promise<TagResult[]> {
 }
 
 /**
- * Fetches all tag overrides page-by-page from the client side.
+ * Fetches tag overrides for fast client-side synchronous classification.
+ * Prioritizes the static /tags-core.json snapshot (fast, CDN-cached, zero Supabase load).
+ * Falls back to querying auto_suggest_tags in Supabase directly if fetch fails.
  */
 export async function getAllTagOverridesClient(): Promise<Record<string, string>> {
+  // 1. Try static CDN snapshot (/tags-core.json)
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/tags-core.json', { cache: 'default' })
+      if (res.ok) {
+        const data = await res.json()
+        if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+          return data
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('Failed to load /tags-core.json snapshot, falling back to Supabase:', fetchErr)
+    }
+  }
+
+  // 2. Fallback to querying public.auto_suggest_tags in Supabase directly
   const overrides: Record<string, string> = {}
-  
   try {
     const supabase = createClient()
-    let page = 0
-    const pageSize = 1000
-    let hasMore = true
+    const { data, error } = await supabase
+      .from('auto_suggest_tags')
+      .select('name, category_name, subcategory')
+      .eq('status', 'approved')
+      .gte('post_count', 5000)
+      .limit(5000)
 
-    while (hasMore) {
-      const { data, error } = await supabase
-        .from('tags')
-        .select('name, category')
-        .range(page * pageSize, (page + 1) * pageSize - 1)
-
-      if (error) {
-        console.error('Error fetching tag overrides client-side:', error)
-        break
-      }
-
-      if (data && data.length > 0) {
-        data.forEach((tag: { name: string; category: string }) => {
-          overrides[tag.name] = tag.category
-        })
-
-        if (data.length < pageSize) {
-          hasMore = false
-        } else {
-          page++
+    if (!error && data) {
+      data.forEach((tag: { name: string; category_name: string; subcategory?: string | null }) => {
+        if (tag.name && tag.category_name) {
+          const val = tag.subcategory ? `${tag.category_name}:${tag.subcategory}` : tag.category_name
+          overrides[tag.name] = val
+          if (tag.name.includes('_')) {
+            overrides[tag.name.replace(/_/g, ' ')] = val
+          }
         }
-      } else {
-        hasMore = false
-      }
+      })
+      return overrides
     }
   } catch (error) {
-    console.error('Error in getAllTagOverridesClient:', error)
+    console.error('Error fetching tag overrides from auto_suggest_tags:', error)
   }
 
   return overrides
 }
 
 /**
- * Fetches tag overrides from localStorage if valid, otherwise queries Supabase and caches them.
+ * Looks up approved category/subcategory for specific tags (names with spaces
+ * or underscores). Complements the static snapshot, which only covers the most
+ * popular tags: Pack Mode calls this for the tags actually present in its pool.
+ * Returns the same key shapes as getAllTagOverridesClient (underscore + space).
+ */
+export async function fetchTagOverridesForNames(names: string[]): Promise<Record<string, string>> {
+  const unique = Array.from(new Set(names.map((n) => n.trim().toLowerCase().replace(/ /g, '_')).filter(Boolean)))
+  const overrides: Record<string, string> = {}
+  if (unique.length === 0) return overrides
+
+  const CHUNK = 150
+  const supabase = createClient()
+  const chunks: string[][] = []
+  for (let i = 0; i < unique.length; i += CHUNK) chunks.push(unique.slice(i, i + CHUNK))
+
+  await Promise.all(chunks.map(async (chunk) => {
+    const { data, error } = await supabase
+      .from('auto_suggest_tags')
+      .select('name, category_name, subcategory')
+      .eq('status', 'approved')
+      .in('name', chunk)
+    if (error || !data) {
+      if (error) console.warn('fetchTagOverridesForNames chunk failed:', error.message)
+      return
+    }
+    data.forEach((tag: { name: string; category_name: string | null; subcategory?: string | null }) => {
+      if (!tag.name || !tag.category_name) return
+      const val = tag.subcategory ? `${tag.category_name}:${tag.subcategory}` : tag.category_name
+      overrides[tag.name] = val
+      if (tag.name.includes('_')) overrides[tag.name.replace(/_/g, ' ')] = val
+    })
+  }))
+
+  return overrides
+}
+
+/**
+ * Fetches tag overrides from localStorage if valid, otherwise queries getAllTagOverridesClient and caches them.
  */
 export async function getCachedTagOverrides(): Promise<Record<string, string>> {
   const CACHE_KEY = 'booru-tag-overrides'
   const CACHE_TIME_KEY = 'booru-tag-overrides-timestamp'
-  const CACHE_DURATION = 60 * 60 * 1000 // 1 hour
+  const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours
 
   if (typeof window !== 'undefined') {
     try {
@@ -141,7 +185,7 @@ export async function getCachedTagOverrides(): Promise<Record<string, string>> {
     }
   }
 
-  // Fallback to fetching from Supabase directly
+  // Fallback to fetching snapshot / Supabase
   const overrides = await getAllTagOverridesClient()
 
   if (typeof window !== 'undefined' && Object.keys(overrides).length > 0) {

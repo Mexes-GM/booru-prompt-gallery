@@ -11,27 +11,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import type { ClassifiedTags } from "@/lib/tag-classifier"
 
-const TeachModal = dynamic(() => import("@/components/teach-modal").then(m => m.TeachModal), { ssr: false, loading: () => null })
-const TeachWelcomeModal = dynamic(() => import("@/components/teach-welcome-modal").then(m => m.TeachWelcomeModal), { ssr: false, loading: () => null })
 const QuickTeachModal = dynamic(() => import("@/components/quick-teach-modal").then(m => m.QuickTeachModal), { ssr: false, loading: () => null })
 const ReversePromptParserModal = dynamic(() => import("@/components/prompt-gallery/reverse-prompt-parser-modal").then(m => m.ReversePromptParserModal), { ssr: false, loading: () => null })
 const GlobalWeightsModal = dynamic(() => import("@/components/prompt-gallery/global-weights-modal").then(m => m.GlobalWeightsModal), { ssr: false, loading: () => null })
-
-// Stable fallback so TeachModal can stay mounted (with `open=false`) even before
-// any tags have been classified, instead of being conditionally unmounted.
-const EMPTY_CLASSIFIED_TAGS: ClassifiedTags = { clothing: [], pose: [], scenery: [], appearance: [], other: [] }
+const SupportModal = dynamic(() => import("@/components/support-modal").then(m => m.SupportModal), { ssr: false, loading: () => null })
 
 interface GalleryModalsProps {
-  // Teach modal
-  teachModalData: { open: boolean; tags: ClassifiedTags | null }
-  setTeachModalData: React.Dispatch<React.SetStateAction<{ open: boolean; tags: ClassifiedTags | null }>>
   onTeachSuccess: () => void
-
-  // Teach welcome modal
-  showWelcomeModal: boolean
-  setShowWelcomeModal: (open: boolean) => void
 
   // Quick Teach (gamified, image-free tag classification) modal
   isQuickTeachOpen: boolean
@@ -42,6 +29,7 @@ interface GalleryModalsProps {
   isGlobalWeightsModalOpen: boolean
   setIsGlobalWeightsModalOpen: (open: boolean) => void
   globalWeights: Record<string, number>
+  isGlobalWeightsEnabled: boolean
   onRemoveGlobalWeight: (tag: string) => void
   onClearGlobalWeights: () => void
   onGlobalWeightChange: (tag: string, weight: number) => void
@@ -59,23 +47,21 @@ interface GalleryModalsProps {
 
 /**
  * Groups all the "floating" modals/dialogs owned by PromptGallery that aren't
- * tied to a specific always-visible panel: the tag-teaching modal + its
- * one-time welcome modal, the global tag weights modal, the reverse prompt
- * parser modal, and the folder-delete confirmation dialog. Pure composition —
- * all state and handlers are owned by the caller and passed in explicitly.
+ * tied to a specific always-visible panel: the tag-teaching modal, the
+ * global tag weights modal, the reverse prompt
+ * parser modal, the one-time donation appeal, and the folder-delete
+ * confirmation dialog. Pure composition — all state and handlers are owned
+ * by the caller and passed in explicitly (SupportModal is self-triggered).
  */
 export function GalleryModals({
-  teachModalData,
-  setTeachModalData,
   onTeachSuccess,
-  showWelcomeModal,
-  setShowWelcomeModal,
   isQuickTeachOpen,
   setIsQuickTeachOpen,
   tagOverrides,
   isGlobalWeightsModalOpen,
   setIsGlobalWeightsModalOpen,
   globalWeights,
+  isGlobalWeightsEnabled,
   onRemoveGlobalWeight,
   onClearGlobalWeights,
   onGlobalWeightChange,
@@ -88,20 +74,7 @@ export function GalleryModals({
 }: GalleryModalsProps) {
   return (
     <>
-      {/*
-        Always mounted (like the other floating modals below) so Radix Dialog
-        starts in data-state="closed" and can actually animate the closed->open
-        transition. Previously this was gated behind `teachModalData.tags &&`,
-        which meant the component (and its Dialog) was born already open on
-        first render, skipping the entry animation entirely.
-      */}
-      <TeachModal
-        open={teachModalData.open}
-        onOpenChange={(open) => setTeachModalData(prev => ({ ...prev, open }))}
-        initialClassifiedTags={teachModalData.tags ?? EMPTY_CLASSIFIED_TAGS}
-        onSuccess={onTeachSuccess}
-      />
-      <TeachWelcomeModal triggerOpen={showWelcomeModal} onOpenChange={setShowWelcomeModal} />
+      <SupportModal />
 
       <QuickTeachModal
         open={isQuickTeachOpen}
@@ -114,6 +87,7 @@ export function GalleryModals({
         open={isGlobalWeightsModalOpen}
         onOpenChange={setIsGlobalWeightsModalOpen}
         weights={globalWeights}
+        isEnabled={isGlobalWeightsEnabled}
         onRemoveWeight={onRemoveGlobalWeight}
         onClearWeights={onClearGlobalWeights}
         onSaveWeight={onGlobalWeightChange}

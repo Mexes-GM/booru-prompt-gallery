@@ -1,61 +1,15 @@
 # Netlify configuration for Booru Prompt Gallery
-# Next.js 15 is auto-detected via the Essential Next.js plugin in the Netlify UI.
-# This file provides additional headers and settings.
+# Next.js is auto-detected by @netlify/plugin-nextjs.
+#
+# Build settings only. Response headers (security + cache) live in
+# next.config.mjs so Vercel and Netlify serve identical headers — do not add
+# [[headers]] blocks here.
 
 [build]
   command = "npm run build"
   publish = ".next"
-
-# Netlify uses Netlify-CDN-Cache-Control for its CDN cache.
-# These headers complement the ones in next.config.mjs.
-[[headers]]
-  for = "/api/*"
-  [headers.values]
-  # Netlify CDN: must be no-store because Netlify's auto-generated netlify-vary
-  # header only includes Next.js internal query params (__nextDataReq, _rsc),
-  # NOT our API params (page, tags, seed, order). Any public cache causes all
-  # /api/posts?* URLs to share one cached response, breaking pagination.
-  # Each API route also sets this per-response, but this acts as a safety net.
-  Netlify-CDN-Cache-Control = "no-store"
-  Vary = "Accept, Accept-Encoding"
-
-[[headers]]
-  for = "/_next/image*"
-  [headers.values]
-    Cache-Control = "public, max-age=2678400, immutable"
-
-[[headers]]
-  for = "/sitemap.xml"
-  [headers.values]
-    Cache-Control = "public, s-maxage=86400, stale-while-revalidate=43200"
-
-[[headers]]
-  for = "/manifest.json"
-  [headers.values]
-    Cache-Control = "public, s-maxage=86400, stale-while-revalidate=43200"
-
-[[headers]]
-  for = "/favicon.ico"
-  [headers.values]
-    Cache-Control = "public, max-age=86400"
-
-[[headers]]
-  for = "/favicon.png"
-  [headers.values]
-    Cache-Control = "public, max-age=86400"
-
-[[headers]]
-  for = "/icon.png"
-  [headers.values]
-    Cache-Control = "public, max-age=86400"
-
-# Security headers for all responses
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Content-Type-Options = "nosniff"
-    X-Frame-Options = "DENY"
-    X-XSS-Protection = "1; mode=block"
-    Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
-    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+  # Skip the build (and the deploy credits it costs) when a push only touches
+  # files that never reach the site bundle. `git diff --quiet` exits 0 when
+  # nothing outside the excluded paths changed → Netlify cancels the build.
+  # On the first build CACHED_COMMIT_REF is empty, git errors out and it builds.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)*.md' ':(exclude)docs' ':(exclude)plans' ':(exclude)tasks' ':(exclude)audit' ':(exclude)audit-mobile' ':(exclude)backups' ':(exclude)__tests__' ':(exclude)extension' ':(exclude)workers' ':(exclude)supabase' ':(exclude)*.png' ':(exclude)*.jpeg' ':(exclude)*.log' ':(exclude).github' ':(exclude).gitignore'"

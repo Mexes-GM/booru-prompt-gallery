@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, Mail, ArrowRight, CheckCircle2 } from "lucide-react"
-import * as Sentry from "@sentry/nextjs"
+import { reportError } from "@/lib/error-reporting"
 import { toast } from "@/hooks/use-toast"
 import { toastError } from "@/lib/toast-error"
 import { motion, AnimatePresence } from "framer-motion"
@@ -25,6 +25,8 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
   const [email, setEmail] = useState("")
   const [isOpen, setIsOpen] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [otpCode, setOtpCode] = useState("")
+  const [isVerifying, setIsVerifying] = useState(false)
   const supabase = createClient()
 
 
@@ -32,11 +34,6 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
     e.preventDefault()
     try {
       setIsLoading(true)
-      Sentry.addBreadcrumb({
-        category: "auth",
-        message: "User initiated magic link login",
-        level: "info"
-      })
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
@@ -49,11 +46,11 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
       const msg = error instanceof Error ? error.message : ""
       // The "For security purposes, you can only request this after N seconds"
       // rate-limit is an expected, user-facing condition — surface it via toast
-      // but don't report it to Sentry (was a recurring non-actionable issue).
+      // but don't report it as an error (was a recurring non-actionable issue).
       const isExpectedRateLimit =
         /for security purposes|only request this after|rate limit|too many/i.test(msg)
       if (!isExpectedRateLimit) {
-        Sentry.captureException(error, {
+        reportError(error, {
           tags: { context: "magic_link_login" }
         })
       }
@@ -66,6 +63,28 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
     }
   }
 
+  // Same email carries both the magic link and a 6-digit code ({{ .Token }}
+  // in the Supabase "Magic Link" template). The code works when the email is
+  // opened on another device, where the link fails the PKCE check.
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsVerifying(true)
+    const { error } = await supabase.auth.verifyOtp({ email, token: otpCode.trim(), type: "email" })
+    setIsVerifying(false)
+    if (error) {
+      toastError({
+        title: "Invalid code",
+        description: /expired|invalid/i.test(error.message)
+          ? "That code is invalid or has expired. Request a new one."
+          : error.message,
+        errorSource: "otp_verify",
+      })
+      return
+    }
+    toast({ title: "Signed in", description: `Welcome, ${email}` })
+    resetState(false)
+  }
+
   const resetState = (open: boolean) => {
     setIsOpen(open)
     if (!open) {
@@ -73,6 +92,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
         setIsSuccess(false)
         setIsLoading(false)
         setEmail("")
+        setOtpCode("")
       }, 300)
     }
   }
@@ -143,7 +163,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
                 className="flex flex-col items-center justify-center py-8 text-center space-y-4"
               >
                 <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                  <CheckCircle2 className="h-8 w-8 text-primary" />
+                  <CheckCircle2 className="h-8 w-8 text-primary-text" />
                 </div>
                 <div className="space-y-2">
                   <h3 className="text-xl font-semibold">Check your email</h3>
@@ -151,7 +171,28 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
                     We&apos;ve sent a magic link to <span className="font-medium text-foreground">{email}</span>
                   </p>
                 </div>
-                <Button variant="outline" onClick={() => resetState(false)} className="mt-4">
+                <form onSubmit={handleVerifyCode} className="w-full max-w-[260px] space-y-2 pt-2">
+                  <Label htmlFor="otp-code" className="text-xs text-muted-foreground">
+                    Opening it on another device? Enter the 6-digit code instead.
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="otp-code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="123456"
+                      className="h-10 text-center font-mono tracking-widest"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                      disabled={isVerifying}
+                    />
+                    <Button type="submit" className="h-10" disabled={otpCode.length !== 6 || isVerifying}>
+                      {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
+                    </Button>
+                  </div>
+                </form>
+                <Button variant="ghost" onClick={() => resetState(false)} className="mt-2">
                   Close
                 </Button>
               </motion.div>
@@ -159,7 +200,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
           </AnimatePresence>
         </div>
         <div className="p-4 bg-muted/30 border-t border-border/50 text-center text-xs text-muted-foreground">
-          By signing in, you agree to our <Link href="/terms" className="underline hover:text-primary" onClick={() => resetState(false)}>Terms of Service</Link> and <Link href="/privacy" className="underline hover:text-primary" onClick={() => resetState(false)}>Privacy Policy</Link>.
+          By signing in, you agree to our <Link href="/terms" className="underline hover:text-primary-text" onClick={() => resetState(false)}>Terms of Service</Link> and <Link href="/privacy" className="underline hover:text-primary-text" onClick={() => resetState(false)}>Privacy Policy</Link>.
         </div>
       </DialogContent>
     </Dialog>

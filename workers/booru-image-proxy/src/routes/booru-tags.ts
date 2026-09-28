@@ -1,14 +1,35 @@
 import { Env } from '../types'
 import { getSupabase } from '../lib/supabase'
 import { getRedis } from '../lib/redis'
-import { checkCircuitOpen } from '../lib/circuit-breaker'
-import { PROVIDER_URLS, getDanbooruUserAgent } from '../lib/constants'
+import { checkCircuitOpen, recordOutcome } from '../lib/circuit-breaker'
+import { PROVIDER_URLS, USER_AGENT, danbooruApiHeaders } from '../lib/constants'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
 import type { Redis } from '../lib/redis'
 import { isBlocked, markBlocked, clearBlocked } from '../lib/rate-limit-cache'
-import { logRateLimitBlock } from '../logger'
+import { logger, logRateLimitBlock } from '../logger'
 import { WORKER_LIMITS } from '../lib/limits'
 import { resolveRateLimitUserId } from '../lib/rate-limit-identity'
+import { fetchUpstream } from '../lib/upstream'
+
+/** The client sends ≤ 50 tags per call; anything far above is not our frontend. */
+const MAX_TAGS_PER_REQUEST = 100
+const CHUNK_SIZE = 50
+
+/** Cached counts are re-fetched after this long (zeros sooner: often a miss). */
+const COUNT_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const ZERO_COUNT_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+const NO_STORE = { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+
+// Set to false the first time Postgres reports `updated_at` missing (migration
+// 20260930000000 not applied yet) so this isolate stops asking for it.
+let hasUpdatedAtColumn = true
+
+interface TagCountRow {
+  tag_name: string
+  post_count: number
+  updated_at?: string
+}
 
 async function checkRateLimit(redis: Redis | null, clientIp: string, userId: string | null): Promise<boolean> {
   if (!redis) return true
@@ -28,20 +49,14 @@ async function checkRateLimit(redis: Redis | null, clientIp: string, userId: str
   return allowed
 }
 
-async function fetchWithRetry(url: string, headers: Record<string, string>, retries = 2): Promise<Response> {
-  let lastError: Error | null = null
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const resp = await fetch(url, { headers })
-      return resp
-    } catch (error: any) {
-      lastError = error
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
-      }
-    }
-  }
-  throw lastError || new Error('Fetch failed')
+function normalizeTagName(tag: string): string {
+  return tag.trim().toLowerCase().replace(/_/g, ' ').replace(/\s{2,}/g, ' ')
+}
+
+function isFresh(row: TagCountRow): boolean {
+  if (!row.updated_at) return true // column not migrated yet: keep old behavior
+  const age = Date.now() - Date.parse(row.updated_at)
+  return age < (row.post_count > 0 ? COUNT_TTL_MS : ZERO_COUNT_TTL_MS)
 }
 
 export async function booruTagsHandler(
@@ -56,10 +71,30 @@ export async function booruTagsHandler(
     return errorResponse('Missing tags parameter', 400)
   }
 
+  if (provider !== 'danbooru' && provider !== 'aibooru') {
+    return jsonResponse({}, 200)
+  }
+
+  const requestedTags = Array.from(
+    new Set(
+      tagsParam
+        .split(',')
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean)
+    )
+  )
+
+  if (requestedTags.length === 0) {
+    return jsonResponse({}, 200)
+  }
+  if (requestedTags.length > MAX_TAGS_PER_REQUEST) {
+    return errorResponse(`At most ${MAX_TAGS_PER_REQUEST} tags per request`, 400, NO_STORE)
+  }
+
   // Rate limit
   const redis = getRedis(env)
   const clientIp = getClientIp(request)
-  // F4 (flag-gated): resolves authed:<userId> when ADAPTIVE_LIMITS is on and
+  // Flag-gated: resolves authed:<userId> when ADAPTIVE_LIMITS is on and
   // the request carries a valid Supabase access token; otherwise null and
   // behavior is identical to before this existed.
   const userId = await resolveRateLimitUserId(request, env)
@@ -69,45 +104,30 @@ export async function booruTagsHandler(
     return errorResponse(
       'Too many tag search requests. Please wait a moment.',
       429,
-      { 'Retry-After': '10', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' }
+      { 'Retry-After': '10', ...NO_STORE }
     )
   }
 
-  if (provider !== 'danbooru' && provider !== 'aibooru') {
-    return jsonResponse({}, 200)
-  }
-
-  // ponytail: circuit breaker for Danbooru — fail fast instead of waiting for timeout.
+  // Circuit breaker for Danbooru — fail fast instead of waiting for timeout.
   // Aibooru doesn't need one (lower traffic, less likely to be saturated).
+  let observedCircuitState: 'closed' | 'open' | 'half-open' = 'closed'
   if (provider === 'danbooru' && redis) {
     const circuit = await checkCircuitOpen(redis, 'danbooru-api')
+    observedCircuitState = circuit.state
     if (circuit.open) {
       logRateLimitBlock(request, { surface: 'tags', keyType: 'anon', scope: 'circuit', origin: 'danbooru' })
       return errorResponse(
         'Danbooru is saturated. Please wait before searching tags.',
         429,
-        {
-          'Retry-After': String(circuit.retryAfter),
-          'Cache-Control': 'no-store',
-          'CDN-Cache-Control': 'no-store',
-        }
+        { 'Retry-After': String(circuit.retryAfter), ...NO_STORE }
       )
     }
-  }
-
-  const requestedTags = tagsParam
-    .split(',')
-    .map((t) => t.trim().toLowerCase())
-    .filter(Boolean)
-
-  if (requestedTags.length === 0) {
-    return jsonResponse({}, 200)
   }
 
   // Normalize
   const normalizedToOriginal = new Map<string, string[]>()
   requestedTags.forEach((tag) => {
-    const normalized = tag.replace(/_/g, ' ').replace(/\s{2,}/g, ' ')
+    const normalized = normalizeTagName(tag)
     if (!normalizedToOriginal.has(normalized)) {
       normalizedToOriginal.set(normalized, [])
     }
@@ -118,16 +138,26 @@ export async function booruTagsHandler(
   const supabase = getSupabase(env)
   const tagCounts: Record<string, number> = {}
 
-  // 1. Fetch from Supabase cache
+  // 1. Fetch from Supabase cache (stale rows count as missing)
   if (supabase) {
-    const { data: dbTags, error: dbError } = await supabase
-      .from('provider_tag_counts')
-      .select('tag_name, post_count')
-      .eq('provider', provider)
-      .in('tag_name', uniqueNormalizedTags)
+    const selectRows = (columns: string) =>
+      supabase
+        .from('provider_tag_counts')
+        .select(columns)
+        .eq('provider', provider)
+        .in('tag_name', uniqueNormalizedTags)
+
+    let { data: dbTags, error: dbError } = await selectRows(
+      hasUpdatedAtColumn ? 'tag_name, post_count, updated_at' : 'tag_name, post_count'
+    )
+    if (dbError?.code === '42703' && hasUpdatedAtColumn) {
+      hasUpdatedAtColumn = false
+      ;({ data: dbTags, error: dbError } = await selectRows('tag_name, post_count'))
+    }
 
     if (!dbError && dbTags) {
-      dbTags.forEach((row: any) => {
+      ;(dbTags as unknown as TagCountRow[]).forEach((row) => {
+        if (!isFresh(row)) return
         const originals = normalizedToOriginal.get(row.tag_name) || []
         originals.forEach((orig) => {
           tagCounts[orig] = row.post_count
@@ -140,80 +170,66 @@ export async function booruTagsHandler(
   const missingTags = requestedTags.filter((tag) => tagCounts[tag] === undefined)
 
   if (missingTags.length > 0) {
-    const baseUrl =
-      provider === 'aibooru' ? PROVIDER_URLS.AIBOORU : PROVIDER_URLS.DANBOORU
-    const authHeaders: Record<string, string> = {
-      'User-Agent': getDanbooruUserAgent(env.DANBOORU_USERNAME),
-      'Accept': 'application/json',
-      'Referer': 'https://danbooru.donmai.us/',
-    }
+    // Danbooru credentials are only ever sent to Danbooru — Aibooru is a
+    // different site and must never receive them.
+    const baseUrl = provider === 'aibooru' ? PROVIDER_URLS.AIBOORU : PROVIDER_URLS.DANBOORU
+    const headers =
+      provider === 'danbooru'
+        ? danbooruApiHeaders(env)
+        : { 'User-Agent': USER_AGENT, Accept: 'application/json' }
 
-    if (env.DANBOORU_USERNAME && env.DANBOORU_API_KEY) {
-      const credentials = btoa(`${env.DANBOORU_USERNAME}:${env.DANBOORU_API_KEY}`)
-      authHeaders['Authorization'] = `Basic ${credentials}`
-    }
-
-    const CHUNK_SIZE = 50
     const chunks: string[][] = []
     for (let i = 0; i < missingTags.length; i += CHUNK_SIZE) {
       chunks.push(missingTags.slice(i, i + CHUNK_SIZE))
     }
 
     // Each chunk is an independent request + its own DB upsert (chunking here is
-    // only to stay under a safe URL length), so fetch them all concurrently.
+    // only to stay under a safe URL length); at most 2 chunks by the cap above.
     await Promise.all(chunks.map(async (chunk) => {
       const apiUrl = new URL(`${baseUrl}/tags.json`)
       apiUrl.searchParams.set('search[category]', '4')
       apiUrl.searchParams.set('search[name_comma]', chunk.join(','))
       apiUrl.searchParams.set('limit', '100')
+      apiUrl.searchParams.set('only', 'name,post_count')
 
       try {
-        const response = await fetchWithRetry(apiUrl.toString(), authHeaders)
+        const response = await fetchUpstream(apiUrl.toString(), { headers, timeoutMs: 8000 })
+        const data = (await response.json()) as unknown
+        if (provider === 'danbooru' && redis) {
+          await recordOutcome(redis, 'danbooru-api', observedCircuitState)
+        }
+        if (!Array.isArray(data)) return
 
-        if (response.ok) {
-          const data = await response.json() as any
-
-          if (Array.isArray(data)) {
-            const fetchedMap: Record<string, number> = {}
-            data.forEach((tag: any) => {
-              if (tag.name && typeof tag.post_count === 'number') {
-                fetchedMap[tag.name.toLowerCase()] = tag.post_count
-              }
-            })
-
-            const rowsToUpsert = chunk.map((tag) => {
-              const normalizedTag = tag.trim().toLowerCase().replace(/_/g, ' ').replace(/\s{2,}/g, ' ')
-              const count =
-                fetchedMap[tag] !== undefined
-                  ? fetchedMap[tag]
-                  : fetchedMap[normalizedTag] !== undefined
-                    ? fetchedMap[normalizedTag]
-                    : 0
-
-              tagCounts[tag] = count
-              return { provider, tag_name: normalizedTag, post_count: count }
-            })
-
-            // Save to Supabase
-            if (supabase) {
-              const { error: upsertError } = await supabase
-                .from('provider_tag_counts')
-                .upsert(rowsToUpsert, { onConflict: 'provider,tag_name' })
-
-              if (upsertError) {
-                console.error(
-                  `[booru-tags] Failed to upsert: ${upsertError.message}`
-                )
-              }
-            }
+        const fetchedMap: Record<string, number> = {}
+        data.forEach((tag: { name?: unknown; post_count?: unknown }) => {
+          if (typeof tag.name === 'string' && typeof tag.post_count === 'number') {
+            fetchedMap[tag.name.toLowerCase()] = tag.post_count
           }
-        } else {
-          console.error(
-            `[booru-tags] Fetch failed: ${response.status}`
-          )
+        })
+
+        const now = new Date().toISOString()
+        const rowsToUpsert = chunk.map((tag) => {
+          const normalizedTag = normalizeTagName(tag)
+          const count = fetchedMap[tag] ?? fetchedMap[normalizedTag] ?? 0
+          tagCounts[tag] = count
+          return hasUpdatedAtColumn
+            ? { provider, tag_name: normalizedTag, post_count: count, updated_at: now }
+            : { provider, tag_name: normalizedTag, post_count: count }
+        })
+
+        if (supabase) {
+          const { error: upsertError } = await supabase
+            .from('provider_tag_counts')
+            .upsert(rowsToUpsert, { onConflict: 'provider,tag_name' })
+          if (upsertError) {
+            logger.warn('booru_tags_upsert_error', { error: upsertError.message })
+          }
         }
       } catch (err) {
-        console.error(`[booru-tags] Error fetching chunk:`, err)
+        logger.warn('booru_tags_fetch_error', { provider, error: String(err) })
+        if (provider === 'danbooru' && redis) {
+          await recordOutcome(redis, 'danbooru-api', observedCircuitState, err)
+        }
       }
     }))
   }

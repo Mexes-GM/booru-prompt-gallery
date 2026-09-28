@@ -109,7 +109,7 @@ export function initWebVitalsDebug(): void {
         })
         // Only surface meaningful shifts to avoid console spam.
         if (entry.value >= 0.01) {
-          // eslint-disable-next-line no-console
+           
           console.warn(
             `[web-vitals] layout-shift +${entry.value.toFixed(4)} (CLS=${state.cls.toFixed(
               4,
@@ -140,7 +140,7 @@ export function initWebVitalsDebug(): void {
         selector: cssPath(last.element ?? null),
         url: last.url || undefined,
       }
-      // eslint-disable-next-line no-console
+       
       console.warn(
         `[web-vitals] LCP=${state.lcp.value}ms element:`,
         state.lcp.selector,
@@ -169,7 +169,7 @@ export function initWebVitalsDebug(): void {
         state.inputs.push(rec)
         if (!state.worstInp || rec.duration > state.worstInp.duration) {
           state.worstInp = rec
-          // eslint-disable-next-line no-console
+           
           console.warn(
             `[web-vitals] INP candidate ${rec.duration}ms (${rec.name}) target:`,
             rec.selector,

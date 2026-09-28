@@ -49,6 +49,13 @@ interface ResultsStatesProps {
   // image rate limiting (owned by the parent — imageErrorCountRef lives there)
   imageRateLimited: boolean
   onResumeScroll: () => void
+
+  // no-results reasons (E11): let each actionable reason fix itself in one click
+  isSafeFilterActive: boolean
+  onToggleRatingFilter: () => void
+  blacklistCount: number
+  onClearBlacklist: () => void
+  onRetrySearch: () => void
 }
 
 /**
@@ -78,6 +85,11 @@ export function ResultsStates({
   retryLoadFavorites,
   imageRateLimited,
   onResumeScroll,
+  isSafeFilterActive,
+  onToggleRatingFilter,
+  blacklistCount,
+  onClearBlacklist,
+  onRetrySearch,
 }: ResultsStatesProps) {
   return (
     <>
@@ -86,7 +98,7 @@ export function ResultsStates({
         <div className="text-center pb-8">
           {sessionCapReached ? (
             <div className="space-y-1 max-w-xs mx-auto">
-              <p className="text-sm text-amber-600 dark:text-amber-400">
+              <p className="text-sm text-warning-text">
                 Session limit reached for this search.
               </p>
               <p className="text-xs text-muted-foreground">
@@ -97,9 +109,9 @@ export function ResultsStates({
             scrollLimited ? (
               <div className="flex flex-col items-center gap-3 w-full max-w-xs mx-auto">
                 <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="w-1/4 h-full bg-amber-500 rounded-full animate-indeterminate-bar [content-visibility:auto]" />
+                  <div className="w-1/4 h-full bg-warning rounded-full animate-indeterminate-bar [content-visibility:auto]" />
                 </div>
-                <p className="text-sm text-amber-600 dark:text-amber-400">
+                <p className="text-sm text-warning-text">
                   Scrolling too fast — pausing for 5s.
                 </p>
               </div>
@@ -114,7 +126,7 @@ export function ResultsStates({
             )
           ) : imageRateLimited ? (
             <div className="space-y-2">
-              <p className="text-sm text-amber-600 dark:text-amber-400">Slow down! Too many requests at once.</p>
+              <p className="text-sm text-warning-text">Slow down! Too many requests at once.</p>
               <Button
                 onClick={onResumeScroll}
                 variant="outline"
@@ -126,7 +138,7 @@ export function ResultsStates({
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-destructive">Failed to load more posts.</p>
+              <p className="text-sm text-destructive-text">Failed to load more posts.</p>
               <Button
                 onClick={loadMore}
                 variant="outline"
@@ -178,7 +190,7 @@ export function ResultsStates({
             </>
           ) : (
             <>
-              <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary-text" />
               <p className="mt-4">Loading...</p>
             </>
           )}
@@ -188,7 +200,7 @@ export function ResultsStates({
       {/* Favorites error states */}
       {showFavorites && filteredPostsLength === 0 && activeFavoriteFolder !== 'artists' && !favsIsLoading && !favsIsRefreshing && (favoritesError || postsError) && (
         <div className="text-center py-12 px-4">
-          <AlertTriangle className="w-10 h-10 mx-auto text-amber-500 mb-3" />
+          <AlertTriangle className="w-10 h-10 mx-auto text-warning-text mb-3" />
           {favoritesError ? (
             <>
               <p className="text-lg font-medium mb-1">Could not load favorites from cloud</p>
@@ -214,7 +226,13 @@ export function ResultsStates({
               <p className="text-lg font-medium">No favorites yet</p>
             </div>
           ) : (
-            <NoResultsState />
+            <NoResultsState
+              isSafeFilterActive={isSafeFilterActive}
+              onToggleRatingFilter={onToggleRatingFilter}
+              blacklistCount={blacklistCount}
+              onClearBlacklist={onClearBlacklist}
+              onRetry={onRetrySearch}
+            />
           )}
         </>
       )}

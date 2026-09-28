@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import * as Sentry from "@sentry/nextjs"
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
@@ -12,8 +11,8 @@ export async function GET(request: Request) {
   const next = searchParams.get('next') ?? '/'
 
   // Expected, user-caused auth outcomes that are NOT actionable bugs. These are
-  // logged as warnings (or skipped) instead of exceptions so they don't dominate
-  // Sentry quota / issue list. Examples: link opened on another device, expired
+  // skipped instead of logged as errors so they don't bury real failures in
+  // the function logs. Examples: link opened on another device, expired
   // magic link, double-clicked link, Supabase 30s rate-limit.
   const isExpectedAuthError = (msg: string | null | undefined): boolean => {
     if (!msg) return false
@@ -40,18 +39,8 @@ export async function GET(request: Request) {
   // If there's an error from Supabase, redirect to error page with details
   if (error) {
     const description = errorDescription || error
-    if (isExpectedAuthError(description)) {
-      // Expected user-caused outcome — breadcrumb only, no issue created.
-      Sentry.addBreadcrumb({
-        category: "auth",
-        message: `Auth callback expected error: ${description}`,
-        level: "info",
-      })
-    } else {
-      Sentry.captureMessage(`Auth callback error: ${description}`, {
-        level: "warning",
-        tags: { context: "auth_callback_error" }
-      })
+    if (!isExpectedAuthError(description)) {
+      console.warn(`[auth_callback_error] ${description}`)
     }
     const errorUrl = new URL(`${origin}/auth/auth-code-error`)
     if (errorDescription) {
@@ -61,34 +50,16 @@ export async function GET(request: Request) {
   }
 
   if (code) {
-    Sentry.addBreadcrumb({
-      category: "auth",
-      message: "Exchanging code for session in callback",
-      level: "info"
-    })
     const supabase = await createClient()
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
     if (!exchangeError) {
-      Sentry.addBreadcrumb({
-        category: "auth",
-        message: "Successfully exchanged code for session",
-        level: "info"
-      })
       return NextResponse.redirect(`${origin}${redirectTo}`)
     }
 
-    if (isExpectedAuthError(exchangeError.message)) {
-      // Expected user-caused outcome (expired/used link, PKCE mismatch across
-      // devices, rate limit). Breadcrumb only — do not create a Sentry issue.
-      Sentry.addBreadcrumb({
-        category: "auth",
-        message: `Auth code exchange expected error: ${exchangeError.message}`,
-        level: "info",
-      })
-    } else {
-      Sentry.captureException(exchangeError, {
-        tags: { context: "auth_code_exchange" }
-      })
+    // Expected user-caused outcomes (expired/used link, PKCE mismatch across
+    // devices, rate limit) are not logged.
+    if (!isExpectedAuthError(exchangeError.message)) {
+      console.error("[auth_code_exchange]", exchangeError)
     }
     // Redirect to error page with specific error details
     const errorUrl = new URL(`${origin}/auth/auth-code-error`)

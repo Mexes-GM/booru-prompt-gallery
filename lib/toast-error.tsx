@@ -22,7 +22,7 @@ import { safeTrack } from "@/lib/analytics"
 // into the background. Override with a solid, high-contrast chip so the
 // "Report" action is clearly legible and doesn't get mistaken for decor.
 const REPORT_ACTION_CLASSNAME =
-  "border-transparent bg-white text-destructive font-semibold hover:bg-white/90 hover:text-destructive focus:ring-white focus:ring-offset-destructive dark:bg-white dark:text-red-700"
+  "border-transparent bg-destructive-foreground text-destructive font-semibold hover:bg-destructive-foreground/90 hover:text-destructive focus:ring-destructive-foreground focus:ring-offset-destructive"
 
 export interface ToastErrorOptions {
   /** Toast title shown to the user. */

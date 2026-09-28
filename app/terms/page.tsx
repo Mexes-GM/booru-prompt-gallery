@@ -25,7 +25,7 @@ export default function TermsPage() {
             <p>
               By accessing or using Booru Prompt Gallery (&quot;the app&quot;), you agree to these Terms of Service and to
               our{" "}
-              <Link href="/privacy" className="underline hover:text-primary">
+              <Link href="/privacy" className="underline hover:text-primary-text">
                 Privacy Policy
               </Link>
               . If you do not agree, please do not use the app.

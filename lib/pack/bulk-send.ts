@@ -19,15 +19,18 @@ import { cleanPrompt, type CleanPromptOptions } from "../cleanPrompt"
 import { applyWeights } from "../weight-utils"
 import { resolveTagConflicts } from "../tag-conflicts"
 import { splitCommaSeparatedTags, splitTags } from "../utils/tag-utils"
+import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from "./prompt-similarity"
 import {
   PACK_AXES,
   MAX_PACK_PROMPTS,
+  MAX_PACK_OVERGENERATE,
   classifyPostForPack,
   extractAxisValues,
   generatePackPrompts,
   withAxisFallback,
   normalizeTagForPack,
-} from "./pack-generator"
+  type PackPrompt,
+} from './pack-generator'
 
 /** A subset of UseCardPromptOptions (hooks/use-card-prompt.ts) — the prompt
  *  settings bundle shared with the "Real posts" bulk-send mode. Duplicated
@@ -44,6 +47,8 @@ export interface BulkSendCleanOptions {
   tagOverrides?: Record<string, string>
   globalWeights?: Record<string, number>
   isGlobalWeightsEnabled?: boolean
+  /** Fallback for cleanSyntheticPrompt's `lockedTags` argument when that is omitted. */
+  lockedTags?: string[]
 }
 
 export interface SyntheticBulkPrompt {
@@ -171,8 +176,13 @@ export function detectCharacterTags(
 export function cleanSyntheticPrompt(
   tags: string[],
   characterTags: string[],
-  options: BulkSendCleanOptions
+  options: BulkSendCleanOptions,
+  lockedTags?: string[]
 ): string {
+  const effectiveLocked = (lockedTags && lockedTags.length > 0)
+    ? lockedTags
+    : (options.lockedTags && options.lockedTags.length > 0 ? options.lockedTags : [])
+
   const {
     excludeInput,
     addInput,
@@ -197,12 +207,66 @@ export function cleanSyntheticPrompt(
     replace: replaces[i],
   }))
 
+  const characterSet = new Set(characterTags.map(normalizeTagForPack))
+
+  // When locked / always-included tags are provided, they bypass destructive cleaner rules:
+  // - They are NOT stripped or deduplicated by optimizeTags (e.g. "horns", "breasts", "hyper" remain intact).
+  // - They are NOT merged by combineSharedNounTags (e.g. "white hair", "long hair", "gradient hair" are not collapsed).
+  // - They are NOT pushed behind scenery by classifyTags (e.g. "spirit blossom syndra" stays at its position).
+  // - They are NOT removed by the user excludeList.
+  if (effectiveLocked.length > 0) {
+    const activeLocked = includeCharacters === false
+      ? effectiveLocked.filter((t) => !characterSet.has(normalizeTagForPack(t)))
+      : effectiveLocked
+
+    const lockedNormSet = new Set(activeLocked.map(normalizeTagForPack))
+
+    // Sampled tags are tags in `tags` that were not part of lockedTags
+    const sampledTags = tags.filter((t) => !lockedNormSet.has(normalizeTagForPack(t)))
+    const generalSampledTags = sampledTags.filter((t) => !characterSet.has(normalizeTagForPack(t)))
+
+    const sharedOpts: CleanPromptOptions = {
+      includeCharacters,
+      includeCopyrights: false,
+      optimizeTags,
+      exclude: excludeList,
+      addedTags: [],
+      tagOverrides,
+      backgroundMode: "keep",
+      escapeOutput: false,
+      wordReplacements,
+    }
+    const cleanedSampledContent = generalSampledTags.length > 0
+      ? cleanPrompt(generalSampledTags.join(", "), "", characterTags.join(" "), "", sharedOpts)
+      : ""
+
+    const cleanedSampledList = cleanedSampledContent
+      ? cleanedSampledContent
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => Boolean(t) && !lockedNormSet.has(normalizeTagForPack(t)))
+      : []
+
+    const combinedForConflictCheck = [...activeLocked, ...cleanedSampledList]
+    const conflictResolution = !combinedForConflictCheck.length || addList.length === 0 || !smartTagExclusion
+      ? { validTags: addList, conflictingTags: [] }
+      : resolveTagConflicts(combinedForConflictCheck, addList)
+
+    const finalTags = [
+      ...conflictResolution.validTags,
+      ...activeLocked,
+      ...cleanedSampledList,
+    ]
+
+    const baseContent = finalTags.join(", ")
+    return isGlobalWeightsEnabled && baseContent ? applyWeights(baseContent, globalWeights) : baseContent
+  }
+
   // Character tags are passed via the dedicated characterTags parameter (4th
   // arg of cleanPrompt), same convention cleanPrompt already uses for real
   // posts (tag_string_character) — general tags go through tagString, minus
   // whatever we've identified as the character's own tags to avoid double
   // counting them in both slots.
-  const characterSet = new Set(characterTags.map(normalizeTagForPack))
   const generalTags = tags.filter((t) => !characterSet.has(normalizeTagForPack(t)))
 
   const sharedOpts: CleanPromptOptions = {
@@ -232,10 +296,93 @@ export function cleanSyntheticPrompt(
 }
 
 /**
+ * Shared "over-generate → clean-per-item → exact-dedup → near-duplicate
+ * filter → cut at N" pipeline, shared by Bulk Send's "Synthetic" mode
+ * (`buildSyntheticPrompts` below) and `hooks/use-pack-mode.ts`'s
+ * `regenerate()`, which passes `axisMinCounts`/`axisWeights`/global weights
+ * as optional fields.
+ *
+ * Order matters: near-duplicate filtering runs AFTER cleaning, because cleaning
+ * itself (optimizeTags, exclude, find&replace) can pull two raw combinations
+ * closer together — filtering on the pre-clean prompt could miss duplicates
+ * the user would actually see. Exact-string dedup via `seen` runs first as a
+ * cheap short-circuit before the O(n) Jaccard scan.
+ */
+export interface GenerateAndFilterPromptsArgs {
+  lockedTags: string[]
+  axes: Partial<Record<TagCategory, string[]>>
+  /** Character tags for cleanSyntheticPrompt's characterTags param (see its docstring). */
+  characterTags: string[]
+  /** How many cleaned, deduped prompts to return. */
+  count: number
+  cleanOptions: BulkSendCleanOptions
+  /** Minimum distinct values sampled per axis category — Pack Mode only. */
+  axisMinCounts?: Partial<Record<TagCategory, number>>
+  /** Per-axis sampling weights (learning model) — Pack Mode only. */
+  axisWeights?: Partial<Record<TagCategory, Record<string, number>>>
+  /** Over-generate ceiling (defaults to MAX_PACK_PROMPTS via generatePackPrompts). */
+  overGenerateCount: number
+  /** Skip near-duplicate filtering entirely when false (Bulk Send's "avoid
+   *  similar prompts" toggle). Defaults to true. */
+  filterNearDuplicates?: boolean
+  /** Jaccard threshold for the near-duplicate filter. */
+  similarityThreshold?: number
+  rng?: () => number
+}
+
+export function generateAndFilterPrompts(args: GenerateAndFilterPromptsArgs): PackPrompt[] {
+  const {
+    lockedTags,
+    axes,
+    characterTags,
+    count,
+    cleanOptions,
+    axisMinCounts,
+    axisWeights,
+    overGenerateCount,
+    filterNearDuplicates = true,
+    similarityThreshold = DEFAULT_SIMILARITY_THRESHOLD,
+    rng,
+  } = args
+
+  const rawPrompts = generatePackPrompts({
+    lockedTags,
+    axes,
+    axisMinCounts,
+    axisWeights,
+    count: overGenerateCount,
+    maxPrompts: Math.min(overGenerateCount, MAX_PACK_OVERGENERATE),
+    globalWeights: cleanOptions.globalWeights,
+    isGlobalWeightsEnabled: cleanOptions.isGlobalWeightsEnabled,
+    rng,
+  })
+
+  const seen = new Set<string>()
+  const dupFilter = filterNearDuplicates ? new NearDuplicateFilter(similarityThreshold) : null
+  const results: PackPrompt[] = []
+
+  for (const raw of rawPrompts) {
+    if (results.length >= count) break
+    const tags = raw.prompt.split(",").map((t) => t.trim()).filter(Boolean)
+    const prompt = cleanSyntheticPrompt(tags, characterTags, { ...cleanOptions, lockedTags }, lockedTags)
+    if (!prompt || seen.has(prompt)) continue
+    if (dupFilter && !dupFilter.tryAccept(prompt)) continue
+    seen.add(prompt)
+    results.push({ prompt, values: raw.values })
+  }
+
+  return results
+}
+
+/**
  * Build up to `count` distinct, cleaned synthetic prompts for the given
  * search query, seeded from `seedPosts`. Returns fewer than `count` when the
  * combination space (after Smart Tag Exclusion + cleaning + dedup) can't
  * support it — callers should report the actual number produced.
+ *
+ * Delegates the generate/clean/dedup loop itself to `generateAndFilterPrompts`
+ * above (shared with Pack Mode) — this function's own job is just deriving
+ * `lockedTags`/`axes`/`characterTags` from the search bar + seed posts.
  */
 export function buildSyntheticPrompts(
   seedPosts: BooruPost[],
@@ -251,24 +398,14 @@ export function buildSyntheticPrompts(
   const axes = buildAxesFromSeedPosts(seedPosts, lockedTags, tagOverrides)
   const characterTags = detectCharacterTags(lockedTags, seedPosts, tagOverrides)
 
-  const packPrompts = generatePackPrompts({
+  return generateAndFilterPrompts({
     lockedTags,
     axes,
+    characterTags,
     count,
-    maxPrompts: Math.min(count, MAX_PACK_PROMPTS),
+    cleanOptions,
+    overGenerateCount: Math.min(count, MAX_PACK_PROMPTS),
+    filterNearDuplicates: false,
     rng,
   })
-
-  const seen = new Set<string>()
-  const results: SyntheticBulkPrompt[] = []
-
-  for (const packPrompt of packPrompts) {
-    const tags = packPrompt.prompt.split(",").map((t) => t.trim()).filter(Boolean)
-    const cleaned = cleanSyntheticPrompt(tags, characterTags, cleanOptions)
-    if (!cleaned || seen.has(cleaned)) continue
-    seen.add(cleaned)
-    results.push({ prompt: cleaned, values: packPrompt.values })
-  }
-
-  return results
 }

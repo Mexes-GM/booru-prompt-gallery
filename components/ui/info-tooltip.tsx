@@ -127,7 +127,7 @@ export function InfoTooltip({
               aria-label={title}
               // p-1/-m-1 enlarges the tap area without shifting the layout
               onClick={(e) => e.stopPropagation()}
-              className="p-1 -m-1 touch-manipulation text-muted-foreground/70 transition-colors hover:text-primary"
+              className="p-1 -m-1 touch-manipulation text-muted-foreground/70 transition-colors hover:text-primary-text"
             >
               <Info className="w-4 h-4" />
             </button>
@@ -147,7 +147,7 @@ export function InfoTooltip({
         <TooltipTrigger asChild>
           <span className={cn("cursor-help inline-flex items-center gap-1.5", triggerClassName)}>
             {children}
-            <Info className="w-4 h-4 text-muted-foreground/70 hover:text-primary transition-colors" />
+            <Info className="w-4 h-4 text-muted-foreground/70 hover:text-primary-text transition-colors" />
           </span>
         </TooltipTrigger>
         <TooltipContent side={side} sideOffset={8} className={panelClassName}>

@@ -1,17 +1,19 @@
 
 import { NextRequest, NextResponse } from 'next/server'
-import { PROVIDER_REFERERS, USER_AGENT, getDanbooruUserAgent } from '@/lib/constants'
-import { getDanbooruApiRateLimit, getDanbooruCombinedLimit } from '@/lib/rate-limit'
+import {
+  PROVIDER_REFERERS,
+  USER_AGENT,
+  getDanbooruUserAgent,
+  isAllowedImageHost,
+  isMediaContentType,
+} from '@/lib/constants'
+import { getDanbooruApiRateLimit, getCombinedLimit } from '@/lib/rate-limit'
 import { logRateLimitBlock } from '@/lib/observability'
-import { NEXT_LIMITS } from '@/lib/limits'
 import { resolveRateLimitUserId } from '@/lib/rate-limit-identity'
+import { getClientIp } from '@/lib/client-ip'
 
 // Use Node.js runtime for better stability with outgoing requests
 export const runtime = 'nodejs'
-
-function getClientIp(request: NextRequest): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
-}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -22,78 +24,54 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing image URL' }, { status: 400 })
   }
 
-  const allowedDomains = [
-    'danbooru.donmai.us', 'cdn.donmai.us', 'donmai.us',
-    'aibooru.online', 'cdn.aibooru.download', 'aibooru.download',
-    'rule34.xxx', 'api-cdn.rule34.xxx', 'us.rule34.xxx', 'wimg.rule34.xxx',
-    'e621.net', 'static1.e621.net',
-    'gelbooru.com'
-  ]
-
-  let urlDomain: string
-  let isDanbooru: boolean
+  let url: URL
   try {
-    const url = new URL(imageUrl)
-    urlDomain = url.hostname
-    isDanbooru = urlDomain.includes('danbooru') || urlDomain.includes('donmai.us')
-  } catch (error) {
+    url = new URL(imageUrl)
+  } catch {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
+  const urlDomain = url.hostname
+  const isDanbooru = urlDomain === 'donmai.us' || urlDomain.endsWith('.donmai.us')
 
-  const isAllowedDomain = allowedDomains.some(domain =>
-    urlDomain === domain || urlDomain.endsWith(`.${domain}`)
-  )
-
-  if (!isAllowedDomain) {
+  // Image CDN hosts only — never an API/site host (danbooru.donmai.us,
+  // gelbooru.com…), so this route cannot relay provider API pages.
+  if (url.protocol !== 'https:' || !isAllowedImageHost(urlDomain)) {
     return NextResponse.json({ error: 'URL domain not allowed' }, { status: 403 })
   }
 
-  // Fase 2 (redis-optimization-plan.md): for Danbooru, per-IP + global
-  // rate-limit + circuit-breaker state are fetched in a single Redis EVAL
-  // instead of 3 separate round-trips.
-  if (isDanbooru) {
-    const clientIp = getClientIp(request)
+  // Fase 2 (redis-optimization-plan.md): per-IP + global rate-limit in a
+  // single Redis EVAL. Inline <img> fallbacks from the gallery grid get their
+  // own, much larger `image` bucket; explicit Danbooru downloads keep the
+  // tight Danbooru budget.
+  if (isInline || isDanbooru) {
+    const profile = isInline ? 'image' : 'danbooruApi'
+    const surface = isInline ? 'image' : 'download'
+    const clientIp = getClientIp(request.headers)
     const userId = await resolveRateLimitUserId(request)
-    const combined = await getDanbooruCombinedLimit(clientIp, userId)
+    const combined = await getCombinedLimit(profile, clientIp, userId)
     const keyType = userId ? 'authed' : 'anon'
+    const requestId = request.headers.get('x-request-id') ?? undefined
 
-    if (combined.userCount > combined.userMax && !combined.degraded) {
-      logRateLimitBlock({ surface: 'download', keyType, scope: 'per-ip', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
+    if (combined.userCount > combined.userMax) {
+      logRateLimitBlock({ surface, keyType, scope: 'per-ip', origin: urlDomain, requestId })
       return NextResponse.json(
-        { error: 'Too many downloads. Please wait before downloading another image.' },
-        {
-          status: 429,
-          headers: {
-            'Cache-Control': 'no-store',
-            'CDN-Cache-Control': 'no-store',
-            'Netlify-CDN-Cache-Control': 'no-store',
-            'Vercel-CDN-Cache-Control': 'no-store',
-            'Retry-After': '10',
-          },
-        }
+        { error: isInline ? 'Too many image requests. Please wait a moment.' : 'Too many downloads. Please wait before downloading another image.', retryAfter: combined.retryAfterS },
+        { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': String(combined.retryAfterS) } }
       )
     }
 
-    if (combined.globalCount > NEXT_LIMITS.danbooruCombined.global.max && !combined.degraded) {
-      logRateLimitBlock({ surface: 'download', keyType, scope: 'global', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
+    if (combined.globalCount > combined.globalMax) {
+      logRateLimitBlock({ surface, keyType, scope: 'global', origin: urlDomain, requestId })
       return NextResponse.json(
-        { error: 'Danbooru requests are temporarily throttled. Please wait a moment.' },
+        { error: 'Image requests are temporarily throttled. Please wait a moment.', retryAfter: 2 },
         { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '2' } }
-      )
-    }
-
-    if (combined.circuitOpen) {
-      logRateLimitBlock({ surface: 'download', keyType, scope: 'circuit', origin: 'danbooru', requestId: request.headers.get('x-request-id') ?? undefined })
-      return NextResponse.json(
-        { error: 'Danbooru is saturated. Please wait before downloading.', retryAfter: 60 },
-        { status: 429, headers: { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'Vercel-CDN-Cache-Control': 'no-store', 'Retry-After': '60' } }
       )
     }
   } else {
     // Non-Danbooru providers only need the general per-IP limiter.
     const ratelimit = getDanbooruApiRateLimit()
     if (ratelimit) {
-      const clientIp = getClientIp(request)
+      const clientIp = getClientIp(request.headers)
       const { success, limit, remaining, reset } = await ratelimit.limit(clientIp)
 
       if (!success) {
@@ -122,35 +100,21 @@ export async function GET(request: NextRequest) {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 60000)
 
-    // Determine appropriate Referer based on domain
-    // Danbooru and Aibooru can be sensitive to Referer, or sometimes block if referer is set
-    // Rule34 fails if referer is wrong.
+    // Anti-hotlink Referer per CDN. Image files need no credentials, so the
+    // Danbooru API key is never sent from this route.
     let referer: string = PROVIDER_REFERERS.DANBOORU
-    if (urlDomain.includes('rule34')) referer = PROVIDER_REFERERS.RULE34
-    else if (urlDomain.includes('aibooru')) referer = PROVIDER_REFERERS.AIBOORU
-    else if (urlDomain.includes('e621')) referer = PROVIDER_REFERERS.E621
-    else if (urlDomain.includes('gelbooru')) referer = PROVIDER_REFERERS.GELBOORU
+    if (urlDomain.endsWith('rule34.xxx')) referer = PROVIDER_REFERERS.RULE34
+    else if (urlDomain.endsWith('aibooru.download')) referer = PROVIDER_REFERERS.AIBOORU
+    else if (urlDomain.endsWith('e621.net') || urlDomain.endsWith('e926.net')) referer = PROVIDER_REFERERS.E621
+    else if (urlDomain.endsWith('gelbooru.com')) referer = PROVIDER_REFERERS.GELBOORU
 
     const fetchHeaders: HeadersInit = {
       'User-Agent': isDanbooru ? getDanbooruUserAgent() : USER_AGENT,
-      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*;q=0.9,*/*;q=0.8',
+      'Referer': referer,
     }
 
-    // Add Danbooru authentication for CDN images if credentials are available
-    if (isDanbooru) {
-      const username = process.env.DANBOORU_USERNAME
-      const apiKey = process.env.DANBOORU_API_KEY
-
-      if (username && apiKey) {
-        const credentials = btoa(`${username}:${apiKey}`)
-        fetchHeaders['Authorization'] = `Basic ${credentials}`
-      }
-      fetchHeaders['Referer'] = 'https://danbooru.donmai.us/'
-    } else if (referer) {
-      fetchHeaders['Referer'] = referer
-    }
-
-    const response = await fetch(imageUrl, {
+    const response = await fetch(url.toString(), {
       signal: controller.signal,
       headers: fetchHeaders,
     })
@@ -162,6 +126,23 @@ export async function GET(request: NextRequest) {
         { error: `Failed to fetch image: ${response.status} ${response.statusText}` },
         { 
           status: response.status,
+          headers: {
+            'Cache-Control': 'no-store',
+            'CDN-Cache-Control': 'no-store',
+            'Netlify-CDN-Cache-Control': 'no-store',
+            'Vercel-CDN-Cache-Control': 'no-store',
+          }
+        }
+      )
+    }
+
+    const contentType = response.headers.get('content-type')
+    if (!isMediaContentType(contentType)) {
+      await response.body?.cancel()
+      return NextResponse.json(
+        { error: 'Upstream did not return an image' },
+        {
+          status: 502,
           headers: {
             'Cache-Control': 'no-store',
             'CDN-Cache-Control': 'no-store',
@@ -187,11 +168,15 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const urlPath = imageUrl.split('?')[0]
-    const filename = urlPath.split('/').pop() || 'download.jpg'
+    // Sanitized so a crafted path cannot break the Content-Disposition header.
+    const lastSegment = url.pathname.split('/').pop() || ''
+    let rawName = lastSegment
+    try { rawName = decodeURIComponent(lastSegment) } catch { /* malformed escape: keep raw */ }
+    const filename = rawName.replace(/[^\w.\-]+/g, '_').slice(0, 150) || 'download.jpg'
 
     const headers = new Headers()
-    headers.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream')
+    headers.set('Content-Type', contentType!)
+    headers.set('X-Content-Type-Options', 'nosniff')
     // ponytail: inline mode for <img> display vs attachment for downloads.
     if (!isInline) {
       headers.set('Content-Disposition', `attachment; filename="${filename}"`)

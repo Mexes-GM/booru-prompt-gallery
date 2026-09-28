@@ -1,8 +1,10 @@
 import { Env } from '../types'
+import { isAllowedImageHost } from '../lib/constants'
 import { jsonResponse, errorResponse } from '../utils'
 import { Redis } from '@upstash/redis/cloudflare'
 import { Ratelimit } from '@upstash/ratelimit'
 import { verifyTurnstile } from '../lib/turnstile'
+import { AI_CONVERT_LIMITS, type WindowLimit } from '../lib/limits'
 
 const SYSTEM_PROMPT = `You are an expert prompt engineer for Anima, a text-to-image model focused on anime/illustration style. Convert booru tags into a descriptive natural language paragraph.
 
@@ -39,6 +41,8 @@ Output: Yor Briar from Spy x Family, a woman with long black hair tied in a bun 
 Now convert these tags:
 TAGS_PLACEHOLDER`
 
+const slidingWindow = (l: WindowLimit) => Ratelimit.slidingWindow(l.max, `${l.windowS} s`)
+
 /** Creates all rate limiters from a single Redis connection. Returns null if Redis is not configured. */
 function createRatelimiters(env: Env) {
   if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN) {
@@ -46,11 +50,11 @@ function createRatelimiters(env: Env) {
   }
   const redis = new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN })
   return {
-    // Free tier: 15 req/min burst + 10 req/day overall budget
-    freeMinute: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(15,  '1 m'), prefix: 'rl:ai:free:min', analytics: false }),
-    freeDaily:  new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(10,  '24 h'), prefix: 'rl:ai:free:day', analytics: false }),
+    // Free tier: per-minute burst + daily overall budget
+    freeMinute: new Ratelimit({ redis, limiter: slidingWindow(AI_CONVERT_LIMITS.freeMinute), prefix: 'rl:ai:free:min', analytics: false }),
+    freeDaily:  new Ratelimit({ redis, limiter: slidingWindow(AI_CONVERT_LIMITS.freeDaily), prefix: 'rl:ai:free:day', analytics: false }),
     // Paid tier (own API key): only per-minute protection
-    paidMinute: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60,  '1 m'), prefix: 'rl:ai:paid:min', analytics: false }),
+    paidMinute: new Ratelimit({ redis, limiter: slidingWindow(AI_CONVERT_LIMITS.paidMinute), prefix: 'rl:ai:paid:min', analytics: false }),
   }
 }
 
@@ -176,25 +180,9 @@ function isSafeImageUrl(url: string): boolean {
     const parsed = new URL(url)
     const hostname = parsed.hostname.toLowerCase()
 
-    // Allowlist of domains supported by the image proxy
-    const ALLOWED_DOMAINS = [
-      'gelbooru.com',
-      'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com',
-      'img4.gelbooru.com', 'img5.gelbooru.com',
-      'danbooru.donmai.us',
-      'cdn.donmai.us',
-      'aibooru.online',
-      'cdn.aibooru.download',
-      'rule34.xxx',
-      'api.rule34.xxx',
-      'e621.net',
-      'static1.e621.net',
-      'e926.net',
-    ]
+    // Same allow-list as the image proxy it is routed through.
+    const isAllowed = isAllowedImageHost(hostname)
 
-    // Check if hostname matches allowed domains (exact or subdomain)
-    const isAllowed = ALLOWED_DOMAINS.some(d => hostname === d || hostname.endsWith(`.${d}`))
-    
     return isAllowed
   } catch {
     return false
@@ -422,7 +410,7 @@ export async function convertPromptHandler(
     const ip = request.headers.get('cf-connecting-ip') || 'unknown'
     const isFreeTier = provider === 'cloudflare' || !apiKey
 
-    // F2 (rate-limit-antiabuse): gate the FREE tier — which spends OUR shared
+    // gate the FREE tier — which spends OUR shared
     // Cloudflare Workers AI quota — behind Turnstile. Enforced ONLY when the
     // explicit flag TURNSTILE_AI_GATE='1' is set (decoupled from the feedback
     // secret, so setting TURNSTILE_SECRET_KEY alone never breaks AI). Default

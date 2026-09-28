@@ -2,6 +2,7 @@ import { Env } from '../types'
 import { getSupabase } from '../lib/supabase'
 import { jsonResponse, getClientIp } from '../utils'
 import { memoryRateLimit } from '../lib/rate-limit-cache'
+import { WORKER_LIMITS } from '../lib/limits'
 
 interface TagData {
   name: string
@@ -19,7 +20,7 @@ const FILTERED_LIMIT = 3000
 function checkRateLimit(clientIp: string): boolean {
   // This route serves a 24h-cached static list — it never touches donmai,
   // so a pure in-memory limiter is enough (Fase 5, redis-optimization-plan.md).
-  return memoryRateLimit(`tags:${clientIp}`, 60, 60_000)
+  return memoryRateLimit(`tags:${clientIp}`, WORKER_LIMITS.tagsList.perIp.max, WORKER_LIMITS.tagsList.perIp.windowS * 1000)
 }
 
 export async function tagsHandler(

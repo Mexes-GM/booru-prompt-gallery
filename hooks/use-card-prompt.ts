@@ -20,6 +20,8 @@ export interface UseCardPromptArgs {
   addInput: string
   /** Search query entered in the search bar. Missing searched tags are appended after addInput. */
   searchTags?: string
+  /** Whether missing search-bar tags get auto-appended (see `searchTags`). Defaults to true. */
+  autoAppendSearchTags?: boolean
   /** "Find" side of the Find & Replace list (comma-separated, paired by index with replaceInput). */
   findInput?: string
   /** "Replace" side of the Find & Replace list (comma-separated, paired by index with findInput). */
@@ -79,6 +81,7 @@ export function useCardPrompt({
   excludeInput,
   addInput,
   searchTags,
+  autoAppendSearchTags = true,
   findInput = "",
   replaceInput = "",
   tagAppendRules,
@@ -107,7 +110,7 @@ export function useCardPrompt({
   // same pipeline can be called imperatively in a batch loop (Bulk Send's
   // "Real posts" mode) without risking the two paths drifting apart.
   const derived = useMemo(() => derivePostPrompt(post, {
-    excludeInput, addInput, searchTags, findInput, replaceInput, tagAppendRules,
+    excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
     includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
     removeLoRaTags, removeQualityTags,
     backgroundMode, simpleBackgroundReplacementTags,
@@ -115,7 +118,7 @@ export function useCardPrompt({
     backgroundMatchStrictness,
     tagOverrides, globalWeights, isGlobalWeightsEnabled,
   }), [
-    post, excludeInput, addInput, searchTags, findInput, replaceInput, tagAppendRules,
+    post, excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
     includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
     removeLoRaTags, removeQualityTags,
     backgroundMode, simpleBackgroundReplacementTags,

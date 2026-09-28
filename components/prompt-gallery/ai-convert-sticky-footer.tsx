@@ -14,32 +14,28 @@ import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
 import { toast } from '@/hooks/use-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { cn } from '@/lib/utils'
-import OpenAIMono from '@lobehub/icons/es/OpenAI/components/Mono'
-import AnthropicMono from '@lobehub/icons/es/Anthropic/components/Mono'
-import GoogleMono from '@lobehub/icons/es/Google/components/Mono'
-import DeepSeekMono from '@lobehub/icons/es/DeepSeek/components/Mono'
-import OpenRouterMono from '@lobehub/icons/es/OpenRouter/components/Mono'
-import CloudflareMono from '@lobehub/icons/es/Cloudflare/components/Mono'
+import { OpenAIIcon, AnthropicIcon, GoogleIcon, DeepSeekIcon, OpenRouterIcon, CloudflareIcon } from "@/components/icons/brand-icons"
 import { usePostHog } from 'posthog-js/react'
 // ── Provider icons ──────────────────────────────────────────────────────────
 const ProviderIcon = ({ provider }: { provider: string }) => {
   const size = 14
   switch (provider) {
     case 'cloudflare':
-      return <CloudflareMono size={size} />
+      return <CloudflareIcon size={size} />
     case 'openai':
-      return <OpenAIMono size={size} />
+      return <OpenAIIcon size={size} />
     case 'gemini':
-      return <GoogleMono size={size} />
+      return <GoogleIcon size={size} />
     case 'claude':
-      return <AnthropicMono size={size} />
+      return <AnthropicIcon size={size} />
     case 'deepseek':
-      return <DeepSeekMono size={size} />
+      return <DeepSeekIcon size={size} />
     case 'openrouter':
-      return <OpenRouterMono size={size} />
+      return <OpenRouterIcon size={size} />
     default:
-      return <CloudflareMono size={size} />
+      return <CloudflareIcon size={size} />
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,10 +108,10 @@ const AiConvertStickyFooterComponent = ({
   const [isLoading, setIsLoading] = useState(false)
   const [hasConverted, setHasConverted] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isCopied, setIsCopied] = useState(false)
+  const [isCopied, triggerCopyFeedback, resetCopyFeedback] = useCopyFeedback()
   const [isPulseActive, setIsPulseActive] = useState(false)
   const [dailyRemaining, setDailyRemaining] = useState<number | null>(null)
-  // F2 (rate-limit-antiabuse): Turnstile token for the free AI tier. Stays null
+  // Turnstile token for the free AI tier. Stays null
   // (and the widget renders nothing) until NEXT_PUBLIC_TURNSTILE_SITE_KEY is set,
   // so this is a no-op today. Sent only for the free 'cloudflare' provider.
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
@@ -201,7 +197,7 @@ const AiConvertStickyFooterComponent = ({
     setHasConverted(true)
     setResult('')
     setError(null)
-    setIsCopied(false)
+    resetCopyFeedback()
     
     const startTime = Date.now()
     posthog.capture('ai_convert_started', {
@@ -224,7 +220,7 @@ const AiConvertStickyFooterComponent = ({
           // Authoritative identity metadata (character/series) from the booru API,
           // so the model uses exact names instead of guessing from the tag soup.
           meta: meta && (meta.characters || meta.series || meta.artist) ? meta : undefined,
-          // Only the free 'cloudflare' tier is gated server-side (F2).
+          // Only the free 'cloudflare' tier is gated server-side.
           turnstile_token: prov === 'cloudflare' ? (turnstileToken || undefined) : undefined,
         }),
       })
@@ -294,12 +290,11 @@ const AiConvertStickyFooterComponent = ({
   const handleCopy = () => {
     if (!result) return
     navigator.clipboard.writeText(result)
-    setIsCopied(true)
+    triggerCopyFeedback()
     toast({
       title: 'Copied!',
       description: 'The natural language prompt has been copied to your clipboard.',
     })
-    setTimeout(() => setIsCopied(false), 2000)
   }
 
   return (
@@ -316,28 +311,22 @@ const AiConvertStickyFooterComponent = ({
             damping: 25,
             mass: 0.8
           }}
-          className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10 ${shouldReduceMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl"}`}
+          className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-foreground/5 ${shouldReduceMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl"}`}
           style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         >
           {/* Border Glow Effect */}
           {!shouldReduceMotion && (
             <div className="absolute inset-0 z-[-1] overflow-hidden rounded-2xl pointer-events-none">
               <motion.div
-                animate={{
-                  background: [
-                    "radial-gradient(circle at 50% 0%, rgba(139,92,246,0.12) 0%, transparent 60%)",
-                    "radial-gradient(circle at 50% 0%, rgba(139,92,246,0.18) 0%, transparent 80%)",
-                    "radial-gradient(circle at 50% 0%, rgba(139,92,246,0.12) 0%, transparent 60%)"
-                  ]
-                }}
+                animate={{ opacity: [0.6, 1, 0.6] }}
                 transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute inset-0"
+                className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--primary)_14%,transparent)_0%,transparent_65%)]"
               />
             </div>
           )}
 
           <div className="p-3 sm:p-4 flex flex-col gap-3">
-            {/* F2: Turnstile for the free AI tier. Renders nothing until
+            {/* Turnstile for the free AI tier. Renders nothing until
                 NEXT_PUBLIC_TURNSTILE_SITE_KEY is set; kept in the DOM (sr-only)
                 so a token is produced non-interactively for the free provider. */}
             {isTurnstileEnabled() && settings.provider === 'cloudflare' && (
@@ -346,7 +335,7 @@ const AiConvertStickyFooterComponent = ({
             {/* Header controls */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-primary/10 rounded-lg text-primary border border-primary/20">
+                <div className="p-1.5 bg-primary/10 rounded-lg text-primary-text border border-primary/20">
                   <Sparkles className="h-4 w-4" aria-hidden="true" />
                 </div>
                 <span className="font-bold text-sm sm:text-base">
@@ -361,10 +350,10 @@ const AiConvertStickyFooterComponent = ({
                       dailyRemaining === null
                         ? 'bg-muted/60 text-muted-foreground border border-border/40'
                         : dailyRemaining === 0
-                        ? 'bg-destructive/15 text-destructive border border-destructive/30'
+                        ? 'bg-destructive/15 text-destructive-text border border-destructive/30'
                         : dailyRemaining <= 3
-                        ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
-                        : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                        ? 'bg-warning-soft text-warning-text border border-warning-border'
+                        : 'bg-success-soft text-success-text border border-success-border'
                     )}
                     title={
                       dailyRemaining !== null
@@ -376,7 +365,7 @@ const AiConvertStickyFooterComponent = ({
                   </span>
                 ) : (
                   <span
-                    className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-primary/10 text-primary border border-primary/25 transition-colors"
+                    className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-primary/10 text-primary-text border border-primary/25 transition-colors"
                     title={`Using your own ${settings.provider} API key · no daily limit`}
                   >
                     🔑 {{
@@ -408,7 +397,7 @@ const AiConvertStickyFooterComponent = ({
                     <SheetHeader className="p-4 sm:p-6 pb-0 border-b border-border/40 bg-gradient-to-r from-primary/5 to-transparent">
                       <div className="flex items-center justify-between">
                         <div>
-                          <SheetTitle className="flex items-center gap-2 text-primary">
+                          <SheetTitle className="flex items-center gap-2 text-primary-text">
                             <History className="w-5 h-5" />
                             Conversion History
                           </SheetTitle>
@@ -421,7 +410,7 @@ const AiConvertStickyFooterComponent = ({
                             variant="ghost"
                             size="icon"
                             onClick={clearHistory}
-                            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            className="text-muted-foreground hover:text-destructive-text hover:bg-destructive/10"
                             title="Clear history"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -468,7 +457,8 @@ const AiConvertStickyFooterComponent = ({
                 </Sheet>
 
                 {/* AI settings Popover — controlled to close on save */}
-                <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
+                {/* closeOnScroll off: the footer is fixed, so the trigger never moves with the page. */}
+                <Popover open={settingsOpen} onOpenChange={setSettingsOpen} closeOnScroll={false}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -483,8 +473,8 @@ const AiConvertStickyFooterComponent = ({
                   </PopoverTrigger>
                   <PopoverContent className="w-80 p-0 overflow-hidden border-border/50 shadow-2xl" align="end" sideOffset={8}>
                     <div className="bg-gradient-to-r from-primary/10 to-transparent p-3 border-b border-border/40 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-primary" aria-hidden="true" />
-                      <span className="text-sm font-semibold text-primary">AI Provider Settings</span>
+                      <Sparkles className="w-4 h-4 text-primary-text" aria-hidden="true" />
+                      <span className="text-sm font-semibold text-primary-text">AI Provider Settings</span>
                     </div>
 
                     <div className="p-4 space-y-4">
@@ -523,7 +513,7 @@ const AiConvertStickyFooterComponent = ({
                               onChange={(e) => setTempApiKey(e.target.value)}
                               className="h-9 rounded-lg bg-background text-xs"
                             />
-                            <p className="text-[10px] text-amber-500/80 flex items-center gap-1 mt-0.5">
+                            <p className="text-[10px] text-warning-text/80 flex items-center gap-1 mt-0.5">
                               <AlertCircle className="w-3 h-3 shrink-0" aria-hidden="true" />
                               {tempRemember
                                 ? 'Stored in browser. Clear anytime by unchecking below.'
@@ -563,10 +553,10 @@ const AiConvertStickyFooterComponent = ({
                                           {m.tag && (
                                             <span className={cn(
                                               'text-[9px] px-1.5 py-0 rounded-full font-bold uppercase tracking-wide',
-                                              m.tag === 'recommended' && 'bg-primary/15 text-primary',
-                                              m.tag === 'best'        && 'bg-amber-500/15 text-amber-500',
-                                              m.tag === 'fastest'     && 'bg-emerald-500/15 text-emerald-500',
-                                              m.tag === 'free'        && 'bg-sky-500/15 text-sky-500',
+                                              m.tag === 'recommended' && 'bg-primary/15 text-primary-text',
+                                              m.tag === 'best'        && 'bg-mode-convert-soft text-mode-convert-text',
+                                              m.tag === 'fastest'     && 'bg-success-soft text-success-text',
+                                              m.tag === 'free'        && 'bg-info-soft text-info-text',
                                             )}>
                                               {m.tag}
                                             </span>
@@ -637,11 +627,10 @@ const AiConvertStickyFooterComponent = ({
             {/* Prompt Output Display */}
             <motion.div
               animate={isPulseActive && !shouldReduceMotion ? {
-                scale: [1, 1.015, 1],
-                borderColor: ['rgba(139, 92, 246, 0.2)', 'rgba(139, 92, 246, 0.6)', 'rgba(139, 92, 246, 0.2)']
+                scale: [1, 1.015, 1]
               } : {}}
               transition={{ duration: 0.5 }}
-              className="relative rounded-xl border border-border/60 bg-secondary/15 min-h-[90px] max-h-[160px] flex flex-col overflow-hidden transition-colors duration-300"
+              className={`relative rounded-xl border ${isPulseActive ? "border-primary/60" : "border-border/60"} bg-secondary/15 min-h-[90px] max-h-[160px] flex flex-col overflow-hidden transition-colors duration-300`}
             >
               {/* Scrollable text area */}
               <div
@@ -654,13 +643,13 @@ const AiConvertStickyFooterComponent = ({
                     <div className="relative flex items-center justify-center">
                       <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-primary to-accent opacity-50 blur animate-pulse" />
                       <div className="relative bg-background rounded-full p-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-primary" aria-hidden="true" />
+                        <Loader2 className="w-4 h-4 animate-spin text-primary-text" aria-hidden="true" />
                       </div>
                     </div>
                     <span className="text-xs text-muted-foreground animate-pulse font-medium">Translating tags into natural language…</span>
                   </div>
                 ) : error ? (
-                  <div className="text-destructive font-medium p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-xs whitespace-pre-wrap" role="alert">
+                  <div className="text-destructive-text font-medium p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-xs whitespace-pre-wrap" role="alert">
                     {error}
                   </div>
                 ) : hasConverted ? (
@@ -670,7 +659,7 @@ const AiConvertStickyFooterComponent = ({
                 ) : (
                   <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground/60 select-none">
                     <Sparkles
-                      className={cn("h-6 w-6 text-primary/30 mb-1.5", !shouldReduceMotion && "animate-pulse")}
+                      className={cn("h-6 w-6 text-primary-text/30 mb-1.5", !shouldReduceMotion && "animate-pulse")}
                       aria-hidden="true"
                     />
                     <p className="text-xs italic">Waiting for input… click Convert on any card to get started</p>
@@ -700,7 +689,7 @@ const AiConvertStickyFooterComponent = ({
                       className={cn(
                         "h-8 px-3 rounded-lg text-xs font-bold transition-colors shadow-sm",
                         isCopied
-                          ? "bg-green-600 hover:bg-green-600 text-white"
+                          ? "bg-success hover:bg-success/90 text-success-foreground"
                           : "bg-primary hover:bg-primary/90 text-primary-foreground"
                       )}
                     >

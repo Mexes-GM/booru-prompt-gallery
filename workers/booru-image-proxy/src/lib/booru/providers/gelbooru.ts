@@ -74,10 +74,13 @@ export class GelbooruProvider extends BaseBooruProvider {
         { Referer: PROVIDER_REFERERS.GELBOORU }
       )
     } catch (e) {
+      // Rethrow: returning [] here used to be cached for 10 min by the posts
+      // route and read by the client as "no more results", which stopped
+      // infinite scroll for everyone on a transient Gelbooru hiccup.
       logger.warn('gelbooru_fetch_error', {
         error: e instanceof Error ? e.message : String(e),
       })
-      return []
+      throw e
     }
 
     let postsList: GelbooruPostResponse[] = []

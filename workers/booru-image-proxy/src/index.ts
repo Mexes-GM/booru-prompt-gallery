@@ -10,8 +10,6 @@ import { versionHandler } from './routes/version'
 import { convertPromptHandler } from './routes/convert-prompt'
 import { corsHeaders, getCorsHeaders } from './utils'
 import { imageProxyHandler } from './routes/image-proxy'
-import { trendsHandler } from './routes/trends'
-import { refreshTrendsCache } from './routes/trends'
 import { securityTxtHandler, robotsTxtHandler } from './routes/security-txt'
 import { posthogIngestHandler } from './routes/posthog-ingest'
 import { logger } from './logger'
@@ -29,7 +27,6 @@ router.post('/api/feedback', feedbackHandler)
 router.get('/api/health', healthHandler)
 router.get('/api/version', versionHandler)
 router.post('/api/llm/convert', convertPromptHandler)
-router.get('/api/trends', trendsHandler)
 
 // Security
 router.get('/security.txt', securityTxtHandler)
@@ -56,18 +53,6 @@ router.all('*', (request: Request) => new Response(JSON.stringify({ error: 'Not 
 }))
 
 export default {
-  // Cron Triggers — see [triggers] in wrangler.toml. Keeps the trends cache
-  // warm so users never trigger a cold Danbooru fetch and the external API is
-  // hit on a predictable schedule.
-  async scheduled(
-    event: ScheduledController,
-    env: Env,
-    ctx: ExecutionContext
-  ): Promise<void> {
-    logger.info('scheduled', { cron: event.cron, scheduledTime: event.scheduledTime })
-    ctx.waitUntil(refreshTrendsCache(env))
-  },
-
   async fetch(request: Request, env: Record<string, string | undefined>, ctx: ExecutionContext): Promise<Response> {
     // Handle security.txt before router (itty-router doesn't match /.well-known/ paths)
     const url = new URL(request.url)
@@ -101,6 +86,15 @@ export default {
     const requestCorsHeaders = getCorsHeaders(request.headers.get('Origin'))
     for (const [k, v] of Object.entries(requestCorsHeaders)) {
       headers.set(k, v)
+    }
+    // Access-Control-Allow-Origin echoes the caller's origin, and most API
+    // responses are cacheable (Cache-Control: public). Without Vary: Origin a
+    // browser that visited the Vercel deployment reuses that cached response
+    // (ACAO = vercel.app) on the Netlify one — or vice versa — and the CORS
+    // check fails. Seen live on /api/booru/tags.
+    const vary = headers.get('Vary')
+    if (!vary?.split(',').some((v) => v.trim().toLowerCase() === 'origin')) {
+      headers.set('Vary', vary ? `${vary}, Origin` : 'Origin')
     }
     return new Response(response.body, { status: response.status, headers })
   },

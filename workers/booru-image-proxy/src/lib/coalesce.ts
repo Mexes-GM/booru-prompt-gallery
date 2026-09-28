@@ -37,13 +37,13 @@ export async function coalesce<T>(
   // ── Cache hit ──────────────────────────────────────────────────────────
   const cached = await redis.get(cacheKey)
   if (cached) {
-    console.log(JSON.stringify({ layer: 'worker', event: 'cache_hit', key: cacheKey.substring(0, 100), timestamp: Date.now() }))
     return JSON.parse(cached) as T
   }
-  console.log(JSON.stringify({ layer: 'worker', event: 'cache_miss', key: cacheKey.substring(0, 100), timestamp: Date.now() }))
 
   // ── Try to acquire the fetch lock ──────────────────────────────────────
-  const acquired = await redis.set(lockKey, '1', { nx: true, ex: 10 })
+  // TTL covers the winner's worst case (fetchUpstream: 2 × 12s timeout + 1s
+  // backoff) so the lock cannot expire mid-fetch and let a second fetch in.
+  const acquired = await redis.set(lockKey, '1', { nx: true, ex: 30 })
   if (acquired) {
     // Winner path: fetch, cache, signal losers, release lock
     try {

@@ -20,6 +20,8 @@ export type TagSuggestion = {
   tag_id: string
   current_category: string
   suggested_category: string
+  current_subcategory?: string | null
+  suggested_subcategory?: string | null
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
   tags: {
@@ -75,7 +77,6 @@ export async function getSuggestions(
     throw new Error(error.message)
   }
 
-  // Get counts for each status
   const [pendingResult, approvedResult, rejectedResult] = await Promise.all([
     supabaseAdmin.from('tag_suggestions').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     supabaseAdmin.from('tag_suggestions').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
@@ -112,19 +113,42 @@ export async function approveSuggestion(id: string) {
     // 1. Fetch suggestion
     const { data: suggestion } = await supabaseAdmin
         .from('tag_suggestions')
-        .select('tag_id, suggested_category')
+        .select('tag_id, suggested_category, suggested_subcategory')
         .eq('id', id)
         .single()
         
     if (!suggestion) throw new Error("Suggestion not found")
 
-    // 2. Update tag
-    const { error: tagError } = await supabaseAdmin
+    // 2. Update tag in public.tags
+    const tagUpdatePayload: Record<string, any> = { category: suggestion.suggested_category }
+    if (suggestion.suggested_subcategory) {
+      tagUpdatePayload.subcategory = suggestion.suggested_subcategory
+    }
+    const { data: updatedTag, error: tagError } = await supabaseAdmin
         .from('tags')
-        .update({ category: suggestion.suggested_category })
+        .update(tagUpdatePayload)
         .eq('id', suggestion.tag_id)
+        .select('name')
+        .maybeSingle()
     
     if (tagError) throw new Error(tagError.message)
+
+    // Sync to public.auto_suggest_tags to keep single source of truth updated
+    if (updatedTag?.name) {
+      const normName = updatedTag.name.toLowerCase().trim().replace(/ /g, '_')
+      const autoUpdatePayload: Record<string, any> = {
+        category_name: suggestion.suggested_category,
+        status: 'approved',
+        confidence: 1.0,
+      }
+      if (suggestion.suggested_subcategory) {
+        autoUpdatePayload.subcategory = suggestion.suggested_subcategory
+      }
+      await supabaseAdmin
+        .from('auto_suggest_tags')
+        .update(autoUpdatePayload)
+        .eq('name', normName)
+    }
 
     // 3. Update suggestion status
     const { error: updateError } = await supabaseAdmin
@@ -186,12 +210,22 @@ export async function revertSuggestionDecision(id: string) {
   if (fetchError || !suggestion) throw new Error("Suggestion not found")
 
   if (suggestion.status === 'approved') {
-    const { error: tagError } = await supabaseAdmin
+    const { data: revertedTag, error: tagError } = await supabaseAdmin
       .from('tags')
       .update({ category: suggestion.current_category })
       .eq('id', suggestion.tag_id)
+      .select('name')
+      .maybeSingle()
 
     if (tagError) throw new Error(tagError.message)
+
+    if (revertedTag?.name) {
+      const normName = revertedTag.name.toLowerCase().trim().replace(/ /g, '_')
+      await supabaseAdmin
+        .from('auto_suggest_tags')
+        .update({ category_name: suggestion.current_category })
+        .eq('name', normName)
+    }
   }
 
   const { error: updateError } = await supabaseAdmin
@@ -236,12 +270,22 @@ export async function correctAndApproveSuggestion(id: string, correctedCategory:
 
   if (!suggestion) throw new Error("Suggestion not found")
 
-  const { error: tagError } = await supabaseAdmin
+  const { data: correctedTag, error: tagError } = await supabaseAdmin
     .from('tags')
     .update({ category: correctedCategory })
     .eq('id', suggestion.tag_id)
+    .select('name')
+    .maybeSingle()
 
   if (tagError) throw new Error(tagError.message)
+
+  if (correctedTag?.name) {
+    const normName = correctedTag.name.toLowerCase().trim().replace(/ /g, '_')
+    await supabaseAdmin
+      .from('auto_suggest_tags')
+      .update({ category_name: correctedCategory, status: 'approved' })
+      .eq('name', normName)
+  }
 
   const { error: updateError } = await supabaseAdmin
     .from('tag_suggestions')

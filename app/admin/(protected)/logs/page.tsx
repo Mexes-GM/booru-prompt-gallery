@@ -37,7 +37,7 @@ export default async function AdminLogsPage(props: {
       <div className="mb-6 flex items-center justify-between">
         <div>
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                <Bot className="h-8 w-8 text-blue-500" />
+                <Bot className="h-8 w-8 text-info-text" />
                 AI Automation Logs
             </h1>
             <p className="text-muted-foreground">
@@ -85,7 +85,7 @@ export default async function AdminLogsPage(props: {
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex flex-col gap-1">
-                                            <span className="font-semibold text-xs text-blue-600 dark:text-blue-400">
+                                            <span className="font-semibold text-xs text-info-text">
                                                 {log.ai_prediction}
                                             </span>
                                             {log.confidence && log.confidence !== 'low' && (
@@ -100,7 +100,7 @@ export default async function AdminLogsPage(props: {
                                     </TableCell>
                                     <TableCell>
                                         {log.action_taken === 'auto_approved' ? (
-                                            <Badge className="bg-green-500 hover:bg-green-600 flex w-fit items-center gap-1">
+                                            <Badge className="bg-success hover:bg-success/90 text-success-foreground flex w-fit items-center gap-1">
                                                 <CheckCircle className="h-3 w-3" /> Auto-Approved
                                             </Badge>
                                         ) : (

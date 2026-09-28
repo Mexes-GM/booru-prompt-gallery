@@ -6,9 +6,9 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "baseUrl": "..",
+    "rootDir": "..",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["../*"]
     }
   },
   "ts-node": {

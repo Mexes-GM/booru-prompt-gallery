@@ -1,10 +1,12 @@
 import type { BooruPost } from "@/lib/booru/types"
 import { createClient } from "@/lib/supabase/client"
+import { booruPostToCacheRow } from "@/lib/cache-utils"
+import { favKey } from "@/lib/favorites-logic"
 
 // ── LocalStorage cache for favorites posts ──
-// Extracted from lib/api-client.ts (Fase 2b del refactor de sostenibilidad):
+// Extracted from lib/api-client.ts:
 // pure cache helpers with no React dependency, so they can be imported from
-// anywhere (including the useFavoritePosts hook) without pulling in SWR/React.
+// anywhere (including the useBooruPostsByIds hook) without pulling in SWR/React.
 
 export interface FavoriteItem {
   id: number
@@ -95,7 +97,7 @@ export function getMergedCachedFavorites(favorites: FavoriteItem[]): BooruPost[]
       if (!Array.isArray(posts)) continue
       for (const post of posts) {
         if (post && post._provider && post.id) {
-          const entryKey = `${(post._provider as string).toLowerCase()}:${post.id}`
+          const entryKey = favKey(post._provider as string, post.id)
           // Let newer entries overwrite older (no has() check)
           postMap.set(entryKey, post as BooruPost)
         }
@@ -104,7 +106,7 @@ export function getMergedCachedFavorites(favorites: FavoriteItem[]): BooruPost[]
   }
 
   return favorites
-    .map(f => postMap.get(`${f.provider}:${f.id}`))
+    .map(f => postMap.get(favKey(f.provider, f.id)))
     .filter((p): p is BooruPost => p !== undefined)
 }
 
@@ -162,42 +164,8 @@ export function cachedRowToBooruPost(row: CachedPostRow): BooruPost {
   }
 }
 
-// Convert a BooruPost to a booru_posts_cache row for upsert.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function booruPostToCacheRow(post: BooruPost, provider: string): any {
-  const tags = (post.tag_string || '').split(/\s+/).filter(Boolean)
-  const artistTags = (post.tag_string_artist || '').split(/\s+/).filter(Boolean)
-  const charTags = (post.tag_string_character || '').split(/\s+/).filter(Boolean)
-  const copyTags = (post.tag_string_copyright || '').split(/\s+/).filter(Boolean)
-  const artistTagSet = new Set(artistTags)
-  const charTagSet = new Set(charTags)
-  const copyTagSet = new Set(copyTags)
-  return {
-    provider,
-    post_id: post.id,
-    file_url: post.file_url || null,
-    large_file_url: post.large_file_url || null,
-    preview_file_url: post.preview_file_url || null,
-    rating: post.rating || 'q',
-    score: post.score || 0,
-    image_width: post.width || 0,
-    image_height: post.height || 0,
-    tag_string: {
-      general: tags.filter(t => !artistTagSet.has(t) && !charTagSet.has(t) && !copyTagSet.has(t)),
-      artist: artistTags,
-      character: charTags,
-      copyright: copyTags,
-    },
-    tag_string_artist: post.tag_string_artist || null,
-    tag_string_character: post.tag_string_character || null,
-    tag_string_copyright: post.tag_string_copyright || null,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tag_string_meta: (post as any).tag_string_meta || null,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ai_metadata: (post as any).ai_metadata || null,
-    stale_at: null,
-  }
-}
+// Converting a BooruPost to a booru_posts_cache row lives in
+// lib/cache-utils.ts (imported above).
 
 // Persist fetched posts to Supabase booru_posts_cache for future visits.
 export async function persistToCache(posts: BooruPost[]): Promise<void> {
@@ -212,7 +180,7 @@ export async function persistToCache(posts: BooruPost[]): Promise<void> {
     // incoming posts array can contain the same favorite more than once, so we
     // keep the last occurrence of each key.
     const deduped = Array.from(
-      new Map(rows.map(r => [`${r.provider}:${r.post_id}`, r])).values()
+      new Map(rows.map(r => [favKey(r.provider, r.post_id), r])).values()
     )
     const { error } = await supabase.from('booru_posts_cache').upsert(deduped, {
       onConflict: 'provider,post_id',

@@ -1,20 +1,23 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
-import { getRateLimit } from '@/lib/rate-limit'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { generateRequestId } from '@/lib/logger'
+import { isAdminMfaRequired } from '@/lib/auth/mfa'
 
-/** Apply common security headers to non-API responses. */
+/**
+ * Apply the per-request security headers to non-API responses. Only the CSP
+ * lives here, because /extension needs a different frame-ancestors; every
+ * static security header (HSTS, nosniff, X-Frame-Options…) is set once for
+ * both hosts in next.config.mjs.
+ */
+// React's dev tooling (call-stack reconstruction, Fast Refresh) needs eval();
+// production bundles don't, so granting it there only widens what an injected
+// script could do.
+const SCRIPT_EVAL = process.env.NODE_ENV === 'development' ? "'unsafe-eval' " : ''
+
 function applySecurityHeaders(response: NextResponse, isExtensionRoute = false): void {
   response.headers.set('X-DNS-Prefetch-Control', 'on')
-  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  if (!isExtensionRoute) {
-    response.headers.set('X-Frame-Options', 'DENY')
-  }
-  response.headers.set('X-XSS-Protection', '1; mode=block')
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
 
   const frameAncestors = isExtensionRoute
     ? "frame-ancestors 'self' chrome-extension://* moz-extension://*;"
@@ -22,11 +25,11 @@ function applySecurityHeaders(response: NextResponse, isExtensionRoute = false):
 
   const csp = `
  default-src 'self';
- script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com https://*.workers.dev;
+ script-src 'self' ${SCRIPT_EVAL}'unsafe-inline' https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com https://*.workers.dev;
  style-src 'self' 'unsafe-inline';
  img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://*.donmai.us https://*.buymeacoffee.com https://gelbooru.com https://*.gelbooru.com https://*.workers.dev https://*.cloudfront.net;
  font-src 'self';
- connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://vitals.vercel-insights.com https://*.ingest.us.sentry.io https://netlify-cdp.netlify.app https://*.workers.dev https://*.cloudfront.net https://challenges.cloudflare.com;
+ connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://netlify-cdp.netlify.app https://*.workers.dev https://*.cloudfront.net https://challenges.cloudflare.com;
  frame-src 'self' https://vercel.live https://challenges.cloudflare.com;
  worker-src 'self' blob:;
  ${frameAncestors}
@@ -49,7 +52,6 @@ function withRequestId(response: NextResponse, requestId: string): NextResponse 
 
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
-  const ip = request.headers.get('x-forwarded-for') ?? '127.0.0.1'
 
   // --- Request ID: generate or propagate ---
   const requestId = request.headers.get('x-request-id') ?? generateRequestId()
@@ -86,20 +88,6 @@ export async function proxy(request: NextRequest) {
   // a Supabase round-trip on every API call, reducing Fast Origin Transfer.
   if (url.pathname.startsWith('/api/')) {
     const response = NextResponse.next()
-
-    // Rate limiting only for feedback submissions
-    if (url.pathname === '/api/feedback') {
-      const rateLimit = getRateLimit()
-      if (rateLimit) {
-        const { success, remaining } = await rateLimit.limit(ip)
-        if (!success) {
-          return withRequestId(NextResponse.json(
-            { error: 'Too many requests' },
-            { status: 429, headers: { 'X-RateLimit-Remaining': remaining.toString() } }
-          ), requestId)
-        }
-      }
-    }
 
     // Minimal security + CORS headers for API routes
     response.headers.set('X-Content-Type-Options', 'nosniff')
@@ -140,16 +128,22 @@ export async function proxy(request: NextRequest) {
         const loginUrl = new URL('/admin/login', request.url)
         return withRequestId(NextResponse.redirect(loginUrl), requestId)
       }
-      
+
       // Verify admin role
       const { data: profile } = await supabaseAdmin
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
-      
+
       if (!profile || profile.role !== 'admin') {
         return withRequestId(NextResponse.redirect(new URL('/', request.url)), requestId)
+      }
+
+      // Second factor: an admin session must be aal2 (TOTP verified) before it
+      // can reach anything but the MFA enroll/verify screen itself.
+      if (isAdminMfaRequired() && user.aal !== 'aal2' && url.pathname !== '/admin/mfa') {
+        return withRequestId(NextResponse.redirect(new URL('/admin/mfa', request.url)), requestId)
       }
     }
   }

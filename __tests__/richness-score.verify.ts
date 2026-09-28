@@ -2,9 +2,10 @@
  * Verification script for the richness score (Palanca 7, lib/tag-classifier.ts
  * computeRichnessScore), docs/prompt-genericness-mitigation-plan.md §7.8.
  *
- * v2 (depth-weighted): each of clothing/pose/scenery/appearance scores by DEPTH,
- * not just presence — 0 tags = 0pts, 1-2 tags ("shallow") = 1pt, 3+ tags ("deep")
- * = 2.5pts, summed across the 4 categories for a composite 0-10 score. This
+ * v2 (depth-weighted): each richness axis (clothing/pose/scenery/appearance, plus
+ * equipment/creature since the taxonomy expansion) scores by DEPTH, not just
+ * presence — 0 tags = 0pts, 1-2 tags ("shallow") = 1pt, 3+ tags ("deep") = 2.5pts,
+ * summed across the axes (max = axes x 2.5, currently 15). This
  * replaced the earlier v1 binary coverage count (0-4, "is this category
  * non-empty?") because a category with a single shallow tag scored identically
  * to one with 8 detailed tags under v1 — see the "richness-score-v2" follow-up
@@ -21,6 +22,7 @@
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/richness-score.verify.ts
  */
 import { classifyTags, computeRichnessScore, type ClassifiedTags } from '../lib/tag-classifier'
+import { emptyClassifiedTags, RICHNESS_AXES } from '../lib/tag-taxonomy'
 
 let passed = 0
 let failed = 0
@@ -35,11 +37,12 @@ function assert(condition: boolean, label: string) {
 }
 
 function empty(): ClassifiedTags {
-  return { clothing: [], pose: [], scenery: [], appearance: [], other: [] }
+  return emptyClassifiedTags()
 }
 
-// ── maxScore is always 10 (4 categories x 2.5pts "deep" each; "other" excluded) ──
-assert(computeRichnessScore(empty()).maxScore === 10, 'maxScore is 10')
+// ── maxScore = richness axes x 2.5pts "deep" each ("other" excluded); the axes
+//    come from the taxonomy, so this tracks new categories automatically ──
+assert(computeRichnessScore(empty()).maxScore === RICHNESS_AXES.length * 2.5, `maxScore is ${RICHNESS_AXES.length * 2.5}`)
 
 // ── Empty classification -> score 0, all breakdown depths "none" ──
 {
@@ -51,9 +54,9 @@ assert(computeRichnessScore(empty()).maxScore === 10, 'maxScore is 10')
   assert(r.breakdown.appearance === 'none', 'empty -> appearance none')
 }
 
-// ── All 4 categories "deep" (3+ tags) -> max score 10 regardless of "other" ──
+// ── 4 categories "deep" (3+ tags) -> score 10 regardless of "other" ──
 {
-  const classified: ClassifiedTags = {
+  const classified: ClassifiedTags = { ...empty(),
     clothing: ['school uniform', 'pleated skirt', 'necktie'],
     pose: ['standing', 'looking at viewer', 'arm up'],
     scenery: ['indoors', 'window', 'night'],
@@ -61,7 +64,7 @@ assert(computeRichnessScore(empty()).maxScore === 10, 'maxScore is 10')
     other: ['artist_name_here', 'copyright_a', 'copyright_b'],
   }
   const r = computeRichnessScore(classified)
-  assert(r.score === 10, 'all 4 categories deep -> score 10 (max)')
+  assert(r.score === 10, 'all 4 categories deep -> score 10')
   assert(
     r.breakdown.clothing === 'deep' && r.breakdown.pose === 'deep' &&
     r.breakdown.scenery === 'deep' && r.breakdown.appearance === 'deep',
@@ -72,14 +75,14 @@ assert(computeRichnessScore(empty()).maxScore === 10, 'maxScore is 10')
 // ── A single shallow tag (1-2) scores less than a deep category (3+), even
 //    though both are "present" — this is exactly the v1 blind spot v2 fixes ──
 {
-  const shallow: ClassifiedTags = {
+  const shallow: ClassifiedTags = { ...empty(),
     clothing: [],
     pose: [],
     scenery: ['outdoors'],
     appearance: [],
     other: [],
   }
-  const deep: ClassifiedTags = {
+  const deep: ClassifiedTags = { ...empty(),
     clothing: [],
     pose: [],
     scenery: ['outdoors', 'forest', 'daytime'],
@@ -97,7 +100,7 @@ assert(computeRichnessScore(empty()).maxScore === 10, 'maxScore is 10')
 
 // ── "other" is excluded from the score, even if huge ──
 {
-  const classified: ClassifiedTags = {
+  const classified: ClassifiedTags = { ...empty(),
     clothing: [],
     pose: [],
     scenery: [],
@@ -113,7 +116,7 @@ assert(computeRichnessScore(empty()).maxScore === 10, 'maxScore is 10')
 //    artist/character/meta-heavy. This is exactly the "looks rich by count,
 //    isn't by coverage/depth" case the palanca targets. ──
 {
-  const classified: ClassifiedTags = {
+  const classified: ClassifiedTags = { ...empty(),
     clothing: [],
     pose: [],
     scenery: [],
@@ -128,7 +131,7 @@ assert(computeRichnessScore(empty()).maxScore === 10, 'maxScore is 10')
 // ── Real-world "high richness" case from the field experiment (post 11782161):
 //    clothing:6, pose:4, scenery:3, appearance:8 -> all 4 categories deep ──
 {
-  const classified: ClassifiedTags = {
+  const classified: ClassifiedTags = { ...empty(),
     clothing: ['a', 'b', 'c', 'd', 'e', 'f'],
     pose: ['standing', 'looking at viewer', 'arm up', 'smile'],
     scenery: ['indoors', 'window', 'night'],

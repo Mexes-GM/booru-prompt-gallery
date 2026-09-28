@@ -15,8 +15,15 @@ interface FloatingActionButtonsProps {
 
 /**
  * Bottom-right floating action stack: AI-convert mode toggle, merge mode
- * toggle, and scroll-to-top. Visibility/position depend on which mode is
- * active so the stack doesn't overlap the sticky footers those modes show.
+ * toggle, and scroll-to-top.
+ *
+ * The mode toggles are ALWAYS visible/usable regardless of scroll position —
+ * they used to share `showBackToTop` (scrollY > 400) with the scroll-to-top
+ * button, so entering AI Convert or Merge from the FAB was impossible near
+ * the top of the page even though neither mode has anything to do with
+ * scroll. Only the scroll-to-top button itself still
+ * depends on `showBackToTop`. Vertical position still depends on which mode
+ * is active so the stack doesn't overlap the sticky footers those modes show.
  */
 export function FloatingActionButtons({
   isMergeMode,
@@ -27,8 +34,7 @@ export function FloatingActionButtons({
   scrollToTop,
 }: FloatingActionButtonsProps) {
   return (
-    <div className={`fixed ${isMergeMode ? 'bottom-[220px] sm:bottom-[200px]' : isAiConvertMode ? 'bottom-[200px] sm:bottom-[180px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none hidden'
-      }`}>
+    <div className={`fixed ${isMergeMode ? 'bottom-[220px] sm:bottom-[200px]' : isAiConvertMode ? 'bottom-[200px] sm:bottom-[180px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3`}>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -61,7 +67,12 @@ export function FloatingActionButtons({
         </TooltipContent>
       </Tooltip>
 
-      <Button onClick={scrollToTop} className="rounded-full shadow-lg h-10 w-10 p-0" variant="secondary" aria-label="Scroll to top">
+      <Button
+        onClick={scrollToTop}
+        className={`rounded-full shadow-lg h-10 w-10 p-0 transition-all duration-500 ${showBackToTop ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-75 pointer-events-none hidden'}`}
+        variant="secondary"
+        aria-label="Scroll to top"
+      >
         <ChevronUp className="h-5 w-5" />
       </Button>
     </div>

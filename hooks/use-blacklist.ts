@@ -51,10 +51,21 @@ export function useBlacklist() {
     })
   }
 
+  // Empties the list entirely (the no-results "Clear blacklist" action).
+  // resetBlacklist instead restores the defaults.
+  const clearBlacklist = () => {
+    setBlacklist([])
+    toast({
+      title: "Blacklist cleared",
+      description: "No tags are being filtered",
+    })
+  }
+
   return {
     blacklist,
     addTag,
     removeTag,
-    resetBlacklist
+    resetBlacklist,
+    clearBlacklist
   }
 }

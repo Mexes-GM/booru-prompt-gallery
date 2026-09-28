@@ -92,9 +92,9 @@ export function FavoritesFolderTabs({
                         className={cn(
                           "relative px-4 py-1.5 rounded-full text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 flex items-center gap-2",
                           isActive
-                            ? "text-primary-foreground shadow-sm"
+                            ? cn("shadow-sm", isArtistsTab ? "text-primary-foreground" : "text-mode-favorites-foreground")
                             : isArtistsTab
-                              ? "text-purple-700 dark:text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/40 ring-1 ring-purple-500/20 shadow-[0_0_10px_rgba(168,85,247,0.15)]"
+                              ? "text-primary-text bg-primary/10 hover:bg-primary/20 border border-primary/40"
                               : "text-muted-foreground hover:text-foreground bg-secondary/50 hover:bg-secondary border border-border/50",
                         )}
                       >
@@ -104,18 +104,18 @@ export function FavoritesFolderTabs({
                             className={cn(
                               "absolute inset-0 rounded-full shadow-sm",
                               isArtistsTab
-                                ? "bg-gradient-to-r from-purple-500 to-fuchsia-500 shadow-[0_0_16px_rgba(168,85,247,0.45)]"
-                                : "bg-red-500",
+                                ? "bg-primary"
+                                : "bg-mode-favorites",
                             )}
                             transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                           />
                         )}
                         <span className="relative z-10 flex items-center gap-2">
-                          {tab.icon && renderIcon(tab.icon, { className: `w-3.5 h-3.5 ${isActive ? "text-primary-foreground" : isArtistsTab ? "text-purple-500" : "opacity-80"}` })}
+                          {tab.icon && renderIcon(tab.icon, { className: `w-3.5 h-3.5 ${isActive ? "" : isArtistsTab ? "text-primary-text" : "opacity-80"}` })}
                           <span>{tab.name}</span>
                           <span className={cn(
                             "text-[10px] px-1.5 py-0.5 rounded-full font-mono",
-                            isActive ? "bg-black/20" : isArtistsTab ? "bg-purple-500/15 text-purple-700 dark:text-purple-200" : "bg-background/80",
+                            isActive ? "bg-overlay/20" : isArtistsTab ? "bg-primary/15 text-primary-text" : "bg-background/80",
                           )}>{tab.count}</span>
                           {tab.id !== 'all' && tab.id !== null && tab.id !== 'artists' && (
                             <span
@@ -133,7 +133,7 @@ export function FavoritesFolderTabs({
                                   setFolderToDelete({ id: tab.id as string, name: tab.name })
                                 }
                               }}
-                              className={`ml-1 rounded-full p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center transition-[background-color,color,transform] duration-150 ease-out active:scale-90 motion-reduce:active:scale-100 cursor-pointer ${isActive ? "hover:bg-black/20 text-primary-foreground" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
+                              className={`ml-1 rounded-full p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center transition-[background-color,color,transform] duration-150 ease-out active:scale-90 motion-reduce:active:scale-100 cursor-pointer ${isActive ? "hover:bg-overlay/20" : "hover:bg-secondary-foreground/20 text-muted-foreground hover:text-foreground"}`}
                               aria-label={`Delete folder ${tab.name}`}
                             >
                               <X className="w-3.5 h-3.5" />

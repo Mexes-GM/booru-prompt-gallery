@@ -89,7 +89,7 @@ const MasonryItem = React.memo(({
     el.style.transform = `translate3d(${fromPos.x}px, ${fromPos.y}px, 0)`
     // Force a reflow so the browser commits the "from" transform before we
     // switch to the animated "to" transform on the next frame.
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+     
     el.getBoundingClientRect()
 
     const raf = requestAnimationFrame(() => {
@@ -97,7 +97,7 @@ const MasonryItem = React.memo(({
       el.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`
     })
     return () => cancelAnimationFrame(raf)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [fromPos, pos.x, pos.y])
 
   return (
@@ -218,7 +218,7 @@ export function MasonryGrid({ items, renderItem, scale = "medium", gap = 16, for
       scrollTarget.removeEventListener("scroll", handleScroll)
       window.removeEventListener("resize", handleResize)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [scrollContainerRef])
 
   // ResizeObserver separado para cambios de container

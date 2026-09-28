@@ -1,27 +1,26 @@
 "use client"
 
-import { AnimatePresence, motion } from "framer-motion"
+import { memo, type ReactNode } from "react"
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
+import { EASE_OUT_STRONG, SEGMENT_PILL_SPRING } from "@/lib/motion"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DebouncedInput } from "@/components/ui/debounced-input"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Slider } from "@/components/ui/slider"
 import { usePostHog } from 'posthog-js/react'
 import { Switch } from "@/components/ui/switch"
 import {
   ArrowRight,
   Check,
   ChevronDown,
-  CornerDownRight,
   Globe,
   Search,
   Settings,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { userPreferences } from "@/lib/storage"
 import type { BackgroundMode } from "@/lib/background-detector"
 import type { MatchStrictness } from "@/lib/background-context"
 
@@ -37,10 +36,162 @@ export const MATCH_STRICTNESS_OPTIONS: { value: MatchStrictness; label: string }
 ]
 
 export const MATCH_STRICTNESS_DESCRIPTIONS: Record<MatchStrictness, string> = {
-  free: "Fully random — scenery may not match the pose or setting.",
-  balanced: "Keeps the scene believable for the pose it's paired with (default).",
-  strict: "Only picks low-traffic, private-feeling settings.",
+  free: "Fully random scenery.",
+  balanced: "Tries to keep the scenery as close as possible to the original post (default).",
+  strict: "Tries even harder to keep the scenery close to the original post.",
 }
+
+/** InfoTooltip demo visuals for the full variant, extracted as constants so
+ *  the unified JSX tree below doesn't duplicate them per-branch. */
+const INCLUDE_CHARACTERS_VISUAL = (
+  <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
+    <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+        <span className="text-muted-foreground font-medium min-w-[70px]">Toggle:</span>
+        <span className="bg-destructive/10 text-destructive-text border border-destructive/20 px-1.5 py-0.5 rounded font-mono font-medium">Off/False</span>
+      </div>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+        <span className="text-muted-foreground font-medium min-w-[70px]">Original:</span>
+        <span className="px-1.5 py-0.5 rounded text-foreground font-mono bg-primary/5">hatsune miku, 1girl, solo</span>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-2 mt-1 px-1">
+      <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
+      <div className="flex flex-wrap gap-1">
+        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, solo</span>
+        <span className="bg-destructive/10 border border-destructive/20 text-destructive-text line-through px-1.5 py-0.5 rounded"><X className="w-2.5 h-2.5 inline mr-0.5" />hatsune miku</span>
+      </div>
+    </div>
+  </div>
+)
+
+const SMART_TAG_COMBINATION_VISUAL = (
+  <div className="w-full flex flex-col gap-2 p-1">
+    <div className="flex justify-between items-center text-[10px] text-muted-foreground w-full px-1">
+      <span>Before</span>
+      <span>After</span>
+    </div>
+    <div className="flex justify-between items-center gap-2 w-full">
+      <span className="bg-muted text-muted-foreground px-2 py-1 rounded text-[10px] whitespace-nowrap">hair, long hair, white hair</span>
+      <span className="text-muted-foreground">→</span>
+      <span className="bg-primary/10 border border-primary/20 text-primary-text px-2 py-1 rounded text-[10px] whitespace-nowrap">long white hair</span>
+    </div>
+  </div>
+)
+
+const SMART_TAG_EXCLUSION_VISUAL = (
+  <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
+    <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+        <span className="text-muted-foreground font-medium min-w-[70px]">Prompt:</span>
+        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, from behind</span>
+      </div>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+        <span className="text-muted-foreground font-medium min-w-[70px]">Tags to Add:</span>
+        <span className="bg-success-soft text-success-text border border-success-border px-1.5 py-0.5 rounded">blue eyes, lips</span>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-2 mt-1 px-1">
+      <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
+      <div className="flex flex-wrap gap-1">
+        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">from behind</span>
+        <span className="bg-destructive/10 border border-destructive/20 text-destructive-text line-through px-1.5 py-0.5 rounded">blue eyes, lips</span>
+      </div>
+    </div>
+  </div>
+)
+
+const PREPEND_ARTIST_VISUAL = (
+  <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
+    <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+        <span className="text-muted-foreground font-medium min-w-[70px]">Artist:</span>
+        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">wlop</span>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-2 mt-1 px-1">
+      <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
+      <div className="flex flex-wrap gap-1">
+        <span className="bg-success-soft border border-success-border text-success-text px-1.5 py-0.5 rounded font-mono">@wlop,</span>
+        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, solo...</span>
+      </div>
+    </div>
+  </div>
+)
+
+const GLOBAL_WEIGHTS_VISUAL = (
+  <div className="w-full flex gap-3 text-[10px] items-center p-3 bg-muted/30 rounded-lg border border-border/50 overflow-hidden relative">
+    {/* Popover mock */}
+    <div className="flex flex-col w-[130px] bg-background rounded-lg border border-border/80 shadow-xs overflow-hidden shrink-0 text-foreground z-10">
+      <div className="p-2 flex items-center justify-between">
+        <div className="flex items-center gap-2.5 text-muted-foreground">
+          <span>—</span> <span className="font-bold text-foreground text-[11px]">1.5</span> <span>+</span>
+        </div>
+        <Globe className="w-3.5 h-3.5 text-primary-text" />
+      </div>
+      <div className="p-1.5 px-2 border-y border-border/60 flex items-center gap-1.5 text-muted-foreground">
+        <Search className="w-3 h-3" /> <span>Search Tag</span>
+      </div>
+      <div className="p-2 flex flex-wrap gap-1 items-center">
+        <span className="bg-primary/10 border border-primary/20 text-primary-text px-1.5 py-0.5 rounded-md font-medium">
+          (frieren:1.5)
+        </span>
+        <span className="text-muted-foreground leading-tight">1girl, elf...</span>
+      </div>
+    </div>
+
+    <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 z-10" />
+
+    {/* Affected cards mock */}
+    <div className="flex flex-col gap-2 flex-1 w-full text-foreground z-10">
+      <div className="bg-background rounded-lg border border-border/80 p-2 flex flex-col gap-1.5 shadow-xs">
+        <div className="flex">
+          <span className="bg-primary/10 border border-primary/20 text-primary-text rounded-md px-1.5 py-0.5 font-medium relative">
+            (frieren:1.5)
+            <span className="absolute -top-0.5 -right-0.5 w-[5px] h-[5px] rounded-full bg-primary" />
+          </span>
+        </div>
+        <span className="text-muted-foreground">elf, sitting</span>
+      </div>
+      <div className="bg-background rounded-lg border border-border/80 p-2 flex flex-col gap-1.5 shadow-xs">
+        <div className="flex">
+          <span className="bg-primary/10 border border-primary/20 text-primary-text rounded-md px-1.5 py-0.5 font-medium relative">
+            (frieren:1.5)
+            <span className="absolute -top-0.5 -right-0.5 w-[5px] h-[5px] rounded-full bg-primary" />
+          </span>
+        </div>
+        <span className="text-muted-foreground">long_hair</span>
+      </div>
+    </div>
+  </div>
+)
+
+const BACKGROUND_OPTIONS_VISUAL = (
+  <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
+    <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+        <span className="text-muted-foreground font-medium min-w-[70px]">Original:</span>
+        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, outdoors, blue sky</span>
+      </div>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+        <span className="text-muted-foreground font-medium min-w-[70px]">Option:</span>
+        <span className="bg-warning-soft text-warning-text border border-warning-border px-1.5 py-0.5 rounded flex items-center gap-1">Replace: <span>white background</span></span>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-2 mt-1 px-1">
+      <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
+      <div className="flex flex-wrap gap-1">
+        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl</span>
+        <span className="bg-success-soft border border-success-border text-success-text px-1.5 py-0.5 rounded flex items-center gap-0.5"><Check className="w-3 h-3" /> white background</span>
+      </div>
+    </div>
+  </div>
+)
+
 interface PromptGenerationOptionsPanelProps {
   isPromptOptionsExpanded: boolean
   setIsPromptOptionsExpanded: (updater: (prev: boolean) => boolean) => void
@@ -54,6 +205,10 @@ interface PromptGenerationOptionsPanelProps {
   setSmartTagExclusion: (val: boolean) => void
   prependAnimaArtist: boolean
   setPrependAnimaArtist: (val: boolean) => void
+  /** Whether tags typed in the search bar but missing from a post's own
+   *  prompt get silently appended to the final prompt. */
+  autoAppendSearchTags?: boolean
+  setAutoAppendSearchTags?: (val: boolean) => void
 
   removeLoRaTags: boolean
   setRemoveLoRaTags: (val: boolean) => void
@@ -81,9 +236,11 @@ interface PromptGenerationOptionsPanelProps {
    * and a mobile-only collapsible header. "compact" renders the same controls
    * with the Pocket's tighter markup (small switches/selects, plain Labels
    * instead of InfoTooltip demos, always expanded — the Pocket has its own
-   * outer Collapsible). Both variants share the exact same props/handlers.
+   * outer Collapsible). Both variants render from ONE JSX tree per section
+   * (switchesSection/backgroundOptionsSection below), branching per-control
+   * on `isCompact` instead of two full copies of the markup.
    */
-  variant?: "full" | "compact"
+  variant?: "full" | "compact" | "embedded"
 }
 
 /**
@@ -94,7 +251,7 @@ interface PromptGenerationOptionsPanelProps {
  * background-handling select with its conditional sub-panels (replacement tags
  * input for "Replace", pattern/gradient toggles for "Simple Random").
  */
-export function PromptGenerationOptionsPanel({
+export const PromptGenerationOptionsPanel = memo(function PromptGenerationOptionsPanel({
   isPromptOptionsExpanded,
   setIsPromptOptionsExpanded,
   booruProvider,
@@ -106,6 +263,8 @@ export function PromptGenerationOptionsPanel({
   setSmartTagExclusion: _setSmartTagExclusion,
   prependAnimaArtist,
   setPrependAnimaArtist: _setPrependAnimaArtist,
+  autoAppendSearchTags = true,
+  setAutoAppendSearchTags: _setAutoAppendSearchTags,
   removeLoRaTags,
   setRemoveLoRaTags: _setRemoveLoRaTags,
   removeQualityTags,
@@ -126,6 +285,7 @@ export function PromptGenerationOptionsPanel({
   variant = "full",
 }: PromptGenerationOptionsPanelProps) {
   const posthog = usePostHog();
+  const shouldReduceMotion = useReducedMotion();
 
   const trackSetting = (settingName: string, value: string | boolean) => {
     posthog.capture('generation_settings_changed', {
@@ -145,6 +305,7 @@ export function PromptGenerationOptionsPanel({
   const setOptimizeTags = (val: boolean) => { trackSetting('optimizeTags', val); _setOptimizeTags(val); };
   const setSmartTagExclusion = (val: boolean) => { trackSetting('smartTagExclusion', val); _setSmartTagExclusion(val); };
   const setPrependAnimaArtist = (val: boolean) => { trackSetting('prependAnimaArtist', val); _setPrependAnimaArtist(val); };
+  const setAutoAppendSearchTags = (val: boolean) => { trackSetting('autoAppendSearchTags', val); _setAutoAppendSearchTags?.(val); };
   const setRemoveLoRaTags = (val: boolean) => { trackSetting('removeLoRaTags', val); _setRemoveLoRaTags(val); };
   const setRemoveQualityTags = (val: boolean) => { trackSetting('removeQualityTags', val); _setRemoveQualityTags(val); };
   // toggleGlobalWeights prop expects (enabled: boolean) => void
@@ -156,177 +317,468 @@ export function PromptGenerationOptionsPanel({
   const setRandomBackgroundIncludeGradients = (val: boolean) => { trackBackground('randomBackgroundIncludeGradients', val); _setRandomBackgroundIncludeGradients(val); };
   const setBackgroundMatchStrictness = (val: MatchStrictness) => { trackBackground('backgroundMatchStrictness', val); _setBackgroundMatchStrictness(val); };
 
-  if (variant === "compact") {
-    return (
-      <>
-        {/* Switches Grid */}
-        <div className="flex flex-col gap-1 border-t pt-2">
-          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-            <Label htmlFor="include-characters" className="text-xs select-none cursor-pointer flex-1">Include Characters</Label>
-            <Switch id="include-characters" checked={includeCharacters} onCheckedChange={setIncludeCharacters} className="scale-75 origin-right" />
-          </div>
-          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-            <Label htmlFor="smart-tag" className="text-xs select-none cursor-pointer flex-1">Smart Tag Combination</Label>
-            <Switch id="smart-tag" checked={optimizeTags} onCheckedChange={setOptimizeTags} className="scale-75 origin-right" />
-          </div>
-          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-            <Label htmlFor="smart-exclusion" className="text-xs select-none cursor-pointer flex-1">Smart Tag Exclusion</Label>
-            <Switch id="smart-exclusion" checked={smartTagExclusion} onCheckedChange={setSmartTagExclusion} className="scale-75 origin-right" />
-          </div>
-          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-            <InfoTooltip
-              title="Prepend Artist (@artist)"
-              description="Adds the post's artist as &quot;@artist,&quot; at the very start of the prompt. Only works for checkpoints that support Anima's @artist invocation syntax (e.g. Anima Pencil-XL) — other checkpoints treat it as a meaningless literal tag."
-            >
-              <Label htmlFor="prepend-anima-artist" className="text-xs select-none cursor-pointer flex-1">Prepend Artist (@artist)</Label>
-            </InfoTooltip>
-            <Switch id="prepend-anima-artist" checked={prependAnimaArtist} onCheckedChange={setPrependAnimaArtist} className="scale-75 origin-right" />
-          </div>
+  const isCompact = variant === "compact"
 
-          {booruProvider === "aibooru" && (
-            <>
-              <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                <Label htmlFor="remove-lora" className="text-xs select-none cursor-pointer flex-1">Remove LoRa tags</Label>
-                <Switch id="remove-lora" checked={removeLoRaTags} onCheckedChange={setRemoveLoRaTags} className="scale-75 origin-right" />
-              </div>
-              <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-                <Label htmlFor="remove-quality" className="text-xs select-none cursor-pointer flex-1">Remove Quality tags</Label>
-                <Switch id="remove-quality" checked={removeQualityTags} onCheckedChange={setRemoveQualityTags} className="scale-75 origin-right" />
-              </div>
-            </>
-          )}
+  // Native compact switch sizing without blurry CSS transform scaling
+  const switchClass = isCompact
+    ? "h-5 w-9 shrink-0 [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+    : "shrink-0"
 
-          <div className="flex items-center justify-between p-1 rounded-md hover:bg-muted/30 transition-colors">
-            <div className="flex flex-col gap-0.5 flex-1">
-              <Label htmlFor="global-weights-toggle" className="text-xs select-none cursor-pointer">Global Tag Weights</Label>
-              <span className="text-[10px] text-muted-foreground leading-none">Apply weights across all cards</span>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <Switch id="global-weights-toggle" checked={isGlobalWeightsEnabled} onCheckedChange={toggleGlobalWeights} className="scale-75 origin-right" />
-              <Button variant="outline" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setIsGlobalWeightsModalOpen(true)}>Manage</Button>
-            </div>
+  const rowClass = cn(
+    "flex items-center justify-between gap-3 rounded-lg transition-colors border border-transparent",
+    isCompact ? "p-1 hover:bg-muted/30" : "p-2 hover:bg-muted/40 hover:border-border/40"
+  )
+
+  const handleBackgroundModeChange = (val: BackgroundMode) => {
+    setBackgroundMode(val)
+  }
+  const handleSimpleBackgroundReplacementTagsChange = (val: string) => {
+    setSimpleBackgroundReplacementTags(val)
+  }
+  const handleRandomBackgroundPatternsChange = (val: boolean) => {
+    setRandomBackgroundPatterns(val)
+  }
+
+  const switchesSection = (
+    <div className={isCompact ? "flex flex-col gap-1 border-t pt-2" : "contents"}>
+      {booruProvider !== 'aibooru' ? (
+        <>
+          <div className={rowClass}>
+            {isCompact ? (
+              <Label htmlFor="include-characters" className="text-xs select-none cursor-pointer flex-1">Character Tags</Label>
+            ) : (
+              <InfoTooltip
+                title="Character Tags"
+                description="Does exactly that: includes character tags in the prompt. You can turn this off if you don't want character names."
+                visual={INCLUDE_CHARACTERS_VISUAL}
+              >
+                <Label htmlFor="include-characters" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Character Tags</Label>
+              </InfoTooltip>
+            )}
+            <Switch
+              id="include-characters"
+              checked={includeCharacters}
+              onCheckedChange={setIncludeCharacters}
+              className={switchClass}
+              aria-label="Include character tags in prompts"
+            />
           </div>
+          <div className={rowClass}>
+            {isCompact ? (
+              <Label htmlFor="smart-tag" className="text-xs select-none cursor-pointer flex-1">Tag Combination</Label>
+            ) : (
+              <InfoTooltip
+                title="Tag Combination"
+                description="If the prompt has, for example, 'hair, long hair, white hair', this function combines them into a single tag: 'long white hair'. Useful to avoid redundancy and not saturate the tokenizer."
+                visual={SMART_TAG_COMBINATION_VISUAL}
+              >
+                <Label htmlFor="smart-tag" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Tag Combination</Label>
+              </InfoTooltip>
+            )}
+            <Switch
+              id="smart-tag"
+              checked={optimizeTags}
+              onCheckedChange={setOptimizeTags}
+              className={switchClass}
+              aria-label="Enable smart tag combination"
+            />
+          </div>
+          <div className={rowClass}>
+            {isCompact ? (
+              <InfoTooltip
+                title="Tag Exclusion"
+                description="Makes added tags work smartly. For example, if the original prompt implies a back view without a face, and your 'Tags to add' contains facial features like 'lips, nose, blue eyes', it automatically disables them for that specific card to keep the generated result faithful."
+              >
+                <Label htmlFor="smart-exclusion" className="text-xs select-none cursor-pointer flex-1">Tag Exclusion</Label>
+              </InfoTooltip>
+            ) : (
+              <div className="flex items-center gap-2">
+                <InfoTooltip
+                  title="Tag Exclusion"
+                  description="Makes added tags work smartly. For example, if the original prompt implies a back view without a face, and your 'Tags to add' contains facial features like 'lips, nose, blue eyes', it automatically disables them for that specific card to keep the generated result faithful."
+                  visual={SMART_TAG_EXCLUSION_VISUAL}
+                >
+                  <Label htmlFor="smart-exclusion" className="text-sm select-none cursor-pointer">Tag Exclusion</Label>
+                </InfoTooltip>
+              </div>
+            )}
+            <Switch
+              id="smart-exclusion"
+              checked={smartTagExclusion}
+              onCheckedChange={setSmartTagExclusion}
+              className={switchClass}
+              aria-label="Enable smart tag exclusion"
+            />
+          </div>
+          <div className={rowClass}>
+            <div className="flex items-center gap-2">
+              <InfoTooltip
+                title="Prepend @artist"
+                description="Adds the post's artist as &quot;@artist,&quot; at the very start of the prompt. Only works for checkpoints that support Anima's @artist invocation syntax (e.g. Anima Pencil-XL) — other checkpoints treat it as a meaningless literal tag."
+                visual={isCompact ? undefined : PREPEND_ARTIST_VISUAL}
+              >
+                <Label htmlFor="prepend-anima-artist" className={isCompact ? "text-xs select-none cursor-pointer flex-1" : "text-sm select-none cursor-pointer whitespace-nowrap"}>Prepend @artist</Label>
+              </InfoTooltip>
+            </div>
+            <Switch
+              id="prepend-anima-artist"
+              checked={prependAnimaArtist}
+              onCheckedChange={setPrependAnimaArtist}
+              className={switchClass}
+              aria-label="Prepend the post's artist as @artist"
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className={rowClass}>
+            <Label htmlFor="remove-lora" className={isCompact ? "text-xs select-none cursor-pointer flex-1" : "text-sm select-none cursor-pointer flex-1 sm:flex-none"}>
+              {isCompact ? "Remove LoRa tags" : "Remove LoRa Tags"}
+            </Label>
+            <Switch
+              id="remove-lora"
+              checked={removeLoRaTags}
+              onCheckedChange={setRemoveLoRaTags}
+              className={switchClass}
+              aria-label="Remove LoRa tags from Aibooru prompts"
+            />
+          </div>
+          <div className={rowClass}>
+            <Label htmlFor="remove-quality" className={isCompact ? "text-xs select-none cursor-pointer flex-1" : "text-sm select-none cursor-pointer flex-1 sm:flex-none"}>
+              {isCompact ? "Remove Quality tags" : "Remove Quality Tags"}
+            </Label>
+            <Switch
+              id="remove-quality"
+              checked={removeQualityTags}
+              onCheckedChange={setRemoveQualityTags}
+              className={switchClass}
+              aria-label="Remove quality tags from Aibooru prompts"
+            />
+          </div>
+        </>
+      )}
+
+      {/* Applies regardless of provider — unlike the switches above, this one
+          isn't gated by booruProvider. */}
+      <div className={rowClass}>
+        {isCompact ? (
+          <Label htmlFor="auto-append-search-tags" className="text-xs select-none cursor-pointer flex-1">Append Search Tags</Label>
+        ) : (
+          <InfoTooltip
+            title="Append Search Tags"
+            description="Any tag you type in the search bar that isn't already present in a post's own prompt gets appended to the end of the final prompt. Turn this off if you only want the post's own tags plus whatever you explicitly add in 'Tags to Add'. Tags listed in 'Tags to Exclude' are never appended regardless of this switch."
+          >
+            <Label htmlFor="auto-append-search-tags" className="text-sm select-none cursor-pointer flex-1 sm:flex-none whitespace-nowrap">Append Search Tags</Label>
+          </InfoTooltip>
+        )}
+        <Switch
+          id="auto-append-search-tags"
+          checked={autoAppendSearchTags}
+          onCheckedChange={setAutoAppendSearchTags}
+          className={switchClass}
+          aria-label="Append missing search tags to the final prompt"
+        />
+      </div>
+
+      <div className={cn(rowClass, "relative")}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <InfoTooltip
+            title="Global Tag Weights"
+            description="All tags are clickable. If you click a tag, you can adjust its weight (e.g., 1.5). If 'Global Tag Weights' is enabled and you click the Globe icon, that weight will automatically be applied to all cards containing said tag."
+            visual={isCompact ? undefined : GLOBAL_WEIGHTS_VISUAL}
+          >
+            <Label htmlFor="global-weights-toggle" className={isCompact ? "text-xs select-none cursor-pointer flex-1" : "text-sm select-none cursor-pointer whitespace-nowrap"}>Global Tag Weights</Label>
+          </InfoTooltip>
         </div>
+        <div className="flex items-center shrink-0 relative">
+          <Switch
+            id="global-weights-toggle"
+            checked={isGlobalWeightsEnabled}
+            onCheckedChange={toggleGlobalWeights}
+            className={switchClass}
+            aria-label="Toggle global tag weights"
+          />
 
-        {/* Background Options */}
-        <div className="flex flex-col gap-2 p-2 rounded-lg bg-muted/40 border border-border/50">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-1">
-                <Label htmlFor="background-handling-select" className="text-xs font-semibold cursor-pointer">Background Options</Label>
-              </div>
-              <span className="text-[10px] text-muted-foreground leading-tight">Modify background/scene tags</span>
-            </div>
-            <Select
-              value={backgroundMode}
-              onValueChange={(val: BackgroundMode) => setBackgroundMode(val)}
-            >
-              <SelectTrigger id="background-handling-select" className="h-7 text-[11px] bg-background w-[110px]">
-                <SelectValue placeholder="Original" />
-              </SelectTrigger>
-              <SelectContent className="text-xs">
-                <SelectItem value="keep">Original</SelectItem>
-                <SelectItem value="remove_all">Remove All</SelectItem>
-                <SelectItem value="force_simple">Replace</SelectItem>
-                <SelectItem value="random">Simple Random</SelectItem>
-                <SelectItem value="detailed_random">Detailed Random</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <AnimatePresence>
-            {backgroundMode === 'force_simple' && (
+          {/* Banderilla flotante pegada encima de todo (overlay absolute con z-30, no empuja el layout) */}
+          <AnimatePresence initial={false}>
+            {isGlobalWeightsEnabled && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15, ease: "easeInOut" }}
-                className="overflow-hidden"
+                key="manage-banderilla-attached"
+                initial={shouldReduceMotion ? false : { opacity: 0, x: -8, scale: 0.9 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, x: -8, scale: 0.9 }}
+                transition={{
+                  type: "spring",
+                  stiffness: 450,
+                  damping: 25,
+                  mass: 0.7
+                }}
+                className={cn(
+                  "z-30 flex items-center",
+                  isCompact
+                    ? "relative ml-1"
+                    : "absolute left-full ml-1.5 top-1/2 -translate-y-1/2"
+                )}
               >
-                <div className="pt-1.5 flex items-center gap-1.5">
-                  <CornerDownRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                  <DebouncedInput
-                    value={simpleBackgroundReplacementTags}
-                    onChange={setSimpleBackgroundReplacementTags}
-                    debounceTime={400}
-                    placeholder="e.g., white background, simple background"
-                    className="h-7 text-xs bg-background flex-1"
-                  />
-                </div>
-              </motion.div>
-            )}
-
-            {backgroundMode === 'random' && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15, ease: "easeInOut" }}
-                className="overflow-hidden"
-              >
-                <div className="pt-2 flex flex-col gap-1.5 pl-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[11px] font-medium">Include Patterns</span>
-                      <span className="text-[10px] text-muted-foreground leading-none">Stripes, dots, etc.</span>
-                    </div>
-                    <Switch
-                      checked={randomBackgroundPatterns}
-                      onCheckedChange={setRandomBackgroundPatterns}
-                      className="scale-75 origin-right"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[11px] font-medium">Include Gradients</span>
-                      <span className="text-[10px] text-muted-foreground leading-none">Gradients and two-tone colors</span>
-                    </div>
-                    <Switch
-                      checked={randomBackgroundIncludeGradients}
-                      onCheckedChange={setRandomBackgroundIncludeGradients}
-                      className="scale-75 origin-right"
-                    />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {backgroundMode === 'detailed_random' && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15, ease: "easeInOut" }}
-                className="overflow-hidden"
-              >
-                <div className="pt-2 pl-3 flex flex-col gap-1.5">
-                  <span className="text-[11px] font-medium">Scene Matching</span>
-                  <div className="grid grid-cols-3 gap-1">
-                    {MATCH_STRICTNESS_OPTIONS.map(({ value, label }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setBackgroundMatchStrictness(value)}
-                        className={cn(
-                          "h-6 rounded-md text-[10px] font-medium transition-colors",
-                          backgroundMatchStrictness === value
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-background text-muted-foreground hover:bg-muted"
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="text-[10px] text-muted-foreground leading-tight">
-                    {MATCH_STRICTNESS_DESCRIPTIONS[backgroundMatchStrictness]}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    if (!isCompact) e.preventDefault()
+                    setIsGlobalWeightsModalOpen(true)
+                  }}
+                  className={cn(
+                    "group relative flex items-center gap-1.5 font-semibold select-none border border-primary/45 bg-card/95 backdrop-blur-md text-primary-text hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all duration-200 shadow-md active:scale-[0.96] cursor-pointer",
+                    isCompact
+                      ? "h-5 pl-1.5 pr-2 text-[9px] rounded-r-md rounded-l-xs"
+                      : "h-6 pl-2 pr-2.5 text-xs rounded-r-lg rounded-l-xs before:absolute before:-left-1 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-3 before:bg-primary/50 before:rounded-l-xs"
+                  )}
+                  title="Manage active global weights"
+                  aria-label="Manage global tag weights"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:bg-primary-foreground transition-colors shrink-0 animate-pulse" />
+                  <span className="leading-none tracking-tight">Manage</span>
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
+      </div>
+    </div>
+  )
+
+  const renderBackgroundOptionsSection = (idPrefix: string) => (
+    <div className={cn(
+      "sm:col-span-2 flex flex-col gap-2.5",
+      isCompact ? "pt-2 border-t border-border/40" : "pt-3 mt-1 border-t border-border/50"
+    )}>
+      <div className={isCompact ? "flex items-center justify-between gap-2" : "flex flex-col sm:flex-row sm:items-center justify-between gap-3"}>
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-1">
+            {isCompact ? (
+              <Label htmlFor={`background-handling-select-${idPrefix}`} className="text-xs font-semibold cursor-pointer">Background Options</Label>
+            ) : (
+              <InfoTooltip
+                title="Background Options"
+                description="This option allows you to modify background-related tags for greater control. You can leave them as is, remove them completely, or more importantly, replace them with one of your liking. Useful for getting results with the same background or simply adding a white background to all your generations."
+                visual={BACKGROUND_OPTIONS_VISUAL}
+              >
+                <Label htmlFor={`background-handling-select-${idPrefix}`} className="text-sm font-medium cursor-pointer">Background Options</Label>
+              </InfoTooltip>
+            )}
+          </div>
+          <span id={`background-options-desc-${idPrefix}`} className="text-[10px] text-muted-foreground leading-tight">
+            {isCompact ? "Modify background/scene tags" : "Modify scenery tags"}
+          </span>
+        </div>
+        <div className={isCompact ? undefined : "w-full sm:w-auto sm:min-w-[160px]"}>
+          <Select
+            value={backgroundMode}
+            onValueChange={handleBackgroundModeChange}
+          >
+            <SelectTrigger
+              id={`background-handling-select-${idPrefix}`}
+              aria-describedby={`background-options-desc-${idPrefix}`}
+              className={isCompact ? "h-7 text-[11px] bg-background w-[110px]" : "h-8 text-xs bg-background"}
+            >
+              <SelectValue placeholder={isCompact ? "Original" : "Keep Original"} />
+            </SelectTrigger>
+            <SelectContent className={isCompact ? "text-xs" : undefined}>
+              <SelectItem value="keep">{isCompact ? "Original" : "Keep Original"}</SelectItem>
+              <SelectItem value="remove_all">Remove All</SelectItem>
+              <SelectItem value="force_simple">Replace</SelectItem>
+              <SelectItem value="random">Simple Random</SelectItem>
+              <SelectItem value="detailed_random">Detailed Random</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {backgroundMode === 'force_simple' && (
+          <motion.div
+            key="force_simple"
+            initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: EASE_OUT_STRONG }}
+            className="overflow-hidden"
+          >
+            <div className={cn("pt-1.5 flex items-center gap-2", !isCompact && "sm:pl-1")}>
+              <DebouncedInput
+                value={simpleBackgroundReplacementTags}
+                onChange={handleSimpleBackgroundReplacementTagsChange}
+                debounceTime={400}
+                placeholder={isCompact ? "e.g., white background, simple background" : "e.g. simple background, white background"}
+                className={cn("bg-background min-w-0 flex-1", isCompact ? "h-7 text-xs" : "h-8 text-xs focus-visible:ring-1")}
+                aria-label="Tags to replace background with"
+              />
+            </div>
+          </motion.div>
+        )}
+
+        {backgroundMode === 'random' && (
+          <motion.div
+            key="random"
+            initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: EASE_OUT_STRONG }}
+            className="overflow-hidden"
+          >
+            <div className={cn("flex flex-col gap-2 pt-2", !isCompact && "sm:pl-1")}>
+              <div className="flex items-center justify-between p-1.5 rounded-lg hover:bg-muted/30 transition-colors">
+                <div className="flex flex-col gap-0.5">
+                  <span className={isCompact ? "text-[11px] font-medium" : "text-xs font-medium text-foreground"}>Include Patterns</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">
+                    {isCompact ? "Stripes, dots, etc." : "Allow generation of patterned backgrounds."}
+                  </span>
+                </div>
+                <Switch
+                  checked={randomBackgroundPatterns}
+                  onCheckedChange={handleRandomBackgroundPatternsChange}
+                  className={switchClass}
+                  aria-label="Include patterns in random backgrounds"
+                />
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded-lg hover:bg-muted/30 transition-colors">
+                <div className="flex flex-col gap-0.5">
+                  <span className={isCompact ? "text-[11px] font-medium" : "text-xs font-medium text-foreground"}>Include Gradients</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">
+                    {isCompact ? "Gradients and two-tone colors" : "Add two-tone and gradient backgrounds."}
+                  </span>
+                </div>
+                <Switch
+                  checked={randomBackgroundIncludeGradients}
+                  onCheckedChange={setRandomBackgroundIncludeGradients}
+                  className={switchClass}
+                  aria-label="Include gradients in random backgrounds"
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {backgroundMode === 'detailed_random' && (
+          <motion.div
+            key="detailed_random"
+            initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: EASE_OUT_STRONG }}
+            className="overflow-hidden"
+          >
+            <div className={cn("pt-2 flex flex-col gap-2", !isCompact && "sm:pl-1")}>
+              {isCompact ? (
+                <span className="text-[11px] font-medium">Scene Matching</span>
+              ) : (
+                <InfoTooltip
+                  title="Scene Matching"
+                  description="Controls how closely the randomly-picked scenery has to match the original post. 'Free' ignores the post entirely for maximum variety. 'Balanced' (default) tries to keep the scenery as close as possible to the original post. 'Strict' tries even harder to keep it close."
+                >
+                  <span className="text-xs font-medium text-foreground cursor-pointer">Scene Matching</span>
+                </InfoTooltip>
+              )}
+              <div className={cn(
+                "p-1 rounded-lg bg-muted/60 border border-border/50 grid grid-cols-3 gap-1 relative",
+                isCompact ? "h-7" : "h-8"
+              )}>
+                {MATCH_STRICTNESS_OPTIONS.map(({ value, label }) => {
+                  const isSelected = backgroundMatchStrictness === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setBackgroundMatchStrictness(value)}
+                      className={cn(
+                        "relative z-10 flex items-center justify-center rounded-md font-medium transition-colors select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:scale-[0.98]",
+                        isCompact ? "text-[10px]" : "text-xs",
+                        isSelected ? "text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                      )}
+                      aria-pressed={isSelected}
+                    >
+                      {isSelected && (
+                        <motion.div
+                          layoutId={`${idPrefix}-strictness-active-pill`}
+                          className="absolute inset-0 bg-primary rounded-md shadow-xs"
+                          transition={shouldReduceMotion ? { duration: 0 } : SEGMENT_PILL_SPRING}
+                        />
+                      )}
+                      <span className="relative z-20">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="text-[10px] text-muted-foreground leading-tight">
+                {MATCH_STRICTNESS_DESCRIPTIONS[backgroundMatchStrictness]}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+
+  if (isCompact) {
+    return (
+      <>
+        {switchesSection}
+        {renderBackgroundOptionsSection("compact")}
       </>
+    )
+  }
+
+  // "embedded": the "Output" half of the main panel's "Customize prompt"
+  // section. One column of switches, each with a plain one-line explanation
+  // instead of an ⓘ tooltip. Tag Exclusion is omitted here — on the main
+  // panel it sits under "Tags to Add", the only list it affects.
+  if (variant === "embedded") {
+    const options: { id: string; label: string; hint: string; checked: boolean; onChange: (v: boolean) => void; extra?: ReactNode }[] =
+      booruProvider !== 'aibooru'
+        ? [
+            { id: "include-characters", label: "Include character names", hint: "Keep the post's character tags", checked: includeCharacters, onChange: setIncludeCharacters },
+            { id: "smart-tag", label: "Merge redundant tags", hint: "“hair, long hair, white hair” → “long white hair”", checked: optimizeTags, onChange: setOptimizeTags },
+          ]
+        : [
+            { id: "remove-lora", label: "Remove LoRA tags", hint: "Strip <lora:…> tags from Aibooru prompts", checked: removeLoRaTags, onChange: setRemoveLoRaTags },
+            { id: "remove-quality", label: "Remove quality tags", hint: "Strip masterpiece, best quality, …", checked: removeQualityTags, onChange: setRemoveQualityTags },
+          ]
+    options.push(
+      { id: "auto-append-search-tags", label: "Add my search tags", hint: "Append the tags you searched for if the post lacks them", checked: autoAppendSearchTags, onChange: setAutoAppendSearchTags },
+    )
+    if (booruProvider !== 'aibooru') {
+      options.push({ id: "prepend-anima-artist", label: "Start with @artist", hint: "Only for checkpoints that support Anima's @artist syntax", checked: prependAnimaArtist, onChange: setPrependAnimaArtist })
+    }
+    options.push({
+      id: "global-weights-toggle",
+      label: "Global tag weights",
+      hint: "Apply the weights you set on tags to every card",
+      checked: isGlobalWeightsEnabled,
+      onChange: toggleGlobalWeights,
+      extra: isGlobalWeightsEnabled && (
+        <Button type="button" variant="outline" size="sm" onClick={() => setIsGlobalWeightsModalOpen(true)} className="h-8 px-2.5 text-xs">
+          Edit weights
+        </Button>
+      ),
+    })
+
+    return (
+      <div className="flex flex-col gap-4" data-tour="generation-options">
+        <div className="flex flex-col">
+          {options.map((o) => (
+            <div key={o.id} className="flex min-h-[56px] items-center justify-between gap-3 border-b border-border/50 py-2 last:border-b-0">
+              <label htmlFor={`${o.id}-embedded`} className="flex min-w-0 cursor-pointer flex-col gap-0.5">
+                <span className="text-sm text-foreground">{o.label}</span>
+                <span className="text-xs text-muted-foreground">{o.hint}</span>
+              </label>
+              <div className="flex shrink-0 items-center gap-2">
+                {o.extra}
+                <Switch id={`${o.id}-embedded`} checked={o.checked} onCheckedChange={o.onChange} />
+              </div>
+            </div>
+          ))}
+        </div>
+        {renderBackgroundOptionsSection("embedded")}
+      </div>
     )
   }
 
@@ -339,7 +791,7 @@ export function PromptGenerationOptionsPanel({
         className="w-full flex items-center justify-between gap-2 cursor-pointer sm:cursor-default sm:pointer-events-none"
       >
         <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Settings className="h-4 w-4 text-primary" />
+          <Settings className="h-4 w-4 text-primary-text" />
           {booruProvider === 'aibooru' ? 'Aibooru Options' : 'Prompt Generation Options'}
         </span>
         <ChevronDown
@@ -349,404 +801,33 @@ export function PromptGenerationOptionsPanel({
           )}
         />
       </button>
-      <div
-        className={cn(
-          "grid grid-cols-1 sm:grid-cols-2 gap-3",
-          !isPromptOptionsExpanded && "hidden sm:grid"
-        )}
-      >
-        {booruProvider !== 'aibooru' ? (
-          <>
-            <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-              <InfoTooltip
-                title="Include Characters"
-                description="Does exactly that: includes character tags in the prompt. You can turn this off if you don't want character names."
-                visual={
-                  <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
-                    <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                        <span className="text-muted-foreground font-medium min-w-[70px]">Toggle:</span>
-                        <span className="bg-destructive/10 text-destructive border border-destructive/20 px-1.5 py-0.5 rounded font-mono font-medium">Off/False</span>
-                      </div>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                        <span className="text-muted-foreground font-medium min-w-[70px]">Original:</span>
-                        <span className="px-1.5 py-0.5 rounded text-foreground font-mono bg-primary/5">hatsune miku, 1girl, solo</span>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 mt-1 px-1">
-                      <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
-                      <div className="flex flex-wrap gap-1">
-                        <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, solo</span>
-                        <span className="bg-destructive/10 border border-destructive/20 text-destructive line-through px-1.5 py-0.5 rounded"><X className="w-2.5 h-2.5 inline mr-0.5" />hatsune miku</span>
-                      </div>
-                    </div>
-                  </div>
-                }
-              >
-                <Label htmlFor="include-characters" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Include Characters</Label>
-              </InfoTooltip>
-              <Switch
-                id="include-characters"
-                checked={includeCharacters}
-                onCheckedChange={setIncludeCharacters}
-                className="scale-90"
-                aria-label="Include characters in prompts"
-              />
-            </div>
-            <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-              <InfoTooltip
-                title="Smart Tag Combination"
-                description="If the prompt has, for example, 'hair, long hair, white hair', this function combines them into a single tag: 'long white hair'. Useful to avoid redundancy and not saturate the tokenizer."
-                visual={
-                  <div className="w-full flex flex-col gap-2 p-1">
-                    <div className="flex justify-between items-center text-[10px] text-muted-foreground w-full px-1">
-                      <span>Before</span>
-                      <span>After</span>
-                    </div>
-                    <div className="flex justify-between items-center gap-2 w-full">
-                      <span className="bg-muted text-muted-foreground px-2 py-1 rounded text-[10px] whitespace-nowrap">hair, long hair, white hair</span>
-                      <span className="text-muted-foreground">→</span>
-                      <span className="bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded text-[10px] whitespace-nowrap">long white hair</span>
-                    </div>
-                  </div>
-                }
-              >
-                <Label htmlFor="smart-tag" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Smart Tag Combination</Label>
-              </InfoTooltip>
-              <Switch
-                id="smart-tag"
-                checked={optimizeTags}
-                onCheckedChange={setOptimizeTags}
-                className="scale-90"
-                aria-label="Enable smart tag combination"
-              />
-            </div>
-            <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-              <div className="flex items-center gap-2">
-                <InfoTooltip
-                  title="Smart Tag Exclusion"
-                  description="Makes added tags work smartly. For example, if the original prompt implies a back view without a face, and your 'Tags to add' contains facial features like 'lips, nose, blue eyes', it automatically disables them for that specific card to keep the generated result faithful. WARNING: This is a beta feature and is still being polished."
-                  visual={
-                    <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
-                      <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                          <span className="text-muted-foreground font-medium min-w-[70px]">Prompt:</span>
-                          <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, from behind</span>
-                        </div>
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                          <span className="text-muted-foreground font-medium min-w-[70px]">Tags to Add:</span>
-                          <span className="bg-green-500/10 text-green-500 border border-green-500/20 px-1.5 py-0.5 rounded">blue eyes, lips</span>
-                        </div>
-                      </div>
+      {/* Desktop: always visible grid */}
+      <div className="hidden sm:grid sm:grid-cols-2 sm:gap-2.5">
+        {switchesSection}
+        {renderBackgroundOptionsSection("desktop")}
+      </div>
 
-                      <div className="flex items-center gap-2 mt-1 px-1">
-                        <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
-                        <div className="flex flex-wrap gap-1">
-                          <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">from behind</span>
-                          <span className="bg-destructive/10 border border-destructive/20 text-destructive line-through px-1.5 py-0.5 rounded">blue eyes, lips</span>
-                        </div>
-                      </div>
-                    </div>
-                  }
-                >
-                  <Label htmlFor="smart-exclusion" className="text-sm select-none cursor-pointer">Smart Tag Exclusion</Label>
-                </InfoTooltip>
-              </div>
-              <Switch
-                id="smart-exclusion"
-                checked={smartTagExclusion}
-                onCheckedChange={setSmartTagExclusion}
-                className="scale-90"
-                aria-label="Enable smart tag exclusion"
-              />
-            </div>
-            <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-              <div className="flex items-center gap-2">
-                <InfoTooltip
-                  title="Prepend Artist (@artist)"
-                  description="Adds the post's artist as &quot;@artist,&quot; at the very start of the prompt. Only works for checkpoints that support Anima's @artist invocation syntax (e.g. Anima Pencil-XL) — other checkpoints will treat it as a meaningless literal tag."
-                  visual={
-                    <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
-                      <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                          <span className="text-muted-foreground font-medium min-w-[70px]">Artist:</span>
-                          <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">wlop</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 mt-1 px-1">
-                        <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
-                        <div className="flex flex-wrap gap-1">
-                          <span className="bg-green-500/10 border border-green-500/20 text-green-500 px-1.5 py-0.5 rounded font-mono">@wlop,</span>
-                          <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, solo...</span>
-                        </div>
-                      </div>
-                    </div>
-                  }
-                >
-                  <Label htmlFor="prepend-anima-artist" className="text-sm select-none cursor-pointer">Prepend Artist (@artist)</Label>
-                </InfoTooltip>
-                <Badge variant="default" className="text-xs py-0 px-2 !rounded-lg">Anima only</Badge>
-              </div>
-              <Switch
-                id="prepend-anima-artist"
-                checked={prependAnimaArtist}
-                onCheckedChange={setPrependAnimaArtist}
-                className="scale-90"
-                aria-label="Prepend the post's artist as @artist for Anima checkpoints"
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-              <Label htmlFor="remove-lora" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Remove LoRa Tags</Label>
-              <Switch
-                id="remove-lora"
-                checked={removeLoRaTags}
-                onCheckedChange={setRemoveLoRaTags}
-                className="scale-90"
-                aria-label="Remove LoRa tags from Aibooru prompts"
-              />
-            </div>
-            <div className="flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50 sm:col-span-2">
-              <Label htmlFor="remove-quality" className="text-sm select-none cursor-pointer flex-1 sm:flex-none">Remove Quality Tags</Label>
-              <Switch
-                id="remove-quality"
-                checked={removeQualityTags}
-                onCheckedChange={setRemoveQualityTags}
-                className="scale-90"
-                aria-label="Remove quality tags from Aibooru prompts"
-              />
-            </div>
-          </>
-        )}
-
-        <div className="sm:col-span-2 flex items-center justify-between sm:justify-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50">
-          <div className="flex flex-col gap-0.5 flex-1 sm:flex-none">
-            <InfoTooltip
-              title="Global Tag Weights"
-              description="All tags are clickable. If you click a tag, you can adjust its weight (e.g., 1.5). If 'Global Tag Weights' is enabled and you click the Globe icon, that weight will automatically be applied to all cards containing said tag."
-              visual={
-                <div className="w-full flex gap-3 text-[10px] items-center p-3 bg-slate-950 rounded-lg overflow-hidden relative">
-
-                  {/* Popover mock */}
-                  <div className="flex flex-col w-[130px] bg-slate-800 rounded-lg border border-slate-700 shadow-xl overflow-hidden shrink-0 text-slate-200 z-10">
-                    <div className="p-2 flex items-center justify-between">
-                      <div className="flex items-center gap-2.5 text-slate-400">
-                        <span>—</span> <span className="font-bold text-slate-100 text-[11px]">1.5</span> <span>+</span>
-                      </div>
-                      <Globe className="w-3.5 h-3.5 text-[#a855f7]" />
-                    </div>
-                    <div className="p-1.5 px-2 border-y border-slate-700 flex items-center gap-1.5 text-slate-400">
-                      <Search className="w-3 h-3" /> <span>Search Tag</span>
-                    </div>
-                    <div className="p-2 flex flex-wrap gap-1 items-center">
-                      <span className="bg-[#a855f7]/20 text-[#d8b4fe] px-1.5 py-0.5 rounded-md font-medium">
-                        (frieren:1.5)
-                      </span>
-                      <span className="text-slate-300 leading-tight">1girl, elf...</span>
-                    </div>
-                  </div>
-
-                  <ArrowRight className="w-4 h-4 text-slate-500 shrink-0 z-10" />
-
-                  {/* Affected cards mock */}
-                  <div className="flex flex-col gap-2 flex-1 w-full text-slate-200 z-10">
-                    <div className="bg-slate-800 rounded-lg border border-slate-700 p-2 flex flex-col gap-1.5 shadow-sm">
-                      <div className="flex">
-                        <span className="bg-[#a855f7]/20 text-[#d8b4fe] rounded-md px-1.5 py-0.5 font-medium relative">
-                          (frieren:1.5)
-                          <span className="absolute -top-0.5 -right-0.5 w-[5px] h-[5px] rounded-full bg-[#a855f7] shadow-[0_0_6px_#c084fc]" />
-                        </span>
-                      </div>
-                      <span className="text-slate-300">elf, sitting</span>
-                    </div>
-                    <div className="bg-slate-800 rounded-lg border border-slate-700 p-2 flex flex-col gap-1.5 shadow-sm">
-                      <div className="flex">
-                        <span className="bg-[#a855f7]/20 text-[#d8b4fe] rounded-md px-1.5 py-0.5 font-medium relative">
-                          (frieren:1.5)
-                          <span className="absolute -top-0.5 -right-0.5 w-[5px] h-[5px] rounded-full bg-[#a855f7] shadow-[0_0_6px_#c084fc]" />
-                        </span>
-                      </div>
-                      <span className="text-slate-300">long_hair</span>
-                    </div>
-                  </div>
-                </div>
-              }
+      {/* Mobile: smooth accordion with Framer Motion */}
+      <div className="sm:hidden">
+        <AnimatePresence initial={false}>
+          {isPromptOptionsExpanded && (
+            <motion.div
+              key="prompt-options-mobile-content"
+              initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: EASE_OUT_STRONG }}
+              className="overflow-hidden"
             >
-              <Label htmlFor="global-weights-toggle" className="text-sm select-none cursor-pointer">Global Tag Weights</Label>
-            </InfoTooltip>
-            <span className="text-[10px] text-muted-foreground">Propagate changes to all cards</span>
-          </div>
-          <div className="flex items-center gap-2 ml-auto sm:ml-0">
-            <Switch
-              id="global-weights-toggle"
-              checked={isGlobalWeightsEnabled}
-              onCheckedChange={toggleGlobalWeights}
-              className="scale-90"
-              aria-label="Toggle global tag weights"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-3 text-xs"
-              onClick={(e) => {
-                e.preventDefault()
-                setIsGlobalWeightsModalOpen(true)
-              }}
-            >
-              Manage
-            </Button>
-          </div>
-        </div>
-
-        <div className="sm:col-span-2 flex flex-col gap-2 p-3 mt-1 rounded-xl bg-muted/40 border border-border/50 shadow-sm transition-colors hover:border-border/80">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center">
-              <div className="flex flex-col gap-0.5">
-                <div className="flex items-center gap-2">
-                  <InfoTooltip
-                    title="Background Options"
-                    description="This option allows you to modify background-related tags for greater control. You can leave them as is, remove them completely, or more importantly, replace them with one of your liking. Useful for getting results with the same background or simply adding a white background to all your generations. WARNING: This is a beta feature and is still being polished."
-                    visual={
-                      <div className="w-full flex flex-col gap-2 p-1.5 text-[10px]">
-                        <div className="flex flex-col gap-1.5 bg-muted/40 p-2 rounded-lg border border-border/50">
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                            <span className="text-muted-foreground font-medium min-w-[70px]">Original:</span>
-                            <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl, outdoors, blue sky</span>
-                          </div>
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                            <span className="text-muted-foreground font-medium min-w-[70px]">Option:</span>
-                            <span className="bg-yellow-500/10 text-yellow-600 border border-yellow-500/20 px-1.5 py-0.5 rounded flex items-center gap-1">Replace: <span>white background</span></span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 mt-1 px-1">
-                          <span className="text-muted-foreground font-medium min-w-[70px]">Result:</span>
-                          <div className="flex flex-wrap gap-1">
-                            <span className="px-1.5 py-0.5 rounded text-foreground bg-primary/5 font-mono">1girl</span>
-                            <span className="bg-green-500/10 border border-green-500/20 text-green-500 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Check className="w-3 h-3" /> white background</span>
-                          </div>
-                        </div>
-                      </div>
-                    }
-                  >
-                    <Label htmlFor="background-handling-select" className="text-sm font-medium cursor-pointer">Background Options</Label>
-                  </InfoTooltip>
-                </div>
-                <span className="text-[10px] text-muted-foreground leading-tight">Modify scenery tags</span>
+              <div className="flex flex-col gap-2 pt-1">
+                {switchesSection}
+                {renderBackgroundOptionsSection("mobile")}
               </div>
-            </div>
-            <div className="w-full sm:w-auto sm:min-w-[160px]">
-              <Select
-                value={backgroundMode}
-                onValueChange={(val: any) => {
-                  setBackgroundMode(val);
-                  userPreferences.setBackgroundMode(val);
-                }}
-              >
-                <SelectTrigger id="background-handling-select" className="h-8 text-xs bg-background">
-                  <SelectValue placeholder="Keep Original" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="keep">Keep Original</SelectItem>
-                  <SelectItem value="remove_all">Remove All</SelectItem>
-                  <SelectItem value="force_simple">Replace</SelectItem>
-                  <SelectItem value="random">Simple Random</SelectItem>
-                  <SelectItem value="detailed_random">Detailed Random</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <AnimatePresence>
-            {backgroundMode === 'force_simple' && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeInOut" }}
-                className="overflow-hidden"
-              >
-                <div className="pt-2 pl-0 sm:pl-[3.25rem] flex items-center gap-2">
-                  <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground hidden sm:block shrink-0" />
-                  <DebouncedInput value={simpleBackgroundReplacementTags} onChange={(val) => {
-                    setSimpleBackgroundReplacementTags(val);
-                    userPreferences.setSimpleBackgroundReplacementTags(val);
-                  }} debounceTime={400} placeholder="e.g. simple background, white background" className="h-8 text-xs bg-background focus-visible:ring-1 min-w-0 flex-1" aria-label="Tags to replace background with" />
-                </div>
-              </motion.div>
-            )}
-            {backgroundMode === 'random' && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeInOut" }}
-                className="overflow-hidden"
-              >
-                <div className="pt-3 pl-0 sm:pl-[3.25rem] flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-xs font-medium text-foreground">Include Patterns</span>
-                      <span className="text-[10px] text-muted-foreground leading-tight">Allow generation of patterned backgrounds.</span>
-                    </div>
-                    <Switch checked={randomBackgroundPatterns} onCheckedChange={(val) => { setRandomBackgroundPatterns(val); userPreferences.setRandomBackgroundPatterns(val); }} className="scale-75 origin-right" />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-xs font-medium text-foreground">Include Gradients</span>
-                      <span className="text-[10px] text-muted-foreground leading-tight">Add two-tone and gradient backgrounds.</span>
-                    </div>
-                    <Switch checked={randomBackgroundIncludeGradients} onCheckedChange={setRandomBackgroundIncludeGradients} className="scale-75 origin-right" />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {backgroundMode === 'detailed_random' && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeInOut" }}
-                className="overflow-hidden"
-              >
-                <div className="pt-3 pl-0 sm:pl-[3.25rem] flex flex-col gap-2">
-                  <InfoTooltip
-                    title="Scene Matching"
-                    description="Controls how closely the randomly-picked scenery has to fit the post. 'Free' ignores the post entirely (old behavior) for maximum variety. 'Balanced' (default) keeps the original location when the post already shows one, and otherwise favors quieter, more private-feeling settings so the scenery matches the mood of the pose. 'Strict' goes further and only picks from secluded, low-traffic settings — useful when you want every generated scene to read as private."
-                  >
-                    <span className="text-xs font-medium text-foreground cursor-pointer">Scene Matching</span>
-                  </InfoTooltip>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {MATCH_STRICTNESS_OPTIONS.map(({ value, label }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setBackgroundMatchStrictness(value)}
-                        className={cn(
-                          "h-7 rounded-md text-xs font-medium transition-colors border",
-                          backgroundMatchStrictness === value
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-background text-muted-foreground border-border hover:bg-muted"
-                        )}
-                        aria-pressed={backgroundMatchStrictness === value}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="text-[10px] text-muted-foreground leading-tight">
-                    {MATCH_STRICTNESS_DESCRIPTIONS[backgroundMatchStrictness]}
-                  </span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )
-}
+})

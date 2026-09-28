@@ -88,7 +88,7 @@ export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {
                             onError={() => setImageError(true)}
                         />
                     ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-purple-500/10 to-muted/50 text-muted-foreground">
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-primary/10 to-muted/50 text-muted-foreground">
                             {imageError ? (
                                 <>
                                     <ImageOff className="w-8 h-8 opacity-40" />
@@ -104,7 +104,7 @@ export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {
                     <div className="absolute top-2 left-2 pointer-events-none">
                         <Badge
                             variant="secondary"
-                            className="px-2 py-0.5 text-[10px] font-medium bg-black/55 backdrop-blur-sm text-white/95 border-0 flex items-center gap-1"
+                            className="px-2 py-0.5 text-[10px] font-medium bg-overlay/55 backdrop-blur-sm text-overlay-foreground/95 border-0 flex items-center gap-1"
                         >
                             <Palette className="w-3 h-3" />
                             {providerLabel}
@@ -125,7 +125,7 @@ export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {
                                     aria-label={`Remove saved artist ${displayName}`}
                                     className={cn(
                                         "glass-effect h-7 w-7 transition-all",
-                                        "text-muted-foreground hover:text-red-500",
+                                        "text-muted-foreground hover:text-destructive-text",
                                     )}
                                 >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -137,7 +137,7 @@ export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {
 
                     {/* Artist name overlaid at bottom of image */}
                     <div className="absolute inset-x-0 bottom-0 p-2.5">
-                        <h3 className="text-white font-semibold text-sm leading-tight line-clamp-2 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        <h3 className="text-overlay-foreground font-semibold text-sm leading-tight line-clamp-2 drop-shadow-[0_1px_2px_color-mix(in_oklab,var(--overlay)_90%,transparent)]">
                             {displayName}
                         </h3>
                     </div>
@@ -191,8 +191,8 @@ export function ArtistGrid({ artists, onSearch, onRemove }: ArtistGridProps) {
         return (
             <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
                 <div className="relative mb-4">
-                    <div className="absolute inset-0 blur-2xl bg-purple-500/20 rounded-full" />
-                    <Palette className="relative w-16 h-16 text-purple-400/60" strokeWidth={1.5} />
+                    <div className="absolute inset-0 blur-2xl bg-primary/20 rounded-full" />
+                    <Palette className="relative w-16 h-16 text-primary-text/60" strokeWidth={1.5} />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">No artists saved yet</h3>
                 <p className="text-sm text-muted-foreground max-w-md">

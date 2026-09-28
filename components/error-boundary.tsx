@@ -1,8 +1,8 @@
 "use client"
 
 import React from 'react'
-import * as Sentry from "@sentry/nextjs"
-import { getTranslationState } from '@/lib/sentry-tracing'
+import { reportError } from "@/lib/error-reporting"
+import { getTranslationState } from '@/lib/error-context'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 interface ErrorBoundaryState {
   hasError: boolean
   error?: Error
-  /** Sentry event id for the captured crash — shown to the user so they can report it. */
+  /** PostHog event id for the captured crash — shown to the user so they can report it. */
   eventId?: string
 }
 
@@ -89,7 +89,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
   // Detect whether the page is currently being auto-translated by the browser
   // (Google Translate / Chrome mobile). Delegates to the shared snapshot so the
-  // boundary and the Sentry beforeSend hook agree. See SENTRY-FULVOUS-ANCHOR-7.
+  // boundary and the PostHog before_send hook agree.
   isLikelyTranslated(): boolean {
     return getTranslationState().detected
   }
@@ -116,14 +116,12 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           ? 'dom_no_translation_detected'
           : 'unknown'
 
-    // Tags/contexts are passed to captureException so they land on THIS event
-    // (setTag after capture would only affect subsequent events).
+    // Properties are passed with the exception so they land on THIS event.
     const signedIn = this.isSignedIn()
-    const eventId = Sentry.captureException(error, {
-      contexts: {
-        react: { componentStack: errorInfo.componentStack },
-        translation: translation as unknown as Record<string, unknown>,
-        auth: { signedIn },
+    const eventId = reportError(error, {
+      extra: {
+        componentStack: errorInfo.componentStack,
+        translation,
       },
       tags: {
         error_type: errorType,

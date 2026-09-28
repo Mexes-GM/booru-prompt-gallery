@@ -104,7 +104,9 @@ export function useFavoritesSync({
       }
     )
 
-    // F7: also sync folder create/rename/delete across tabs & devices.
+    // Also sync folder create/delete across tabs & devices.
+    // (No UPDATE case: there is no rename/update-folder UI action — folders are
+    // only created or deleted, so a folder UPDATE payload should never occur.)
     channel.on(
       "postgres_changes",
       {
@@ -132,22 +134,10 @@ export function useFavoritesSync({
             }
             break
 
-          case "UPDATE":
-            if (payload.new) {
-              setFolders((prev) =>
-                prev.map((f) =>
-                  f.id === payload.new!.id
-                    ? { id: payload.new!.id, name: payload.new!.name, icon: payload.new!.icon }
-                    : f,
-                ),
-              )
-            }
-            break
-
           case "DELETE":
             setFolders((prev) => prev.filter((f) => f.id !== id))
             // The favorites rows that referenced this folder are cleaned up by
-            // deleteFolder (F1) and arrive as separate `favorites` UPDATE events.
+            // deleteFolder and arrive as separate `favorites` UPDATE events.
             break
         }
       }

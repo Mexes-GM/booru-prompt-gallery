@@ -96,7 +96,7 @@ export function SaveFavoriteButton({
             <Button
                 variant="secondary"
                 className={`rounded-none rounded-l-full h-8 px-2.5 transition-all ${isFavorited
-                    ? "bg-red-500 text-white hover:bg-red-600"
+                    ? "bg-mode-favorites text-mode-favorites-foreground hover:bg-mode-favorites/90"
                     : "bg-background/80 hover:bg-background/95 text-muted-foreground hover:text-foreground"
                     }`}
                 onClick={(e) => {
@@ -123,7 +123,7 @@ export function SaveFavoriteButton({
                     <Button
                         variant="secondary"
                         className={`rounded-none rounded-r-full h-8 px-1.5 border-l transition-all flex items-center justify-center ${isFavorited
-                            ? "bg-red-500 text-white hover:bg-red-600 border-red-600"
+                            ? "bg-mode-favorites text-mode-favorites-foreground hover:bg-mode-favorites/90 border-mode-favorites"
                             : "bg-background/80 hover:bg-background/95 text-muted-foreground hover:text-foreground border-border/50"
                             }`}
                         onClick={(e) => {
@@ -187,7 +187,7 @@ export function SaveFavoriteButton({
                                             <Button
                                                 variant={newFolderIcon === iconName ? "default" : "outline"}
                                                 size="icon"
-                                                className={`h-9 w-9 w-full ${newFolderIcon === iconName ? "bg-red-500 hover:bg-red-600 text-white border-none shadow-md" : ""}`}
+                                                className={`h-9 w-9 w-full ${newFolderIcon === iconName ? "bg-mode-favorites hover:bg-mode-favorites/90 text-mode-favorites-foreground border-none shadow-md" : ""}`}
                                                 onClick={() => setNewFolderIcon(iconName)}
                                             >
                                                 {renderIcon(iconName, { className: "h-4 w-4" })}
@@ -202,7 +202,7 @@ export function SaveFavoriteButton({
                         <Button
                             disabled={!newFolderName.trim() || isCreating}
                             onClick={handleCreateFolderModal}
-                            className="bg-red-500 hover:bg-red-600 text-white"
+                            className="bg-mode-favorites hover:bg-mode-favorites/90 text-mode-favorites-foreground"
                         >
                             {isCreating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                             Create
@@ -256,11 +256,11 @@ function FolderPopoverContent({
                         value="Uncategorized"
                         onSelect={() => onSelectFolder(null)}
                         className={`flex items-center gap-2 cursor-pointer py-1.5 rounded-md m-0.5 transition-colors 
-                                        ${selectedFolderIds.length === 0 && isFavorited ? "bg-primary/15 text-primary hover:bg-primary/25 data-[selected=true]:bg-primary/25" : "hover:bg-accent hover:text-accent-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"}
+                                        ${selectedFolderIds.length === 0 && isFavorited ? "bg-primary/15 text-primary-text hover:bg-primary/25 data-[selected=true]:bg-primary/25" : "hover:bg-accent hover:text-accent-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"}
                                     `}
                     >
                         <div className={`w-6 h-6 rounded-md flex items-center justify-center ${selectedFolderIds.length === 0 && isFavorited ? "bg-primary/20" : "bg-muted"}`}>
-                            <Folder className={`h-3 w-3 ${selectedFolderIds.length === 0 && isFavorited ? "text-primary" : "text-muted-foreground"}`} />
+                            <Folder className={`h-3 w-3 ${selectedFolderIds.length === 0 && isFavorited ? "text-primary-text" : "text-muted-foreground"}`} />
                         </div>
                         <span className="flex-1 font-medium text-xs">Uncategorized</span>
                         <AnimatePresence>
@@ -271,7 +271,7 @@ function FolderPopoverContent({
                                     exit={{ scale: 0.95, opacity: 0 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                 >
-                                    <Check className="h-3 w-3 text-primary" />
+                                    <Check className="h-3 w-3 text-primary-text" />
                                 </motion.div>
                             )}
                         </AnimatePresence>
@@ -284,11 +284,11 @@ function FolderPopoverContent({
                                 value={folder.name}
                                 onSelect={() => onSelectFolder(folder.id)}
                                 className={`flex items-center gap-2 cursor-pointer py-1.5 rounded-md m-0.5 transition-colors 
-                                                ${isSelected ? "bg-primary/15 text-primary hover:bg-primary/25 data-[selected=true]:bg-primary/25" : "hover:bg-accent hover:text-accent-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"}
+                                                ${isSelected ? "bg-primary/15 text-primary-text hover:bg-primary/25 data-[selected=true]:bg-primary/25" : "hover:bg-accent hover:text-accent-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"}
                                             `}
                             >
                                 <div className={`w-6 h-6 rounded-md flex items-center justify-center ${isSelected ? "bg-primary/20" : "bg-muted"}`}>
-                                    {renderIcon(folder.icon, { className: `h-3 w-3 ${isSelected ? "text-primary" : "text-muted-foreground"}` })}
+                                    {renderIcon(folder.icon, { className: `h-3 w-3 ${isSelected ? "text-primary-text" : "text-muted-foreground"}` })}
                                 </div>
                                 <span className="flex-1 font-medium text-xs truncate">{folder.name}</span>
                                 <AnimatePresence>
@@ -299,7 +299,7 @@ function FolderPopoverContent({
                                             exit={{ scale: 0.95, opacity: 0 }}
                                             transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                         >
-                                            <Check className="h-3 w-3 text-primary" />
+                                            <Check className="h-3 w-3 text-primary-text" />
                                         </motion.div>
                                     )}
                                 </AnimatePresence>

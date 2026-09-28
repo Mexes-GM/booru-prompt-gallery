@@ -114,7 +114,7 @@ export function Turnstile({ onVerify, className, theme = "auto" }: TurnstileProp
         widgetIdRef.current = null
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isConfigured, render, reactId])
 
   if (!isConfigured) return null

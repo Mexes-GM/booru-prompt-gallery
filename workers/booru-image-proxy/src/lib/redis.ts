@@ -85,9 +85,9 @@ class MemoryRedis implements Redis {
       memoryStore.set(key, { value: '1', expiresAt: now + expireSeconds * 1000 })
       return 1
     }
+    // Fixed window: keep the original expiry (see MERGED_RATELIMIT_SCRIPT).
     const num = (parseInt(entry.value) || 0) + 1
     entry.value = String(num)
-    entry.expiresAt = now + expireSeconds * 1000
     return num
   }
 
@@ -137,8 +137,9 @@ class UpstashRedis implements Redis {
   }
 
   async incrWithExpire(key: string, expireSeconds: number): Promise<number> {
-    // Atomic INCR + EXPIRE via Lua — 1 Redis command instead of 2
-    const script = 'redis.call("INCR", KEYS[1]) redis.call("EXPIRE", KEYS[1], ARGV[1]) return redis.call("GET", KEYS[1])'
+    // Atomic INCR + EXPIRE via Lua — 1 Redis command instead of 2. TTL only on
+    // creation (fixed window) — see MERGED_RATELIMIT_SCRIPT in constants.ts.
+    const script = 'local n = redis.call("INCR", KEYS[1]) if n == 1 or redis.call("TTL", KEYS[1]) == -1 then redis.call("EXPIRE", KEYS[1], ARGV[1]) end return n'
     const result = await this.eval(script, [key], [String(expireSeconds)])
     return parseInt(String(result ?? '0')) || 0
   }

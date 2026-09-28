@@ -1,4 +1,5 @@
 import { Redis } from './redis'
+import { isUpstreamOutage } from './upstream'
 
 const OPEN_TIMEOUT_MS = 60_000
 const MAX_FAILS = 2
@@ -79,4 +80,23 @@ export async function recordFailure(redis: Redis, name: string): Promise<void> {
     // than trusting a possibly-stale "closed" cache entry.
     circuitCache.delete(name)
   }
+}
+
+/**
+ * Feed the breaker with the outcome of one upstream call. Only provider-side
+ * failures (5xx, 429, timeouts — see isUpstreamOutage) count: a 4xx caused by
+ * the caller's own query must not open the circuit for every user. A success
+ * only spends the EVAL when the circuit was not already closed.
+ */
+export async function recordOutcome(
+  redis: Redis,
+  name: string,
+  observedState: 'closed' | 'open' | 'half-open',
+  error?: unknown
+): Promise<void> {
+  if (error === undefined) {
+    if (observedState !== 'closed') await recordSuccess(redis, name)
+    return
+  }
+  if (isUpstreamOutage(error)) await recordFailure(redis, name)
 }

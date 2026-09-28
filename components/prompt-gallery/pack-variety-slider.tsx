@@ -32,8 +32,8 @@ export function PackVarietySlider({ value, onChange }: PackVarietySliderProps) {
   }
 
   return (
-    <div className="flex items-center gap-3 w-full max-w-sm mx-auto">
-      <Label htmlFor="pack-variety" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+    <div className="flex items-center gap-3 w-full">
+      <Label htmlFor="pack-variety" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap w-16">
         Variety
       </Label>
       <Slider

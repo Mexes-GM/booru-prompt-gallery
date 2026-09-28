@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory, classifyTags, classifyTag } from '@/lib/tag-classifier'
+import { PACK_AXES, TAG_CATEGORY_IDS } from '@/lib/tag-taxonomy'
 import { processBackgroundTags, type BackgroundMode } from '@/lib/background-detector'
 import { deriveBackgroundContext, type MatchStrictness } from '@/lib/background-context'
 import { applyWordReplacementsToList, buildPostMetaTagSet, isMetaTag, type WordReplacementRule } from '@/lib/cleanPrompt'
@@ -69,7 +70,7 @@ export function useMergeMode(
     const [selectedPosts, setSelectedPosts] = useState<Map<number, SelectedPostParts>>(new Map())
     const [randomSettings, setRandomSettings] = useState<RandomSettings>({
         postCount: 3,
-        allowedCategories: ['appearance', 'clothing', 'pose', 'scenery']
+        allowedCategories: [...PACK_AXES]
     })
 
     const toggleMergeMode = useCallback(() => {
@@ -258,7 +259,7 @@ export function useMergeMode(
         const rawAddedTags = addedTagsInput.split(',').map(t => t.trim()).filter(Boolean)
         const classifiedAddedTags = classifyTags(rawAddedTags, tagOverrides)
 
-        const categories: TagCategory[] = ['appearance', 'clothing', 'pose', 'scenery', 'other']
+        const categories = TAG_CATEGORY_IDS
 
         // 1. Process ALL Added Tags First (across all categories) to ensure they are at the top
         categories.forEach(cat => {
@@ -395,7 +396,7 @@ export function useMergeMode(
             const commonTags = mergedPromptSegments.filter(s => !s.postId).map(s => s.display)
             
             // Then group by category, then by post id
-            const categories: TagCategory[] = ['appearance', 'clothing', 'pose', 'scenery', 'other']
+            const categories = TAG_CATEGORY_IDS
             const dynamicBlocks: string[] = []
             
             categories.forEach(cat => {

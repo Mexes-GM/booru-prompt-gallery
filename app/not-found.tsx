@@ -15,7 +15,7 @@ export default function NotFound() {
     <main className="container mx-auto flex min-h-[70vh] max-w-2xl items-center justify-center px-4 py-8">
       <Card className="glass-effect w-full text-center">
         <CardHeader>
-          <p className="text-6xl font-bold tracking-tight text-primary" aria-hidden="true">
+          <p className="text-6xl font-bold tracking-tight text-primary-text" aria-hidden="true">
             404
           </p>
           <CardTitle className="mt-2 text-2xl">Page not found</CardTitle>

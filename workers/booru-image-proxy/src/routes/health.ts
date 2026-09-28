@@ -2,6 +2,7 @@ import { Env } from '../types'
 import { getSupabase } from '../lib/supabase'
 import { jsonResponse, errorResponse, getClientIp } from '../utils'
 import { memoryRateLimit } from '../lib/rate-limit-cache'
+import { WORKER_LIMITS } from '../lib/limits'
 
 const CACHE_HEADERS = {
   'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
@@ -12,12 +13,12 @@ export async function healthHandler(
   request: Request,
   env: Env
 ): Promise<Response> {
-  // ponytail: per-IP rate limit — 30 req/min. Health check hits Supabase;
+  // ponytail: per-IP rate limit (WORKER_LIMITS.health). Health check hits Supabase;
   // without a limit it's a trivial DoS vector. This endpoint never touches
   // donmai, so a pure in-memory limiter is enough — no Redis commands spent
   // (Fase 5, redis-optimization-plan.md).
   const clientIp = getClientIp(request)
-  if (!memoryRateLimit(`health:${clientIp}`, 30, 60_000)) {
+  if (!memoryRateLimit(`health:${clientIp}`, WORKER_LIMITS.health.perIp.max, WORKER_LIMITS.health.perIp.windowS * 1000)) {
     return errorResponse('Too many health check requests', 429, {
       'Retry-After': '10',
       'Cache-Control': 'no-store',
@@ -43,7 +44,7 @@ export async function healthHandler(
   }
 
   try {
-    const { error } = await supabase.from('trend_cache').select('id').limit(1)
+    const { error } = await supabase.from('booru_posts_cache').select('id').limit(1)
     const responseTime = Date.now() - startTime
 
     if (error) {

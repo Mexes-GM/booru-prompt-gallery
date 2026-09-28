@@ -5,31 +5,8 @@
   "framework": "nextjs",
   "outputDirectory": ".next",
   "functions": {
-    "app/api/posts/route.ts": {
-      "maxDuration": 30
-    },
     "app/api/**/*": {
       "maxDuration": 10
     }
-  },
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Vary",
-          "value": "Accept, Accept-Encoding"
-        }
-      ]
-    },
-    {
-      "source": "/(favicon\\.ico|favicon\\.png|icon\\.png|manifest\\.json)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=86400"
-        }
-      ]
-    }
-  ]
+  }
 }

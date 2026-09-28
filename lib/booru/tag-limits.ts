@@ -100,6 +100,16 @@ const TAGCOUNT_SUPPORTED_PROVIDERS = new Set<BooruProvider>(['danbooru', 'aiboor
 
 export const isTagCountSupportedProvider = (provider: BooruProvider): boolean => TAGCOUNT_SUPPORTED_PROVIDERS.has(provider)
 
+/**
+ * Checks whether a booru provider supports unrestricted random post ordering
+ * without hitting tag-count limits or pagination constraints (Gelbooru, Rule34).
+ * Providers with strict tag counts (Danbooru with 2 tags, Aibooru with 4) or
+ * unsupported/broken random pagination (e621) return false.
+ */
+export const isRandomOrderSafeProvider = (provider: BooruProvider): boolean => {
+  return PROVIDER_TAG_LIMITS[provider] === Infinity
+}
+
 // Palanca 1 (docs/prompt-genericness-mitigation-plan.md §7-§8): quality floor via score:>=N.
 // Confirmed empirically (§7.2) that score: filters posts and is free (doesn't consume a tag
 // slot) on ALL 5 providers — unlike tagcount:, which Gelbooru/Rule34 don't support at all.

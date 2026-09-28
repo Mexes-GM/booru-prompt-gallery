@@ -5,7 +5,15 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const SUPABASE_CONFIGURED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 
-export async function updateSession(request: NextRequest) {
+export interface SessionUser {
+  id: string
+  /** Authenticator assurance level: 'aal1' (password/magic link) or 'aal2' (MFA verified). */
+  aal: string | null
+}
+
+export async function updateSession(
+  request: NextRequest
+): Promise<{ response: NextResponse; user: SessionUser | null }> {
   // If Supabase is not configured, skip auth entirely
   if (!SUPABASE_CONFIGURED) {
     return {
@@ -40,12 +48,18 @@ export async function updateSession(request: NextRequest) {
   })
 
   // IMPORTANT: Avoid writing any logic between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
+  // supabase.auth.getClaims(). A simple mistake could make it very hard to debug
   // issues with users being randomly logged out.
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // getClaims() verifies the access token locally against the project's JWKS
+  // when it uses asymmetric signing keys (no Auth round-trip on every page
+  // navigation), and falls back to a getUser()-equivalent server check for
+  // legacy HS256 projects. Either way it refreshes an expired session first.
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims
+  const user: SessionUser | null = claims?.sub
+    ? { id: claims.sub, aal: typeof claims.aal === 'string' ? claims.aal : null }
+    : null
 
   return { response, user }
 }

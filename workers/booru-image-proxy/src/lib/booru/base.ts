@@ -1,8 +1,69 @@
 import { BooruPost, SearchOptions } from './types'
-import { getDanbooruUserAgent, USER_AGENT } from '../constants'
+import { USER_AGENT } from '../constants'
+import { fetchUpstream, UpstreamError } from '../upstream'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '../../logger'
 import { resolveTagCategories, toTagLookupKey } from './tag-lookup'
+
+// ---------------------------------------------------------------------------
+// Per-isolate tag-category cache.
+//
+// A 100-post Gelbooru/Rule34 page carries ~1-2k distinct tags; resolving them
+// cold is dozens of PostgREST requests (3+ spellings per tag, 100 per chunk,
+// two tables). Tag categories practically never change, and consecutive pages
+// share most of their tags, so remembering each tag's resolution — including
+// "no row" — for an hour removes nearly all of those queries on warm isolates.
+// ---------------------------------------------------------------------------
+const CATEGORY_CACHE_TTL_MS = 60 * 60 * 1000
+const CATEGORY_CACHE_MAX = 50_000
+const categoryCache = new Map<string, { category: number | null; at: number }>()
+
+type FetchCategoryRows = (names: string[]) => Promise<TagCategoryRow[]>
+
+async function resolveTagCategoriesCached(
+  namespace: string,
+  tags: Iterable<string>,
+  fetchRows: FetchCategoryRows
+): Promise<Map<string, number>> {
+  const now = Date.now()
+  const resolved = new Map<string, number>()
+  const missing: string[] = []
+
+  for (const tag of tags) {
+    const key = toTagLookupKey(tag)
+    if (!key) continue
+    const entry = categoryCache.get(`${namespace}:${key}`)
+    if (entry && now - entry.at < CATEGORY_CACHE_TTL_MS) {
+      if (entry.category !== null) resolved.set(key, entry.category)
+    } else {
+      missing.push(tag)
+    }
+  }
+
+  if (missing.length > 0) {
+    // fetchRows throws on a DB error, so a failed lookup is never cached as
+    // "no category".
+    const fetched = await resolveTagCategories(missing, fetchRows)
+    for (const tag of missing) {
+      const key = toTagLookupKey(tag)
+      const category = fetched.get(key)
+      const cacheKey = `${namespace}:${key}`
+      categoryCache.delete(cacheKey) // re-insert at the end so eviction stays oldest-first
+      categoryCache.set(cacheKey, { category: category ?? null, at: now })
+      if (category !== undefined) resolved.set(key, category)
+    }
+    // Map iterates in insertion order, so this evicts the oldest entries.
+    if (categoryCache.size > CATEGORY_CACHE_MAX) {
+      let excess = categoryCache.size - CATEGORY_CACHE_MAX
+      for (const cacheKey of categoryCache.keys()) {
+        if (excess-- <= 0) break
+        categoryCache.delete(cacheKey)
+      }
+    }
+  }
+
+  return resolved
+}
 
 interface TagCategoryRow {
   name: string
@@ -15,56 +76,31 @@ export abstract class BaseBooruProvider {
 
   abstract search(options: SearchOptions): Promise<BooruPost[]>
 
-  // Simple fetch with retry — replaces smartFetch for Workers
+  /**
+   * GET a provider JSON endpoint. Retries/timeouts live in fetchUpstream (the
+   * single retry layer); failures surface as UpstreamError with the status.
+   */
   protected async fetchJson<T>(
     url: string,
     params: URLSearchParams,
-    headers: Record<string, string> = {},
-    retries = 2
+    headers: Record<string, string> = {}
   ): Promise<T> {
     const finalUrl = new URL(url)
     finalUrl.search = params.toString()
 
-    let lastError: Error | null = null
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 12000)
+    const response = await fetchUpstream(finalUrl.toString(), {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, ...headers },
+    })
 
-        const requestHeaders: Record<string, string> = {
-          'Accept': 'application/json',
-          'User-Agent': 'Boorugallery/9.2',
-          ...headers,
-        }
-
-        const response = await fetch(finalUrl.toString(), {
-          headers: requestHeaders,
-          signal: controller.signal,
-        })
-        clearTimeout(timeoutId)
-
-        if (!response.ok) {
-          throw new Error(`API Error: ${response.status} ${response.statusText}`)
-        }
-
-        const text = await response.text()
-        if (!text || text.trim().length === 0) {
-          return [] as unknown as T
-        }
-
-        try {
-          return JSON.parse(text) as T
-        } catch {
-          throw new Error('Invalid JSON response from provider')
-        }
-      } catch (error: any) {
-        lastError = error
-        if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
-        }
-      }
+    const text = await response.text()
+    if (!text || text.trim().length === 0) {
+      return [] as unknown as T
     }
-    throw lastError || new Error('Fetch failed')
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      throw new UpstreamError('Invalid JSON response from provider', 502)
+    }
   }
 
   protected filterValidPosts<T>(posts: T[]): T[] {
@@ -84,9 +120,15 @@ export abstract class BaseBooruProvider {
     })
   }
 
+  /**
+   * @param provider When set, tags `auto_suggest_tags` does not know are also
+   *   resolved against `provider_tag_categories` (precomputed offline by
+   *   scripts/classify-rule34-tags.ts). Danbooru's category always wins.
+   */
   protected async enrichPostsWithCategories(
     posts: BooruPost[],
-    supabase: SupabaseClient | null
+    supabase: SupabaseClient | null,
+    provider?: string
   ): Promise<BooruPost[]> {
     if (!posts || posts.length === 0) return posts
     if (!supabase) return posts
@@ -108,13 +150,33 @@ export abstract class BaseBooruProvider {
       // `absurd_res` vs `absurdres` — and the previous exact `in('name', tags)`
       // silently missed those, so the tag was never classified as meta and
       // reached the prompt as content. See ./tag-lookup.ts.
-      const tagMap = await resolveTagCategories(allTags, async (names) => {
-        const { data } = await supabase
-          .from('auto_suggest_tags')
-          .select('name, category')
-          .in('name', names)
-        return (data ?? []) as TagCategoryRow[]
-      })
+      // Both lookups run concurrently so the provider table adds no latency.
+      const [tagMap, providerTagMap] = await Promise.all([
+        resolveTagCategoriesCached('auto_suggest_tags', allTags, async (names) => {
+          const { data, error } = await supabase
+            .from('auto_suggest_tags')
+            .select('name, category')
+            .in('name', names)
+          if (error) throw error
+          return (data ?? []) as TagCategoryRow[]
+        }),
+        provider
+          ? resolveTagCategoriesCached(`provider_tag_categories:${provider}`, allTags, async (names) => {
+              const { data, error } = await supabase
+                .from('provider_tag_categories')
+                .select('name, category')
+                .eq('provider', provider)
+                .eq('status', 'approved')
+                .neq('category', 0)
+                .in('name', names)
+              if (error) throw error
+              return (data ?? []) as TagCategoryRow[]
+            })
+          : Promise.resolve(new Map<string, number>()),
+      ])
+      for (const [key, category] of providerTagMap) {
+        if (!tagMap.has(key)) tagMap.set(key, category)
+      }
 
       return posts.map((post) => {
         if (!post.tag_string) return post

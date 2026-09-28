@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import * as Sentry from "@sentry/nextjs"
+import { reportError } from "@/lib/error-reporting"
 import posthog from 'posthog-js'
 
 // Module-level guard for the `user_authenticated` analytics event.
@@ -49,20 +49,10 @@ export function useUser() {
 
     supabase.auth.getSession().then(({ data: { session }, error }: { data: { session: Session | null }; error: unknown }) => {
       if (error) {
-        Sentry.captureException(error, { tags: { context: "use_user_get_session" } })
+        reportError(error, { tags: { context: "use_user_get_session" } })
       }
       if (!isSubscribed) return
       
-      Sentry.addBreadcrumb({
-        category: "auth",
-        message: "Session loaded from getSession",
-        level: "info",
-        data: { hasUser: !!session?.user, userId: session?.user?.id }
-      })
-
-      // Identify the user by UUID only (no PII) so Sentry shows affected-user
-      // counts and lets us filter a specific user's crashes. See SENTRY-FULVOUS-ANCHOR-7.
-      Sentry.setUser(session?.user ? { id: session.user.id } : null)
       // Re-identify with PostHog on page refresh so events from returning sessions
       // are correlated to the correct person profile.
       if (session?.user) {
@@ -76,17 +66,6 @@ export function useUser() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       if (!isSubscribed) return
 
-      Sentry.addBreadcrumb({
-        category: "auth",
-        message: `Auth state changed: ${event}`,
-        level: "info",
-        data: { hasUser: !!session?.user, userId: session?.user?.id }
-      })
-
-      // Identify the user by UUID only (no PII) so Sentry shows affected-user
-      // counts and lets us filter a specific user's crashes. See SENTRY-FULVOUS-ANCHOR-7.
-      Sentry.setUser(session?.user ? { id: session.user.id } : null)
-      
       if (typeof window !== 'undefined') {
         if (session?.user) {
           posthog.identify(session.user.id)
