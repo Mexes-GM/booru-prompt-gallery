@@ -31,7 +31,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
   { kind: 'improved', title: 'Much Better on Phones', body: "The search bar is now on the first screen, buttons are easier to hit, and scrolling over a prompt scrolls the page instead of getting stuck inside the prompt box. The floating buttons also stop covering the cards' copy menu." },
-  { kind: 'improved', title: 'Less in Your Way', body: "Tap anywhere outside the tour to close it. On phones, copying a prompt gives a short buzz instead of a banner covering the next cards, and tapping an image shows the full prompt without spilling off the screen." },
+  { kind: 'improved', title: 'Less in Your Way', body: "Tap anywhere outside the tour to close it. On phones, copying a prompt no longer shows a banner covering the next cards, and tapping an image shows the full prompt without spilling off the screen." },
   { kind: 'fixed', title: 'iPhone Zoom & Shared Links', body: "The search box no longer zooms the page in on iPhone. Links with a search in them (?tags=...) keep it while the page loads instead of briefly dropping it." },
   { kind: 'fixed', title: 'Smoother After Updates', body: "If a new version goes live while you have the page open, it now reloads itself instead of breaking. Also includes the latest security updates." },
 ]

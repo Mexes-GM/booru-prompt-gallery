@@ -1260,10 +1260,8 @@ export function PromptGallery() {
       }
 
       // On touch screens the card's own "Copied" overlay is the feedback; the
-      // top toast only covered the next row of cards. A short buzz replaces it.
-      if (window.matchMedia("(pointer: coarse)").matches) {
-        navigator.vibrate?.(10)
-      } else {
+      // top toast only covered the next row of cards.
+      if (!window.matchMedia("(pointer: coarse)").matches) {
         toast({
           title: "Copied!",
           description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
