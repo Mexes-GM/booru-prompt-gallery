@@ -146,7 +146,7 @@ export async function submitTeachClassification(
         .eq('name', normName)
 
       if (autoError) {
-        console.error(`[submitTeachClassification] failed to update auto_suggest_tags for ${normName}:`, autoError)
+        console.error('[submitTeachClassification] failed to update auto_suggest_tags for %s:', normName, autoError)
         return { success: false, message: autoError.message }
       }
 
@@ -270,7 +270,7 @@ export async function submitTeachClassification(
       wasAutoApproved: false,
     }
   } catch (err: any) {
-    console.error(`[submitTeachClassification] unexpected error on tag ${tagName}:`, err)
+    console.error('[submitTeachClassification] unexpected error on tag %s:', tagName, err)
     return { success: false, message: err.message ?? 'Unknown error' }
   }
 }
@@ -308,7 +308,7 @@ export async function revertTeachClassification(
         .eq('name', normName)
 
       if (autoError) {
-        console.error(`[revertTeachClassification] failed to revert auto_suggest_tags for ${normName}:`, autoError)
+        console.error('[revertTeachClassification] failed to revert auto_suggest_tags for %s:', normName, autoError)
         return { success: false, message: autoError.message }
       }
 
@@ -341,7 +341,7 @@ export async function revertTeachClassification(
 
     return { success: true }
   } catch (err: any) {
-    console.error(`[revertTeachClassification] unexpected error on tag ${tagName}:`, err)
+    console.error('[revertTeachClassification] unexpected error on tag %s:', tagName, err)
     return { success: false, message: err.message ?? 'Unknown error' }
   }
 }

@@ -73,11 +73,16 @@ function dlog(...args) {
   if (DEV_MODE) console.log(...args);
 }
 
-function setEnvironment(url) {
+// Only these URLs may be loaded into the iframe. The env value can come from
+// localStorage, so anything else (javascript:, other hosts) falls back to prod.
+const KNOWN_ENV_URLS = [PROD_URL, FALLBACK_PROD_URL, DEV_URL];
+
+function setEnvironment(requestedUrl) {
+  const url = KNOWN_ENV_URLS.includes(requestedUrl) ? requestedUrl : PROD_URL;
   bootWatch(url);
   appFrame.src = url;
   if (!btnLocal || !btnProd) return;
-  if (url.includes("localhost")) {
+  if (url === DEV_URL) {
     btnLocal.classList.add("active");
     btnProd.classList.remove("active");
   } else {
