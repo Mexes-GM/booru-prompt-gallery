@@ -20,7 +20,7 @@ export async function GET() {
     // instead of hammering external booru APIs.
     const { data, error } = await supabaseAdmin
       .from('booru_posts_cache')
-      .select('id')
+      .select('post_id')
       .limit(1)
 
     const responseTime = Date.now() - startTime
