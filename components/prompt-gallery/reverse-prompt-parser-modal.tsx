@@ -51,6 +51,11 @@ const categoryConfig = {
     color: "bg-cat-clothing-soft text-cat-clothing-text",
     borderColor: "border-cat-clothing-border",
   },
+  equipment: {
+    label: TAG_CATEGORIES.equipment.label,
+    color: "bg-cat-equipment-soft text-cat-equipment-text",
+    borderColor: "border-cat-equipment-border",
+  },
   pose: {
     label: TAG_CATEGORIES.pose.label,
     color: "bg-cat-pose-soft text-cat-pose-text",
@@ -60,6 +65,11 @@ const categoryConfig = {
     label: TAG_CATEGORIES.scenery.label,
     color: "bg-cat-scenery-soft text-cat-scenery-text",
     borderColor: "border-cat-scenery-border",
+  },
+  creature: {
+    label: TAG_CATEGORIES.creature.label,
+    color: "bg-cat-creature-soft text-cat-creature-text",
+    borderColor: "border-cat-creature-border",
   },
   quality: {
     label: "Quality",
@@ -106,14 +116,9 @@ export function ReversePromptParserModal({
 }: ReversePromptParserModalProps) {
   const [rawInput, setRawInput] = useState("")
   const [copied, triggerCopyFeedback] = useCopyFeedback()
-  const [selectedCategories, setSelectedCategories] = useState<Record<string, boolean>>({
-    appearance: true,
-    clothing: true,
-    pose: true,
-    scenery: true,
-    quality: true,
-    other: true,
-  })
+  const [selectedCategories, setSelectedCategories] = useState<Record<keyof typeof categoryConfig, boolean>>(
+    () => Object.fromEntries(Object.keys(categoryConfig).map((key) => [key, true])) as Record<keyof typeof categoryConfig, boolean>
+  )
   const [parserOptions, setParserOptions] = useState({
     removeWeights: true,
     removeLoras: true,
@@ -151,14 +156,7 @@ export function ReversePromptParserModal({
 
   // Generate output prompt based on selected categories
   const outputPrompt = useMemo(() => {
-    return reconstructPrompt(parsed.classified, parsed.quality, {
-      appearance: selectedCategories.appearance,
-      clothing: selectedCategories.clothing,
-      pose: selectedCategories.pose,
-      scenery: selectedCategories.scenery,
-      quality: selectedCategories.quality,
-      other: selectedCategories.other,
-    })
+    return reconstructPrompt(parsed.classified, parsed.quality, selectedCategories)
   }, [parsed.classified, parsed.quality, selectedCategories])
 
   const handleCopy = () => {
@@ -174,7 +172,7 @@ export function ReversePromptParserModal({
     setRawInput("")
   }
 
-  const toggleCategory = (category: string) => {
+  const toggleCategory = (category: keyof typeof categoryConfig) => {
     setSelectedCategories((prev) => ({
       ...prev,
       [category]: !prev[category],
@@ -272,7 +270,7 @@ export function ReversePromptParserModal({
               <div className="text-sm font-semibold block">
                 Include Categories
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {(Object.entries(categoryConfig) as Array<[keyof typeof categoryConfig, typeof categoryConfig.appearance]>).map(
                   ([key, config]) => (
                     <button

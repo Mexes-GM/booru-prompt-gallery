@@ -334,7 +334,9 @@ export function useBooruFavorites(
       // The caller usually hands us the post it is showing (postData), so it is
       // cached directly — no booru request needed. Only when it is absent do we
       // hydrate it through /api/favorites.
-      if (isAddingNewFavorite) {
+      // booru_posts_cache RLS only accepts writes from authenticated users, so
+      // anonymous toggles skip it (the upsert would just 401).
+      if (isAddingNewFavorite && user) {
         const cachePost = (post: BooruPost) => {
           const row = booruPostToCacheRow(post, targetProvider)
           supabase.from("booru_posts_cache").upsert(row, {

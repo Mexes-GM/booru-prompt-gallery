@@ -5,7 +5,7 @@
 
 import { normalize, toSpace, toUnderscore, parseTagList, QUALITY_TAGS_SET } from "./cleanPrompt"
 import { classifyTags, type ClassifiedTags } from "./tag-classifier"
-import { emptyClassifiedTags } from "./tag-taxonomy"
+import { emptyClassifiedTags, TAG_CATEGORY_IDS, type TagCategory } from "./tag-taxonomy"
 
 export interface ParsedRawPrompt {
   rawTags: string[]
@@ -175,34 +175,20 @@ export function parseRawPrompt(
 export function reconstructPrompt(
   classified: ClassifiedTags,
   quality: string[],
-  options?: {
-    appearance?: boolean
-    clothing?: boolean
-    pose?: boolean
-    scenery?: boolean
-    other?: boolean
-    quality?: boolean
+  options?: Partial<Record<TagCategory | "quality", boolean>> & {
     escapeParentheses?: boolean
   }
 ): string {
-  const {
-    appearance = true,
-    clothing = true,
-    pose = true,
-    scenery = true,
-    other = true,
-    quality: includeQuality = true,
-    escapeParentheses = false,
-  } = options || {}
+  const { escapeParentheses = false } = options || {}
 
   const parts: string[] = []
 
-  if (appearance) parts.push(...classified.appearance)
-  if (clothing) parts.push(...classified.clothing)
-  if (pose) parts.push(...classified.pose)
-  if (scenery) parts.push(...classified.scenery)
-  if (other) parts.push(...classified.other)
-  if (includeQuality) parts.push(...quality)
+  // Every taxonomy category, in canonical order: a hardcoded list here used to
+  // drop equipment/creature tags from the output silently.
+  for (const category of TAG_CATEGORY_IDS) {
+    if (options?.[category] !== false) parts.push(...classified[category])
+  }
+  if (options?.quality !== false) parts.push(...quality)
 
   const escapeTag = (tag: string) => {
     if (!escapeParentheses) return tag
@@ -216,12 +202,5 @@ export function reconstructPrompt(
  * Get the total count of tags in a classified structure
  */
 export function countClassifiedTags(classified: ClassifiedTags, quality: string[]): number {
-  return (
-    classified.appearance.length +
-    classified.clothing.length +
-    classified.pose.length +
-    classified.scenery.length +
-    classified.other.length +
-    quality.length
-  )
+  return TAG_CATEGORY_IDS.reduce((sum, category) => sum + classified[category].length, quality.length)
 }
