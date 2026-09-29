@@ -7,9 +7,63 @@ import {
   trackLoadMore,
   trackRefresh,
   trackProviderChange,
+  trackUrlSyncLoop,
 } from '@/lib/analytics'
 import { useToast } from "@/hooks/use-toast"
 import { useScrollRateLimiter, MAX_SESSION_PAGE_LOADS } from "@/hooks/use-scroll-rate-limiter"
+
+// History watchdog + circuit breaker for the ?tags= URL sync. On 2026-09-01
+// an iOS Safari session flapped the URL "/" <-> "?tags=..." ~1,200 times and
+// the writer was never identified. This wraps pushState/replaceState once per
+// page (module scope, so it survives remounts, and installed before Next.js
+// patches history, so Next's own writes pass through it too). It always calls
+// the original — nothing is blocked — but past URL_SYNC_MAX_WRITES writes in
+// URL_SYNC_WINDOW_MS it stops our own URL sync and reports the recent writes
+// (with stack frames) to PostHog, once.
+const URL_SYNC_MAX_WRITES = 20
+const URL_SYNC_WINDOW_MS = 10_000
+
+type HistoryWrite = { at: number; method: string; url: string; nextInternal: boolean; stack: string }
+const historyWatchdog = { installed: false, writes: [] as HistoryWrite[], tripped: false }
+
+function installHistoryWatchdog() {
+  if (typeof window === 'undefined' || historyWatchdog.installed) return
+  historyWatchdog.installed = true
+  for (const method of ['pushState', 'replaceState'] as const) {
+    const original = window.history[method].bind(window.history)
+    window.history[method] = function (data: unknown, unused: string, url?: string | URL | null) {
+      try {
+        const now = Date.now()
+        const w = historyWatchdog
+        w.writes = w.writes.filter(x => now - x.at < URL_SYNC_WINDOW_MS)
+        w.writes.push({
+          at: now,
+          method,
+          url: String(url ?? '').replace(window.location.origin, ''),
+          nextInternal: !!(data as { __NA?: boolean } | null)?.__NA,
+          stack: (new Error().stack ?? '').split('\n').slice(2, 5).map(s => s.trim()).join(' | ').slice(0, 300),
+        })
+        if (!w.tripped && w.writes.length > URL_SYNC_MAX_WRITES) {
+          w.tripped = true
+          trackUrlSyncLoop({
+            writes: w.writes.length,
+            windowMs: URL_SYNC_WINDOW_MS,
+            recentWrites: w.writes.slice(-8).map(({ at: _at, ...rest }) => rest),
+          })
+        }
+      } catch {
+        /* diagnostics must never break navigation */
+      }
+      return original(data, unused, url)
+    }
+  }
+}
+installHistoryWatchdog()
+
+const readTagsFromUrl = (): string => {
+  if (typeof window === 'undefined') return ""
+  return new URLSearchParams(window.location.search).get('tags') ?? ""
+}
 
 function shallowEqual(objA: any, objB: any): boolean {
   if (Object.is(objA, objB)) return true;
@@ -27,13 +81,7 @@ function shallowEqual(objA: any, objB: any): boolean {
 }
 
 export function useBooruSearch() {
-  const [searchTags, setSearchTagsState] = useState(() => {
-    if (typeof window === 'undefined') return ""
-    const params = new URLSearchParams(window.location.search)
-    const tagsFromUrl = params.get('tags')
-    if (tagsFromUrl) return tagsFromUrl
-    return ""
-  })
+  const [searchTags, setSearchTagsState] = useState(readTagsFromUrl)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -58,7 +106,10 @@ export function useBooruSearch() {
       return newValue
     })
   }, [])
-  const [debouncedSearchTags, setDebouncedSearchTags] = useState("")
+  // Seeded from the URL like searchTags: starting at "" made the URL-sync
+  // effect below strip ?tags= on mount and put it back 500ms later (and fetch
+  // an unfiltered first page in between).
+  const [debouncedSearchTags, setDebouncedSearchTags] = useState(readTagsFromUrl)
 
   // --- Persistent State ---
 
@@ -292,6 +343,10 @@ export function useBooruSearch() {
   // debounce this to avoid a replaceState call on every keystroke.
   useEffect(() => {
     if (typeof window === 'undefined') return
+    // Something is fighting over the URL (see installHistoryWatchdog): stop
+    // syncing for this page load. Search keeps working; only the shareable
+    // URL goes stale.
+    if (historyWatchdog.tripped) return
     const url = new URL(window.location.href)
     const trimmed = debouncedSearchTags.trim()
     const current = url.searchParams.get('tags') ?? ''

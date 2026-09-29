@@ -29,6 +29,19 @@ export function safeTrack(event: string, props: Record<string, any> = {}) {
 export function initScrollDepthTracking() { return () => { } }
 export function trackTimeOnPage(_startTime: number) { }
 
+// Fired once per page load when the ?tags= URL sync trips its circuit breaker
+// (see useBooruSearch). Diagnostic only: a 2026-09-01 iOS Safari session showed
+// the URL flapping "/" <-> "?tags=..." ~1,200 times, and the cause was never
+// reproduced — this carries enough context to identify the competing writer.
+export function trackUrlSyncLoop(props: {
+  writes: number
+  windowMs: number
+  /** Last few history writes: method, target URL, Next-internal flag, top stack frames. */
+  recentWrites: { method: string; url: string; nextInternal: boolean; stack: string }[]
+}) {
+  capture('url_sync_loop_detected', props)
+}
+
 export function trackExternalLink(href: string, context?: string) {
   capture('external_link_clicked', { href, context })
 }
