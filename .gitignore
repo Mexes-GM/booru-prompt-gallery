@@ -100,8 +100,8 @@ srtsource/
 # Local reference screenshots / mockups (not project assets)
 panelejemplo.png
 
-# Local schema exports (regenerate with `supabase db dump`, not versioned)
-supabase/schema.snapshot.sql
+# Supabase project files (config, migrations, local CLI state) — kept local only
+supabase/
 .env.local
 
 # react-doctor triage working notes (internal process artifacts, not project docs)
