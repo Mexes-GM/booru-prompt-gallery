@@ -34,7 +34,7 @@
     "@radix-ui/react-toast": "^1.2.19",
     "@radix-ui/react-tooltip": "^1.2.12",
     "@supabase/ssr": "^0.12.3",
-    "@supabase/supabase-js": "^2.110.5",
+    "@supabase/supabase-js": "^2.117.2",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "class-variance-authority": "^0.7.1",
