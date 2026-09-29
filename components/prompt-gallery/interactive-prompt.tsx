@@ -262,7 +262,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
           role="button"
           tabIndex={0}
           className={cn(
-            "cursor-pointer px-0.5 -mx-0.5 rounded transition-colors duration-200 decoration-clone select-text outline-none inline relative border-none bg-transparent font-inherit whitespace-normal text-left break-words",
+            "cursor-pointer px-0.5 -mx-0.5 pointer-coarse:py-1 rounded transition-colors duration-200 decoration-clone select-text outline-none inline relative border-none bg-transparent font-inherit whitespace-normal text-left break-words",
             textClass,
             justCopied ? "!bg-success/25 ring-1 ring-success/50" : bgClass
           )}

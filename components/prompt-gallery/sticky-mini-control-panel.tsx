@@ -98,7 +98,7 @@ export function StickyMiniControlPanel({
                   value={addInput}
                   onChange={setAddInput}
                   placeholder="e.g. 1girl, solo..."
-                  className="flex-1 h-full bg-transparent border-none p-0 shadow-none focus-visible:ring-0 text-xs w-full min-w-0"
+                  className="flex-1 h-full bg-transparent border-none p-0 shadow-none focus-visible:ring-0 text-base sm:text-xs w-full min-w-0"
                   debounceTime={400}
                 />
                 {addInput && (

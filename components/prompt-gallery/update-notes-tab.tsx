@@ -30,13 +30,10 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'Pack Mode', body: "Pick a base card or paste your own prompt and get a whole batch built around it. Choose what stays fixed, set how wild it gets with the Variety slider, and re-roll any single prompt you don't like. There's also a \"Make pack\" shortcut in every card's \"...\" menu." },
-  { kind: 'new', title: 'New Tag Categories (Jev)', body: "Tags are now sorted into 7 categories and 33 subcategories (weapon, handheld, footwear, expression, props...), with new Equipment and Creature badges. All ~145k Danbooru tags were classified with Jev, TypeSafe's AI model, so way fewer tags end up in \"other\"." },
-  { kind: 'new', title: 'Quick Teach', body: "Teaching tags is now a fast queue of the tags Jev wasn't sure about, with its best guess already picked: Enter to accept, number keys to choose another. Each answer is saved right away, with Undo." },
-  { kind: 'new', title: 'Find & Append', body: "Make your own rules: when a prompt has X, append Y. There's a visual block editor, and your rules are applied to every prompt you copy." },
-  { kind: 'improved', title: 'A Much Cleaner Interface', body: "Way fewer controls between you and your first card. There's a new Update Notes tab, a single card size control (Small / Medium / Large) and mode buttons that all behave the same. Trending and List view were removed to keep things simple." },
-  { kind: 'improved', title: 'Cleaner Prompts & Backgrounds', body: "Rule34 and Gelbooru artist and meta tags no longer sneak into your prompts as content. Detailed Random backgrounds also got a much bigger scenery dataset." },
-  { kind: 'fixed', title: 'Assorted Fixes', body: "Fixed Aibooru applying options that were hidden there, artists you removed coming back to your favorites, and the page jumping slightly whenever a popover opened." },
+  { kind: 'improved', title: 'Much Better on Phones', body: "The search bar is now on the first screen, buttons are easier to hit, and scrolling over a prompt scrolls the page instead of getting stuck inside the prompt box. The floating buttons also stop covering the cards' copy menu." },
+  { kind: 'improved', title: 'Less in Your Way', body: "Tap anywhere outside the tour to close it. On phones, copying a prompt gives a short buzz instead of a banner covering the next cards, and tapping an image shows the full prompt without spilling off the screen." },
+  { kind: 'fixed', title: 'iPhone Zoom & Shared Links', body: "The search box no longer zooms the page in on iPhone. Links with a search in them (?tags=...) keep it while the page loads instead of briefly dropping it." },
+  { kind: 'fixed', title: 'Smoother After Updates', body: "If a new version goes live while you have the page open, it now reloads itself instead of breaking. Also includes the latest security updates." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)

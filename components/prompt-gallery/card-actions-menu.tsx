@@ -68,7 +68,7 @@ export function CardActionsMenu({
                 <Button
                     size="icon"
                     variant="secondary"
-                    className={`rounded-full bg-background/80 hover:bg-background/95 text-muted-foreground hover:text-foreground shadow-sm ${isSmall ? "h-7 w-7" : "h-8 w-8"}`}
+                    className={`touch-hit touch-hit-up relative rounded-full bg-background/80 hover:bg-background/95 text-muted-foreground hover:text-foreground shadow-sm ${isSmall ? "h-7 w-7" : "h-8 w-8"}`}
                     aria-label="More actions"
                 >
                     <MoreHorizontal className={isSmall ? "w-3.5 h-3.5" : "w-4 h-4"} aria-hidden="true" />

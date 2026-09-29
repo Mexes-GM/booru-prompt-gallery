@@ -817,6 +817,24 @@ input[type="number"] {
   font-variant-numeric: tabular-nums;
 }
 
+/* Enlarges the tap area of small controls on touch screens without changing
+   how they look. The element must already be positioned (relative/absolute):
+   this deliberately doesn't set `position`, since unlayered CSS would
+   override the element's own Tailwind positioning. */
+@media (pointer: coarse) {
+  .touch-hit::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
+  /* For controls overlaid on a card image: don't grow downward into the
+     image, whose own tap expands the card (short landscape images would
+     otherwise have their center covered). */
+  .touch-hit-up::after {
+    bottom: 0;
+  }
+}
+
 /* Safe area padding for fixed elements on notched devices */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);

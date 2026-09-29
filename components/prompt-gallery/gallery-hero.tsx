@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import { useReducedMotion } from "framer-motion"
+import { ChevronDown } from "lucide-react"
 import { trackExternalLink } from "@/lib/analytics"
 import { SOCIAL_URLS } from "@/lib/constants"
 import { cn } from "@/lib/utils"
@@ -26,6 +27,10 @@ import type { BooruPost } from "@/lib/booru/types"
  * All examples are stacked in one grid cell so the panel is as tall as the
  * tallest one (no layout shift on rotation). Auto-rotation pauses on
  * hover/focus and is off under prefers-reduced-motion; the tabs always work.
+ *
+ * Below `sm` the specimen is folded behind a "See what it does" toggle so the
+ * search panel fits in the first screen on phones (replays showed it sitting
+ * below the fold, under a full screen of hero).
  *
  * Update notes and the Support / GitHub / Mirror buttons live in the folder
  * tabs docked on the search panel's top edge (UpdateNotesTab, PanelLinkTabs);
@@ -218,7 +223,7 @@ function Specimen() {
             aria-pressed={i === active}
             onClick={() => setActive(i)}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+              "rounded-md px-2.5 py-1 pointer-coarse:py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
               i === active
                 ? "bg-primary/15 text-primary"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -261,10 +266,13 @@ function Specimen() {
 }
 
 export function GalleryHero() {
+  const [specimenOpen, setSpecimenOpen] = useState(false)
+  const specimenId = useId()
+
   return (
-    <div className="grid gap-8 pt-8 sm:pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center lg:gap-14 lg:pt-10">
-      <div className="space-y-5">
-        <h1 className="text-4xl sm:text-5xl font-semibold tracking-tighter text-balance leading-[1.05]">
+    <div className="grid gap-4 pt-8 sm:gap-8 sm:pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center lg:gap-14 lg:pt-10">
+      <div className="space-y-3 sm:space-y-5">
+        <h1 className="text-3xl sm:text-5xl font-semibold tracking-tighter text-balance leading-[1.05]">
           Booru Prompt Gallery
         </h1>
         <p className="max-w-md text-base sm:text-lg text-muted-foreground text-pretty leading-snug">
@@ -288,7 +296,7 @@ export function GalleryHero() {
                 rel="noopener noreferrer"
                 onClick={() => trackExternalLink(s.href, "social")}
                 aria-label={`Visit Mexes on ${s.label}`}
-                className="rounded-sm underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                className="rounded-sm pointer-coarse:py-2 underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
               >
                 {s.label}
               </a>
@@ -297,7 +305,27 @@ export function GalleryHero() {
         </p>
       </div>
 
-      <Specimen />
+      <div>
+        <button
+          type="button"
+          aria-expanded={specimenOpen}
+          aria-controls={specimenId}
+          onClick={() => setSpecimenOpen((o) => !o)}
+          className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/70 bg-card/40 px-4 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:hidden"
+        >
+          See what it does
+          <ChevronDown
+            aria-hidden="true"
+            className={cn("h-4 w-4 transition-transform duration-200", specimenOpen && "rotate-180")}
+          />
+        </button>
+        <div id={specimenId} className={cn(specimenOpen ? "mt-2 block" : "hidden", "sm:mt-0 sm:block")}>
+          {/* Remount on toggle: while folded it keeps rotating unseen, so opening
+              it landed mid-cycle and it switched tabs seconds later. Only the
+              phone toggle changes this key; on sm+ it never remounts. */}
+          <Specimen key={specimenOpen ? "open" : "folded"} />
+        </div>
+      </div>
     </div>
   )
 }

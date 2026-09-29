@@ -90,7 +90,9 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex items-center justify-center bg-overlay/60 backdrop-blur-[2px] rounded-xl cursor-pointer"
+            // Touch: let taps pass through to the card underneath — replays showed
+            // mobile users repeatedly tapping this overlay to reach "Copy options".
+            className="absolute inset-0 z-50 flex items-center justify-center bg-overlay/60 backdrop-blur-[2px] rounded-xl cursor-pointer pointer-coarse:pointer-events-none"
             role="button"
             aria-label="Close success overlay"
             tabIndex={0}
@@ -490,7 +492,9 @@ export const MasonryItem = memo(function MasonryItem({
 
         return (
             <div
-                className={`group flex flex-col relative card-hover bg-card text-card-foreground border-0 rounded-xl ${isExpanded ? "overflow-visible shadow-2xl ring-2 ring-primary/40 z-30" : "overflow-hidden shadow-none"}`}
+                // Below `sm` the expanded card keeps its column width: widening by
+                // 40px pushed left-column cards past the screen edge on phones.
+                className={`group flex flex-col relative card-hover bg-card text-card-foreground border-0 rounded-xl ${isExpanded ? "overflow-visible shadow-2xl ring-2 ring-primary/40 z-30 max-sm:w-full! max-sm:ml-0!" : "overflow-hidden shadow-none"}`}
                 style={{ width: isExpanded ? width + 40 : width, marginLeft: isExpanded ? -20 : 0 }}
             >
                 <div
@@ -716,7 +720,9 @@ export const MasonryItem = memo(function MasonryItem({
                         character post count live in its tooltip instead of four colored chips
                         plus a separate "1K" chip competing with the artwork. */}
                     {totalTagsCount > 0 && (
-                        <div className="absolute bottom-2 right-2 z-10">
+                        // Hidden on phones while expanded: the centered "Collapse"
+                        // pill overlaps it on a narrow card.
+                        <div className={`absolute bottom-2 right-2 z-10 ${isExpanded ? "max-sm:hidden" : ""}`}>
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <span
@@ -798,12 +804,18 @@ export const MasonryItem = memo(function MasonryItem({
                     animate={{ height: isExpanded ? "auto" : footerHeight }}
                     transition={lowMotion ? { duration: 0 } : { type: "tween", duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
                 >
+                    {/* Touch screens get no inner scroll at all: session replays showed
+                        users trying to scroll the page and moving this box instead.
+                        Collapsed it clips with a fade (tap the image for the full
+                        prompt); expanded it grows to its full height so the page
+                        scroll does the work. */}
                     <div
-                        className={`bg-muted/50 rounded-lg overflow-y-auto prompt-container min-h-0 ${isExpanded
-                            ? ""
+                        className={`bg-muted/50 rounded-lg overflow-y-auto pointer-coarse:overflow-hidden prompt-container min-h-0 ${isExpanded
+                            // `!` so it beats the inline 65vh cap below.
+                            ? "pointer-coarse:max-h-none!"
                             // Collapsed: a scrollbar in a 3-line box is just noise. Still
                             // wheel-scrollable; "Full prompt" is the real way to read it all.
-                            : "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"}`}
+                            : "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden pointer-coarse:[mask-image:linear-gradient(to_bottom,black_65%,transparent)]"}`}
                         style={isExpanded ? { maxHeight: "65vh" } : undefined}
                     >
                         <InteractivePrompt
@@ -869,7 +881,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 <Button
                                     // Matches the primary half of the split button so both read as one control.
                                     variant={isPackMode ? "outline" : (isNaturalLanguageMode || copiedId === post.id ? "default" : "secondary")}
-                                    className={`px-2 focus-ring h-auto rounded-l-none ${isPackMode ? "" : "border-l border-foreground/10"}`}
+                                    className={`px-2 pointer-coarse:min-w-11 focus-ring h-auto rounded-l-none ${isPackMode ? "" : "border-l border-foreground/10"}`}
                                     disabled={!displayContent}
                                     aria-label="Copy options"
                                 >

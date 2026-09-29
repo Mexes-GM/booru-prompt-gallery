@@ -1122,7 +1122,18 @@ export function PromptGallery() {
   
   // Scroll tracking
   useEffect(() => {
-    const handleScroll = () => setShowBackToTop(window.scrollY > 400)
+    // On phones the button sits over the right column's card controls, so it
+    // only shows while scrolling UP (the moment someone wants to go back) and
+    // hides again as soon as they scroll down through the cards.
+    let lastY = window.scrollY
+    const handleScroll = () => {
+      const y = window.scrollY
+      const scrollingUp = y < lastY
+      if (Math.abs(y - lastY) < 8) return
+      lastY = y
+      const narrow = window.matchMedia('(max-width: 639px)').matches
+      setShowBackToTop(y > 400 && (!narrow || scrollingUp))
+    }
     window.addEventListener('scroll', handleScroll, { passive: true })
 
     const start = Date.now()
@@ -1248,10 +1259,16 @@ export function PromptGallery() {
         addToHistory({ postId, provider: (snapshot?._provider as BooruProvider) || search.booruProvider, post: snapshot })
       }
 
-      toast({
-        title: "Copied!",
-        description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
-      })
+      // On touch screens the card's own "Copied" overlay is the feedback; the
+      // top toast only covered the next row of cards. A short buzz replaces it.
+      if (window.matchMedia("(pointer: coarse)").matches) {
+        navigator.vibrate?.(10)
+      } else {
+        toast({
+          title: "Copied!",
+          description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
+        })
+      }
       setTimeout(() => setCopiedId(null), 2000)
       recordPromptCopy()
     } catch (error) {

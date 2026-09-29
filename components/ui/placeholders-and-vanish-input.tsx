@@ -257,7 +257,7 @@ export function PlaceholdersAndVanishInput({
         type="text"
         aria-label={ariaLabel || "Search"}
         className={cn(
-          "w-full relative text-sm sm:text-base z-50 border-none bg-transparent text-foreground h-full focus:outline-none focus:ring-0 pl-0 pr-0",
+          "w-full relative text-base z-50 border-none bg-transparent text-foreground h-full focus:outline-none focus:ring-0 pl-0 pr-0",
           animating && "text-transparent dark:text-transparent"
         )}
       />
@@ -324,7 +324,7 @@ export function PlaceholdersAndVanishInput({
                 duration: 0.3,
                 ease: "linear",
               }}
-              className="text-muted-foreground text-sm sm:text-base font-normal pl-10 text-left w-[calc(100%-2rem)] truncate"
+              className="text-muted-foreground text-base font-normal pl-10 text-left w-[calc(100%-2rem)] truncate"
             >
               {placeholders[currentPlaceholder]}
             </motion.p>
