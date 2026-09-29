@@ -56,8 +56,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.2",
-    "@types/node": "^26.1.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
     "@types/piexifjs": "^1.0.0",
     "@types/react": "19.2.17",
@@ -67,7 +67,7 @@
     "eslint-config-next": "16.3.6",
     "pg": "^8.23.0",
     "postcss": "^8.5.23",
-    "react-doctor": "^0.7.8",
+    "react-doctor": "^0.9.14",
     "tailwindcss": "^4.3.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
