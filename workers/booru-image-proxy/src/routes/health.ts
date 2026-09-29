@@ -44,7 +44,7 @@ export async function healthHandler(
   }
 
   try {
-    const { error } = await supabase.from('booru_posts_cache').select('id').limit(1)
+    const { error } = await supabase.from('booru_posts_cache').select('post_id').limit(1)
     const responseTime = Date.now() - startTime
 
     if (error) {
