@@ -91,14 +91,15 @@ export function SaveFavoriteButton({
     }
 
     return (
-        <div className={`flex items-stretch shadow-sm rounded-full overflow-hidden ${className}`}>
+        <div className={`flex items-stretch shadow-sm rounded-full ${className}`}>
             {/* Main Action Button */}
             <Button
                 variant="secondary"
-                className={`rounded-none rounded-l-full h-8 px-2.5 transition-all ${isFavorited
+                className={`touch-hit touch-hit-up relative rounded-none rounded-l-full h-8 px-2.5 transition-all ${isFavorited
                     ? "bg-mode-favorites text-mode-favorites-foreground hover:bg-mode-favorites/90"
                     : "bg-background/80 hover:bg-background/95 text-muted-foreground hover:text-foreground"
                     }`}
+                aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
                 onClick={(e) => {
                     e.stopPropagation()
                     onToggleFavorite(undefined)
@@ -122,10 +123,11 @@ export function SaveFavoriteButton({
                 <PopoverTrigger asChild>
                     <Button
                         variant="secondary"
-                        className={`rounded-none rounded-r-full h-8 px-1.5 border-l transition-all flex items-center justify-center ${isFavorited
+                        className={`touch-hit touch-hit-up relative rounded-none rounded-r-full h-8 px-1.5 pointer-coarse:px-2.5 border-l transition-all flex items-center justify-center ${isFavorited
                             ? "bg-mode-favorites text-mode-favorites-foreground hover:bg-mode-favorites/90 border-mode-favorites"
                             : "bg-background/80 hover:bg-background/95 text-muted-foreground hover:text-foreground border-border/50"
                             }`}
+                        aria-label="Choose favorite folders"
                         onClick={(e) => {
                             e.stopPropagation()
                         }}

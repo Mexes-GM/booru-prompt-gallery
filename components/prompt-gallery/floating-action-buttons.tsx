@@ -24,6 +24,12 @@ interface FloatingActionButtonsProps {
  * scroll. Only the scroll-to-top button itself still
  * depends on `showBackToTop`. Vertical position still depends on which mode
  * is active so the stack doesn't overlap the sticky footers those modes show.
+ *
+ * Below `sm` the inactive mode toggles are hidden: the stack sits over the
+ * right masonry column and covered its "Copy options" / "More actions"
+ * buttons (session replays showed accidental AI-mode toggles). Both modes stay
+ * reachable on mobile from the mode bar and the sticky mini panel; an ACTIVE
+ * toggle stays visible so it can still be switched off from here.
  */
 export function FloatingActionButtons({
   isMergeMode,
@@ -34,13 +40,13 @@ export function FloatingActionButtons({
   scrollToTop,
 }: FloatingActionButtonsProps) {
   return (
-    <div className={`fixed ${isMergeMode ? 'bottom-[220px] sm:bottom-[200px]' : isAiConvertMode ? 'bottom-[200px] sm:bottom-[180px]' : 'bottom-4 sm:bottom-6'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3`}>
+    <div className={`fixed ${isMergeMode ? 'bottom-[220px] sm:bottom-[200px]' : isAiConvertMode ? 'bottom-[200px] sm:bottom-[180px]' : 'bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]'} right-4 sm:right-6 z-50 transition-all duration-500 flex flex-col gap-3`}>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
             onClick={toggleAiConvertMode}
             variant={isAiConvertMode ? "default" : "secondary"}
-            className={`rounded-full shadow-lg h-10 w-10 p-0 ${isAiConvertMode ? "" : "bg-background/80 backdrop-blur border"}`}
+            className={`rounded-full shadow-lg h-10 w-10 p-0 ${isAiConvertMode ? "" : "hidden sm:inline-flex bg-background/80 backdrop-blur border"}`}
             aria-label={isAiConvertMode ? "Disable AI Mode" : "Enable AI Mode"}
           >
             <Sparkles className="h-5 w-5" />
@@ -56,7 +62,7 @@ export function FloatingActionButtons({
           <Button
             onClick={handleToggleMergeMode}
             variant={isMergeMode ? "default" : "secondary"}
-            className={`rounded-full shadow-lg h-10 w-10 p-0 ${isMergeMode ? "" : "bg-background/80 backdrop-blur border"}`}
+            className={`rounded-full shadow-lg h-10 w-10 p-0 ${isMergeMode ? "" : "hidden sm:inline-flex bg-background/80 backdrop-blur border"}`}
             aria-label={isMergeMode ? "Disable Merge Mode" : "Enable Merge Mode"}
           >
             <FileCheck2 className="h-5 w-5" />

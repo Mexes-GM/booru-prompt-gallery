@@ -127,7 +127,7 @@ export function InfoTooltip({
               aria-label={title}
               // p-1/-m-1 enlarges the tap area without shifting the layout
               onClick={(e) => e.stopPropagation()}
-              className="p-1 -m-1 touch-manipulation text-muted-foreground/70 transition-colors hover:text-primary-text"
+              className="touch-hit relative p-1 -m-1 touch-manipulation text-muted-foreground/70 transition-colors hover:text-primary-text"
             >
               <Info className="w-4 h-4" />
             </button>

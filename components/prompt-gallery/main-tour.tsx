@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useJoyride, STATUS, type Status, type Step } from "react-joyride"
+import { useJoyride, ACTIONS, ORIGIN, STATUS, type Status, type Step } from "react-joyride"
 import { Sparkles, Search, Copy, SlidersHorizontal, LayoutGrid, HelpCircle } from "lucide-react"
 import { TourTooltip, TOUR_OPTIONS, type TourStepData } from "@/components/tour-tooltip"
 
@@ -120,10 +120,15 @@ export function MainTour({ runSignal, onStart }: MainTourProps) {
     scrollToFirstStep: true,
     tooltipComponent: TourTooltip,
     // Extra offset keeps the spotlight clear of the sticky "Tags to Add" bar.
-    options: { ...TOUR_OPTIONS, scrollOffset: 180 },
+    // Tapping the dimmed overlay ends the tour: session replays showed mobile
+    // users stuck under it, tapping everywhere except the tooltip buttons.
+    options: { ...TOUR_OPTIONS, scrollOffset: 180, overlayClickAction: "close" },
     steps: STEPS,
-    onEvent: ({ status }) => {
-      if (([STATUS.FINISHED, STATUS.SKIPPED] as Status[]).includes(status)) {
+    onEvent: ({ action, origin, status }) => {
+      if (
+        ([STATUS.FINISHED, STATUS.SKIPPED] as Status[]).includes(status) ||
+        (action === ACTIONS.CLOSE && origin === ORIGIN.OVERLAY)
+      ) {
         markDone()
       }
     },
