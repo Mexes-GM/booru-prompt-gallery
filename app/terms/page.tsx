@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 }
 
 export default function TermsPage() {
-  const lastUpdated = "July 4, 2026"
+  const lastUpdated = "September 28, 2026"
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-4xl">
@@ -80,7 +80,54 @@ export default function TermsPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>5. Third-Party Content &amp; Intellectual Property</CardTitle>
+            <CardTitle>5. Third-Party Providers &amp; Their Content</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>
+              Every image, tag, rating, and piece of metadata shown in the app is supplied by independent third-party
+              providers through their public APIs. Booru Prompt Gallery is not affiliated with, endorsed by, or sponsored
+              by any of these providers, and it has no control over what they publish.
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
+              <li>
+                <strong>No review or endorsement.</strong> We do not create, upload, pre-screen, moderate, or endorse
+                third-party content. Displaying it in the app does not mean we approve of it or vouch for its legality,
+                accuracy, or appropriateness.
+              </li>
+              <li>
+                <strong>Content may be objectionable.</strong> Third-party content may be offensive, explicit, inaccurate,
+                infringing, or otherwise objectionable. You access it at your own risk.
+              </li>
+              <li>
+                <strong>Ratings and tags may be wrong.</strong> The content filter relies on ratings and tags assigned by
+                the providers and their users. They can be missing or mislabeled, so the filter cannot guarantee that
+                mature content will never appear.
+              </li>
+              <li>
+                <strong>Technical relaying only.</strong> Where the app proxies or temporarily caches images or API
+                responses, it does so automatically and solely for performance and compatibility, without inspecting or
+                altering the content.
+              </li>
+              <li>
+                <strong>Provider availability.</strong> Providers may change, rate-limit, restrict, or discontinue their
+                APIs at any time. We are not responsible for outages, data loss, or changes caused by them.
+              </li>
+              <li>
+                <strong>External links.</strong> Links to provider websites or original sources are offered for
+                convenience; those sites are governed by their own terms and privacy policies.
+              </li>
+            </ul>
+            <p>
+              Any claim about third-party content — including copyright or takedown requests — should be directed to the
+              provider hosting it. If you report content to us via the Feedback tool, we may hide it from the app at our
+              discretion, but removal from the source remains the provider&apos;s responsibility.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>6. Intellectual Property &amp; Generated Prompts</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
@@ -94,7 +141,7 @@ export default function TermsPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>6. Accounts</CardTitle>
+            <CardTitle>7. Accounts</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
@@ -107,7 +154,7 @@ export default function TermsPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>7. Disclaimer of Warranties</CardTitle>
+            <CardTitle>8. Disclaimer of Warranties</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
@@ -121,7 +168,7 @@ export default function TermsPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>8. Limitation of Liability</CardTitle>
+            <CardTitle>9. Limitation of Liability</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
@@ -130,12 +177,30 @@ export default function TermsPage() {
               third-party providers. As the app is provided free of charge, any direct liability is limited to the
               greatest extent permitted by law.
             </p>
+            <p>
+              Without limiting the above, we are not responsible for any content, rating, tag, or metadata supplied by a
+              third-party provider, nor for any loss or harm arising from your viewing, downloading, sharing, or relying on
+              it.
+            </p>
           </CardContent>
         </Card>
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>9. Changes to These Terms</CardTitle>
+            <CardTitle>10. Indemnification</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p>
+              You agree to indemnify and hold harmless Booru Prompt Gallery and its creator from any claims, damages, or
+              expenses (including reasonable legal fees) arising from your use of the app, your use of third-party content
+              or generated prompts, or your violation of these Terms or of any provider&apos;s terms.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
+            <CardTitle>11. Changes to These Terms</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
@@ -148,7 +213,7 @@ export default function TermsPage() {
 
         <Card className="glass-effect">
           <CardHeader>
-            <CardTitle>10. Contact</CardTitle>
+            <CardTitle>12. Contact</CardTitle>
           </CardHeader>
           <CardContent>
             <p>

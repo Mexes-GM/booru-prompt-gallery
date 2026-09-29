@@ -187,7 +187,7 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
 
       return { items, requested: count, produced: items.length }
     },
-    [seedPages, realCleanOptions, matchResolution, maxLongSide, strictResolutionCap, avoidSimilarPrompts, similarityThreshold]
+    [seedPages, realCleanOptions, matchResolution, maxLongSide, strictResolutionCap, snapToBucket, avoidSimilarPrompts, similarityThreshold]
   )
 
   const runSynthetic = useCallback(

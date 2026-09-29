@@ -10,7 +10,7 @@ import { useCardPrompt, type UseCardPromptOptions } from "@/hooks/use-card-promp
 import { useToast } from "@/hooks/use-toast"
 import { favKey } from "@/lib/favorites-logic"
 import { getPostUrl } from "@/lib/constants"
-import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
+import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
 import type { HistoryItem } from "@/lib/storage"
 import type { BooruPost } from "@/lib/api-client"
 import { postToParent } from "./pocket-bridge"
@@ -161,7 +161,7 @@ const HistoryRow = memo(function HistoryRow({
       <div className="relative w-12 h-12 shrink-0 rounded-md overflow-hidden bg-muted">
         {thumb && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumb} alt="" loading="lazy" referrerPolicy={provider === "aibooru" ? undefined : "no-referrer"} className="object-cover w-full h-full" />
+          <img src={thumb} alt="" loading="lazy" referrerPolicy={imageReferrerPolicy(provider)} className="object-cover w-full h-full" />
         )}
       </div>
       <div className="flex-1 min-w-0 flex flex-col gap-1">

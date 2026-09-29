@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster"
 import ErrorBoundary from '@/components/error-boundary'
 import { PostHogProvider } from '@/components/analytics/posthog-provider'
 import { themeHex } from '@/lib/theme/tokens.generated'
+import { themeBootstrapScript } from '@/lib/theme/theme-bootstrap'
 
 // Neutral, technical sans with character (anti-slop, not "toon"). Exposed as a
 // CSS variable so Tailwind's `font-sans` (= var(--font-sans)) picks it up.
@@ -177,6 +178,7 @@ export default function RootLayout({
     // (React #185) crashes. See SENTRY-FULVOUS-ANCHOR-7.
     <html lang="en" translate="no" suppressHydrationWarning>
       <body className={`${fontSans.variable} ${fontMono.variable} font-sans notranslate`} suppressHydrationWarning>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 z-50 bg-background px-4 py-2 border rounded shadow-md">
           Skip to content
         </a>

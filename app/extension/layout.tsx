@@ -7,23 +7,14 @@ export const metadata: Metadata = {
 }
 
 /**
- * Anti-flash theme bootstrap. The shared ThemeProvider only mounts next-themes
- * AFTER hydration (it returns bare children until `mounted`), so the initial
- * HTML carries no theme class and would paint LIGHT for a frame on dark setups.
- * Inside a sidebar iframe this flash is especially jarring. This blocking inline
- * script runs during body parse — before the React app paints — and applies the
- * resolved theme (reading next-themes' "theme" key) plus the `extension-mode`
- * class up front, so the pocket UI opens already in the correct theme.
+ * The root layout's theme bootstrap (lib/theme/theme-bootstrap.ts) already
+ * applies the resolved theme before paint; this adds the `extension-mode`
+ * class up front too, so the pocket UI inside the sidebar iframe opens with
+ * its compact layout instead of flashing the full one.
  */
-const themeBootstrap = `(function () {
+const extensionModeBootstrap = `(function () {
   try {
-    var root = document.documentElement;
-    root.classList.add("extension-mode");
-    var stored = localStorage.getItem("theme") || "system";
-    var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var isDark = stored === "dark" || (stored !== "light" && prefersDark);
-    if (isDark) root.classList.add("dark");
-    else root.classList.remove("dark");
+    document.documentElement.classList.add("extension-mode");
   } catch (e) {}
 })();`
 
@@ -34,7 +25,7 @@ export default function ExtensionLayout({
 }) {
   return (
     <>
-      <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+      <script dangerouslySetInnerHTML={{ __html: extensionModeBootstrap }} />
       {children}
     </>
   )

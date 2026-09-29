@@ -256,6 +256,9 @@ export function createTagAppendRule(): TagAppendRule {
   return { id: generateId(), find: '', append: [] }
 }
 
+/** Default minimum tags per post ("25+"): filters out sparsely tagged posts that yield thin prompts. */
+export const DEFAULT_MINIMUM_TAG_COUNT = '25'
+
 // Type-safe getters and setters for specific preferences
 export const userPreferences = {
   getPromptOptions: (): PromptOptions =>
@@ -312,7 +315,7 @@ export const userPreferences = {
     storage.set(STORAGE_KEYS.RATING_FILTER, rating),
 
   getMinimumTagCount: (): string =>
-    storage.get(STORAGE_KEYS.MINIMUM_TAG_COUNT, "5"),
+    storage.get(STORAGE_KEYS.MINIMUM_TAG_COUNT, DEFAULT_MINIMUM_TAG_COUNT),
 
   setMinimumTagCount: (count: string) =>
     storage.set(STORAGE_KEYS.MINIMUM_TAG_COUNT, count),

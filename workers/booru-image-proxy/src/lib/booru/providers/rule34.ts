@@ -110,6 +110,10 @@ export class Rule34Provider extends BaseBooruProvider {
       height: parseInt(String(post.height)),
     }))
 
-    return this.enrichPostsWithCategories(finalPosts, this.supabase, 'rule34')
+    return options.enrich === false ? finalPosts : this.enrich(finalPosts)
+  }
+
+  override async enrich(posts: BooruPost[]): Promise<BooruPost[]> {
+    return this.enrichPostsWithCategories(posts, this.supabase, 'rule34')
   }
 }

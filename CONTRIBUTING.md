@@ -35,7 +35,7 @@ You'll need Node.js 24.12+.
 - Use the `@/` alias for internal imports.
 - Icons come from `lucide-react`.
 - Match the code around you: same naming, same comment density, same patterns.
-- Don't hardcode colors. They're generated from `lib/theme/palette.mjs`. After changing the palette, run `npm run theme:build` (and `npm run theme:check` to verify contrast). `DESIGN.md` describes the visual system.
+- Don't hardcode colors. They're generated from `lib/theme/palette.mjs`. After changing the palette, run `npm run theme:build` (and `npm run theme:check` to verify contrast).
 
 ## Tests
 

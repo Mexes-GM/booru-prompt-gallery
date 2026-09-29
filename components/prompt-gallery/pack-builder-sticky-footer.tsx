@@ -638,9 +638,9 @@ const PackBuilderStickyFooterComponent = ({
                                     >
                                         {progress !== null ? (
                                             <motion.div
-                                                className="h-full bg-mode-pack"
+                                                className="h-full w-full origin-left bg-mode-pack"
                                                 initial={false}
-                                                animate={{ width: `${Math.max(4, progress * 100)}%` }}
+                                                animate={{ scaleX: Math.max(0.04, progress) }}
                                                 transition={{ type: 'tween', duration: 0.3 }}
                                             />
                                         ) : (

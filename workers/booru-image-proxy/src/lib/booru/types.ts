@@ -22,8 +22,12 @@ export interface SearchOptions {
   limit?: string
   order?: 'popular' | 'recent' | 'random'
   hasPrompt?: boolean
+  /** false → skip tag-category enrichment (caller enriches the batch once). */
+  enrich?: boolean
 }
 
 export interface IBooruProvider {
   search(options: SearchOptions): Promise<BooruPost[]>
+  /** Resolve artist/character/copyright/meta for flat-tag providers; identity otherwise. */
+  enrich(posts: BooruPost[]): Promise<BooruPost[]>
 }

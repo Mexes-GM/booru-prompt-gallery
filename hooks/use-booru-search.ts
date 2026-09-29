@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
 import type { ScoreTier } from "@/lib/api-client"
-import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
+import { userPreferences, STORAGE_KEYS, DEFAULT_MINIMUM_TAG_COUNT } from "@/lib/storage"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
   trackLoadMore,
@@ -112,7 +112,7 @@ export function useBooruSearch() {
   )
 
   const [tagCountFilter, _setTagCountFilter] = usePersistentState(
-    "5",
+    DEFAULT_MINIMUM_TAG_COUNT,
     userPreferences.getMinimumTagCount,
     userPreferences.setMinimumTagCount,
     "minTagCount",
@@ -152,7 +152,7 @@ export function useBooruSearch() {
     _setCharacterCountFilter(value)
   }, [_setCharacterCountFilter])
 
-  const [appliedTagCountFilter, setAppliedTagCountFilter] = useState("5")
+  const [appliedTagCountFilter, setAppliedTagCountFilter] = useState(DEFAULT_MINIMUM_TAG_COUNT)
   const [appliedScoreTier, setAppliedScoreTier] = useState<ScoreTier>("off")
   const [appliedCharacterCountFilter, setAppliedCharacterCountFilter] = useState("0")
   const [isClient, setIsClient] = useState(false)

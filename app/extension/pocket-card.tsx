@@ -25,7 +25,7 @@ import { CopyOptionsDropdown } from "@/components/prompt-gallery/copy-options-dr
 import { useCardPrompt, type UseCardPromptOptions } from "@/hooks/use-card-prompt"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { toast } from "@/hooks/use-toast"
-import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
+import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
 import { getPostUrl } from "@/lib/constants"
 import { computeGenerationResolution } from "@/lib/extension/generation-resolution"
 import type { BooruPost, BooruProvider } from "@/lib/api-client"
@@ -297,7 +297,7 @@ export const PocketCard = memo(function PocketCard({
             className="absolute inset-0 w-full h-full object-cover object-top"
             loading="lazy"
             decoding="async"
-            referrerPolicy={itemProvider === "aibooru" ? undefined : "no-referrer"}
+            referrerPolicy={imageReferrerPolicy(itemProvider)}
             onError={handleImageError}
           />
         )}

@@ -18,13 +18,79 @@ const CATEGORY_CACHE_TTL_MS = 60 * 60 * 1000
 const CATEGORY_CACHE_MAX = 50_000
 const categoryCache = new Map<string, { category: number | null; at: number }>()
 
-type FetchCategoryRows = (names: string[]) => Promise<TagCategoryRow[]>
+// ---------------------------------------------------------------------------
+// Subrequest budget.
+//
+// Cloudflare caps each Worker invocation at 50 subrequests (free plan), and
+// every Supabase/Upstash/provider call counts. Classifying a page is done with
+// ONE `lookup_tag_categories` RPC per table (migration 20260930000100). Until
+// that migration is applied, the legacy chunked GET path is used, but capped
+// at LEGACY_MAX_CHUNKS per table — unresolved tags simply stay unclassified
+// (and are not cached as "no category") instead of the whole request failing
+// with "Too many subrequests".
+// ---------------------------------------------------------------------------
+const LEGACY_CHUNK_SIZE = 100
+const LEGACY_MAX_CHUNKS = 8
+let rpcAvailable = true
 
+interface CategoryLookup {
+  rows: TagCategoryRow[]
+  /** false when the legacy path hit its chunk budget and skipped names. */
+  complete: boolean
+}
+
+async function lookupCategories(
+  supabase: SupabaseClient,
+  names: string[],
+  provider: string | null
+): Promise<CategoryLookup> {
+  if (rpcAvailable) {
+    const { data, error } = await supabase.rpc('lookup_tag_categories', {
+      p_names: names,
+      p_provider: provider,
+    })
+    if (!error) return { rows: (data ?? []) as TagCategoryRow[], complete: true }
+    // PGRST202 / 42883: function not deployed yet → fall back for this isolate.
+    if (error.code !== 'PGRST202' && error.code !== '42883') throw error
+    rpcAvailable = false
+    logger.warn('lookup_tag_categories_missing', { hint: 'apply migration 20260930000100' })
+  }
+
+  const chunks: string[][] = []
+  for (let i = 0; i < names.length; i += LEGACY_CHUNK_SIZE) chunks.push(names.slice(i, i + LEGACY_CHUNK_SIZE))
+  const budgeted = chunks.slice(0, LEGACY_MAX_CHUNKS)
+
+  const results = await Promise.all(
+    budgeted.map(async (chunk) => {
+      let query = provider
+        ? supabase
+            .from('provider_tag_categories')
+            .select('name, category')
+            .eq('provider', provider)
+            .eq('status', 'approved')
+            .neq('category', 0)
+        : supabase.from('auto_suggest_tags').select('name, category')
+      query = query.in('name', chunk)
+      const { data, error } = await query
+      if (error) throw error
+      return (data ?? []) as TagCategoryRow[]
+    })
+  )
+  return { rows: results.flat(), complete: budgeted.length === chunks.length }
+}
+
+/**
+ * Resolve categories for `tags` against one table (provider = null →
+ * auto_suggest_tags), consulting the per-isolate cache first. A failed lookup
+ * throws, so it is never cached as "no category"; an incomplete (budgeted)
+ * lookup only caches the tags it actually found.
+ */
 async function resolveTagCategoriesCached(
-  namespace: string,
+  supabase: SupabaseClient,
   tags: Iterable<string>,
-  fetchRows: FetchCategoryRows
+  provider: string | null
 ): Promise<Map<string, number>> {
+  const namespace = provider ? `provider_tag_categories:${provider}` : 'auto_suggest_tags'
   const now = Date.now()
   const resolved = new Map<string, number>()
   const missing: string[] = []
@@ -41,16 +107,26 @@ async function resolveTagCategoriesCached(
   }
 
   if (missing.length > 0) {
-    // fetchRows throws on a DB error, so a failed lookup is never cached as
-    // "no category".
-    const fetched = await resolveTagCategories(missing, fetchRows)
+    let complete = true
+    // One fetchRows call for every candidate spelling (chunking happens inside
+    // lookupCategories), so the RPC path costs a single subrequest.
+    const fetched = await resolveTagCategories(
+      missing,
+      async (names) => {
+        const lookup = await lookupCategories(supabase, names, provider)
+        complete = lookup.complete
+        return lookup.rows
+      },
+      Number.MAX_SAFE_INTEGER
+    )
     for (const tag of missing) {
       const key = toTagLookupKey(tag)
       const category = fetched.get(key)
+      if (category !== undefined) resolved.set(key, category)
+      else if (!complete) continue
       const cacheKey = `${namespace}:${key}`
       categoryCache.delete(cacheKey) // re-insert at the end so eviction stays oldest-first
       categoryCache.set(cacheKey, { category: category ?? null, at: now })
-      if (category !== undefined) resolved.set(key, category)
     }
     // Map iterates in insertion order, so this evicts the oldest entries.
     if (categoryCache.size > CATEGORY_CACHE_MAX) {
@@ -75,6 +151,11 @@ export abstract class BaseBooruProvider {
   protected abstract defaultParams: Record<string, string>
 
   abstract search(options: SearchOptions): Promise<BooruPost[]>
+
+  /** Providers with categorized tags (Danbooru-family, e621) need nothing. */
+  async enrich(posts: BooruPost[]): Promise<BooruPost[]> {
+    return posts
+  }
 
   /**
    * GET a provider JSON endpoint. Retries/timeouts live in fetchUpstream (the
@@ -152,26 +233,9 @@ export abstract class BaseBooruProvider {
       // reached the prompt as content. See ./tag-lookup.ts.
       // Both lookups run concurrently so the provider table adds no latency.
       const [tagMap, providerTagMap] = await Promise.all([
-        resolveTagCategoriesCached('auto_suggest_tags', allTags, async (names) => {
-          const { data, error } = await supabase
-            .from('auto_suggest_tags')
-            .select('name, category')
-            .in('name', names)
-          if (error) throw error
-          return (data ?? []) as TagCategoryRow[]
-        }),
+        resolveTagCategoriesCached(supabase, allTags, null),
         provider
-          ? resolveTagCategoriesCached(`provider_tag_categories:${provider}`, allTags, async (names) => {
-              const { data, error } = await supabase
-                .from('provider_tag_categories')
-                .select('name, category')
-                .eq('provider', provider)
-                .eq('status', 'approved')
-                .neq('category', 0)
-                .in('name', names)
-              if (error) throw error
-              return (data ?? []) as TagCategoryRow[]
-            })
+          ? resolveTagCategoriesCached(supabase, allTags, provider)
           : Promise.resolve(new Map<string, number>()),
       ])
       for (const [key, category] of providerTagMap) {

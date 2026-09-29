@@ -12,6 +12,12 @@ import { logger, logRateLimitBlock } from '../logger'
 
 /** Hard cap per request — callers batch (the frontend sends ≤ 100 at a time). */
 const MAX_FAVORITES_PER_REQUEST = 100
+/**
+ * Gelbooru costs one provider call per id, and Cloudflare caps a Worker
+ * invocation at 50 subrequests (provider + Supabase + Upstash all count), so a
+ * request may carry at most this many Gelbooru ids. The frontend sends 20.
+ */
+const MAX_GELBOORU_IDS_PER_REQUEST = 30
 
 /**
  * Ids per `id:a,b,c` lookup. Danbooru-family and e621 accept long id lists
@@ -83,6 +89,9 @@ export async function favoritesHandler(request: Request, env: Env): Promise<Resp
   if (total > MAX_FAVORITES_PER_REQUEST) {
     return errorResponse(`At most ${MAX_FAVORITES_PER_REQUEST} favorites per request`, 400, NO_STORE)
   }
+  if ((groups.get('gelbooru')?.length ?? 0) > MAX_GELBOORU_IDS_PER_REQUEST) {
+    return errorResponse(`At most ${MAX_GELBOORU_IDS_PER_REQUEST} Gelbooru favorites per request`, 400, NO_STORE)
+  }
 
   // Upstream cost of this request, in provider calls.
   const danbooruCalls = Math.ceil((groups.get('danbooru')?.length ?? 0) / ID_LIST_BATCH.danbooru!)
@@ -147,16 +156,18 @@ export async function favoritesHandler(request: Request, env: Env): Promise<Resp
     const tag = (posts: BooruPost[]) => posts.map((post) => ({ ...post, _provider: providerName }))
 
     if (providerName === 'gelbooru') {
+      // Fetch raw, then classify the whole batch once: enriching per id cost
+      // two Supabase calls per favorite on top of the provider call.
       const results = await mapWithConcurrency(ids, GELBOORU_CONCURRENCY, async (id) => {
         try {
-          const posts = await provider.search({ tags: `id:${id}`, page: '1', order: 'recent' })
-          return tag(posts.slice(0, 1))
+          const posts = await provider.search({ tags: `id:${id}`, page: '1', order: 'recent', enrich: false })
+          return posts.slice(0, 1)
         } catch (error) {
           logger.warn('favorites_batch_error', { provider: providerName, error: String(error) })
           return []
         }
       })
-      results.forEach((posts) => allPosts.push(...posts))
+      allPosts.push(...tag(await provider.enrich(results.flat())))
       continue
     }
 

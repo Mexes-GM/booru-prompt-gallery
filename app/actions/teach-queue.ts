@@ -5,6 +5,7 @@ import { getClientIp } from '@/lib/client-ip'
 import { getSuggestionAuthorId, isMissingColumnError } from '@/lib/tag-suggestion-author'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { requireAdmin } from '@/lib/auth/authorization'
+import { revertOwnPendingSuggestion } from './suggestions'
 import { TAG_CATEGORY_IDS, TAG_SUBCATEGORIES, type TagCategory } from '@/lib/tag-taxonomy'
 
 export interface TeachQueueItem {
@@ -213,17 +214,22 @@ export async function submitTeachClassification(
       tagId = newTag.id
     }
 
+    // The pending-uniqueness index doesn't include the subcategory, so a pending
+    // row for the same tag + category blocks the insert even when the
+    // subcategory differs. Only hand back its id (which Undo would delete) when
+    // it's an exact match.
     const { data: existingPending } = await supabaseAdmin
       .from('tag_suggestions')
-      .select('id')
+      .select('id, suggested_subcategory')
       .eq('tag_id', tagId)
       .eq('suggested_category', category)
-      .eq('suggested_subcategory', subcategory)
       .eq('status', 'pending')
+      .limit(1)
       .maybeSingle()
 
     if (existingPending) {
-      return { success: true, suggestionId: existingPending.id, wasAutoApproved: false }
+      const isExactMatch = existingPending.suggested_subcategory === subcategory
+      return { success: true, suggestionId: isExactMatch ? existingPending.id : null, wasAutoApproved: false }
     }
 
     // Insert pending suggestion
@@ -244,6 +250,13 @@ export async function submitTeachClassification(
     let { data: insertedSuggestion, error: insertError } = await insertRow(authorId ? { ...row, user_id: authorId } : row)
     if (authorId && isMissingColumnError(insertError)) {
       ;({ data: insertedSuggestion, error: insertError } = await insertRow(row))
+    }
+
+    // Unique violation: another pending suggestion for this tag landed first
+    // (concurrent submit, or a stricter index). The tag is already queued for
+    // review, so treat it as a no-op rather than an error.
+    if (insertError?.code === '23505') {
+      return { success: true, suggestionId: null, wasAutoApproved: false }
     }
 
     if (insertError) {
@@ -277,6 +290,11 @@ export async function revertTeachClassification(
 ): Promise<{ success: boolean; message?: string }> {
   try {
     if (options?.wasAutoApproved) {
+      // Server actions are publicly callable: without this, anyone could pass
+      // wasAutoApproved + an arbitrary previousState and rewrite production tags.
+      if (!(await checkIsAdmin())) {
+        return { success: false, message: 'Unauthorized' }
+      }
       const normName = tagName.toLowerCase().trim().replace(/ /g, '_')
 
       const { error: autoError } = await supabaseAdmin
@@ -315,13 +333,10 @@ export async function revertTeachClassification(
       return { success: true }
     }
 
-    // Community suggestion rollback: delete the pending suggestion
+    // Community suggestion rollback: delete the pending suggestion, scoped to
+    // the submitter's IP / user id so a leaked id can't delete someone else's.
     if (options?.suggestionId) {
-      await supabaseAdmin
-        .from('tag_suggestions')
-        .delete()
-        .eq('id', options.suggestionId)
-        .eq('status', 'pending')
+      return await revertOwnPendingSuggestion(options.suggestionId)
     }
 
     return { success: true }

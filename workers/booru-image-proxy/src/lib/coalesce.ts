@@ -46,16 +46,26 @@ export async function coalesce<T>(
   const acquired = await redis.set(lockKey, '1', { nx: true, ex: 30 })
   if (acquired) {
     // Winner path: fetch, cache, signal losers, release lock
+    let result: T
     try {
-      const result = await fetcher()
+      result = await fetcher()
+    } catch (error) {
+      await redis.del(lockKey).catch(() => {})
+      throw error
+    }
+    // Cache writes are best-effort: once the data is in hand, a Redis hiccup
+    // (or hitting the per-invocation subrequest cap) must not turn the
+    // response into a 500. Losers then simply fall through to a direct fetch.
+    try {
       // 1. Write cached result
       await redis.set(cacheKey, JSON.stringify(result), { ex: ttlSeconds })
       // 2. Signal losers via lightweight notify key (4 bytes vs 80KB cache entry)
       await redis.set(notifyKey, '1', { ex: Math.min(ttlSeconds, 15) })
-      return result
-    } finally {
       await redis.del(lockKey)
+    } catch {
+      /* lock expires on its own (TTL) */
     }
+    return result
   }
 
   // ── Loser path: wait for winner via lightweight notify-key polling ─────

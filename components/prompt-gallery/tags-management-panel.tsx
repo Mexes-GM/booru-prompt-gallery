@@ -30,7 +30,7 @@ import { ScoreTierControl } from "@/components/prompt-gallery/score-tier-control
 import { Check, ChevronDown, ListPlus, Plus, Save, Trash2, X, Replace, RotateCcw } from "lucide-react"
 import { ToastAction } from "@/components/ui/toast"
 import { toast } from "@/hooks/use-toast"
-import { createTagAppendRule, type TagPreset } from "@/lib/storage"
+import { createTagAppendRule, DEFAULT_MINIMUM_TAG_COUNT, type TagPreset } from "@/lib/storage"
 import type { TagAppendRule } from "@/lib/cleanPrompt"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 import type { ScoreTier } from "@/lib/api-client"
@@ -43,8 +43,8 @@ import { cn } from "@/lib/utils"
  *  idea SmoothFilterSlider/ScoreTierControl already used internally. */
 type PanelVariant = "full" | "compact"
 
-/** Default from use-booru-search.ts — what "Reset" returns the tag-count filter to. */
-const DEFAULT_TAG_COUNT = 5
+/** What "Reset" returns the tag-count filter to (lib/storage.ts). */
+const DEFAULT_TAG_COUNT = Number(DEFAULT_MINIMUM_TAG_COUNT)
 
 /** Character post counts are heavy-tailed, so quick picks beat a linear 0–10k slider. */
 const CHARACTER_COUNT_PRESETS = [
@@ -635,7 +635,7 @@ interface TagsManagementPanelProps {
   setSmartTagExclusion?: (value: boolean) => void
 }
 
-/** Quick picks for the embedded tag-count filter (5 = the default floor). */
+/** Quick picks for the embedded tag-count filter (25 = the default floor). */
 const TAG_COUNT_PRESETS = [
   { label: "5+", value: 5 },
   { label: "15+", value: 15 },
@@ -693,10 +693,10 @@ export function TagsManagementPanel({
   const isEmbedded = embedded && !isCompact
 
   // Section summaries: how many controls deviate from their defaults
-  // (use-booru-search.ts: tag count "5", score "off", character count "0").
+  // (use-booru-search.ts: tag count "25", score "off", character count "0").
   // Disabled controls don't count — they aren't affecting anything.
   const activeFilterCount =
-    (isTagCountSupported && (parseInt(tagCountFilter) || DEFAULT_TAG_COUNT) > DEFAULT_TAG_COUNT ? 1 : 0) +
+    (isTagCountSupported && (parseInt(tagCountFilter) || DEFAULT_TAG_COUNT) !== DEFAULT_TAG_COUNT ? 1 : 0) +
     (scoreTier !== "off" ? 1 : 0) +
     (includeCharacters && (parseInt(characterCountFilter) || 0) > 0 ? 1 : 0)
 

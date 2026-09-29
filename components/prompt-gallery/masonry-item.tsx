@@ -26,7 +26,7 @@ import {
     BooruProvider
 } from "@/lib/api-client"
 import { getPostUrl } from "@/lib/constants"
-import { getGelbooruProxyUrl, getDanbooruCdnUrl } from "@/lib/proxy-url"
+import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
 import { type TagCategory, type ClassifiedTags, type RichnessDepth } from "@/lib/tag-classifier"
@@ -407,7 +407,6 @@ export const MasonryItem = memo(function MasonryItem({
     // Gelbooru applies hotlink protection to all URLs — cross-origin requests get
     // 302-redirected to hotlink.php. The Worker sets Referer: gelbooru.com/ which bypasses this.
     const gelbooruNeedsProxy = isGelbooru && !!rawFileUrl
-    const isAibooru = itemProvider === 'aibooru'
 
     // Danbooru image routing:
     // - CloudFront (getDanbooruCdnUrl) is the PRIMARY path when NEXT_PUBLIC_CDN_PROXY_URL
@@ -630,7 +629,7 @@ export const MasonryItem = memo(function MasonryItem({
                         loading={index < 8 ? "eager" : "lazy"}
                         fetchPriority={index < 8 ? "high" : "low"}
                         decoding={index < 8 ? "sync" : "async"}
-                        referrerPolicy={isAibooru ? undefined : "no-referrer"}
+                        referrerPolicy={imageReferrerPolicy(itemProvider)}
                         onError={handleImageError}
                         onLoad={() => {
                             setImageError(false)

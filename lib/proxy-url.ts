@@ -1,3 +1,5 @@
+import type { HTMLAttributeReferrerPolicy } from "react"
+
 // ── Image proxy routing ──
 //
 // Direct <img> (no proxy):
@@ -142,6 +144,17 @@ function proxyUrl(imageUrl: string): string {
   if (PROXY_AVAILABLE) return `${CLOUDFLARE_WORKER_URL}?url=${encodeURIComponent(imageUrl)}`
   // No worker configured — return direct/optimized as a last resort.
   return optimizeImageUrl(imageUrl)
+}
+
+/**
+ * Referrer policy for a booru <img>. Most CDNs are loaded with no Referer
+ * (privacy, and the Worker proxy gates on Sec-Fetch-Dest instead). Aibooru and
+ * e621 are the exceptions: e621's CDN now rejects browser image loads that
+ * carry no Referer at all, so they get the default policy, which sends only
+ * our origin cross-site.
+ */
+export function imageReferrerPolicy(provider: string | undefined): HTMLAttributeReferrerPolicy | undefined {
+  return provider === 'aibooru' || provider === 'e621' ? undefined : 'no-referrer'
 }
 
 export function getDanbooruProxyUrl(imageUrl: string): string {

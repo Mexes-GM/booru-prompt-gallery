@@ -299,13 +299,11 @@ function UnavailablePostsNotice({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ favorites: ids.map(id => ({ id, provider })) }),
         })
-        // Rate limit / server error → inconclusive: count these ids as found so
-        // a throttled re-check can never offer to delete favorites that still
-        // exist. Other non-OK statuses keep them as missing.
+        // Any non-OK response (rate limit, server error, provider refusing the
+        // Worker) is inconclusive: count these ids as found so a failed
+        // re-check can never offer to delete favorites that still exist.
         if (!res.ok) {
-          if (res.status === 429 || res.status >= 500) {
-            for (const id of ids) foundIds.add(`${provider}:${id}`)
-          }
+          for (const id of ids) foundIds.add(`${provider}:${id}`)
           return
         }
         const posts: BooruPost[] = await res.json()
