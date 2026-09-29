@@ -8,7 +8,7 @@
     "logs": "wrangler tail"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.107.0",
+    "@supabase/supabase-js": "^2.117.2",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "itty-router": "^5.0.23",
