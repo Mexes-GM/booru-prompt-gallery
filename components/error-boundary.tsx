@@ -3,6 +3,7 @@
 import React from 'react'
 import { reportError } from "@/lib/error-reporting"
 import { getTranslationState } from '@/lib/error-context'
+import { isChunkLoadError, reloadForChunkError } from '@/lib/chunk-reload'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -41,6 +42,12 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
     this.unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
       const error = event.reason instanceof Error ? event.reason : new Error(String(event.reason))
+      // Stale build after a deploy: a lazy import() outside React (e.g. an
+      // event handler) failed. Reload to pick up the current chunks.
+      if (isChunkLoadError(error) && reloadForChunkError()) {
+        event.preventDefault()
+        return
+      }
       if (this.isDOMManipulationError(error)) {
         console.warn('Global promise rejection with DOM error:', error)
         this.setState({ hasError: true, error })
@@ -100,6 +107,11 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Stale build after a deploy (chunk hash no longer exists). "Try Again"
+    // can't fix it; a reload can. Skip reporting: it's expected, not a bug.
+    // If we already reloaded recently, fall through and report it normally.
+    if (isChunkLoadError(error) && reloadForChunkError()) return
+
     const translation = getTranslationState()
     const isRenderLoop = this.isRenderLoopError(error)
     const isDom = this.isDOMManipulationError(error)
