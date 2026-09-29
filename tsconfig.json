@@ -38,6 +38,7 @@
   "exclude": [
     "node_modules",
     "workers",
-    "scripts"
+    "scripts",
+    "__tests__/booru-upstream.verify.ts"
   ]
 }
