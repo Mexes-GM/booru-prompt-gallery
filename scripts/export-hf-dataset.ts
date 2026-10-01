@@ -34,7 +34,7 @@ const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`
 
 const PAGE_SIZE = 1000;
 /** Hugging Face dataset id shown in the card's loading example. */
-const HF_REPO = arg('hf-repo') ?? process.env.HF_DATASET_REPO ?? '<user>/booru-tag-taxonomy';
+const HF_REPO = arg('hf-repo') ?? process.env.HF_DATASET_REPO ?? '<user>/danbooru-tag-taxonomy';
 const OUT_DIR = path.resolve(arg('out') ?? 'dist/hf-dataset');
 const EXCLUDED_FILE = path.join('data', 'excluded-terms.json');
 
@@ -249,11 +249,20 @@ function buildCard(rows: ExportRow[]): string {
 license: cc-by-4.0
 language:
   - en
-pretty_name: Booru Tag Taxonomy
+pretty_name: Danbooru Tag Taxonomy
 size_categories:
   - ${sizeCategory(rows.length)}
 task_categories:
   - text-classification
+task_ids:
+  - multi-class-classification
+annotations_creators:
+  - machine-generated
+  - expert-generated
+language_creators:
+  - crowdsourced
+source_datasets:
+  - original
 tags:
   - danbooru
   - booru
@@ -261,7 +270,11 @@ tags:
   - tags
   - taxonomy
   - stable-diffusion
+  - image-generation
+  - text-to-image
   - prompt-engineering
+  - tagger
+  - captioning
   - not-for-all-audiences
 configs:
   - config_name: default
@@ -270,7 +283,7 @@ configs:
         path: tags.parquet
 ---
 
-# Booru Tag Taxonomy
+# Danbooru Tag Taxonomy
 
 ${fmt(rows.length)} Danbooru tags labelled with a category and a slot from a fixed taxonomy of 7 categories
 and 33 slots, for example \`clothing:footwear\`, \`pose:expression\` or \`scenery:atmosphere\`.
@@ -380,6 +393,19 @@ not meant to be a list of artist names.
 Danbooru's vocabulary includes tags for sexual and other adult content, and they are labelled like any
 other tag. The dataset contains tag names only, no images.
 
+## Related datasets
+
+- [Jio7/danbooru-tags-classified](https://huggingface.co/datasets/Jio7/danbooru-tags-classified): Danbooru tags
+  in 14 flat categories labelled by an LLM. Used here as a second opinion.
+- [deepghs/site_tags](https://huggingface.co/datasets/deepghs/site_tags): tag lists, types and aliases for
+  Danbooru and other sites, without semantic categories.
+- [Danbooru's tag groups](https://danbooru.donmai.us/wiki_pages/tag_groups), exported monthly as JSON by
+  [danbooru-tag-groups-scraper](https://github.com/PBandDev/danbooru-tag-groups-scraper): hierarchical groups
+  curated by the Danbooru community. Used here to check and fill slots.
+
+This dataset differs in giving each tag one slot, so tags of the same kind can replace each other, and in
+recording a confidence and a review status per tag.
+
 ## License and attribution
 
 The classification (\`category\`, \`subcategory\`, \`slot\`, \`confidence\`, \`status\`) is released under
@@ -388,8 +414,8 @@ The classification (\`category\`, \`subcategory\`, \`slot\`, \`confidence\`, \`s
 danbooru-tag-groups-scraper and Jio7/danbooru-tags-classified, both MIT-licensed.
 
 \`\`\`bibtex
-@misc{booru_tag_taxonomy,
-  title  = {Booru Tag Taxonomy},
+@misc{danbooru_tag_taxonomy,
+  title  = {Danbooru Tag Taxonomy},
   year   = {${today.slice(0, 4)}},
   url    = {https://github.com/Mexes-GM/booru-prompt-gallery}
 }
