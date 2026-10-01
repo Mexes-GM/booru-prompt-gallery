@@ -94,7 +94,13 @@ audit_*.md
 
 # Project-specific
 backups/
-scripts/
+# Local one-off scripts; the Hugging Face dataset pipeline (npm run dataset:export) is versioned.
+scripts/*
+!scripts/export-hf-dataset.ts
+!scripts/export-hf-charts.mjs
+!scripts/rasterize-charts.py
+!scripts/refine-tags-external.ts
+!scripts/reclassify-needs-review.ts
 srtsource/
 
 # Local reference screenshots / mockups (not project assets)
