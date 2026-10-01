@@ -101,6 +101,8 @@ scripts/*
 !scripts/rasterize-charts.py
 !scripts/refine-tags-external.ts
 !scripts/reclassify-needs-review.ts
+!scripts/build-hf-space.ts
+!scripts/hf-space/
 srtsource/
 
 # Local reference screenshots / mockups (not project assets)

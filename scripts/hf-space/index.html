@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Danbooru Tag Taxonomy</title>
+<meta name="description" content="Paste a Danbooru-style prompt and see every tag grouped by what it describes: hair, clothing, pose, scenery and more.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: oklch(0.95 0.012 250);
+    --card: oklch(0.97 0.014 250);
+    --fg: oklch(0.22 0.025 253);
+    --muted: oklch(0.46 0.022 252);
+    --border: oklch(0.83 0.02 248);
+    --mix-soft: 10%;
+    --mix-border: 30%;
+    --cat-appearance: oklch(0.56 0.16 45);
+    --cat-appearance-text: oklch(0.41 0.1175 45);
+    --cat-clothing: oklch(0.62 0.1141 178);
+    --cat-clothing-text: oklch(0.41 0.0756 178);
+    --cat-equipment: oklch(0.62 0.1065 192);
+    --cat-equipment-text: oklch(0.41 0.0705 192);
+    --cat-pose: oklch(0.62 0.1129 220);
+    --cat-pose-text: oklch(0.41 0.0748 220);
+    --cat-scenery: oklch(0.62 0.1522 123);
+    --cat-scenery-text: oklch(0.41 0.1008 123);
+    --cat-creature: oklch(0.62 0.1061 206);
+    --cat-creature-text: oklch(0.41 0.0703 206);
+    --cat-other: oklch(0.6 0.02 252);
+    --cat-other-text: oklch(0.42 0.02 252);
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: oklch(0.27 0.022 250);
+      --card: oklch(0.305 0.024 250);
+      --fg: oklch(0.94 0.014 248);
+      --muted: oklch(0.78 0.02 250);
+      --border: oklch(0.4 0.024 250);
+      --mix-soft: 16%;
+      --mix-border: 40%;
+      --cat-appearance: oklch(0.68 0.16 45);
+      --cat-appearance-text: oklch(0.79 0.1296 45);
+      --cat-clothing: oklch(0.71 0.1307 178);
+      --cat-clothing-text: oklch(0.79 0.1454 178);
+      --cat-equipment: oklch(0.71 0.1219 192);
+      --cat-equipment-text: oklch(0.79 0.1357 192);
+      --cat-pose: oklch(0.71 0.1293 220);
+      --cat-pose-text: oklch(0.79 0.1439 220);
+      --cat-scenery: oklch(0.71 0.16 123);
+      --cat-scenery-text: oklch(0.79 0.15 123);
+      --cat-creature: oklch(0.71 0.1215 206);
+      --cat-creature-text: oklch(0.79 0.1352 206);
+      --cat-other: oklch(0.7 0.02 250);
+      --cat-other-text: oklch(0.8 0.02 250);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); margin: 0 0 20px; max-width: 62ch; }
+  .lede a { color: inherit; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  textarea {
+    width: 100%;
+    min-height: 96px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--fg);
+    font: 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+    resize: vertical;
+  }
+  textarea:focus-visible, button:focus-visible { outline: 2px solid var(--cat-pose); outline-offset: 2px; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+  .examples button {
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--fg);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .examples button:hover { border-color: var(--muted); }
+  .summary { margin: 24px 0 12px; color: var(--muted); font-size: 14px; min-height: 1.5em; }
+  .groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .group {
+    --c: var(--cat-other);
+    --ct: var(--cat-other-text);
+    background: var(--card);
+    border: 1px solid color-mix(in oklab, var(--c) var(--mix-border), var(--border));
+    border-radius: var(--radius);
+    padding: 12px 14px 14px;
+  }
+  .group h2 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ct);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .group h2::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .slot { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: start; padding: 4px 0; }
+  .slot + .slot { border-top: 1px dashed color-mix(in oklab, var(--c) var(--mix-border), transparent); }
+  .slot-name { color: var(--muted); font-size: 13px; padding-top: 3px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    background: color-mix(in oklab, var(--c) var(--mix-soft), transparent);
+    border: 1px solid color-mix(in oklab, var(--c) var(--mix-border), transparent);
+    color: var(--fg);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 13px;
+  }
+  .chip small { color: var(--muted); }
+  .group.plain .slot { grid-template-columns: 1fr; }
+  .group.plain .slot-name { display: none; }
+  .note { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+  footer a { color: inherit; }
+  .loading { color: var(--muted); }
+  @media (max-width: 480px) {
+    .slot { grid-template-columns: 1fr; gap: 4px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Danbooru Tag Taxonomy</h1>
+  <p class="lede">
+    Paste a Danbooru-style prompt and see what each tag describes. Tags are sorted into 7 categories and 33 slots;
+    tags in the same slot can usually replace each other.
+    <span id="dataset-link"></span>
+  </p>
+
+  <label for="prompt">Prompt</label>
+  <textarea id="prompt" spellcheck="false" autocomplete="off"></textarea>
+  <div class="examples" id="examples"><span>Try:</span></div>
+
+  <p class="summary" id="summary" aria-live="polite"><span class="loading">Loading tags…</span></p>
+  <div class="groups" id="groups"></div>
+
+  <footer>
+    Labels: CC BY 4.0. Tag names and aliases come from <a href="https://danbooru.donmai.us">Danbooru</a>.
+    Everything runs in your browser; nothing you type is sent anywhere.
+  </footer>
+</main>
+
+<script>
+const CATEGORY_ORDER = ['appearance', 'clothing', 'equipment', 'pose', 'scenery', 'creature', 'other'];
+const SLOT_LABELS = { demographics: 'subject' };
+const EXAMPLES = [
+  '1girl, solo, long hair, blue eyes, school uniform, pleated skirt, thighhighs, smile, sitting, classroom, window, sunset',
+  'masterpiece, 1boy, short hair, armor, cape, holding sword, fighting stance, from below, ruins, smoke, night',
+  '2girls, twintails, (maid:1.2), apron, frills, holding tray, cup, cake, indoors, cafe, blush, :d',
+];
+
+let DATA = null;
+
+/** Lowercase, underscores, single separators: the key form used in tags.json. */
+function keyOf(text) {
+  return text.trim().toLowerCase().replace(/\s+/g, '_').replace(/_+/g, '_');
+}
+
+/** Strips prompt weights and brackets: "(long hair:1.2)" -> "long hair", "x \(cosplay\)" -> "x (cosplay)". */
+function cleanTag(raw) {
+  let s = raw.trim();
+  while (/^[([{]/.test(s)) s = s.slice(1);
+  while (/[)\]}]$/.test(s) && !/\\[)\]}]$/.test(s)) s = s.slice(0, -1);
+  s = s.replace(/:\s*-?\d+(\.\d+)?\s*$/, '');
+  s = s.replace(/\\([()[\]{}])/g, '$1').trim();
+  // A trailing ")" removed above may belong to the tag itself, e.g. "hatsune miku (cosplay)".
+  const open = (s.match(/\(/g) || []).length;
+  const close = (s.match(/\)/g) || []).length;
+  if (open > close) s += ')'.repeat(open - close);
+  return s;
+}
+
+/** Slot index for a tag: exact name, then Danbooru alias, then the longest known suffix ("blue skirt" -> "skirt"). */
+function lookup(text) {
+  const key = keyOf(text);
+  if (key in DATA.t) return { slot: DATA.t[key], via: null };
+  const alias = DATA.a[key];
+  if (alias !== undefined) return { slot: DATA.t[alias], via: alias };
+  const parts = key.split('_');
+  for (let i = 1; i < parts.length; i++) {
+    const suffix = parts.slice(i).join('_');
+    if (suffix in DATA.t && DATA.t[suffix] !== DATA.pending) return { slot: DATA.t[suffix], via: suffix, inferred: true };
+  }
+  return null;
+}
+
+function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') node.className = v;
+    else if (k === 'style') node.setAttribute('style', v);
+    else node.setAttribute(k, v);
+  }
+  for (const child of [].concat(children)) node.append(child);
+  return node;
+}
+
+function chip(item) {
+  const children = [item.display];
+  if (item.via) children.push(' ', el('small', {}, item.inferred ? `as ${item.via.replace(/_/g, ' ')}` : `→ ${item.via.replace(/_/g, ' ')}`));
+  return el('span', { class: 'chip', title: item.via ? `Matched ${item.via}` : '' }, children);
+}
+
+function groupCard(category, title, slotsMap, plain = false) {
+  const card = el('section', {
+    class: `group${plain ? ' plain' : ''}`,
+    style: `--c: var(--cat-${category}); --ct: var(--cat-${category}-text)`,
+  });
+  card.append(el('h2', {}, title));
+  for (const [slotName, items] of slotsMap) {
+    card.append(
+      el('div', { class: 'slot' }, [
+        el('span', { class: 'slot-name' }, slotName),
+        el('div', { class: 'chips' }, items.map(chip)),
+      ])
+    );
+  }
+  return card;
+}
+
+function render() {
+  const text = document.getElementById('prompt').value;
+  const pieces = text.split(/[,\n]/).map((p) => p.trim()).filter(Boolean);
+  const byCategory = new Map(CATEGORY_ORDER.map((c) => [c, new Map()]));
+  const pending = [];
+  const unknown = [];
+  const seen = new Set();
+  let classified = 0;
+
+  for (const piece of pieces) {
+    const display = cleanTag(piece);
+    if (!display || seen.has(keyOf(display))) continue;
+    seen.add(keyOf(display));
+    const hit = lookup(display);
+    if (!hit) { unknown.push({ display }); continue; }
+    if (hit.slot === DATA.pending) { pending.push({ display }); continue; }
+    const [category, sub] = DATA.slots[hit.slot].split(':');
+    const slotName = SLOT_LABELS[sub] || sub;
+    const slots = byCategory.get(category);
+    if (!slots.has(slotName)) slots.set(slotName, []);
+    slots.get(slotName).push({ display, via: hit.via, inferred: hit.inferred });
+    classified++;
+  }
+
+  const groups = document.getElementById('groups');
+  groups.replaceChildren();
+  let slotCount = 0;
+  for (const category of CATEGORY_ORDER) {
+    const slots = byCategory.get(category);
+    if (!slots.size) continue;
+    slotCount += slots.size;
+    // Keep the taxonomy's slot order inside each category.
+    const order = DATA.slots.filter((s) => s.startsWith(`${category}:`)).map((s) => SLOT_LABELS[s.split(':')[1]] || s.split(':')[1]);
+    const sorted = new Map([...slots].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])));
+    groups.append(groupCard(category, category, sorted));
+  }
+  if (pending.length) groups.append(groupCard('other', 'Not classified yet', new Map([['', pending]]), true));
+  if (unknown.length) groups.append(groupCard('other', 'Not in the dataset', new Map([['', unknown]]), true));
+
+  const summary = document.getElementById('summary');
+  if (!pieces.length) {
+    summary.textContent = 'Paste a prompt above, or pick an example.';
+    return;
+  }
+  const parts = [`${classified} tag${classified === 1 ? '' : 's'} in ${slotCount} slot${slotCount === 1 ? '' : 's'}`];
+  if (pending.length) parts.push(`${pending.length} not classified yet`);
+  if (unknown.length) parts.push(`${unknown.length} not in the dataset`);
+  summary.textContent = parts.join(' · ');
+}
+
+async function main() {
+  const examples = document.getElementById('examples');
+  EXAMPLES.forEach((example, i) => {
+    const button = el('button', { type: 'button' }, `Example ${i + 1}`);
+    button.addEventListener('click', () => {
+      document.getElementById('prompt').value = example;
+      render();
+    });
+    examples.append(button);
+  });
+
+  DATA = await (await fetch('tags.json')).json();
+  if (DATA.dataset) {
+    const link = el('a', { href: `https://huggingface.co/datasets/${DATA.dataset}` }, 'Browse the dataset');
+    document.getElementById('dataset-link').append(link, '.');
+  }
+  const input = document.getElementById('prompt');
+  input.value = EXAMPLES[0];
+  let timer;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(render, 120);
+  });
+  render();
+}
+
+main().catch((err) => {
+  document.getElementById('summary').textContent = `Could not load the tag data (${err.message}).`;
+});
+</script>
+</body>
+</html>

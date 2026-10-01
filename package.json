@@ -13,6 +13,7 @@
     "theme:check": "node scripts/build-theme.mjs --check",
     "colors:audit": "node scripts/audit-colors.mjs",
     "dataset:export": "bun scripts/export-hf-dataset.ts && node scripts/export-hf-charts.mjs && python scripts/rasterize-charts.py",
+    "dataset:space": "bun scripts/build-hf-space.ts",
     "test": "node __tests__/run-all.mjs",
     "typecheck": "tsc --noEmit"
   },
