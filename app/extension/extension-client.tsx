@@ -33,6 +33,7 @@ import { useBlacklist } from "@/hooks/use-blacklist"
 import { useToast } from "@/hooks/use-toast"
 import { toastError } from "@/lib/toast-error"
 import { parsePromptList } from "@/lib/extension/prompt-list-parser"
+import { clampMaxLongSide, MAX_MAX_LONG_SIDE, MIN_MAX_LONG_SIDE } from "@/lib/extension/generation-resolution"
 import { detectSearchCharacterName } from "@/lib/pack/bulk-send"
 import { shouldConfirmNsfwEnable, nextRatingFilter, ALL_RATING, SAFE_RATING } from "@/lib/nsfw-consent"
 import type { BooruPost, BooruProvider } from "@/lib/api-client"
@@ -357,15 +358,23 @@ export default function ExtensionClient() {
     false, userPreferences.getMatchResolutionEnabled, userPreferences.setMatchResolutionEnabled,
     "matchResolutionEnabled", STORAGE_KEYS.MATCH_RESOLUTION_ENABLED
   )
-  const [maxLongSide, setMaxLongSide] = usePersistentState(
-    1536, userPreferences.getMatchResolutionMaxLongSide, userPreferences.setMatchResolutionMaxLongSide,
+  const [storedMaxLongSide, setMaxLongSide] = usePersistentState(
+    MAX_MAX_LONG_SIDE, userPreferences.getMatchResolutionMaxLongSide, userPreferences.setMatchResolutionMaxLongSide,
     "matchResolutionMaxLongSide", STORAGE_KEYS.MATCH_RESOLUTION_MAX_LONG_SIDE
   )
+  // Values saved before the 512–1536 limit existed (e.g. 2048) are clamped on read.
+  const maxLongSide = clampMaxLongSide(storedMaxLongSide)
   // "area" budget (off) lets one side exceed maxLongSide while total area fits;
   // "strict" (on) makes maxLongSide a hard per-side ceiling.
   const [strictResolutionCap, setStrictResolutionCap] = usePersistentState(
     false, userPreferences.getMatchResolutionStrictCap, userPreferences.setMatchResolutionStrictCap,
     "matchResolutionStrictCap", STORAGE_KEYS.MATCH_RESOLUTION_STRICT_CAP
+  )
+  // Snap to the closest curated aspect-ratio bucket (5:7, 2:3, 16:9…)
+  // instead of each post's raw, often unusual, aspect ratio.
+  const [snapToBucket, setSnapToBucket] = usePersistentState(
+    false, userPreferences.getMatchResolutionSnapToBucket, userPreferences.setMatchResolutionSnapToBucket,
+    "matchResolutionSnapToBucket", STORAGE_KEYS.MATCH_RESOLUTION_SNAP_TO_BUCKET
   )
   // Typed locally and committed on blur/Enter so clearing the field to retype
   // doesn't snap it back to the default mid-edit.
@@ -374,7 +383,7 @@ export default function ExtensionClient() {
   const commitMaxLongSide = () => {
     if (maxLongSideDraft === null) return
     const parsed = Number.parseInt(maxLongSideDraft, 10)
-    if (Number.isFinite(parsed) && parsed >= 64) setMaxLongSide(Math.min(parsed, 4096))
+    if (Number.isFinite(parsed)) setMaxLongSide(clampMaxLongSide(parsed))
     setMaxLongSideDraft(null)
   }
 
@@ -515,6 +524,7 @@ export default function ExtensionClient() {
       matchResolution,
       maxLongSide,
       strictResolutionCap,
+      snapToBucket,
     }
   )
 
@@ -621,6 +631,7 @@ export default function ExtensionClient() {
       matchResolution={matchResolution}
       maxLongSide={maxLongSide}
       strictResolutionCap={strictResolutionCap}
+      snapToBucket={snapToBucket}
       resolutionConfigured={resolutionConfigured}
       onNoResolutionFields={guideToResolutionFields}
       characterFolder={activeCharacterFolder}
@@ -628,7 +639,7 @@ export default function ExtensionClient() {
   ), [
     cardPromptOptions, search.booruProvider, search.setSearchTags, tagCounts, cardGlobalWeights,
     cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleUsedPrompt, previouslyCopiedPostIds,
-    hasTarget, guideToTarget, matchResolution, maxLongSide, strictResolutionCap, resolutionConfigured,
+    hasTarget, guideToTarget, matchResolution, maxLongSide, strictResolutionCap, snapToBucket, resolutionConfigured,
     guideToResolutionFields, activeCharacterFolder,
   ])
 
@@ -953,8 +964,8 @@ export default function ExtensionClient() {
                         <Input
                           id="max-long-side"
                           type="number"
-                          min={64}
-                          max={4096}
+                          min={MIN_MAX_LONG_SIDE}
+                          max={MAX_MAX_LONG_SIDE}
                           step={64}
                           inputMode="numeric"
                           value={maxLongSideDraft ?? String(maxLongSide)}
@@ -971,6 +982,14 @@ export default function ExtensionClient() {
                         hint={strictResolutionCap ? "Longest side never exceeds the value above" : "Longest side may exceed it if total area still fits"}
                         checked={strictResolutionCap}
                         onCheckedChange={setStrictResolutionCap}
+                      />
+                      <HostToggleRow
+                        nested
+                        id="snap-to-bucket"
+                        label="Snap to standard ratios"
+                        hint={snapToBucket ? "Uses the closest of 1:1, 5:7, 3:4, 2:3 or 9:16" : "Keeps each image's exact aspect ratio"}
+                        checked={snapToBucket}
+                        onCheckedChange={setSnapToBucket}
                       />
                     </>
                   )}

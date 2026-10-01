@@ -30,7 +30,7 @@ export interface GenerationResolution {
 }
 
 export interface ComputeGenerationResolutionOptions {
-  /** Longest side of the output, in px. Default 1536 (Illustrious/Anima ceiling). */
+  /** Longest side of the output, in px. Default 1536 (Anima ceiling). */
   maxLongSide?: number
   /** Both dimensions are snapped to this multiple. Default 64. */
   multiple?: number
@@ -43,33 +43,44 @@ export interface ComputeGenerationResolutionOptions {
 }
 
 /**
- * Curated "bucket" resolutions the model was actually trained/tested on
- * (Illustrious/Anima-class SDXL checkpoints), covering the common aspect
- * ratios — 1:1, 2:3 / 3:2 (portrait/landscape "poster"), 3:4 / 4:3, and
- * 9:16 / 16:9 (phone/widescreen) — within Anima's documented working range
- * of roughly 512^2 to 1536^2 total pixels. Using one of these instead of an
- * arbitrary aspect ratio derived from a booru post's raw dimensions avoids
- * feeding the model a ratio it wasn't trained on (which tends to produce
- * warped anatomy/composition), at the cost of a slight crop/pad vs. the
- * source image's exact proportions.
- *
- * `1536x1536` is included but documented upstream as "iffy" (Anima's ceiling
- * is a total-area budget of 1536^2 px; a full 1536x1536 square sits exactly
- * at that ceiling and edges into unreliable territory for some workflows) —
- * kept as an option rather than omitted since it's still within the stated
- * working range.
+ * Anima's documented working range is 512^2 to 1536^2 total pixels, so the
+ * "Max long side" setting is clamped to that span: below 512 the output drops
+ * under the floor in strict mode, and above 1536 the area budget overshoots
+ * the ceiling in the default mode.
+ */
+export const MIN_MAX_LONG_SIDE = 512
+export const MAX_MAX_LONG_SIDE = 1536
+
+/** Clamps a (possibly stale, persisted) "Max long side" value to Anima's range. */
+export function clampMaxLongSide(value: number): number {
+  if (!Number.isFinite(value)) return MAX_MAX_LONG_SIDE
+  return Math.min(MAX_MAX_LONG_SIDE, Math.max(MIN_MAX_LONG_SIDE, Math.round(value)))
+}
+
+/**
+ * Curated "bucket" resolutions covering the common aspect ratios — 1:1,
+ * 5:7 / 7:5, 3:4 / 4:3, 2:3 / 3:2 and 9:16 / 16:9 — sized for Anima base
+ * v1.0, whose training after preview3 targeted higher resolutions (up to the
+ * 1536^2 ceiling). The preview-era advice of ~1 MP (e.g. 832x1216) no longer
+ * applies, so each bucket puts its long side at 1536 where a multiple of 64
+ * allows it. Using one of these instead of an arbitrary aspect ratio derived
+ * from a booru post's raw dimensions avoids feeding the model an unusual
+ * ratio (which tends to produce warped anatomy/composition), at the cost of a
+ * slight crop/pad vs. the source image's exact proportions.
  */
 export const SUPPORTED_BUCKET_RESOLUTIONS: readonly GenerationResolution[] = [
   // 1:1
-  { width: 1024, height: 1024 },
-  { width: 1536, height: 1536 }, // iffy — see doc comment above
-  // 2:3 / 3:2 (portrait / landscape "poster")
-  { width: 832, height: 1216 },
-  { width: 1216, height: 832 },
+  { width: 1536, height: 1536 },
+  // 5:7 / 7:5
+  { width: 1088, height: 1536 },
+  { width: 1536, height: 1088 },
   // 3:4 / 4:3
   { width: 1152, height: 1536 },
   { width: 1536, height: 1152 },
-  // 9:16 / 16:9
+  // 2:3 / 3:2 (portrait / landscape "poster")
+  { width: 1024, height: 1536 },
+  { width: 1536, height: 1024 },
+  // 9:16 / 16:9 (phone/widescreen) — closest multiple-of-64 pair to 16:9
   { width: 768, height: 1344 },
   { width: 1344, height: 768 },
 ]

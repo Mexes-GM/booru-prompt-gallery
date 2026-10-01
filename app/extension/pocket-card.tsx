@@ -63,6 +63,9 @@ export interface PocketCardProps {
   maxLongSide?: number
   /** When true, maxLongSide is a hard per-side cap instead of a total-area budget. */
   strictResolutionCap?: boolean
+  /** When true, snap to the closest curated aspect-ratio bucket instead of
+   *  the post's raw aspect ratio. */
+  snapToBucket?: boolean
   /** Whether this origin has widthField+heightField configured in its SiteProfile. */
   resolutionConfigured?: boolean
   /** Called once per send when matchResolution is on but fields aren't configured yet. */
@@ -102,6 +105,7 @@ export const PocketCard = memo(function PocketCard({
   matchResolution,
   maxLongSide,
   strictResolutionCap,
+  snapToBucket,
   resolutionConfigured,
   onNoResolutionFields,
   characterFolder,
@@ -198,7 +202,7 @@ export const PocketCard = memo(function PocketCard({
     // maxLongSide. Missing post dimensions or an unconfigured resolution
     // fields target degrade gracefully — the prompt still sends as-is.
     const resolution = matchResolution
-      ? computeGenerationResolution(post.width, post.height, { maxLongSide, strictCap: strictResolutionCap })
+      ? computeGenerationResolution(post.width, post.height, { maxLongSide, strictCap: strictResolutionCap, snapToBucket })
       : null
     postToParent({
       type: "INJECT_PROMPT",

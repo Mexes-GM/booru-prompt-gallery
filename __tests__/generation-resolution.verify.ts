@@ -7,7 +7,7 @@
  *     max(width, height) must never exceed it, regardless of aspect ratio.
  * ...and the `snapToBucket` option, which replaces the source's raw aspect
  * ratio with the closest entry from SUPPORTED_BUCKET_RESOLUTIONS (common
- * ratios the model was actually trained on: 1:1, 2:3/3:2, 3:4/4:3, 9:16/16:9)
+ * ratios: 1:1, 5:7/7:5, 3:4/4:3, 2:3/3:2, 9:16/16:9)
  * before applying the same capping logic.
  *
  * This file specifically covers the bug report: "auto resolution takes the
@@ -17,7 +17,13 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/generation-resolution.verify.ts
  */
-import { computeGenerationResolution } from "../lib/extension/generation-resolution"
+import {
+  clampMaxLongSide,
+  computeGenerationResolution,
+  MAX_MAX_LONG_SIDE,
+  MIN_MAX_LONG_SIDE,
+  SUPPORTED_BUCKET_RESOLUTIONS,
+} from "../lib/extension/generation-resolution"
 
 let passed = 0
 let failed = 0
@@ -126,20 +132,24 @@ function assert(condition: boolean, label: string) {
 
 // ── 8) snapToBucket: an odd/unusual source ratio still snaps to the closest bucket ──
 {
-  // 1000x1400 (5:7 ≈ 0.714) is closest to 2:3 (≈0.667) among the buckets,
-  // not to 3:4 (0.75) or 9:16 (0.5625) — verifies "closest", not "first match".
-  // Compare distance-to-2:3 vs distance-to-3:4 directly (rather than
-  // asserting an exact final ratio) since post-bucket capping/snapping can
-  // nudge the reported ratio slightly off the bucket's exact value — this
-  // still unambiguously confirms which bucket won.
-  const res = computeGenerationResolution(1000, 1400, { maxLongSide: 1536, snapToBucket: true })
+  // 1000x1470 (≈0.680) sits between 2:3 (0.667) and the 5:7 bucket (0.708) but is
+  // closer to 2:3 in log space — verifies "closest", not "first match"
+  // (5:7 comes before 2:3 in the list). Compare distances instead of an exact
+  // final ratio since post-bucket capping/snapping can nudge it slightly.
+  const res = computeGenerationResolution(1000, 1470, { maxLongSide: 1536, snapToBucket: true, strictCap: true })
   assert(res !== null, "snapToBucket produces a result for an odd source ratio")
   if (res) {
     const ratio = res.width / res.height
     const distTo2_3 = Math.abs(ratio - 2 / 3)
-    const distTo3_4 = Math.abs(ratio - 3 / 4)
-    assert(distTo2_3 < distTo3_4, `odd source ratio (5:7=${(5/7).toFixed(3)}) snaps closer to 2:3 (${(2/3).toFixed(3)}, dist=${distTo2_3.toFixed(3)}) than to 3:4 (${(3/4).toFixed(3)}, dist=${distTo3_4.toFixed(3)}); got ratio ${ratio.toFixed(3)} (${res.width}x${res.height})`)
+    const distTo5_7 = Math.abs(ratio - 5 / 7)
+    assert(distTo2_3 < distTo5_7, `source ratio ${(1000 / 1470).toFixed(3)} snaps to 2:3 rather than 5:7; got ratio ${ratio.toFixed(3)} (${res.width}x${res.height})`)
   }
+}
+
+// ── 8b) snapToBucket: a 5:7 source keeps the 5:7 bucket at Anima v1.0 size ──
+{
+  const res = computeGenerationResolution(1000, 1400, { maxLongSide: 1536, snapToBucket: true, strictCap: true })
+  assert(res !== null && res.width === 1088 && res.height === 1536, `5:7 source in strict mode returns the 1088x1536 bucket (got ${res ? `${res.width}x${res.height}` : "null"})`)
 }
 
 // ── 9) snapToBucket: orientation is preserved (landscape source never snaps to a portrait bucket) ──
@@ -160,6 +170,23 @@ function assert(condition: boolean, label: string) {
   if (res) {
     assert(res.width === res.height, `near-square source (1050x950) snaps to the 1:1 bucket (got ${res.width}x${res.height})`)
   }
+}
+
+// ── 11) Every bucket sits inside Anima's 512^2–1536^2 working range ──
+{
+  for (const { width, height } of SUPPORTED_BUCKET_RESOLUTIONS) {
+    const area = width * height
+    assert(area >= 512 * 512 && area <= 1536 * 1536, `bucket ${width}x${height} is within 512^2–1536^2 px`)
+    assert(width % 64 === 0 && height % 64 === 0, `bucket ${width}x${height} uses multiples of 64`)
+  }
+}
+
+// ── 12) clampMaxLongSide keeps the setting inside 512–1536 ──
+{
+  assert(clampMaxLongSide(4096) === MAX_MAX_LONG_SIDE, "values above 1536 clamp down")
+  assert(clampMaxLongSide(64) === MIN_MAX_LONG_SIDE, "values below 512 clamp up")
+  assert(clampMaxLongSide(1088) === 1088, "in-range values pass through")
+  assert(clampMaxLongSide(Number.NaN) === MAX_MAX_LONG_SIDE, "NaN falls back to the default")
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)
