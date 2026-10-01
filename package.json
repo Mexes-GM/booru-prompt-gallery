@@ -12,6 +12,7 @@
     "theme:build": "node scripts/build-theme.mjs",
     "theme:check": "node scripts/build-theme.mjs --check",
     "colors:audit": "node scripts/audit-colors.mjs",
+    "dataset:export": "bun scripts/export-hf-dataset.ts && node scripts/export-hf-charts.mjs && python scripts/rasterize-charts.py",
     "test": "node __tests__/run-all.mjs",
     "typecheck": "tsc --noEmit"
   },
@@ -65,6 +66,8 @@
     "dotenv": "^18.0.4",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.3.6",
+    "hyparquet": "^1.31.2",
+    "hyparquet-writer": "^0.16.10",
     "pg": "^8.23.0",
     "postcss": "^8.5.23",
     "react-doctor": "^0.9.14",
