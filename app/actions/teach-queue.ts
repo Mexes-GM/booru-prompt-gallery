@@ -6,6 +6,7 @@ import { getSuggestionAuthorId, isMissingColumnError } from '@/lib/tag-suggestio
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { requireAdmin } from '@/lib/auth/authorization'
 import { revertOwnPendingSuggestion } from './suggestions'
+import { filterWritableTagNames, toStorageTagName } from '@/lib/tag-write-guard'
 import { TAG_CATEGORY_IDS, TAG_SUBCATEGORIES, type TagCategory } from '@/lib/tag-taxonomy'
 
 export interface TeachQueueItem {
@@ -57,8 +58,9 @@ export async function fetchTeachQueue(
     const limit = Math.min(Math.max(options.limit ?? 15, 1), 50)
     const excludeSet = new Set((options.excludeNames ?? []).map(n => n.toLowerCase().trim().replace(/ /g, '_')))
 
-    // Query a slightly larger batch to allow in-memory deduplication against excludeNames
-    const fetchLimit = limit + Math.min(excludeSet.size, 100)
+    // Query a larger batch to allow in-memory deduplication against excludeNames
+    // and against tags already approved in `tags`
+    const fetchLimit = limit * 2 + Math.min(excludeSet.size, 100)
 
     const { data, error } = await supabaseAdmin
       .from('auto_suggest_tags')
@@ -76,10 +78,20 @@ export async function fetchTeachQueue(
       return { success: true, items: [] }
     }
 
+    // `auto_suggest_tags.status` lags behind `tags`: a tag approved through the
+    // suggestions flow can still read `needs_review` here. Skip those so the
+    // queue doesn't ask people to re-classify settled tags.
+    const { data: approvedRows } = await supabaseAdmin
+      .from('tags')
+      .select('name')
+      .eq('status', 'approved')
+      .in('name', data.map(row => toStorageTagName(row.name ?? '')).filter(Boolean))
+    const approvedNames = new Set((approvedRows ?? []).map(row => row.name))
+
     const items: TeachQueueItem[] = []
     for (const row of data) {
       const norm = (row.name ?? '').toLowerCase().trim()
-      if (!norm || excludeSet.has(norm)) continue
+      if (!norm || excludeSet.has(norm) || approvedNames.has(toStorageTagName(norm))) continue
 
       const validProposedCat = TAG_CATEGORY_IDS.includes(row.proposed_category as TagCategory)
         ? (row.proposed_category as TagCategory)
@@ -130,7 +142,24 @@ export async function submitTeachClassification(
       return { success: false, message: `Invalid subcategory '${subcategory}' for category '${category}'` }
     }
 
-    const normName = tagName.toLowerCase().trim().replace(/ /g, '_')
+    // Same write guard as submitTagSuggestions: artist/copyright/character/meta
+    // never become rows in `tags`. On a lookup failure the guard lets it through.
+    const guard = await filterWritableTagNames(supabaseAdmin, [tagName])
+    if (guard.rejected.length > 0) {
+      return {
+        success: false,
+        message: `"${tagName}" is a ${guard.rejected[0].reason} tag, not a description of the image.`,
+      }
+    }
+
+    // `auto_suggest_tags.name` is underscored; `tags.name` uses the space-form
+    // storage convention. Writing the underscored name into `tags` minted
+    // duplicates of rows that already existed (`one_eye_closed` / `one eye closed`).
+    const autoName = tagName.toLowerCase().trim().replace(/ /g, '_')
+    const storageName = toStorageTagName(tagName)
+    if (!storageName) {
+      return { success: false, message: 'Invalid tag name' }
+    }
     const isAdmin = await checkIsAdmin()
 
     // 1. Admin direct approval path
@@ -143,17 +172,17 @@ export async function submitTeachClassification(
           status: 'approved',
           confidence: 1.0,
         })
-        .eq('name', normName)
+        .eq('name', autoName)
 
       if (autoError) {
-        console.error('[submitTeachClassification] failed to update auto_suggest_tags for %s:', normName, autoError)
+        console.error('[submitTeachClassification] failed to update auto_suggest_tags for %s:', autoName, autoError)
         return { success: false, message: autoError.message }
       }
 
       const { data: existingTag } = await supabaseAdmin
         .from('tags')
         .select('id')
-        .eq('name', normName)
+        .eq('name', storageName)
         .maybeSingle()
 
       if (existingTag?.id) {
@@ -170,7 +199,7 @@ export async function submitTeachClassification(
         await supabaseAdmin
           .from('tags')
           .insert({
-            name: normName,
+            name: storageName,
             category,
             subcategory,
             status: 'approved',
@@ -190,7 +219,7 @@ export async function submitTeachClassification(
     const { data: existingTag } = await supabaseAdmin
       .from('tags')
       .select('id')
-      .eq('name', normName)
+      .eq('name', storageName)
       .maybeSingle()
 
     if (existingTag?.id) {
@@ -199,7 +228,7 @@ export async function submitTeachClassification(
       const { data: newTag, error: newTagError } = await supabaseAdmin
         .from('tags')
         .insert({
-          name: normName,
+          name: storageName,
           category: (context?.currentCategory as TagCategory) || 'other',
           subcategory: context?.currentSubcategory || null,
           status: 'needs_review',
@@ -295,7 +324,7 @@ export async function revertTeachClassification(
       if (!(await checkIsAdmin())) {
         return { success: false, message: 'Unauthorized' }
       }
-      const normName = tagName.toLowerCase().trim().replace(/ /g, '_')
+      const autoName = tagName.toLowerCase().trim().replace(/ /g, '_')
 
       const { error: autoError } = await supabaseAdmin
         .from('auto_suggest_tags')
@@ -305,17 +334,17 @@ export async function revertTeachClassification(
           status: options.previousState?.status ?? 'needs_review',
           confidence: options.previousState?.confidence ?? null,
         })
-        .eq('name', normName)
+        .eq('name', autoName)
 
       if (autoError) {
-        console.error('[revertTeachClassification] failed to revert auto_suggest_tags for %s:', normName, autoError)
+        console.error('[revertTeachClassification] failed to revert auto_suggest_tags for %s:', autoName, autoError)
         return { success: false, message: autoError.message }
       }
 
       const { data: existingTag } = await supabaseAdmin
         .from('tags')
         .select('id')
-        .eq('name', normName)
+        .eq('name', toStorageTagName(tagName))
         .maybeSingle()
 
       if (existingTag?.id) {
