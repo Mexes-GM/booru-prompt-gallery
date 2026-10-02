@@ -31,8 +31,18 @@ import path from 'path';
 import pg from 'pg';
 import { classifyBatchWithJev, type JevClassificationResult } from '../lib/jev-classifier';
 
-// Supabase's pooler certificate does not verify through pg; same as classify-pending-danbooru-tags.ts.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+/**
+ * Supabase's pooler certificate does not verify through pg, so only the database connection skips
+ * verification (Danbooru requests stay verified). pg lets an sslmode in the URL override the ssl
+ * option, so drop it here.
+ */
+function databaseUrl(): string | undefined {
+  const raw = process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL;
+  if (!raw) return raw;
+  const url = new URL(raw);
+  url.searchParams.delete('sslmode');
+  return url.toString();
+}
 
 const APPLY = process.argv.includes('--apply');
 const REFETCH = process.argv.includes('--refetch');
@@ -178,7 +188,7 @@ async function lookUpCounts(cache: DanbooruCache, names: string[]) {
 
 async function main() {
   const pool = new pg.Pool({
-    connectionString: process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL,
+    connectionString: databaseUrl(),
     ssl: { rejectUnauthorized: false },
   });
 
