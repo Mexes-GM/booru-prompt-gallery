@@ -58,6 +58,21 @@ function createRatelimiters(env: Env) {
   }
 }
 
+/**
+ * Run a limiter, failing open when Upstash errors (unreachable, or the monthly
+ * command quota is exhausted). @upstash/ratelimit throws in that case, which
+ * used to turn every conversion into a generic 500 (2026-09-29 → 10-01 outage).
+ * Workers AI keeps its own daily cap, so failing open stays bounded.
+ */
+async function safeLimit(limiter: Ratelimit, key: string) {
+  try {
+    return await limiter.limit(key)
+  } catch (err) {
+    console.error('AI convert rate limiter unavailable, failing open:', err)
+    return null
+  }
+}
+
 /** Detect if a Cloudflare Workers AI error is a quota/rate-limit error. */
 function isCfAiQuotaError(err: unknown): boolean {
   const msg = ((err as any)?.message ?? '').toLowerCase()
@@ -123,6 +138,8 @@ const VISION_MODEL = '@cf/google/gemma-4-26b-a4b-it'
 // bounded max output stops it rambling past the 2–6 sentence target.
 const GEN_TEMPERATURE = 0.4
 const MAX_OUTPUT_TOKENS = 768
+// OpenAI counts reasoning tokens against the cap, so leave headroom for them.
+const OPENAI_MAX_COMPLETION_TOKENS = 4096
 
 function isExternalUrl(s: string): boolean {
   return s.startsWith('http://') || s.startsWith('https://')
@@ -434,9 +451,9 @@ export async function convertPromptHandler(
     if (limiters) {
       if (isFreeTier) {
         // 1. Check daily budget first (10 req / 24 h)
-        const daily = await limiters.freeDaily.limit(ip)
-        dailyRemaining = daily.remaining
-        if (!daily.success) {
+        const daily = await safeLimit(limiters.freeDaily, ip)
+        if (daily) dailyRemaining = daily.remaining
+        if (daily && !daily.success) {
           return errorResponse(
             'Daily limit reached. You have used all 10 free conversions for today. Come back tomorrow or add your own API key in ⚙️ Settings.',
             429,
@@ -450,8 +467,8 @@ export async function convertPromptHandler(
         }
 
         // 2. Check per-minute burst limit (15 req / min)
-        const minute = await limiters.freeMinute.limit(ip)
-        if (!minute.success) {
+        const minute = await safeLimit(limiters.freeMinute, ip)
+        if (minute && !minute.success) {
           return errorResponse(
             'Too many requests. Please wait a moment before trying again.',
             429,
@@ -460,14 +477,14 @@ export async function convertPromptHandler(
               'X-RateLimit-Remaining': minute.remaining.toString(),
               'X-RateLimit-Reset': minute.reset.toString(),
               'X-RateLimit-Type': 'minute',
-              'X-RateLimit-Daily-Remaining': daily.remaining.toString(),
+              ...(daily ? { 'X-RateLimit-Daily-Remaining': daily.remaining.toString() } : {}),
             }
           )
         }
       } else {
         // Paid / own API key: only per-minute protection (60 req / min)
-        const minute = await limiters.paidMinute.limit(ip)
-        if (!minute.success) {
+        const minute = await safeLimit(limiters.paidMinute, ip)
+        if (minute && !minute.success) {
           return errorResponse(
             'Too many requests. Please wait a moment before trying again.',
             429,
@@ -530,6 +547,10 @@ export async function convertPromptHandler(
 
     // ── OpenAI ──
     if (provider === 'openai') {
+      // -pro models are Responses-API only; Chat Completions rejects them.
+      if (customModel && /-pro$/.test(customModel)) {
+        return errorResponse(`${customModel} is not supported here. Pick another OpenAI model in ⚙️ Settings.`, 400)
+      }
       let messages: any[]
       if (image) {
         // Native vision: user's key, OpenAI downloads the image
@@ -550,7 +571,10 @@ export async function convertPromptHandler(
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: customModel || 'gpt-5.4-mini', messages, temperature: GEN_TEMPERATURE, max_tokens: MAX_OUTPUT_TOKENS })
+        // GPT-5 models reject `max_tokens` and any non-default `temperature`.
+        // max_completion_tokens also covers reasoning tokens, hence the larger
+        // budget; the SYSTEM_PROMPT keeps the visible output short.
+        body: JSON.stringify({ model: customModel || 'gpt-5.4-mini', messages, max_completion_tokens: OPENAI_MAX_COMPLETION_TOKENS })
       })
       if (!res.ok) {
         const error = await res.json() as any;

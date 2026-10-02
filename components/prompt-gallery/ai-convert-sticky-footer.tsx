@@ -45,8 +45,7 @@ const PROVIDER_MODELS: Record<string, { id: string; label: string; tag?: string 
   openai: [
     { id: 'gpt-5.4-mini',  label: 'GPT-5.4 Mini',  tag: 'recommended' },
     { id: 'gpt-5.4',       label: 'GPT-5.4' },
-    { id: 'gpt-5.5',       label: 'GPT-5.5' },
-    { id: 'gpt-5.5-pro',   label: 'GPT-5.5 Pro',   tag: 'best' },
+    { id: 'gpt-5.5',       label: 'GPT-5.5',       tag: 'best' },
     { id: 'gpt-5.4-nano',  label: 'GPT-5.4 Nano',  tag: 'fastest' },
   ],
   gemini: [
@@ -205,6 +204,7 @@ const AiConvertStickyFooterComponent = ({
       model_id: model || 'default'
     })
 
+    let status: number | null = null
     try {
       const res = await fetch(apiUrl('/api/llm/convert'), {
         method: 'POST',
@@ -226,6 +226,7 @@ const AiConvertStickyFooterComponent = ({
       })
 
       // Read remaining daily quota from headers on every response (success or 429)
+      status = res.status
       const remaining = res.headers.get('X-RateLimit-Daily-Remaining')
       if (remaining !== null) setDailyRemaining(parseInt(remaining, 10))
 
@@ -256,6 +257,13 @@ const AiConvertStickyFooterComponent = ({
       })
     } catch (err: any) {
       console.error(err)
+      posthog.capture('ai_convert_failed', {
+        provider: prov,
+        model_id: model || 'default',
+        status,
+        error_message: String(err?.message ?? err).slice(0, 200),
+        generation_duration_ms: Date.now() - startTime
+      })
       // Show inline only — no duplicate toast
       setError(err.message)
     } finally {
