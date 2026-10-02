@@ -17,6 +17,7 @@ export default function AdminLoginPage() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isMagicLinkSent, setIsMagicLinkSent] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
   const rateLimitResetRef = useRef<number | null>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -85,19 +86,88 @@ export default function AdminLoginPage() {
     }
   }
 
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError('')
+
+    try {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        email,
+        token: otpCode,
+        type: 'email',
+      })
+
+      if (verifyError) {
+        if (verifyError.message.includes('rate limit')) {
+          throw new Error('Too many attempts. Please wait before trying again.')
+        }
+        throw new Error('Invalid or expired code')
+      }
+
+      router.refresh()
+      router.push('/admin')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   if (isMagicLinkSent) {
     return (
       <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-background">
         <Card className="w-full max-w-sm">
           <CardHeader>
             <CardTitle>Check your email</CardTitle>
-            <CardDescription>We sent a magic link to {email}</CardDescription>
+            <CardDescription>
+              We sent a sign-in link and a one-time code to {email}. Click the link, or enter the code below.
+            </CardDescription>
           </CardHeader>
-          <CardFooter>
-            <Button variant="outline" className="w-full" onClick={() => setIsMagicLinkSent(false)}>
-              Back to Login
-            </Button>
-          </CardFooter>
+          <form onSubmit={handleVerifyCode}>
+            <CardContent className="space-y-2">
+              <Label htmlFor="otp">One-time code</Label>
+              <Input
+                id="otp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]*"
+                maxLength={10}
+                placeholder="123456"
+                value={otpCode}
+                onChange={(e) => {
+                  setOtpCode(e.target.value.replace(/\D/g, ''))
+                  setError('')
+                }}
+                disabled={isLoading}
+                className="h-11 text-center font-mono text-lg tracking-[0.4em]"
+                autoFocus
+              />
+              {error && (
+                <div className="flex items-center gap-2 text-sm text-destructive-text bg-destructive/10 p-3 rounded-md">
+                  <AlertCircle className="h-4 w-4" />
+                  <p>{error}</p>
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex flex-col gap-2 pt-4">
+              <Button type="submit" className="w-full h-11" disabled={isLoading || otpCode.length < 6}>
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify code'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setIsMagicLinkSent(false)
+                  setOtpCode('')
+                  setError('')
+                }}
+              >
+                Back to Login
+              </Button>
+            </CardFooter>
+          </form>
         </Card>
       </div>
     )
