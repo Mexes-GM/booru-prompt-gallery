@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { TagCategory } from "@/lib/tag-classifier"
 import { PACK_AXES, slotsOf } from "@/lib/tag-taxonomy"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
+import { isExplicitTag } from "@/lib/pack/explicit-tags"
 
 export type PackAxisFallbacks = Partial<Record<TagCategory, string[]>>
 
@@ -15,13 +16,22 @@ const SFW_EXCLUDED_SLOTS = new Set(["clothing:underwear", "pose:physiological"])
 const FALLBACKS_PER_CATEGORY = 60
 
 /**
+ * Explicit sources get each slot's explicit tags first. The vocabulary's own
+ * NSFW flag isn't used for ordering: it's a substring match, so it would put
+ * "butterfly" or "cumulonimbus cloud" at the top of an NSFW pool.
+ */
+function explicitFirst(entries: VocabularyEntry[]): VocabularyEntry[] {
+  return [...entries.filter((e) => isExplicitTag(e[0])), ...entries.filter((e) => !isExplicitTag(e[0]))]
+}
+
+/**
  * Pack Mode's safety net for sparse pools (a niche search with a handful of
  * posts): the most-used approved tags of each slot, from
  * `/pack-vocabulary.json` (built from the tags database by
  * scripts/generate-pack-vocabulary.ts). Fetched once, only while Pack Mode
  * is on. Slots are interleaved so a topped-up pool spans subcategories
  * instead of being all hair colours; SFW sources skip flagged tags and the
- * explicit-prone slots.
+ * explicit-prone slots, Explicit sources get explicit tags first.
  */
 export function usePackAxisFallbacks(enabled: boolean, ratingMode: PackRatingMode): PackAxisFallbacks {
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null)
@@ -57,7 +67,11 @@ export function usePackAxisFallbacks(enabled: boolean, ratingMode: PackRatingMod
     PACK_AXES.forEach((cat) => {
       const lists = slotsOf(cat)
         .filter((slot) => !(sfw && SFW_EXCLUDED_SLOTS.has(slot)))
-        .map((slot) => (vocabulary[slot] ?? []).filter((entry) => !(sfw && entry[2] === 1)))
+        .map((slot) => {
+          const entries = vocabulary[slot] ?? []
+          if (sfw) return entries.filter((entry) => entry[2] !== 1)
+          return ratingMode === "explicit" ? explicitFirst(entries) : entries
+        })
       const picked: string[] = []
       for (let i = 0; picked.length < FALLBACKS_PER_CATEGORY; i++) {
         let any = false

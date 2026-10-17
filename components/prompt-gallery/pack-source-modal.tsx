@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Search, Pencil, Ban, AlertTriangle, SlidersHorizontal } from "lucide-react"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import { hasMultipleTags, getProviderTagLimit, type BooruProvider } from "@/lib/api-client"
+import { splitRatingFromTags, formatRatingBreakdown, type RatingBreakdown } from "@/lib/pack/source-rating"
 
 export type PackTagsSource = "current" | "custom" | "empty"
 
@@ -44,6 +45,8 @@ export interface PackSourceModalProps {
   /** How many posts are currently loaded for these answers; hidden when null
    *  (the first-time step, before anything has been fetched). */
   postCount: number | null
+  /** Ratings of those loaded posts; hidden when null or empty. */
+  ratingBreakdown?: RatingBreakdown | null
   /** Label for the confirm button — "Continue" as a setup step, "Apply" when editing. */
   confirmLabel?: string
   open: boolean
@@ -96,7 +99,7 @@ export function summarizePackSourceAnswers(answers: PackSourceAnswers): string {
   return `${rating} · ${PROVIDER_LABELS[answers.booruProvider]}`
 }
 
-export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags, postCount, confirmLabel = "Apply", open }: PackSourceModalProps) {
+export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags, postCount, ratingBreakdown, confirmLabel = "Apply", open }: PackSourceModalProps) {
   const [ratingTier, setRatingTier] = useState<"sfw" | "nsfw">(answers.ratingMode === "sfw" ? "sfw" : "nsfw")
   const [nsfwSub, setNsfwSub] = useState<"questionable" | "explicit" | "both">(
     answers.ratingMode === "sfw" ? "questionable" : answers.ratingMode
@@ -122,20 +125,27 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const effectiveTags = tagsSource === "current" ? currentSearchTags : tagsSource === "custom" ? customTags : ""
+  // A `rating:` tag in the search wins over the selector: both end up in the
+  // same query, so letting them disagree would match no posts at all.
+  const searchRating = useMemo(() => splitRatingFromTags(effectiveTags), [effectiveTags])
+  const shownTier: "sfw" | "nsfw" = searchRating.rating ? (searchRating.rating === "sfw" ? "sfw" : "nsfw") : ratingTier
+  const shownSub = searchRating.rating && searchRating.rating !== "sfw" ? searchRating.rating : nsfwSub
 
   const tagLimitWarning = useMemo(() => {
     if (tagsSource !== "custom") return null
-    if (!hasMultipleTags(customTags, booruProvider, 0)) return null
+    const tags = splitRatingFromTags(customTags).tags
+    if (!hasMultipleTags(tags, booruProvider, 0)) return null
     const limit = getProviderTagLimit(booruProvider)
-    const tagCount = countUserTags(customTags)
+    const tagCount = countUserTags(tags)
     const recommended = recommendProvider(tagCount, booruProvider)
     return { limit, tagCount, recommended }
   }, [tagsSource, customTags, booruProvider])
 
-  const ratingMode: PackRatingMode = ratingTier === "sfw" ? "sfw" : nsfwSub
+  const ratingMode: PackRatingMode = searchRating.rating ?? (ratingTier === "sfw" ? "sfw" : nsfwSub)
+  const breakdownText = ratingBreakdown ? formatRatingBreakdown(ratingBreakdown) : ""
 
   const handleApply = () => {
-    onApply({ ratingMode, tagsSource, searchTags: effectiveTags, booruProvider })
+    onApply({ ratingMode, tagsSource, searchTags: searchRating.tags, booruProvider })
   }
 
   return (
@@ -148,7 +158,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
           </DialogTitle>
           <DialogDescription>
             Where Pack Mode samples the tags that vary between prompts.
-            {postCount !== null && <> · {postCount} posts loaded</>}
+            {postCount !== null && <> · {postCount} posts loaded{breakdownText && <> ({breakdownText})</>}</>}
           </DialogDescription>
         </DialogHeader>
 
@@ -157,13 +167,14 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
           <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Content rating</Label>
           <div className="grid grid-cols-2 gap-1.5">
             {RATING_OPTIONS.map((opt) => {
-              const isSelected = ratingTier === opt.value
+              const isSelected = shownTier === opt.value
               return (
                 <button
                   type="button"
                   key={opt.value}
                   onClick={() => setRatingTier(opt.value)}
-                  className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium rounded-md border transition-all duration-200 ${isSelected ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+                  disabled={!!searchRating.rating}
+                  className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium rounded-md border transition-all duration-200 disabled:cursor-not-allowed ${isSelected ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
                 >
                   <span>{opt.label}</span>
                   <span className="text-[10px] font-normal opacity-70">{opt.description}</span>
@@ -172,16 +183,17 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
             })}
           </div>
 
-          {ratingTier === "nsfw" && (
+          {shownTier === "nsfw" && (
             <div className="grid grid-cols-3 gap-1.5 pt-1">
               {NSFW_SUB_OPTIONS.map((opt) => {
-                const isSelected = nsfwSub === opt.value
+                const isSelected = shownSub === opt.value
                 return (
                   <button
                     type="button"
                     key={opt.value}
                     onClick={() => setNsfwSub(opt.value)}
-                    className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium rounded-md border transition-all duration-200 ${isSelected ? 'bg-warning-soft border-warning-border text-warning-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+                    disabled={!!searchRating.rating}
+                    className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium rounded-md border transition-all duration-200 disabled:cursor-not-allowed ${isSelected ? 'bg-warning-soft border-warning-border text-warning-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
                   >
                     <span>{opt.label}</span>
                     <span className="text-[9px] font-normal opacity-70 leading-tight text-center">{opt.description}</span>
@@ -189,6 +201,12 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
                 )
               })}
             </div>
+          )}
+
+          {searchRating.rating && (
+            <p className="text-[11px] text-muted-foreground">
+              Set by the <code className="font-mono">rating:</code> tag in your search tags.
+            </p>
           )}
         </div>
 
