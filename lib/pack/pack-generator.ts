@@ -29,6 +29,7 @@ import {
   SLOT_GROUP_CONSTRAINTS,
   getTagSlotFromOverrides,
   slotsOf,
+  type PackAxis,
 } from "../tag-taxonomy"
 import { splitTags, splitCommaSeparatedTags, joinTags } from "../utils/tag-utils"
 
@@ -581,6 +582,15 @@ export interface GeneratePackPromptsArgs {
   maxPrompts?: number
   /** Tag overrides mapping tag names to category or category:subcategory for slot constraint enforcement. */
   tagOverrides?: Record<string, string>
+  /**
+   * Every prompt must contain at least one tag passing this test (e.g. an
+   * explicit tag for an Explicit source). A selection without one gets one of
+   * its picks swapped for a passing value from the same axis — pose first —
+   * and is dropped if that still fails. Ignored when the base already passes
+   * or no axis has a passing value, so a pool that can't satisfy it still
+   * produces prompts.
+   */
+  requiredTag?: (tag: string) => boolean
 }
 
 export interface PackPrompt {
@@ -773,6 +783,7 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     rng = Math.random,
     maxPrompts = MAX_PACK_PROMPTS,
     tagOverrides,
+    requiredTag,
   } = args
 
   const normalizedLocked = Array.from(
@@ -808,13 +819,14 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
       ? applyTemperature(vals.map((v) => rawWeights[v] ?? 1), weightTemperature)
       : undefined
     return {
+      cat,
       vals,
       k,
       weights,
       comboCount: combinationCount(vals.length, k, ENUMERATE_THRESHOLD),
     }
   }).filter(
-    (axis): axis is { vals: string[]; k: number; weights: number[] | undefined; comboCount: number } =>
+    (axis): axis is { cat: PackAxis; vals: string[]; k: number; weights: number[] | undefined; comboCount: number } =>
       axis !== null
   )
 
@@ -883,10 +895,41 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
   const seenPrompts = new Set<string>()
   const results: PackPrompt[] = []
 
-  const trySelection = (picked: string[][]) => {
+  // requiredTag: which axes can supply a passing value, pose first since
+  // that's where most rating-defining tags live. Empty when the base already passes (nothing
+  // to enforce) or no axis can help (enforcing would drop every prompt).
+  const passes = (values: string[]) =>
+    !!requiredTag && values.some((v) => splitCommaSeparatedTags(v).some(requiredTag))
+  const requiredSources = !requiredTag || passes(normalizedLocked)
+    ? []
+    : activeAxes
+        .map((axis, idx) => ({ idx, cat: axis.cat, vals: axis.vals.filter((v) => passes([v])) }))
+        .filter((source) => source.vals.length > 0)
+        .sort((a, b) => Number(b.cat === 'pose') - Number(a.cat === 'pose'))
+
+  const withRequiredTag = (picked: string[][]): string[][] | null => {
+    if (passes(picked.flat())) return picked
+    for (const source of requiredSources) {
+      const current = picked[source.idx]
+      const options = source.vals.filter((v) => !current.includes(v))
+      if (options.length === 0) continue
+      const replacement = options[Math.floor(rng() * options.length)]
+      const slot = Math.floor(rng() * current.length)
+      const next = picked.slice()
+      next[source.idx] = current.map((v, i) => (i === slot ? replacement : v))
+      return next
+    }
+    return null
+  }
+
+  const trySelection = (rawPicked: string[][]) => {
+    const picked = requiredSources.length > 0 ? withRequiredTag(rawPicked) : rawPicked
+    if (!picked) return
     const flatValues = picked.flat()
     const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled, tagOverrides)
     if (!built) return
+    // Conflict resolution can still drop the swapped-in value.
+    if (requiredSources.length > 0 && !passes(built.prompt.split(','))) return
     if (seenPrompts.has(built.prompt)) return
     seenPrompts.add(built.prompt)
     results.push(built)

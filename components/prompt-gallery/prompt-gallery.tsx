@@ -148,6 +148,7 @@ import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { usePackMode } from "@/hooks/use-pack-mode"
 import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/use-pack-seed"
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
+import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
 import { PackSourceModal, type PackSourceAnswers } from "./pack-source-modal"
@@ -758,18 +759,25 @@ export function PromptGallery() {
   // the "From a card"/"From my prompt" choice screen.
   const [packEntryStartInPrompt, setPackEntryStartInPrompt] = useState(false)
   const [packSourceAnswers, setPackSourceAnswers] = useState<PackSourceAnswers>(() => {
+    // Normalized so answers saved before the selector learned to read a
+    // search `rating:` tag stop sending two contradicting ratings.
     const stored = userPreferences.getPackSourceAnswers()
-    if (stored) return stored
-    return {
+    if (stored) return normalizePackSourceRating(stored)
+    return normalizePackSourceRating<PackSourceAnswers>({
       ratingMode: 'sfw',
       tagsSource: 'current',
       searchTags: search.searchTags,
       booruProvider: search.booruProvider,
-    }
+    })
   })
   const [sourceStep, setSourceStep] = useState<'setup' | 'edit' | null>(null)
   // Curated per-slot vocabulary that tops up sparse pools (rating-aware).
   const packAxisFallbacks = usePackAxisFallbacks(packMode.isPackMode, packSourceAnswers.ratingMode)
+  // An Explicit source guarantees an explicit tag in every generated prompt.
+  const packModeSetRequireExplicit = packMode.setRequireExplicit
+  useEffect(() => {
+    packModeSetRequireExplicit(packSourceAnswers.ratingMode === 'explicit')
+  }, [packModeSetRequireExplicit, packSourceAnswers.ratingMode])
 
   // Where Pack Mode's posts come from (provider + rating + tags) — also the
   // key of the persistent pool cache (lib/pack/pool-cache.ts).
@@ -787,7 +795,7 @@ export function PromptGallery() {
   // PromptGallery doesn't re-render from the full result on every page.
   const packSeedSearchRef = useRef<UsePackSeedSearchResult | null>(null)
   const packCachedRef = useRef<{ key: string; posts: BooruPost[] } | null>(null)
-  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ postCount: number; savedCount: number; canLoadMore: boolean } | null>(null)
+  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ postCount: number; savedCount: number; canLoadMore: boolean; ratings: RatingBreakdown } | null>(null)
   // Only seeds pools ONCE per base — re-running it on every incidental result
   // update would fight the user's own edits.
   const hasSeededRef = useRef(false)
@@ -807,10 +815,12 @@ export function PromptGallery() {
   const updatePackSnapshot = useCallback(() => {
     const search = packSeedSearchRef.current
     const saved = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts.length : 0
+    const posts = packPoolPosts()
     setPackSeedSnapshot({
-      postCount: packPoolPosts().length,
+      postCount: posts.length,
       savedCount: saved,
       canLoadMore: search ? !search.noMoreResults && !search.sessionCapReached : true,
+      ratings: countPostRatings(posts),
     })
   }, [packPoolPosts])
 
@@ -857,7 +867,8 @@ export function PromptGallery() {
     setPackEntryOpen(true)
   }, [])
 
-  const handleApplyPackSourceAnswers = useCallback((answers: PackSourceAnswers) => {
+  const handleApplyPackSourceAnswers = useCallback((rawAnswers: PackSourceAnswers) => {
+    const answers = normalizePackSourceRating(rawAnswers)
     const nextKey = poolCacheKey(answers.booruProvider, answers.ratingMode, answers.searchTags)
     setPackSourceAnswers(answers)
     try {
@@ -2166,6 +2177,7 @@ export function PromptGallery() {
         onCancel={handleCancelPackSource}
         currentSearchTags={search.searchTags}
         postCount={sourceStep === 'edit' ? (packSeedSnapshot?.postCount ?? 0) : null}
+        ratingBreakdown={sourceStep === 'edit' ? packSeedSnapshot?.ratings : null}
         confirmLabel={sourceStep === 'setup' ? 'Continue' : 'Apply'}
       />
       <PackBuilderStickyFooter

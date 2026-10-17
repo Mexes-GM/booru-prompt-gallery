@@ -28,6 +28,7 @@ import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from '@/lib/pack/pr
 import { classifyBasePrompt } from '@/lib/pack/base-prompt'
 import { pickReplacement } from '@/lib/pack/reroll'
 import { finalizePackPrompt, parseAlwaysAddTags } from '@/lib/pack/always-add'
+import { isExplicitTag, promptHasExplicitTag } from '@/lib/pack/explicit-tags'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
@@ -226,6 +227,10 @@ export interface UsePackModeResult {
 
   promptCount: number
   setPromptCount: (count: number) => void
+
+  /** Every prompt must carry an explicit tag (set from an Explicit source). */
+  requireExplicit: boolean
+  setRequireExplicit: (value: boolean) => void
 
   generatedPrompts: PackPrompt[]
   regenerate: () => void
@@ -427,6 +432,8 @@ export function usePackMode(
   // plain state, only (re)computed inside `regenerate()`, which the
   // "Generate" button calls explicitly.
   const [generatedPrompts, setGeneratedPrompts] = useState<PackPrompt[]>([])
+  // Driven by the source's rating (PromptGallery owns the source), never persisted.
+  const [requireExplicit, setRequireExplicit] = useState(false)
 
   const togglePackMode = useCallback(() => setIsPackMode((prev) => !prev), [])
   const enablePackMode = useCallback(() => setIsPackMode(true), [])
@@ -1111,7 +1118,11 @@ export function usePackMode(
       // Slot whitelist is already applied to the pools (mergedAxisValues),
       // where manual values are deliberately exempt — not passed again here.
       tagOverrides: effectiveOverrides,
+      requiredTag: requireExplicit ? isExplicitTag : undefined,
     })
+    // Only enforce after cleaning (exclude list, optimizeTags can drop the
+    // explicit tag) when the generator could enforce it in the first place.
+    const enforceExplicit = requireExplicit && rawPrompts.some((p) => promptHasExplicitTag(p.prompt))
 
     // Run each raw combination through the exact same cleaner pipeline every
     // real card uses (cleanPrompt + Smart Tag Exclusion + global weights),
@@ -1158,6 +1169,7 @@ export function usePackMode(
       )
       const prompt = cleanedPrompt && finalizePackPrompt(cleanedPrompt, alwaysAddTags)
       if (!prompt || seen.has(prompt)) continue
+      if (enforceExplicit && !promptHasExplicitTag(prompt)) continue
       if (minTotalTags > 0 && countPromptTags(prompt) < minTotalTags) {
         short.push({ prompt, values: raw.values, tagSlots: raw.tagSlots })
         continue
@@ -1216,6 +1228,7 @@ export function usePackMode(
     learningContextKeys,
     axisValueCategory,
     alwaysAddTags,
+    requireExplicit,
   ])
 
   /**
@@ -1239,6 +1252,7 @@ export function usePackMode(
         globalWeights,
         isGlobalWeightsEnabled,
         tagOverrides: effectiveOverrides,
+        requiredTag: requireExplicit ? isExplicitTag : undefined,
       })
       const others = generatedPrompts.filter((_, i) => i !== index).map((p) => p.prompt)
       const clean = (tags: string[]) => {
@@ -1265,6 +1279,7 @@ export function usePackMode(
       characterTags,
       cleanOptions,
       alwaysAddTags,
+      requireExplicit,
     ]
   )
 
@@ -1417,6 +1432,9 @@ export function usePackMode(
 
     promptCount,
     setPromptCount: setPromptCountClamped,
+
+    requireExplicit,
+    setRequireExplicit,
 
     generatedPrompts,
     regenerate,
