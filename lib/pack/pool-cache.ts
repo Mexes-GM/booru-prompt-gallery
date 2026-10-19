@@ -25,6 +25,10 @@ interface SlimPost {
   c: string
   m?: string
   r: string
+  /** Copyright and artist tags, so sampling can leave them out. Absent on
+   *  posts saved before they were stored; a re-fetch replaces those. */
+  p?: string
+  a?: string
 }
 
 interface CacheRecord {
@@ -50,6 +54,8 @@ function toSlim(post: BooruPost): SlimPost {
     c: post.tag_string_character || "",
     m: post.tag_string_meta || undefined,
     r: post.rating || "",
+    p: post.tag_string_copyright || undefined,
+    a: post.tag_string_artist || undefined,
   }
 }
 
@@ -60,9 +66,9 @@ function fromSlim(p: SlimPost): BooruPost {
     large_file_url: "",
     preview_file_url: "",
     tag_string: p.t,
-    tag_string_artist: "",
+    tag_string_artist: p.a || "",
     tag_string_character: p.c,
-    tag_string_copyright: "",
+    tag_string_copyright: p.p || "",
     tag_string_meta: p.m,
     rating: p.r,
     score: 0,

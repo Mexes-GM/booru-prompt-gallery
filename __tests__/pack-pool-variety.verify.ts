@@ -7,12 +7,13 @@
  *   2. lastPageFromCount rounds up and caps.
  *   3. randomPageOrder keeps page 1 first, covers every page once, is seeded.
  *   4. collapseNearDuplicates drops near-identical posts of the same character only.
+ *   5. classifyPostForPack keeps copyright and artist tags out of every axis.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-pool-variety.verify.ts
  */
 import { findLastPage, lastPageFromCount, randomPageOrder, MAX_RANDOM_PAGE } from "../lib/booru/page-range"
 import { collapseNearDuplicates } from "../lib/pack/near-duplicates"
-import { createSeededRng } from "../lib/pack/pack-generator"
+import { createSeededRng, classifyPostForPack } from "../lib/pack/pack-generator"
 import type { BooruPost } from "../lib/booru/types"
 
 let passed = 0
@@ -69,6 +70,19 @@ async function main() {
   const kept = collapseNearDuplicates(posts).map((p) => p.id)
   assert(kept.join() === "1,3,4,5,6", `keeps first of each group (got ${kept.join()})`)
   assert(collapseNearDuplicates([]).length === 0, "empty pool")
+
+  // 5. Series and artist names never become axis values
+  const named = {
+    id: 99,
+    tag_string: "1girl solo beach smile bikini magi_the_labyrinth_of_magic some_artist",
+    tag_string_character: "",
+    tag_string_copyright: "magi_the_labyrinth_of_magic",
+    tag_string_artist: "some_artist",
+  } as BooruPost
+  const axisTags = Object.values(classifyPostForPack(named)).flat()
+  assert(!axisTags.includes("magi the labyrinth of magic"), "copyright tag left out")
+  assert(!axisTags.includes("some artist"), "artist tag left out")
+  assert(axisTags.includes("beach") && axisTags.includes("bikini"), "general tags kept")
 }
 
 main().then(() => {

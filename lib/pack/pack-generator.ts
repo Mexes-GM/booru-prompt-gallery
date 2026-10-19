@@ -108,6 +108,10 @@ function normalizedTagList(tagString: string | undefined): string[] {
  * 5 category buckets, in display-normalized form. Character tags are passed as
  * knownCharacterTags so they land in `appearance` (important for the
  * "clothing pack varying characters" use case).
+ *
+ * Copyright and artist tags are dropped: Danbooru's tag_string carries every
+ * category, and a series or artist name the classifier doesn't know could
+ * otherwise land in any axis (e.g. a series title sampled as scenery).
  */
 export function classifyPostForPack(
   post: BooruPost,
@@ -118,8 +122,12 @@ export function classifyPostForPack(
   // for this post; the curated set inside isMetaTag covers the editorial
   // removals Danbooru classifies as `general` (signature, watermark, text...).
   const postMetaTags = buildPostMetaTagSet(post.tag_string_meta)
+  const nameTags = new Set([
+    ...normalizedTagList(post.tag_string_copyright),
+    ...normalizedTagList(post.tag_string_artist),
+  ])
   const generalTags = normalizedTagList(post.tag_string).filter(
-    (t) => !isMetaTag(t, postMetaTags)
+    (t) => !isMetaTag(t, postMetaTags) && !nameTags.has(t)
   )
   const allTags = Array.from(new Set([...charTags, ...generalTags]))
   return classifyTags(allTags, tagOverrides, charTags)
