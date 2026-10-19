@@ -30,10 +30,13 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'improved', title: 'Much Better on Phones', body: "The search bar is now on the first screen, buttons are easier to hit, and scrolling over a prompt scrolls the page instead of getting stuck inside the prompt box. The floating buttons also stop covering the cards' copy menu." },
-  { kind: 'improved', title: 'Less in Your Way', body: "Tap anywhere outside the tour to close it. On phones, copying a prompt no longer shows a banner covering the next cards, and tapping an image shows the full prompt without spilling off the screen." },
-  { kind: 'fixed', title: 'iPhone Zoom & Shared Links', body: "The search box no longer zooms the page in on iPhone. Links with a search in them (?tags=...) keep it while the page loads instead of briefly dropping it." },
-  { kind: 'fixed', title: 'Smoother After Updates', body: "If a new version goes live while you have the page open, it now reloads itself instead of breaking. Also includes the latest security updates." },
+  { kind: 'new', title: 'Suggested Size per Prompt', body: "Each Pack Mode prompt can now carry a size that fits its pose, taken from the posts that pose came from: wider for wide shots, closer to square for all fours. Turn on Size in the results to see it and include it when copying." },
+  { kind: 'improved', title: 'More Varied Packs', body: "Packs now sample from across a search's whole history instead of only the newest uploads, and near-identical uploads of the same image count once. Outfits and poses repeat far less, and series names no longer show up as backgrounds." },
+  { kind: 'improved', title: 'Better Tag Sorting', body: "The built-in list of common tags grew from about 7,000 to 9,400, so more tags land in the right category right away, and some were moved where they belong (one eye closed is now an expression). Quick Teach no longer creates duplicate tags." },
+  { kind: 'fixed', title: 'Packs Collect All Their Posts', body: "Collecting posts for a pack stopped after the first page of results. Packs now fill up to 100 posts, and Collect more really adds new ones." },
+  { kind: 'fixed', title: 'Content Rating Stays Consistent', body: "A rating tag in your pack's search now sets the pack's rating instead of clashing with it, the source window shows the rating mix of the loaded posts, and packs set to Both are now half of each." },
+  { kind: 'fixed', title: 'AI Convert Works Again', body: "AI Convert stopped working on the free tier for a few days at the start of October, and conversions with your own OpenAI key failed on the GPT-5 models. Both are fixed." },
+  { kind: 'fixed', title: 'No More Buzz on Copy', body: "Copying a prompt on a phone no longer vibrates; the card's Copied overlay is the only feedback." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
