@@ -1,4 +1,5 @@
 import { Env } from '../types'
+import { logger } from '../logger'
 
 // In-memory fallback for when Redis is not configured (local dev)
 // For production, always use Upstash Redis.
@@ -16,20 +17,57 @@ function makeUpstashToken(env: Env): string {
   return env.UPSTASH_REDIS_REST_TOKEN!
 }
 
+// Fail fast when Upstash is unhealthy. Incident 2026-10: the free tier's
+// monthly command quota ran out; Upstash kept answering GETs but rejected
+// every write with 400 "max requests limit exceeded". coalesce() read the
+// failed lock SET as "another request holds the lock" and every cache miss
+// polled for 5.1s before fetching — all searches got ~6s slower. After any
+// failed call this isolate stops using Redis for REDIS_COOLDOWN_MS, so routes
+// take their no-Redis path (direct fetch, no shared rate limit) right away.
+const REDIS_TIMEOUT_MS = 2_000
+const REDIS_COOLDOWN_MS = 60_000
+let redisDownUntil = 0
+
+/** True while a recent Upstash failure has this isolate skipping Redis. */
+export function isRedisDown(): boolean {
+  return Date.now() < redisDownUntil
+}
+
+function markRedisDown(reason: string): void {
+  if (!isRedisDown()) {
+    logger.warn('redis_unavailable', { reason, cooldownMs: REDIS_COOLDOWN_MS })
+  }
+  redisDownUntil = Date.now() + REDIS_COOLDOWN_MS
+}
+
+/** Test hook: forget a previous failure. */
+export function resetRedisHealth(): void {
+  redisDownUntil = 0
+}
+
 async function redisRequest(
   env: Env,
   path: string,
   init?: RequestInit
 ): Promise<Response> {
   const url = `${makeUpstashUrl(env)}${path}`
-  const resp = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${makeUpstashToken(env)}`,
-      ...(init?.headers || {}),
-    },
-  })
-  return resp
+  try {
+    const resp = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${makeUpstashToken(env)}`,
+        ...(init?.headers || {}),
+      },
+      signal: AbortSignal.timeout(REDIS_TIMEOUT_MS),
+    })
+    if (!resp.ok) markRedisDown(`status ${resp.status}`)
+    return resp
+  } catch (error) {
+    // Network error or timeout: callers already treat a non-ok response as a
+    // miss / not-acquired / zero, so hand them one instead of throwing.
+    markRedisDown(error instanceof Error ? error.name : 'fetch failed')
+    return new Response(null, { status: 503 })
+  }
 }
 
 export interface Redis {
@@ -162,7 +200,7 @@ class UpstashRedis implements Redis {
 }
 
 export function getRedis(env: Env): Redis | null {
-  if (redisAvailable(env)) {
+  if (redisAvailable(env) && !isRedisDown()) {
     return new UpstashRedis(env)
   }
   return null
