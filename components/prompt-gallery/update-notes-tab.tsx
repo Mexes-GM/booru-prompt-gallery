@@ -35,9 +35,7 @@ const NOTES: UpdateNote[] = [
   { kind: 'improved', title: 'Better Tag Sorting', body: "The built-in list of common tags grew from about 7,000 to 9,400, so more tags land in the right category right away, and some were moved where they belong (one eye closed is now an expression). Quick Teach no longer creates duplicate tags." },
   { kind: 'fixed', title: 'Packs Collect All Their Posts', body: "Collecting posts for a pack stopped after the first page of results. Packs now fill up to 100 posts, and Collect more really adds new ones." },
   { kind: 'fixed', title: 'Content Rating Stays Consistent', body: "A rating tag in your pack's search now sets the pack's rating instead of clashing with it, the source window shows the rating mix of the loaded posts, and packs set to Both are now half of each." },
-  { kind: 'fixed', title: 'AI Convert Works Again', body: "AI Convert stopped working on the free tier for a few days at the start of October, and conversions with your own OpenAI key failed on the GPT-5 models. Both are fixed." },
-  { kind: 'fixed', title: 'No More Buzz on Copy', body: "Copying a prompt on a phone no longer vibrates; the card's Copied overlay is the only feedback." },
-]
+  { kind: 'fixed', title: 'AI Convert Works Again', body: "AI Convert stopped working on the free tier for a few days at the start of October, and conversions with your own OpenAI key failed on the GPT-5 models. Both are fixed." },]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
 
