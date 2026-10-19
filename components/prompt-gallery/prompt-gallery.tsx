@@ -149,6 +149,7 @@ import { usePackMode } from "@/hooks/use-pack-mode"
 import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/use-pack-seed"
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
+import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
 import { PackSourceModal, type PackSourceAnswers } from "./pack-source-modal"
@@ -807,9 +808,18 @@ export function PromptGallery() {
   // for the rest of the Pack Mode session (unmounting it drops its posts).
   const [packFetcherActive, setPackFetcherActive] = useState(false)
 
+  // Fresh + saved posts, deduped by id and with near-identical variations
+  // collapsed to one (lib/pack/near-duplicates.ts). Memoized on the two input
+  // arrays: seeding polls this every 150ms while pages land.
+  const packPoolMemoRef = useRef<{ fresh: BooruPost[]; cached: BooruPost[]; posts: BooruPost[] } | null>(null)
   const packPoolPosts = useCallback((): BooruPost[] => {
     const cached = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts : []
-    return mergePostLists(packSeedSearchRef.current?.allPosts ?? [], cached)
+    const fresh = packSeedSearchRef.current?.allPosts ?? []
+    const memo = packPoolMemoRef.current
+    if (memo && memo.fresh === fresh && memo.cached === cached) return memo.posts
+    const posts = collapseNearDuplicates(mergePostLists(fresh, cached))
+    packPoolMemoRef.current = { fresh, cached, posts }
+    return posts
   }, [])
 
   const updatePackSnapshot = useCallback(() => {
