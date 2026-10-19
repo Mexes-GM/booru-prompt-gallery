@@ -30,12 +30,13 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'Suggested Size per Prompt', body: "Each Pack Mode prompt can now carry a size that fits its pose, taken from the posts that pose came from: wider for wide shots, closer to square for all fours. Turn on Size in the results to see it and include it when copying." },
-  { kind: 'improved', title: 'More Varied Packs', body: "Packs now sample from across a search's whole history instead of only the newest uploads, and near-identical uploads of the same image count once. Outfits and poses repeat far less, and series names no longer show up as backgrounds." },
-  { kind: 'improved', title: 'Better Tag Sorting', body: "The built-in list of common tags grew from about 7,000 to 9,400, so more tags land in the right category right away, and some were moved where they belong (one eye closed is now an expression). Quick Teach no longer creates duplicate tags." },
-  { kind: 'fixed', title: 'Packs Collect All Their Posts', body: "Collecting posts for a pack stopped after the first page of results. Packs now fill up to 100 posts, and Collect more really adds new ones." },
-  { kind: 'fixed', title: 'Content Rating Stays Consistent', body: "A rating tag in your pack's search now sets the pack's rating instead of clashing with it, the source window shows the rating mix of the loaded posts, and packs set to Both are now half of each." },
-  { kind: 'fixed', title: 'AI Convert Works Again', body: "AI Convert stopped working on the free tier for a few days at the start of October, and conversions with your own OpenAI key failed on the GPT-5 models. Both are fixed." },]
+  { kind: 'new', title: 'Suggested Size per Prompt', body: "Pack Mode can now suggest a size for each prompt that fits its pose: wider for wide shots, closer to square for all fours, taller for sitting. Turn on Size in the results to see it and include it when you copy." },
+  { kind: 'improved', title: 'More Varied Packs', body: "Packs repeat the same outfits and poses far less, even when someone uploaded a whole series of near-identical images. Series titles also stopped showing up as backgrounds." },
+  { kind: 'improved', title: 'Better Tag Sorting', body: "More tags land in the right category, so card badges, copy by category, Merge and Pack Mode sort them better. For example, one eye closed now counts as an expression." },
+  { kind: 'fixed', title: 'Packs Collect All Their Posts', body: "Packs were only using the first page of results. They now gather up to 100 posts, and Collect more really adds new ones." },
+  { kind: 'fixed', title: 'Content Rating Stays Consistent', body: "A rating typed in your pack's search no longer clashes with the one you picked, the source window shows which ratings the loaded posts have, and packs set to Both are now half of each." },
+  { kind: 'fixed', title: 'AI Convert Works Again', body: "Free AI Convert failed for a few days at the start of October, and converting with your own OpenAI key never worked on the GPT-5 models. Both are fixed." },
+]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
 
