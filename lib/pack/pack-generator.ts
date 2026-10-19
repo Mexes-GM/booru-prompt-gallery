@@ -591,6 +591,12 @@ export interface GeneratePackPromptsArgs {
    * produces prompts.
    */
   requiredTag?: (tag: string) => boolean
+  /**
+   * Tags passing this test are never sampled: single values are dropped,
+   * bundles lose just those tags (and vanish if nothing is left). The base
+   * (`lockedTags`) is left alone — it is the user's own choice.
+   */
+  forbiddenTag?: (tag: string) => boolean
 }
 
 export interface PackPrompt {
@@ -757,6 +763,20 @@ export function maxValuesPerPrompt(groups: SlotGroup[]): number {
   return total
 }
 
+/** Axis values with every tag passing `forbidden` removed; bundles keep their other tags. */
+export function withoutForbiddenTags(values: string[], forbidden: (tag: string) => boolean): string[] {
+  const out: string[] = []
+  for (const value of values) {
+    if (!value.includes(",")) {
+      if (!forbidden(value)) out.push(value)
+      continue
+    }
+    const kept = splitCommaSeparatedTags(value).filter((tag) => !forbidden(tag))
+    if (kept.length > 0) out.push(canonicalizeBundleTags(kept))
+  }
+  return out
+}
+
 /**
  * Generate up to `count` distinct pack prompts. Each prompt is:
  *   lockedTags + (axisMinCounts[category] sampled values per active axis,
@@ -784,6 +804,7 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     maxPrompts = MAX_PACK_PROMPTS,
     tagOverrides,
     requiredTag,
+    forbiddenTag,
   } = args
 
   const normalizedLocked = Array.from(
@@ -804,7 +825,8 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
   const activeAxes = PACK_AXES.map((cat) => {
     const rawVals = axes[cat]
     if (!Array.isArray(rawVals) || rawVals.length === 0) return null
-    const vals = Array.from(new Set(rawVals.map(normalizeTagForPack).filter(Boolean)))
+    const allowed = forbiddenTag ? withoutForbiddenTags(rawVals, forbiddenTag) : rawVals
+    const vals = Array.from(new Set(allowed.map(normalizeTagForPack).filter(Boolean)))
     if (vals.length === 0) return null
 
     const requestedMin = axisMinCounts[cat] ?? 1
