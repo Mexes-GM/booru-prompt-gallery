@@ -160,9 +160,12 @@ export function ResultsStates({
 
       {/* Loading / Empty States */}
       {/* Show progress bar only on initial load (no posts visible yet).
-          During Load More, the button handles its own loading state. */}
+          During Load More, the button handles its own loading state.
+          min-h-screen holds the space the results grid is about to take, so
+          the footer stays below the fold instead of showing under the spinner
+          and jumping down when the first page renders (layout shift). */}
       {((isLoading && filteredPostsLength === 0 && !showFavorites && !showHistory) || (showFavorites && (favsIsLoading || favsIsRefreshing) && filteredPostsLength === 0 && activeFavoriteFolder !== 'artists')) && (
-        <div className="text-center py-12">
+        <div className="text-center py-12 min-h-screen">
           {showFavorites && favoritesProgress.total > 0 ? (
             <>
               {/* Progress bar */}
