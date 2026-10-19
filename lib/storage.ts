@@ -138,6 +138,8 @@ export const STORAGE_KEYS = {
   // Last-used "source of variations" answers (rating/solo/tags/provider),
   // reused as the popover's default and to detect first use.
   PACK_SOURCE_ANSWERS: 'pack-source-answers',
+  // Pack Mode: prefix copied prompts with their suggested [WIDTHxHEIGHT].
+  PACK_ADD_RESOLUTION: 'pack-add-resolution',
   // Last prompt pasted in "From my prompt", restored as the textarea's value.
   PACK_LAST_BASE_PROMPT: 'pack-last-base-prompt',
 
@@ -666,6 +668,12 @@ export const userPreferences = {
 
   setPackModeConfigV2: (config: PackModeConfigV2) =>
     storage.set(STORAGE_KEYS.PACK_MODE_CONFIG_V2, config),
+
+  getPackAddResolution: (): boolean =>
+    storage.get(STORAGE_KEYS.PACK_ADD_RESOLUTION, false),
+
+  setPackAddResolution: (val: boolean) =>
+    storage.set(STORAGE_KEYS.PACK_ADD_RESOLUTION, val),
 
   getPackSourceAnswers: (): StoredPackSourceAnswers | null => {
     const stored = storage.get<unknown>(STORAGE_KEYS.PACK_SOURCE_ANSWERS, null)

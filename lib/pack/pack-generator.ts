@@ -199,8 +199,9 @@ export function extractAxisValues(
 function rankAxisCounts(
   counts: Map<string, number>,
   firstSeen: Map<string, number>,
-  limit: number
-): Array<{ value: string; count: number }> {
+  limit: number,
+  aspectLogs?: Map<string, number[]>
+): Array<{ value: string; count: number; aspect?: number }> {
   return Array.from(counts.keys())
     .sort((a, b) => {
       const diff = (counts.get(b) ?? 0) - (counts.get(a) ?? 0)
@@ -208,7 +209,34 @@ function rankAxisCounts(
       return (firstSeen.get(a) ?? 0) - (firstSeen.get(b) ?? 0)
     })
     .slice(0, limit)
-    .map((value) => ({ value, count: counts.get(value) ?? 0 }))
+    .map((value) => {
+      const logs = aspectLogs?.get(value)
+      return logs && logs.length > 0
+        ? { value, count: counts.get(value) ?? 0, aspect: medianAspect(logs) }
+        : { value, count: counts.get(value) ?? 0 }
+    })
+}
+
+/** Natural log of a post's width / height, or null when the provider gave no size. */
+export function postAspectLog(post: BooruPost): number | null {
+  return post.width && post.height && post.width > 0 && post.height > 0
+    ? Math.log(post.width / post.height)
+    : null
+}
+
+/** Median aspect ratio (width / height) of a list of log aspect ratios. */
+export function medianAspect(logs: number[]): number {
+  const sorted = [...logs].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  return Math.exp(median)
+}
+
+function pushAspect(target: Map<string, number[]>, value: string, log: number | null) {
+  if (log === null) return
+  const list = target.get(value)
+  if (list) list.push(log)
+  else target.set(value, [log])
 }
 
 /**
@@ -252,31 +280,39 @@ export function extractAxisValuesWithCounts(
  * seed. Use this whenever every axis needs reseeding at once; use the
  * single-category function above when only one axis does (reseedAxis's
  * "Re-sample" button).
+ *
+ * Each value also gets `aspect`: the median width / height of the posts that
+ * carry it (absent when none reported a size) — see lib/pack/prompt-resolution.ts.
  */
 export function extractAllAxisValuesWithCounts(
   posts: BooruPost[],
   categories: readonly TagCategory[],
   tagOverrides: Record<string, string> = {},
   limit = 200
-): Partial<Record<TagCategory, Array<{ value: string; count: number }>>> {
+): Partial<Record<TagCategory, Array<{ value: string; count: number; aspect?: number }>>> {
   const countsByCategory = new Map<TagCategory, Map<string, number>>()
   const firstSeenByCategory = new Map<TagCategory, Map<string, number>>()
   const orderByCategory = new Map<TagCategory, number>()
+  const aspectsByCategory = new Map<TagCategory, Map<string, number[]>>()
   categories.forEach((cat) => {
     countsByCategory.set(cat, new Map())
     firstSeenByCategory.set(cat, new Map())
     orderByCategory.set(cat, 0)
+    aspectsByCategory.set(cat, new Map())
   })
 
   for (const post of posts) {
     const classified = classifyPostForPack(post, tagOverrides)
+    const aspectLog = postAspectLog(post)
     for (const cat of categories) {
       const counts = countsByCategory.get(cat)!
       const firstSeen = firstSeenByCategory.get(cat)!
+      const aspects = aspectsByCategory.get(cat)!
       // Dedupe within a post so one post can't inflate a tag's frequency.
       const unique = new Set(classified[cat] ?? [])
       for (const tag of unique) {
         counts.set(tag, (counts.get(tag) ?? 0) + 1)
+        pushAspect(aspects, tag, aspectLog)
         if (!firstSeen.has(tag)) {
           firstSeen.set(tag, orderByCategory.get(cat)!)
           orderByCategory.set(cat, orderByCategory.get(cat)! + 1)
@@ -285,9 +321,9 @@ export function extractAllAxisValuesWithCounts(
     }
   }
 
-  const result: Partial<Record<TagCategory, Array<{ value: string; count: number }>>> = {}
+  const result: Partial<Record<TagCategory, Array<{ value: string; count: number; aspect?: number }>>> = {}
   categories.forEach((cat) => {
-    result[cat] = rankAxisCounts(countsByCategory.get(cat)!, firstSeenByCategory.get(cat)!, limit)
+    result[cat] = rankAxisCounts(countsByCategory.get(cat)!, firstSeenByCategory.get(cat)!, limit, aspectsByCategory.get(cat)!)
   })
   return result
 }
@@ -336,26 +372,30 @@ export function extractAxisBundlesWithCounts(
 
 /**
  * Same as extractAxisBundlesWithCounts, but classifies each post ONCE across
- * all requested categories simultaneously.
+ * all requested categories simultaneously. Each bundle also gets `aspect`,
+ * the width / height of the post(s) it came from.
  */
 export function extractAllAxisBundlesWithCounts(
   posts: BooruPost[],
   categories: readonly TagCategory[],
   tagOverrides: Record<string, string> = {},
   limit = 200
-): Partial<Record<TagCategory, Array<{ value: string; count: number }>>> {
+): Partial<Record<TagCategory, Array<{ value: string; count: number; aspect?: number }>>> {
   const countsByCategory = new Map<TagCategory, Map<string, number>>()
   const firstSeenByCategory = new Map<TagCategory, Map<string, number>>()
   const orderByCategory = new Map<TagCategory, number>()
+  const aspectsByCategory = new Map<TagCategory, Map<string, number[]>>()
 
   categories.forEach((cat) => {
     countsByCategory.set(cat, new Map())
     firstSeenByCategory.set(cat, new Map())
     orderByCategory.set(cat, 0)
+    aspectsByCategory.set(cat, new Map())
   })
 
   for (const post of posts) {
     const classified = classifyPostForPack(post, tagOverrides)
+    const aspectLog = postAspectLog(post)
     for (const cat of categories) {
       const rawTags = classified[cat] ?? []
       if (rawTags.length === 0) continue
@@ -367,6 +407,7 @@ export function extractAllAxisBundlesWithCounts(
       const firstSeen = firstSeenByCategory.get(cat)!
 
       counts.set(bundleKey, (counts.get(bundleKey) ?? 0) + 1)
+      pushAspect(aspectsByCategory.get(cat)!, bundleKey, aspectLog)
       if (!firstSeen.has(bundleKey)) {
         firstSeen.set(bundleKey, orderByCategory.get(cat)!)
         orderByCategory.set(cat, orderByCategory.get(cat)! + 1)
@@ -374,9 +415,9 @@ export function extractAllAxisBundlesWithCounts(
     }
   }
 
-  const result: Partial<Record<TagCategory, Array<{ value: string; count: number }>>> = {}
+  const result: Partial<Record<TagCategory, Array<{ value: string; count: number; aspect?: number }>>> = {}
   categories.forEach((cat) => {
-    result[cat] = rankAxisCounts(countsByCategory.get(cat)!, firstSeenByCategory.get(cat)!, limit)
+    result[cat] = rankAxisCounts(countsByCategory.get(cat)!, firstSeenByCategory.get(cat)!, limit, aspectsByCategory.get(cat)!)
   })
   return result
 }
@@ -614,6 +655,9 @@ export interface PackPrompt {
   values: string[]
   /** Map of tag -> slot ("category:subcategory") for UI diff highlighting. */
   tagSlots?: Record<string, string>
+  /** Suggested generation size, from the source posts' proportions (lib/pack/prompt-resolution.ts). */
+  width?: number
+  height?: number
 }
 
 /**

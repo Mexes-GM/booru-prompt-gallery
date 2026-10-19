@@ -19,6 +19,8 @@ import {
   maxValuesPerPrompt,
   withAxisFallback,
   normalizeTagForPack,
+  postAspectLog,
+  medianAspect,
   type PackPrompt,
   type AxisTagMode,
   type SlotGroup,
@@ -37,6 +39,8 @@ import {
   type RatingRule,
 } from '@/lib/pack/explicit-tags'
 import type { PackRatingMode } from '@/hooks/use-pack-seed-search'
+import { pickPromptAspect, resolutionForAspect } from '@/lib/pack/prompt-resolution'
+import { clampMaxLongSide } from '@/lib/extension/generation-resolution'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
@@ -83,7 +87,7 @@ function collectPostTags(posts: BooruPost[]): string[] {
   return Array.from(out)
 }
 
-type AxisSample = { values: string[]; counts: Record<string, number> }
+type AxisSample = { values: string[]; counts: Record<string, number>; aspects: Record<string, number> }
 
 /** Samples candidate pools for `categories`, classifying each post once per mode group. */
 function sampleAxes(
@@ -96,13 +100,15 @@ function sampleAxes(
   const out: Partial<Record<TagCategory, AxisSample>> = {}
   const toCounts = (list: Array<{ value: string; count: number }>) =>
     Object.fromEntries(list.map((v) => [v.value, v.count]))
+  const toAspects = (list: Array<{ value: string; aspect?: number }>) =>
+    Object.fromEntries(list.flatMap((v) => (v.aspect ? [[v.value, v.aspect]] : [])))
 
   const individual = categories.filter((cat) => modes[cat] !== 'bundle')
   if (individual.length > 0) {
     const sampled = extractAllAxisValuesWithCounts(posts, individual, overrides)
     individual.forEach((cat) => {
       const list = sampled[cat] ?? []
-      out[cat] = { values: withAxisFallback(list.map((v) => v.value), fallbacks[cat]), counts: toCounts(list) }
+      out[cat] = { values: withAxisFallback(list.map((v) => v.value), fallbacks[cat]), counts: toCounts(list), aspects: toAspects(list) }
     })
   }
 
@@ -111,7 +117,7 @@ function sampleAxes(
     const sampled = extractAllAxisBundlesWithCounts(posts, bundled, overrides)
     bundled.forEach((cat) => {
       const list = sampled[cat] ?? []
-      out[cat] = { values: list.map((v) => v.value), counts: toCounts(list) }
+      out[cat] = { values: list.map((v) => v.value), counts: toCounts(list), aspects: toAspects(list) }
     })
   }
   return out
@@ -416,6 +422,11 @@ export function usePackMode(
   // they simply have no entry here; buildSamplingWeights treats a missing
   // count as 1 (extractAxisValuesWithCounts never returns 0 either way).
   const [axisCounts, setAxisCounts] = useState<Partial<Record<TagCategory, Record<string, number>>>>({})
+  // Median width / height of the posts behind each sampled value, plus the
+  // pool's own — what per-prompt resolution is picked from (see
+  // lib/pack/prompt-resolution.ts). Manual values have none.
+  const [axisAspects, setAxisAspects] = useState<Partial<Record<TagCategory, Record<string, number>>>>({})
+  const [poolAspect, setPoolAspect] = useState<number | null>(null)
   // Values the user typed in by hand via the axis editor's "Add" input —
   // these ARE persisted, since they don't come from sampling and represent
   // an explicit, durable preference (e.g. always wanting "beach" in the
@@ -462,6 +473,7 @@ export function usePackMode(
     // which base card is selected.
     setAxisValuesRaw({})
     setAxisCounts({})
+    setAxisAspects({})
     setExcludedBaseTags(new Set())
     // Previously generated prompts belong to the old base — clear them so the
     // results list doesn't show stale prompts until the user hits Generate again.
@@ -475,6 +487,7 @@ export function usePackMode(
     setPromptCharacterTags([])
     setAxisValuesRaw({})
     setAxisCounts({})
+    setAxisAspects({})
     setExcludedBaseTags(new Set())
     setGeneratedPrompts([])
     try {
@@ -797,6 +810,34 @@ export function usePackMode(
     return map
   }, [mergedAxisValues])
 
+  // Suggested size for one prompt, from the proportions of the posts its
+  // values came from (see lib/pack/prompt-resolution.ts). Sized with the
+  // extension's own "Max long side" / strict-cap settings.
+  const withResolution = useCallback((prompt: PackPrompt): PackPrompt => {
+    const aspect = pickPromptAspect({
+      values: prompt.values,
+      categoryOf: (value) => axisValueCategory.get(value),
+      aspectOf: (category, value) => {
+        const aspect = axisAspects[category]?.[value]
+        return aspect ? { aspect, count: axisCounts[category]?.[value] ?? 1 } : undefined
+      },
+      baseAspect: baseCard?.width && baseCard.height ? baseCard.width / baseCard.height : null,
+      poolAspect,
+    })
+    if (!aspect) return prompt
+    let prefs = { maxLongSide: 1536, strictCap: false }
+    try {
+      prefs = {
+        maxLongSide: clampMaxLongSide(userPreferences.getMatchResolutionMaxLongSide()),
+        strictCap: userPreferences.getMatchResolutionStrictCap(),
+      }
+    } catch {
+      // Defaults above.
+    }
+    const resolution = resolutionForAspect(aspect, prefs)
+    return resolution ? { ...prompt, ...resolution } : prompt
+  }, [axisValueCategory, axisAspects, axisCounts, baseCard, poolAspect])
+
   const addAxisValue = useCallback((category: TagCategory, value: string) => {
     let normalized: string
     if (axisTagModes[category] === 'bundle' || value.includes(',')) {
@@ -866,12 +907,17 @@ export function usePackMode(
         const samples = sampleAxes(posts, categories, modes, currentOverrides(), fallbacks)
         const values: Partial<Record<TagCategory, string[]>> = {}
         const counts: Partial<Record<TagCategory, Record<string, number>>> = {}
+        const aspects: Partial<Record<TagCategory, Record<string, number>>> = {}
         ;(Object.keys(samples) as TagCategory[]).forEach((cat) => {
           values[cat] = samples[cat]!.values
           counts[cat] = samples[cat]!.counts
+          aspects[cat] = samples[cat]!.aspects
         })
         setAxisValuesRaw((prev) => (replaceAll ? values : { ...prev, ...values }))
         setAxisCounts((prev) => (replaceAll ? counts : { ...prev, ...counts }))
+        setAxisAspects((prev) => (replaceAll ? aspects : { ...prev, ...aspects }))
+        const logs = posts.map(postAspectLog).filter((l): l is number => l !== null)
+        if (logs.length > 0) setPoolAspect(medianAspect(logs))
       }
       apply()
       void enrichOverrides(collectPostTags(posts)).then((changed) => {
@@ -1206,7 +1252,7 @@ export function usePackMode(
       }
       return cleaned
     }
-    const cleaned = interleave(ratingPasses(contentRating, promptCount).map(runPass))
+    const cleaned = interleave(ratingPasses(contentRating, promptCount).map(runPass)).map(withResolution)
     setGeneratedPrompts(cleaned)
 
     // Record the "shown" half of the pick/show signal (§7.2) ONCE per
@@ -1249,6 +1295,7 @@ export function usePackMode(
     axisValueCategory,
     alwaysAddTags,
     contentRating,
+    withResolution,
   ])
 
   /**
@@ -1290,7 +1337,7 @@ export function usePackMode(
       }
       const replacement = pickReplacement(rawCandidates, others, clean, lockedTags)
       if (!replacement) return false
-      setGeneratedPrompts((prev) => prev.map((p, i) => (i === index ? replacement : p)))
+      setGeneratedPrompts((prev) => prev.map((p, i) => (i === index ? withResolution(replacement) : p)))
       return true
     },
     [
@@ -1304,6 +1351,7 @@ export function usePackMode(
       cleanOptions,
       alwaysAddTags,
       contentRating,
+      withResolution,
     ]
   )
 
@@ -1333,6 +1381,7 @@ export function usePackMode(
     setPromptCharacterTags([])
     setAxisValuesRaw({})
     setAxisCounts({})
+    setAxisAspects({})
     setManualAxisValues({})
     setAxisMinCounts({})
     setAxisTagModes({})
