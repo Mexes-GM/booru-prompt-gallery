@@ -592,8 +592,8 @@ export interface GeneratePackPromptsArgs {
    */
   requiredTag?: (tag: string) => boolean
   /**
-   * Tags passing this test are never sampled: single values are dropped,
-   * bundles lose just those tags (and vanish if nothing is left). The base
+   * Values containing a tag that passes this test are never sampled — a
+   * bundle is dropped whole, not trimmed (see withoutForbiddenTags). The base
    * (`lockedTags`) is left alone — it is the user's own choice.
    */
   forbiddenTag?: (tag: string) => boolean
@@ -763,18 +763,16 @@ export function maxValuesPerPrompt(groups: SlotGroup[]): number {
   return total
 }
 
-/** Axis values with every tag passing `forbidden` removed; bundles keep their other tags. */
+/**
+ * Axis values with no tag passing `forbidden`. A bundle containing one is
+ * dropped whole rather than trimmed: it is one post's cohesive set, and the
+ * leftover ("looking at viewer" minus the act) is a poor sample. Trimming
+ * also produced values missing from the axis weight map, which then sampled
+ * at the fallback weight of 1 — far above the normalized weights around them —
+ * and crowded out the rest of the pool.
+ */
 export function withoutForbiddenTags(values: string[], forbidden: (tag: string) => boolean): string[] {
-  const out: string[] = []
-  for (const value of values) {
-    if (!value.includes(",")) {
-      if (!forbidden(value)) out.push(value)
-      continue
-    }
-    const kept = splitCommaSeparatedTags(value).filter((tag) => !forbidden(tag))
-    if (kept.length > 0) out.push(canonicalizeBundleTags(kept))
-  }
-  return out
+  return values.filter((value) => !splitCommaSeparatedTags(value).some(forbidden))
 }
 
 /**
