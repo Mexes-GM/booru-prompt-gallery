@@ -20,8 +20,11 @@ const EXPLICIT_WORDS = new Set([
   "orgasm", "ahegao", "fellatio", "irrumatio", "deepthroat", "cunnilingus", "anilingus",
   "paizuri", "handjob", "footjob", "thighjob", "masturbation", "fingering", "groping",
   "tribadism", "doggystyle", "missionary", "spitroast",
-  "dildo", "vibrator", "condom",
+  "dildo", "vibrator", "condom", "lube",
 ])
+
+/** Explicit as a whole tag, though their words alone aren't ("rub", "crotch"). */
+const EXPLICIT_TAGS = new Set(["crotch rub"])
 
 function cleanTag(tag: string): string {
   return tag
@@ -36,7 +39,7 @@ function cleanTag(tag: string): string {
 /** True when `tag` (weights, parentheses and underscores ignored) belongs to the explicit rating. */
 export function isExplicitTag(tag: string): boolean {
   const clean = cleanTag(tag)
-  if (SEXUAL_ACT_TAGS.has(clean)) return true
+  if (SEXUAL_ACT_TAGS.has(clean) || EXPLICIT_TAGS.has(clean)) return true
   return clean.split(" ").some((w) => EXPLICIT_WORDS.has(w))
 }
 
