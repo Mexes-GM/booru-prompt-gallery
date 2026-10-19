@@ -66,7 +66,6 @@ Then:
 - If it's something users will notice, ship it as a new version, all in the same PR:
   - Bump `version` in `package.json` and `package-lock.json` (fixes only: patch; anything new: minor). The Update Notes tab only flags notes as new when the version changes.
   - Replace `NOTES` in `components/prompt-gallery/update-notes-tab.tsx` with this version's notes; the previous ones are removed.
-  - Add `docs/releases/vX.Y.Z.md`, following the existing ones.
   - When several PRs are stacked or merge together, only the last one bumps the version, covering all of them.
 - If it needs a database change, add a migration in `supabase/migrations/`.
 
