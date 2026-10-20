@@ -61,6 +61,7 @@ const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then
 import pkg from "@/package.json"
 import { useToast } from "@/hooks/use-toast"
 import { toastError } from "@/lib/toast-error"
+import { describeSearchError } from "@/lib/booru/search-error-reason"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
@@ -1171,9 +1172,16 @@ export function PromptGallery() {
     window.addEventListener('scroll', handleScroll, { passive: true })
 
     const start = Date.now()
+    // visibility / prerendering / was_discarded separate real opens from
+    // background tabs, speculative prerenders and restored (discarded) tabs,
+    // which otherwise count as one-event "bounces".
+    const doc = document as Document & { prerendering?: boolean; wasDiscarded?: boolean }
     safeTrack('app_open', {
       ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'na',
       w: typeof window !== 'undefined' ? window.innerWidth : 0,
+      visibility: doc.visibilityState,
+      prerendering: doc.prerendering === true,
+      was_discarded: doc.wasDiscarded === true,
     })
     const cleanupScroll = initScrollDepthTracking()
     const onVisibility = () => {
@@ -1222,7 +1230,7 @@ export function PromptGallery() {
           ? "Aibooru is blocking server requests. Try Danbooru or Rule34 instead."
           : (search.error.message || "Could not load images"),
         errorSource: "booru_search",
-        context: { provider: search.booruProvider, status: search.error.status ?? search.error.statusCode },
+        context: { provider: search.booruProvider, ...describeSearchError(search.error) },
       })
     }
     hasMounted.current = true

@@ -1,12 +1,21 @@
 /**
  * Analytics / telemetry module — every track* helper routes into PostHog
  * product analytics through the crash-proof capture() choke point below.
- * PostHog is the only analytics tool (pageviews come from PostHogPageView), so
- * Vercel and Netlify report identically.
+ * PostHog is the only analytics tool (pageviews are captured by the SDK, see
+ * capture_pageview in instrumentation-client.ts), so Vercel and Netlify report
+ * identically.
  */
 
 import posthog from "posthog-js"
 import { setErrorContext } from "@/lib/error-reporting"
+
+// posthog.init() runs asynchronously (instrumentation-client.ts) and posthog-js
+// silently drops captures made before it, so mount-time events such as
+// app_open could race it and vanish. They wait here until the `loaded` callback
+// calls flushPendingEvents(). Bounded: on localhost or without a key PostHog
+// never loads and the queue just stops growing.
+const MAX_PENDING_EVENTS = 50
+const pendingEvents: Array<{ event: string; props?: Record<string, unknown>; timestamp: Date }> = []
 
 // Crash-proof PostHog capture. Guards SSR (no window) and never throws so
 // telemetry can never take down the app. This is the single choke point that
@@ -14,9 +23,27 @@ import { setErrorContext } from "@/lib/error-reporting"
 function capture(event: string, props?: Record<string, unknown>) {
   if (typeof window === 'undefined') return
   try {
+    if (!posthog.__loaded) {
+      if (pendingEvents.length < MAX_PENDING_EVENTS) {
+        pendingEvents.push({ event, props, timestamp: new Date() })
+      }
+      return
+    }
     posthog.capture(event, props)
   } catch {
     /* non-fatal: telemetry is best-effort */
+  }
+}
+
+/** Sends the events queued before PostHog finished loading. */
+export function flushPendingEvents() {
+  const queued = pendingEvents.splice(0)
+  for (const { event, props, timestamp } of queued) {
+    try {
+      posthog.capture(event, props, { timestamp })
+    } catch {
+      /* non-fatal */
+    }
   }
 }
 

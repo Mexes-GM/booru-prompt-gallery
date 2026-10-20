@@ -34,6 +34,11 @@ const IGNORED_EXCEPTION_MESSAGES = [
   "Failed to execute 'appendChild' on 'Node'",
   "The node to be removed is not a child of this node",
   "The node before which the new node is to be inserted is not a child of this node",
+  // Crypto-wallet extensions probing window.ethereum (202 events / 114 users
+  // in Sep–Oct 2026, none from our code)
+  "window.ethereum.selectedAddress",
+  // posthog-js's own ingestion timeouts — telemetry about telemetry
+  "PostHog request timed out",
 ];
 
 const EXTENSION_PROTOCOLS = ["file://", "chrome-extension://", "moz-extension://", "safari-extension://"];
@@ -117,7 +122,12 @@ if (process.env.NEXT_PUBLIC_POSTHOG_KEY && !isLocalHost) {
       ui_host: "https://us.posthog.com",
       defaults: "2026-01-30",
       person_profiles: "identified_only",
-      capture_pageview: false,
+      // The SDK captures the initial $pageview right after init (deferred until
+      // the tab is visible) and one per pathname change on pushState/
+      // replaceState. A manual capture from a React effect used to run before
+      // this async init, so posthog-js dropped it (~70% of sessions had no
+      // $pageview). ?tags= rewrites are searches, not pageviews.
+      capture_pageview: "history_change",
       capture_pageleave: true,
       capture_exceptions: true,
       before_send: filterExceptions,
@@ -131,6 +141,13 @@ if (process.env.NEXT_PUBLIC_POSTHOG_KEY && !isLocalHost) {
       // Browser-translation tracing registers super properties, so it must
       // start only once PostHog is loaded.
       loaded: () => {
+        // Events tracked before init (e.g. app_open) were queued by
+        // lib/analytics.ts; send them now with their original timestamps.
+        import("@/lib/analytics")
+          .then((m) => m.flushPendingEvents())
+          .catch(() => {
+            /* non-fatal: telemetry is best-effort */
+          });
         if (document.readyState === "loading") {
           window.addEventListener("DOMContentLoaded", () => initTranslationTracing(), { once: true });
         } else {
