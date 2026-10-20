@@ -29,6 +29,9 @@ interface SlimPost {
    *  posts saved before they were stored; a re-fetch replaces those. */
   p?: string
   a?: string
+  /** Image size, for per-prompt resolution. Absent on older entries, same as p/a. */
+  w?: number
+  h?: number
 }
 
 interface CacheRecord {
@@ -56,6 +59,8 @@ function toSlim(post: BooruPost): SlimPost {
     r: post.rating || "",
     p: post.tag_string_copyright || undefined,
     a: post.tag_string_artist || undefined,
+    w: post.width || undefined,
+    h: post.height || undefined,
   }
 }
 
@@ -72,6 +77,8 @@ function fromSlim(p: SlimPost): BooruPost {
     tag_string_meta: p.m,
     rating: p.r,
     score: 0,
+    width: p.w,
+    height: p.h,
   }
 }
 

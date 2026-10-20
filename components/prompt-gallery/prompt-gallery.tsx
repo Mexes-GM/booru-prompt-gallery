@@ -2278,8 +2278,8 @@ export function PromptGallery() {
         savedPostCount={packSeedSnapshot?.savedCount ?? 0}
         onClearSavedPosts={handleClearSavedPackPosts}
         prompts={packMode.generatedPrompts}
-        onCopyPrompt={(prompt) => {
-          copyToClipboard(prompt.prompt, 0, true)
+        onCopyPrompt={(prompt, text) => {
+          copyToClipboard(text, 0, true)
           packMode.recordPromptCopied(prompt)
         }}
         onCopyAll={(text) => copyToClipboard(text, 0, true)}

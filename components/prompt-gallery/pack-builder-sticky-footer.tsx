@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Check, Package, Shuffle, Copy, CopyCheck, X, Dices, Pencil, Loader2, RefreshCw, AlertTriangle, Database, HelpCircle } from "lucide-react"
+import { Check, Package, Shuffle, Copy, CopyCheck, X, Dices, Pencil, Loader2, RefreshCw, AlertTriangle, Database, HelpCircle, Ratio } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory } from '@/lib/tag-classifier'
 import { MAX_PACK_PROMPTS, PACK_AXES, type PackPrompt, type AxisTagMode, type SlotGroup } from '@/lib/pack/pack-generator'
@@ -16,6 +16,8 @@ import { toast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 import Image from 'next/image'
 import { getDanbooruProxyUrl } from "@/lib/proxy-url"
+import { withResolutionPrefix } from '@/lib/pack/prompt-resolution'
+import { userPreferences } from '@/lib/storage'
 import { MAX_MIN_TOTAL_TAGS, type PackCategoryState, type PackSlotState } from '@/hooks/use-pack-mode'
 import { summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-modal'
 import { PackVarietySlider } from './pack-variety-slider'
@@ -89,7 +91,8 @@ export interface PackBuilderStickyFooterProps {
     onClearBase: () => void
     onExit: () => void
     prompts: PackPrompt[]
-    onCopyPrompt: (prompt: PackPrompt) => void
+    /** `text` is what goes on the clipboard (with the size prefix when that's on). */
+    onCopyPrompt: (prompt: PackPrompt, text: string) => void
     onCopyAll: (text: string) => void
     onResetLearning?: () => void
     children?: React.ReactNode
@@ -116,6 +119,7 @@ const PromptRow = memo(({
     onReroll,
     lockedSet,
     variedSet,
+    showResolution,
 }: {
     prompt: PackPrompt
     index: number
@@ -123,6 +127,7 @@ const PromptRow = memo(({
     onReroll: (index: number) => void
     lockedSet: ReadonlySet<string>
     variedSet: ReadonlySet<string>
+    showResolution: boolean
 }) => {
     const tokens = useMemo(() => prompt.prompt.split(',').map((t) => t.trim()).filter(Boolean), [prompt.prompt])
     const [isCopied, triggerCopyFeedback] = useCopyFeedback()
@@ -147,6 +152,14 @@ const PromptRow = memo(({
                     {String(index + 1).padStart(2, '0')}
                 </span>
                 <span className="text-[9px] text-muted-foreground/70 tabular-nums" title="Tags in this prompt">{tokens.length}</span>
+                {showResolution && prompt.width && prompt.height && (
+                    <span
+                        className="text-[9px] text-mode-pack-text tabular-nums whitespace-nowrap"
+                        title="Suggested size, from the posts this prompt's pose came from"
+                    >
+                        {prompt.width}×{prompt.height}
+                    </span>
+                )}
             </div>
             <p className="flex-1 text-xs lg:text-[13px] leading-relaxed font-mono break-words select-all">
                 {tokens.map((token, i) => {
@@ -202,7 +215,7 @@ const PackResultsList = memo(({
     minTotalTags,
 }: {
     prompts: PackPrompt[]
-    onCopyPrompt: (prompt: PackPrompt) => void
+    onCopyPrompt: (prompt: PackPrompt, text: string) => void
     onCopyAll: (text: string) => void
     onReroll: (index: number) => void
     lockedSet: ReadonlySet<string>
@@ -214,10 +227,33 @@ const PackResultsList = memo(({
         ? prompts.filter((p) => p.prompt.split(',').filter((t) => t.trim()).length < minTotalTags).length
         : 0
     const [isAllCopied, triggerCopyAllFeedback] = useCopyFeedback()
+    // Prefix copied prompts with their suggested [WIDTHxHEIGHT] — the form the
+    // extension's Import List reads (lib/extension/prompt-list-parser.ts).
+    const [addResolution, setAddResolution] = useState(() => {
+        try {
+            return userPreferences.getPackAddResolution()
+        } catch {
+            return false
+        }
+    })
+    const toggleAddResolution = () => {
+        const next = !addResolution
+        setAddResolution(next)
+        try {
+            userPreferences.setPackAddResolution(next)
+        } catch {
+            // Best-effort, like every other preference write.
+        }
+    }
+    const textOf = useCallback(
+        (p: PackPrompt) => (addResolution ? withResolutionPrefix(p.prompt, p) : p.prompt),
+        [addResolution]
+    )
+    const handleCopyPrompt = useCallback((p: PackPrompt) => onCopyPrompt(p, textOf(p)), [onCopyPrompt, textOf])
 
     const handleCopyAll = () => {
         if (prompts.length === 0) return
-        onCopyAll(prompts.map((p) => p.prompt).join('\n'))
+        onCopyAll(prompts.map(textOf).join('\n'))
         triggerCopyAllFeedback()
     }
 
@@ -239,6 +275,24 @@ const PackResultsList = memo(({
                         </span>
                     )}
                 </div>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={toggleAddResolution}
+                            aria-pressed={addResolution}
+                            className={`h-7 text-xs flex-shrink-0 transition-colors ml-auto ${addResolution ? 'bg-mode-pack-soft text-mode-pack-text border-mode-pack-border' : ''}`}
+                        >
+                            <Ratio className="w-3.5 h-3.5 mr-1.5" />
+                            Size
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                        Add each prompt&apos;s suggested size as [WIDTHxHEIGHT] when copying, for the extension&apos;s Import List. Taken from the posts its pose came from.
+                    </TooltipContent>
+                </Tooltip>
                 <Button
                     type="button"
                     variant="outline"
@@ -286,10 +340,11 @@ const PackResultsList = memo(({
                                 key={`${i}-${p.prompt}`}
                                 prompt={p}
                                 index={i}
-                                onCopy={onCopyPrompt}
+                                onCopy={handleCopyPrompt}
                                 onReroll={onReroll}
                                 lockedSet={lockedSet}
                                 variedSet={variedSet}
+                                showResolution={addResolution}
                             />
                         ))}
                     </AnimatePresence>

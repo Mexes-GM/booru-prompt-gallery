@@ -30,10 +30,13 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'improved', title: 'Much Better on Phones', body: "The search bar is now on the first screen, buttons are easier to hit, and scrolling over a prompt scrolls the page instead of getting stuck inside the prompt box. The floating buttons also stop covering the cards' copy menu." },
-  { kind: 'improved', title: 'Less in Your Way', body: "Tap anywhere outside the tour to close it. On phones, copying a prompt no longer shows a banner covering the next cards, and tapping an image shows the full prompt without spilling off the screen." },
-  { kind: 'fixed', title: 'iPhone Zoom & Shared Links', body: "The search box no longer zooms the page in on iPhone. Links with a search in them (?tags=...) keep it while the page loads instead of briefly dropping it." },
-  { kind: 'fixed', title: 'Smoother After Updates', body: "If a new version goes live while you have the page open, it now reloads itself instead of breaking. Also includes the latest security updates." },
+  { kind: 'new', title: 'Suggested Size per Prompt', body: "Pack Mode can now suggest a size for each prompt that fits its pose: wider for wide shots, closer to square for all fours, taller for sitting. Turn on Size in the results to see it and include it when you copy." },
+  { kind: 'improved', title: 'More Varied Packs', body: "Packs repeat the same outfits and poses far less, even when someone uploaded a whole series of near-identical images. Series titles also stopped showing up as backgrounds." },
+  { kind: 'improved', title: 'Faster Searches', body: "New searches had been taking several seconds longer than they should. They're back to normal speed. The first cards also show up sooner when you open the site, and the page no longer jumps while they load." },
+  { kind: 'improved', title: 'Better Tag Sorting', body: "More tags land in the right category, so card badges, copy by category, Merge and Pack Mode sort them better. For example, one eye closed now counts as an expression." },
+  { kind: 'fixed', title: 'Packs Collect All Their Posts', body: "Packs were only using the first page of results. They now gather up to 100 posts, and Collect more really adds new ones." },
+  { kind: 'fixed', title: 'Content Rating Stays Consistent', body: "A rating typed in your pack's search no longer clashes with the one you picked, the source window shows which ratings the loaded posts have, and packs set to Both are now half of each." },
+  { kind: 'fixed', title: 'AI Convert Works Again', body: "Free AI Convert failed for a few days at the start of October, and converting with your own OpenAI key never worked on the GPT-5 models. Both are fixed." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
