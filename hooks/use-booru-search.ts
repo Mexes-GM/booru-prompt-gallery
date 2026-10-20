@@ -3,7 +3,7 @@ import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
 import type { ScoreTier } from "@/lib/api-client"
 import { userPreferences, STORAGE_KEYS, DEFAULT_MINIMUM_TAG_COUNT } from "@/lib/storage"
 import { usePersistentState } from "@/hooks/use-persistent-state"
-import { readTagsFromUrl } from "@/lib/booru/posts-prefetch"
+import { initialShuffleSeed, readTagsFromUrl } from "@/lib/booru/posts-prefetch"
 import {
   trackLoadMore,
   trackRefresh,
@@ -221,7 +221,17 @@ export function useBooruSearch() {
  const [loadMoreError, setLoadMoreError] = useState(false)
  const [noMoreResults, setNoMoreResults] = useState(false)
  const [lastLoadAttempt, setLastLoadAttempt] = useState(0)
- const [randomSeed, setRandomSeed] = useState<number>(0)
+ // The first render already has its final seed (shared with the first-page
+ // prefetch): a seed set in a mount effect changed the Shuffle key right after
+ // the first request and fetched page 1 twice, like the applied filters above.
+ const [randomSeed, setRandomSeed] = useState(initialShuffleSeed)
+ // New seed whenever Shuffle turns on (toggle, or a restore from another tab).
+ // Adjusted during render, not in an effect, so the old key is never fetched.
+ const [seededShuffle, setSeededShuffle] = useState(isShuffle)
+ if (seededShuffle !== isShuffle) {
+   setSeededShuffle(isShuffle)
+   if (isShuffle) setRandomSeed(Date.now())
+ }
  const loadMoreGuardRef = useRef(false)
  const [circuitOpen, setCircuitOpen] = useState(false)
 
@@ -279,15 +289,7 @@ export function useBooruSearch() {
 
   useEffect(() => {
     setIsClient(true)
-    setRandomSeed(Date.now())
   }, []) // Run once on mount
-
-  // Generate new seed when shuffle is enabled (useful when isShuffle is restored from storage)
-  useEffect(() => {
-    if (isShuffle && isClient) {
-      setRandomSeed(Date.now())
-    }
-  }, [isShuffle, isClient])
 
   // Sync applied filter when persistent changes (e.g. from UI)
   // But wait for debounce/blur logic usually? In this component, setAppliedTagCountFilter is usually manual.
@@ -516,13 +518,7 @@ export function useBooruSearch() {
   }, [order, searchTags, mutate])
 
   const toggleShuffle = useCallback(() => {
-    setIsShuffle(prev => {
-      const next = !prev
-      if (next) {
-        setRandomSeed(Date.now())
-      }
-      return next
-    })
+    setIsShuffle(prev => !prev)
     setSize(1)
   }, [setIsShuffle, setSize])
 
