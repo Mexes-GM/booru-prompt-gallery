@@ -149,6 +149,7 @@ import { usePackMode } from "@/hooks/use-pack-mode"
 import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/use-pack-seed"
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
+import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
 import { PackSourceModal, type PackSourceAnswers } from "./pack-source-modal"
@@ -773,11 +774,11 @@ export function PromptGallery() {
   const [sourceStep, setSourceStep] = useState<'setup' | 'edit' | null>(null)
   // Curated per-slot vocabulary that tops up sparse pools (rating-aware).
   const packAxisFallbacks = usePackAxisFallbacks(packMode.isPackMode, packSourceAnswers.ratingMode)
-  // An Explicit source guarantees an explicit tag in every generated prompt.
-  const packModeSetRequireExplicit = packMode.setRequireExplicit
+  // Generated prompts follow the source's content rating (see contentRating).
+  const packModeSetContentRating = packMode.setContentRating
   useEffect(() => {
-    packModeSetRequireExplicit(packSourceAnswers.ratingMode === 'explicit')
-  }, [packModeSetRequireExplicit, packSourceAnswers.ratingMode])
+    packModeSetContentRating(packSourceAnswers.ratingMode)
+  }, [packModeSetContentRating, packSourceAnswers.ratingMode])
 
   // Where Pack Mode's posts come from (provider + rating + tags) — also the
   // key of the persistent pool cache (lib/pack/pool-cache.ts).
@@ -807,9 +808,18 @@ export function PromptGallery() {
   // for the rest of the Pack Mode session (unmounting it drops its posts).
   const [packFetcherActive, setPackFetcherActive] = useState(false)
 
+  // Fresh + saved posts, deduped by id and with near-identical variations
+  // collapsed to one (lib/pack/near-duplicates.ts). Memoized on the two input
+  // arrays: seeding polls this every 150ms while pages land.
+  const packPoolMemoRef = useRef<{ fresh: BooruPost[]; cached: BooruPost[]; posts: BooruPost[] } | null>(null)
   const packPoolPosts = useCallback((): BooruPost[] => {
     const cached = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts : []
-    return mergePostLists(packSeedSearchRef.current?.allPosts ?? [], cached)
+    const fresh = packSeedSearchRef.current?.allPosts ?? []
+    const memo = packPoolMemoRef.current
+    if (memo && memo.fresh === fresh && memo.cached === cached) return memo.posts
+    const posts = collapseNearDuplicates(mergePostLists(fresh, cached))
+    packPoolMemoRef.current = { fresh, cached, posts }
+    return posts
   }, [])
 
   const updatePackSnapshot = useCallback(() => {
@@ -895,6 +905,16 @@ export function PromptGallery() {
     setSourceStep(null)
   }, [sourceStep, packModeSetBaseCard, packModeSetBasePrompt])
 
+  // Seed-search view whose `allPosts` is the whole pool (fresh + saved,
+  // deduped), so seeding targets count UNIQUE posts. Danbooru pages by
+  // recency, so a session's first page is usually already saved; counting
+  // only fresh posts let that page alone "reach" the target and the pool
+  // never grew past it.
+  const poolSearch = useCallback(
+    (fallback: UsePackSeedSearchResult) => () => ({ ...(packSeedSearchRef.current ?? fallback), allPosts: packPoolPosts() }),
+    [packPoolPosts]
+  )
+
   // Refills the pools while pages are still landing (not just once at the
   // end), so chips visibly appear as posts arrive. Throttled by post count:
   // ensureSeeded reports every poll tick, most of which bring nothing new.
@@ -941,16 +961,22 @@ export function PromptGallery() {
     }
     enrichedSourcesRef.current.add(key)
     const saved = packCachedRef.current?.posts.length ?? 0
-    const fetchedNow = packSeedSearchRef.current?.allPosts.length ?? 0
-    // Plenty saved already: just add one batch of new posts. Otherwise fill up to the target.
-    const target = saved >= PACK_SEED_TARGET_POSTS
-      ? Math.max(fetchedNow, PACK_ENRICH_POSTS)
-      : Math.max(PACK_ENRICH_POSTS, PACK_SEED_TARGET_POSTS - saved)
-    await packSeed.ensureSeeded(() => packSeedSearchRef.current ?? search, target, makeLiveReseed(fetchedNow))
+    if (saved >= PACK_SEED_TARGET_POSTS) {
+      // Plenty saved already: just add one batch of new posts.
+      const fetchedNow = packSeedSearchRef.current?.allPosts.length ?? 0
+      await packSeed.ensureSeeded(
+        () => packSeedSearchRef.current ?? search,
+        Math.max(fetchedNow, PACK_ENRICH_POSTS),
+        makeLiveReseed(fetchedNow)
+      )
+    } else {
+      // Fill up to the target in UNIQUE posts, saved ones included.
+      await packSeed.ensureSeeded(poolSearch(search), PACK_SEED_TARGET_POSTS, makeLiveReseed(packPoolPosts().length))
+    }
     if (packSourceKeyRef.current !== key) return
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     await persistPackPool(key)
-  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed, makeLiveReseed, packPoolPosts, updatePackSnapshot, persistPackPool])
+  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed, makeLiveReseed, packPoolPosts, poolSearch, updatePackSnapshot, persistPackPool])
 
   // Runs a pending seed once a base, a confirmed source and fetched results all exist.
   const packHasBase = packMode.hasBase
@@ -965,20 +991,17 @@ export function PromptGallery() {
     if (!hasSeededRef.current) setSeedRequest((n) => n + 1)
   }, [updatePackSnapshot])
 
-  // Manual "Collect more" — another batch of fresh posts for the same source.
+  // Manual "Collect more" — another batch of posts not in the pool yet.
   const handleLoadMorePacks = useCallback(async () => {
-    if (!packSeedSearchRef.current) return
+    const search = packSeedSearchRef.current
+    if (!search) return
     const key = packSourceKeyRef.current
-    const start = packSeedSearchRef.current.allPosts.length
-    await packSeed.ensureSeeded(
-      () => packSeedSearchRef.current!,
-      start + PACK_SEED_TARGET_POSTS,
-      makeLiveReseed(start)
-    )
+    const start = packPoolPosts().length
+    await packSeed.ensureSeeded(poolSearch(search), start + PACK_SEED_TARGET_POSTS, makeLiveReseed(start))
     if (packSourceKeyRef.current !== key) return
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     await persistPackPool(key)
-  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks, makeLiveReseed, packPoolPosts, persistPackPool])
+  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks, makeLiveReseed, packPoolPosts, poolSearch, persistPackPool])
 
   /** Forgets the posts saved for the current source (fresh ones stay). */
   const handleClearSavedPackPosts = useCallback(async () => {

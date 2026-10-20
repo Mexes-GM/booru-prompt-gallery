@@ -523,7 +523,13 @@ export const hasMoreThanTwoTerms = (tags: string): boolean => {
 export { getFinalQueryTags, getFinalQueryTagsWithMeta, detectMisusedMetatags } from './booru/tag-limits'
 export type { QueryTagMeta, FinalQueryTagsResult, MisusedMetatagWarning, ScoreTier } from './booru/tag-limits'
 
-export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string, scoreTier: ScoreTier = 'off') => {
+/**
+ * The booru `tags` query useInfinitePosts sends (rating + tagcount + score
+ * floor + the user's tags, trimmed to the provider's tag limit), without the
+ * order/random metatag it appends per provider. Exported so other requests
+ * against the same result set (e.g. Pack Mode's page-range probe) match it.
+ */
+export function buildBooruQuery(tags: string, ratingFilter: string, order: string, provider: BooruProvider, tagCountFilter?: string, scoreTier: ScoreTier = 'off'): string {
   // Provider-specific rating vocabulary mapping (e.g. e621 has no "general" tier —
   // see lib/booru/tag-limits.ts for the full empirical rationale).
   const effectiveRating = mapRatingForProvider(ratingFilter, provider)
@@ -543,8 +549,19 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
   const systemOrderTagCount = (order === 'popular' || order === 'random') ? 1 : 0
   const processedTags = processTagsForAPI(tags, provider, systemOrderTagCount)
 
-  const query = processedTags ? `${ratingPart}${tagCountPart}${scoreTierPart}${processedTags}` : `${ratingPart}${tagCountPart}${scoreTierPart}`.trim()
+  return processedTags ? `${ratingPart}${tagCountPart}${scoreTierPart}${processedTags}` : `${ratingPart}${tagCountPart}${scoreTierPart}`.trim()
+}
+
+/**
+ * `pageOrder`, when given, lists which booru page to request for each SWR
+ * page index (non-random orders only), and fetching stops once it runs out —
+ * Pack Mode uses it to sample pages across the whole result set instead of
+ * only the newest ones (see hooks/use-random-page-order.ts).
+ */
+export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string, scoreTier: ScoreTier = 'off', pageOrder?: number[]) => {
+  const query = buildBooruQuery(tags, ratingFilter, order, provider, tagCountFilter, scoreTier)
   const encodedQuery = encodeURIComponent(query)
+  const pageAt = (pageIndex: number) => pageOrder ? pageOrder[pageIndex] : pageIndex + 1
 
   return useSWRInfinite<BooruPost[]>(
     (pageIndex: number, previousPageData: BooruPost[] | null) => {
@@ -552,6 +569,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       if (previousPageData && previousPageData.length === 0) {
         return null
       }
+      if (pageOrder && pageIndex >= pageOrder.length) return null
 
       // Special handling for Aibooru: Direct client-side fetch to bypass Vercel IP blocks
       if (provider === 'aibooru') {
@@ -571,7 +589,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
         // For random order, we must stick to page 1 because random:20 limits the result set to 20 items.
         // We ensure uniqueness for SWR keys by adding a seed parameter.
         const isRandom = order === 'random'
-        const effectivePage = isRandom ? "1" : (pageIndex + 1).toString()
+        const effectivePage = isRandom ? "1" : pageAt(pageIndex).toString()
 
         const params = new URLSearchParams({
           limit: "60",
@@ -592,7 +610,7 @@ export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:ge
       // (each user's browser has its own IP, so Danbooru's 10 req/s limit is per user)
       if (provider === 'danbooru') {
         const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
-        const effectivePage = isRandomOrder ? 1 : pageIndex + 1
+        const effectivePage = isRandomOrder ? 1 : pageAt(pageIndex)
         return buildDirectDanbooruUrl(query, String(effectivePage), order, randomSeed, pageIndex)
       }
 

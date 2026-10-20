@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useInfinitePosts, isRandomOrderSafeProvider, type BooruPost } from "@/lib/api-client"
 import type { BooruProvider } from "@/lib/booru/types"
 import { useScrollRateLimiter } from "./use-scroll-rate-limiter"
+import { useRandomPageOrder } from "./use-random-page-order"
 import { useToast } from "./use-toast"
 
 export type PackRatingMode = "sfw" | "questionable" | "explicit" | "both"
@@ -69,19 +70,26 @@ function buildTags(searchTags: string): string {
  * needs (automatically defaults to "random" order on providers where it poses
  * no tag-count or pagination limitations like Gelbooru/Rule34, and "recent" on
  * providers with strict limits like Danbooru/Aibooru/e621 for stable pagination).
+ * On Danbooru/Aibooru those "recent" pages are visited in a random order
+ * (useRandomPageOrder), so the pool isn't just the newest uploads.
  */
 function useSingleRatingFeed(tags: string, ratingFilter: string, provider: BooruProvider, seed: number) {
-  const [size, setSize] = useState(1)
   const isRandomSafe = isRandomOrderSafeProvider(provider)
   const order = isRandomSafe ? "random" : "recent"
+  const pageOrder = useRandomPageOrder(tags, ratingFilter, provider, seed)
 
-  const { data: pages, isValidating } = useInfinitePosts(
+  // size/setSize must be SWR's own: a separate useState counter never told
+  // SWR to fetch past page 1, so every source stopped at its first page.
+  const { data: pages, isValidating, size, setSize } = useInfinitePosts(
     tags,
     ratingFilter,
     order,
     isRandomSafe ? seed : undefined,
     provider,
     false,
+    undefined,
+    'off',
+    pageOrder,
   )
 
   // Reset pagination whenever the query itself changes (new tags/rating/
@@ -91,9 +99,9 @@ function useSingleRatingFeed(tags: string, ratingFilter: string, provider: Booru
   useEffect(() => {
     if (resetKeyRef.current !== resetKey) {
       resetKeyRef.current = resetKey
-      setSize(1)
+      void setSize(1)
     }
-  }, [resetKey])
+  }, [resetKey, setSize])
 
   const allPosts = useMemo(() => {
     if (!pages) return []
@@ -108,7 +116,10 @@ function useSingleRatingFeed(tags: string, ratingFilter: string, provider: Booru
 
   const isLoadingMore = isValidating && size > 0
   const lastPage = pages && pages.length > 0 ? pages[pages.length - 1] : null
-  const noMoreResults = !!pages && pages.length > 0 && lastPage !== null && lastPage.length === 0
+  // A random page order ends when every page in range has been fetched.
+  const noMoreResults = !!pages && pages.length > 0 && (
+    (lastPage !== null && lastPage.length === 0) || (!!pageOrder && pages.length >= pageOrder.length)
+  )
 
   return { allPosts, isLoadingMore, noMoreResults, size, setSize }
 }

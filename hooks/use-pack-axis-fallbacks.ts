@@ -31,7 +31,8 @@ function explicitFirst(entries: VocabularyEntry[]): VocabularyEntry[] {
  * scripts/generate-pack-vocabulary.ts). Fetched once, only while Pack Mode
  * is on. Slots are interleaved so a topped-up pool spans subcategories
  * instead of being all hair colours; SFW sources skip flagged tags and the
- * explicit-prone slots, Explicit sources get explicit tags first.
+ * explicit-prone slots, Questionable sources skip explicit tags, Explicit
+ * sources get them first.
  */
 export function usePackAxisFallbacks(enabled: boolean, ratingMode: PackRatingMode): PackAxisFallbacks {
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null)
@@ -70,6 +71,7 @@ export function usePackAxisFallbacks(enabled: boolean, ratingMode: PackRatingMod
         .map((slot) => {
           const entries = vocabulary[slot] ?? []
           if (sfw) return entries.filter((entry) => entry[2] !== 1)
+          if (ratingMode === "questionable") return entries.filter((entry) => !isExplicitTag(entry[0]))
           return ratingMode === "explicit" ? explicitFirst(entries) : entries
         })
       const picked: string[] = []
