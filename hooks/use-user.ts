@@ -70,7 +70,14 @@ export function useUser() {
         if (session?.user) {
           posthog.identify(session.user.id)
         } else {
-          posthog.reset()
+          // Supabase reports "no session" on every page load for anonymous
+          // visitors (once per listener). Only reset when PostHog is still
+          // identified as a user who signed out or whose session expired;
+          // resetting anonymous visitors gave each visit a new distinct_id,
+          // inflating unique users and hiding retention.
+          if (posthog.get_property('$user_state') === 'identified') {
+            posthog.reset()
+          }
           lastAuthedUserId = null
         }
 
