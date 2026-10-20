@@ -27,19 +27,24 @@ const PREFETCH_TTL_MS = 15_000
 
 const prefetched = new Map<string, { at: number; response: Promise<Response> }>()
 
+// Shuffle URLs carry a random seed. The prefetch picks it and useBooruSearch
+// starts from the same one (initialShuffleSeed), so both build the same URL.
+let prefetchSeed: { at: number; seed: number } | undefined
+
 export function prefetchFirstPostsPage(): void {
   if (typeof window === 'undefined') return
   try {
-    // Shuffle picks its random seed on mount, so the URL can't be known yet.
-    if (userPreferences.getIsShuffle()) return
     // Signed-in requests to our Worker carry an Authorization header that
     // needs the Supabase client; leave those to the fetcher.
     if (/(?:^|;\s*)sb-[^=]*-auth-token/.test(document.cookie)) return
 
+    const isShuffle = userPreferences.getIsShuffle()
+    const randomSeed = isShuffle ? Date.now() : undefined
     const url = createPostsKey({
       tags: readTagsFromUrl(),
       ratingFilter: userPreferences.getRatingFilter(),
-      order: 'recent',
+      order: isShuffle ? 'random' : 'recent',
+      randomSeed,
       provider: userPreferences.getBooruProvider(),
       hasPrompt: userPreferences.getHasPromptFilter(),
       tagCountFilter: userPreferences.getMinimumTagCount(),
@@ -52,6 +57,7 @@ export function prefetchFirstPostsPage(): void {
     const response = fetch(url, { headers })
     response.catch(() => { /* the fetcher retries on its own */ })
     prefetched.set(url, { at: Date.now(), response })
+    if (randomSeed !== undefined) prefetchSeed = { at: Date.now(), seed: randomSeed }
   } catch {
     // A prefetch must never break the page.
   }
@@ -63,4 +69,14 @@ export function takePrefetchedPosts(url: string): Promise<Response> | undefined 
   if (!entry) return undefined
   prefetched.delete(url)
   return Date.now() - entry.at < PREFETCH_TTL_MS ? entry.response : undefined
+}
+
+/**
+ * The seed useBooruSearch starts Shuffle with: the prefetch's while its
+ * response is still fresh, a new one otherwise. Not consumed on read, so a
+ * double-invoked state initializer (Strict Mode) gets the same value.
+ */
+export function initialShuffleSeed(): number {
+  if (prefetchSeed && Date.now() - prefetchSeed.at < PREFETCH_TTL_MS) return prefetchSeed.seed
+  return Date.now()
 }
