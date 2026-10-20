@@ -8,16 +8,16 @@
     "logs": "wrangler tail"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.2",
+    "@supabase/supabase-js": "^2.118.0",
     "@upstash/ratelimit": "^2.2.0",
     "@upstash/redis": "^1.39.0",
     "itty-router": "^5.0.23",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260710.1",
+    "@cloudflare/workers-types": "^5.20261016.1",
     "typescript": "^7.0.2",
-    "wrangler": "^4.143.0"
+    "wrangler": "^4.151.0"
   },
   "overrides": {
     "undici": "^7.30.0"
