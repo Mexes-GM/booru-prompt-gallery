@@ -3,6 +3,7 @@ import { useInfinitePosts, BooruProvider, BooruPost } from "@/lib/api-client"
 import type { ScoreTier } from "@/lib/api-client"
 import { userPreferences, STORAGE_KEYS, DEFAULT_MINIMUM_TAG_COUNT } from "@/lib/storage"
 import { usePersistentState } from "@/hooks/use-persistent-state"
+import { readTagsFromUrl } from "@/lib/booru/posts-prefetch"
 import {
   trackLoadMore,
   trackRefresh,
@@ -59,11 +60,6 @@ function installHistoryWatchdog() {
   }
 }
 installHistoryWatchdog()
-
-const readTagsFromUrl = (): string => {
-  if (typeof window === 'undefined') return ""
-  return new URLSearchParams(window.location.search).get('tags') ?? ""
-}
 
 function shallowEqual(objA: any, objB: any): boolean {
   if (Object.is(objA, objB)) return true;
@@ -203,9 +199,13 @@ export function useBooruSearch() {
     _setCharacterCountFilter(value)
   }, [_setCharacterCountFilter])
 
-  const [appliedTagCountFilter, setAppliedTagCountFilter] = useState(DEFAULT_MINIMUM_TAG_COUNT)
-  const [appliedScoreTier, setAppliedScoreTier] = useState<ScoreTier>("off")
-  const [appliedCharacterCountFilter, setAppliedCharacterCountFilter] = useState("0")
+  // Start from the stored values, not the defaults: the first page request
+  // goes out on the first render, and a key that changes right after mount
+  // fetched page 1 twice (the second queued 1s behind the first, see
+  // page1Chain in lib/api-client.ts) and missed the first-page prefetch.
+  const [appliedTagCountFilter, setAppliedTagCountFilter] = useState(tagCountFilter)
+  const [appliedScoreTier, setAppliedScoreTier] = useState<ScoreTier>(scoreTier)
+  const [appliedCharacterCountFilter, setAppliedCharacterCountFilter] = useState(characterCountFilter)
   const [isClient, setIsClient] = useState(false)
 
   // Sync applied filter with persistent state on load (when no user interaction has occurred)

@@ -3,10 +3,12 @@ import useSWRInfinite from 'swr/infinite'
 import { BooruPost, isAibooruPost as checkIsAibooruPost } from './booru/types'
 import { prefetchTagCounts } from '@/hooks/use-tag-counts'
 import { splitCommaSeparatedTags } from './utils/tag-utils'
-import { PROVIDER_URLS, USER_AGENT } from '@/lib/constants'
+import { PROVIDER_URLS } from '@/lib/constants'
 // URL helpers extracted to lib/booru/urls.ts (pure, no React). Re-exported below
 // so existing `@/lib/api-client` consumers keep working.
-import { apiUrl, buildDirectDanbooruUrl, urlHasHost } from './booru/urls'
+import { apiUrl, urlHasHost } from './booru/urls'
+import { buildBooruQuery, createPostsKey } from './booru/posts-key'
+import { takePrefetchedPosts } from './booru/posts-prefetch'
 import { getAuthHeader } from './booru/auth-header'
 import { transformAibooruPost, transformDanbooruPost, transformE621Post } from './booru/post-transformers'
 import { relaxScoreFloorInUrl, SCORE_FLOOR_BY_PROVIDER, type BooruProvider as TagLimitsBooruProvider, type ScoreTier } from './booru/tag-limits'
@@ -328,7 +330,13 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
             ...authHeader,
           }
 
-        const res = await fetch(url, { headers })
+        // A first page prefetched before the gallery chunk loaded
+        // (lib/booru/posts-prefetch.ts) stands in for the first attempt.
+        // Anonymous only: the prefetch was sent without an Authorization header.
+        const prefetched = attempt === 0 && Object.keys(authHeader).length === 0
+          ? takePrefetchedPosts(url)
+          : undefined
+        const res = await (prefetched ?? fetch(url, { headers }))
 
         // Retry 429 responses after the server-suggested delay
         if (res.status === 429 && attempt < MAX_RETRIES) {
@@ -504,7 +512,6 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
 // module (lib/booru/tag-limits.ts) so they can be unit-tested without pulling in React/Next.
 // See that file for the full empirical/documentation rationale behind each provider's limit.
 export { hasMultipleTags, getProviderTagLimit, isTagCountSupportedProvider, isRandomOrderSafeProvider, getScoreFloor } from './booru/tag-limits'
-import { processTagsForAPI, mapRatingForProvider, isTagCountSupportedProvider, getScoreFloor } from './booru/tag-limits'
 
 // Function to check if user entered more than 2 search terms total
 export const hasMoreThanTwoTerms = (tags: string): boolean => {
@@ -523,129 +530,14 @@ export const hasMoreThanTwoTerms = (tags: string): boolean => {
 export { getFinalQueryTags, getFinalQueryTagsWithMeta, detectMisusedMetatags } from './booru/tag-limits'
 export type { QueryTagMeta, FinalQueryTagsResult, MisusedMetatagWarning, ScoreTier } from './booru/tag-limits'
 
-/**
- * The booru `tags` query useInfinitePosts sends (rating + tagcount + score
- * floor + the user's tags, trimmed to the provider's tag limit), without the
- * order/random metatag it appends per provider. Exported so other requests
- * against the same result set (e.g. Pack Mode's page-range probe) match it.
- */
-export function buildBooruQuery(tags: string, ratingFilter: string, order: string, provider: BooruProvider, tagCountFilter?: string, scoreTier: ScoreTier = 'off'): string {
-  // Provider-specific rating vocabulary mapping (e.g. e621 has no "general" tier —
-  // see lib/booru/tag-limits.ts for the full empirical rationale).
-  const effectiveRating = mapRatingForProvider(ratingFilter, provider)
-
-  const ratingPart = effectiveRating && effectiveRating !== 'all' ? `${effectiveRating} ` : ''
-  // Tag count filter: supported (confirmed empirically) on Danbooru, Aibooru and e621 —
-  // NOT on Gelbooru/Rule34. See lib/booru/tag-limits.ts for the full rationale.
-  const tagCountPart = (tagCountFilter && isTagCountSupportedProvider(provider)) ? `tagcount:>=${tagCountFilter.replace(/\D/g, '')} ` : ''
-
-  // Quality floor (Palanca 1, docs/prompt-genericness-mitigation-plan.md §7-§8): score:>=N,
-  // free on all 5 providers (confirmed §7.2). No-op when scoreTier is 'off' (the default).
-  const scoreFloor = getScoreFloor(provider, scoreTier)
-  const scoreTierPart = scoreFloor != null ? `score:>=${scoreFloor} ` : ''
-
-  // order:rank / random:N are appended to the query later (below, per-provider) and are
-  // confirmed to consume one slot of the provider's tag limit — same as a normal tag.
-  const systemOrderTagCount = (order === 'popular' || order === 'random') ? 1 : 0
-  const processedTags = processTagsForAPI(tags, provider, systemOrderTagCount)
-
-  return processedTags ? `${ratingPart}${tagCountPart}${scoreTierPart}${processedTags}` : `${ratingPart}${tagCountPart}${scoreTierPart}`.trim()
-}
+export { buildBooruQuery }
 
 /**
- * `pageOrder`, when given, lists which booru page to request for each SWR
- * page index (non-random orders only), and fetching stops once it runs out —
- * Pack Mode uses it to sample pages across the whole result set instead of
- * only the newest ones (see hooks/use-random-page-order.ts).
+ * `pageOrder`: see PostsQuery in lib/booru/posts-key.ts.
  */
 export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string, scoreTier: ScoreTier = 'off', pageOrder?: number[]) => {
-  const query = buildBooruQuery(tags, ratingFilter, order, provider, tagCountFilter, scoreTier)
-  const encodedQuery = encodeURIComponent(query)
-  const pageAt = (pageIndex: number) => pageOrder ? pageOrder[pageIndex] : pageIndex + 1
-
   return useSWRInfinite<BooruPost[]>(
-    (pageIndex: number, previousPageData: BooruPost[] | null) => {
-      // Stop fetching if we received an empty array (no more results)
-      if (previousPageData && previousPageData.length === 0) {
-        return null
-      }
-      if (pageOrder && pageIndex >= pageOrder.length) return null
-
-      // Special handling for Aibooru: Direct client-side fetch to bypass Vercel IP blocks
-      if (provider === 'aibooru') {
-        const promptFilter = hasPrompt ? 'has:prompt' : ''
-        let finalTags: string
-
-        // Use raw 'query' instead of 'encodedQuery' to avoid double encoding by URLSearchParams
-        if (order === 'recent') {
-          finalTags = [query, promptFilter].filter(Boolean).join(' ').trim()
-        } else if (order === 'random') {
-          const randomCount = "60"
-          finalTags = [query, promptFilter, `random:${randomCount}`].filter(Boolean).join(' ')
-        } else {
-          finalTags = [query, promptFilter, 'order:rank'].filter(Boolean).join(' ')
-        }
-
-        // For random order, we must stick to page 1 because random:20 limits the result set to 20 items.
-        // We ensure uniqueness for SWR keys by adding a seed parameter.
-        const isRandom = order === 'random'
-        const effectivePage = isRandom ? "1" : pageAt(pageIndex).toString()
-
-        const params = new URLSearchParams({
-          limit: "60",
-          only: "id,file_url,large_file_url,preview_file_url,tag_string,tag_string_artist,tag_string_character,tag_string_copyright,rating,score,ai_metadata,image_width,image_height",
-          page: effectivePage,
-          tags: finalTags
-        })
-
-        if (isRandom) {
-          params.append("seed", `${randomSeed}_${pageIndex}`)
-        }
-
-        const directUrl = `${PROVIDER_URLS.AIBOORU}/posts.json?${params.toString()}`
-        return directUrl
-      }
-
-      // Danbooru: direct to danbooru.donmai.us to avoid shared IP rate limiting
-      // (each user's browser has its own IP, so Danbooru's 10 req/s limit is per user)
-      if (provider === 'danbooru') {
-        const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
-        const effectivePage = isRandomOrder ? 1 : pageAt(pageIndex)
-        return buildDirectDanbooruUrl(query, String(effectivePage), order, randomSeed, pageIndex)
-      }
-
-      // E621: direct client fetch — CORS *, no auth required.
-      // Each user's browser has its own IP, eliminating shared rate-limit contention.
-      // ponytail: direct URL, no transform needed (handled by fetcher).
-      if (provider === 'e621') {
-        const isRandom = order === 'random' || /order:random|random:\d+/i.test(tags)
-        const effectivePage = isRandom ? "1" : (pageIndex + 1).toString()
-        const params = new URLSearchParams({
-          limit: "60",
-          page: effectivePage,
-          tags: query,
-          _client: USER_AGENT,
-        })
-        if (isRandom) {
-          params.append("seed", `${randomSeed}_${pageIndex}`)
-        }
-        return `https://e621.net/posts.json?${params.toString()}`
-      }
-
-      // Other providers — route through the Worker API
-      const apiEndpoint = '/api/posts'
-
-      const isRandomOrder = order === 'random' || /order:random|random:\d+/i.test(tags)
-      const effectivePage = isRandomOrder ? 1 : pageIndex + 1
-
-      const baseUrl = apiUrl(`${apiEndpoint}?page=${effectivePage}&tags=${encodedQuery}&order=${order}&provider=${provider}`)
-
-      const seedParam = isRandomOrder && randomSeed ? `&seed=${randomSeed}_${pageIndex}` : ''
-
-      const finalUrl = `${baseUrl}${seedParam}`
-
-      return finalUrl
-    },
+    createPostsKey({ tags, ratingFilter, order, randomSeed, provider, hasPrompt, tagCountFilter, scoreTier, pageOrder }),
     fetcher,
     {
       revalidateFirstPage: false, // Don't revalidate first page when loading more
