@@ -108,6 +108,10 @@ function normalizedTagList(tagString: string | undefined): string[] {
  * 5 category buckets, in display-normalized form. Character tags are passed as
  * knownCharacterTags so they land in `appearance` (important for the
  * "clothing pack varying characters" use case).
+ *
+ * Copyright and artist tags are dropped: Danbooru's tag_string carries every
+ * category, and a series or artist name the classifier doesn't know could
+ * otherwise land in any axis (e.g. a series title sampled as scenery).
  */
 export function classifyPostForPack(
   post: BooruPost,
@@ -118,8 +122,12 @@ export function classifyPostForPack(
   // for this post; the curated set inside isMetaTag covers the editorial
   // removals Danbooru classifies as `general` (signature, watermark, text...).
   const postMetaTags = buildPostMetaTagSet(post.tag_string_meta)
+  const nameTags = new Set([
+    ...normalizedTagList(post.tag_string_copyright),
+    ...normalizedTagList(post.tag_string_artist),
+  ])
   const generalTags = normalizedTagList(post.tag_string).filter(
-    (t) => !isMetaTag(t, postMetaTags)
+    (t) => !isMetaTag(t, postMetaTags) && !nameTags.has(t)
   )
   const allTags = Array.from(new Set([...charTags, ...generalTags]))
   return classifyTags(allTags, tagOverrides, charTags)
@@ -591,6 +599,12 @@ export interface GeneratePackPromptsArgs {
    * produces prompts.
    */
   requiredTag?: (tag: string) => boolean
+  /**
+   * Values containing a tag that passes this test are never sampled — a
+   * bundle is dropped whole, not trimmed (see withoutForbiddenTags). The base
+   * (`lockedTags`) is left alone — it is the user's own choice.
+   */
+  forbiddenTag?: (tag: string) => boolean
 }
 
 export interface PackPrompt {
@@ -758,6 +772,18 @@ export function maxValuesPerPrompt(groups: SlotGroup[]): number {
 }
 
 /**
+ * Axis values with no tag passing `forbidden`. A bundle containing one is
+ * dropped whole rather than trimmed: it is one post's cohesive set, and the
+ * leftover ("looking at viewer" minus the act) is a poor sample. Trimming
+ * also produced values missing from the axis weight map, which then sampled
+ * at the fallback weight of 1 — far above the normalized weights around them —
+ * and crowded out the rest of the pool.
+ */
+export function withoutForbiddenTags(values: string[], forbidden: (tag: string) => boolean): string[] {
+  return values.filter((value) => !splitCommaSeparatedTags(value).some(forbidden))
+}
+
+/**
  * Generate up to `count` distinct pack prompts. Each prompt is:
  *   lockedTags + (axisMinCounts[category] sampled values per active axis,
  *   conflict-resolved) — axisMinCounts defaults to 1 per axis (one value per
@@ -784,6 +810,7 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     maxPrompts = MAX_PACK_PROMPTS,
     tagOverrides,
     requiredTag,
+    forbiddenTag,
   } = args
 
   const normalizedLocked = Array.from(
@@ -804,7 +831,8 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
   const activeAxes = PACK_AXES.map((cat) => {
     const rawVals = axes[cat]
     if (!Array.isArray(rawVals) || rawVals.length === 0) return null
-    const vals = Array.from(new Set(rawVals.map(normalizeTagForPack).filter(Boolean)))
+    const allowed = forbiddenTag ? withoutForbiddenTags(rawVals, forbiddenTag) : rawVals
+    const vals = Array.from(new Set(allowed.map(normalizeTagForPack).filter(Boolean)))
     if (vals.length === 0) return null
 
     const requestedMin = axisMinCounts[cat] ?? 1

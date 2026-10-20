@@ -7,7 +7,7 @@ import { PROVIDER_URLS } from '@/lib/constants'
 // URL helpers extracted to lib/booru/urls.ts (pure, no React). Re-exported below
 // so existing `@/lib/api-client` consumers keep working.
 import { apiUrl, urlHasHost } from './booru/urls'
-import { createPostsKey } from './booru/posts-key'
+import { buildBooruQuery, createPostsKey } from './booru/posts-key'
 import { takePrefetchedPosts } from './booru/posts-prefetch'
 import { getAuthHeader } from './booru/auth-header'
 import { transformAibooruPost, transformDanbooruPost, transformE621Post } from './booru/post-transformers'
@@ -530,9 +530,14 @@ export const hasMoreThanTwoTerms = (tags: string): boolean => {
 export { getFinalQueryTags, getFinalQueryTagsWithMeta, detectMisusedMetatags } from './booru/tag-limits'
 export type { QueryTagMeta, FinalQueryTagsResult, MisusedMetatagWarning, ScoreTier } from './booru/tag-limits'
 
-export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string, scoreTier: ScoreTier = 'off') => {
+export { buildBooruQuery }
+
+/**
+ * `pageOrder`: see PostsQuery in lib/booru/posts-key.ts.
+ */
+export const useInfinitePosts = (tags: string, ratingFilter: string = 'rating:general', order: string = 'popular', randomSeed?: number, provider: BooruProvider = 'danbooru', hasPrompt: boolean = false, tagCountFilter?: string, scoreTier: ScoreTier = 'off', pageOrder?: number[]) => {
   return useSWRInfinite<BooruPost[]>(
-    createPostsKey({ tags, ratingFilter, order, randomSeed, provider, hasPrompt, tagCountFilter, scoreTier }),
+    createPostsKey({ tags, ratingFilter, order, randomSeed, provider, hasPrompt, tagCountFilter, scoreTier, pageOrder }),
     fetcher,
     {
       revalidateFirstPage: false, // Don't revalidate first page when loading more

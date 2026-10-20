@@ -8,6 +8,35 @@ const RELEASE =
   process.env.COMMIT_REF ||              // Netlify
   undefined
 
+// React's dev tooling (call-stack reconstruction, Fast Refresh) needs eval();
+// production bundles don't, so granting it there only widens what an injected
+// script could do.
+const SCRIPT_EVAL = process.env.NODE_ENV === 'development' ? "'unsafe-eval' " : ''
+
+/** @param {string} [frameAncestors] */
+function contentSecurityPolicy(frameAncestors = '') {
+  return `
+ default-src 'self';
+ script-src 'self' ${SCRIPT_EVAL}'unsafe-inline' https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com https://*.workers.dev;
+ style-src 'self' 'unsafe-inline';
+ img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://*.donmai.us https://*.buymeacoffee.com https://gelbooru.com https://*.gelbooru.com https://*.workers.dev https://*.cloudfront.net;
+ font-src 'self';
+ connect-src 'self' https://*.supabase.co wss://*.supabase.co https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://danbooru.donmai.us https://cdn.donmai.us https://*.donmai.us https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://gelbooru.com https://*.gelbooru.com https://vercel.live https://netlify-cdp.netlify.app https://*.workers.dev https://*.cloudfront.net https://challenges.cloudflare.com;
+ frame-src 'self' https://vercel.live https://challenges.cloudflare.com;
+ worker-src 'self' blob:;
+ ${frameAncestors}
+ object-src 'none';
+ base-uri 'self';
+ form-action 'self';
+ `.replace(/\s+/g, ' ').trim()
+}
+
+/** @param {string} csp */
+const pageHeaders = (csp) => [
+  { key: 'Content-Security-Policy', value: csp },
+  { key: 'X-DNS-Prefetch-Control', value: 'on' },
+]
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // NOTE: the PostHog reverse-proxy rewrites (/ingest/* -> *.i.posthog.com) used
@@ -105,11 +134,26 @@ const nextConfig = {
     dangerouslyAllowSVG: false,
     formats: ['image/webp', 'image/avif'],
   },
-  // Single source of truth for static response headers on BOTH hosts: Vercel
-  // and Netlify (@netlify/plugin-nextjs) both apply next.config headers,
-  // including to /public files. proxy.ts only adds the per-request CSP. Do not
-  // re-add headers to vercel.json or netlify.toml — divergent copies there are
-  // how the two deployments drifted apart.
+  // Supabase magic links land on /?code=... instead of /auth/callback?code=...
+  // when emailRedirectTo isn't in the Supabase redirect whitelist. This used to
+  // live in proxy.ts, but that kept "/" in the middleware matcher, and on
+  // Netlify middleware is an edge function that runs before the CDN cache on
+  // every request. A config redirect is routing, not middleware, so "/" stays
+  // cacheable. Query values (code, next) pass through to the destination.
+  redirects: async () => [
+    {
+      source: '/((?!api/|auth/).*)',
+      has: [{ type: 'query', key: 'code' }],
+      destination: '/auth/callback',
+      permanent: false,
+    },
+  ],
+  // Single source of truth for response headers on BOTH hosts: Vercel and
+  // Netlify (@netlify/plugin-nextjs) both apply next.config headers, including
+  // to /public files and to pages served from the CDN cache. Do not re-add
+  // headers to vercel.json, netlify.toml or proxy.ts — divergent copies there
+  // are how the two deployments drifted apart, and headers set in proxy.ts
+  // force every matched route through middleware.
   headers: async () => {
     const securityHeaders = [
       { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
@@ -123,8 +167,17 @@ const nextConfig = {
     return [
       { source: '/:path*', headers: securityHeaders },
       // Every route except /extension, which the browser extension embeds in
-      // an iframe; its framing policy is the CSP frame-ancestors set by proxy.ts.
+      // an iframe; its framing policy is the CSP frame-ancestors below.
       { source: '/((?!extension).*)', headers: [{ key: 'X-Frame-Options', value: 'DENY' }] },
+      // Pages get the CSP; API responses are JSON and never had one. The two
+      // sources don't overlap, so each page gets exactly one policy.
+      { source: '/((?!api/|extension).*)', headers: pageHeaders(contentSecurityPolicy()) },
+      {
+        source: '/extension',
+        headers: pageHeaders(
+          contentSecurityPolicy("frame-ancestors 'self' chrome-extension://* moz-extension://*;")
+        ),
+      },
       {
         source: '/api/(.*)',
         headers: [

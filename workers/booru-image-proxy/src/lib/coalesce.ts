@@ -1,4 +1,4 @@
-import { Redis } from './redis'
+import { Redis, isRedisDown } from './redis'
 import { sleep } from '../utils'
 
 /**
@@ -68,6 +68,10 @@ export async function coalesce<T>(
     return result
   }
 
+  // A failed SET (quota exhausted, timeout) also returns false — that is not
+  // a lock held by another request, so there is no winner to wait for.
+  if (isRedisDown()) return fetcher()
+
   // ── Loser path: wait for winner via lightweight notify-key polling ─────
   //
   // Instead of polling the heavy cacheKey (up to ~80KB per GET), we poll a
@@ -80,6 +84,7 @@ export async function coalesce<T>(
   // herd that further degrades the API.
   for (let i = 0; i < 17; i++) {
     await sleep(300)
+    if (isRedisDown()) break
     const signal = await redis.get(notifyKey)
     if (signal) {
       const result = await redis.get(cacheKey)

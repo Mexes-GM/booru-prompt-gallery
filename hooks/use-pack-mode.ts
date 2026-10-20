@@ -28,7 +28,15 @@ import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from '@/lib/pack/pr
 import { classifyBasePrompt } from '@/lib/pack/base-prompt'
 import { pickReplacement } from '@/lib/pack/reroll'
 import { finalizePackPrompt, parseAlwaysAddTags } from '@/lib/pack/always-add'
-import { isExplicitTag, promptHasExplicitTag } from '@/lib/pack/explicit-tags'
+import {
+  promptHasExplicitTag,
+  ratingPasses,
+  ratingRuleArgs,
+  interleave,
+  type RatingPass,
+  type RatingRule,
+} from '@/lib/pack/explicit-tags'
+import type { PackRatingMode } from '@/hooks/use-pack-seed-search'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
@@ -228,9 +236,13 @@ export interface UsePackModeResult {
   promptCount: number
   setPromptCount: (count: number) => void
 
-  /** Every prompt must carry an explicit tag (set from an Explicit source). */
-  requireExplicit: boolean
-  setRequireExplicit: (value: boolean) => void
+  /**
+   * The source's content rating, which generation follows: explicit packs
+   * carry an explicit tag in every prompt, questionable/SFW packs never
+   * sample one, "both" packs are half and half. Null applies no rule.
+   */
+  contentRating: PackRatingMode | null
+  setContentRating: (rating: PackRatingMode | null) => void
 
   generatedPrompts: PackPrompt[]
   regenerate: () => void
@@ -433,7 +445,7 @@ export function usePackMode(
   // "Generate" button calls explicitly.
   const [generatedPrompts, setGeneratedPrompts] = useState<PackPrompt[]>([])
   // Driven by the source's rating (PromptGallery owns the source), never persisted.
-  const [requireExplicit, setRequireExplicit] = useState(false)
+  const [contentRating, setContentRating] = useState<PackRatingMode | null>(null)
 
   const togglePackMode = useCallback(() => setIsPackMode((prev) => !prev), [])
   const enablePackMode = useCallback(() => setIsPackMode(true), [])
@@ -1105,25 +1117,6 @@ export function usePackMode(
     // generate pass at the same value left zero headroom for the 3x
     // multiplier whenever promptCount was close to MAX_PACK_PROMPTS (see
     // that constant's docstring in pack-generator.ts).
-    const overGenerateCount = Math.min(promptCount * 3, MAX_PACK_OVERGENERATE)
-    const rawPrompts = generatePackPrompts({
-      lockedTags,
-      axes,
-      axisMinCounts: effectiveAxisMinCounts,
-      axisWeights,
-      count: overGenerateCount,
-      maxPrompts: overGenerateCount,
-      globalWeights,
-      isGlobalWeightsEnabled,
-      // Slot whitelist is already applied to the pools (mergedAxisValues),
-      // where manual values are deliberately exempt — not passed again here.
-      tagOverrides: effectiveOverrides,
-      requiredTag: requireExplicit ? isExplicitTag : undefined,
-    })
-    // Only enforce after cleaning (exclude list, optimizeTags can drop the
-    // explicit tag) when the generator could enforce it in the first place.
-    const enforceExplicit = requireExplicit && rawPrompts.some((p) => promptHasExplicitTag(p.prompt))
-
     // Run each raw combination through the exact same cleaner pipeline every
     // real card uses (cleanPrompt + Smart Tag Exclusion + global weights),
     // driven by the app's current prompt settings — see cleanSyntheticPrompt
@@ -1146,47 +1139,74 @@ export function usePackMode(
     // Never sort `cleaned` by any learned score — doing so would turn
     // position bias into a feedback loop on itself (top-scored item sits on
     // top, gets copied for being on top, scores even higher).
+    //
+    // The source's content rating splits generation into passes (see
+    // ratingPasses): one for explicit/questionable/SFW sources, two for
+    // "both", whose halves are interleaved. Dedup is shared across passes.
     const seen = new Set<string>()
     const dupFilter = new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, lockedTags)
-    const cleaned: PackPrompt[] = []
-    // Prompts the cleaner shrank below "Min tags per prompt" — only used to
-    // top the list up (longest first) if not enough full-size ones survive.
-    const short: PackPrompt[] = []
-    for (const raw of rawPrompts) {
-      if (cleaned.length >= promptCount) break
-      const tags = raw.prompt.split(',').map((t) => t.trim()).filter(Boolean)
-      const cleanedPrompt = cleanSyntheticPrompt(
-        tags,
-        characterTags,
-        {
-          ...cleanOptions,
-          tagOverrides: effectiveOverrides,
-          globalWeights,
-          isGlobalWeightsEnabled,
-          lockedTags,
-        },
-        lockedTags
-      )
-      const prompt = cleanedPrompt && finalizePackPrompt(cleanedPrompt, alwaysAddTags)
-      if (!prompt || seen.has(prompt)) continue
-      if (enforceExplicit && !promptHasExplicitTag(prompt)) continue
-      if (minTotalTags > 0 && countPromptTags(prompt) < minTotalTags) {
-        short.push({ prompt, values: raw.values, tagSlots: raw.tagSlots })
-        continue
+    const runPass = ({ rule, count }: RatingPass): PackPrompt[] => {
+      const overGenerateCount = Math.min(count * 3, MAX_PACK_OVERGENERATE)
+      const rawPrompts = generatePackPrompts({
+        lockedTags,
+        axes,
+        axisMinCounts: effectiveAxisMinCounts,
+        axisWeights,
+        count: overGenerateCount,
+        maxPrompts: overGenerateCount,
+        globalWeights,
+        isGlobalWeightsEnabled,
+        // Slot whitelist is already applied to the pools (mergedAxisValues),
+        // where manual values are deliberately exempt — not passed again here.
+        tagOverrides: effectiveOverrides,
+        ...ratingRuleArgs(rule),
+      })
+      // Only re-check after cleaning (exclude list, optimizeTags can drop the
+      // tag) when the generator could enforce it in the first place.
+      const enforceRequired = rule === 'require' && rawPrompts.some((p) => promptHasExplicitTag(p.prompt))
+
+      const cleaned: PackPrompt[] = []
+      // Prompts the cleaner shrank below "Min tags per prompt" — only used to
+      // top the list up (longest first) if not enough full-size ones survive.
+      const short: PackPrompt[] = []
+      for (const raw of rawPrompts) {
+        if (cleaned.length >= count) break
+        const tags = raw.prompt.split(',').map((t) => t.trim()).filter(Boolean)
+        const cleanedPrompt = cleanSyntheticPrompt(
+          tags,
+          characterTags,
+          {
+            ...cleanOptions,
+            tagOverrides: effectiveOverrides,
+            globalWeights,
+            isGlobalWeightsEnabled,
+            lockedTags,
+          },
+          lockedTags
+        )
+        const prompt = cleanedPrompt && finalizePackPrompt(cleanedPrompt, alwaysAddTags)
+        if (!prompt || seen.has(prompt)) continue
+        if (enforceRequired && !promptHasExplicitTag(prompt)) continue
+        if (minTotalTags > 0 && countPromptTags(prompt) < minTotalTags) {
+          short.push({ prompt, values: raw.values, tagSlots: raw.tagSlots })
+          continue
+        }
+        if (!dupFilter.tryAccept(prompt)) continue
+        seen.add(prompt)
+        cleaned.push({ prompt, values: raw.values, tagSlots: raw.tagSlots })
       }
-      if (!dupFilter.tryAccept(prompt)) continue
-      seen.add(prompt)
-      cleaned.push({ prompt, values: raw.values, tagSlots: raw.tagSlots })
-    }
-    if (cleaned.length < promptCount && short.length > 0) {
-      short.sort((a, b) => countPromptTags(b.prompt) - countPromptTags(a.prompt))
-      for (const p of short) {
-        if (cleaned.length >= promptCount) break
-        if (seen.has(p.prompt) || !dupFilter.tryAccept(p.prompt)) continue
-        seen.add(p.prompt)
-        cleaned.push(p)
+      if (cleaned.length < count && short.length > 0) {
+        short.sort((a, b) => countPromptTags(b.prompt) - countPromptTags(a.prompt))
+        for (const p of short) {
+          if (cleaned.length >= count) break
+          if (seen.has(p.prompt) || !dupFilter.tryAccept(p.prompt)) continue
+          seen.add(p.prompt)
+          cleaned.push(p)
+        }
       }
+      return cleaned
     }
+    const cleaned = interleave(ratingPasses(contentRating, promptCount).map(runPass))
     setGeneratedPrompts(cleaned)
 
     // Record the "shown" half of the pick/show signal (§7.2) ONCE per
@@ -1228,7 +1248,7 @@ export function usePackMode(
     learningContextKeys,
     axisValueCategory,
     alwaysAddTags,
-    requireExplicit,
+    contentRating,
   ])
 
   /**
@@ -1242,6 +1262,10 @@ export function usePackMode(
     (index: number): boolean => {
       if (index < 0 || index >= generatedPrompts.length) return false
       const { axes, axisWeights, effectiveAxisMinCounts } = buildGenerationArgs()
+      // A "both" pack keeps each row on the half it came from.
+      const rule: RatingRule = contentRating === 'both'
+        ? (promptHasExplicitTag(generatedPrompts[index].prompt) ? 'require' : 'forbid')
+        : ratingPasses(contentRating, 1)[0].rule
       const rawCandidates = generatePackPrompts({
         lockedTags,
         axes,
@@ -1252,7 +1276,7 @@ export function usePackMode(
         globalWeights,
         isGlobalWeightsEnabled,
         tagOverrides: effectiveOverrides,
-        requiredTag: requireExplicit ? isExplicitTag : undefined,
+        ...ratingRuleArgs(rule),
       })
       const others = generatedPrompts.filter((_, i) => i !== index).map((p) => p.prompt)
       const clean = (tags: string[]) => {
@@ -1279,7 +1303,7 @@ export function usePackMode(
       characterTags,
       cleanOptions,
       alwaysAddTags,
-      requireExplicit,
+      contentRating,
     ]
   )
 
@@ -1433,8 +1457,8 @@ export function usePackMode(
     promptCount,
     setPromptCount: setPromptCountClamped,
 
-    requireExplicit,
-    setRequireExplicit,
+    contentRating,
+    setContentRating,
 
     generatedPrompts,
     regenerate,
