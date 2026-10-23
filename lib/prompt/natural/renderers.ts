@@ -55,7 +55,8 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[] } = 
     prose.camera,
   ].filter(Boolean)
   // Pose tags no rule could phrase stay in the tag block so nothing is lost.
-  const poseRaw = prose.raw.filter((t) => !scene.unclassified.includes(t))
+  const unclassified = new Set(scene.unclassified)
+  const poseRaw = prose.raw.filter((t) => !unclassified.has(t))
   const tagBlock = [...tags, ...poseRaw.map(escapeTag)].join(", ")
   return {
     text: sentences.length ? `${tagBlock}. ${sentences.join(" ")}` : tagBlock,

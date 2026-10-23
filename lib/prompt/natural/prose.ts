@@ -185,7 +185,8 @@ export function describeScene(scene: Scene): SceneProse {
 
   // Body.
   const relations = anatomyAll.filter((t) => RELATIONS.has(t))
-  const anatomy = anatomyAll.filter((t) => !species.includes(t) && !RELATIONS.has(t))
+  const speciesSet = new Set(species)
+  const anatomy = anatomyAll.filter((t) => !speciesSet.has(t) && !RELATIONS.has(t))
   const bodyAdjectives = anatomy.filter((t) => BODY_ADJECTIVES.has(t))
   const visible = anatomy.filter((t) => BODY_VISIBLE.has(t))
   const bodyNouns = anatomy.filter((t) => !BODY_ADJECTIVES.has(t) && !BODY_VISIBLE.has(t)).map((t) => (isPluralNoun(t) ? t : withArticle(t)))
@@ -216,7 +217,8 @@ export function describeScene(scene: Scene): SceneProse {
   // Held items: "holding X" names the item; the bare item tag is then redundant.
   const equipment = [...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])]
   const heldNames = equipment.filter((t) => t.startsWith("holding ")).map((t) => t.slice(8))
-  const loose = dropImplied(equipment.filter((t) => t !== "holding" && !t.startsWith("holding ") && !heldNames.includes(t)))
+  const heldSet = new Set(heldNames)
+  const loose = dropImplied(equipment.filter((t) => t !== "holding" && !t.startsWith("holding ") && !heldSet.has(t)))
   const held = [
     heldNames.length ? `${Subject} ${is} holding ${joinList(heldNames.map(withArticle))}.` : "",
     loose.length ? `${Subject} ${has} ${joinList(loose.map(withArticle))}.` : "",
