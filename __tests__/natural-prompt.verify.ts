@@ -12,6 +12,9 @@
  *   6. FLUX.2 output: prose only, no rating, quality or artist tags.
  *   7. The phrase dictionary and its precedence.
  *   8. Pasted prompts: hand-written names, gender and size tags.
+ *   9-10. Word budget; trait attribution between characters.
+ *   11. One character under several names; placeholder names.
+ *   12. Gender per character: sexual anatomy stays shared, possessives follow it.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
@@ -220,6 +223,54 @@ const overrides: Record<string, string> = {
   const cosplay = buildScene({ ...input, general: [...general, "cosplay"] }, vocab, { traits })
   assert(!Object.values(cosplay.assigned.find((a) => a.character.name === "Hatsune Miku")?.slots ?? {}).flat().includes("necktie"), "on costume posts only hair, eyes and body are attributed")
   assert(buildScene(input, vocab).assigned.length === 0, "without profiles nothing is attributed")
+}
+
+// 11. One character under several names (Rule34), placeholder names.
+{
+  const names = (characters: string[], general: string[], characterAliases?: Record<string, string>) =>
+    buildScene({ general, characters }, overrides, { characterAliases }).characters.map((c) => c.name)
+  const aliased = names(["kasumi (pokemon)", "misty (pokemon)"], ["1girl"], { "kasumi (pokemon)": "misty (pokemon)", "misty (pokemon)": "misty (pokemon)" })
+  assert(aliased.join() === "Misty", "names the alias map joins are one person, under the canonical tag")
+  assert(names(["kitagawa marin", "marin kitagawa"], ["1girl"]).length === 1, "swapped given and family name is one person")
+  assert(names(["gotoh naoki", "gotou naoki"], ["1girl"]).length === 1, "romanisation variants are one person")
+  assert(names(["marceline", "marceline the vampire queen"], ["1girl"]).join() === "Marceline", "a longer form of the same name is one person")
+  assert(names(["jeanne d'arc", "jeanne d'arc alter"], ["2girls"]).length === 2, "similar names stay apart when the post has that many people")
+  assert(names(["kitagawa marin", "marin kitagawa"], []).length === 2, "without a people count only the alias map merges")
+  assert(names(["anonymous male", "background character", "kitagawa marin"], ["1girl", "1boy"]).join() === "Kitagawa Marin", "placeholder names are not characters")
+
+  const vampire = buildScene({ general: ["1girl", "grey-skinned girl", "vampire girl", "busty girl"], characters: ["marceline abadeer"] }, { ...overrides, "grey-skinned girl": "appearance:anatomy", "vampire girl": "appearance:anatomy", "busty girl": "appearance:anatomy" })
+  assert(renderFlux2(vampire).text.includes("Marceline Abadeer, a grey-skinned, busty vampire girl"), "one person's species tags make one noun")
+  assert(normalizeTag("grabbing_another&#039;s_breast") === "grabbing another's breast", "HTML entities in Rule34 tags are decoded")
+}
+
+// 12. Gender per character: sexual anatomy stays shared, gendered traits and possessives follow it.
+{
+  // Danbooru related-tag shares (rounded): his posts carry her breasts and nipples.
+  const traits = {
+    "gojou wakana": { "solo 1girl": 0.51, "solo 1boy": 0.49, "1girl": 0.845, "1boy": 0.818, breasts: 0.64, "large breasts": 0.398, nipples: 0.289, penis: 0.286, pussy: 0.177, collarbone: 0.135, "black hair": 0.8 },
+    "kitagawa marin": { "solo 1girl": 1, "solo 1boy": 0, "1girl": 0.93, "1boy": 0.21, breasts: 0.805, "large breasts": 0.502, collarbone: 0.233, nipples: 0.166, penis: 0.117, "blonde hair": 0.9 },
+  }
+  const vocab: Record<string, string> = { ...overrides, penis: "appearance:anatomy", pussy: "appearance:anatomy", nipples: "appearance:anatomy", "large breasts": "appearance:anatomy", collarbone: "appearance:anatomy", "blonde hair": "appearance:hair", "black hair": "appearance:hair" }
+  const general = ["1girl", "1boy", "penis", "pussy", "nipples", "large breasts", "collarbone", "blonde hair", "black hair"]
+  const scene = buildScene({ general, characters: ["gojou wakana", "kitagawa marin"] }, vocab, { traits })
+  const owned = (name: string) => Object.values(scene.assigned.find((a) => a.character.name === name)?.slots ?? {}).flat()
+  assert(scene.characters.map((c) => c.gender).join() === "male,female", "with everyone named, the higher 1boy share is the boy")
+  assert(!["penis", "pussy", "nipples"].some((t) => owned("Gojou Wakana").includes(t) || owned("Kitagawa Marin").includes(t)), "sexual anatomy is never attributed")
+  assert(owned("Kitagawa Marin").includes("large breasts") && !owned("Gojou Wakana").includes("large breasts"), "breast tags cannot go to a male character")
+  const phrases = { collarbone: { kind: "has" as const, text: "{pos} collarbones visible" } }
+  const flux = renderFlux2(scene, { phrases, maxWords: null }).text
+  assert(/Kitagawa Marin has [^.]*her collarbones visible/.test(flux) && !/their collarbones/.test(flux), "a character's own sentence uses her possessive in a mixed scene")
+  const crowd = buildScene({ general: ["1girl", "2boys"], characters: ["gojou wakana", "kitagawa marin"] }, vocab, { traits })
+  assert(crowd.characters.map((c) => c.gender).join() === "male,female", "with someone unnamed, clear 1boy/1girl ratios still decide")
+  assert(buildScene({ general: ["1girl", "1boy"], characters: ["fujimaru ritsuka (male)", "kitagawa marin"] }, vocab).characters[0].gender === "male", "a (male) qualifier decides without a profile")
+
+  // Without solo posts, all-post shares mostly measure the partner: a girl always drawn with the boy looks male.
+  const noSolo = { "nagiha": { "1girl": 0.619, "1boy": 0.952, "large breasts": 0.5 }, "ashihara seiji": { "1girl": 0.778, "1boy": 0.889 } }
+  const unsure = buildScene({ general: ["1girl", "1boy", "large breasts"], characters: ["nagiha", "ashihara seiji"] }, vocab, { traits: noSolo })
+  assert(unsure.characters.every((c) => !c.gender), "unclear all-post shares leave the gender unknown")
+  assert(unsure.assigned.some((a) => a.character.name === "Nagiha"), "an unknown gender does not block a trait")
+  const twoMen = { a: { "solo 1boy": 1, breasts: 0.5 }, b: { "solo 1boy": 1, breasts: 0.3 } }
+  assert(buildScene({ general: ["2boys", "large breasts"], characters: ["a", "b"] }, vocab, { traits: twoMen }).assigned.length === 0, "a female-only trait with no woman to own it stays shared")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

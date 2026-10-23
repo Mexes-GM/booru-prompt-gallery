@@ -31,6 +31,8 @@ export interface SceneCharacter {
   tag: string
   /** Display name without qualifiers ("Kashima"). */
   name: string
+  /** When the count tags, a "(male)" qualifier or the trait profile tell (see `assignGenders`). */
+  gender?: "female" | "male"
 }
 
 export interface CameraParts {
@@ -80,11 +82,18 @@ export type CharacterTraits = Record<string, Record<string, number>>
 export interface BuildSceneOptions {
   /** Enables per-character attribution of hair, eyes, body and outfit tags. */
   traits?: CharacterTraits
+  /**
+   * Character tag -> canonical tag, for boorus that tag one character under
+   * several names (Rule34 posts carry both "kasumi (pokemon)" and "misty (pokemon)").
+   * Names with the same canonical tag are one person.
+   */
+  characterAliases?: Record<string, string>
 }
 
-/** Lowercase, spaces instead of underscores, booru escapes removed. */
+/** Lowercase, spaces instead of underscores, booru escapes and HTML entities (Rule34's "another&#039;s") removed. */
 export function normalizeTag(tag: string): string {
-  return tag.toLowerCase().replace(/_/g, " ").replace(/\\([()])/g, "$1").replace(/\s{2,}/g, " ").trim()
+  return tag.toLowerCase().replace(/_/g, " ").replace(/\\([()])/g, "$1").replace(/&#0*39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
+    .replace(/\s{2,}/g, " ").trim()
 }
 
 // "1girl", "2boys", and Rule34's "1girls", "1female", "1futa", "1boy1girl".
@@ -98,6 +107,8 @@ const COUNT_WORDS = new Set([
   "male/female", "female/female", "male/male", "human", "human only", "hetero", "straight", "humanoid only",
 ])
 const COSTUME_WORDS = new Set(["cosplay", "alternate costume", "official alternate costume", "alternate hairstyle", "costume switch"])
+// Placeholders some boorus file as character tags ("anonymous male"): they name nobody.
+const PLACEHOLDER_CHARACTER_RE = /^(anon|anonymous( (character|female|male|person))?|(background|unknown|unnamed) (character|characters|female|male)|original characters?|oc|you|npc|someone else's oc)$/
 
 // Framing tags that the taxonomy stores outside pose:camera (e.g. "upper body"
 // is filed under appearance:anatomy) still belong to the camera.
@@ -172,7 +183,7 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   const characters: SceneCharacter[] = []
   for (const tag of characterTags) {
     const name = displayName(tag)
-    if (cosplayNames.has(name) || characters.some((c) => c.name === name)) continue
+    if (PLACEHOLDER_CHARACTER_RE.test(tag) || cosplayNames.has(name) || characters.some((c) => c.name === name)) continue
     characters.push({ tag, name })
   }
 
@@ -284,8 +295,88 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     else scene.unclassified.push(tag)
   }
 
+  scene.characters = mergeAliases(scene.characters, options, scene.girls + scene.boys + scene.others)
+  assignGenders(scene, options.traits)
   if (options.traits) attributeTraits(scene, options.traits)
   return scene
+}
+
+// 1boy over 1girl in a character's solo posts, where the count tag is the
+// character itself: 0 for women, high for men. Across all posts it is often the
+// partner (a man drawn with a woman, a woman almost always drawn with a man), so
+// that fallback needs a much clearer ratio.
+const SOLO = { male: 0.9, female: 0.6 }
+const ALL_POSTS = { male: 2, female: 0.5 }
+
+function genderRatio(profile: Record<string, number> | undefined): { ratio: number; solo: boolean } | null {
+  if (!profile) return null
+  const [soloBoy, soloGirl] = [profile["solo 1boy"] ?? 0, profile["solo 1girl"] ?? 0]
+  if (soloBoy + soloGirl >= 0.5) return { ratio: soloBoy / Math.max(soloGirl, 0.01), solo: true }
+  const [boy, girl] = [profile["1boy"] ?? 0, profile["1girl"] ?? 0]
+  return Math.max(boy, girl) >= 0.5 ? { ratio: boy / Math.max(girl, 0.01), solo: false } : null
+}
+
+/**
+ * Gender per character, for the pronoun in its own sentence and for which
+ * traits it can own. Single-gender posts decide it outright. In mixed posts a
+ * "(male)" qualifier, else the profile (`genderRatio`): when every person is
+ * named and has solo data, the highest ratios are the boys; otherwise only clear
+ * ratios count, and the rest stay unknown.
+ */
+function assignGenders(scene: Scene, traits: CharacterTraits = {}): void {
+  const single = scene.others > 0 ? null : scene.boys === 0 && scene.girls > 0 ? "female" : scene.girls === 0 && scene.boys > 0 ? "male" : null
+  const open: SceneCharacter[] = []
+  for (const c of scene.characters) {
+    const qualified = c.tag.match(/\((male|female)\)/)?.[1] as SceneCharacter["gender"] | undefined
+    if (single || qualified) c.gender = single ?? qualified
+    else open.push(c)
+  }
+  const ratios = open.map((c) => ({ c, g: genderRatio(traits[c.tag]) }))
+  const boysLeft = scene.boys - scene.characters.filter((c) => c.gender === "male").length
+  if (scene.characters.length === scene.girls + scene.boys && ratios.every((x) => x.g?.solo)) {
+    ratios.sort((a, b) => b.g!.ratio - a.g!.ratio).forEach((x, i) => (x.c.gender = i < boysLeft ? "male" : "female"))
+    return
+  }
+  for (const { c, g } of ratios) {
+    const limits = g?.solo ? SOLO : ALL_POSTS
+    if (g && g.ratio >= limits.male) c.gender = "male"
+    else if (g && g.ratio <= limits.female) c.gender = "female"
+  }
+}
+
+/** "kitagawa marin" = "marin kitagawa", "gotoh naoki" = "gotou naoki": same words in any order, either romanisation. */
+function nameKey(name: string): string {
+  return name.toLowerCase().replace(/o[uh](?![aeiou])/g, "o").replace(/uu/g, "u").split(" ").sort().join(" ")
+}
+
+/** "Marceline" and "Marceline the Vampire Queen", or the same words in another order or romanisation. */
+function similarNames(a: string, b: string): boolean {
+  const [x, y] = [a.toLowerCase(), b.toLowerCase()]
+  return nameKey(x) === nameKey(y) || x.startsWith(`${y} `) || y.startsWith(`${x} `)
+}
+
+/**
+ * Joins names that are one person. The alias map is always trusted; similar
+ * spellings could also be two people ("Jeanne d'Arc" and "Jeanne d'Arc Alter"),
+ * so they only merge while the post has more names than people. Each merged
+ * person keeps the canonical tag, or else one with a trait profile.
+ */
+function mergeAliases(characters: SceneCharacter[], options: BuildSceneOptions, people: number): SceneCharacter[] {
+  const aliases = options.characterAliases ?? {}
+  const canonical = (c: SceneCharacter) => aliases[c.tag] ?? c.tag
+  const groups: SceneCharacter[][] = []
+  for (const character of characters) {
+    const group = groups.find((g) => g.some((c) => canonical(c) === canonical(character)))
+    if (group) group.push(character)
+    else groups.push([character])
+  }
+  while (people > 0 && groups.length > people) {
+    const i = groups.findIndex((g, i) => groups.slice(i + 1).some((o) => g.some((a) => o.some((b) => similarNames(a.name, b.name)))))
+    if (i === -1) break
+    const j = groups.findIndex((o, j) => j > i && groups[i].some((a) => o.some((b) => similarNames(a.name, b.name))))
+    groups[i].push(...groups.splice(j, 1)[0])
+  }
+  return groups.map((g) => g.find((c) => g.some((o) => canonical(o) === c.tag)) ?? g.find((c) => options.traits?.[c.tag]) ?? g[0])
 }
 
 const ATTRIBUTABLE_SLOTS: SceneSlot[] = [
@@ -299,6 +390,13 @@ const MIN_SHARE = 0.15
 const MIN_RATIO = 1.5
 // With a named character we know nothing about, a trait could be theirs: ask for more.
 const MIN_SHARE_WITH_UNKNOWN = 0.3
+// Genitals, nipples and the like describe the act or what is exposed, not who the
+// character is, and a profile counts the partner's too (a male character's posts
+// carry "nipples" and "pussy" from the women he appears with): never attributed.
+const SEXUAL_ANATOMY_RE = /\b(penis(es)?|pussy|vulva|vagina|labia|clitoris|testicles|balls|scrotum|anus|nipples?|areolae?|pubic hair|erection|foreskin|genitals|crotch|cameltoe|cum|sperm)\b|^heart$/
+// Traits only one gender can own; a profile's "breasts" share for a male character is his partners'.
+const FEMALE_ONLY_RE = /\b(breasts?|cleavage|underboob|sideboob|female)\b/
+const MALE_ONLY_RE = /\b(male|pectorals|beard|facial hair|mustache|stubble)\b/
 
 /**
  * Booru tags are one flat list, so "aqua hair, blonde hair" does not say who
@@ -321,11 +419,13 @@ export function attributeTraits(scene: Scene, traits: CharacterTraits): void {
     const shared: string[] = []
     for (const tag of scene.slots[slot] ?? []) {
       // "bare shoulders", "sleeveless": how the outfit is worn, not an item someone owns.
-      if (isClothingState(tag)) { shared.push(tag); continue }
+      if (isClothingState(tag) || (slot === "anatomy" && SEXUAL_ANATOMY_RE.test(tag))) { shared.push(tag); continue }
+      const excluded = FEMALE_ONLY_RE.test(tag) ? "male" : MALE_ONLY_RE.test(tag) ? "female" : null
       const [best, second] = profiled
+        .filter(({ character }) => !excluded || character.gender !== excluded)
         .map(({ character, profile }) => ({ character, share: profile[tag] ?? 0 }))
         .sort((a, b) => b.share - a.share)
-      if (best.share >= minShare && best.share >= MIN_RATIO * (second?.share ?? 0)) {
+      if (best && best.share >= minShare && best.share >= MIN_RATIO * (second?.share ?? 0)) {
         ;((owners.get(best.character.tag)!.slots[slot] ??= [])).push(tag)
       } else {
         shared.push(tag)
