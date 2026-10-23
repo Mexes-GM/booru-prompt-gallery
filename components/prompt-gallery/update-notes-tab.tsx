@@ -30,13 +30,9 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'Suggested Size per Prompt', body: "Pack Mode can now suggest a size for each prompt that fits its pose: wider for wide shots, closer to square for all fours, taller for sitting. Turn on Size in the results to see it and include it when you copy." },
-  { kind: 'improved', title: 'More Varied Packs', body: "Packs repeat the same outfits and poses far less, even when someone uploaded a whole series of near-identical images. Series titles also stopped showing up as backgrounds." },
-  { kind: 'improved', title: 'Faster Searches', body: "New searches had been taking several seconds longer than they should. They're back to normal speed. The first cards also show up sooner when you open the site, and the page no longer jumps while they load." },
-  { kind: 'improved', title: 'Better Tag Sorting', body: "More tags land in the right category, so card badges, copy by category, Merge and Pack Mode sort them better. For example, one eye closed now counts as an expression." },
-  { kind: 'fixed', title: 'Packs Collect All Their Posts', body: "Packs were only using the first page of results. They now gather up to 100 posts, and Collect more really adds new ones." },
-  { kind: 'fixed', title: 'Content Rating Stays Consistent', body: "A rating typed in your pack's search no longer clashes with the one you picked, the source window shows which ratings the loaded posts have, and packs set to Both are now half of each." },
-  { kind: 'fixed', title: 'AI Convert Works Again', body: "Free AI Convert failed for a few days at the start of October, and converting with your own OpenAI key never worked on the GPT-5 models. Both are fixed." },
+  { kind: 'new', title: 'See Which Tags Repeat in Merge', body: "When you merge several posts, each tag now shows how many of them it appears in. Handy for picking the version most people use, like bodysuit over leotard, before you copy." },
+  { kind: 'new', title: 'Merge Equipment and Creatures', body: "In Merge, each post now lets you pick its Equipment and Creature tags too, not just appearance, clothing, pose and scenery." },
+  { kind: 'improved', title: 'Faster Shuffle', body: "Shuffle shows its first results sooner." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)

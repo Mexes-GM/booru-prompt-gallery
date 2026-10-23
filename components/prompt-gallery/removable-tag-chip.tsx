@@ -8,6 +8,8 @@ export interface RemovableTagChipProps {
   text: string
   category: TagCategory
   onRemove: () => void
+  /** How many selected posts share this tag; shown as a badge when above 1. */
+  count?: number
   /** "explode": scale up + blur on exit, with a red hover overlay and an
    *  absolutely-positioned X revealed on hover (Merge's original look).
    *  "fade": simple opacity/scale fade on exit, X shown inline at full
@@ -28,7 +30,7 @@ export interface RemovableTagChipProps {
  * footers. Category color comes from the shared
  * CATEGORY_CHIP_CLASS map (category-chip-styles.ts).
  */
-export const RemovableTagChip = memo(({ text, category, onRemove, exitVariant = 'explode', reducedMotion = false }: RemovableTagChipProps) => {
+export const RemovableTagChip = memo(({ text, category, onRemove, count, exitVariant = 'explode', reducedMotion = false }: RemovableTagChipProps) => {
   if (exitVariant === 'fade') {
     return (
       <motion.button
@@ -67,6 +69,9 @@ export const RemovableTagChip = memo(({ text, category, onRemove, exitVariant = 
       >
         <span className="block relative z-10 transition-transform duration-300 group-hover:-translate-x-1.5 truncate max-w-[150px]">
           {text}
+          {count !== undefined && count > 1 && (
+            <span className="ml-1.5 opacity-60 tabular-nums" aria-label={`in ${count} posts`}>{count}</span>
+          )}
         </span>
 
         <span className="absolute inset-0 bg-destructive/20 sm:opacity-0 opacity-100 group-hover:opacity-100 transition-opacity duration-200" />

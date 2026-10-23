@@ -44,6 +44,15 @@ export interface SelectedPostParts {
 
 export type MergeModeType = 'merge' | 'variations'
 
+export interface MergedPromptSegment {
+    text: string
+    display: string
+    category: TagCategory
+    postId?: number
+    /** Selected posts this tag came from (merge mode only; UI-only, never in the copied prompt). */
+    count?: number
+}
+
 const escapeParentheses = (s: string) => s.replace(/\(/g, "\\(").replace(/\)/g, "\\)")
 
 export interface RandomSettings {
@@ -252,8 +261,10 @@ export function useMergeMode(
     // Helper for escaping parentheses in tags removed (moved to outer scope)
 
     const mergedPromptSegments = useMemo(() => {
-        const segments: { text: string, display: string, category: TagCategory, postId?: number }[] = []
+        const segments: MergedPromptSegment[] = []
         const seenTags = new Set<string>()
+        // Post-derived segment per tag, so repeats across posts bump its count
+        const postSegments = new Map<string, MergedPromptSegment>()
 
         // Pre-classify added tags
         const rawAddedTags = addedTagsInput.split(',').map(t => t.trim()).filter(Boolean)
@@ -295,7 +306,10 @@ export function useMergeMode(
                         const normalized = t.toLowerCase().replace(/_/g, ' ')
                         // In variations mode, we allow the same tag across different posts because each post is a separate variation block
                         const key = mergeModeType === 'variations' ? `${data.post.id}-${normalized}` : normalized;
-                        if (!seenTags.has(key) && !excludedTags.has(normalized)) {
+                        if (seenTags.has(key)) {
+                            const existing = postSegments.get(key)
+                            if (existing && existing.postId !== data.post.id) existing.count = (existing.count ?? 1) + 1
+                        } else if (!excludedTags.has(normalized)) {
                             seenTags.add(key)
 
                             let displayText = escapeParentheses(normalized)
@@ -307,12 +321,15 @@ export function useMergeMode(
                                 }
                             }
 
-                            segments.push({
+                            const segment: MergedPromptSegment = {
                                 text: normalized,
                                 display: displayText,
                                 category: cat,
-                                postId: data.post.id
-                            })
+                                postId: data.post.id,
+                                count: 1
+                            }
+                            postSegments.set(key, segment)
+                            segments.push(segment)
                         }
                     })
                 }
