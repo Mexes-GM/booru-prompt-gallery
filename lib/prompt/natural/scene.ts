@@ -279,28 +279,55 @@ function characterByBaseName(base: string, overrides: Record<string, string>): s
 }
 
 /**
+ * "(smile:1.2)" -> "smile", "((smile))" -> "smile". Only wrapping brackets go:
+ * the qualifier in "2d_(artwork)" is part of the tag.
+ */
+function stripWeight(piece: string): string {
+  let text = piece.trim()
+  const opening = text.match(/^[([{]+/)?.[0].length ?? 0
+  if (opening) text = text.slice(opening).replace(new RegExp(`[)\\]}]{0,${opening}}$`), "")
+  return text.replace(/:\s*[\d.]+$/, "").trim()
+}
+
+/**
  * Splits a pasted prompt ("1girl, sakura haruno, (smile:1.2), @artist") into the
  * fields a post would carry. Weights are removed; names are found by exact tag,
  * by swapped given/family name ("sakura haruno" -> "haruno sakura"), or by base
  * name ("tsunade" -> "tsunade (naruto)").
  */
-export function splitPromptTags(prompt: string, overrides: Record<string, string>): NaturalPromptInput {
+export function splitPromptTags(
+  prompt: string,
+  overrides: Record<string, string>,
+  options: { guessNames?: boolean } = {},
+): NaturalPromptInput {
+  // Booru posts (Rule34, Gelbooru) spell names exactly; only hand-written prompts need guessing.
+  const guessNames = options.guessNames ?? true
   const input = { general: [] as string[], characters: [] as string[], copyrights: [] as string[], artists: [] as string[] }
   const kindOf = (t: string) => overrides[t] ?? overrides[t.replace(/ /g, "_")]
+  const unknown: { tag: string; cleaned: string }[] = []
   for (const piece of prompt.split(",")) {
-    const cleaned = piece.trim().replace(/^[([{]+|[)\]}]+$/g, "").replace(/:\s*[\d.]+$/, "").trim()
+    const cleaned = stripWeight(piece)
     const tag = normalizeTag(cleaned)
     if (!tag) continue
     if (tag.startsWith("@")) { input.artists.push(tag.slice(1).trim()); continue }
-    const words = tag.split(" ")
-    const swapped = words.length === 2 ? `${words[1]} ${words[0]}` : null
     const kind = kindOf(tag)
     if (kind === "other:character") input.characters.push(tag)
     else if (kind === "other:copyright") input.copyrights.push(tag)
     else if (kind === "other:artist") input.artists.push(tag)
-    else if (!kind && swapped && kindOf(swapped) === "other:character") input.characters.push(swapped)
-    else if (!kind && characterByBaseName(tag, overrides)) input.characters.push(characterByBaseName(tag, overrides)!)
+    else if (!kind && guessNames) unknown.push({ tag, cleaned })
     // The original spelling goes on, so score tags keep their underscores.
+    else input.general.push(cleaned)
+  }
+  // Guesses run last so they can check the series the prompt names: a base-name
+  // match whose series is not among them ("lifeguard" -> "lifeguard (lilo & stitch)"
+  // in an Overwatch prompt) is a coincidence, not the character.
+  const series = new Set(input.copyrights)
+  for (const { tag, cleaned } of unknown) {
+    const words = tag.split(" ")
+    const swapped = words.length === 2 ? `${words[1]} ${words[0]}` : null
+    const byBase = characterByBaseName(tag, overrides)
+    if (swapped && kindOf(swapped) === "other:character") input.characters.push(swapped)
+    else if (byBase && (series.size === 0 || series.has(qualifier(byBase) ?? ""))) input.characters.push(byBase)
     else input.general.push(cleaned)
   }
   return input

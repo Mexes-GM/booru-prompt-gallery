@@ -61,6 +61,7 @@ const HAIR_ACCESSORY_RE = /(ornament|ribbon|bow|flower|clip|band|tie|bun|pin|scr
 const BODY_ADJECTIVES = new Set([
   "curvy", "slim", "slender", "petite", "muscular", "plump", "skinny", "tall", "short", "toned", "chubby",
   "thick", "androgynous", "furry", "nude", "naked", "wet", "sweaty", "pregnant", "tan", "tanned", "pale",
+  "busty", "voluptuous", "curvaceous", "chubby", "athletic", "lanky", "stocky",
 ])
 // Body parts named because they are visible, not because the subject "has" them.
 const BODY_VISIBLE = new Set([
