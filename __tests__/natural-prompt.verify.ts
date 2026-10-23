@@ -177,6 +177,8 @@ const overrides: Record<string, string> = {
   assert(flux.text.startsWith("An anime-style illustration of Kashima"), "the subject is never cut")
   assert(flux.omitted > 0, "what was cut is reported")
   assert(renderFlux2(scene, { maxWords: 400 }).omitted < flux.omitted, "a larger budget cuts less")
+  const unlimited = renderFlux2(scene, { maxWords: null })
+  assert(unlimited.omitted === 0 && unlimited.text.includes("a village"), "maxWords: null keeps every detail")
 
   const phrases = { "oral sex": { kind: "is" as const, text: "performing oral sex" }, "fellatio deep": { kind: "is" as const, text: "performing oral sex on a penis" } }
   const repeated = buildScene({ general: ["1girl", "oral sex", "fellatio deep"] }, { ...overrides, "oral sex": "pose:physiological", "fellatio deep": "pose:physiological" })

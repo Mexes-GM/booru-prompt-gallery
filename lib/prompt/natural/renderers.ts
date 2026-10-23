@@ -7,9 +7,10 @@
  *   subject, pose, expression and framing, which tags express poorly.
  *   Tag order follows the model card: safety, count, character, series,
  *   @artist, general tags.
- * - flux2: prose only, no quality or artist tags, within BFL's recommended
- *   30-80 words: lists are capped and whole sentences are dropped by priority
- *   (subject, action, outfit, place, body, light, camera, style) to fit.
+ * - flux2: prose only, no quality or artist tags. By default it stays within
+ *   BFL's recommended 30-80 words: lists are capped and whole sentences are
+ *   dropped by priority (subject, action, outfit, place, body, light, camera,
+ *   style). `maxWords: null` turns the limit off and keeps every detail.
  */
 import type { Scene, SceneSlot } from "./scene"
 import { describeScene, type PhraseDictionary } from "./prose"
@@ -77,11 +78,21 @@ function sentencesOf(text: string): string[] {
   return text ? text.split(/(?<=\.)\s+(?=[A-Z])/) : []
 }
 
-export function renderFlux2(
-  scene: Scene,
-  options: { medium?: string; phrases?: PhraseDictionary; maxWords?: number } = {},
-): RenderResult {
-  const maxWords = options.maxWords ?? 80
+/** BFL's recommended upper bound for a medium-length FLUX.2 prompt. */
+export const FLUX2_DEFAULT_MAX_WORDS = 80
+
+export interface Flux2Options {
+  medium?: string
+  phrases?: PhraseDictionary
+  /**
+   * Word budget. Defaults to FLUX2_DEFAULT_MAX_WORDS; `null` turns the limit
+   * off and keeps every detail (for long-prompt models or when the user asks).
+   */
+  maxWords?: number | null
+}
+
+export function renderFlux2(scene: Scene, options: Flux2Options = {}): RenderResult {
+  const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? FLUX2_DEFAULT_MAX_WORDS
   const medium = options.medium ?? "An anime-style illustration"
   // Full detail when it fits; otherwise cap every list first, then drop sentences.
   const full = describeScene(scene, options.phrases)
