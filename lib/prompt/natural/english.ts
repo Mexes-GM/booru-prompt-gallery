@@ -120,6 +120,16 @@ export function dropImplied(tags: string[]): string[] {
   })
 }
 
+/**
+ * Drops phrases another phrase in the list already says, after the dictionary
+ * has turned tags into words: "performing oral sex" next to "performing oral
+ * sex on a penis", or two tags that map to the same phrase.
+ */
+export function dropContainedPhrases(phrases: string[]): string[] {
+  const unique = [...new Set(phrases)]
+  return unique.filter((phrase) => !unique.some((other) => other !== phrase && ` ${other} `.includes(` ${phrase} `)))
+}
+
 const SIZE_RANK: Record<string, number> = { flat: 1, small: 2, medium: 3, big: 4, large: 5, huge: 6, gigantic: 7, enormous: 7 }
 
 function sizeOf(tag: string): { noun: string; rank: number } | null {

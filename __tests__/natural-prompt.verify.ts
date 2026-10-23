@@ -162,5 +162,27 @@ const overrides: Record<string, string> = {
   assert(splitPromptTags("tsunade", withBases, { guessNames: false }).characters?.length === 0, "booru posts skip name guessing")
 }
 
+// 9. Length and repetition: FLUX.2 stays within 80 words, the subject always survives.
+{
+  const many: Record<string, string> = { ...overrides }
+  const garments = ["red dress", "white gloves", "black boots", "blue scarf", "gold necklace", "silver ring", "lace choker", "fur coat", "wool hat", "leather belt"]
+  garments.forEach((g) => (many[g] = "clothing:accents"))
+  const places = ["forest", "river", "bridge", "castle", "mountain", "village"]
+  places.forEach((t) => (many[t] = "scenery:setting"))
+  const scene = buildScene({ general: ["1girl", "1girls", "long hair", "black hair", "red eyes", "smile", "sitting", ...garments, ...places, "warm lighting", "cowboy shot"], characters: ["kashima (kancolle)"] }, many)
+  assert(scene.girls === 1, "1girl and 1girls count one girl, not two")
+  const flux = renderFlux2(scene)
+  const words = flux.text.split(/\s+/).length
+  assert(words <= 80, `flux2 stays within 80 words (got ${words})`)
+  assert(flux.text.startsWith("An anime-style illustration of Kashima"), "the subject is never cut")
+  assert(flux.omitted > 0, "what was cut is reported")
+  assert(renderFlux2(scene, { maxWords: 400 }).omitted < flux.omitted, "a larger budget cuts less")
+
+  const phrases = { "oral sex": { kind: "is" as const, text: "performing oral sex" }, "fellatio deep": { kind: "is" as const, text: "performing oral sex on a penis" } }
+  const repeated = buildScene({ general: ["1girl", "oral sex", "fellatio deep"] }, { ...overrides, "oral sex": "pose:physiological", "fellatio deep": "pose:physiological" })
+  const text = renderFlux2(repeated, { phrases }).text
+  assert(text.includes("performing oral sex on a penis") && !/performing oral sex(,| and)/.test(text), "a phrase contained in another is dropped")
+}
+
 console.log(`${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

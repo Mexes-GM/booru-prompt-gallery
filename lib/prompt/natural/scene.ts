@@ -69,11 +69,15 @@ export function normalizeTag(tag: string): string {
   return tag.toLowerCase().replace(/_/g, " ").replace(/\\([()])/g, "$1").replace(/\s{2,}/g, " ").trim()
 }
 
-const COUNT_RE = /^(\d+)\+?(girl|boy|other)s?$/
+// "1girl", "2boys", and Rule34's "1girls", "1female", "1futa", "1boy1girl".
+const COUNT_RE = /^(\d+)\+?(girl|boy|other|female|male|futa)s?$/
+const PAIR_COUNT_RE = /^(\d+)(boy|girl)(\d+)(boy|girl)s?$/
 const COUNT_WORDS = new Set([
   "solo", "multiple girls", "multiple boys", "multiple others", "solo focus", "male focus", "female focus",
   // Gender tags as other boorus write them (Rule34, Gelbooru): subject information, not description.
   "female", "male", "solo female", "solo male", "female only", "male only",
+  // Rule34 pairing and species-scope tags ("straight" there means a man and a woman).
+  "male/female", "female/female", "male/male", "human", "human only", "hetero", "straight", "humanoid only",
 ])
 const COSTUME_WORDS = new Set(["cosplay", "alternate costume", "official alternate costume", "alternate hairstyle", "costume switch"])
 
@@ -181,12 +185,17 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     // Providers without split tag fields mix names into the general list.
     if (characterSet.has(tag) || copyrightTags.has(tag) || artistTags.has(tag)) continue
 
+    // Boorus that tag both "1girl" and "1girls" would double the count, so each
+    // gender keeps the largest number seen instead of a sum.
+    const pair = tag.match(PAIR_COUNT_RE)
     const count = tag.match(COUNT_RE)
-    if (count) {
-      const n = Number(count[1])
-      if (count[2] === "girl") scene.girls += n
-      else if (count[2] === "boy") scene.boys += n
-      else scene.others += n
+    if (pair || count) {
+      const counts = pair ? [[pair[1], pair[2]], [pair[3], pair[4]]] : [[count![1], count![2]]]
+      for (const [n, who] of counts) {
+        if (who === "girl" || who === "female" || who === "futa") scene.girls = Math.max(scene.girls, Number(n))
+        else if (who === "boy" || who === "male") scene.boys = Math.max(scene.boys, Number(n))
+        else scene.others = Math.max(scene.others, Number(n))
+      }
       scene.subjectTags.push(tag)
       continue
     }
