@@ -85,7 +85,7 @@ export function CardActionsMenu({
                 )}
                 <DropdownMenuItem onSelect={onConvert}>
                     <Sparkles className="mr-2 h-4 w-4 text-primary-text" />
-                    Convert to natural language
+                    Rewrite with AI
                 </DropdownMenuItem>
                 {onMakePack && (
                     <DropdownMenuItem onSelect={onMakePack}>
