@@ -330,9 +330,10 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}): Sce
   // A lone adjective with no phrase ("shiny") would read as "a shiny"; keep it as a raw tag instead.
   const moodAdjectives = moodTags.filter((t) => dictionary(t)?.kind !== "scene" && /^[a-z]+(y|ed|ful|ous)$/.test(t) && !UNIQUE_NOUNS.has(t))
   raw.push(...moodAdjectives)
+  const moodAdjectiveSet = new Set(moodAdjectives)
   const mood = [
     ...moodTags
-      .filter((t) => !moodAdjectives.includes(t))
+      .filter((t) => !moodAdjectiveSet.has(t))
       .map((t) => (dictionary(t)?.kind === "scene" ? dictionary(t)!.text : isPluralNoun(t) || /^(rain|snow|fog|mist|steam|wind|smoke|fire|water)$/.test(t) ? t : withArticle(t))),
     ...extraMood,
   ]
