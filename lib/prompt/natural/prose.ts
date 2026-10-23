@@ -175,7 +175,7 @@ function articleForScenery(tag: string): string {
 }
 
 /**
- * `phrases` is the generated phrase dictionary (lib/prompt/natural/data/phrases.json).
+ * `phrases` is the generated phrase dictionary (public/natural-prompt-phrases.json).
  * It is passed in rather than imported so the browser can load it lazily.
  * Hand-written wording in english.ts wins over it; the generic rules come last.
  */
@@ -316,7 +316,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}): Sce
   const mood = [
     ...atmosphere
       .filter((t) => !TIME_PHRASES[t] && !/ lighting$/.test(t) && !EFFECTS_RE.test(t))
-      .map((t) => dictionary(t)?.text ?? (isPluralNoun(t) || /^(rain|snow|fog|mist|steam|wind|smoke|fire|water)$/.test(t) ? t : withArticle(t))),
+      .map((t) => (dictionary(t)?.kind === "scene" ? dictionary(t)!.text : isPluralNoun(t) || /^(rain|snow|fog|mist|steam|wind|smoke|fire|water)$/.test(t) ? t : withArticle(t))),
     ...extraMood,
   ]
   const lighting = [
