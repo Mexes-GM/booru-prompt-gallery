@@ -12,6 +12,8 @@
  *   6. FLUX.2 output: prose only, no rating, quality or artist tags.
  *   7. The phrase dictionary and its precedence.
  *   8. Pasted prompts: hand-written names, gender and size tags.
+ *   9-10. Word budget; trait attribution between characters.
+ *   11. One character under several names; placeholder names.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
@@ -220,6 +222,24 @@ const overrides: Record<string, string> = {
   const cosplay = buildScene({ ...input, general: [...general, "cosplay"] }, vocab, { traits })
   assert(!Object.values(cosplay.assigned.find((a) => a.character.name === "Hatsune Miku")?.slots ?? {}).flat().includes("necktie"), "on costume posts only hair, eyes and body are attributed")
   assert(buildScene(input, vocab).assigned.length === 0, "without profiles nothing is attributed")
+}
+
+// 11. One character under several names (Rule34), placeholder names.
+{
+  const names = (characters: string[], general: string[], characterAliases?: Record<string, string>) =>
+    buildScene({ general, characters }, overrides, { characterAliases }).characters.map((c) => c.name)
+  const aliased = names(["kasumi (pokemon)", "misty (pokemon)"], ["1girl"], { "kasumi (pokemon)": "misty (pokemon)", "misty (pokemon)": "misty (pokemon)" })
+  assert(aliased.join() === "Misty", "names the alias map joins are one person, under the canonical tag")
+  assert(names(["kitagawa marin", "marin kitagawa"], ["1girl"]).length === 1, "swapped given and family name is one person")
+  assert(names(["gotoh naoki", "gotou naoki"], ["1girl"]).length === 1, "romanisation variants are one person")
+  assert(names(["marceline", "marceline the vampire queen"], ["1girl"]).join() === "Marceline", "a longer form of the same name is one person")
+  assert(names(["jeanne d'arc", "jeanne d'arc alter"], ["2girls"]).length === 2, "similar names stay apart when the post has that many people")
+  assert(names(["kitagawa marin", "marin kitagawa"], []).length === 2, "without a people count only the alias map merges")
+  assert(names(["anonymous male", "background character", "kitagawa marin"], ["1girl", "1boy"]).join() === "Kitagawa Marin", "placeholder names are not characters")
+
+  const vampire = buildScene({ general: ["1girl", "grey-skinned girl", "vampire girl", "busty girl"], characters: ["marceline abadeer"] }, { ...overrides, "grey-skinned girl": "appearance:anatomy", "vampire girl": "appearance:anatomy", "busty girl": "appearance:anatomy" })
+  assert(renderFlux2(vampire).text.includes("Marceline Abadeer, a grey-skinned, busty vampire girl"), "one person's species tags make one noun")
+  assert(normalizeTag("grabbing_another&#039;s_breast") === "grabbing another's breast", "HTML entities in Rule34 tags are decoded")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

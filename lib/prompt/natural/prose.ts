@@ -125,6 +125,21 @@ function countPhrase(n: number, noun: string): string {
   return `${NUMBER_WORDS[n] ?? String(n)} ${noun}${n > 1 ? "s" : ""}`
 }
 
+const SPECIES_ADJECTIVES = new Set(["busty", "slim", "skinny", "fat", "thick", "cute", "tall", "small", "tiny", "little", "tanned", "beautiful", "bearded", "round", "goth", "girly", "muscle", "teen", "teenage", "young", "alt"])
+
+/**
+ * One person's "grey-skinned girl", "vampire girl" and "busty girl" are one
+ * noun ("a grey-skinned, busty vampire girl"), not three people.
+ */
+function speciesPhrase(species: string[]): string {
+  const heads = new Set(species.map((t) => t.split(" ").pop()!))
+  if (species.length < 2 || heads.size > 1 || species.some((t) => t.includes(" and "))) return joinList(species.map(withArticle))
+  const modifiers = species.map((t) => t.slice(0, t.lastIndexOf(" ")))
+  const isAdjective = (m: string) => SPECIES_ADJECTIVES.has(m) || /ed$/.test(m)
+  const adjectives = modifiers.filter(isAdjective).join(", ")
+  return withArticle([adjectives, ...modifiers.filter((m) => !isAdjective(m)), ...heads].filter(Boolean).join(" "))
+}
+
 function subjectPhrase(scene: Scene, species: string[]): string {
   let subject = ""
   if (scene.characters.length > 0) {
@@ -145,7 +160,7 @@ function subjectPhrase(scene: Scene, species: string[]): string {
   }
   if (!subject) return ""
   const appositive = [
-    species.length ? joinList(species.map(withArticle)) : "",
+    species.length ? speciesPhrase(species) : "",
     scene.cosplayAs.length ? `cosplaying as ${joinList(scene.cosplayAs)}` : "",
   ].filter(Boolean).join(", ")
   return appositive ? `${subject}, ${appositive}` : subject

@@ -80,11 +80,18 @@ export type CharacterTraits = Record<string, Record<string, number>>
 export interface BuildSceneOptions {
   /** Enables per-character attribution of hair, eyes, body and outfit tags. */
   traits?: CharacterTraits
+  /**
+   * Character tag -> canonical tag, for boorus that tag one character under
+   * several names (Rule34 posts carry both "kasumi (pokemon)" and "misty (pokemon)").
+   * Names with the same canonical tag are one person.
+   */
+  characterAliases?: Record<string, string>
 }
 
-/** Lowercase, spaces instead of underscores, booru escapes removed. */
+/** Lowercase, spaces instead of underscores, booru escapes and HTML entities (Rule34's "another&#039;s") removed. */
 export function normalizeTag(tag: string): string {
-  return tag.toLowerCase().replace(/_/g, " ").replace(/\\([()])/g, "$1").replace(/\s{2,}/g, " ").trim()
+  return tag.toLowerCase().replace(/_/g, " ").replace(/\\([()])/g, "$1").replace(/&#0*39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
+    .replace(/\s{2,}/g, " ").trim()
 }
 
 // "1girl", "2boys", and Rule34's "1girls", "1female", "1futa", "1boy1girl".
@@ -98,6 +105,8 @@ const COUNT_WORDS = new Set([
   "male/female", "female/female", "male/male", "human", "human only", "hetero", "straight", "humanoid only",
 ])
 const COSTUME_WORDS = new Set(["cosplay", "alternate costume", "official alternate costume", "alternate hairstyle", "costume switch"])
+// Placeholders some boorus file as character tags ("anonymous male"): they name nobody.
+const PLACEHOLDER_CHARACTER_RE = /^(anon|anonymous( (character|female|male|person))?|(background|unknown|unnamed) (character|characters|female|male)|original characters?|oc|you|npc|someone else's oc)$/
 
 // Framing tags that the taxonomy stores outside pose:camera (e.g. "upper body"
 // is filed under appearance:anatomy) still belong to the camera.
@@ -172,7 +181,7 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   const characters: SceneCharacter[] = []
   for (const tag of characterTags) {
     const name = displayName(tag)
-    if (cosplayNames.has(name) || characters.some((c) => c.name === name)) continue
+    if (PLACEHOLDER_CHARACTER_RE.test(tag) || cosplayNames.has(name) || characters.some((c) => c.name === name)) continue
     characters.push({ tag, name })
   }
 
@@ -284,8 +293,44 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     else scene.unclassified.push(tag)
   }
 
+  scene.characters = mergeAliases(scene.characters, options, scene.girls + scene.boys + scene.others)
   if (options.traits) attributeTraits(scene, options.traits)
   return scene
+}
+
+/** "kitagawa marin" = "marin kitagawa", "gotoh naoki" = "gotou naoki": same words in any order, either romanisation. */
+function nameKey(name: string): string {
+  return name.toLowerCase().replace(/o[uh](?![aeiou])/g, "o").replace(/uu/g, "u").split(" ").sort().join(" ")
+}
+
+/** "Marceline" and "Marceline the Vampire Queen", or the same words in another order or romanisation. */
+function similarNames(a: string, b: string): boolean {
+  const [x, y] = [a.toLowerCase(), b.toLowerCase()]
+  return nameKey(x) === nameKey(y) || x.startsWith(`${y} `) || y.startsWith(`${x} `)
+}
+
+/**
+ * Joins names that are one person. The alias map is always trusted; similar
+ * spellings could also be two people ("Jeanne d'Arc" and "Jeanne d'Arc Alter"),
+ * so they only merge while the post has more names than people. Each merged
+ * person keeps the canonical tag, or else one with a trait profile.
+ */
+function mergeAliases(characters: SceneCharacter[], options: BuildSceneOptions, people: number): SceneCharacter[] {
+  const aliases = options.characterAliases ?? {}
+  const canonical = (c: SceneCharacter) => aliases[c.tag] ?? c.tag
+  const groups: SceneCharacter[][] = []
+  for (const character of characters) {
+    const group = groups.find((g) => g.some((c) => canonical(c) === canonical(character)))
+    if (group) group.push(character)
+    else groups.push([character])
+  }
+  while (people > 0 && groups.length > people) {
+    const i = groups.findIndex((g, i) => groups.slice(i + 1).some((o) => g.some((a) => o.some((b) => similarNames(a.name, b.name)))))
+    if (i === -1) break
+    const j = groups.findIndex((o, j) => j > i && groups[i].some((a) => o.some((b) => similarNames(a.name, b.name))))
+    groups[i].push(...groups.splice(j, 1)[0])
+  }
+  return groups.map((g) => g.find((c) => g.some((o) => canonical(o) === c.tag)) ?? g.find((c) => options.traits?.[c.tag]) ?? g[0])
 }
 
 const ATTRIBUTABLE_SLOTS: SceneSlot[] = [
