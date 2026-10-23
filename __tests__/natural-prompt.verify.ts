@@ -154,6 +154,12 @@ const overrides: Record<string, string> = {
   const flux = renderFlux2(scene).text
   assert(flux.includes("They are curvy and mature."), "gendered tags become adjectives, without repeating the hair colour")
   assert(flux.includes("a huge ass") && !flux.includes("big ass"), "only the largest size of a body part is kept")
+
+  const withBases = { ...names, "lifeguard (lilo & stitch)": "other:character", "overwatch 2": "other:copyright", mercy: "other:character" }
+  const r34 = splitPromptTags("mercy, overwatch 2, lifeguard, 2d_(artwork)", withBases)
+  assert(r34.characters?.join() === "mercy" && r34.general.includes("lifeguard"), "a base-name guess from another series is not taken")
+  assert(r34.general.includes("2d_(artwork)"), "a tag's own qualifier is not stripped as a weight")
+  assert(splitPromptTags("tsunade", withBases, { guessNames: false }).characters?.length === 0, "booru posts skip name guessing")
 }
 
 console.log(`${passed} passed, ${failed} failed`)
