@@ -70,28 +70,41 @@ function buildAutoDLPath(character, baseFilename) {
 
 /**
  * Pool of the REAL prompt text sent to SeaArt for each generation that was
- * successfully injected (pushed right where processNext() confirms injection
- * succeeded — see "sentPromptsQueue.push" below).
+ * successfully injected (added via recordSentPrompt right where processNext()
+ * confirms injection succeeded).
  *
- * Why this is a content-matched pool, not a FIFO: completions do not arrive
- * in send order. SeaArt runs several generation slots concurrently, and when the
- * tab is backgrounded the images render in a burst on refocus — so a prompt
- * sent later can finish (and be reported) before an earlier one, and a FIFO
- * would embed the wrong prompt into an image.
+ * Why this is a keyed pool, not a FIFO: completions do not arrive in send
+ * order. SeaArt runs several generation slots concurrently, a short prompt can
+ * finish before a long one sent earlier, and when the tab is backgrounded the
+ * images render in a burst on refocus — so pairing "next image ↔ oldest prompt"
+ * embeds the wrong prompt into an image.
  *
- * The page observer already reports, alongside each finished image, the prompt
- * SeaArt shows next to THAT image in its history (`.c-workflow-history-item
- * .c-text-content`). That DOM text is correctly ASSOCIATED with the image but
- * can be truncated/reformatted. So we use it as a matching key: pick the pool
- * entry whose tags best cover the DOM prompt (see matchSentPromptForImage) to
- * recover the exact, complete prompt string while keeping the right pairing.
+ * Each finished image is reported with two possible keys, best first:
+ *   - `jobId`: the ledger job tagged onto the image's SeaArt history card when
+ *     the task was created (see armAutoDLJob and tagNewHistoryCards in
+ *     installAutoDownloadObserverInPage). Exact, whatever order tasks finish in.
+ *   - the DOM prompt: text SeaArt renders inside the same card, which only
+ *     exists when the workflow has a text output. Correctly associated with the
+ *     image but maybe truncated/reformatted, so it is matched by content (see
+ *     matchSentPromptForImage) to recover the exact, complete prompt string.
  *
- * Entries are { prompt, character } objects — `character` is the
+ * Entries are { prompt, character, jobId } objects — `character` is the
  * Auto-Downloading "group by character" folder name detected for the search
  * this prompt was queued from (see queueItem.character / detectSearchCharacterName),
  * or undefined when the queue item had none.
  */
 const sentPromptsQueue = [];
+
+/** Jobs whose image was already paired through their jobId. A fast generation
+ *  can finish before processNext records its prompt, and that late entry must
+ *  not stay in the pool for a later, unrelated image to claim. */
+const autoDLPairedJobIds = new Set();
+
+/** Adds a just-submitted prompt to the pool (see sentPromptsQueue). */
+function recordSentPrompt(entry) {
+  if (entry.jobId && autoDLPairedJobIds.has(entry.jobId)) return;
+  sentPromptsQueue.push(entry);
+}
 
 /**
  * Splits a prompt into a set of normalized tag tokens for fuzzy comparison.
@@ -138,18 +151,24 @@ function promptSimilarity(domPrompt, candidate) {
 const PROMPT_MATCH_THRESHOLD = 0.5;
 
 /**
- * Resolves which prompt to embed into a just-completed image, given the prompt
- * SeaArt renders next to it in the DOM (`domPrompt`, correctly associated but
- * maybe truncated). Strategy, best-to-worst:
- *   1. Best content match in the sent pool above the threshold → return its
- *      exact text and REMOVE it from the pool (correct pairing + full text).
- *   2. A DOM prompt exists but nothing matches (e.g. a generation started
+ * Resolves which prompt to embed into a just-completed image, given the job
+ * tagged on its SeaArt history card (`jobId`) and the prompt SeaArt renders in
+ * that card (`domPrompt`, correctly associated but maybe truncated). Strategy,
+ * best-to-worst:
+ *   1. `jobId` → that job's exact prompt: from the pool (and REMOVED from it),
+ *      or from the ledger when the pool no longer has it (a task with several
+ *      images reports the same jobId once per image).
+ *   2. Best content match of the DOM prompt in the sent pool above the
+ *      threshold → return its exact text and REMOVE it from the pool.
+ *   3. A DOM prompt exists but nothing matches (e.g. a generation started
  *      outside our queue) → return the DOM prompt itself; leave the pool intact
  *      so a later, matching image can still claim those entries.
- *   3. No DOM prompt at all → fall back to FIFO (oldest sent), the legacy
- *      best-effort behavior.
- * On ties, the earliest (oldest) matching entry wins because the loop keeps the
- * first max — a harmless, order-stable tiebreaker.
+ *   4. No key at all → the pool's only entry, if it has exactly one. With two
+ *      or more, nothing says which one this image is: completions arrive out of
+ *      send order, so "the oldest" is routinely the wrong one. The image gets no
+ *      prompt rather than a guessed one, and the pool is left intact.
+ * On content ties, the earliest (oldest) matching entry wins because the loop
+ * keeps the first max — a harmless, order-stable tiebreaker.
  *
  * Returns { prompt, character, jobId, source, score?, index? } — `character`
  * is the Auto-Downloading "group by character" folder name carried alongside
@@ -158,7 +177,21 @@ const PROMPT_MATCH_THRESHOLD = 0.5;
  * undefined when the matched/fallback entry has none (e.g. a generation that
  * bypassed our queue entirely).
  */
-function matchSentPromptForImage(domPrompt) {
+function matchSentPromptForImage(domPrompt, jobId) {
+  if (jobId) {
+    const poolIdx = sentPromptsQueue.findIndex((entry) => entry.jobId === jobId);
+    if (poolIdx >= 0) {
+      const [entry] = sentPromptsQueue.splice(poolIdx, 1);
+      autoDLPairedJobIds.add(jobId);
+      return { prompt: entry.prompt, character: entry.character, jobId, source: "job-id" };
+    }
+    const job = ledgerGet(jobId);
+    if (job) {
+      autoDLPairedJobIds.add(jobId);
+      return { prompt: job.prompt, character: job.character, jobId, source: "job-id-ledger" };
+    }
+  }
+
   const hasDom = !!(domPrompt && domPrompt.trim());
 
   if (sentPromptsQueue.length === 0) {
@@ -166,9 +199,11 @@ function matchSentPromptForImage(domPrompt) {
   }
 
   if (!hasDom) {
-    // Nothing to match against — best we can do is the oldest sent prompt.
-    const oldest = sentPromptsQueue.shift();
-    return { prompt: oldest.prompt, character: oldest.character, jobId: oldest.jobId, source: "fifo-fallback" };
+    if (sentPromptsQueue.length === 1) {
+      const [only] = sentPromptsQueue.splice(0, 1);
+      return { prompt: only.prompt, character: only.character, jobId: only.jobId, source: "single-pending" };
+    }
+    return { prompt: "", source: "unpaired" };
   }
 
   let bestIdx = -1;
@@ -191,12 +226,19 @@ function matchSentPromptForImage(domPrompt) {
   return { prompt: domPrompt, source: "dom-nomatch", score: bestScore };
 }
 
+/** How long an armed job waits for its SeaArt history card (see
+ *  armAutoDLJobInPage). SeaArt inserts the card a few seconds after the click;
+ *  an arm older than this belongs to a click that never created a task. Passed
+ *  as an argument because page-side functions are serialized on their own. */
+const AUTODL_ARM_TTL_MS = 60000;
+
 /**
  * Installed into the SeaArt page. Marks all currently-visible generated images
  * as "seen" (so we don't re-download history), then watches for new ones and
- * reports each loaded image back via chrome.runtime.sendMessage. Idempotent.
+ * reports each loaded image back via chrome.runtime.sendMessage, together with
+ * the queue job tagged on its history card (see tagNewHistoryCards). Idempotent.
  */
-function installAutoDownloadObserverInPage() {
+function installAutoDownloadObserverInPage(armTtlMs) {
   const LOG = (...a) => console.log("%c[AutoDL]", "color:#a855f7;font-weight:bold", ...a);
 
   // ── Idempotency guard ─────────────────────────────────────────────────
@@ -281,16 +323,64 @@ function installAutoDownloadObserverInPage() {
     return list;
   };
 
-  const getPrompt = (img) => {
+  // ── History cards: which task an image belongs to ─────────────────────
+  // SeaArt's ComfyUI page answers each Generate click by inserting ONE
+  // `.c-workflow-history-item` card at the top of its history list, keyed by
+  // the new task's id, and later renders that task's finished image(s) inside
+  // the same card. So the card an image sits in identifies its task, whatever
+  // order tasks finish in. The card shows no prompt, though (`.c-text-content`
+  // only exists when the workflow has a text output), so the side panel arms
+  // the queue job it is about to submit (armAutoDLJobInPage) and the first new
+  // card that appears afterwards is tagged with that jobId.
+  const CARD_SELECTOR = ".c-workflow-history-item";
+  const JOB_ATTR = "data-booru-job-id";
+  window.__booruAutoDLKnownCards = window.__booruAutoDLKnownCards || new WeakSet();
+
+  const findHistoryCard = (img) => {
     let node = img;
     while (node) {
-      if (node.matches && node.matches(".c-workflow-history-item")) {
-        const el = querySelectorAllDeep(".c-text-content", node)[0];
-        return el ? el.textContent.trim() : "";
-      }
+      if (node.matches && node.matches(CARD_SELECTOR)) return node;
       node = node.parentNode || node.host;
     }
-    return "";
+    return null;
+  };
+
+  const getPrompt = (card) => {
+    const el = querySelectorAllDeep(".c-text-content", card)[0];
+    return el ? el.textContent.trim() : "";
+  };
+
+  /**
+   * Called with history cards found in the DOM; only the ones not seen before
+   * count. Exactly one new card, at the top of its list and with no image yet,
+   * while a job is armed → it is that job's task. Several new cards at once are
+   * a list (re)load, and older cards loaded by scrolling are appended below or
+   * already hold images, so none of those is tagged.
+   */
+  const tagNewHistoryCards = (cards) => {
+    const known = window.__booruAutoDLKnownCards;
+    const fresh = cards.filter((card) => !known.has(card));
+    fresh.forEach((card) => known.add(card));
+    if (fresh.length !== 1) return;
+    const card = fresh[0];
+    if (card.hasAttribute(JOB_ATTR)) return;
+    const firstInList = card.parentNode && card.parentNode.querySelector(CARD_SELECTOR);
+    if (firstInList !== card || card.querySelector(".media-attachments-img, .c-history-img")) return;
+
+    const arm = window.__booruAutoDLArm;
+    const missedAt = window.__booruAutoDLMissedCardAt;
+    window.__booruAutoDLArm = null;
+    window.__booruAutoDLMissedCardAt = null;
+    if (missedAt && Date.now() - missedAt < armTtlMs) {
+      // The job armed before the current one never got its card, so this card
+      // is either that one arriving late or the current job's. Either tag could
+      // embed the wrong prompt; leave it untagged.
+      LOG("new history card left untagged: the previous job's card never appeared, so it is ambiguous");
+      return;
+    }
+    if (!arm || Date.now() - arm.at > armTtlMs) return; // a generation started outside the queue
+    card.setAttribute(JOB_ATTR, arm.jobId);
+    LOG("tagged new history card with", arm.jobId);
   };
 
   const report = (img) => {
@@ -298,10 +388,12 @@ function installAutoDownloadObserverInPage() {
     if (!src || !/^https?:/.test(src) || src.startsWith("data:") || src.startsWith("blob:")) return;
     if (img.naturalWidth <= 1) return; // not a real decoded image yet
     if (window.__booruAutoDLSeen.has(src)) return;
-    const prompt = getPrompt(img);
-    LOG("new image →", src.slice(0, 80), "| prompt:", prompt.slice(0, 50));
+    const card = findHistoryCard(img);
+    const prompt = card ? getPrompt(card) : "";
+    const jobId = (card && card.getAttribute(JOB_ATTR)) || "";
+    LOG("new image →", src.slice(0, 80), "| job:", jobId || "none", "| prompt:", prompt.slice(0, 50));
     try {
-      chrome.runtime.sendMessage({ type: "AUTODL_NEW_IMAGE", src, prompt });
+      chrome.runtime.sendMessage({ type: "AUTODL_NEW_IMAGE", src, prompt, jobId });
       window.__booruAutoDLSeen.add(src); // Only mark as seen AFTER successful send
     } catch (e) {
       LOG("send failed — extension context likely invalidated, flagging for re-install", e);
@@ -313,6 +405,8 @@ function installAutoDownloadObserverInPage() {
   };
 
   const handleImg = (img) => {
+    // The card header's avatar matches ".c-workflow-history-item img" too.
+    if (img.matches && img.matches(".workflow-history-item__avatar")) return;
     // SeaArt's history images may use native loading="lazy". In a
     // backgrounded tab the browser can skip fetching the bytes entirely
     // (naturalWidth stays 0) until the element scrolls into view. Forcing
@@ -328,30 +422,47 @@ function installAutoDownloadObserverInPage() {
     const src = img.currentSrc || img.src || img.getAttribute("src") || "";
     if (src && /^https?:/.test(src)) window.__booruAutoDLSeen.add(src);
   });
+  // ...and every existing history card, so only cards created from now on can
+  // be tagged with a queue job.
+  querySelectorAllDeep(CARD_SELECTOR).forEach((card) => window.__booruAutoDLKnownCards.add(card));
 
   const observer = new MutationObserver((mutations) => {
+    const addedCards = [];
+    const images = [];
     for (const m of mutations) {
       if (m.type === "attributes" && m.target.matches && m.target.matches(".media-attachments-img")) {
-        handleImg(m.target);
+        images.push(m.target);
         continue;
       }
       for (const node of m.addedNodes) {
         if (!node || node.nodeType !== 1) continue;
-        if (node.matches && node.matches(".media-attachments-img")) handleImg(node);
+        if (node.matches && node.matches(CARD_SELECTOR)) addedCards.push(node);
+        else if (node.querySelectorAll) addedCards.push(...node.querySelectorAll(CARD_SELECTOR));
+        if (node.matches && node.matches(".media-attachments-img")) images.push(node);
         if (node.querySelectorAll) {
-          node.querySelectorAll(".c-history-img .media-attachments-img").forEach(handleImg);
+          images.push(...node.querySelectorAll(".c-history-img .media-attachments-img"));
         }
       }
     }
+    // Cards first: a card has to be tagged before any image inside it reports.
+    if (addedCards.length) tagNewHistoryCards(addedCards);
+    images.forEach(handleImg);
   });
   observer.observe(document.body, {
     childList: true, subtree: true, attributes: true, attributeFilter: ["src"]
   });
   window.__booruAutoDLObserver = observer;
 
-  // Primary Shadow DOM polling scanner (run every 1.5s to cover web component history elements)
+  // Primary Shadow DOM polling scanner (run every 1.5s to cover web component
+  // history elements). Also catches history cards the MutationObserver can't
+  // see (inside shadow roots).
   const scan = () => {
-    const images = querySelectorAllDeep(".media-attachments-img, .c-history-img img, .c-workflow-history-item img");
+    const cards = [];
+    const images = [];
+    for (const el of querySelectorAllDeep(`${CARD_SELECTOR}, .media-attachments-img, .c-history-img img, .c-workflow-history-item img`)) {
+      (el.matches(CARD_SELECTOR) ? cards : images).push(el);
+    }
+    tagNewHistoryCards(cards);
     images.forEach(handleImg);
   };
 
@@ -390,6 +501,57 @@ function uninstallAutoDownloadObserverInPage() {
   return { status: "removed" };
 }
 
+/**
+ * Installed into the SeaArt page right before the queue clicks Generate:
+ * the next new history card belongs to `jobId` (see tagNewHistoryCards).
+ * Runs in the same isolated world as the observer, so they share `window`.
+ */
+function armAutoDLJobInPage(jobId, armTtlMs) {
+  const prev = window.__booruAutoDLArm;
+  if (prev && prev.jobId !== jobId && Date.now() - prev.at < armTtlMs) {
+    // The previous job's card never appeared. It may still arrive late, which
+    // makes the next new card ambiguous.
+    window.__booruAutoDLMissedCardAt = Date.now();
+  }
+  window.__booruAutoDLArm = { jobId, at: Date.now() };
+}
+
+/** Undoes armAutoDLJobInPage when the click created no task (see disarmAutoDLJob). */
+function disarmAutoDLJobInPage(jobId) {
+  if (window.__booruAutoDLArm && window.__booruAutoDLArm.jobId === jobId) {
+    window.__booruAutoDLArm = null;
+  }
+}
+
+/** Runs a page-side helper in the SeaArt tab's top frame (where the observer
+ *  lives). Never rejects: a failed arm only costs that image its jobId. */
+function runInSeaArtPage(tabId, func, args) {
+  return new Promise((resolve) => {
+    chrome.scripting.executeScript({ target: { tabId, allFrames: false }, func, args }, () => {
+      if (chrome.runtime.lastError) console.warn("[AutoDL] page script error:", chrome.runtime.lastError.message);
+      resolve();
+    });
+  });
+}
+
+/**
+ * Tells the SeaArt page which queue job the Generate click about to happen
+ * belongs to, so the history card SeaArt creates for it gets tagged with the
+ * jobId and its image pairs with the right prompt. Call right before the click.
+ */
+function armAutoDLJob(tabId, jobId) {
+  if (!autoDownloadEnabled || currentPlatform !== "SeaArt" || !jobId) return Promise.resolve();
+  autoDLPairedJobIds.delete(jobId); // a new generation attempt for this job
+  return runInSeaArtPage(tabId, armAutoDLJobInPage, [jobId, AUTODL_ARM_TTL_MS]);
+}
+
+/** Withdraws an arm when the click is known to have created no task
+ *  (injection failed, or SeaArt's task-limit modal blocked it). */
+function disarmAutoDLJob(tabId, jobId) {
+  if (!autoDownloadEnabled || currentPlatform !== "SeaArt" || !jobId) return Promise.resolve();
+  return runInSeaArtPage(tabId, disarmAutoDLJobInPage, [jobId]);
+}
+
 /** Find the SeaArt tab id in the current window. */
 function findSeaArtTab() {
   return new Promise((resolve) => {
@@ -409,7 +571,7 @@ async function startAutoDownloadObserver() {
   }
   currentPlatform = "SeaArt"; // we have a confirmed SeaArt tab
   chrome.scripting.executeScript(
-    { target: { tabId: tab.id, allFrames: false }, func: installAutoDownloadObserverInPage },
+    { target: { tabId: tab.id, allFrames: false }, func: installAutoDownloadObserverInPage, args: [AUTODL_ARM_TTL_MS] },
     (res) => {
       if (chrome.runtime.lastError) { console.warn("[AutoDL] install error:", chrome.runtime.lastError.message); return; }
       dlog("[AutoDL] observer:", res?.[0]?.result);
@@ -451,13 +613,12 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   autoDLInFlight.add(msg.src);
 
   // Pair this finished image with the prompt SeaArt actually generated it from.
-  // msg.prompt is the text SeaArt renders next to THIS image in its history —
-  // correctly associated but sometimes truncated/reformatted. We use it as a
-  // key to recover the exact, complete prompt from the sent pool by content
-  // (matchSentPromptForImage), instead of blindly taking the oldest sent one.
-  // This is what fixes "crossed prompts" when images finish out of send order
-  // (concurrent SeaArt slots, or a burst of renders when the tab regains focus).
-  const match = matchSentPromptForImage(msg.prompt);
+  // msg.jobId is the queue job tagged on THIS image's history card when its
+  // task was created; msg.prompt is any text SeaArt renders in that card. Both
+  // stay with the image whatever order tasks finish in (concurrent SeaArt
+  // slots, or a burst of renders when the tab regains focus), unlike "the
+  // oldest prompt sent" — see matchSentPromptForImage.
+  const match = matchSentPromptForImage(msg.prompt, msg.jobId);
   const promptToEmbed = match.prompt || "";
   console.log(`[AutoDL] new image detected: ${msg.src.slice(0, 80)} | jobId=${match.jobId || "none"} | prompt source=${match.source}${match.score !== undefined ? ` (score=${match.score.toFixed(2)})` : ""} | pool left=${sentPromptsQueue.length}`);
 

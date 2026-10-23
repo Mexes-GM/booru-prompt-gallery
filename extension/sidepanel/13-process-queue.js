@@ -329,9 +329,13 @@ async function processNext() {
     // generation task was actually created", independent of any button-busy
     // heuristic (which SeaArt's own Generate button famously never reflects).
     const preClickSnapshot = await countActiveTasks(tabId);
+    // Auto-download: the SeaArt history card this click creates gets tagged
+    // with the jobId, which is how its image finds this prompt later.
+    await armAutoDLJob(tabId, queueItem.jobId);
     const injectResult = await injectPromptToTab(tabId, promptText, promptLocator, generateLocator, sizeConfig);
 
     if (!injectResult.success) {
+      disarmAutoDLJob(tabId, queueItem.jobId);
       currentPromptRetries++;
       console.warn(`[Queue] Prompt injection failed (attempt ${currentPromptRetries}/${MAX_PROMPT_RETRIES}), reason: ${injectResult.reason}`);
       if (queueItem.jobId) ledgerTransition(queueItem.jobId, JOB_STATE.QUEUED, { reason: "inject_failed", detail: injectResult.reason, attempt: currentPromptRetries });
@@ -376,7 +380,7 @@ async function processNext() {
     // was actually accepted (not silently rejected + retried), so each
     // completed image maps to exactly one queue entry.
     if (!(injectResult.hasButton && usePlatformSpecificQueueLogic)) {
-      sentPromptsQueue.push({ prompt: promptText, character: queueItem.character, jobId: queueItem.jobId });
+      recordSentPrompt({ prompt: promptText, character: queueItem.character, jobId: queueItem.jobId });
     }
 
     // If we found a Generate button and clicked it, wait for it to free up.
@@ -404,6 +408,7 @@ async function processNext() {
         currentActiveTasks = seaArtLimit;
         console.warn(`[SeaArt Queue] Limit reached. Calibrated: ${currentActiveTasks}/${seaArtLimit}.`);
         if (queueItem.jobId) ledgerTransition(queueItem.jobId, JOB_STATE.REJECTED, { reason: "limit_reached", detectedLimit: seaArtLimit });
+        disarmAutoDLJob(tabId, queueItem.jobId); // the modal blocked it: no task, no history card
 
         // ── Retry strategy (NO re-queue) ─────────────────────────────────
         // Re-queuing would create a tight loop: same prompt → inject → blocked → re-queue → pull again.
@@ -420,9 +425,11 @@ async function processNext() {
 
         // Retry the same prompt directly (not through processNext/queue)
         dlog(`[SeaArt Queue] Retrying blocked prompt: "${promptText.substring(0, 60)}..."`);
+        await armAutoDLJob(tabId, queueItem.jobId);
         const retryResult = await injectPromptToTab(tabId, promptText, promptLocator, generateLocator, sizeConfig);
-        
+
         if (!retryResult.success) {
+          disarmAutoDLJob(tabId, queueItem.jobId);
           console.warn(`[SeaArt Queue] Retry injection failed (${retryResult.reason}), skipping prompt.`);
           consecutiveSamePrompt = 0; // Reset — we're moving on
           // Already marked REJECTED above; this makes it terminal (no further
@@ -439,6 +446,7 @@ async function processNext() {
           if (retryWait?.status === "limit_reached") {
             // Still at limit — give up on this prompt, move to next
             console.warn(`[SeaArt Queue] Prompt still blocked after retry, skipping to next.`);
+            disarmAutoDLJob(tabId, queueItem.jobId);
             consecutiveSamePrompt = 0;
             // Skip the prompt without looping, but record it as FAILED.
             if (queueItem.jobId) ledgerTransition(queueItem.jobId, JOB_STATE.FAILED, { reason: "still_limit_reached_after_retry" });
@@ -452,7 +460,7 @@ async function processNext() {
         // Retry succeeded! Reset safety counter and continue normally.
         consecutiveSamePrompt = 0;
         lastGeneratedPrompt = promptText; // Mark as generated so next same-prompt detection is fresh
-        sentPromptsQueue.push({ prompt: promptText, character: queueItem.character, jobId: queueItem.jobId }); // The retried prompt is what SeaArt actually generated
+        recordSentPrompt({ prompt: promptText, character: queueItem.character, jobId: queueItem.jobId }); // The retried prompt is what SeaArt actually generated
         if (queueItem.jobId) ledgerTransition(queueItem.jobId, JOB_STATE.SUBMITTED, { via: "retry_after_limit" });
         await new Promise((r) => setTimeout(r, GRACE_PERIOD_MS));
         isProcessing = false;
@@ -466,7 +474,7 @@ async function processNext() {
       }
 
       // No paywall/limit modal appeared — the generation was accepted.
-      sentPromptsQueue.push({ prompt: promptText, character: queueItem.character, jobId: queueItem.jobId });
+      recordSentPrompt({ prompt: promptText, character: queueItem.character, jobId: queueItem.jobId });
       await confirmSubmitByDelta(queueItem.jobId, tabId, preClickSnapshot, `platform (${waitResult?.status || "unknown"})`);
 
       // Grace period before next injection
