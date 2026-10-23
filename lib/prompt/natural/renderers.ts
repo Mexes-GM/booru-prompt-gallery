@@ -11,7 +11,7 @@
  *   outfit, setting, light, camera, style), no quality or artist tags.
  */
 import type { Scene, SceneSlot } from "./scene"
-import { describeScene } from "./prose"
+import { describeScene, type PhraseDictionary } from "./prose"
 import { capitalize, joinList } from "./english"
 
 export interface RenderResult {
@@ -33,8 +33,8 @@ const ANIMA_TAG_SLOTS: SceneSlot[] = [
   "weapon", "handheld", "setting", "props", "atmosphere", "animal", "style", "layout",
 ]
 
-export function renderAnima(scene: Scene, options: { qualityTags?: string[] } = {}): RenderResult {
-  const prose = describeScene(scene)
+export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phrases?: PhraseDictionary } = {}): RenderResult {
+  const prose = describeScene(scene, options.phrases)
   const tags = [
     ...(options.qualityTags ?? []),
     ...(scene.rating && RATING_TAGS[scene.rating] ? [RATING_TAGS[scene.rating]] : []),
@@ -64,8 +64,8 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[] } = 
   }
 }
 
-export function renderFlux2(scene: Scene, options: { medium?: string } = {}): RenderResult {
-  const prose = describeScene(scene)
+export function renderFlux2(scene: Scene, options: { medium?: string; phrases?: PhraseDictionary } = {}): RenderResult {
+  const prose = describeScene(scene, options.phrases)
   const medium = options.medium ?? "An anime-style illustration"
   const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
   const sentences = [

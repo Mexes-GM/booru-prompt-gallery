@@ -60,6 +60,12 @@ export function isClothingState(tag: string): boolean {
 
 const BODY_PART_START = /^(hand|hands|arm|arms|finger|fingers|leg|legs|knee|knees|foot|feet|head|hip|hips|elbow|elbows|thigh|thighs|own hands|both hands)\b/
 
+/** The hand-written lexicon entry for a pose or expression tag, if any. */
+export function lexiconPhrase(tag: string, p: Pronouns): { kind: "state" | "with"; text: string } | null {
+  const entry = POSE_LEXICON[tag] ?? EXPRESSION_LEXICON[tag]
+  return entry ? { kind: entry.kind, text: entry.text.replace(/\{pos\}/g, p.possessive) } : null
+}
+
 /**
  * A pose tag as a phrase that follows "She is ..." ("sitting on a chair") or
  * "with ..." ("with her arms up"). Returns null when no rule applies.
@@ -121,8 +127,9 @@ const ANGLE_PHRASES: Record<string, string> = {
   pov: "seen from a first-person point of view",
 }
 
-export function anglePhrase(tag: string): string {
-  return ANGLE_PHRASES[tag] ?? tag
+/** Curated wording first, then the phrase dictionary, then the tag itself. */
+export function anglePhrase(tag: string, dictionaryText?: string): string {
+  return ANGLE_PHRASES[tag] ?? dictionaryText ?? tag
 }
 
 const FRAMING_PHRASES: Record<string, string> = {
@@ -136,8 +143,8 @@ const FRAMING_PHRASES: Record<string, string> = {
   profile: "a profile view",
 }
 
-export function framingPhrase(tag: string): string {
-  return FRAMING_PHRASES[tag] ?? withArticle(tag)
+export function framingPhrase(tag: string, dictionaryText?: string): string {
+  return FRAMING_PHRASES[tag] ?? dictionaryText ?? withArticle(tag)
 }
 
 type LexiconEntry = { kind: "state" | "with"; text: string }

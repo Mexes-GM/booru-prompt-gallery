@@ -19,9 +19,19 @@ import {
   isClothingState,
   isPluralNoun,
   joinList,
+  lexiconPhrase,
   posePhrase,
   withArticle,
 } from "./english"
+
+/**
+ * How a dictionary phrase plugs into a sentence: "is" continues "She is ___",
+ * "with" continues "..., with ___", "has" continues "She has ___", "wears"
+ * continues "She wears ___", "framing" continues "The image is ___", "scene" is
+ * a noun phrase for the atmosphere. `{pos}` stands for the possessive pronoun.
+ */
+export type PhraseKind = "is" | "with" | "has" | "wears" | "framing" | "scene"
+export type PhraseDictionary = Record<string, { kind: PhraseKind; text: string }>
 
 export interface SceneProse {
   /** "Yor Briar from Spy x Family, with long black hair and red eyes" (no final period). */
@@ -164,7 +174,12 @@ function articleForScenery(tag: string): string {
   return withArticle(tag)
 }
 
-export function describeScene(scene: Scene): SceneProse {
+/**
+ * `phrases` is the generated phrase dictionary (lib/prompt/natural/data/phrases.json).
+ * It is passed in rather than imported so the browser can load it lazily.
+ * Hand-written wording in english.ts wins over it; the generic rules come last.
+ */
+export function describeScene(scene: Scene, phrases: PhraseDictionary = {}): SceneProse {
   const p = pronounsFor(scene)
   const Subject = capitalize(p.subject)
   const Possessive = capitalize(p.possessive)
@@ -173,6 +188,10 @@ export function describeScene(scene: Scene): SceneProse {
   const wears = p.plural ? "wear" : "wears"
   const raw: string[] = []
   const slot = (s: SceneSlot) => dropImplied(scene.slots[s] ?? [])
+  const dictionary = (tag: string) => {
+    const entry = phrases[tag]
+    return entry ? { kind: entry.kind, text: entry.text.replace(/\{pos\}/g, p.possessive) } : null
+  }
 
   // Identity: name or count, species, cosplay, hair and eyes.
   const anatomyAll = dropImplied([...(scene.slots.demographics ?? []).filter((t) => t !== "no humans"), ...(scene.slots.anatomy ?? [])])
@@ -189,11 +208,21 @@ export function describeScene(scene: Scene): SceneProse {
   const anatomy = anatomyAll.filter((t) => !speciesSet.has(t) && !RELATIONS.has(t))
   const bodyAdjectives = anatomy.filter((t) => BODY_ADJECTIVES.has(t))
   const visible = anatomy.filter((t) => BODY_VISIBLE.has(t))
-  const bodyNouns = anatomy.filter((t) => !BODY_ADJECTIVES.has(t) && !BODY_VISIBLE.has(t)).map((t) => (isPluralNoun(t) ? t : withArticle(t)))
+  const bodyNouns: string[] = []
+  const bodyWith: string[] = []
+  for (const tag of anatomy) {
+    if (BODY_ADJECTIVES.has(tag) || BODY_VISIBLE.has(tag)) continue
+    const phrase = dictionary(tag)
+    if (phrase?.kind === "is") bodyAdjectives.push(phrase.text)
+    else if (phrase?.kind === "with") bodyWith.push(phrase.text)
+    else if (phrase) bodyNouns.push(phrase.text)
+    else bodyNouns.push(isPluralNoun(tag) ? tag : withArticle(tag))
+  }
   const body = [
     bodyAdjectives.length ? `${Subject} ${is} ${joinList(bodyAdjectives)}.` : "",
     bodyNouns.length ? `${Subject} ${has} ${joinList(bodyNouns)}.` : "",
     visible.length ? `${Possessive} ${joinList(visible)} ${visible.length > 1 || /s$/.test(visible[0]) ? "are" : "is"} visible.` : "",
+    bodyWith.length ? `${Subject} ${is} shown with ${joinList(bodyWith)}.` : "",
     relations.length ? `They are ${joinList(relations)}.` : "",
   ].filter(Boolean).join(" ")
 
@@ -201,13 +230,20 @@ export function describeScene(scene: Scene): SceneProse {
   const clothingTags = dropImplied(CLOTHING_ORDER.flatMap((s) => scene.slots[s] ?? []))
   const states = clothingTags.filter(isClothingState)
   const worn = clothingTags.filter((t) => !isClothingState(t) && WORN_STATE_RE.test(t))
-  const garments = clothingTags.filter((t) => !isClothingState(t) && !WORN_STATE_RE.test(t))
   const adjectives = states.filter((t) => OUTFIT_ADJECTIVES.has(t)).map((t) => OUTFIT_WORDING[t] ?? t.replace(/ clothes$/, ""))
   const beings = states.filter((t) => BEING_STATES[t]).map((t) => BEING_STATES[t])
   const showing = states.filter((t) => !OUTFIT_ADJECTIVES.has(t) && !BEING_STATES[t]).map((t) => (/cutout$/.test(t) ? withArticle(t) : t))
-  const wornPhrases = worn.map((t) => `${p.possessive} ${t.replace(/ lift$/, " lifted").replace(/ pull$/, " pulled")}`)
+  const wornPhrases = worn.map((t) => dictionary(t)?.kind === "with" ? dictionary(t)!.text : `${p.possessive} ${t.replace(/ lift$/, " lifted").replace(/ pull$/, " pulled")}`)
+  const garments: string[] = []
+  for (const tag of clothingTags) {
+    if (isClothingState(tag) || WORN_STATE_RE.test(tag)) continue
+    const phrase = dictionary(tag)
+    if (phrase?.kind === "with") wornPhrases.push(phrase.text)
+    else if (phrase?.kind === "is") beings.push(phrase.text)
+    else garments.push(phrase?.kind === "wears" ? phrase.text : withArticle(tag))
+  }
   const clothing = [
-    garments.length ? `${Subject} ${wears} ${joinList(garments.map(withArticle))}${wornPhrases.length ? `, with ${joinList(wornPhrases)}` : ""}.` : "",
+    garments.length ? `${Subject} ${wears} ${joinList(garments)}${wornPhrases.length ? `, with ${joinList(wornPhrases)}` : ""}.` : "",
     !garments.length && wornPhrases.length ? `${Subject} ${is} shown with ${joinList(wornPhrases)}.` : "",
     adjectives.length ? `${Possessive} outfit is ${joinList(adjectives)}.` : "",
     beings.length ? `${Subject} ${is} ${joinList(beings)}.` : "",
@@ -227,14 +263,26 @@ export function describeScene(scene: Scene): SceneProse {
   // Pose, expression and gaze in one sentence.
   const statesOut: string[] = []
   const withs: string[] = []
+  const extraFraming: string[] = []
+  const extraMood: string[] = []
   const poseTags = dropImplied([...POSE_ORDER.flatMap((s) => scene.slots[s] ?? []), ...(scene.slots.expression ?? [])])
   for (const tag of poseTags) {
     if (tag === "holding") continue
-    const phrase = posePhrase(tag, p) ?? expressionPhrase(tag, p)
-    if (!phrase) { raw.push(tag); continue }
-    ;(phrase.kind === "state" ? statesOut : withs).push(phrase.text)
+    const curated = lexiconPhrase(tag, p)
+    if (curated) { (curated.kind === "state" ? statesOut : withs).push(curated.text); continue }
+    const phrase = dictionary(tag)
+    if (phrase) {
+      if (phrase.kind === "is") statesOut.push(phrase.text)
+      else if (phrase.kind === "framing") extraFraming.push(phrase.text)
+      else if (phrase.kind === "scene") extraMood.push(phrase.text)
+      else withs.push(phrase.text)
+      continue
+    }
+    const ruled = posePhrase(tag, p) ?? expressionPhrase(tag, p)
+    if (!ruled) { raw.push(tag); continue }
+    ;(ruled.kind === "state" ? statesOut : withs).push(ruled.text)
   }
-  statesOut.push(...dropImplied(scene.camera.gaze).map((t) => gazePhrase(t, p)))
+  statesOut.push(...dropImplied(scene.camera.gaze).map((t) => (dictionary(t)?.kind === "is" ? dictionary(t)!.text : gazePhrase(t, p))))
   let pose = ""
   if (statesOut.length) pose = `${Subject} ${is} ${joinList(statesOut)}${withs.length ? `, with ${joinList(withs)}` : ""}.`
   else if (withs.length) pose = `${Subject} ${is} shown with ${joinList(withs)}.`
@@ -265,16 +313,21 @@ export function describeScene(scene: Scene): SceneProse {
   // Lighting and effects.
   const lightingAdjectives = atmosphere.filter((t) => / lighting$/.test(t)).map((t) => t.slice(0, -9))
   const effects = atmosphere.filter((t) => EFFECTS_RE.test(t))
-  const mood = atmosphere.filter((t) => !TIME_PHRASES[t] && !/ lighting$/.test(t) && !EFFECTS_RE.test(t))
+  const mood = [
+    ...atmosphere
+      .filter((t) => !TIME_PHRASES[t] && !/ lighting$/.test(t) && !EFFECTS_RE.test(t))
+      .map((t) => dictionary(t)?.text ?? (isPluralNoun(t) || /^(rain|snow|fog|mist|steam|wind|smoke|fire|water)$/.test(t) ? t : withArticle(t))),
+    ...extraMood,
+  ]
   const lighting = [
     lightingAdjectives.length ? `The lighting is ${joinList(lightingAdjectives)}.` : "",
-    mood.length ? `The atmosphere includes ${joinList(mood.map((t) => (isPluralNoun(t) || /^(rain|snow|fog|mist|steam|wind|smoke|fire|water)$/.test(t) ? t : withArticle(t))))}.` : "",
+    mood.length ? `The atmosphere includes ${joinList(mood)}.` : "",
     effects.length ? `The image has ${joinList(effects.map((t) => (/^(depth of field|bokeh|motion blur|film grain|chromatic aberration|light particles|light rays)$/.test(t) ? t : withArticle(t))))}.` : "",
   ].filter(Boolean).join(" ")
 
   // Camera.
-  const framing = dropImplied(scene.camera.framing).map(framingPhrase)
-  const angle = scene.camera.angle.map(anglePhrase)
+  const framing = [...dropImplied(scene.camera.framing).map((t) => framingPhrase(t, dictionary(t)?.text)), ...extraFraming]
+  const angle = scene.camera.angle.map((t) => anglePhrase(t, dictionary(t)?.text))
   const camera = framing.length
     ? `The image is ${joinList(framing)}${angle.length ? `, ${joinList(angle)}` : ""}.`
     : angle.length ? `The image is ${joinList(angle)}.` : ""

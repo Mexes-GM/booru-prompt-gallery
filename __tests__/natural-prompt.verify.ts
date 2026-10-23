@@ -109,5 +109,24 @@ const overrides: Record<string, string> = {
   assert(flux.includes("The lighting is warm."), "lighting tags become a lighting sentence")
 }
 
+// 7. Phrase dictionary: used when no hand-written wording exists, {pos} follows the pronoun.
+{
+  const phrases = {
+    "lying on stomach": { kind: "is" as const, text: "lying flat on {pos} stomach" },
+    smile: { kind: "is" as const, text: "beaming" },
+    "mole under eye": { kind: "has" as const, text: "a mole under {pos} eye" },
+    "warm lighting": { kind: "scene" as const, text: "ignored, lighting tags have their own sentence" },
+  }
+  const solo = buildScene({ general: ["1girl", "lying_on_stomach", "smile", "mole_under_eye"] }, { ...overrides, "mole under eye": "appearance:anatomy" })
+  const flux = renderFlux2(solo, { phrases }).text
+  assert(flux.includes("lying flat on her stomach"), "dictionary phrase replaces the generic rule")
+  assert(flux.includes("smiling") && !flux.includes("beaming"), "hand-written lexicon wins over the dictionary")
+  assert(flux.includes("She has a mole under her eye."), "anatomy uses the dictionary with the possessive filled in")
+
+  const duo = buildScene({ general: ["2girls", "lying_on_stomach"] }, overrides)
+  assert(renderFlux2(duo, { phrases }).text.includes("They are lying flat on their stomach"), "{pos} follows a plural subject")
+  assert(!renderFlux2(solo).text.includes("lying flat"), "without a dictionary the rules alone apply")
+}
+
 console.log(`${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

@@ -8,5 +8,5 @@
  * per-model output profiles.
  */
 export { buildScene, normalizeTag, sceneTagCount, titleCase, type NaturalPromptInput, type Scene, type SceneSlot } from "./scene"
-export { describeScene, type SceneProse } from "./prose"
+export { describeScene, type PhraseDictionary, type PhraseKind, type SceneProse } from "./prose"
 export { renderAnima, renderFlux2, type RenderResult } from "./renderers"
