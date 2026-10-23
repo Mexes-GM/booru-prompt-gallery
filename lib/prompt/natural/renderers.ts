@@ -37,6 +37,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
   const prose = describeScene(scene, options.phrases)
   const tags = [
     ...(options.qualityTags ?? []),
+    ...scene.quality,
     ...(scene.rating && RATING_TAGS[scene.rating] ? [RATING_TAGS[scene.rating]] : []),
     ...scene.subjectTags,
     ...scene.characterTags,

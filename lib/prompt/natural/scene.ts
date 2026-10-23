@@ -44,6 +44,8 @@ export interface Scene {
   others: number
   /** Count and costume tags (1girl, solo, cosplay...), kept verbatim for tag renderers. */
   subjectTags: string[]
+  /** Quality and score tags from AI-generated prompts (masterpiece, score_9...); tag renderers keep them. */
+  quality: string[]
   /** One entry per person: costume variants of the same character are merged. */
   characters: SceneCharacter[]
   /** Every character tag as given, costume variants included (tag renderers keep them). */
@@ -79,6 +81,7 @@ const GAZE_RE = /^(looking |eye contact|facing |looking$)/
 const EFFECT_RE = /^(depth of field|bokeh|blurry|blurry background|blurry foreground|motion blur|chromatic aberration|film grain|lens flare)$/
 
 // Meta tags that describe the file or the post, not the picture.
+const QUALITY_RE = /^(masterpiece|best quality|high quality|good quality|normal quality|amazing quality|very aesthetic|aesthetic|newest|recent|score \d+( up)?|score_\d+(_up)?|year \d{4})$/
 const META_RE = /(commentary|translat|request|^bad |md5|duplicate|revision|third-party|^highres$|^absurdres$|^lowres$|resolution|^tagme$|^check |^official art$|^variant set$|^image sample$|^paid reward)/
 
 /** "rapi (red hood) (nikke)" -> "Rapi". */
@@ -146,6 +149,7 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     boys: 0,
     others: 0,
     subjectTags: [],
+    quality: [],
     characters,
     characterTags,
     cosplayAs: [...cosplayNames],
@@ -185,10 +189,22 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
       continue
     }
 
+    if (QUALITY_RE.test(tag) || QUALITY_RE.test(raw.trim().toLowerCase())) {
+      scene.quality.push(raw.trim().toLowerCase().startsWith("score_") ? raw.trim().toLowerCase() : tag)
+      continue
+    }
+
     if (FRAMING_RE.test(tag)) { scene.camera.framing.push(tag); continue }
     if (ANGLE_RE.test(tag)) { scene.camera.angle.push(tag); continue }
     if (GAZE_RE.test(tag)) { scene.camera.gaze.push(tag); continue }
 
+    // Hand-written tags ("lying on stomach") are not in the taxonomy; the suffix
+    // fallback would file them by their last word (stomach -> anatomy), so a tag
+    // that starts with a verb is read as a pose instead.
+    if (!overrides[tag] && /^[a-z]+ing\b/.test(tag) && !/^(earring|ring|string|wing|ceiling|building|clothing|stocking)s?\b/.test(tag)) {
+      push(scene, "posture", tag)
+      continue
+    }
     const slot = getTagSlotFromOverrides(tag, overrides)
     if (slot?.category === "other" && (slot.subcategory === "meta" || slot.subcategory === "artist")) {
       scene.dropped.push(tag)
@@ -233,5 +249,5 @@ function push(scene: Scene, slot: SceneSlot, tag: string) {
 export function sceneTagCount(scene: Scene): number {
   const slotTags = Object.values(scene.slots).reduce((n, tags) => n + (tags?.length ?? 0), 0)
   const camera = scene.camera.framing.length + scene.camera.angle.length + scene.camera.gaze.length
-  return slotTags + camera + scene.unclassified.length + scene.subjectTags.length
+  return slotTags + camera + scene.unclassified.length + scene.subjectTags.length + scene.quality.length
 }
