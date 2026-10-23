@@ -249,11 +249,11 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     ? `${subject}${traits.length ? `, with ${joinList(traits)}` : ""}`
     : traits.length ? `A figure with ${joinList(traits)}` : ""
 
-  // Traits attributed to one character (attributeTraits): one sentence each.
-  // The possessive follows the scene's genders, as Danbooru names carry none.
-  const ownPossessive = scene.boys === 0 ? "her" : scene.girls === 0 ? "his" : "their"
-  const own = (tag: string) => phrases[tag]?.text.replace(/\{pos\}/g, ownPossessive)
+  // Traits attributed to one character (attributeTraits): one sentence each, with
+  // that character's possessive (assignGenders); "their" only when nothing tells.
   const characters = scene.assigned.map(({ character, slots }) => {
+    const possessive = character.gender === "male" ? "his" : character.gender === "female" ? "her" : "their"
+    const own = (tag: string) => phrases[tag]?.text.replace(/\{pos\}/g, possessive)
     const of = (s: SceneSlot) => dropImplied(slots[s] ?? [])
     // "reptile girl", "a mature woman": what the character is, not something they have.
     const isTag = (t: string) => SPECIES_RE.test(t) || (phrases[t]?.kind === "is" && /^an? /.test(phrases[t].text))
