@@ -37,6 +37,8 @@ export type PhraseDictionary = Record<string, { kind: PhraseKind; text: string }
 export interface SceneProse {
   /** "Yor Briar from Spy x Family, with long black hair and red eyes" (no final period). */
   identity: string
+  /** One sentence per character with attributed traits ("Hatsune Miku has aqua hair…"). */
+  characters: string[]
   body: string
   clothing: string
   held: string
@@ -223,11 +225,41 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   // Identity: name or count, species, cosplay, hair and eyes.
   const anatomyAll = dropImplied([...(scene.slots.demographics ?? []).filter((t) => t !== "no humans"), ...(scene.slots.anatomy ?? [])])
   const species = p.plural ? [] : anatomyAll.filter((t) => SPECIES_RE.test(t))
-  const traits = [...tidy(hairTraits(slot("hair")), 3), ...tidy(eyeTraits(slot("eyes")), 1)]
+  // A shared "long hair" says nothing once a character owns "very long hair".
+  const ownedTraits = scene.assigned.flatMap((a) => [...(a.slots.hair ?? []), ...(a.slots.eyes ?? [])])
+  const notOwned = (tag: string) => !ownedTraits.some((o) => o.endsWith(` ${tag}`) || o.startsWith(`${tag} `))
+  const traits = [...tidy(hairTraits(slot("hair").filter(notOwned)), 3), ...tidy(eyeTraits(slot("eyes").filter(notOwned)), 1)]
   const subject = subjectPhrase(scene, species)
   const identity = subject
     ? `${subject}${traits.length ? `, with ${joinList(traits)}` : ""}`
     : traits.length ? `A figure with ${joinList(traits)}` : ""
+
+  // Traits attributed to one character (attributeTraits): one sentence each.
+  // The possessive follows the scene's genders, as Danbooru names carry none.
+  const ownPossessive = scene.boys === 0 ? "her" : scene.girls === 0 ? "his" : "their"
+  const own = (tag: string) => phrases[tag]?.text.replace(/\{pos\}/g, ownPossessive)
+  const characters = scene.assigned.map(({ character, slots }) => {
+    const of = (s: SceneSlot) => dropImplied(slots[s] ?? [])
+    // "reptile girl", "a mature woman": what the character is, not something they have.
+    const isTag = (t: string) => SPECIES_RE.test(t) || (phrases[t]?.kind === "is" && /^an? /.test(phrases[t].text))
+    const isList = tidy(of("anatomy").filter(isTag).map((t) => (phrases[t]?.kind === "is" ? own(t)! : withArticle(t))), 1)
+    const hasList = tidy([
+      ...hairTraits(of("hair")),
+      ...eyeTraits(of("eyes")),
+      ...of("anatomy").filter((t) => !isTag(t)).map((t) => own(t) ?? (isPluralNoun(t) ? t : withArticle(t))),
+    ], 4)
+    const wearList = tidy(CLOTHING_ORDER.flatMap(of).map((t) => (phrases[t]?.kind === "wears" ? own(t)! : withArticle(t))), 4)
+    const holdList = tidy([...of("weapon"), ...of("handheld")].map((t) => withArticle(t.replace(/^holding /, ""))), 2)
+    const clauses = [
+      isList.length ? `is ${joinList(isList)}` : "",
+      hasList.length ? `has ${joinList(hasList)}` : "",
+      wearList.length ? `wears ${joinList(wearList)}` : "",
+      holdList.length ? `holds ${joinList(holdList)}` : "",
+    ].filter(Boolean)
+    if (!clauses.length) return ""
+    const last = clauses.pop()!
+    return `${character.name} ${clauses.length ? `${clauses.join(", ")}, and ${last}` : last}.`
+  }).filter(Boolean)
 
   // Body.
   const relations = anatomyAll.filter((t) => RELATIONS.has(t))
@@ -407,5 +439,5 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   ].filter(Boolean).join(" ")
 
   raw.push(...scene.unclassified)
-  return { identity, body, clothing, held, pose, setting, lighting, camera, style, extras, pronouns: p, raw, omitted }
+  return { identity, characters, body, clothing, held, pose, setting, lighting, camera, style, extras, pronouns: p, raw, omitted }
 }

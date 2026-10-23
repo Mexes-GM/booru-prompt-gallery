@@ -186,5 +186,37 @@ const overrides: Record<string, string> = {
   assert(text.includes("performing oral sex on a penis") && !/performing oral sex(,| and)/.test(text), "a phrase contained in another is dropped")
 }
 
+// 10. Trait attribution between characters (Danbooru related-tag shares, rounded).
+{
+  const traits = {
+    "hatsune miku": { twintails: 0.83, "aqua hair": 0.51, "aqua eyes": 0.38, necktie: 0.38, skirt: 0.39, "detached sleeves": 0.37, "blue eyes": 0.27 },
+    "kagamine rin": { "blonde hair": 0.81, "short hair": 0.63, "hair ribbon": 0.25, "blue eyes": 0.47, "sailor collar": 0.31, shorts: 0.29, "detached sleeves": 0.3, "aqua eyes": 0.22, twintails: 0.24, "aqua hair": 0.16, necktie: 0.19, skirt: 0.19 },
+  }
+  const vocab: Record<string, string> = {
+    ...overrides,
+    twintails: "appearance:hair", "aqua hair": "appearance:hair", "blonde hair": "appearance:hair", "short hair": "appearance:hair", "hair ribbon": "appearance:hair",
+    "aqua eyes": "appearance:eyes", "blue eyes": "appearance:eyes",
+    necktie: "clothing:accents", skirt: "clothing:bottom", shorts: "clothing:bottom", "sailor collar": "clothing:top", "detached sleeves": "clothing:accents",
+  }
+  const general = ["2girls", "twintails", "aqua hair", "blonde hair", "short hair", "hair ribbon", "aqua eyes", "blue eyes", "detached sleeves", "necktie", "sailor collar", "shorts", "skirt", "smile"]
+  const input = { general, characters: ["hatsune_miku", "kagamine_rin"], copyrights: ["vocaloid"] }
+
+  const scene = buildScene(input, vocab, { traits })
+  const owned = (name: string) => Object.values(scene.assigned.find((a) => a.character.name === name)?.slots ?? {}).flat()
+  assert(["twintails", "aqua hair", "aqua eyes", "necktie", "skirt"].every((t) => owned("Hatsune Miku").includes(t)), "Miku gets twintails, aqua hair and eyes, necktie, skirt")
+  assert(["blonde hair", "short hair", "hair ribbon", "blue eyes", "sailor collar", "shorts"].every((t) => owned("Kagamine Rin").includes(t)), "Rin gets blonde short hair, ribbon, blue eyes, sailor collar, shorts")
+  assert(scene.slots.accents?.includes("detached sleeves") ?? false, "a trait both share stays shared")
+  assert(sceneTagCount(scene) + scene.dropped.length === new Set(general).size, "attribution moves tags, it does not lose them")
+
+  const flux = renderFlux2(scene, { maxWords: null }).text
+  assert(/Hatsune Miku has [^.]*aqua hair[^.]*, and wears [^.]*necktie/.test(flux), "Miku gets her own sentence")
+  assert(/Kagamine Rin has [^.]*blonde hair/.test(flux) && !/with [^.]*aqua[^.]*blonde/.test(flux), "Rin gets her own sentence; hair colours are no longer merged")
+  assert(renderAnima(scene).text.includes("Hatsune Miku has"), "Anima prose describes each character too")
+
+  const cosplay = buildScene({ ...input, general: [...general, "cosplay"] }, vocab, { traits })
+  assert(!Object.values(cosplay.assigned.find((a) => a.character.name === "Hatsune Miku")?.slots ?? {}).flat().includes("necktie"), "on costume posts only hair, eyes and body are attributed")
+  assert(buildScene(input, vocab).assigned.length === 0, "without profiles nothing is attributed")
+}
+
 console.log(`${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

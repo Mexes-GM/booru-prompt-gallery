@@ -12,6 +12,7 @@
  * the booru already separates, instead of being guessed.
  */
 import { getTagSlotFromOverrides, TAG_SUBCATEGORIES } from "@/lib/tag-taxonomy"
+import { isClothingState } from "./english"
 
 export interface NaturalPromptInput {
   /** General tags, as on the post (underscores or spaces). */
@@ -62,6 +63,23 @@ export interface Scene {
   unclassified: string[]
   /** Tags removed on purpose (meta tags such as highres or commentary). */
   dropped: string[]
+  /**
+   * Traits moved out of `slots` to the character they belong to (see
+   * `attributeTraits`). Empty unless several characters have trait profiles.
+   */
+  assigned: { character: SceneCharacter; slots: Partial<Record<SceneSlot, string[]>> }[]
+}
+
+/**
+ * Per character, how often each general tag appears on its posts (0-1), e.g.
+ * { "hatsune miku": { "twintails": 0.83, "aqua hair": 0.51 } }. Built from
+ * Danbooru's related tags (scripts/natural-prompt-eval/traits/).
+ */
+export type CharacterTraits = Record<string, Record<string, number>>
+
+export interface BuildSceneOptions {
+  /** Enables per-character attribution of hair, eyes, body and outfit tags. */
+  traits?: CharacterTraits
 }
 
 /** Lowercase, spaces instead of underscores, booru escapes removed. */
@@ -139,7 +157,7 @@ function fallbackSlot(tag: string, category?: string): SceneSlot | null {
   }
 }
 
-export function buildScene(input: NaturalPromptInput, overrides: Record<string, string>): Scene {
+export function buildScene(input: NaturalPromptInput, overrides: Record<string, string>, options: BuildSceneOptions = {}): Scene {
   const characterTags = (input.characters ?? []).map(normalizeTag)
   const copyrightTags = new Set((input.copyrights ?? []).map(normalizeTag))
   const artistTags = new Set((input.artists ?? []).map(normalizeTag))
@@ -175,6 +193,7 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     camera: { framing: [], angle: [], gaze: [] },
     unclassified: [],
     dropped: [],
+    assigned: [],
   }
 
   const seen = new Set<string>()
@@ -265,7 +284,55 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     else scene.unclassified.push(tag)
   }
 
+  if (options.traits) attributeTraits(scene, options.traits)
   return scene
+}
+
+const ATTRIBUTABLE_SLOTS: SceneSlot[] = [
+  "hair", "eyes", "anatomy",
+  "outfit", "top", "bottom", "underwear", "legwear", "footwear", "headwear", "eyewear", "accents",
+  "weapon", "handheld",
+]
+// A trait goes to a character when it appears on at least MIN_SHARE of that
+// character's posts and MIN_RATIO times more often than for the next one.
+const MIN_SHARE = 0.15
+const MIN_RATIO = 1.5
+// With a named character we know nothing about, a trait could be theirs: ask for more.
+const MIN_SHARE_WITH_UNKNOWN = 0.3
+
+/**
+ * Booru tags are one flat list, so "aqua hair, blonde hair" does not say who
+ * has which. Each character's trait profile does: Hatsune Miku's posts carry
+ * "aqua hair" far more often than Kagamine Rin's. Tags with a clear owner move
+ * from `slots` to `assigned`; ambiguous ones stay shared. Costume posts
+ * (cosplay, alternate costume) only attribute hair, eyes and body, since the
+ * outfit is not the character's usual one.
+ */
+export function attributeTraits(scene: Scene, traits: CharacterTraits): void {
+  const profiled = scene.characters.flatMap((character) => (traits[character.tag] ? [{ character, profile: traits[character.tag] }] : []))
+  if (scene.characters.length < 2 || profiled.length < 2) return
+  const minShare = profiled.length < scene.characters.length ? MIN_SHARE_WITH_UNKNOWN : MIN_SHARE
+  const costume = scene.subjectTags.some((t) => /cosplay|alternate costume/.test(t))
+  const slots = costume ? ATTRIBUTABLE_SLOTS.slice(0, 3) : ATTRIBUTABLE_SLOTS
+  const owners = new Map(profiled.map(({ character }) => [character.tag, { character, slots: {} as Partial<Record<SceneSlot, string[]>> }]))
+
+  for (const slot of slots) {
+    const shared: string[] = []
+    for (const tag of scene.slots[slot] ?? []) {
+      // "bare shoulders", "sleeveless": how the outfit is worn, not an item someone owns.
+      if (isClothingState(tag)) { shared.push(tag); continue }
+      const [best, second] = profiled
+        .map(({ character, profile }) => ({ character, share: profile[tag] ?? 0 }))
+        .sort((a, b) => b.share - a.share)
+      if (best.share >= minShare && best.share >= MIN_RATIO * (second?.share ?? 0)) {
+        ;((owners.get(best.character.tag)!.slots[slot] ??= [])).push(tag)
+      } else {
+        shared.push(tag)
+      }
+    }
+    if (scene.slots[slot]) scene.slots[slot] = shared
+  }
+  scene.assigned = [...owners.values()].filter((o) => Object.keys(o.slots).length > 0)
 }
 
 const nameIndexes = new WeakMap<Record<string, string>, Map<string, string | null>>()
@@ -348,7 +415,8 @@ function push(scene: Scene, slot: SceneSlot, tag: string) {
 
 /** Every tag the scene will render (everything except `dropped`). */
 export function sceneTagCount(scene: Scene): number {
-  const slotTags = Object.values(scene.slots).reduce((n, tags) => n + (tags?.length ?? 0), 0)
+  const slotTags = [...Object.values(scene.slots), ...scene.assigned.flatMap((a) => Object.values(a.slots))]
+    .reduce((n, tags) => n + (tags?.length ?? 0), 0)
   const camera = scene.camera.framing.length + scene.camera.angle.length + scene.camera.gaze.length
   return slotTags + camera + scene.unclassified.length + scene.subjectTags.length + scene.quality.length
 }

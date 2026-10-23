@@ -56,6 +56,8 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
   // Prose: who, what they do, how it is framed. Anima wants at least two sentences.
   const sentences = [
     prose.identity ? `${capitalize(prose.identity)}.` : "",
+    // Anima's card asks for each character to be described separately.
+    ...prose.characters,
     prose.pose,
     prose.camera,
   ].filter(Boolean)
@@ -96,13 +98,15 @@ export function renderFlux2(scene: Scene, options: Flux2Options = {}): RenderRes
   const medium = options.medium ?? "An anime-style illustration"
   // Full detail when it fits; otherwise cap every list first, then drop sentences.
   const full = describeScene(scene, options.phrases)
-  const fullWords = wordCount([full.identity, full.pose, full.body, full.clothing, full.held, full.setting, full.lighting, full.camera, full.style, full.extras, full.raw.join(" ")].join(" ")) + wordCount(medium) + 2
+  const fullWords = wordCount([full.identity, ...full.characters, full.pose, full.body, full.clothing, full.held, full.setting, full.lighting, full.camera, full.style, full.extras, full.raw.join(" ")].join(" ")) + wordCount(medium) + 2
   const prose = fullWords > maxWords ? describeScene(scene, options.phrases, { compact: true }) : full
   const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
 
   // Output order reads naturally; `priority` decides what survives the budget.
   const sections = [
     { text: opening, priority: 0 },
+    // Who has which trait matters as much as who is there.
+    { text: prose.characters.join(" "), priority: 0.5 },
     { text: prose.pose, priority: 1 },
     { text: prose.body, priority: 4 },
     { text: prose.clothing, priority: 2 },
