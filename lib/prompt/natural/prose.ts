@@ -67,7 +67,8 @@ const BODY_VISIBLE = new Set([
   "navel", "midriff", "collarbone", "stomach", "armpits", "cleavage", "nipples", "thighs", "ass",
   "back", "shoulders", "abs", "ribs", "feet", "toes", "groin", "pussy", "penis", "anus", "testicles",
 ])
-const SPECIES_RE = / (girl|boy|female|male)$/
+const SPECIES_RE = / (girl|boy)$/
+const GENDERED_RE = /^(.+) (female|male)$/
 const RELATIONS = new Set(["siblings", "sisters", "brothers", "twins", "couple", "friends", "mother and daughter", "father and daughter", "mother and son", "brother and sister"])
 // More names than this read as a list, not a description.
 const MAX_NAMED_CHARACTERS = 4
@@ -210,16 +211,28 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}): Sce
   const visible = anatomy.filter((t) => BODY_VISIBLE.has(t))
   const bodyNouns: string[] = []
   const bodyWith: string[] = []
+  // A noun phrase ("a mature woman") cannot follow "They are"; with several people it gets its own sentence.
+  const bodyRoles: string[] = []
+  const hairColors = new Set(slot("hair").map((h) => h.replace(/ hair$/, "")))
   for (const tag of anatomy) {
     if (BODY_ADJECTIVES.has(tag) || BODY_VISIBLE.has(tag)) continue
+    // "curvy female", "mature female": the adjective is the description; "blonde female" repeats the hair.
+    const gendered = tag.match(GENDERED_RE)
+    if (gendered) {
+      if (!hairColors.has(gendered[1]) && !HAIR_COLOR_RE.test(gendered[1])) bodyAdjectives.push(gendered[1])
+      continue
+    }
     const phrase = dictionary(tag)
-    if (phrase?.kind === "is") bodyAdjectives.push(phrase.text)
+    if (phrase?.kind === "is" && p.plural && /^an? /.test(phrase.text)) bodyRoles.push(phrase.text)
+    else if (phrase?.kind === "is") bodyAdjectives.push(phrase.text)
     else if (phrase?.kind === "with") bodyWith.push(phrase.text)
     else if (phrase) bodyNouns.push(phrase.text)
     else bodyNouns.push(isPluralNoun(tag) ? tag : withArticle(tag))
   }
+  const adjectiveList = [...new Set(bodyAdjectives)]
   const body = [
-    bodyAdjectives.length ? `${Subject} ${is} ${joinList(bodyAdjectives)}.` : "",
+    adjectiveList.length ? `${Subject} ${is} ${joinList(adjectiveList)}.` : "",
+    bodyRoles.length ? `One of them is ${joinList(bodyRoles)}.` : "",
     bodyNouns.length ? `${Subject} ${has} ${joinList(bodyNouns)}.` : "",
     visible.length ? `${Possessive} ${joinList(visible)} ${visible.length > 1 || /s$/.test(visible[0]) ? "are" : "is"} visible.` : "",
     bodyWith.length ? `${Subject} ${is} shown with ${joinList(bodyWith)}.` : "",
@@ -313,9 +326,13 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}): Sce
   // Lighting and effects.
   const lightingAdjectives = atmosphere.filter((t) => / lighting$/.test(t)).map((t) => t.slice(0, -9))
   const effects = atmosphere.filter((t) => EFFECTS_RE.test(t))
+  const moodTags = atmosphere.filter((t) => !TIME_PHRASES[t] && !/ lighting$/.test(t) && !EFFECTS_RE.test(t))
+  // A lone adjective with no phrase ("shiny") would read as "a shiny"; keep it as a raw tag instead.
+  const moodAdjectives = moodTags.filter((t) => dictionary(t)?.kind !== "scene" && /^[a-z]+(y|ed|ful|ous)$/.test(t) && !UNIQUE_NOUNS.has(t))
+  raw.push(...moodAdjectives)
   const mood = [
-    ...atmosphere
-      .filter((t) => !TIME_PHRASES[t] && !/ lighting$/.test(t) && !EFFECTS_RE.test(t))
+    ...moodTags
+      .filter((t) => !moodAdjectives.includes(t))
       .map((t) => (dictionary(t)?.kind === "scene" ? dictionary(t)!.text : isPluralNoun(t) || /^(rain|snow|fog|mist|steam|wind|smoke|fire|water)$/.test(t) ? t : withArticle(t))),
     ...extraMood,
   ]

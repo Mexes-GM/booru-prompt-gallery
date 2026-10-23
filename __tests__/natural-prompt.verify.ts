@@ -10,10 +10,12 @@
  *   5. Anima output: tag order from the model card, @artist, escaped parentheses,
  *      followed by a prose block.
  *   6. FLUX.2 output: prose only, no rating, quality or artist tags.
+ *   7. The phrase dictionary and its precedence.
+ *   8. Pasted prompts: hand-written names, gender and size tags.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
-import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, titleCase } from "../lib/prompt/natural"
+import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, splitPromptTags, titleCase } from "../lib/prompt/natural"
 import { dropImplied } from "../lib/prompt/natural/english"
 
 let passed = 0
@@ -126,6 +128,32 @@ const overrides: Record<string, string> = {
   const duo = buildScene({ general: ["2girls", "lying_on_stomach"] }, overrides)
   assert(renderFlux2(duo, { phrases }).text.includes("They are lying flat on their stomach"), "{pos} follows a plural subject")
   assert(!renderFlux2(solo).text.includes("lying flat"), "without a dictionary the rules alone apply")
+}
+
+// 8. Pasted prompts in other boorus' style (names written by hand, gender and size tags).
+{
+  const names: Record<string, string> = {
+    ...overrides,
+    "haruno sakura": "other:character",
+    "tsunade (naruto)": "other:character",
+    haruno: "other:artist",
+    "big ass": "appearance:anatomy",
+    "huge ass": "appearance:anatomy",
+    "mature female": "appearance:demographics",
+    // As in the real taxonomy: "curvy female" reaches demographics through its suffix.
+    female: "appearance:demographics",
+  }
+  const input = splitPromptTags("sakura haruno, tsunade, 2girls, (smile:1.3), @some artist, score_9", names)
+  assert(input.characters?.join() === "haruno sakura,tsunade (naruto)", "names found by swapped order and by base name")
+  assert(input.artists?.join() === "some artist" && input.general.includes("smile") && input.general.includes("score_9"), "weights removed, @artist split, score spelling kept")
+
+  const scene = buildScene({ ...input, general: [...input.general, "big ass", "huge ass", "blonde female", "curvy female", "mature female", "female only", "blonde hair"] }, names)
+  assert(scene.series.join() === "Naruto", "series taken from the character qualifier when the prompt names none")
+  assert(scene.subjectTags.includes("female only"), "gender tags count as subject tags")
+  assert(!scene.dropped.includes("sakura haruno"), "a suffix guess never drops a tag as an artist name")
+  const flux = renderFlux2(scene).text
+  assert(flux.includes("They are curvy and mature."), "gendered tags become adjectives, without repeating the hair colour")
+  assert(flux.includes("a huge ass") && !flux.includes("big ass"), "only the largest size of a body part is kept")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

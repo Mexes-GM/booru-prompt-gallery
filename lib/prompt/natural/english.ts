@@ -107,7 +107,24 @@ export function gazePhrase(tag: string, p: Pronouns): string {
 export function dropImplied(tags: string[]): string[] {
   const implied = new Set<string>()
   for (const tag of tags) for (const other of IMPLIES[tag] ?? []) implied.add(other)
-  return tags.filter((tag) => !implied.has(tag) && !tags.some((other) => other !== tag && (other.endsWith(` ${tag}`) || other.startsWith(`${tag} `))))
+  // Several sizes of one body part ("big ass, huge ass, large ass"): keep the largest.
+  const largest = new Map<string, number>()
+  for (const tag of tags) {
+    const size = sizeOf(tag)
+    if (size) largest.set(size.noun, Math.max(largest.get(size.noun) ?? 0, size.rank))
+  }
+  return tags.filter((tag) => {
+    const size = sizeOf(tag)
+    if (size && size.rank < (largest.get(size.noun) ?? 0)) return false
+    return !implied.has(tag) && !tags.some((other) => other !== tag && (other.endsWith(` ${tag}`) || other.startsWith(`${tag} `)))
+  })
+}
+
+const SIZE_RANK: Record<string, number> = { flat: 1, small: 2, medium: 3, big: 4, large: 5, huge: 6, gigantic: 7, enormous: 7 }
+
+function sizeOf(tag: string): { noun: string; rank: number } | null {
+  const [first, ...rest] = tag.split(" ")
+  return SIZE_RANK[first] && rest.length ? { noun: rest.join(" "), rank: SIZE_RANK[first] } : null
 }
 
 const IMPLIES: Record<string, string[]> = {

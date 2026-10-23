@@ -70,7 +70,11 @@ export function normalizeTag(tag: string): string {
 }
 
 const COUNT_RE = /^(\d+)\+?(girl|boy|other)s?$/
-const COUNT_WORDS = new Set(["solo", "multiple girls", "multiple boys", "multiple others", "solo focus", "male focus", "female focus"])
+const COUNT_WORDS = new Set([
+  "solo", "multiple girls", "multiple boys", "multiple others", "solo focus", "male focus", "female focus",
+  // Gender tags as other boorus write them (Rule34, Gelbooru): subject information, not description.
+  "female", "male", "solo female", "solo male", "female only", "male only",
+])
 const COSTUME_WORDS = new Set(["cosplay", "alternate costume", "official alternate costume", "alternate hairstyle", "costume switch"])
 
 // Framing tags that the taxonomy stores outside pose:camera (e.g. "upper body"
@@ -99,6 +103,12 @@ export function titleCase(text: string): string {
     .split(" ")
     .map((w, i) => (i > 0 && SMALL_WORDS.has(w) ? w : w.replace(/(^|[/-])([a-z])/g, (_, sep, c) => sep + c.toUpperCase())))
     .join(" ")
+}
+
+/** "tsunade (naruto)" -> "naruto"; costume qualifiers such as "(cosplay)" are not series. */
+function qualifier(tag: string): string | null {
+  const m = tag.match(/\(([^)]+)\)$/)
+  return m && !/^(cosplay|costume|swimsuit|young|adult|alternate|human|male|female)\b/.test(m[1]) ? m[1] : null
 }
 
 function seriesNames(copyrights: string[]): string[] {
@@ -153,7 +163,8 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     characters,
     characterTags,
     cosplayAs: [...cosplayNames],
-    series: seriesNames(input.copyrights ?? []),
+    // Without copyright tags (a pasted prompt), the character qualifiers still name the series.
+    series: seriesNames(input.copyrights?.length ? input.copyrights : [...new Set(characterTags.map(qualifier).filter((q): q is string => !!q))]),
     artists: [...artistTags],
     rating: input.rating,
     slots: {},
@@ -205,7 +216,14 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
       push(scene, "posture", tag)
       continue
     }
+    const exact = overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
     const slot = getTagSlotFromOverrides(tag, overrides)
+    // A name slot reached through the suffix fallback is a guess ("sakura haruno"
+    // ends in an artist's name), so only an exact match may drop the tag.
+    if (slot?.category === "other" && !exact) {
+      scene.unclassified.push(tag)
+      continue
+    }
     if (slot?.category === "other" && (slot.subcategory === "meta" || slot.subcategory === "artist")) {
       scene.dropped.push(tag)
       continue
@@ -239,6 +257,53 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   }
 
   return scene
+}
+
+const nameIndexes = new WeakMap<Record<string, string>, Map<string, string | null>>()
+
+/** "tsunade" -> "tsunade (naruto)" when exactly one character tag has that base name. */
+function characterByBaseName(base: string, overrides: Record<string, string>): string | null {
+  let index = nameIndexes.get(overrides)
+  if (!index) {
+    index = new Map()
+    for (const [key, value] of Object.entries(overrides)) {
+      if (value !== "other:character") continue
+      const m = key.replace(/_/g, " ").match(/^(.+?) \([^)]+\)$/)
+      if (!m) continue
+      // Two characters sharing a base name are ambiguous: remember that with null.
+      index.set(m[1], index.has(m[1]) && index.get(m[1]) !== key ? null : key.replace(/_/g, " "))
+    }
+    nameIndexes.set(overrides, index)
+  }
+  return index.get(base) ?? null
+}
+
+/**
+ * Splits a pasted prompt ("1girl, sakura haruno, (smile:1.2), @artist") into the
+ * fields a post would carry. Weights are removed; names are found by exact tag,
+ * by swapped given/family name ("sakura haruno" -> "haruno sakura"), or by base
+ * name ("tsunade" -> "tsunade (naruto)").
+ */
+export function splitPromptTags(prompt: string, overrides: Record<string, string>): NaturalPromptInput {
+  const input = { general: [] as string[], characters: [] as string[], copyrights: [] as string[], artists: [] as string[] }
+  const kindOf = (t: string) => overrides[t] ?? overrides[t.replace(/ /g, "_")]
+  for (const piece of prompt.split(",")) {
+    const cleaned = piece.trim().replace(/^[([{]+|[)\]}]+$/g, "").replace(/:\s*[\d.]+$/, "").trim()
+    const tag = normalizeTag(cleaned)
+    if (!tag) continue
+    if (tag.startsWith("@")) { input.artists.push(tag.slice(1).trim()); continue }
+    const words = tag.split(" ")
+    const swapped = words.length === 2 ? `${words[1]} ${words[0]}` : null
+    const kind = kindOf(tag)
+    if (kind === "other:character") input.characters.push(tag)
+    else if (kind === "other:copyright") input.copyrights.push(tag)
+    else if (kind === "other:artist") input.artists.push(tag)
+    else if (!kind && swapped && kindOf(swapped) === "other:character") input.characters.push(swapped)
+    else if (!kind && characterByBaseName(tag, overrides)) input.characters.push(characterByBaseName(tag, overrides)!)
+    // The original spelling goes on, so score tags keep their underscores.
+    else input.general.push(cleaned)
+  }
+  return input
 }
 
 function push(scene: Scene, slot: SceneSlot, tag: string) {
