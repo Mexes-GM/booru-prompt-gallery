@@ -192,6 +192,9 @@ import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useHistoryPosts } from "@/hooks/use-history-posts"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { usePostHog } from 'posthog-js/react'
+import { usePromptFormat } from "@/hooks/use-natural-prompt"
+import { PROMPT_FORMAT_INFO, hasWordBudget, type PromptFormat } from "@/lib/prompt/prompt-format"
+import { NaturalPromptStatus } from "@/components/prompt-gallery/prompt-format-setting"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PackSeedFetcher
@@ -571,6 +574,7 @@ export function PromptGallery() {
     setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
     setAutoAppendSearchTags,
   } = usePromptOptions()
+  const { format: promptFormat, fullDetail: promptFullDetail } = usePromptFormat()
 
   const [showCategoryTagBadges, setShowCategoryTagBadges] = useState(true)
 
@@ -1255,18 +1259,18 @@ export function PromptGallery() {
   // --- Helpers ---
   // Ref-stabilized callbacks: stable references that always call the latest version.
   // Prevents renderMasonryItem from recreating when toast or other deps change.
-  const copyToClipboardRef = useRef<(content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string) => Promise<void>>(async () => {})
+  const copyToClipboardRef = useRef<(content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string, format?: PromptFormat) => Promise<void>>(async () => {})
   const downloadImageRef = useRef<(post: BooruPost) => Promise<void>>(async () => {})
 
-  const stableCopyToClipboard = useCallback(async (content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string) => {
-    return copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl)
+  const stableCopyToClipboard = useCallback(async (content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string, format?: PromptFormat) => {
+    return copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl, format)
   }, [])
 
   const stableDownloadImage = useCallback(async (post: BooruPost) => {
     return downloadImageRef.current(post)
   }, [])
 
-  const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string) => {
+  const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string, format: PromptFormat = 'tags') => {
     try {
       await navigator.clipboard.writeText(content)
 
@@ -1274,7 +1278,8 @@ export function PromptGallery() {
       posthog.capture('prompt_copied', {
         copy_type: isPrompt ? 'ai_text' : 'tags',
         booru_source: search.booruProvider,
-        has_translated_tags: isAiConvertMode || content.includes('Masterpiece')
+        has_translated_tags: isAiConvertMode || content.includes('Masterpiece'),
+        prompt_format: format,
       })
 
       setCopiedId(postId)
@@ -1306,7 +1311,9 @@ export function PromptGallery() {
       if (!window.matchMedia("(pointer: coarse)").matches) {
         toast({
           title: "Copied!",
-          description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
+          description: format !== 'tags'
+            ? `${PROMPT_FORMAT_INFO[format].label} prompt copied to clipboard`
+            : isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
         })
       }
       setTimeout(() => setCopiedId(null), 2000)
@@ -1762,6 +1769,9 @@ export function PromptGallery() {
                       ? [search.removeLoRaTags, search.removeQualityTags, autoAppendSearchTags, isGlobalWeightsEnabled]
                       : [includeCharacters, optimizeTags, autoAppendSearchTags, prependAnimaArtist, isGlobalWeightsEnabled]
                     const promptSummary = [
+                      promptFormat !== 'tags'
+                        ? `${PROMPT_FORMAT_INFO[promptFormat].badge}${hasWordBudget(promptFormat) && promptFullDetail ? " (every detail)" : ""}`
+                        : null,
                       addedTagCount > 0 ? `+${addedTagCount} tag${addedTagCount === 1 ? '' : 's'} added` : "No tags added",
                       excludeInput.trim() ? `${splitCommaSeparatedTags(excludeInput).length} removed` : null,
                       `${outputFlags.filter(Boolean).length} of ${outputFlags.length} options on`,
@@ -2178,6 +2188,7 @@ export function PromptGallery() {
         randomSettings={mergeMode.randomSettings}
         setRandomSettings={mergeMode.setRandomSettings}
       />
+      <NaturalPromptStatus />
       <AiConvertStickyFooter
         isOpen={isAiConvertMode}
         tags={aiConvertTags}

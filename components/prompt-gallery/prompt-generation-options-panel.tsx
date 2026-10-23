@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils"
 import type { BackgroundMode } from "@/lib/background-detector"
 import type { MatchStrictness } from "@/lib/background-context"
+import { PromptFormatSetting } from "./prompt-format-setting"
 
 /**
  * Labels + tooltip copy for the "Detailed Random" scene-matching strictness.
@@ -764,6 +765,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
     return (
       <div className="flex flex-col gap-4" data-tour="generation-options">
         <div className="flex flex-col">
+          <PromptFormatSetting onSettingChange={trackSetting} />
           {options.map((o) => (
             <div key={o.id} className="flex min-h-[56px] items-center justify-between gap-3 border-b border-border/50 py-2 last:border-b-0">
               <label htmlFor={`${o.id}-embedded`} className="flex min-w-0 cursor-pointer flex-col gap-0.5">
