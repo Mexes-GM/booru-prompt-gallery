@@ -306,14 +306,15 @@ const MIN_SHARE_WITH_UNKNOWN = 0.3
  * "aqua hair" far more often than Kagamine Rin's. Tags with a clear owner move
  * from `slots` to `assigned`; ambiguous ones stay shared. Costume posts
  * (cosplay, alternate costume) only attribute hair, eyes and body, since the
- * outfit is not the character's usual one.
+ * outfit is not the character's usual one; genderswap posts only hair and eyes.
  */
 export function attributeTraits(scene: Scene, traits: CharacterTraits): void {
   const profiled = scene.characters.flatMap((character) => (traits[character.tag] ? [{ character, profile: traits[character.tag] }] : []))
   if (scene.characters.length < 2 || profiled.length < 2) return
   const minShare = profiled.length < scene.characters.length ? MIN_SHARE_WITH_UNKNOWN : MIN_SHARE
   const costume = scene.subjectTags.some((t) => /cosplay|alternate costume/.test(t))
-  const slots = costume ? ATTRIBUTABLE_SLOTS.slice(0, 3) : ATTRIBUTABLE_SLOTS
+  const genderswap = [...Object.values(scene.slots).flat(), ...scene.unclassified].some((t) => t?.startsWith("genderswap"))
+  const slots = genderswap ? ATTRIBUTABLE_SLOTS.slice(0, 2) : costume ? ATTRIBUTABLE_SLOTS.slice(0, 3) : ATTRIBUTABLE_SLOTS
   const owners = new Map(profiled.map(({ character }) => [character.tag, { character, slots: {} as Partial<Record<SceneSlot, string[]>> }]))
 
   for (const slot of slots) {
