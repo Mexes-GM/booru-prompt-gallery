@@ -30,7 +30,8 @@ import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/l
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
 import { type TagCategory, type ClassifiedTags, type RichnessDepth } from "@/lib/tag-classifier"
-import { RICHNESS_AXES, TAG_CATEGORIES } from "@/lib/tag-taxonomy"
+import { PACK_AXES, RICHNESS_AXES, TAG_CATEGORIES } from "@/lib/tag-taxonomy"
+import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
 import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { useCardPrompt } from "@/hooks/use-card-prompt"
 
@@ -58,6 +59,17 @@ const SHOW_RICHNESS_BADGE = false
 // gives up. Unbounded retries turned one deleted/broken file into a request
 // every 10s forever, and each failure counted toward the gallery's image-error
 // threshold — so a single broken card eventually paused infinite scroll.
+// Selected state of the Merge Mode part buttons on each card.
+const MERGE_PART_ACTIVE_CLASS: Record<TagCategory, string> = {
+    appearance: 'bg-cat-appearance text-cat-appearance-foreground shadow-cat-appearance/30',
+    clothing: 'bg-cat-clothing text-cat-clothing-foreground shadow-cat-clothing/30',
+    equipment: 'bg-cat-equipment text-cat-equipment-foreground shadow-cat-equipment/30',
+    pose: 'bg-cat-pose text-cat-pose-foreground shadow-cat-pose/30',
+    scenery: 'bg-cat-scenery text-cat-scenery-foreground shadow-cat-scenery/30',
+    creature: 'bg-cat-creature text-cat-creature-foreground shadow-cat-creature/30',
+    other: 'bg-muted text-foreground',
+}
+
 const MAX_IMAGE_RETRIES = 2
 const IMAGE_RETRY_BASE_MS = 10_000
 
@@ -541,36 +553,21 @@ export const MasonryItem = memo(function MasonryItem({
                             >
                                 {/* Inline Selection Bar */}
                                 <motion.div
-                                    className="flex items-center justify-between w-full max-w-[220px] mx-auto bg-background/85 border border-border/40 shadow-2xl rounded-2xl p-1.5 gap-1.5 ring-1 ring-foreground/5"
+                                    className="flex items-center justify-between w-full max-w-[280px] mx-auto bg-background/85 border border-border/40 shadow-2xl rounded-2xl p-1 sm:p-1.5 gap-0.5 sm:gap-1 ring-1 ring-foreground/5"
                                     initial={{ scale: 0.9, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 25 }}
                                 >
-                                    {(['appearance', 'pose', 'clothing', 'scenery'] as const).map(part => {
+                                    {PACK_AXES.map(part => {
                                         const isChecked = selectedParts?.has(part)
                                         const hasTags = classifiedTags[part] && classifiedTags[part].length > 0
-
-                                        // Icons mapping
-                                        const Icon = part === 'appearance' ? Smile :
-                                            part === 'pose' ? User :
-                                                part === 'clothing' ? Shirt :
-                                                    Mountain
-
-                                        // Colors mapping
-                                        const activeColorClass = part === 'appearance' ? 'bg-cat-appearance text-cat-appearance-foreground shadow-cat-appearance/30' :
-                                            part === 'pose' ? 'bg-cat-pose text-cat-pose-foreground shadow-cat-pose/30' :
-                                                part === 'clothing' ? 'bg-cat-clothing text-cat-clothing-foreground shadow-cat-clothing/30' :
-                                                    'bg-cat-scenery text-cat-scenery-foreground shadow-cat-scenery/30'
-
-                                        const inactiveColorClass = part === 'appearance' ? 'hover:text-cat-appearance-text hover:bg-cat-appearance-soft' :
-                                            part === 'pose' ? 'hover:text-cat-pose-text hover:bg-cat-pose-soft' :
-                                                part === 'clothing' ? 'hover:text-cat-clothing-text hover:bg-cat-clothing-soft' :
-                                                    'hover:text-cat-scenery-text hover:bg-cat-scenery-soft'
+                                        const Icon = TAG_CATEGORY_ICONS[part]
+                                        const activeColorClass = MERGE_PART_ACTIVE_CLASS[part]
 
                                         return (
                                             <Tooltip key={part}>
                                                 <TooltipTrigger asChild>
-                                                    <span tabIndex={!hasTags ? -1 : 0} className="flex-1 flex max-w-[50px]">
+                                                    <span tabIndex={!hasTags ? -1 : 0} className="flex-1 flex min-w-0 max-w-[44px]">
                                                         <motion.button
                                                             disabled={!hasTags}
                                                             whileHover={hasTags && !lowMotion ? { scale: 1.1, y: -2 } : {}}
@@ -581,7 +578,7 @@ export const MasonryItem = memo(function MasonryItem({
                                                             }}
                                                             aria-label={isChecked ? `Deselect ${part} tags` : `Select ${part} tags`}
                                                             className={`
-                                                              relative flex-1 h-9 flex items-center justify-center rounded-xl transition-all duration-300
+                                                              relative flex-1 min-w-0 h-8 sm:h-9 flex items-center justify-center rounded-xl transition-all duration-300
                                                               ${!hasTags
                                                                     ? `opacity-40 cursor-not-allowed bg-muted/50 text-muted-foreground`
                                                                     : isChecked

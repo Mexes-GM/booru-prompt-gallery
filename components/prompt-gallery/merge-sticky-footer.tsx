@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { X, Copy, Trash2, Check, Shuffle, Type, Dices, Settings2 } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
-import { SelectedPostParts, MergeModeType, RandomSettings } from '@/hooks/use-merge-mode'
+import { SelectedPostParts, MergeModeType, RandomSettings, MergedPromptSegment } from '@/hooks/use-merge-mode'
 import { TagCategory } from '@/lib/tag-classifier'
 import { usePostHog } from 'posthog-js/react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -24,7 +24,7 @@ interface MergeStickyFooterProps {
     isOpen: boolean
     selectedPosts: Map<number, SelectedPostParts>
     mergedPrompt: string
-    mergedPromptSegments: { text: string, display: string, category: TagCategory, postId?: number }[]
+    mergedPromptSegments: MergedPromptSegment[]
     onRemovePost: (id: number) => void
     onClearAll: () => void
     onExit: () => void
@@ -507,6 +507,7 @@ const MergeStickyFooterComponent = ({
                                                         key={`${segment.text}-${index}`}
                                                         text={segment.display}
                                                         category={segment.category}
+                                                        count={selectedPosts.size > 1 ? segment.count : undefined}
                                                         onRemove={() => onRemoveTag(segment.text)}
                                                     />
                                                 ))}
