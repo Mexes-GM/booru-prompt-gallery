@@ -11,6 +11,11 @@
  *   BFL's recommended 30-80 words: lists are capped and whole sentences are
  *   dropped by priority (subject, action, outfit, place, body, light, camera,
  *   style). `maxWords: null` turns the limit off and keeps every detail.
+ *   Krea 2 also wants full sentences and reads up to 512 tokens: same format.
+ * - moss: the same prose with a longer budget. MOSS-Image was trained on VLM
+ *   captions (long ones average ~235 tokens) and its prompt-enhancer skill asks
+ *   for cohesive prose without quality tags; Danbooru tags and @artist work
+ *   poorly there, so names are written out.
  */
 import type { Scene, SceneSlot } from "./scene"
 import { describeScene, type PhraseDictionary } from "./prose"
@@ -82,19 +87,29 @@ function sentencesOf(text: string): string[] {
 
 /** BFL's recommended upper bound for a medium-length FLUX.2 prompt. */
 export const FLUX2_DEFAULT_MAX_WORDS = 80
+/** About the length of MOSS-Image's long training captions (~235 tokens). */
+export const MOSS_DEFAULT_MAX_WORDS = 180
 
-export interface Flux2Options {
+export interface ProseOptions {
   medium?: string
   phrases?: PhraseDictionary
   /**
-   * Word budget. Defaults to FLUX2_DEFAULT_MAX_WORDS; `null` turns the limit
-   * off and keeps every detail (for long-prompt models or when the user asks).
+   * Word budget. Defaults to the profile's own (FLUX2_DEFAULT_MAX_WORDS,
+   * MOSS_DEFAULT_MAX_WORDS); `null` turns the limit off and keeps every detail.
    */
   maxWords?: number | null
 }
 
-export function renderFlux2(scene: Scene, options: Flux2Options = {}): RenderResult {
-  const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? FLUX2_DEFAULT_MAX_WORDS
+export function renderFlux2(scene: Scene, options: ProseOptions = {}): RenderResult {
+  return renderProse(scene, options, FLUX2_DEFAULT_MAX_WORDS)
+}
+
+export function renderMoss(scene: Scene, options: ProseOptions = {}): RenderResult {
+  return renderProse(scene, options, MOSS_DEFAULT_MAX_WORDS)
+}
+
+function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: number): RenderResult {
+  const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? defaultMaxWords
   const medium = options.medium ?? "An anime-style illustration"
   // Full detail when it fits; otherwise cap every list first, then drop sentences.
   const full = describeScene(scene, options.phrases)

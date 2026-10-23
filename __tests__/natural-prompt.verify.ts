@@ -15,7 +15,7 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
-import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, splitPromptTags, titleCase } from "../lib/prompt/natural"
+import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, renderMoss, splitPromptTags, titleCase } from "../lib/prompt/natural"
 import { dropImplied } from "../lib/prompt/natural/english"
 
 let passed = 0
@@ -179,6 +179,10 @@ const overrides: Record<string, string> = {
   assert(renderFlux2(scene, { maxWords: 400 }).omitted < flux.omitted, "a larger budget cuts less")
   const unlimited = renderFlux2(scene, { maxWords: null })
   assert(unlimited.omitted === 0 && unlimited.text.includes("a village"), "maxWords: null keeps every detail")
+
+  const moss = renderMoss(scene)
+  assert(moss.text.split(/\s+/).length <= 180 && moss.omitted <= flux.omitted, "MOSS-Image keeps more detail, within its 180-word default")
+  assert(!/@|\\\(|best quality/.test(moss.text) && moss.text.startsWith("An anime-style illustration of Kashima"), "MOSS-Image is prose with names written out")
 
   const phrases = { "oral sex": { kind: "is" as const, text: "performing oral sex" }, "fellatio deep": { kind: "is" as const, text: "performing oral sex on a penis" } }
   const repeated = buildScene({ general: ["1girl", "oral sex", "fellatio deep"] }, { ...overrides, "oral sex": "pose:physiological", "fellatio deep": "pose:physiological" })

@@ -9,4 +9,4 @@
  */
 export { attributeTraits, buildScene, normalizeTag, sceneTagCount, splitPromptTags, titleCase, type BuildSceneOptions, type CharacterTraits, type NaturalPromptInput, type Scene, type SceneSlot } from "./scene"
 export { describeScene, type PhraseDictionary, type PhraseKind, type SceneProse } from "./prose"
-export { FLUX2_DEFAULT_MAX_WORDS, renderAnima, renderFlux2, type Flux2Options, type RenderResult } from "./renderers"
+export { FLUX2_DEFAULT_MAX_WORDS, MOSS_DEFAULT_MAX_WORDS, renderAnima, renderFlux2, renderMoss, type ProseOptions, type RenderResult } from "./renderers"
