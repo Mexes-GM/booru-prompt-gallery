@@ -10,11 +10,18 @@
  *   4. Tags without an exact classification are reported for lookup.
  *   5. FLUX.2 short stays within its budget and reports what it left out;
  *      full detail keeps everything. Anima keeps the tag block and reports nothing.
- *   6. Format metadata.
+ *   6. Character traits: only cards with two or more characters load profiles,
+ *      other boorus' names find the Danbooru profile, attribution and aliases apply.
+ *   7. Trait shards: the hash is stable and public/natural-traits/ agrees with it.
+ *   8. Format metadata.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt-format.verify.ts
  */
-import { formatPrompt, naturalPromptInput, ratingLetter, unclassifiedTags } from "../lib/prompt/natural-format"
+import fs from "fs"
+import path from "path"
+import { normalizeTag } from "../lib/prompt/natural"
+import { cardTraits, formatPrompt, naturalPromptInput, ratingLetter, traitNames, unclassifiedTags } from "../lib/prompt/natural-format"
+import { TRAIT_SHARD_COUNT, traitShard, traitShardFile } from "../lib/prompt/natural-traits"
 import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, hasWordBudget, isPromptFormat } from "../lib/prompt/prompt-format"
 
 let passed = 0
@@ -124,7 +131,57 @@ const overrides: Record<string, string> = {
   assert(!/safe|explicit|masterpiece/.test(short.text), "prose leaves out rating and quality tags")
 }
 
-// 6. Format metadata.
+// 6. Character traits: which names load, how they are looked up, what they change.
+{
+  assert(traitNames(naturalPromptInput({ prompt: "1girl, smile", characters: "yor_briar" }, overrides)).length === 0, "one character loads no profiles")
+  const pair = naturalPromptInput({ prompt: "2girls, aqua hair, blonde hair, twintails, hair bow", characters: "hatsune_miku kagamine_rin" }, overrides)
+  assert(traitNames(pair).join("|") === "hatsune miku|kagamine rin", "two characters load their profiles, by normalized name")
+
+  const profiles = {
+    "hatsune miku": { "aqua hair": 0.9, twintails: 0.85, "solo 1girl": 0.95, "solo 1boy": 0 },
+    "kagamine rin": { "blonde hair": 0.9, "hair bow": 0.7, "solo 1girl": 0.9, "solo 1boy": 0.01 },
+  }
+  const traits = cardTraits(["hatsune miku", "rin (vocaloid)"], { "rin (vocaloid)": "kagamine rin" }, profiles)
+  assert(traits["rin (vocaloid)"] === profiles["kagamine rin"], "another booru's name finds the Danbooru profile, keyed by the card's own tag")
+  assert(Object.keys(traits).length === 2, "every name with a profile is included")
+
+  const known = { ...overrides, "aqua hair": "appearance:hair", "blonde hair": "appearance:hair", twintails: "appearance:hair", "hair bow": "clothing:headwear" }
+  const shared = formatPrompt("flux2", pair, known, { fullDetail: true }).text
+  const attributed = formatPrompt("flux2", pair, known, { fullDetail: true, traits: cardTraits(traitNames(pair), {}, profiles) }).text
+  assert(shared.includes("with aqua and blonde hair") && !shared.includes("Hatsune Miku has"), "without profiles the hair is described for both")
+  assert(attributed.includes("Hatsune Miku has aqua hair") && attributed.includes("Kagamine Rin has blonde hair"), "with profiles each character gets their own hair")
+
+  const twoNames = naturalPromptInput({ prompt: "1girl, smile", characters: "kasumi_(pokemon) misty_(pokemon)" }, overrides)
+  const merged = formatPrompt("flux2", twoNames, overrides, { characterAliases: { "kasumi (pokemon)": "misty (pokemon)" } }).text
+  assert(merged.includes("Misty") && !merged.includes("Kasumi"), "aliases make one person of two names")
+}
+
+// 7. Trait shards: a stable hash, and the exported files agree with it.
+{
+  assert(traitShard("hatsune miku") === traitShard("hatsune miku") && traitShard("") === traitShard(""), "the shard hash is deterministic")
+  const spread = new Set(["hatsune miku", "kagamine rin", "yor briar", "misty (pokemon)", "kashima (kancolle)", "rapi (nikke)"].map(traitShard))
+  assert(spread.size >= 4 && [...spread].every((s) => s >= 0 && s < TRAIT_SHARD_COUNT), "names spread over the shard range")
+  assert(traitShardFile(0) === "00.json" && traitShardFile(TRAIT_SHARD_COUNT - 1) === `${(TRAIT_SHARD_COUNT - 1).toString(16)}.json`, "shard files are two hex digits")
+
+  const dir = path.join(__dirname, "../public/natural-traits")
+  if (fs.existsSync(dir)) {
+    let misplaced = 0
+    let profilesSeen = 0
+    for (let shard = 0; shard < TRAIT_SHARD_COUNT; shard++) {
+      const file = path.join(dir, traitShardFile(shard))
+      if (!fs.existsSync(file)) { misplaced++; continue }
+      for (const [name, profile] of Object.entries(JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, Record<string, number>>)) {
+        profilesSeen++
+        if (traitShard(name) !== shard || name !== normalizeTag(name) || Object.values(profile).some((v) => typeof v !== "number")) misplaced++
+      }
+    }
+    const aliases: Record<string, string> = JSON.parse(fs.readFileSync(path.join(dir, "aliases.json"), "utf8"))
+    assert(misplaced === 0 && profilesSeen > 0, `every exported profile sits in the shard its name hashes to (${misplaced} misplaced)`)
+    assert(Object.entries(aliases).every(([from, to]) => from !== to && from === normalizeTag(from)), "aliases only list names that differ, normalized")
+  }
+}
+
+// 8. Format metadata.
 {
   assert(PROMPT_FORMATS[0] === "tags", "tags is the first and default format")
   assert(isPromptFormat("moss") && !isPromptFormat("nl") && !isPromptFormat(null), "stored values are validated")

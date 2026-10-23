@@ -15,6 +15,7 @@ import {
   renderFlux2,
   renderMoss,
   splitPromptTags,
+  type CharacterTraits,
   type NaturalPromptInput,
   type PhraseDictionary,
 } from "@/lib/prompt/natural"
@@ -96,7 +97,38 @@ export function unclassifiedTags(input: NaturalPromptInput, overrides: Record<st
   return [...tags]
 }
 
+/**
+ * The card's character names whose trait profiles are worth loading:
+ * attribution only starts with two or more characters.
+ */
+export function traitNames(input: NaturalPromptInput): string[] {
+  const names = [...new Set((input.characters ?? []).map(normalizeTag))]
+  return names.length >= 2 ? names : []
+}
+
+/**
+ * Profiles for the card's names, keyed by the card's own tags. A name from
+ * another booru is looked up under the Danbooru name it maps to.
+ */
+export function cardTraits(names: string[], aliases: Record<string, string>, profiles: CharacterTraits): CharacterTraits {
+  const traits: CharacterTraits = {}
+  for (const name of names) {
+    const profile = profiles[aliases[name] ?? name]
+    if (profile) traits[name] = profile
+  }
+  return traits
+}
+
 const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length
+
+export interface FormatPromptOptions {
+  phrases?: PhraseDictionary
+  fullDetail?: boolean
+  /** Per-character profiles (see cardTraits): hair, eyes and outfit go to whoever owns them. */
+  traits?: CharacterTraits
+  /** Other boorus' names -> Danbooru name, so one person tagged twice counts once. */
+  characterAliases?: Record<string, string>
+}
 
 /**
  * `fullDetail` lifts the word budget of the prose formats (FLUX.2 and Krea 2,
@@ -106,9 +138,9 @@ export function formatPrompt(
   format: NaturalPromptFormat,
   input: NaturalPromptInput,
   overrides: Record<string, string>,
-  options: { phrases?: PhraseDictionary; fullDetail?: boolean } = {},
+  options: FormatPromptOptions = {},
 ): FormattedPrompt {
-  const scene = buildScene(input, overrides)
+  const scene = buildScene(input, overrides, { traits: options.traits, characterAliases: options.characterAliases })
   const { phrases } = options
   const maxWords = options.fullDetail ? null : undefined
   const result = format === "anima"

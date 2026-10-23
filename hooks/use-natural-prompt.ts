@@ -4,11 +4,15 @@ import { onSettingsChange } from "@/lib/settings-bridge"
 import type { PromptFormat } from "@/lib/prompt/prompt-format"
 import type { FormattedPrompt, NaturalPromptSource } from "@/lib/prompt/natural-format"
 import {
+  getCharacterTraits,
   getNaturalPromptResources,
+  getNoCharacterTraits,
   getServerNaturalPromptResources,
   getTagLookups,
+  loadCharacterTraits,
   loadNaturalPrompt,
   requestTagLookups,
+  subscribeCharacterTraits,
   subscribeNaturalPrompt,
   subscribeTagLookups,
   withTagLookups,
@@ -50,6 +54,8 @@ export function usePromptFormat() {
 const noSubscription = () => () => {}
 const NO_LOOKUPS: Record<string, string> = {}
 const getNoLookups = () => NO_LOOKUPS
+const NO_NAMES: string[] = []
+const NO_SCENE_OPTIONS = {}
 
 /**
  * Converter state. Starts the download when `enabled`; while disabled the
@@ -110,14 +116,35 @@ export function useNaturalPrompt({ enabled, format, fullDetail, source, override
     if (missing.length > 0) requestTagLookups(missing)
   }, [input, engine, allOverrides])
 
+  // Cards with two or more characters load those characters' trait profiles,
+  // so each one's hair, eyes and outfit are described as theirs.
+  const names = useMemo(() => (input && engine ? engine.traitNames(input) : NO_NAMES), [input, engine])
+  const wantsTraits = names.length > 0
+  const traitData = useSyncExternalStore(
+    wantsTraits ? subscribeCharacterTraits : noSubscription,
+    wantsTraits ? getCharacterTraits : getNoCharacterTraits,
+    getNoCharacterTraits,
+  )
+  useEffect(() => {
+    if (wantsTraits) loadCharacterTraits(names).catch(() => {})
+  }, [wantsTraits, names])
+  const sceneOptions = useMemo(
+    () => (engine && wantsTraits
+      ? { traits: engine.cardTraits(names, traitData.aliases, traitData.profiles), characterAliases: traitData.aliases }
+      : NO_SCENE_OPTIONS),
+    [engine, wantsTraits, names, traitData],
+  )
+
   const naturalFormat = format === "tags" ? null : format
   const formatted = useMemo(
-    () => (input && engine && naturalFormat ? engine.formatPrompt(naturalFormat, input, allOverrides, { phrases, fullDetail }) : null),
-    [input, engine, naturalFormat, allOverrides, phrases, fullDetail],
+    () => (input && engine && naturalFormat ? engine.formatPrompt(naturalFormat, input, allOverrides, { phrases, fullDetail, ...sceneOptions }) : null),
+    [input, engine, naturalFormat, allOverrides, phrases, fullDetail, sceneOptions],
   )
   const alternate = useMemo(
-    () => (withAlternate && input && engine && naturalFormat ? engine.formatPrompt(naturalFormat, input, allOverrides, { phrases, fullDetail: !fullDetail }) : null),
-    [withAlternate, input, engine, naturalFormat, allOverrides, phrases, fullDetail],
+    () => (withAlternate && input && engine && naturalFormat
+      ? engine.formatPrompt(naturalFormat, input, allOverrides, { phrases, fullDetail: !fullDetail, ...sceneOptions })
+      : null),
+    [withAlternate, input, engine, naturalFormat, allOverrides, phrases, fullDetail, sceneOptions],
   )
 
   if (!active) return { status: "off", prompt: null, alternate: null }

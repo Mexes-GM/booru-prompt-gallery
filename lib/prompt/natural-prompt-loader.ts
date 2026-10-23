@@ -7,9 +7,12 @@
  *   only the dictionary fails, cards still convert with the built-in wording.
  * - Tags missing from the static taxonomy snapshot (tags-core.json) are looked up
  *   in batches; until an answer arrives, or if it never does, the snapshot is used.
+ * - Character trait profiles (public/natural-traits/) load per shard, only for
+ *   cards with two or more characters; without them the description is shared.
  */
 import { fetchTagOverridesForNames } from "@/lib/supabase/client-queries"
-import type { PhraseDictionary } from "@/lib/prompt/natural"
+import type { CharacterTraits, PhraseDictionary } from "@/lib/prompt/natural"
+import { TRAIT_ALIASES_URL, traitShard, traitShardUrl } from "@/lib/prompt/natural-traits"
 import type { FormattedPrompt, NaturalPromptSource } from "@/lib/prompt/natural-format"
 import type { NaturalPromptFormat } from "@/lib/prompt/prompt-format"
 
@@ -98,7 +101,15 @@ export async function convertPromptOnce(
   const { engine, phrases } = resources.status === "error" ? await retryNaturalPrompt() : await loadNaturalPrompt()
   if (!engine) throw new Error("The prompt converter could not be loaded")
   const all = withTagLookups(overrides, lookedUp)
-  return engine.formatPrompt(format, engine.naturalPromptInput(source, all), all, { phrases, fullDetail })
+  const input = engine.naturalPromptInput(source, all)
+  const names = engine.traitNames(input)
+  const { aliases, profiles } = await loadCharacterTraits(names)
+  return engine.formatPrompt(format, input, all, {
+    phrases,
+    fullDetail,
+    traits: engine.cardTraits(names, aliases, profiles),
+    characterAliases: aliases,
+  })
 }
 
 /** Warm-up on intent (opening the format menu): starts the download, ignores errors. */
@@ -157,6 +168,82 @@ export function subscribeTagLookups(listener: () => void): () => void {
 }
 
 export const getTagLookups = () => lookedUp
+
+// --- Character trait profiles ------------------------------------------------
+
+export interface CharacterTraitData {
+  aliases: Record<string, string>
+  profiles: CharacterTraits
+}
+
+/** How long shards that arrive close together wait to reach the cards as one update. */
+const TRAIT_NOTIFY_DELAY_MS = 50
+
+const NO_TRAITS: CharacterTraitData = { aliases: {}, profiles: {} }
+let traitData = NO_TRAITS
+let aliasesTask: Promise<Record<string, string>> | null = null
+/** One task per shard, kept after a failure too: a missing shard only means no attribution. */
+const shardTasks = new Map<number, Promise<void>>()
+let traitNotifyTimer: ReturnType<typeof setTimeout> | null = null
+const traitListeners = new Set<() => void>()
+
+function notifyTraits() {
+  if (traitNotifyTimer) return
+  traitNotifyTimer = setTimeout(() => {
+    traitNotifyTimer = null
+    traitListeners.forEach((listener) => listener())
+  }, TRAIT_NOTIFY_DELAY_MS)
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${url} request failed (${res.status})`)
+  return res.json()
+}
+
+function loadTraitAliases(): Promise<Record<string, string>> {
+  aliasesTask ??= fetchJson<Record<string, string>>(TRAIT_ALIASES_URL)
+    .catch(() => ({}))
+    .then((aliases) => {
+      traitData = { ...traitData, aliases }
+      notifyTraits()
+      return aliases
+    })
+  return aliasesTask
+}
+
+function loadTraitShard(shard: number): Promise<void> {
+  let task = shardTasks.get(shard)
+  if (!task) {
+    task = fetchJson<CharacterTraits>(traitShardUrl(shard))
+      .then((profiles) => {
+        traitData = { ...traitData, profiles: { ...traitData.profiles, ...profiles } }
+        notifyTraits()
+      })
+      .catch(() => {})
+    shardTasks.set(shard, task)
+  }
+  return task
+}
+
+/**
+ * Loads the alias map and the shards holding these names (lowercase, spaces),
+ * each file once per page. Resolves when they are in, or failed for good.
+ */
+export async function loadCharacterTraits(names: string[]): Promise<CharacterTraitData> {
+  if (names.length === 0) return traitData
+  const aliases = await loadTraitAliases()
+  await Promise.all([...new Set(names.map((name) => traitShard(aliases[name] ?? name)))].map(loadTraitShard))
+  return traitData
+}
+
+export function subscribeCharacterTraits(listener: () => void): () => void {
+  traitListeners.add(listener)
+  return () => traitListeners.delete(listener)
+}
+
+export const getCharacterTraits = () => traitData
+export const getNoCharacterTraits = () => NO_TRAITS
 
 let merged: { base: Record<string, string>; extra: Record<string, string>; result: Record<string, string> } | null = null
 
