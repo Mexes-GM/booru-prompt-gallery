@@ -1,23 +1,12 @@
 import type { CSSProperties, ReactNode } from "react"
 import { Img, staticFile } from "remotion"
 import { Check, ChevronDown, Copy, MoreHorizontal } from "lucide-react"
+import { CARD, CARD_HEIGHT } from "./layout"
 import { C, FONT, u } from "./theme"
 
 // Recreations of the site's controls, drawn at 1.6× (see `u`). Sizes follow
 // the real components: card (components/prompt-gallery/masonry-item.tsx),
 // menus (components/ui/dropdown-menu.tsx), select and switch.
-
-export const CARD = { x: 40, y: 112, width: 360, imageHeight: 250, pad: 16, wellHeight: 207, buttonHeight: 58 }
-export const CARD_HEIGHT = CARD.imageHeight + CARD.pad + CARD.wellHeight + 14 + CARD.buttonHeight + CARD.pad
-
-/** Where the split Copy button's ▾ half sits on the canvas. */
-export const CHEVRON = {
-  x: CARD.x + CARD.width - CARD.pad - 28,
-  y: CARD.y + CARD_HEIGHT - CARD.pad - CARD.buttonHeight / 2,
-}
-
-/** The "⋯" overlay button on the image (top right). */
-export const MORE_BUTTON = { x: CARD.x + CARD.width - 34, y: CARD.y + 34 }
 
 export function PromptCard({
   well,

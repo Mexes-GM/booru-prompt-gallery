@@ -4,13 +4,11 @@ import { Check, ClipboardCheck, Download, ExternalLink, Mountain, Package, Palet
 import { CHAPTERS, DURATION } from "./chapters"
 import { CHARACTER_SENTENCES, POST, PROMPTS, wordCount } from "./data"
 import { C, FONT, MONO, tween, u, visible } from "./theme"
+import { CARD, CHEVRON, MORE_BUTTON } from "./layout"
 import {
-  CARD,
-  CHEVRON,
   ClickRing,
   CountPill,
   Hint,
-  MORE_BUTTON,
   MenuItem,
   MenuLabel,
   MenuSeparator,
