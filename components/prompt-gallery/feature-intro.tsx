@@ -14,11 +14,11 @@ export const FEATURE_INTRO_POSTER = "/whats-new/10.4.0-prompt-formats-poster.jpg
 
 const SEEN_KEY = "feature_intro_seen"
 
-/** Wait after the page has loaded, so the dialog never competes with the first paint. */
-const START_DELAY_MS = 2500
+/** Wait this long after the page has loaded, so the dialog never competes with the first paint. */
+const START_DELAY_MS = 500
 /** Only open after this long without a click, key press or scroll: never mid-action. */
-const QUIET_MS = 2500
-const CHECK_EVERY_MS = 1000
+const QUIET_MS = 1000
+const CHECK_EVERY_MS = 250
 /** No chance to open this long after the gallery mounted: try again on the next visit. */
 const GIVE_UP_MS = 5 * 60 * 1000
 
@@ -51,9 +51,9 @@ function markSeen() {
 
 /**
  * Opens the "what's new" dialog once per browser for the release's main
- * feature. It waits until the page has loaded and the user has started using
- * it, then for a pause (no input, nothing else open), and it is marked as seen
- * the moment it opens. The dialog's code and video load only then.
+ * feature, as soon as the page has loaded, unless the user is mid-action or
+ * something else is open; then it waits for a pause. It is marked as seen the
+ * moment it opens. The dialog's code and video load only after the page.
  */
 export function FeatureIntro({ version, onTry }: { version: string; onTry: () => void }) {
   const [open, setOpen] = useState<boolean | null>(null)
@@ -67,18 +67,14 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
     }
     if (!shouldOffer(version)) return
 
-    // Waiting for a first click, key press, wheel or touch keeps the dialog out
-    // of the page's Largest Contentful Paint: browsers stop measuring it at the
-    // first input, and the dialog's video would otherwise become the largest
-    // element. Scroll events alone don't count, since the page can scroll itself.
+    // It opens without waiting for a first input, so on that one visit the
+    // dialog's poster can become the page's Largest Contentful Paint.
     const mountedAt = performance.now()
     let loadedAt = document.readyState === "complete" ? mountedAt : Infinity
-    let interacted = false
-    let lastInput = mountedAt
+    let lastInput = -Infinity
     let warmed = false
-    const onInput = (e: Event) => {
+    const onInput = () => {
       lastInput = performance.now()
-      if (e.type !== "scroll") interacted = true
     }
     // One signal removes every listener below.
     const listeners = new AbortController()
@@ -92,14 +88,15 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
     const check = setInterval(() => {
       const now = performance.now()
       if (now - mountedAt > GIVE_UP_MS) return stop()
-      if (!interacted || now - loadedAt < START_DELAY_MS) return
+      if (loadedAt === Infinity) return
       if (!warmed) {
-        // Fetch the dialog's code and poster during the pause, so it opens
+        // Fetch the dialog's code and poster during the delay, so it opens
         // without a blank frame.
         warmed = true
         loadDialog().catch(() => {})
         new Image().src = FEATURE_INTRO_POSTER
       }
+      if (now - loadedAt < START_DELAY_MS) return
       if (document.visibilityState !== "visible" || now - lastInput < QUIET_MS || isBusy()) return
       stop()
       markSeen()
