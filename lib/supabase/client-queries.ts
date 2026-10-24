@@ -1,5 +1,16 @@
 import { createClient } from './client'
 import { PROVIDER_SLOT_CHUNK, chunked, slotRowsToOverrides, type ProviderSlotRow } from '@/lib/prompt/provider-slots'
+import pkg from '@/package.json'
+
+/**
+ * The snapshot is cached for a week over HTTP and a day in localStorage. Keying
+ * both to the site version lets a release that changes it reach returning
+ * visitors right away.
+ */
+const TAGS_CORE_URL = `/tags-core.json?v=${pkg.version}`
+
+/** Danbooru's tag category number for characters. */
+const DANBOORU_CHARACTER = 4
 
 export type TagResult = {
   name: string
@@ -84,7 +95,7 @@ export async function getAllTagOverridesClient(): Promise<Record<string, string>
   // 1. Try static CDN snapshot (/tags-core.json)
   if (typeof window !== 'undefined') {
     try {
-      const res = await fetch('/tags-core.json', { cache: 'default' })
+      const res = await fetch(TAGS_CORE_URL, { cache: 'default' })
       if (res.ok) {
         const data = await res.json()
         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
@@ -131,6 +142,10 @@ export async function getAllTagOverridesClient(): Promise<Record<string, string>
  * or underscores). Complements the static snapshot, which only covers the most
  * popular tags: Pack Mode calls this for the tags actually present in its pool.
  * Returns the same key shapes as getAllTagOverridesClient (underscore + space).
+ *
+ * A tag only counts as a character name when Danbooru files it as one: some
+ * general tags (species, groups, weapons) were classified other:character, and
+ * would otherwise be named as characters. Those are left unclassified.
  */
 export async function fetchTagOverridesForNames(names: string[]): Promise<Record<string, string>> {
   const unique = Array.from(new Set(names.map((n) => n.trim().toLowerCase().replace(/ /g, '_')).filter(Boolean)))
@@ -145,16 +160,17 @@ export async function fetchTagOverridesForNames(names: string[]): Promise<Record
   await Promise.all(chunks.map(async (chunk) => {
     const { data, error } = await supabase
       .from('auto_suggest_tags')
-      .select('name, category_name, subcategory')
+      .select('name, category, category_name, subcategory')
       .eq('status', 'approved')
       .in('name', chunk)
     if (error || !data) {
       if (error) console.warn('fetchTagOverridesForNames chunk failed:', error.message)
       return
     }
-    data.forEach((tag: { name: string; category_name: string | null; subcategory?: string | null }) => {
+    data.forEach((tag: { name: string; category: number | null; category_name: string | null; subcategory?: string | null }) => {
       if (!tag.name || !tag.category_name) return
       const val = tag.subcategory ? `${tag.category_name}:${tag.subcategory}` : tag.category_name
+      if (val === 'other:character' && tag.category != null && tag.category !== DANBOORU_CHARACTER) return
       overrides[tag.name] = val
       if (tag.name.includes('_')) overrides[tag.name.replace(/_/g, ' ')] = val
     })
@@ -188,13 +204,14 @@ export async function fetchProviderTagSlots(provider: string, names: string[]): 
 export async function getCachedTagOverrides(): Promise<Record<string, string>> {
   const CACHE_KEY = 'booru-tag-overrides'
   const CACHE_TIME_KEY = 'booru-tag-overrides-timestamp'
+  const CACHE_VERSION_KEY = 'booru-tag-overrides-version'
   const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours
 
   if (typeof window !== 'undefined') {
     try {
       const cached = localStorage.getItem(CACHE_KEY)
       const timestamp = localStorage.getItem(CACHE_TIME_KEY)
-      if (cached && timestamp) {
+      if (cached && timestamp && localStorage.getItem(CACHE_VERSION_KEY) === pkg.version) {
         const age = Date.now() - parseInt(timestamp, 10)
         if (age < CACHE_DURATION) {
           return JSON.parse(cached)
@@ -212,6 +229,7 @@ export async function getCachedTagOverrides(): Promise<Record<string, string>> {
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify(overrides))
       localStorage.setItem(CACHE_TIME_KEY, Date.now().toString())
+      localStorage.setItem(CACHE_VERSION_KEY, pkg.version)
     } catch (e) {
       console.warn('Failed to save tag overrides cache to localStorage:', e)
     }

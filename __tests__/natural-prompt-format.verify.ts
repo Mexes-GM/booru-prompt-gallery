@@ -15,6 +15,8 @@
  *   7. Trait shards: the hash is stable and public/natural-traits/ agrees with it.
  *   8. Rule34 slots: provider spelling, both key shapes, Danbooru taxonomy first.
  *   9. Format metadata.
+ *  10. General tags the taxonomy had filed as characters (yuri, name connection...)
+ *      are not named as characters by the shipped snapshot.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt-format.verify.ts
  */
@@ -229,6 +231,22 @@ const overrides: Record<string, string> = {
   assert(isPromptFormat("moss") && !isPromptFormat("nl") && !isPromptFormat(null), "stored values are validated")
   assert(hasWordBudget("flux2") && hasWordBudget("moss") && !hasWordBudget("anima") && !hasWordBudget("tags"), "only prose formats have a budget")
   assert(PROMPT_FORMAT_INFO.flux2.shortWords === 80 && PROMPT_FORMAT_INFO.moss.shortWords === 180, "budgets match the renderers")
+}
+
+// 10. General tags filed as characters. Danbooru calls these general tags, but the
+//     taxonomy had them under other:character, so cards named them ("... and Yuri").
+{
+  const core = JSON.parse(fs.readFileSync(path.join(__dirname, "../public/tags-core.json"), "utf8")) as Record<string, string>
+  const general = ["yuri", "dougi", "erune", "squirrel girl", "character name", "name connection", "borrowed character", "object namesake"]
+  for (const tag of general) {
+    for (const key of new Set([tag, tag.replace(/ /g, "_")])) {
+      assert(key in core && core[key] !== "other:character", `tags-core.json does not file "${key}" as a character`)
+    }
+  }
+  const flat = naturalPromptInput({ prompt: "2girls, yuri, kiss, name connection, character name, dougi", provider: "rule34" }, core)
+  assert(flat.characters?.length === 0, "a flat-tag post with these tags names no characters")
+  const fields = naturalPromptInput({ prompt: "2girls, yuri, kiss, souryuu asuka langley, ayanami rei", characters: "souryuu_asuka_langley ayanami_rei", provider: "danbooru" }, core)
+  assert(fields.characters?.join("|") === "souryuu_asuka_langley|ayanami_rei", "a Danbooru post keeps only its own characters")
 }
 
 console.log(`natural-prompt-format: ${passed} passed, ${failed} failed`)
