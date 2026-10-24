@@ -113,6 +113,7 @@ __tests__/
 *.spec.ts
 
 # Development files
+video/
 examples/
 docs/
 documentation/

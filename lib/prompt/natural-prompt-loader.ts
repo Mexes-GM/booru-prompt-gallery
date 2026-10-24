@@ -1,0 +1,337 @@
+/**
+ * On-demand resources for the natural-language prompt formats, shared by every
+ * card through small external stores (read with useSyncExternalStore):
+ *
+ * - The converter code and the phrase dictionary (public/natural-prompt-phrases.json)
+ *   load together, once per page, the first time a natural format is used. If
+ *   only the dictionary fails, cards still convert with the built-in wording.
+ * - Tags missing from the static taxonomy snapshot (tags-core.json) are looked up
+ *   in batches; until an answer arrives, or if it never does, the snapshot is used.
+ * - Rule34 cards also ask for Rule34's own slots for the tags still unplaced
+ *   (lookup_provider_tag_slots); the Danbooru taxonomy wins where both have one.
+ * - Character trait profiles (public/natural-traits/) load per shard, only for
+ *   cards with two or more characters; without them the description is shared.
+ */
+import { fetchProviderTagSlots, fetchTagOverridesForNames } from "@/lib/supabase/client-queries"
+import { SLOT_PROVIDERS, providerSlotNames, withProviderSlots } from "@/lib/prompt/provider-slots"
+import type { CharacterTraits, PhraseDictionary } from "@/lib/prompt/natural"
+import { TRAIT_ALIASES_URL, traitShard, traitShardUrl } from "@/lib/prompt/natural-traits"
+import type { FormattedPrompt, NaturalPromptSource } from "@/lib/prompt/natural-format"
+import type { NaturalPromptFormat } from "@/lib/prompt/prompt-format"
+
+type NaturalFormatModule = typeof import("@/lib/prompt/natural-format")
+
+export interface NaturalPromptResources {
+  /** "loading" until the converter is ready; "error" only if the converter itself failed. */
+  status: "idle" | "loading" | "ready" | "error"
+  engine: NaturalFormatModule | null
+  phrases: PhraseDictionary
+  /** The converter works but without the phrase dictionary (simpler wording). */
+  phrasesFailed: boolean
+}
+
+const PHRASES_URL = "/natural-prompt-phrases.json"
+const NO_PHRASES: PhraseDictionary = {}
+const IDLE: NaturalPromptResources = { status: "idle", engine: null, phrases: NO_PHRASES, phrasesFailed: false }
+
+let resources = IDLE
+let pending: Promise<NaturalPromptResources> | null = null
+const resourceListeners = new Set<() => void>()
+
+function setResources(next: NaturalPromptResources) {
+  resources = next
+  resourceListeners.forEach((listener) => listener())
+}
+
+async function fetchPhrases(): Promise<PhraseDictionary> {
+  const res = await fetch(PHRASES_URL)
+  if (!res.ok) throw new Error(`Phrase dictionary request failed (${res.status})`)
+  return res.json()
+}
+
+/** Loads whatever is missing: the converter, the dictionary, or both. */
+function start(): Promise<NaturalPromptResources> {
+  const hasPhrases = resources.status === "ready" && !resources.phrasesFailed
+  const tasks = [
+    resources.engine ? Promise.resolve(resources.engine) : import("@/lib/prompt/natural-format"),
+    hasPhrases ? Promise.resolve(resources.phrases) : fetchPhrases(),
+  ] as const
+  setResources({ ...resources, status: resources.engine ? "ready" : "loading", phrasesFailed: false })
+  pending = Promise.allSettled(tasks).then(([engine, phrases]) => {
+    pending = null
+    if (engine.status === "rejected") {
+      setResources({ ...IDLE, status: "error" })
+      throw engine.reason
+    }
+    setResources({
+      status: "ready",
+      engine: engine.value,
+      phrases: phrases.status === "fulfilled" ? phrases.value : NO_PHRASES,
+      phrasesFailed: phrases.status === "rejected",
+    })
+    return resources
+  })
+  return pending
+}
+
+/**
+ * Starts loading once and resolves when the converter is usable. Safe to call
+ * from every card: after a failure it does not retry on its own (see
+ * retryNaturalPrompt), so scrolling never repeats a failing download.
+ */
+export function loadNaturalPrompt(): Promise<NaturalPromptResources> {
+  if (pending) return pending
+  if (resources.status === "ready") return Promise.resolve(resources)
+  if (resources.status === "error") return Promise.reject(new Error("The prompt converter could not be loaded"))
+  return start()
+}
+
+/** Tries the failed parts again (the converter, the dictionary, or both). */
+export function retryNaturalPrompt(): Promise<NaturalPromptResources> {
+  return pending ?? start()
+}
+
+/**
+ * One conversion outside the card's own format ("Copy as"). Loads the converter
+ * first if needed, and tries again if an earlier load failed.
+ */
+export async function convertPromptOnce(
+  format: NaturalPromptFormat,
+  source: NaturalPromptSource,
+  overrides: Record<string, string>,
+  fullDetail: boolean,
+): Promise<FormattedPrompt> {
+  const { engine, phrases } = resources.status === "error" ? await retryNaturalPrompt() : await loadNaturalPrompt()
+  if (!engine) throw new Error("The prompt converter could not be loaded")
+  let all = withTagLookups(overrides, lookedUp)
+  const provider = source.provider
+  if (provider && SLOT_PROVIDERS.has(provider)) {
+    await requestProviderSlots(provider, providerSlotNames(engine.naturalPromptInput(source, all).general, all))
+    all = withBooruSlots(all, providerSlots[provider])
+  }
+  const input = engine.naturalPromptInput(source, all)
+  const names = engine.traitNames(input)
+  const { aliases, profiles } = await loadCharacterTraits(names)
+  return engine.formatPrompt(format, input, all, {
+    phrases,
+    fullDetail,
+    traits: engine.cardTraits(names, aliases, profiles),
+    characterAliases: aliases,
+  })
+}
+
+/** Warm-up on intent (opening the format menu): starts the download, ignores errors. */
+export function preloadNaturalPrompt(): void {
+  loadNaturalPrompt().catch(() => {})
+}
+
+export function subscribeNaturalPrompt(listener: () => void): () => void {
+  resourceListeners.add(listener)
+  return () => resourceListeners.delete(listener)
+}
+
+export const getNaturalPromptResources = () => resources
+export const getServerNaturalPromptResources = () => IDLE
+
+// --- Tag classification lookups -------------------------------------------
+
+/** How long cards that mount together get to add their tags to one request. */
+const LOOKUP_DELAY_MS = 250
+
+/** Tags already asked for (answered or not), so each one is requested once per page. */
+const requested = new Set<string>()
+const queued = new Set<string>()
+let lookupTimer: ReturnType<typeof setTimeout> | null = null
+const NO_LOOKUPS: Record<string, string> = {}
+let lookedUp = NO_LOOKUPS
+const lookupListeners = new Set<() => void>()
+
+async function flushLookups() {
+  lookupTimer = null
+  const names = [...queued]
+  queued.clear()
+  try {
+    const found = await fetchTagOverridesForNames(names)
+    if (Object.keys(found).length === 0) return
+    lookedUp = { ...lookedUp, ...found }
+    lookupListeners.forEach((listener) => listener())
+  } catch {
+    // The snapshot classification stays in use for these tags.
+  }
+}
+
+/** Queues tags (lowercase, spaces) for classification; repeated tags are ignored. */
+export function requestTagLookups(tags: string[]): void {
+  for (const tag of tags) {
+    if (requested.has(tag)) continue
+    requested.add(tag)
+    queued.add(tag)
+  }
+  if (queued.size > 0 && !lookupTimer) lookupTimer = setTimeout(flushLookups, LOOKUP_DELAY_MS)
+}
+
+export function subscribeTagLookups(listener: () => void): () => void {
+  lookupListeners.add(listener)
+  return () => lookupListeners.delete(listener)
+}
+
+export const getTagLookups = () => lookedUp
+
+// --- A booru's own slots (Rule34) ----------------------------------------------
+
+const NO_SLOTS: Record<string, string> = {}
+const NO_PROVIDER_SLOTS: Record<string, Record<string, string>> = {}
+/** Per provider, every slot found so far (a new object whenever slots arrive). */
+let providerSlots = NO_PROVIDER_SLOTS
+/** "provider:name" -> the batch that asks for it, so each name is asked once per page. */
+const slotTasks = new Map<string, Promise<void>>()
+const slotQueue = new Map<string, Set<string>>()
+let slotBatch: { promise: Promise<void>; resolve: () => void } | null = null
+const slotListeners = new Set<() => void>()
+
+async function flushProviderSlots() {
+  const batch = slotBatch
+  slotBatch = null
+  const queued = [...slotQueue]
+  slotQueue.clear()
+  await Promise.all(queued.map(async ([provider, names]) => {
+    try {
+      const found = await fetchProviderTagSlots(provider, [...names])
+      if (Object.keys(found).length === 0) return
+      providerSlots = { ...providerSlots, [provider]: { ...(providerSlots[provider] ?? NO_SLOTS), ...found } }
+      slotListeners.forEach((listener) => listener())
+    } catch {
+      // The card keeps the Danbooru taxonomy alone.
+    }
+  }))
+  batch?.resolve()
+}
+
+/**
+ * Queues tag names (provider spelling, see providerSlotNames) for a booru's slot
+ * lookup. Resolves once the batch holding them is answered or has failed.
+ */
+export function requestProviderSlots(provider: string, names: string[]): Promise<void> {
+  const waits = new Set<Promise<void>>()
+  for (const name of names) {
+    const key = `${provider}:${name}`
+    let task = slotTasks.get(key)
+    if (!task) {
+      if (!slotBatch) {
+        let resolve = () => {}
+        const promise = new Promise<void>((done) => { resolve = done })
+        slotBatch = { promise, resolve }
+        setTimeout(flushProviderSlots, LOOKUP_DELAY_MS)
+      }
+      task = slotBatch.promise
+      slotTasks.set(key, task)
+      slotQueue.set(provider, (slotQueue.get(provider) ?? new Set<string>()).add(name))
+    }
+    waits.add(task)
+  }
+  return Promise.all(waits).then(() => {})
+}
+
+export function subscribeProviderSlots(listener: () => void): () => void {
+  slotListeners.add(listener)
+  return () => slotListeners.delete(listener)
+}
+
+export const getProviderSlots = () => providerSlots
+export const getNoProviderSlots = () => NO_PROVIDER_SLOTS
+
+let slotMerge: { base: Record<string, string>; slots: Record<string, string>; result: Record<string, string> } | null = null
+
+/** Overrides with a booru's slots under them (see withProviderSlots), rebuilt only when either side changes. */
+export function withBooruSlots(base: Record<string, string>, slots: Record<string, string> | undefined): Record<string, string> {
+  if (!slots || slots === NO_SLOTS) return base
+  if (slotMerge && slotMerge.base === base && slotMerge.slots === slots) return slotMerge.result
+  slotMerge = { base, slots, result: withProviderSlots(base, slots) }
+  return slotMerge.result
+}
+
+// --- Character trait profiles ------------------------------------------------
+
+export interface CharacterTraitData {
+  aliases: Record<string, string>
+  profiles: CharacterTraits
+}
+
+/** How long shards that arrive close together wait to reach the cards as one update. */
+const TRAIT_NOTIFY_DELAY_MS = 50
+
+const NO_TRAITS: CharacterTraitData = { aliases: {}, profiles: {} }
+let traitData = NO_TRAITS
+let aliasesTask: Promise<Record<string, string>> | null = null
+/** One task per shard, kept after a failure too: a missing shard only means no attribution. */
+const shardTasks = new Map<number, Promise<void>>()
+let traitNotifyTimer: ReturnType<typeof setTimeout> | null = null
+const traitListeners = new Set<() => void>()
+
+function notifyTraits() {
+  if (traitNotifyTimer) return
+  traitNotifyTimer = setTimeout(() => {
+    traitNotifyTimer = null
+    traitListeners.forEach((listener) => listener())
+  }, TRAIT_NOTIFY_DELAY_MS)
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${url} request failed (${res.status})`)
+  return res.json()
+}
+
+function loadTraitAliases(): Promise<Record<string, string>> {
+  aliasesTask ??= fetchJson<Record<string, string>>(TRAIT_ALIASES_URL)
+    .catch(() => ({}))
+    .then((aliases) => {
+      traitData = { ...traitData, aliases }
+      notifyTraits()
+      return aliases
+    })
+  return aliasesTask
+}
+
+function loadTraitShard(shard: number): Promise<void> {
+  let task = shardTasks.get(shard)
+  if (!task) {
+    task = fetchJson<CharacterTraits>(traitShardUrl(shard))
+      .then((profiles) => {
+        traitData = { ...traitData, profiles: { ...traitData.profiles, ...profiles } }
+        notifyTraits()
+      })
+      .catch(() => {})
+    shardTasks.set(shard, task)
+  }
+  return task
+}
+
+/**
+ * Loads the alias map and the shards holding these names (lowercase, spaces),
+ * each file once per page. Resolves when they are in, or failed for good.
+ */
+export async function loadCharacterTraits(names: string[]): Promise<CharacterTraitData> {
+  if (names.length === 0) return traitData
+  const aliases = await loadTraitAliases()
+  await Promise.all([...new Set(names.map((name) => traitShard(aliases[name] ?? name)))].map(loadTraitShard))
+  return traitData
+}
+
+export function subscribeCharacterTraits(listener: () => void): () => void {
+  traitListeners.add(listener)
+  return () => traitListeners.delete(listener)
+}
+
+export const getCharacterTraits = () => traitData
+export const getNoCharacterTraits = () => NO_TRAITS
+
+let merged: { base: Record<string, string>; extra: Record<string, string>; result: Record<string, string> } | null = null
+
+/** The card's overrides plus every looked-up tag, rebuilt only when either side changes. */
+export function withTagLookups(base: Record<string, string>, extra: Record<string, string>): Record<string, string> {
+  if (extra === NO_LOOKUPS) return base
+  if (merged && merged.base === base && merged.extra === extra) return merged.result
+  merged = { base, extra, result: { ...extra, ...base } }
+  return merged.result
+}

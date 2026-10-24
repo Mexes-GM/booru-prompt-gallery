@@ -12,4 +12,4 @@
   # files that never reach the site bundle. `git diff --quiet` exits 0 when
   # nothing outside the excluded paths changed → Netlify cancels the build.
   # On the first build CACHED_COMMIT_REF is empty, git errors out and it builds.
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)*.md' ':(exclude)docs' ':(exclude)plans' ':(exclude)tasks' ':(exclude)audit' ':(exclude)audit-mobile' ':(exclude)backups' ':(exclude)__tests__' ':(exclude)extension' ':(exclude)workers' ':(exclude)supabase' ':(exclude)*.png' ':(exclude)*.jpeg' ':(exclude)*.log' ':(exclude).github' ':(exclude).gitignore'"
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)*.md' ':(exclude)docs' ':(exclude)plans' ':(exclude)tasks' ':(exclude)audit' ':(exclude)audit-mobile' ':(exclude)backups' ':(exclude)__tests__' ':(exclude)extension' ':(exclude)workers' ':(exclude)video' ':(exclude)supabase' ':(exclude)*.png' ':(exclude)*.jpeg' ':(exclude)*.log' ':(exclude).github' ':(exclude).gitignore'"

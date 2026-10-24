@@ -169,6 +169,7 @@ import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { GalleryModals } from "@/components/prompt-gallery/gallery-modals"
 import { SiteCornerMenu } from "@/components/prompt-gallery/site-corner-menu"
 import { MainTour } from "@/components/prompt-gallery/main-tour"
+import { FeatureIntro } from "@/components/prompt-gallery/feature-intro"
 import { recordPromptCopy } from "@/lib/support-prompt"
 import { GalleryHero } from "@/components/prompt-gallery/gallery-hero"
 import { TagsManagementPanel } from "@/components/prompt-gallery/tags-management-panel"
@@ -192,6 +193,9 @@ import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useHistoryPosts } from "@/hooks/use-history-posts"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { usePostHog } from 'posthog-js/react'
+import { usePromptFormat } from "@/hooks/use-natural-prompt"
+import { PROMPT_FORMAT_INFO, hasWordBudget, type PromptFormat } from "@/lib/prompt/prompt-format"
+import { NaturalPromptStatus } from "@/components/prompt-gallery/prompt-format-setting"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PackSeedFetcher
@@ -571,6 +575,7 @@ export function PromptGallery() {
     setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
     setAutoAppendSearchTags,
   } = usePromptOptions()
+  const { format: promptFormat, fullDetail: promptFullDetail } = usePromptFormat()
 
   const [showCategoryTagBadges, setShowCategoryTagBadges] = useState(true)
 
@@ -642,6 +647,21 @@ export function PromptGallery() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [showStickyPanel, setShowStickyPanel] = useState(false)
   const controlPanelRef = useRef<HTMLDivElement>(null)
+
+  // "Choose a format" in the release dialog: open Customize prompt and put
+  // focus on its Prompt format setting.
+  const openPromptFormatSetting = useCallback(() => {
+    // Bring the control panel to the top so the section drops down below it.
+    // A jump, not the page's smooth scroll: the section measures where to
+    // open as it renders, so the panel must already be in place.
+    const top = controlPanelRef.current?.getBoundingClientRect().top
+    if (top !== undefined && Math.abs(top - 16) > 8) {
+      window.scrollTo({ top: window.scrollY + top - 16, behavior: "instant" })
+    }
+    setPromptOptionsOpen(true)
+    // The setting renders once the section (or the mobile sheet) has opened.
+    window.setTimeout(() => document.getElementById("prompt-format-embedded")?.focus({ preventScroll: true }), 350)
+  }, [])
 
   // Folder Delete State
   const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
@@ -1255,18 +1275,18 @@ export function PromptGallery() {
   // --- Helpers ---
   // Ref-stabilized callbacks: stable references that always call the latest version.
   // Prevents renderMasonryItem from recreating when toast or other deps change.
-  const copyToClipboardRef = useRef<(content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string) => Promise<void>>(async () => {})
+  const copyToClipboardRef = useRef<(content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string, format?: PromptFormat) => Promise<void>>(async () => {})
   const downloadImageRef = useRef<(post: BooruPost) => Promise<void>>(async () => {})
 
-  const stableCopyToClipboard = useCallback(async (content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string) => {
-    return copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl)
+  const stableCopyToClipboard = useCallback(async (content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string, format?: PromptFormat) => {
+    return copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl, format)
   }, [])
 
   const stableDownloadImage = useCallback(async (post: BooruPost) => {
     return downloadImageRef.current(post)
   }, [])
 
-  const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string) => {
+  const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string, format: PromptFormat = 'tags') => {
     try {
       await navigator.clipboard.writeText(content)
 
@@ -1274,7 +1294,8 @@ export function PromptGallery() {
       posthog.capture('prompt_copied', {
         copy_type: isPrompt ? 'ai_text' : 'tags',
         booru_source: search.booruProvider,
-        has_translated_tags: isAiConvertMode || content.includes('Masterpiece')
+        has_translated_tags: isAiConvertMode || content.includes('Masterpiece'),
+        prompt_format: format,
       })
 
       setCopiedId(postId)
@@ -1306,7 +1327,9 @@ export function PromptGallery() {
       if (!window.matchMedia("(pointer: coarse)").matches) {
         toast({
           title: "Copied!",
-          description: isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
+          description: format !== 'tags'
+            ? `${PROMPT_FORMAT_INFO[format].label} prompt copied to clipboard`
+            : isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
         })
       }
       setTimeout(() => setCopiedId(null), 2000)
@@ -1644,6 +1667,8 @@ export function PromptGallery() {
           }}
         />
 
+        <FeatureIntro version={pkg.version} onTry={openPromptFormatSetting} />
+
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
           <div className="w-full max-w-6xl mx-auto mb-4 sm:mb-8 space-y-4 sm:space-y-6">
@@ -1762,6 +1787,9 @@ export function PromptGallery() {
                       ? [search.removeLoRaTags, search.removeQualityTags, autoAppendSearchTags, isGlobalWeightsEnabled]
                       : [includeCharacters, optimizeTags, autoAppendSearchTags, prependAnimaArtist, isGlobalWeightsEnabled]
                     const promptSummary = [
+                      promptFormat !== 'tags'
+                        ? `${PROMPT_FORMAT_INFO[promptFormat].badge}${hasWordBudget(promptFormat) && promptFullDetail ? " (every detail)" : ""}`
+                        : null,
                       addedTagCount > 0 ? `+${addedTagCount} tag${addedTagCount === 1 ? '' : 's'} added` : "No tags added",
                       excludeInput.trim() ? `${splitCommaSeparatedTags(excludeInput).length} removed` : null,
                       `${outputFlags.filter(Boolean).length} of ${outputFlags.length} options on`,
@@ -2178,6 +2206,7 @@ export function PromptGallery() {
         randomSettings={mergeMode.randomSettings}
         setRandomSettings={mergeMode.setRandomSettings}
       />
+      <NaturalPromptStatus />
       <AiConvertStickyFooter
         isOpen={isAiConvertMode}
         tags={aiConvertTags}

@@ -20,6 +20,7 @@ export default defineConfig([{
         "workers/**",
         "supabase/**",
         "extension/**",
+        "video/**",
         // Utility scripts — not app source, has its own historically-relaxed
         // lint posture (require() imports, prefer-const looseness, etc.)
         "scripts/**",

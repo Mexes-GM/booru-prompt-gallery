@@ -38,6 +38,7 @@
   "exclude": [
     "node_modules",
     "workers",
+    "video",
     "scripts",
     "__tests__/booru-upstream.verify.ts",
     "__tests__/redis-fail-fast.verify.ts"

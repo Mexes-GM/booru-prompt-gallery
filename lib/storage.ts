@@ -7,6 +7,7 @@ import type { BooruProvider, BooruPost } from '@/lib/booru/types'
 import type { TagCategory } from '@/lib/tag-classifier'
 import type { PackLearningModel } from '@/lib/pack/pack-learning'
 import type { AxisTagMode } from '@/lib/pack/pack-generator'
+import { isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -76,6 +77,10 @@ export const STORAGE_KEYS = {
   FIND_REPLACE_REPLACE: 'find-replace-replace-input',
   TAG_APPEND_RULES: 'tag-append-rules',
   PROMPT_OPTIONS: 'prompt-options',
+  // Format every card writes its prompt in (lib/prompt/prompt-format.ts), and
+  // whether the prose formats keep every detail instead of their word budget.
+  PROMPT_FORMAT: 'prompt-format',
+  PROMPT_FULL_DETAIL: 'prompt-full-detail',
   CARD_SCALE: 'card-scale',
   BACKGROUND_MODE: 'background-mode',
   SIMPLE_BACKGROUND_REPLACEMENT_TAGS: 'simple-background-replacement-tags',
@@ -268,6 +273,20 @@ export const userPreferences = {
 
   setPromptOptions: (options: PromptOptions) =>
     storage.set(STORAGE_KEYS.PROMPT_OPTIONS, options),
+
+  getPromptFormat: (): PromptFormat => {
+    const stored = storage.get<unknown>(STORAGE_KEYS.PROMPT_FORMAT, 'tags')
+    return isPromptFormat(stored) ? stored : 'tags'
+  },
+
+  setPromptFormat: (format: PromptFormat) =>
+    storage.set(STORAGE_KEYS.PROMPT_FORMAT, format),
+
+  getPromptFullDetail: (): boolean =>
+    storage.get<unknown>(STORAGE_KEYS.PROMPT_FULL_DETAIL, false) === true,
+
+  setPromptFullDetail: (fullDetail: boolean) =>
+    storage.set(STORAGE_KEYS.PROMPT_FULL_DETAIL, fullDetail),
 
   getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru' =>
     storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'gelbooru'),

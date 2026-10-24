@@ -34,6 +34,10 @@ import { PACK_AXES, RICHNESS_AXES, TAG_CATEGORIES } from "@/lib/tag-taxonomy"
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
 import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { useCardPrompt } from "@/hooks/use-card-prompt"
+import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
+import { convertPromptOnce } from "@/lib/prompt/natural-prompt-loader"
+import { PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
+import { NaturalPromptBody } from "./natural-prompt-body"
 
 // Richness tooltip depth labels/classes (Palanca 7, docs/prompt-genericness-mitigation-plan.md
 // §7.8): maps each category's RichnessDepth to a short prefix + color, replacing the old
@@ -185,7 +189,8 @@ interface MasonryItemProps {
     /** Outside Pack Mode only — activates it with this post as the base, no entry modal. */
     onMakePack?: (post: BooruPost) => void
     downloadImage: (post: BooruPost) => void
-    copyToClipboard: (text: string, id: number, isPrompt: boolean, thumb?: string) => Promise<void>
+    /** `format` is the prompt format the text was written in (tags when omitted). */
+    copyToClipboard: (text: string, id: number, isPrompt: boolean, thumb?: string, format?: PromptFormat) => Promise<void>
     excludeInput: string
     addInput: string
     searchTags?: string
@@ -366,6 +371,62 @@ export const MasonryItem = memo(function MasonryItem({
         isGlobalWeightsEnabled,
         onBaseContentChange: () => setModifiedContent(null),
     })
+
+    // Natural-language formats rewrite the card's cleaned prompt (baseContent:
+    // the user's edits applied, no weights). Merge, Pack and AI modes work on
+    // tags, so cards stay on tags there.
+    const { format: promptFormat, fullDetail: globalFullDetail } = usePromptFormat()
+    // "Show every detail" on one card holds until the global setting changes.
+    const [detailOverride, setDetailOverride] = useState<{ fullDetail: boolean; global: boolean } | null>(null)
+    const fullDetail = detailOverride?.global === globalFullDetail ? detailOverride.fullDetail : globalFullDetail
+    const keepNames = includeCharacters && !isAiPost
+    const naturalSource = useMemo(() => ({
+        prompt: baseContent,
+        characters: keepNames ? post.tag_string_character : undefined,
+        copyrights: keepNames ? post.tag_string_copyright : undefined,
+        rating: post.rating,
+        provider: itemProvider,
+        handWritten: isAiPost,
+    }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost])
+    const natural = useNaturalPrompt({
+        enabled: !isMergeMode && !isPackMode && !isNaturalLanguageMode,
+        format: promptFormat,
+        fullDetail,
+        source: naturalSource,
+        overrides: tagOverrides,
+        withAlternate: isExpanded,
+    })
+    // A converter that failed to load leaves the card on tags.
+    const showsNatural = natural.status === "loading" || natural.status === "ready"
+    const naturalText = natural.prompt?.text ?? ""
+    const toggleFullDetail = useCallback(() => {
+        setDetailOverride({ fullDetail: !fullDetail, global: globalFullDetail })
+    }, [fullDetail, globalFullDetail])
+
+    const tagPrompt = modifiedContent ?? displayContent
+    const copyText = showsNatural ? naturalText : tagPrompt
+
+    // "Copy as": this card in another format, once, without changing the setting.
+    const copyAs = async (format: PromptFormat) => {
+        if (format === "tags") {
+            await copyToClipboard(tagPrompt, post.id, !!aiPrompt, post.preview_file_url, "tags")
+            return
+        }
+        if (format === promptFormat && naturalText) {
+            await copyToClipboard(naturalText, post.id, !!aiPrompt, post.preview_file_url, format)
+            return
+        }
+        try {
+            const converted = await convertPromptOnce(format, naturalSource, tagOverrides, fullDetail)
+            await copyToClipboard(converted.text, post.id, !!aiPrompt, post.preview_file_url, format)
+        } catch {
+            toast({
+                description: "Couldn't load the prompt converter. Check your connection and try again.",
+                variant: "destructive",
+                duration: 3000,
+            })
+        }
+    }
 
     // Authoritative identity metadata for the AI converter, taken straight from
     // the booru API (not guessed from the flattened prompt). Gated by
@@ -815,14 +876,24 @@ export const MasonryItem = memo(function MasonryItem({
                             : "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden pointer-coarse:[mask-image:linear-gradient(to_bottom,black_65%,transparent)]"}`}
                         style={isExpanded ? { maxHeight: "65vh" } : undefined}
                     >
-                        <InteractivePrompt
-                            initialPrompt={displayContent}
-                            onUpdate={setModifiedContent}
-                            onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
-                            globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
-                            onSearch={onSearch}
-                              conflictingTags={conflictingTags}
-                        />
+                        {showsNatural ? (
+                            <NaturalPromptBody
+                                format={promptFormat}
+                                view={natural}
+                                fullDetail={fullDetail}
+                                isExpanded={isExpanded}
+                                onToggleFullDetail={toggleFullDetail}
+                            />
+                        ) : (
+                            <InteractivePrompt
+                                initialPrompt={displayContent}
+                                onUpdate={setModifiedContent}
+                                onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
+                                globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
+                                onSearch={onSearch}
+                                conflictingTags={conflictingTags}
+                            />
+                        )}
                     </div>
 
                     <div className="flex button-group items-stretch isolate shrink-0" {...(index === 0 ? { 'data-tour': 'copy-options' } : {})}>
@@ -849,11 +920,14 @@ export const MasonryItem = memo(function MasonryItem({
                             </Button>
                         ) : (
                             <Button
-                                onClick={() => copyToClipboard(modifiedContent ?? displayContent, post.id, !!aiPrompt, post.preview_file_url)}
+                                onClick={() => copyToClipboard(copyText, post.id, !!aiPrompt, post.preview_file_url, showsNatural ? promptFormat : "tags")}
                                 className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
                                 variant={copiedId === post.id ? "default" : "secondary"}
-                                disabled={!displayContent}
-                                aria-label={copiedId === post.id ? "Copied prompt" : "Copy prompt"}
+                                disabled={!copyText}
+                                aria-busy={natural.status === "loading" || undefined}
+                                aria-label={copiedId === post.id
+                                    ? "Copied prompt"
+                                    : showsNatural ? `Copy ${PROMPT_FORMAT_INFO[promptFormat].label} prompt` : "Copy prompt"}
                             >
                                 {copiedId === post.id ? (
                                     <>
@@ -874,6 +948,7 @@ export const MasonryItem = memo(function MasonryItem({
                             onCopyCategory={copyCategory}
                             disabled={!displayContent}
                             contentClassName="z-[10005]"
+                            copyAs={{ current: showsNatural ? promptFormat : "tags", onSelect: copyAs }}
                             trigger={
                                 <Button
                                     // Matches the primary half of the split button so both read as one control.

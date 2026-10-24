@@ -1,0 +1,22 @@
+{
+  "name": "booru-prompt-gallery-video",
+  "private": true,
+  "description": "Remotion source for the short feature videos shown on the site. Not part of the Next.js app.",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "node render.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.535",
+    "@remotion/google-fonts": "4.0.535",
+    "lucide-react": "1.49.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.535"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "6.0.3"
+  }
+}
