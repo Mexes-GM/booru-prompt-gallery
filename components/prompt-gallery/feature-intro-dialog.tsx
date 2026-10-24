@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { Pause, Play, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -38,6 +38,14 @@ function chapterAt(seconds: number) {
 const RISE = "animate-in fade-in slide-in-from-bottom-1.5 fill-mode-both duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none"
 const delay = (step: number) => ({ animationDelay: `${80 + step * 50}ms` })
 
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)"
+function subscribeReducedMotion(onChange: () => void) {
+  const query = window.matchMedia(REDUCED_MOTION)
+  query.addEventListener("change", onChange)
+  return () => query.removeEventListener("change", onChange)
+}
+const prefersReducedMotion = () => window.matchMedia(REDUCED_MOTION).matches
+
 export function FeatureIntroDialog({
   open,
   onOpenChange,
@@ -47,8 +55,7 @@ export function FeatureIntroDialog({
   onOpenChange: (open: boolean) => void
   onTry: () => void
 }) {
-  // Client-only component (loaded without SSR), so the media query is readable on first render.
-  const [reduceMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+  const reduceMotion = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef<HTMLSpanElement>(null)

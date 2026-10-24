@@ -19,7 +19,7 @@ const START_DELAY_MS = 2500
 /** Only open after this long without a click, key press or scroll: never mid-action. */
 const QUIET_MS = 2500
 const CHECK_EVERY_MS = 1000
-/** No chance to open by then: try again on the next visit. */
+/** No chance to open this long after the gallery mounted: try again on the next visit. */
 const GIVE_UP_MS = 5 * 60 * 1000
 
 /** Another dialog, menu, popover or tour on screen, or the user is typing. */
@@ -77,8 +77,11 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
     // of the page's Largest Contentful Paint: browsers stop measuring it at the
     // first input, and the dialog's video would otherwise become the largest
     // element. Scroll events alone don't count, since the page can scroll itself.
+    const mountedAt = performance.now()
+    let loadedAt = document.readyState === "complete" ? mountedAt : Infinity
     let interacted = false
-    let lastInput = performance.now()
+    let lastInput = mountedAt
+    let warmed = false
     const onInput = (e: Event) => {
       lastInput = performance.now()
       if (e.type !== "scroll") interacted = true
@@ -88,22 +91,14 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
     for (const name of ["pointerdown", "keydown", "wheel", "touchstart", "scroll"]) {
       window.addEventListener(name, onInput, { capture: true, passive: true, signal: listeners.signal })
     }
-
-    let startTimer: ReturnType<typeof setTimeout> | undefined
-    let checkTimer: ReturnType<typeof setInterval> | undefined
-    let startedAt = 0
-
-    const stop = () => {
-      clearTimeout(startTimer)
-      clearInterval(checkTimer)
-      listeners.abort()
+    if (loadedAt === Infinity) {
+      window.addEventListener("load", () => { loadedAt = performance.now() }, { once: true, signal: listeners.signal })
     }
 
-    let warmed = false
-    const tryOpen = () => {
+    const check = setInterval(() => {
       const now = performance.now()
-      if (now - startedAt > GIVE_UP_MS) return stop()
-      if (!interacted) return
+      if (now - mountedAt > GIVE_UP_MS) return stop()
+      if (!interacted || now - loadedAt < START_DELAY_MS) return
       if (!warmed) {
         // Fetch the dialog's code and poster during the pause, so it opens
         // without a blank frame.
@@ -116,22 +111,14 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
       markSeen()
       setOpen(true)
       safeTrack("feature_intro_shown", { release: FEATURE_INTRO_RELEASE })
+    }, CHECK_EVERY_MS)
+
+    const stop = () => {
+      clearInterval(check)
+      listeners.abort()
     }
-
-    const start = () => {
-      startTimer = setTimeout(() => {
-        startedAt = performance.now()
-        checkTimer = setInterval(tryOpen, CHECK_EVERY_MS)
-        tryOpen()
-      }, START_DELAY_MS)
-    }
-
-    if (document.readyState === "complete") start()
-    else window.addEventListener("load", start, { once: true, signal: listeners.signal })
-
     return () => {
-      clearTimeout(startTimer)
-      clearInterval(checkTimer)
+      clearInterval(check)
       listeners.abort()
     }
   }, [version])
