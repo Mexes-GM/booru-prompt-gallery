@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { motion, useReducedMotion } from "framer-motion"
 import { Pause, Play, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -35,11 +34,9 @@ function chapterAt(seconds: number) {
   return index
 }
 
-const STAGGER = { hidden: {}, shown: { transition: { staggerChildren: 0.05, delayChildren: 0.08 } } }
-const RISE = {
-  hidden: { opacity: 0, y: 6 },
-  shown: { opacity: 1, y: 0, transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] as const } },
-}
+/** Text column enters in small steps; each block passes its own delay (none with reduced motion). */
+const RISE = "animate-in fade-in slide-in-from-bottom-1.5 fill-mode-both duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none"
+const delay = (step: number) => ({ animationDelay: `${80 + step * 50}ms` })
 
 export function FeatureIntroDialog({
   open,
@@ -50,7 +47,8 @@ export function FeatureIntroDialog({
   onOpenChange: (open: boolean) => void
   onTry: () => void
 }) {
-  const reduceMotion = useReducedMotion()
+  // Client-only component (loaded without SSR), so the media query is readable on first render.
+  const [reduceMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)
   const videoRef = useRef<HTMLVideoElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef<HTMLSpanElement>(null)
@@ -202,26 +200,19 @@ export function FeatureIntroDialog({
           )}
         </div>
 
-        <motion.div
-          className="flex min-w-0 flex-col p-5 pb-0 sm:p-6 sm:pb-0 lg:pb-6"
-          variants={STAGGER}
-          initial={reduceMotion ? false : "hidden"}
-          animate="shown"
-        >
-          <motion.p variants={RISE} className="pr-10 text-xs font-medium text-primary-text">
+        <div className="flex min-w-0 flex-col p-5 pb-0 sm:p-6 sm:pb-0 lg:pb-6">
+          <p className={cn(RISE, "pr-10 text-xs font-medium text-primary-text")} style={delay(0)}>
             New in v{FEATURE_INTRO_RELEASE}
-          </motion.p>
-          <motion.div variants={RISE}>
-            <DialogTitle className="mt-1.5 pr-10 text-lg text-balance">Prompts in plain English</DialogTitle>
-          </motion.div>
-          <motion.div variants={RISE}>
-            <DialogDescription id="feature-intro-description" className="mt-2 text-pretty">
-              Each card can show its prompt as a description written for Anima, FLUX.2 · Krea 2 or MOSS-Image. It
-              appears right away and needs no AI.
-            </DialogDescription>
-          </motion.div>
+          </p>
+          <DialogTitle className={cn(RISE, "mt-1.5 pr-10 text-lg text-balance")} style={delay(1)}>
+            Prompts in plain English
+          </DialogTitle>
+          <DialogDescription id="feature-intro-description" className={cn(RISE, "mt-2 text-pretty")} style={delay(2)}>
+            Each card can show its prompt as a description written for Anima, FLUX.2 · Krea 2 or MOSS-Image. It appears
+            right away and needs no AI.
+          </DialogDescription>
 
-          <motion.ol variants={RISE} aria-label="Video chapters" className="-mx-2 mt-4 flex flex-col gap-0.5">
+          <ol aria-label="Video chapters" className={cn(RISE, "-mx-2 mt-4 flex flex-col gap-0.5")} style={delay(3)}>
             {CHAPTERS.map((c, i) => {
               const current = i === chapter && state !== "idle"
               return (
@@ -254,13 +245,16 @@ export function FeatureIntroDialog({
                 </li>
               )
             })}
-          </motion.ol>
+          </ol>
 
           {/* Pinned to the bottom while the dialog scrolls on short screens,
               so both actions stay in reach. */}
-          <motion.div
-            variants={RISE}
-            className="sticky bottom-0 -mx-5 mt-auto flex flex-col-reverse gap-2 border-t border-border/60 bg-background px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:flex-row sm:justify-end sm:px-6 sm:pb-6 lg:static lg:mx-0 lg:border-0 lg:px-0 lg:pb-0 lg:pt-5"
+          <div
+            style={delay(4)}
+            className={cn(
+              RISE,
+              "sticky bottom-0 -mx-5 mt-auto flex flex-col-reverse gap-2 border-t border-border/60 bg-background px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:flex-row sm:justify-end sm:px-6 sm:pb-6 lg:static lg:mx-0 lg:border-0 lg:px-0 lg:pb-0 lg:pt-5"
+            )}
           >
             <Button type="button" variant="ghost" onClick={() => close("close_button")}>
               Close
@@ -268,8 +262,8 @@ export function FeatureIntroDialog({
             <Button type="button" onClick={tryIt}>
               Choose a format
             </Button>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
 
         <DialogPrimitive.Close
           onClick={() => {

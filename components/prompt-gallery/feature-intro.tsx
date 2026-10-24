@@ -83,8 +83,11 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
       lastInput = performance.now()
       if (e.type !== "scroll") interacted = true
     }
-    const inputEvents = ["pointerdown", "keydown", "wheel", "touchstart", "scroll"] as const
-    for (const name of inputEvents) window.addEventListener(name, onInput, { capture: true, passive: true })
+    // One signal removes every listener below.
+    const listeners = new AbortController()
+    for (const name of ["pointerdown", "keydown", "wheel", "touchstart", "scroll"]) {
+      window.addEventListener(name, onInput, { capture: true, passive: true, signal: listeners.signal })
+    }
 
     let startTimer: ReturnType<typeof setTimeout> | undefined
     let checkTimer: ReturnType<typeof setInterval> | undefined
@@ -93,7 +96,7 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
     const stop = () => {
       clearTimeout(startTimer)
       clearInterval(checkTimer)
-      for (const name of inputEvents) window.removeEventListener(name, onInput, { capture: true })
+      listeners.abort()
     }
 
     let warmed = false
@@ -124,11 +127,12 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
     }
 
     if (document.readyState === "complete") start()
-    else window.addEventListener("load", start, { once: true })
+    else window.addEventListener("load", start, { once: true, signal: listeners.signal })
 
     return () => {
-      window.removeEventListener("load", start)
-      stop()
+      clearTimeout(startTimer)
+      clearInterval(checkTimer)
+      listeners.abort()
     }
   }, [version])
 
