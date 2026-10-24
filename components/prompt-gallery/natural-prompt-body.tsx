@@ -55,8 +55,9 @@ function PromptLength({ prompt, alternate, shortened, shortWords, onToggleFullDe
 }
 
 /**
- * A card's prompt in a natural-language format: plain, selectable text led by
- * a small format label. It fills the same box as the tag prompt, so switching
+ * A card's prompt in a natural-language format: plain, selectable text with no
+ * visible format label, since the user picked the format. It fills the same
+ * box as the tag prompt, so switching
  * formats never changes the card's height.
  */
 export const NaturalPromptBody = memo(function NaturalPromptBody({
@@ -76,12 +77,6 @@ export const NaturalPromptBody = memo(function NaturalPromptBody({
   return (
     <div className="text-left">
       <p className="text-foreground leading-relaxed wrap-anywhere text-pretty">
-        <span
-          aria-hidden="true"
-          className="mr-1.5 inline-block select-none rounded-[5px] px-1 py-px align-[0.08em] text-[0.6875rem] font-medium leading-tight text-muted-foreground ring-1 ring-inset ring-border"
-        >
-          {info.badge}{shortened ? " · short" : ""}
-        </span>
         <span className="sr-only">{`${info.label} prompt${shortened ? ", short version" : ""}: `}</span>
         {prompt.text}
       </p>
