@@ -12,7 +12,7 @@
  * the booru already separates, instead of being guessed.
  */
 import { getTagSlotFromOverrides, TAG_SUBCATEGORIES } from "@/lib/tag-taxonomy"
-import { isClothingState } from "./english"
+import { isClothingState, splitHairCompound } from "./english"
 
 export interface NaturalPromptInput {
   /** General tags, as on the post (underscores or spaces). */
@@ -208,7 +208,9 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   }
 
   const seen = new Set<string>()
-  for (const raw of input.general) {
+  // Cleaned prompts merge one noun's adjectives ("blue long hair"); hair goes back to plain tags.
+  const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? [raw])
+  for (const raw of general) {
     const tag = normalizeTag(raw)
     if (!tag || seen.has(tag)) continue
     seen.add(tag)
