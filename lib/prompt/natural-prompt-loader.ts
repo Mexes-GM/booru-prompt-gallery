@@ -7,10 +7,13 @@
  *   only the dictionary fails, cards still convert with the built-in wording.
  * - Tags missing from the static taxonomy snapshot (tags-core.json) are looked up
  *   in batches; until an answer arrives, or if it never does, the snapshot is used.
+ * - Rule34 cards also ask for Rule34's own slots for the tags still unplaced
+ *   (lookup_provider_tag_slots); the Danbooru taxonomy wins where both have one.
  * - Character trait profiles (public/natural-traits/) load per shard, only for
  *   cards with two or more characters; without them the description is shared.
  */
-import { fetchTagOverridesForNames } from "@/lib/supabase/client-queries"
+import { fetchProviderTagSlots, fetchTagOverridesForNames } from "@/lib/supabase/client-queries"
+import { SLOT_PROVIDERS, providerSlotNames, withProviderSlots } from "@/lib/prompt/provider-slots"
 import type { CharacterTraits, PhraseDictionary } from "@/lib/prompt/natural"
 import { TRAIT_ALIASES_URL, traitShard, traitShardUrl } from "@/lib/prompt/natural-traits"
 import type { FormattedPrompt, NaturalPromptSource } from "@/lib/prompt/natural-format"
@@ -100,7 +103,12 @@ export async function convertPromptOnce(
 ): Promise<FormattedPrompt> {
   const { engine, phrases } = resources.status === "error" ? await retryNaturalPrompt() : await loadNaturalPrompt()
   if (!engine) throw new Error("The prompt converter could not be loaded")
-  const all = withTagLookups(overrides, lookedUp)
+  let all = withTagLookups(overrides, lookedUp)
+  const provider = source.provider
+  if (provider && SLOT_PROVIDERS.has(provider)) {
+    await requestProviderSlots(provider, providerSlotNames(engine.naturalPromptInput(source, all).general, all))
+    all = withBooruSlots(all, providerSlots[provider])
+  }
   const input = engine.naturalPromptInput(source, all)
   const names = engine.traitNames(input)
   const { aliases, profiles } = await loadCharacterTraits(names)
@@ -168,6 +176,79 @@ export function subscribeTagLookups(listener: () => void): () => void {
 }
 
 export const getTagLookups = () => lookedUp
+
+// --- A booru's own slots (Rule34) ----------------------------------------------
+
+const NO_SLOTS: Record<string, string> = {}
+const NO_PROVIDER_SLOTS: Record<string, Record<string, string>> = {}
+/** Per provider, every slot found so far (a new object whenever slots arrive). */
+let providerSlots = NO_PROVIDER_SLOTS
+/** "provider:name" -> the batch that asks for it, so each name is asked once per page. */
+const slotTasks = new Map<string, Promise<void>>()
+const slotQueue = new Map<string, Set<string>>()
+let slotBatch: { promise: Promise<void>; resolve: () => void } | null = null
+const slotListeners = new Set<() => void>()
+
+async function flushProviderSlots() {
+  const batch = slotBatch
+  slotBatch = null
+  const queued = [...slotQueue]
+  slotQueue.clear()
+  await Promise.all(queued.map(async ([provider, names]) => {
+    try {
+      const found = await fetchProviderTagSlots(provider, [...names])
+      if (Object.keys(found).length === 0) return
+      providerSlots = { ...providerSlots, [provider]: { ...(providerSlots[provider] ?? NO_SLOTS), ...found } }
+      slotListeners.forEach((listener) => listener())
+    } catch {
+      // The card keeps the Danbooru taxonomy alone.
+    }
+  }))
+  batch?.resolve()
+}
+
+/**
+ * Queues tag names (provider spelling, see providerSlotNames) for a booru's slot
+ * lookup. Resolves once the batch holding them is answered or has failed.
+ */
+export function requestProviderSlots(provider: string, names: string[]): Promise<void> {
+  const waits = new Set<Promise<void>>()
+  for (const name of names) {
+    const key = `${provider}:${name}`
+    let task = slotTasks.get(key)
+    if (!task) {
+      if (!slotBatch) {
+        let resolve = () => {}
+        const promise = new Promise<void>((done) => { resolve = done })
+        slotBatch = { promise, resolve }
+        setTimeout(flushProviderSlots, LOOKUP_DELAY_MS)
+      }
+      task = slotBatch.promise
+      slotTasks.set(key, task)
+      slotQueue.set(provider, (slotQueue.get(provider) ?? new Set<string>()).add(name))
+    }
+    waits.add(task)
+  }
+  return Promise.all(waits).then(() => {})
+}
+
+export function subscribeProviderSlots(listener: () => void): () => void {
+  slotListeners.add(listener)
+  return () => slotListeners.delete(listener)
+}
+
+export const getProviderSlots = () => providerSlots
+export const getNoProviderSlots = () => NO_PROVIDER_SLOTS
+
+let slotMerge: { base: Record<string, string>; slots: Record<string, string>; result: Record<string, string> } | null = null
+
+/** Overrides with a booru's slots under them (see withProviderSlots), rebuilt only when either side changes. */
+export function withBooruSlots(base: Record<string, string>, slots: Record<string, string> | undefined): Record<string, string> {
+  if (!slots || slots === NO_SLOTS) return base
+  if (slotMerge && slotMerge.base === base && slotMerge.slots === slots) return slotMerge.result
+  slotMerge = { base, slots, result: withProviderSlots(base, slots) }
+  return slotMerge.result
+}
 
 // --- Character trait profiles ------------------------------------------------
 

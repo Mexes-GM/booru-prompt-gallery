@@ -2,22 +2,29 @@ import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { STORAGE_EVENT_NAME, STORAGE_KEYS, userPreferences } from "@/lib/storage"
 import { onSettingsChange } from "@/lib/settings-bridge"
 import type { PromptFormat } from "@/lib/prompt/prompt-format"
-import type { FormattedPrompt, NaturalPromptSource } from "@/lib/prompt/natural-format"
+import type { FormatPromptOptions, FormattedPrompt, NaturalPromptSource } from "@/lib/prompt/natural-format"
+import type { NaturalPromptInput } from "@/lib/prompt/natural"
 import {
   getCharacterTraits,
   getNaturalPromptResources,
   getNoCharacterTraits,
+  getNoProviderSlots,
+  getProviderSlots,
   getServerNaturalPromptResources,
   getTagLookups,
   loadCharacterTraits,
   loadNaturalPrompt,
+  requestProviderSlots,
   requestTagLookups,
   subscribeCharacterTraits,
   subscribeNaturalPrompt,
+  subscribeProviderSlots,
   subscribeTagLookups,
+  withBooruSlots,
   withTagLookups,
   type NaturalPromptResources,
 } from "@/lib/prompt/natural-prompt-loader"
+import { SLOT_PROVIDERS, providerSlotNames } from "@/lib/prompt/provider-slots"
 
 const FORMAT_KEYS: ReadonlySet<string> = new Set([STORAGE_KEYS.PROMPT_FORMAT, STORAGE_KEYS.PROMPT_FULL_DETAIL])
 
@@ -55,7 +62,7 @@ const noSubscription = () => () => {}
 const NO_LOOKUPS: Record<string, string> = {}
 const getNoLookups = () => NO_LOOKUPS
 const NO_NAMES: string[] = []
-const NO_SCENE_OPTIONS = {}
+const NO_SCENE_OPTIONS: FormatPromptOptions = {}
 
 /**
  * Converter state. Starts the download when `enabled`; while disabled the
@@ -93,31 +100,45 @@ interface UseNaturalPromptOptions {
   withAlternate?: boolean
 }
 
-/** A card's prompt in the chosen natural-language format. */
-export function useNaturalPrompt({ enabled, format, fullDetail, source, overrides, withAlternate = false }: UseNaturalPromptOptions): NaturalPromptView {
-  const active = enabled && format !== "tags"
-  const resources = useNaturalPromptResources(active)
+type Engine = NonNullable<NaturalPromptResources["engine"]>
+
+/**
+ * The card's overrides plus what was looked up for it: Danbooru classifications
+ * for unplaced tags and, on Rule34 cards, Rule34's own slots (which Rule34
+ * spells its own way), under the Danbooru taxonomy.
+ */
+function useCardOverrides(active: boolean, provider: string | undefined, overrides: Record<string, string>) {
   const lookups = useSyncExternalStore(active ? subscribeTagLookups : noSubscription, active ? getTagLookups : getNoLookups, getNoLookups)
-  const allOverrides = withTagLookups(overrides, lookups)
-  const { engine, phrases } = resources
-  const { prompt, characters, copyrights, rating, provider, handWritten } = source
-
-  const input = useMemo(
-    () => (active && engine && prompt
-      ? engine.naturalPromptInput({ prompt, characters, copyrights, rating, provider, handWritten }, allOverrides)
-      : null),
-    [active, engine, prompt, characters, copyrights, rating, provider, handWritten, allOverrides],
+  const slotProvider = active && provider && SLOT_PROVIDERS.has(provider) ? provider : null
+  const slotsByProvider = useSyncExternalStore(
+    slotProvider ? subscribeProviderSlots : noSubscription,
+    slotProvider ? getProviderSlots : getNoProviderSlots,
+    getNoProviderSlots,
   )
+  const slots = slotProvider ? slotsByProvider[slotProvider] : undefined
+  return { slotProvider, allOverrides: withBooruSlots(withTagLookups(overrides, lookups), slots) }
+}
 
-  // Tags the static snapshot does not know get looked up once; the card re-renders when they arrive.
+/** Asks, once per tag, for what the overrides cannot place; the card re-renders when answers arrive. */
+function useTagRequests(engine: Engine | null, input: NaturalPromptInput | null, allOverrides: Record<string, string>, slotProvider: string | null) {
   useEffect(() => {
     if (!input || !engine) return
     const missing = engine.unclassifiedTags(input, allOverrides)
     if (missing.length > 0) requestTagLookups(missing)
   }, [input, engine, allOverrides])
 
-  // Cards with two or more characters load those characters' trait profiles,
-  // so each one's hair, eyes and outfit are described as theirs.
+  useEffect(() => {
+    if (!input || !slotProvider) return
+    const names = providerSlotNames(input.general, allOverrides)
+    if (names.length > 0) requestProviderSlots(slotProvider, names).catch(() => {})
+  }, [input, slotProvider, allOverrides])
+}
+
+/**
+ * Cards with two or more characters load those characters' trait profiles,
+ * so each one's hair, eyes and outfit are described as theirs.
+ */
+function useCardTraits(engine: Engine | null, input: NaturalPromptInput | null): FormatPromptOptions {
   const names = useMemo(() => (input && engine ? engine.traitNames(input) : NO_NAMES), [input, engine])
   const wantsTraits = names.length > 0
   const traitData = useSyncExternalStore(
@@ -128,12 +149,30 @@ export function useNaturalPrompt({ enabled, format, fullDetail, source, override
   useEffect(() => {
     if (wantsTraits) loadCharacterTraits(names).catch(() => {})
   }, [wantsTraits, names])
-  const sceneOptions = useMemo(
+  return useMemo(
     () => (engine && wantsTraits
       ? { traits: engine.cardTraits(names, traitData.aliases, traitData.profiles), characterAliases: traitData.aliases }
       : NO_SCENE_OPTIONS),
     [engine, wantsTraits, names, traitData],
   )
+}
+
+/** A card's prompt in the chosen natural-language format. */
+export function useNaturalPrompt({ enabled, format, fullDetail, source, overrides, withAlternate = false }: UseNaturalPromptOptions): NaturalPromptView {
+  const active = enabled && format !== "tags"
+  const resources = useNaturalPromptResources(active)
+  const { prompt, characters, copyrights, rating, provider, handWritten } = source
+  const { slotProvider, allOverrides } = useCardOverrides(active, provider, overrides)
+  const { engine, phrases } = resources
+
+  const input = useMemo(
+    () => (active && engine && prompt
+      ? engine.naturalPromptInput({ prompt, characters, copyrights, rating, provider, handWritten }, allOverrides)
+      : null),
+    [active, engine, prompt, characters, copyrights, rating, provider, handWritten, allOverrides],
+  )
+  useTagRequests(engine, input, allOverrides, slotProvider)
+  const sceneOptions = useCardTraits(engine, input)
 
   const naturalFormat = format === "tags" ? null : format
   const formatted = useMemo(

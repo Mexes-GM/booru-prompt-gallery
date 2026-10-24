@@ -13,7 +13,8 @@
  *   6. Character traits: only cards with two or more characters load profiles,
  *      other boorus' names find the Danbooru profile, attribution and aliases apply.
  *   7. Trait shards: the hash is stable and public/natural-traits/ agrees with it.
- *   8. Format metadata.
+ *   8. Rule34 slots: provider spelling, both key shapes, Danbooru taxonomy first.
+ *   9. Format metadata.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt-format.verify.ts
  */
@@ -23,6 +24,7 @@ import { normalizeTag } from "../lib/prompt/natural"
 import { cardTraits, formatPrompt, naturalPromptInput, ratingLetter, traitNames, unclassifiedTags } from "../lib/prompt/natural-format"
 import { TRAIT_SHARD_COUNT, traitShard, traitShardFile } from "../lib/prompt/natural-traits"
 import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, hasWordBudget, isPromptFormat } from "../lib/prompt/prompt-format"
+import { PROVIDER_SLOT_CHUNK, chunked, providerSlotNames, slotRowsToOverrides, withProviderSlots } from "../lib/prompt/provider-slots"
 
 let passed = 0
 let failed = 0
@@ -181,7 +183,38 @@ const overrides: Record<string, string> = {
   }
 }
 
-// 8. Format metadata.
+// 8. Rule34 slots: provider spelling, both key shapes, Danbooru first, chunks.
+{
+  const rows = [
+    { name: "big_breasts", category_name: "appearance", subcategory: "anatomy" },
+    { name: "female_only", category_name: "appearance", subcategory: "demographics" },
+    { name: "lying_on_stomach", category_name: "pose", subcategory: "posture" },
+    { name: "hand_on_another&#039;s_head", category_name: "pose", subcategory: "gesture" },
+    { name: "smile", category_name: "clothing", subcategory: "accents" },
+    { name: "no_slot", category_name: null, subcategory: null },
+  ]
+  const slots = slotRowsToOverrides(rows)
+  assert(slots["big_breasts"] === "appearance:anatomy" && slots["big breasts"] === "appearance:anatomy", "slots are keyed by the provider spelling and the spaced one")
+  assert(slots["hand on another's head"] === "pose:gesture", "HTML entities in returned names are decoded")
+  assert(!("no slot" in slots) && !("no_slot" in slots), "rows without a category add nothing")
+
+  const merged = withProviderSlots(overrides, slots)
+  assert(merged.smile === "pose:expression", "the Danbooru taxonomy wins on conflicts")
+  assert(merged["lying on stomach"] === "pose:posture", "provider-only tags get their slot")
+  assert(withProviderSlots(overrides, {}) === overrides, "no slots leaves the overrides untouched")
+
+  const names = providerSlotNames(["big breasts", "smile", "black_hair", "female only", "Big_Breasts", "hand on another&#039;s head", "hat \\(object\\)"], overrides)
+  assert(names.join("|") === "big_breasts|female_only|hand_on_another's_head|hat_(object)", "only tags without an exact entry are asked for, once, in the provider spelling")
+  assert(chunked(Array.from({ length: 1001 }, (_, i) => i), PROVIDER_SLOT_CHUNK).map((c) => c.length).join(",") === "500,500,1", "names go out in chunks of at most 500")
+
+  const input = naturalPromptInput({ prompt: "1girl, solo, big breasts, female only, lying on stomach, smile", rating: "explicit", provider: "rule34" }, overrides)
+  const without = formatPrompt("flux2", input, overrides, { fullDetail: true }).text
+  const withSlots = formatPrompt("flux2", input, merged, { fullDetail: true }).text
+  assert(/Additional details:[^.]*big breasts/.test(without), "without slots Rule34 tags end up as raw details")
+  assert(!withSlots.includes("Additional details") && withSlots.includes("She has big breasts"), "with slots they are written into the description")
+}
+
+// 9. Format metadata.
 {
   assert(PROMPT_FORMATS[0] === "tags", "tags is the first and default format")
   assert(isPromptFormat("moss") && !isPromptFormat("nl") && !isPromptFormat(null), "stored values are validated")

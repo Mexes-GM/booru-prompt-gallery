@@ -1,4 +1,5 @@
 import { createClient } from './client'
+import { PROVIDER_SLOT_CHUNK, chunked, slotRowsToOverrides, type ProviderSlotRow } from '@/lib/prompt/provider-slots'
 
 export type TagResult = {
   name: string
@@ -160,6 +161,25 @@ export async function fetchTagOverridesForNames(names: string[]): Promise<Record
   }))
 
   return overrides
+}
+
+/**
+ * Approved taxonomy slots for a booru's own tag spellings (`lookup_provider_tag_slots`),
+ * as overrides under both key shapes. `names` use the provider spelling (see
+ * providerSlotNames). Sent in chunks the RPC accepts; a failed chunk is skipped.
+ */
+export async function fetchProviderTagSlots(provider: string, names: string[]): Promise<Record<string, string>> {
+  if (names.length === 0) return {}
+  const supabase = createClient()
+  const results = await Promise.all(chunked(names, PROVIDER_SLOT_CHUNK).map(async (chunk) => {
+    const { data, error } = await supabase.rpc('lookup_provider_tag_slots', { p_provider: provider, p_names: chunk })
+    if (error || !Array.isArray(data)) {
+      if (error) console.warn('fetchProviderTagSlots chunk failed:', error.message)
+      return {}
+    }
+    return slotRowsToOverrides(data as ProviderSlotRow[])
+  }))
+  return Object.assign({}, ...results)
 }
 
 /**
