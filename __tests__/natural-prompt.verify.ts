@@ -19,6 +19,7 @@
  *   14. Things said twice: held items and their generic words, series, relations, phrases.
  *   15. No phrase for content involving minors.
  *   16. Wording: demographic tags, garments worn somewhere, "is/are visible", "it" for a robot.
+ *   17. Several people: who has what (named or not), gendered tags, pairings, acts between two.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
@@ -161,7 +162,7 @@ const overrides: Record<string, string> = {
   assert(scene.subjectTags.includes("female only"), "gender tags count as subject tags")
   assert(!scene.dropped.includes("sakura haruno"), "a suffix guess never drops a tag as an artist name")
   const flux = renderFlux2(scene).text
-  assert(flux.includes("They are curvy and mature."), "gendered tags become adjectives, without repeating the hair colour")
+  assert(flux.includes("One of the girls is curvy and mature.") && !flux.includes("blonde."), "gendered tags describe one of the girls, without repeating the hair colour")
   assert(flux.includes("a huge ass") && !flux.includes("big ass"), "only the largest size of a body part is kept")
 
   const withBases = { ...names, "lifeguard (lilo & stitch)": "other:character", "overwatch 2": "other:copyright", mercy: "other:character" }
@@ -261,7 +262,8 @@ const overrides: Record<string, string> = {
   const scene = buildScene({ general, characters: ["gojou wakana", "kitagawa marin"] }, vocab, { traits })
   const owned = (name: string) => Object.values(scene.assigned.find((a) => a.character.name === name)?.slots ?? {}).flat()
   assert(scene.characters.map((c) => c.gender).join() === "male,female", "with everyone named, the higher 1boy share is the boy")
-  assert(!["penis", "pussy", "nipples"].some((t) => owned("Gojou Wakana").includes(t) || owned("Kitagawa Marin").includes(t)), "sexual anatomy is never attributed")
+  // His profile carries "nipples" and "pussy" from the women he is drawn with: only gender decides these.
+  assert(owned("Gojou Wakana").includes("penis") && owned("Kitagawa Marin").includes("pussy") && !owned("Gojou Wakana").includes("pussy"), "sexual anatomy goes by gender, not by the characters' profiles")
   assert(owned("Kitagawa Marin").includes("large breasts") && !owned("Gojou Wakana").includes("large breasts"), "breast tags cannot go to a male character")
   const phrases = { collarbone: { kind: "has" as const, text: "{pos} collarbones visible" } }
   const flux = renderFlux2(scene, { phrases, maxWords: null }).text
@@ -367,6 +369,73 @@ const overrides: Record<string, string> = {
 
   const robot = flux(["solo", "no humans", "holding weapon", "beam rifle"], { characters: ["gundam zirius"] })
   assert(robot.includes("It is holding a beam rifle.") && !/\bShe\b/.test(robot), "one named character with no humans is it")
+}
+
+// 17. Several people: a shared "They have breasts and a large penis" gives both to everyone.
+{
+  const vocab: Record<string, string> = {
+    "large breasts": "appearance:anatomy", "large penis": "appearance:anatomy", penis: "appearance:anatomy",
+    "dark-skinned female": "appearance:anatomy", "muscular male": "appearance:anatomy", "smaller female": "appearance:anatomy",
+    "bigger female": "appearance:anatomy", "clothed female nude male": "appearance:anatomy", "futa with female": "appearance:demographics",
+    bikini: "clothing:underwear", dress: "clothing:outfit", crossdressing: "clothing:outfit",
+    "long hair": "appearance:hair", "short hair": "appearance:hair", "brown hair": "appearance:hair", "purple hair": "appearance:hair",
+    twintails: "appearance:hair", cunnilingus: "pose:interaction", "male penetrated": "pose:interaction",
+  }
+  // Fixed gender profiles, so the test does not move when the bundled ones are regenerated.
+  const genderAffinity = { "long hair": [0.59, 0.2, 0.52, 0.15], "short hair": [0.16, 0.48, 0.14, 0.27] } as const
+  const phrases = { cunnilingus: { kind: "is" as const, text: "performing oral sex on a woman" }, "male penetrated": { kind: "is" as const, text: "being penetrated by a man" } }
+  const scene = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}, options: Parameters<typeof buildScene>[2] = {}) =>
+    buildScene({ general, ...extra }, vocab, { genderAffinity, ...options })
+  const flux = (...args: Parameters<typeof scene>) => renderFlux2(scene(...args), { phrases, maxWords: null }).text
+
+  const couple = flux(["1girl", "1boy", "large breasts", "large penis", "dark-skinned female", "muscular male", "bikini"], { rating: "e" })
+  assert(couple.includes("The woman is dark-skinned, has large breasts, and wears a bikini.") && couple.includes("The man is muscular, and has a large penis."), "each person's traits go to that person")
+  assert(!/\bThey (have|are|wear)\b/.test(couple), "nothing only one of them has is said of both")
+  assert(couple.startsWith("An anime-style illustration of a woman and a man."), "an explicit post names a woman and a man")
+  assert(flux(["1girl", "1boy"], { rating: "g" }).includes("of a girl and a boy"), "a general post keeps the booru's girl and boy")
+
+  const hair = scene(["1girl", "1boy", "long hair", "short hair"], { rating: "g" })
+  const ownedBy = (s: ReturnType<typeof scene>, name: string) => Object.values(s.assigned.find((a) => a.character.name === name)?.slots ?? {}).flat()
+  assert(ownedBy(hair, "the girl").includes("long hair") && ownedBy(hair, "the boy").includes("short hair"), "the gender profiles decide what tends to be one gender's")
+  const traits = { sesshoumaru: { "solo 1boy": 1, "solo 1girl": 0, "long hair": 0.9 } }
+  const named = scene(["1girl", "1boy", "long hair"], { rating: "g", characters: ["sesshoumaru"] }, { traits })
+  assert(!ownedBy(named, "the girl").includes("long hair"), "a tendency of women does not take a named man's own trait")
+
+  const three = flux(["3girls", "smaller female", "bigger female", "dark-skinned female"], { rating: "e" })
+  assert(three.includes("One of the women is smaller and dark-skinned, and another is bigger."), "gendered tags among several women describe one of them, opposites another")
+  const cfnm = flux(["1girl", "1boy", "clothed female nude male"], { rating: "e" })
+  assert(cfnm.includes("The woman is clothed.") && cfnm.includes("The man is nude."), "clothed female nude male gives each person a state")
+
+  const futa = flux(["futa with female", "penis", "large breasts"], { rating: "e" })
+  assert(futa.includes("two women") && futa.includes("The futanari's penis is visible.") && !futa.includes("futa with"), "a pairing counts people and its futanari owns the penis")
+  const dressed = scene(["1girl", "1boy", "dress", "crossdressing"], { rating: "g" })
+  assert(dressed.assigned.length === 0, "with crossdressing, a dress has no owner by gender")
+
+  assert(flux(["1girl", "1boy", "cunnilingus"], { rating: "e" }).includes("The man is performing oral sex on the woman."), "an act that names a woman gets the man as its subject")
+  assert(flux(["2girls", "cunnilingus"]).includes("One of the girls is performing oral sex on the other."), "between two women the object is the other")
+  const alone = flux(["1boy", "solo", "male penetrated"], { rating: "e" })
+  assert(alone.includes("He is being penetrated.") && !alone.includes("by a man"), "a penetrated man alone is not given a second man")
+
+  const marin = { "kitagawa marin": { "solo 1girl": 1, "solo 1boy": 0 } }
+  const partner = flux(["1girl", "1boy", "large penis"], { rating: "e", characters: ["kitagawa marin"] }, { traits: marin })
+  assert(partner.includes("of Kitagawa Marin and a man") && partner.includes("The man has a large penis."), "the unnamed partner is named in the opening and owns his traits")
+  const unknown = scene(["1girl", "1boy", "large breasts", "large penis"], { rating: "e", characters: ["takane (blue archive)"] })
+  assert(ownedBy(unknown, "the woman").includes("large breasts") && ownedBy(unknown, "the man").includes("large penis"), "with a named character of unknown gender, stand-ins still take what gender decides")
+  const girls = { a: { "solo 1girl": 1 }, b: { "solo 1girl": 1 }, c: { "solo 1boy": 1 } }
+  const group = flux(["2girls", "1boy", "large breasts"], { characters: ["a", "b", "c"] }, { traits: girls })
+  assert(group.includes("The girls have large breasts.") && !group.includes("They have"), "what several named girls share by gender is said of the girls, not of everyone")
+
+  const pair = { sandrone: { "solo 1girl": 1, "brown hair": 0.9 }, columbina: { "solo 1girl": 1, twintails: 0.5 } }
+  const leftover = scene(["2girls", "brown hair", "purple hair"], { characters: ["sandrone", "columbina"] }, { traits: pair })
+  assert(ownedBy(leftover, "Columbina").includes("purple hair") && !(leftover.slots.hair ?? []).includes("purple hair"), "with two people, the colour one does not own is the other's")
+  assert(flux(["2girls", "long hair", "short hair", "purple hair"]).includes("long and short hair"), "two lengths in a group are two people's")
+  const lynae = { lynae: { "solo 1girl": 1, "blonde hair": 0.8 } }
+  const withMan = scene(["1girl", "1boy", "blonde hair", "green hair"], { rating: "e", characters: ["lynae"] }, { traits: lynae })
+  assert(!ownedBy(withMan, "the man").includes("green hair"), "an unnamed partner does not take the colours a named character leaves")
+
+  // A pose sentence too long for the budget is cut to its first actions, not lost.
+  const busy = renderFlux2(buildScene({ general: ["1girl", "sitting", "dancing", "jumping", "running", "crossed arms"] }, vocab), { maxWords: 12 }).text
+  assert(busy.includes("She is sitting and dancing."), "a long pose keeps its first actions within the budget")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

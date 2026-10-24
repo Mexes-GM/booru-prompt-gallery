@@ -63,6 +63,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
     prose.identity ? `${capitalize(prose.identity)}.` : "",
     // Anima's card asks for each character to be described separately.
     ...prose.characters,
+    ...prose.people,
     prose.pose,
     prose.camera,
   ].filter(Boolean)
@@ -113,16 +114,20 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
   const medium = options.medium ?? "An anime-style illustration"
   // Full detail when it fits; otherwise cap every list first, then drop sentences.
   const full = describeScene(scene, options.phrases)
-  const fullWords = wordCount([full.identity, ...full.characters, full.pose, full.body, full.clothing, full.held, full.setting, full.lighting, full.camera, full.style, full.extras, full.raw.join(" ")].join(" ")) + wordCount(medium) + 2
+  const fullWords = wordCount([full.identity, ...full.characters, ...full.people, full.pose, full.body, full.clothing, full.held, full.setting, full.lighting, full.camera, full.style, full.extras, full.raw.join(" ")].join(" ")) + wordCount(medium) + 2
   const prose = fullWords > maxWords ? describeScene(scene, options.phrases, { compact: true }) : full
   const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
 
   // Output order reads naturally; `priority` decides what survives the budget.
-  const sections = [
+  // `short` stands in for a section's first sentence when that one does not fit.
+  const sections: { text: string; priority: number; short?: string }[] = [
     { text: opening, priority: 0 },
     // Who has which trait matters as much as who is there.
     { text: prose.characters.join(" "), priority: 0.5 },
-    { text: prose.pose, priority: 1 },
+    // Unnamed people's own details ("The woman has large breasts") matter less than what is happening.
+    { text: prose.people.join(" "), priority: 1.5 },
+    // A long pose sentence is cut to its first actions rather than lost.
+    { text: prose.pose, priority: 1, short: prose.poseShort },
     { text: prose.body, priority: 4 },
     { text: prose.clothing, priority: 2 },
     { text: prose.held, priority: 5 },
@@ -134,13 +139,19 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
     { text: prose.raw.length ? `Additional details: ${joinList(prose.raw)}.` : "", priority: 10 },
   ]
   const sentences = sections.flatMap((section, order) =>
-    sentencesOf(section.text).map((text, index) => ({ text, order, index, priority: section.priority, words: wordCount(text) })),
+    sentencesOf(section.text).map((text, index) => ({ text, order, index, priority: section.priority, words: wordCount(text), short: index === 0 ? section.short : undefined })),
   )
-  // Greedy by priority: a sentence that does not fit is skipped, a shorter later one may still fit.
+  // Greedy by priority: a sentence that does not fit is skipped (or cut to its
+  // short form); a shorter later one may still fit.
   const kept = new Set<(typeof sentences)[number]>()
   let words = 0
   for (const sentence of [...sentences].sort((a, b) => a.priority - b.priority || a.index - b.index)) {
-    if (sentence.priority > 0 && words + sentence.words > maxWords) continue
+    if (sentence.priority > 0 && words + sentence.words > maxWords) {
+      const shortWords = sentence.short ? wordCount(sentence.short) : Infinity
+      if (words + shortWords > maxWords) continue
+      sentence.text = sentence.short!
+      sentence.words = shortWords
+    }
     kept.add(sentence)
     words += sentence.words
   }

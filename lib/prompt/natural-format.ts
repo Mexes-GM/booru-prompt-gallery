@@ -11,6 +11,7 @@
 import {
   buildScene,
   normalizeTag,
+  peopleCount,
   renderAnima,
   renderFlux2,
   renderMoss,
@@ -95,12 +96,13 @@ export function unclassifiedTags(input: NaturalPromptInput, overrides: Record<st
 }
 
 /**
- * The card's character names whose trait profiles are worth loading:
- * attribution only starts with two or more characters.
+ * The card's character names whose trait profiles are worth loading: with two
+ * or more characters, or one next to someone unnamed ("1girl, 1boy" naming only
+ * her), where the profile tells which of the two she is.
  */
 export function traitNames(input: NaturalPromptInput): string[] {
   const names = [...new Set((input.characters ?? []).map(normalizeTag))]
-  return names.length >= 2 ? names : []
+  return names.length >= 2 || (names.length === 1 && peopleCount(input.general) >= 2) ? names : []
 }
 
 /**

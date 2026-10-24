@@ -30,6 +30,9 @@ export function joinList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
 }
 
+/** A colour word as hair and eye tags use it ("blonde" in "blonde hair", "light blue" in "light blue eyes"). */
+export const HAIR_COLOR_RE = /^((light|dark) )?(black|white|blonde|blond|brown|red|orange|yellow|green|aqua|blue|purple|pink|grey|gray|silver|rainbow)$/
+
 // Nouns used without an article: plurals, pairs and mass nouns.
 const MASS_NOUNS = /\b(teeth|cleavage|food|sclera|grass|pantyhose|underwear|lingerie|clothes|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|bandages|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear)$/
 const SINGULAR_S = /(ss|us|is|dress|bodysuit|swimsuit|jumpsuit|tracksuit|catsuit|leotards?)$/
@@ -37,6 +40,14 @@ const IRREGULAR_PLURALS = /^(feet|teeth|people|men|women)$/
 
 // "arms around another's back", "hands on own chest": the plural body part comes first.
 const PLURAL_HEAD = /^(arms|hands|legs|feet|fingers|knees|thighs|wings|ears|eyes|breasts) /
+
+// Mass nouns take no article but a singular verb: "her cleavage is visible".
+const SINGULAR_MASS = /\b(cleavage|food|sclera|grass|underwear|lingerie|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear)$/
+
+/** Verb agreement: "feet are", "breasts are", but "cleavage is", "underwear is". */
+export function takesPluralVerb(phrase: string): boolean {
+  return isPluralNoun(phrase) && !SINGULAR_MASS.test(phrase)
+}
 
 export function isPluralNoun(phrase: string): boolean {
   const last = phrase.split(" ").pop() ?? phrase
@@ -339,6 +350,9 @@ const POSE_LEXICON: Record<string, LexiconEntry> = {
   "jumping": { kind: "state", text: "jumping" },
   "running": { kind: "state", text: "running" },
   "walking": { kind: "state", text: "walking" },
+  // The tag says who is penetrated, not by whom: "by a man" adds a man who may not be there.
+  "male penetrated": { kind: "state", text: "being penetrated" },
+  "female penetrated": { kind: "state", text: "being penetrated" },
 }
 
 const EXPRESSION_LEXICON: Record<string, LexiconEntry> = {
