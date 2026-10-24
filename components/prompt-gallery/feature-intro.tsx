@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import dynamic from "next/dynamic"
 import { safeTrack } from "@/lib/analytics"
-import { TOUR_STORAGE_KEY } from "@/components/prompt-gallery/main-tour"
+import { MAIN_TOUR_STORAGE_KEY, isFeatureIntroPreview, isOverlayOpen } from "@/lib/onboarding"
 
 const loadDialog = () => import("@/components/prompt-gallery/feature-intro-dialog")
 const FeatureIntroDialog = dynamic(() => loadDialog().then((m) => m.FeatureIntroDialog), { ssr: false, loading: () => null })
@@ -24,13 +24,7 @@ const GIVE_UP_MS = 5 * 60 * 1000
 
 /** Another dialog, menu, popover or tour on screen, or the user is typing. */
 function isBusy(): boolean {
-  if (
-    document.querySelector(
-      '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-expanded="true"], .react-joyride__overlay'
-    )
-  ) {
-    return true
-  }
+  if (isOverlayOpen()) return true
   const el = document.activeElement
   return el instanceof HTMLElement && (el.isContentEditable || el.matches("input, textarea, select"))
 }
@@ -42,7 +36,7 @@ function shouldOffer(version: string): boolean {
   try {
     if (localStorage.getItem(SEEN_KEY) === FEATURE_INTRO_RELEASE) return false
     // First visit: the welcome tour runs instead, and this waits for the next visit.
-    return localStorage.getItem(TOUR_STORAGE_KEY) === "1"
+    return localStorage.getItem(MAIN_TOUR_STORAGE_KEY) === "1"
   } catch {
     // Storage blocked: the dismissal couldn't be remembered, so never show it.
     return false
@@ -66,8 +60,8 @@ export function FeatureIntro({ version, onTry }: { version: string; onTry: () =>
 
   useEffect(() => {
     // Dev-only preview: open /?feature-intro to show it right away, without
-    // the checks above and without marking it as seen.
-    if (process.env.NODE_ENV !== "production" && new URLSearchParams(window.location.search).has("feature-intro")) {
+    // the checks above and without marking it as seen (the tour stays off).
+    if (isFeatureIntroPreview()) {
       const timer = setTimeout(() => setOpen(true), 0)
       return () => clearTimeout(timer)
     }

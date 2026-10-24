@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useJoyride, ACTIONS, ORIGIN, STATUS, type Status, type Step } from "react-joyride"
 import { Sparkles, Search, Copy, SlidersHorizontal, LayoutGrid, HelpCircle } from "lucide-react"
 import { TourTooltip, TOUR_OPTIONS, type TourStepData } from "@/components/tour-tooltip"
-
-export const TOUR_STORAGE_KEY = "booru_main_tour_done"
+import { MAIN_TOUR_STORAGE_KEY as TOUR_STORAGE_KEY, isFeatureIntroPreview, isOverlayOpen } from "@/lib/onboarding"
 
 /** Let the page settle (hero, results skeleton) before spotlighting anything. */
 const AUTO_START_DELAY_MS = 700
@@ -82,7 +81,12 @@ export function MainTour({ runSignal, onStart }: MainTourProps) {
   // Auto-start on first visit only.
   useEffect(() => {
     if (localStorage.getItem(TOUR_STORAGE_KEY) === "1") return
+    if (isFeatureIntroPreview()) return
     const timer = setTimeout(() => {
+      // Never cover something already open (a dialog, a menu). The flag stays
+      // unset, so the tour starts on the next visit instead of popping up later
+      // in this one, once the user is busy with something else.
+      if (isOverlayOpen()) return
       // Persist the flag at auto-start, not only on FINISH/SKIP: an interrupted
       // tour (reload, tab close, a missing target stalling Joyride) must not
       // re-trigger on every visit. Written here, not before the timeout, so a
