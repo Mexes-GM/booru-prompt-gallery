@@ -491,6 +491,7 @@ const ATTRIBUTABLE_SLOTS: SceneSlot[] = [
   "outfit", "top", "bottom", "underwear", "legwear", "footwear", "headwear", "eyewear", "accents",
   "weapon", "handheld",
 ]
+const ATTRIBUTABLE = new Set(ATTRIBUTABLE_SLOTS)
 const CLOTHING_SLOTS = new Set<SceneSlot>(["outfit", "top", "bottom", "underwear", "legwear", "footwear", "headwear", "eyewear", "accents"])
 // A trait goes to a person when it appears on at least MIN_SHARE of their posts
 // and MIN_RATIO times more often than for the next one.
@@ -601,7 +602,7 @@ export function attributeTraits(scene: Scene, traits: CharacterTraits, affinity:
     const named = genderedTraits(tag)
     const fromTag = named.length === 1 ? named[0].gender : null
     // Other slots (expression, pose) only hand out tags that name their person ("embarrassed female").
-    if (!fromTag && !ATTRIBUTABLE_SLOTS.includes(slot)) return null
+    if (!fromTag && !ATTRIBUTABLE.has(slot)) return null
     // "bare shoulders", "sleeveless": how the outfit is worn, not an item someone owns
     // (but "sideboob" or "cleavage" can only be the woman's).
     if (!fromTag && isClothingState(tag) && !ruleGender(tag)) return null
@@ -618,7 +619,8 @@ export function attributeTraits(scene: Scene, traits: CharacterTraits, affinity:
       // A named man's profile carrying a women's tendency ("long hair") may be his own;
       // carrying "sideboob" or "bikini" it is his partners', as with sexual anatomy.
       const oneSex = sexual || ruleGender(tag) === gender || (gender === "female" ? FEMALE_ONLY_RE : MALE_ONLY_RE).test(tag)
-      const ownedByOther = !!byData && !oneSex && people.some((p) => !pool.includes(p) && !p.generic && (traits[p.tag]?.[tag] ?? 0) >= MIN_SHARE)
+      const inPool = new Set(pool)
+      const ownedByOther = !!byData && !oneSex && people.some((p) => !inPool.has(p) && !p.generic && (traits[p.tag]?.[tag] ?? 0) >= MIN_SHARE)
       if (!ownedByOther) {
         // A stand-in is the last resort: a named character of unknown gender whose
         // profile carries the trait ("large breasts" on Nagiha's posts) is likelier hers.
