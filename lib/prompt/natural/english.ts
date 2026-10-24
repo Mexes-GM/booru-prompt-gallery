@@ -107,6 +107,8 @@ export function gazePhrase(tag: string, p: Pronouns): string {
 export function dropImplied(tags: string[]): string[] {
   const implied = new Set<string>()
   for (const tag of tags) for (const other of IMPLIES[tag] ?? []) implied.add(other)
+  // "colored skin" only says the skin is an unnatural colour; "grey skin" says which.
+  if (tags.some((tag) => SKIN_COLOR_RE.test(tag))) implied.add("colored skin")
   // Several sizes of one body part ("big ass, huge ass, large ass"): keep the largest.
   const largest = new Map<string, number>()
   for (const tag of tags) {
@@ -143,6 +145,31 @@ const IMPLIES: Record<string, string[]> = {
   grin: ["smile"],
   "completely nude": ["nude"],
   "double v": ["v"],
+}
+
+const SKIN_COLOR_RE = /^(grey|gray|blue|green|red|purple|pink|orange|yellow|black|white|aqua|multicolored|two-tone) skin$/
+
+const HAIR_LENGTH_WORDS = new Set(["absurdly long", "very long", "very short", "long", "medium", "short"])
+const HAIR_WORD_RE = /^((light|dark) )?(black|white|blonde|blond|brown|red|orange|yellow|green|aqua|blue|purple|pink|grey|gray|silver)$|^(wavy|curly|straight|messy|spiked|fluffy|multicolored|two-tone|gradient|streaked)$/
+const isHairWord = (words: string) => HAIR_LENGTH_WORDS.has(words) || HAIR_WORD_RE.test(words)
+
+/**
+ * "blue long hair" -> ["blue hair", "long hair"]. The site's prompt cleanup
+ * merges the adjectives of one noun into a single tag, in post order; the hair
+ * description (and per-character attribution) needs the plain tags back. Null
+ * when the tag is not made only of length, colour and texture words.
+ */
+export function splitHairCompound(tag: string): string[] | null {
+  if (!tag.endsWith(" hair")) return null
+  const words = tag.slice(0, -" hair".length).split(" ")
+  const parts: string[] = []
+  for (let i = 0; i < words.length;) {
+    const pair = i + 1 < words.length ? `${words[i]} ${words[i + 1]}` : null
+    if (pair && isHairWord(pair)) { parts.push(pair); i += 2 }
+    else if (isHairWord(words[i])) { parts.push(words[i]); i += 1 }
+    else return null
+  }
+  return parts.length >= 2 ? parts.map((part) => `${part} hair`) : null
 }
 
 const ANGLE_PHRASES: Record<string, string> = {

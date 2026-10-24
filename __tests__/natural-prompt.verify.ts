@@ -15,11 +15,12 @@
  *   9-10. Word budget; trait attribution between characters.
  *   11. One character under several names; placeholder names.
  *   12. Gender per character: sexual anatomy stays shared, possessives follow it.
+ *   13. Cleaned-prompt input: merged hair tags, skin colour redundancy.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
 import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, renderMoss, splitPromptTags, titleCase } from "../lib/prompt/natural"
-import { dropImplied } from "../lib/prompt/natural/english"
+import { dropImplied, splitHairCompound } from "../lib/prompt/natural/english"
 
 let passed = 0
 let failed = 0
@@ -271,6 +272,18 @@ const overrides: Record<string, string> = {
   assert(unsure.assigned.some((a) => a.character.name === "Nagiha"), "an unknown gender does not block a trait")
   const twoMen = { a: { "solo 1boy": 1, breasts: 0.5 }, b: { "solo 1boy": 1, breasts: 0.3 } }
   assert(buildScene({ general: ["2boys", "large breasts"], characters: ["a", "b"] }, vocab, { traits: twoMen }).assigned.length === 0, "a female-only trait with no woman to own it stays shared")
+}
+
+// 13. Cleaned-prompt input: the site merges one noun's adjectives ("blue long hair").
+{
+  assert(splitHairCompound("blue long hair")?.join() === "blue hair,long hair", "a merged hair tag splits back into its tags")
+  assert(splitHairCompound("very long light blue hair")?.join() === "very long hair,light blue hair", "two-word lengths and colours stay whole")
+  assert(splitHairCompound("long hair") === null && splitHairCompound("hair over one eye") === null && splitHairCompound("blue hair ornament hair") === null, "plain or non-trait hair tags are left alone")
+  const vocab = { ...overrides, "brown eyes": "appearance:eyes", "colored skin": "appearance:anatomy", "grey skin": "appearance:anatomy", "pointy ears": "appearance:anatomy" }
+  const text = renderFlux2(buildScene({ general: ["1boy", "blue long hair", "brown eyes", "colored skin", "grey skin", "pointy ears"] }, vocab), { maxWords: null }).text
+  assert(text.includes("long blue hair") && !text.includes("blue long hair"), "merged hair reads as length then colour")
+  assert(text.includes("grey skin") && !text.includes("colored skin"), "a specific skin colour makes colored skin redundant")
+  assert(dropImplied(["colored skin", "dark skin"]).includes("colored skin"), "a natural skin tone does not replace colored skin")
 }
 
 console.log(`${passed} passed, ${failed} failed`)
