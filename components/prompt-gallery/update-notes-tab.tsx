@@ -30,7 +30,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'Prompts in Plain English', body: "Pick a Prompt format in Customize prompt: Anima, FLUX.2 · Krea 2 or MOSS-Image. Every card then shows its prompt as a description written for that model, right away. The AI conversion is still in the card menu, now called Rewrite with AI." },
+  { kind: 'new', title: 'Tags to Natural Language', body: "Pick a Prompt format in Customize prompt: Anima, FLUX.2 · Krea 2 or MOSS-Image. Every card then shows its prompt as a description written for that model, right away. The AI conversion is still in the card menu, now called Rewrite with AI." },
   { kind: 'new', title: 'Copy as Another Format', body: "A card's copy menu now has Copy as, to copy that prompt once in any format without changing your setting." },
   { kind: 'new', title: 'Each Character Described Apart', body: "When a post has two or more popular characters, the description gives each one their own hair, eyes and outfit, so models are less likely to mix them up." },
   { kind: 'new', title: 'Short or Full Descriptions', body: "FLUX.2 and MOSS-Image prompts stay short by default, FLUX.2 under 80 words. Turn on Keep every detail for the full version." },
