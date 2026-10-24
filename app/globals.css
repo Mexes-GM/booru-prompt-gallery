@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @config "../tailwind.config.ts";
+/* video/ is the Remotion project for the feature videos, not site markup. */
+@source not "../video";
 
 /* @theme-tokens:start — GENERADO por scripts/build-theme.mjs desde lib/theme/palette.mjs — no editar a mano. */
 
