@@ -17,11 +17,14 @@ import {
   expressionPhrase,
   framingPhrase,
   gazePhrase,
+  genericsOf,
   isClothingState,
   isPluralNoun,
   joinList,
   lexiconPhrase,
+  mergeSharedPrefix,
   posePhrase,
+  splitPlacement,
   withArticle,
 } from "./english"
 
@@ -75,7 +78,44 @@ const BODY_VISIBLE = new Set([
 ])
 const SPECIES_RE = / (girl|boy)$/
 const GENDERED_RE = /^(.+) (female|male)$/
-const RELATIONS = new Set(["siblings", "sisters", "brothers", "twins", "couple", "friends", "mother and daughter", "father and daughter", "mother and son", "brother and sister"])
+const RELATIONS = new Set(["siblings", "sisters", "brothers", "twins", "couple", "friends", "mother and daughter", "father and daughter", "mother and son", "brother and sister", "husband and wife"])
+// "They are ___": the singular ones need an article.
+const RELATION_WORDING: Record<string, string> = { couple: "a couple" }
+
+/**
+ * Held and carried items, each said once. "holding X" names the item; a kind
+ * replaces its generic word ("holding gun" + "handgun" -> "a handgun", "weapon"
+ * next to "knife" goes); a placement joins its item ("umbrella over shoulder" ->
+ * "a parasol over her shoulder") instead of adding a second one.
+ */
+function describeItems(tags: string[], possessive: string): { held: string[]; loose: string[] } {
+  const holding = tags.filter((t) => t.startsWith("holding ")).map((t) => t.slice("holding ".length))
+  const placed = tags.filter((t) => !t.startsWith("holding ") && splitPlacement(t).place)
+  const others = tags.filter((t) => t !== "holding" && !t.startsWith("holding ") && !splitPlacement(t).place)
+  const kept = new Set(dropImplied([...new Set([...holding, ...others])]))
+  const isKind = (specific: string, generic: string) =>
+    specific === generic || specific.endsWith(` ${generic}`) || genericsOf(specific).includes(generic)
+  const held: string[] = []
+  for (const name of holding) {
+    const item = kept.has(name) ? name : others.find((o) => kept.has(o) && isKind(o, name))
+    if (item && !held.includes(item)) held.push(item)
+  }
+  const loose = others.filter((o) => kept.has(o) && !held.includes(o))
+  const heldText = held.map(withArticle)
+  const looseText = loose.map(withArticle)
+  const where = (place: string) => place.replace(/(shoulder|back|hip|mouth)$/, `${possessive} $1`)
+  // "sword on back" already says "weapon on back".
+  for (const tag of dropImplied(placed)) {
+    const { item, place } = splitPlacement(tag)
+    const h = held.findIndex((x) => isKind(x, item))
+    // A held item is in the hand: only "over shoulder" still describes it.
+    if (h >= 0) { if (/shoulder$/.test(place!)) heldText[h] += ` ${where(place!)}`; continue }
+    const l = loose.findIndex((x) => isKind(x, item))
+    if (l >= 0) looseText[l] += ` ${where(place!)}`
+    else looseText.push(`${withArticle(item)} ${where(place!)}`)
+  }
+  return { held: heldText, loose: looseText }
+}
 // More names than this read as a list, not a description.
 const MAX_NAMED_CHARACTERS = 4
 
@@ -221,7 +261,9 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const sameAs = (text: string) => ` ${text.replace(/\bnaked\b/g, "nude")} `
   const tidy = (items: string[], max: number) => {
     const keys = new Set<string>()
-    const unique = dropContainedPhrases(items).filter((item) => {
+    // A tag's qualifier is for the booru, not the sentence: "a lily (flower)" -> "a lily".
+    const plain = items.map((item) => item.replace(/ \([^)]*\)/g, ""))
+    const unique = dropContainedPhrases(plain).filter((item) => {
       const key = sameAs(item)
       if (keys.has(key) || said.some((done) => done.includes(key))) return false
       keys.add(key)
@@ -264,7 +306,8 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
       ...of("anatomy").filter((t) => !isTag(t)).map((t) => own(t) ?? (isPluralNoun(t) ? t : withArticle(t))),
     ], 4)
     const wearList = tidy(CLOTHING_ORDER.flatMap(of).map((t) => (phrases[t]?.kind === "wears" ? own(t)! : withArticle(t))), 4)
-    const holdList = tidy([...of("weapon"), ...of("handheld")].map((t) => withArticle(t.replace(/^holding /, ""))), 2)
+    const items = describeItems([...(slots.weapon ?? []), ...(slots.handheld ?? [])], possessive)
+    const holdList = tidy([...items.held, ...items.loose], 2)
     const clauses = [
       isList.length ? `is ${joinList(isList)}` : "",
       hasList.length ? `has ${joinList(hasList)}` : "",
@@ -276,8 +319,10 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     return `${character.name} ${clauses.length ? `${clauses.join(", ")}, and ${last}` : last}.`
   }).filter(Boolean)
 
-  // Body.
-  const relations = anatomyAll.filter((t) => RELATIONS.has(t))
+  // Body. Relations ("couple", "husband and wife") are filed in several slots, or none.
+  const relationTags = [...new Set([...anatomyAll, ...Object.values(scene.slots).flat(), ...scene.unclassified])]
+    .filter((t): t is string => !!t && RELATIONS.has(t))
+  const relations = dropImplied(relationTags).map((t) => RELATION_WORDING[t] ?? t)
   const speciesSet = new Set(species)
   const anatomy = anatomyAll.filter((t) => !speciesSet.has(t) && !RELATIONS.has(t))
   const bodyAdjectives = anatomy.filter((t) => BODY_ADJECTIVES.has(t))
@@ -345,13 +390,10 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     showingList.length ? `The outfit shows ${joinList(showingList)}.` : "",
   ].filter(Boolean).join(" ")
 
-  // Held items: "holding X" names the item; the bare item tag is then redundant.
-  const equipment = [...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])]
-  const heldNames = equipment.filter((t) => t.startsWith("holding ")).map((t) => t.slice(8))
-  const heldSet = new Set(heldNames)
-  const loose = dropImplied(equipment.filter((t) => t !== "holding" && !t.startsWith("holding ") && !heldSet.has(t)))
-  const heldList = tidy(heldNames.map(withArticle), 2)
-  const looseList = tidy(loose.map(withArticle), 2)
+  // Held and carried items, each said once (see describeItems).
+  const items = describeItems([...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])], p.possessive)
+  const heldList = tidy(items.held, 2)
+  const looseList = tidy(items.loose, 2)
   const held = [
     heldList.length ? `${Subject} ${is} holding ${joinList(heldList)}.` : "",
     looseList.length ? `${Subject} ${has} ${joinList(looseList)}.` : "",
@@ -364,7 +406,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const extraMood: string[] = []
   const poseTags = dropImplied([...POSE_ORDER.flatMap((s) => scene.slots[s] ?? []), ...(scene.slots.expression ?? [])])
   for (const tag of poseTags) {
-    if (tag === "holding") continue
+    if (tag === "holding" || RELATIONS.has(tag)) continue
     const curated = lexiconPhrase(tag, p)
     if (curated) { (curated.kind === "state" ? statesOut : withs).push(curated.text); continue }
     const phrase = dictionary(tag)
@@ -380,8 +422,8 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     ;(ruled.kind === "state" ? statesOut : withs).push(ruled.text)
   }
   statesOut.push(...dropImplied(scene.camera.gaze).map((t) => (dictionary(t)?.kind === "is" ? dictionary(t)!.text : gazePhrase(t, p))))
-  const stateList = tidy(statesOut, 4)
-  const withList = tidy(withs, 3)
+  const stateList = tidy(mergeSharedPrefix(statesOut), 4)
+  const withList = tidy(mergeSharedPrefix(withs), 3)
   let pose = ""
   if (stateList.length) pose = `${Subject} ${is} ${joinList(stateList)}${withList.length ? `, with ${joinList(withList)}` : ""}.`
   else if (withList.length) pose = `${Subject} ${is} shown with ${joinList(withList)}.`
@@ -453,6 +495,6 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     layout.length ? `The image includes ${joinList(layout)}.` : "",
   ].filter(Boolean).join(" ")
 
-  raw.push(...scene.unclassified)
+  raw.push(...scene.unclassified.filter((t) => !RELATIONS.has(t)))
   return { identity, characters, body, clothing, held, pose, setting, lighting, camera, style, extras, pronouns: p, raw, omitted }
 }

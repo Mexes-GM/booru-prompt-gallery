@@ -33,10 +33,29 @@ export function joinList(items: string[]): string {
 const MASS_NOUNS = /\b(teeth|cleavage|food|sclera|grass|pantyhose|underwear|lingerie|clothes|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|bandages|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear)$/
 const SINGULAR_S = /(ss|us|is|dress|bodysuit|swimsuit|jumpsuit|tracksuit|catsuit|leotards?)$/
 
+// "arms around another's back", "hands on own chest": the plural body part comes first.
+const PLURAL_HEAD = /^(arms|hands|legs|feet|fingers|knees|thighs|wings|ears|eyes|breasts) /
+
 export function isPluralNoun(phrase: string): boolean {
   const last = phrase.split(" ").pop() ?? phrase
-  if (MASS_NOUNS.test(phrase)) return true
+  if (MASS_NOUNS.test(phrase) || PLURAL_HEAD.test(phrase)) return true
   return last.endsWith("s") && !SINGULAR_S.test(last)
+}
+
+/**
+ * "kissing another person's hair", "kissing another person's head" ->
+ * "kissing another person's hair and head": phrases that differ only in their
+ * last word are said once. Order follows the first phrase of each group.
+ */
+export function mergeSharedPrefix(phrases: string[]): string[] {
+  const groups = new Map<string, string[]>()
+  for (const phrase of new Set(phrases)) {
+    const cut = phrase.lastIndexOf(" ")
+    // Phrases of one or two words ("smiling", "looking up") never merge.
+    const key = phrase.split(" ").length >= 3 ? phrase.slice(0, cut) : `\0${phrase}`
+    groups.set(key, [...(groups.get(key) ?? []), phrase.slice(cut + 1)])
+  }
+  return [...groups].map(([key, lasts]) => (key.startsWith("\0") ? key.slice(1) : `${key} ${joinList(lasts)}`))
 }
 
 /** "white dress" -> "a white dress", "thighhighs" -> "thighhighs", "apron" -> "an apron". */
@@ -109,6 +128,12 @@ export function dropImplied(tags: string[]): string[] {
   for (const tag of tags) for (const other of IMPLIES[tag] ?? []) implied.add(other)
   // "colored skin" only says the skin is an unnatural colour; "grey skin" says which.
   if (tags.some((tag) => SKIN_COLOR_RE.test(tag))) implied.add("colored skin")
+  // A kind of thing implies the generic word, where it was placed too:
+  // "parasol" -> "umbrella", "handgun" -> "gun" and "weapon", "sword on back" -> "weapon on back".
+  for (const tag of tags) {
+    const { item, place } = splitPlacement(tag)
+    for (const generic of genericsOf(item)) implied.add(place ? `${generic} ${place}` : generic)
+  }
   // Several sizes of one body part ("big ass, huge ass, large ass"): keep the largest.
   const largest = new Map<string, number>()
   for (const tag of tags) {
@@ -145,9 +170,35 @@ const IMPLIES: Record<string, string[]> = {
   grin: ["smile"],
   "completely nude": ["nude"],
   "double v": ["v"],
+  "husband and wife": ["couple"],
 }
 
 const SKIN_COLOR_RE = /^(grey|gray|blue|green|red|purple|pink|orange|yellow|black|white|aqua|multicolored|two-tone) skin$/
+
+// Kinds of a thing that Danbooru tags next to the generic word (a suffix match already covers "transparent umbrella").
+const HYPONYMS: Record<string, string> = {
+  wristwatch: "watch", parasol: "umbrella",
+  handgun: "gun", pistol: "gun", revolver: "gun", rifle: "gun", shotgun: "gun",
+  katana: "sword", rapier: "sword", saber: "sword", sabre: "sword", scimitar: "sword", claymore: "sword",
+}
+// Weapons by their last word; "bow" alone is a ribbon, so only "bow (weapon)" counts.
+const WEAPON_RE = /(^|\s)(sword|katana|knife|dagger|gun|handgun|pistol|revolver|rifle|shotgun|spear|polearm|lance|axe|scythe|staff|mace|whip|trident|halberd|naginata|kunai|shuriken|blade|rapier|saber|sabre|scimitar|claymore|crossbow|bow \(weapon\))$/
+const PLACEMENT_RE = /^(.+?) (over shoulder|on shoulder|on back|on hip|at hip|in mouth)$/
+
+/** "umbrella over shoulder" -> { item: "umbrella", place: "over shoulder" }. */
+export function splitPlacement(tag: string): { item: string; place: string | null } {
+  const m = tag.match(PLACEMENT_RE)
+  return m ? { item: m[1], place: m[2] } : { item: tag, place: null }
+}
+
+/** The generic words an item implies: "handgun" -> ["gun", "weapon"]. */
+export function genericsOf(item: string): string[] {
+  const last = item.split(" ").pop() ?? item
+  const generic = HYPONYMS[item] ?? HYPONYMS[last]
+  const out = generic ? [generic] : []
+  if (item !== "weapon" && WEAPON_RE.test(item)) out.push("weapon")
+  return out
+}
 
 const HAIR_LENGTH_WORDS = new Set(["absurdly long", "very long", "very short", "long", "medium", "short"])
 const HAIR_WORD_RE = /^((light|dark) )?(black|white|blonde|blond|brown|red|orange|yellow|green|aqua|blue|purple|pink|grey|gray|silver)$|^(wavy|curly|straight|messy|spiked|fluffy|multicolored|two-tone|gradient|streaked)$/
