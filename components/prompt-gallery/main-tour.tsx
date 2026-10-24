@@ -5,7 +5,7 @@ import { useJoyride, ACTIONS, ORIGIN, STATUS, type Status, type Step } from "rea
 import { Sparkles, Search, Copy, SlidersHorizontal, LayoutGrid, HelpCircle } from "lucide-react"
 import { TourTooltip, TOUR_OPTIONS, type TourStepData } from "@/components/tour-tooltip"
 
-const TOUR_STORAGE_KEY = "booru_main_tour_done"
+export const TOUR_STORAGE_KEY = "booru_main_tour_done"
 
 /** Let the page settle (hero, results skeleton) before spotlighting anything. */
 const AUTO_START_DELAY_MS = 700

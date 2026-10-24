@@ -169,6 +169,7 @@ import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { GalleryModals } from "@/components/prompt-gallery/gallery-modals"
 import { SiteCornerMenu } from "@/components/prompt-gallery/site-corner-menu"
 import { MainTour } from "@/components/prompt-gallery/main-tour"
+import { FeatureIntro } from "@/components/prompt-gallery/feature-intro"
 import { recordPromptCopy } from "@/lib/support-prompt"
 import { GalleryHero } from "@/components/prompt-gallery/gallery-hero"
 import { TagsManagementPanel } from "@/components/prompt-gallery/tags-management-panel"
@@ -646,6 +647,21 @@ export function PromptGallery() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [showStickyPanel, setShowStickyPanel] = useState(false)
   const controlPanelRef = useRef<HTMLDivElement>(null)
+
+  // "Choose a format" in the release dialog: open Customize prompt and put
+  // focus on its Prompt format setting.
+  const openPromptFormatSetting = useCallback(() => {
+    // Bring the control panel to the top so the section drops down below it.
+    // A jump, not the page's smooth scroll: the section measures where to
+    // open as it renders, so the panel must already be in place.
+    const top = controlPanelRef.current?.getBoundingClientRect().top
+    if (top !== undefined && Math.abs(top - 16) > 8) {
+      window.scrollTo({ top: window.scrollY + top - 16, behavior: "instant" })
+    }
+    setPromptOptionsOpen(true)
+    // The setting renders once the section (or the mobile sheet) has opened.
+    window.setTimeout(() => document.getElementById("prompt-format-embedded")?.focus({ preventScroll: true }), 350)
+  }, [])
 
   // Folder Delete State
   const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
@@ -1650,6 +1666,8 @@ export function PromptGallery() {
             setIsPromptOptionsExpanded(true)
           }}
         />
+
+        <FeatureIntro version={pkg.version} onTry={openPromptFormatSetting} />
 
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
