@@ -20,7 +20,6 @@ import {
   type PhraseDictionary,
 } from "@/lib/prompt/natural"
 import type { NaturalPromptFormat } from "@/lib/prompt/prompt-format"
-import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
 
 export interface NaturalPromptSource {
   /** The card's cleaned prompt: comma-separated tags, weights and escapes allowed. */
@@ -81,18 +80,16 @@ export function naturalPromptInput(source: NaturalPromptSource, overrides: Recor
 }
 
 /**
- * General tags the taxonomy cannot place: no exact entry, and no known suffix
- * either ("frilled red dress" is placed through "dress"). Worth looking up
- * before rendering, since they would otherwise end up as raw text.
+ * General tags without an exact taxonomy entry, worth looking up before
+ * rendering. That includes tags the scene would place through a suffix: the
+ * suffix is a guess, right for "frilled red dress" (a dress) but wrong for a
+ * series or a creature named after an object ("youkai watch" is not a watch).
  */
 export function unclassifiedTags(input: NaturalPromptInput, overrides: Record<string, string>): string[] {
   const tags = new Set<string>()
   for (const raw of input.general) {
     const tag = normalizeTag(raw)
-    if (!tag || overrides[tag] || overrides[tag.replace(/ /g, "_")]) continue
-    // A suffix match on a name or meta tag is a guess the scene ignores.
-    const bySuffix = getTagSlotFromOverrides(tag, overrides)
-    if (!bySuffix || bySuffix.category === "other") tags.add(tag)
+    if (tag && !overrides[tag] && !overrides[tag.replace(/ /g, "_")]) tags.add(tag)
   }
   return [...tags]
 }

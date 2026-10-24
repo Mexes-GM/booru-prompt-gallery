@@ -103,10 +103,19 @@ const overrides: Record<string, string> = {
     characters: "komari_chika",
   }, known)
   const missing = unclassifiedTags(input, known)
-  assert(missing.length === 3 && missing.includes("mystery prop") && missing.includes("odd tag"), "only tags the taxonomy cannot place are reported, once each")
+  assert(missing.length === 4 && missing.includes("mystery prop") && missing.includes("odd tag"), "only tags without an exact entry are reported, once each")
   assert(!input.general.includes("komari chika"), "a name from the post field is not a general tag")
-  assert(!missing.includes("frilled black dress"), "a tag placed through its suffix is not looked up")
+  assert(!missing.includes("black hair"), "a tag with an exact entry is not looked up")
+  assert(missing.includes("frilled black dress"), "a tag only placed through its suffix is looked up: the suffix is a guess")
   assert(missing.includes("saga tsukinoki koto"), "a suffix that only matches a name is looked up, not trusted")
+
+  // A Gelbooru copy of a Danbooru post: the series is only in the general list.
+  const series = { ...overrides, watch: "clothing:accents" }
+  const youkai = naturalPromptInput({ prompt: "1boy, youkai (youkai watch), youkai watch, blue hair" }, series)
+  assert(unclassifiedTags(youkai, series).includes("youkai watch"), "a series named after an object is looked up, not worn")
+  const found = { ...series, "youkai watch": "other:copyright", "youkai (youkai watch)": "other:copyright" }
+  const resolved = naturalPromptInput({ prompt: "1boy, youkai (youkai watch), youkai watch, blue hair" }, found)
+  assert(resolved.copyrights?.includes("youkai watch") === true && !formatPrompt("flux2", resolved, found).text.includes("wears"), "once looked up, the series is a series, not something worn")
 }
 
 // 5. Budgets.
