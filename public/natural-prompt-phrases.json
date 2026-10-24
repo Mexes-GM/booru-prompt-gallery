@@ -2571,10 +2571,6 @@
   "kind": "is",
   "text": "a babysitter"
  },
- "babywearing": {
-  "kind": "is",
-  "text": "carrying a baby in a sling"
- },
  "back": {
   "kind": "framing",
   "text": "seen from behind"
@@ -4070,10 +4066,6 @@
  "bishie sparkle": {
   "kind": "scene",
   "text": "sparkles in the background"
- },
- "bishounen": {
-  "kind": "is",
-  "text": "a bishounen, a delicately handsome young man"
  },
  "bit gag": {
   "kind": "wears",
@@ -6467,14 +6459,6 @@
   "kind": "has",
   "text": "large breasts on a male body"
  },
- "busty teen": {
-  "kind": "is",
-  "text": "teenage girl with large breasts"
- },
- "busty teenager": {
-  "kind": "has",
-  "text": "teenager with large breasts"
- },
  "busty woman": {
   "kind": "has",
   "text": "large breasts"
@@ -7426,10 +7410,6 @@
  "chibi on shoulder": {
   "kind": "is",
   "text": "a chibi sitting on {pos} shoulder"
- },
- "child bearing hips": {
-  "kind": "has",
-  "text": "wide hips"
  },
  "chimera": {
   "kind": "has",
@@ -10394,10 +10374,6 @@
  "cute fangs": {
   "kind": "has",
   "text": "small fangs"
- },
- "cute female": {
-  "kind": "is",
-  "text": "a young woman"
  },
  "cute girl": {
   "kind": "is",
@@ -13971,10 +13947,6 @@
   "kind": "is",
   "text": "a female butler"
  },
- "female cub": {
-  "kind": "is",
-  "text": "a young girl"
- },
  "female cum": {
   "kind": "with",
   "text": "female ejaculate visible"
@@ -16166,10 +16138,6 @@
  "gagging on penis": {
   "kind": "is",
   "text": "gagging on a penis"
- },
- "gal": {
-  "kind": "is",
-  "text": "a young woman"
  },
  "galaxy": {
   "kind": "scene",
@@ -20063,10 +20031,6 @@
   "kind": "is",
   "text": "throwing a high kick"
  },
- "high school student": {
-  "kind": "is",
-  "text": "a high school student"
- },
  "hiking": {
   "kind": "is",
   "text": "hiking"
@@ -22455,10 +22419,6 @@
   "kind": "with",
   "text": "breast milk leaking from {pos} nipples"
  },
- "lad": {
-  "kind": "is",
-  "text": "a young man"
- },
  "ladybug ornament": {
   "kind": "wears",
   "text": "a ladybug ornament"
@@ -23863,21 +23823,9 @@
   "kind": "has",
   "text": "wings made of liquid"
  },
- "little brother": {
-  "kind": "is",
-  "text": "a little brother"
- },
- "little girl": {
-  "kind": "is",
-  "text": "a little girl"
- },
  "little penis": {
   "kind": "has",
   "text": "a small penis"
- },
- "little sister": {
-  "kind": "is",
-  "text": "a little sister"
  },
  "lizard tail": {
   "kind": "has",
@@ -24630,10 +24578,6 @@
  "male breasts": {
   "kind": "has",
   "text": "male breasts"
- },
- "male cub": {
-  "kind": "is",
-  "text": "a young boy"
  },
  "male draenei": {
   "kind": "is",
@@ -25414,18 +25358,6 @@
  "mini wings": {
   "kind": "has",
   "text": "small wings"
- },
- "miniboy": {
-  "kind": "is",
-  "text": "a very small boy"
- },
- "minigirl": {
-  "kind": "is",
-  "text": "a very small girl"
- },
- "minigirl on penis": {
-  "kind": "is",
-  "text": "a very small woman on a penis"
  },
  "minotaur female": {
   "kind": "is",
@@ -27723,14 +27655,6 @@
   "kind": "is",
   "text": "an older man"
  },
- "older man and teenage girl": {
-  "kind": "is",
-  "text": "an older man and a teenage girl"
- },
- "older man and younger boy": {
-  "kind": "is",
-  "text": "an older man and a younger boy"
- },
  "older penetrated": {
   "kind": "is",
   "text": "an older person being penetrated"
@@ -27742,14 +27666,6 @@
  "older woman": {
   "kind": "is",
   "text": "an older woman"
- },
- "older woman and teenage girl": {
-  "kind": "is",
-  "text": "an older woman and a teenage girl"
- },
- "older woman and younger boy": {
-  "kind": "is",
-  "text": "an older woman and a younger boy"
  },
  "older woman and younger man": {
   "kind": "is",
@@ -33619,10 +33535,6 @@
   "kind": "is",
   "text": "making a scary face"
  },
- "schoolboy": {
-  "kind": "is",
-  "text": "a schoolboy"
- },
  "scissorhold": {
   "kind": "is",
   "text": "in a scissor hold"
@@ -35714,10 +35626,6 @@
  "small feet": {
   "kind": "has",
   "text": "small feet"
- },
- "small girl": {
-  "kind": "is",
-  "text": "a small girl"
  },
  "small hands": {
   "kind": "has",
@@ -39043,50 +38951,6 @@
   "kind": "has",
   "text": "teats"
  },
- "teen": {
-  "kind": "is",
-  "text": "a teenager"
- },
- "teen boy": {
-  "kind": "is",
-  "text": "a teenage boy"
- },
- "teen girl": {
-  "kind": "is",
-  "text": "a teenage girl"
- },
- "teenage": {
-  "kind": "is",
-  "text": "a teenager"
- },
- "teenage boy": {
-  "kind": "is",
-  "text": "a teenage boy"
- },
- "teenage couple": {
-  "kind": "is",
-  "text": "a teenage couple"
- },
- "teenage female": {
-  "kind": "is",
-  "text": "a teenage girl"
- },
- "teenage girl": {
-  "kind": "is",
-  "text": "a teenage girl"
- },
- "teenage male": {
-  "kind": "is",
-  "text": "a teenage boy"
- },
- "teenage tits": {
-  "kind": "has",
-  "text": "small developing breasts"
- },
- "teenager": {
-  "kind": "is",
-  "text": "a teenager"
- },
  "teeth": {
   "kind": "with",
   "text": "{pos} teeth visible"
@@ -39890,10 +39754,6 @@
  "tiny breasts": {
   "kind": "has",
   "text": "tiny breasts"
- },
- "tiny girl": {
-  "kind": "is",
-  "text": "a tiny girl"
  },
  "tiny penis": {
   "kind": "has",
@@ -43222,26 +43082,6 @@
  "youkai": {
   "kind": "is",
   "text": "a youkai"
- },
- "young anthro": {
-  "kind": "is",
-  "text": "a young anthro"
- },
- "young female": {
-  "kind": "is",
-  "text": "a young woman"
- },
- "young girl": {
-  "kind": "is",
-  "text": "a young girl"
- },
- "young male": {
-  "kind": "is",
-  "text": "a young man"
- },
- "young woman": {
-  "kind": "is",
-  "text": "a young woman"
  },
  "younger anthro": {
   "kind": "is",

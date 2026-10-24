@@ -17,11 +17,14 @@
  *   12. Gender per character: sexual anatomy stays shared, possessives follow it.
  *   13. Cleaned-prompt input: merged hair tags, skin colour redundancy.
  *   14. Things said twice: held items and their generic words, series, relations, phrases.
+ *   15. No phrase for content involving minors.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
 import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, renderMoss, splitPromptTags, titleCase } from "../lib/prompt/natural"
 import { dropImplied, mergeSharedPrefix, splitHairCompound, withArticle } from "../lib/prompt/natural/english"
+import { readFileSync } from "fs"
+import path from "path"
 
 let passed = 0
 let failed = 0
@@ -322,6 +325,14 @@ const overrides: Record<string, string> = {
   const kiss = mergeSharedPrefix(["kissing another person's hair", "kissing another person's head", "blushing"])
   assert(kiss.join("|") === "kissing another person's hair and head|blushing", "phrases that differ only in the last word are said once")
   assert(withArticle("arms around another's back") === "arms around another's back", "no article before a plural body part")
+}
+
+// 15. The phrase dictionary has nothing for content involving minors (same terms as the data export filter).
+{
+  const dictionary: Record<string, { text: string }> = JSON.parse(readFileSync(path.join(__dirname, "../public/natural-prompt-phrases.json"), "utf8"))
+  const MINORS = /\b(loli|lolicon|shota|shotacon|child|children|toddlers?|kindergarten|aged down|young|underage|baby|babies|infant|cub|elementary|teens?|teenage|teenaged|teenagers?|preteens?|little (girl|boy|sister|brother)s?|school ?(girl|boy)s?|high school students?|diapers?|newborns?)\b/
+  const leaks = Object.entries(dictionary).filter(([tag, entry]) => MINORS.test(tag.replace(/_/g, " ")) || MINORS.test(entry.text))
+  assert(leaks.length === 0, `no phrase for content involving minors (found: ${leaks.slice(0, 5).map(([t]) => t).join(", ")})`)
 }
 
 console.log(`${passed} passed, ${failed} failed`)
