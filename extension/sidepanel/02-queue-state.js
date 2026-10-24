@@ -186,6 +186,7 @@ function clearQueue() {
   currentPromptRetries = 0;
   lastGeneratedPrompt = null;
   sentPromptsQueue.length = 0;
+  autoDLPairedJobIds.clear();
   jobLedger.clear();
   persistLedger();
   persistQueue();
