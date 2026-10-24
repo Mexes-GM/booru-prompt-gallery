@@ -17,6 +17,7 @@ export const PRONOUNS = {
   her: { subject: "she", possessive: "her", plural: false },
   his: { subject: "he", possessive: "his", plural: false },
   their: { subject: "they", possessive: "their", plural: true },
+  its: { subject: "it", possessive: "its", plural: false },
 } satisfies Record<string, Pronouns>
 
 export function capitalize(text: string): string {
@@ -32,13 +33,14 @@ export function joinList(items: string[]): string {
 // Nouns used without an article: plurals, pairs and mass nouns.
 const MASS_NOUNS = /\b(teeth|cleavage|food|sclera|grass|pantyhose|underwear|lingerie|clothes|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|bandages|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear)$/
 const SINGULAR_S = /(ss|us|is|dress|bodysuit|swimsuit|jumpsuit|tracksuit|catsuit|leotards?)$/
+const IRREGULAR_PLURALS = /^(feet|teeth|people|men|women)$/
 
 // "arms around another's back", "hands on own chest": the plural body part comes first.
 const PLURAL_HEAD = /^(arms|hands|legs|feet|fingers|knees|thighs|wings|ears|eyes|breasts) /
 
 export function isPluralNoun(phrase: string): boolean {
   const last = phrase.split(" ").pop() ?? phrase
-  if (MASS_NOUNS.test(phrase) || PLURAL_HEAD.test(phrase)) return true
+  if (MASS_NOUNS.test(phrase) || PLURAL_HEAD.test(phrase) || IRREGULAR_PLURALS.test(last)) return true
   return last.endsWith("s") && !SINGULAR_S.test(last)
 }
 
@@ -62,6 +64,24 @@ export function mergeSharedPrefix(phrases: string[]): string[] {
 export function withArticle(phrase: string): string {
   if (isPluralNoun(phrase)) return phrase
   return `${/^[aeiou]/.test(phrase) && !/^(uni|one|eu)/.test(phrase) ? "an" : "a"} ${phrase}`
+}
+
+// Clothing tags that name a style rather than a garment: "a gothic lolita" reads as a person.
+const GARMENT_WORDING: Record<string, string> = {
+  "gothic lolita": "a gothic lolita outfit",
+  "classic lolita": "a classic lolita outfit",
+  "sweet lolita": "a sweet lolita outfit",
+  "lolita fashion": "a lolita fashion outfit",
+}
+const WORN_ON_RE = /^(.+) (on head|on back|around waist)$/
+
+/** "goggles on head" -> "goggles on her head", "gothic lolita" -> "a gothic lolita outfit", "skirt" -> "a skirt". */
+export function garmentPhrase(tag: string, possessive: string): string {
+  if (GARMENT_WORDING[tag]) return GARMENT_WORDING[tag]
+  const worn = tag.match(WORN_ON_RE)
+  if (!worn) return withArticle(tag)
+  const [preposition, part] = worn[2].split(" ")
+  return `${withArticle(worn[1])} ${preposition} ${possessive} ${part}`
 }
 
 // Clothing tags that describe the outfit instead of naming a garment.
@@ -171,6 +191,11 @@ const IMPLIES: Record<string, string[]> = {
   "completely nude": ["nude"],
   "double v": ["v"],
   "husband and wife": ["couple"],
+  "dark-skinned female": ["dark skin"],
+  "dark-skinned male": ["dark skin"],
+  "gothic lolita": ["lolita fashion"],
+  "classic lolita": ["lolita fashion"],
+  "sweet lolita": ["lolita fashion"],
 }
 
 const SKIN_COLOR_RE = /^(grey|gray|blue|green|red|purple|pink|orange|yellow|black|white|aqua|multicolored|two-tone) skin$/

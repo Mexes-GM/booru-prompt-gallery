@@ -18,6 +18,7 @@
  *   13. Cleaned-prompt input: merged hair tags, skin colour redundancy.
  *   14. Things said twice: held items and their generic words, series, relations, phrases.
  *   15. No phrase for content involving minors.
+ *   16. Wording: demographic tags, garments worn somewhere, "is/are visible", "it" for a robot.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
@@ -333,6 +334,39 @@ const overrides: Record<string, string> = {
   const MINORS = /\b(loli|lolicon|shota|shotacon|child|children|toddlers?|kindergarten|aged down|young|underage|baby|babies|infant|cub|elementary|teens?|teenage|teenaged|teenagers?|preteens?|little (girl|boy|sister|brother)s?|school ?(girl|boy)s?|high school students?|diapers?|newborns?)\b/
   const leaks = Object.entries(dictionary).filter(([tag, entry]) => MINORS.test(tag.replace(/_/g, " ")) || MINORS.test(entry.text))
   assert(leaks.length === 0, `no phrase for content involving minors (found: ${leaks.slice(0, 5).map(([t]) => t).join(", ")})`)
+}
+
+// 16. Wording the generic rules got wrong ("She has an aged up", "a goggles on head").
+{
+  const vocab: Record<string, string> = {
+    "goggles on head": "clothing:eyewear", "eyewear on head": "clothing:eyewear", dress: "clothing:outfit",
+    "gothic lolita": "clothing:outfit", "lolita fashion": "clothing:outfit",
+    "aged up": "appearance:demographics", priest: "appearance:demographics", genderswap: "appearance:demographics",
+    erune: "appearance:demographics", "no humans": "appearance:demographics",
+    ass: "appearance:anatomy", feet: "appearance:anatomy", "dark-skinned female": "appearance:anatomy", "dark skin": "appearance:anatomy",
+    "holding weapon": "equipment:weapon", "beam rifle": "equipment:weapon",
+  }
+  const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}) =>
+    renderFlux2(buildScene({ general, ...extra }, vocab), { maxWords: null }).text
+
+  assert(flux(["1girl", "goggles on head"]).includes("She wears goggles on her head."), "a garment worn somewhere says where, with the possessive")
+  assert(flux(["1girl", "eyewear on head"]).includes("eyewear on her head") && !flux(["1girl", "eyewear on head"]).includes("an eyewear"), "no article before a mass noun worn somewhere")
+  const lolita = flux(["1girl", "dress", "gothic lolita", "lolita fashion"])
+  assert(lolita.includes("a gothic lolita outfit") && !lolita.includes("lolita fashion"), "a fashion style is an outfit, and the specific style implies the generic one")
+
+  const aged = flux(["1girl", "aged up"])
+  assert(aged.includes("She is drawn older than usual.") && !/has an? aged/.test(aged), "aged up says how the subject is drawn")
+  const priest = flux(["1girl", "priest", "genderswap"])
+  assert(priest.includes("She is a priest.") && priest.includes("Additional details: genderswap") && !/has an? /.test(priest), "a kind of person is what the subject is; other demographic tags stay raw")
+  assert(flux(["2girls", "erune"]).includes("One of them is an erune."), "with several people a kind of person is one of them")
+
+  assert(flux(["1girl", "ass"]).includes("Her ass is visible."), "a singular body part ending in s takes is")
+  assert(flux(["1girl", "feet"]).includes("Her feet are visible."), "an irregular plural takes are")
+  const skin = flux(["1girl", "dark-skinned female", "dark skin"])
+  assert(skin.includes("dark-skinned") && !skin.includes("dark skin."), "dark-skinned female already says dark skin")
+
+  const robot = flux(["solo", "no humans", "holding weapon", "beam rifle"], { characters: ["gundam zirius"] })
+  assert(robot.includes("It is holding a beam rifle.") && !/\bShe\b/.test(robot), "one named character with no humans is it")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

@@ -16,6 +16,7 @@ import {
   dropImplied,
   expressionPhrase,
   framingPhrase,
+  garmentPhrase,
   gazePhrase,
   genericsOf,
   isClothingState,
@@ -78,6 +79,11 @@ const BODY_VISIBLE = new Set([
 ])
 const SPECIES_RE = / (girl|boy)$/
 const GENDERED_RE = /^(.+) (female|male)$/
+// Demographic tags without a phrase. A kind of person is what the subject is
+// ("an erune", "a priest"); these few say how the subject is drawn. The rest
+// ("genderswap", "age difference") stay raw details rather than "She has a genderswap".
+const DEMOGRAPHIC_WORDING: Record<string, string> = { "aged up": "drawn older than usual", manly: "manly", mature: "mature" }
+const PERSON_NOUN_RE = /\b(girl|boy|woman|man|adult|priest|nun|femboy|twink|bishounen|anthro|erune|draph|harvin|elf|draconequus)$/
 const RELATIONS = new Set(["siblings", "sisters", "brothers", "twins", "couple", "friends", "mother and daughter", "father and daughter", "mother and son", "brother and sister", "husband and wife"])
 // "They are ___": the singular ones need an article.
 const RELATION_WORDING: Record<string, string> = { couple: "a couple" }
@@ -158,6 +164,8 @@ function pronounsFor(scene: Scene): Pronouns {
   if (people > 1) return PRONOUNS.their
   if (people === 1) return scene.boys === 1 ? PRONOUNS.his : scene.girls === 1 ? PRONOUNS.her : PRONOUNS.their
   if (scene.characters.length > 1) return PRONOUNS.their
+  // One named robot or creature in a "no humans" post is "it", not "she".
+  if (scene.characters.length === 1 && (scene.slots.demographics ?? []).includes("no humans")) return PRONOUNS.its
   return scene.characters.length === 1 ? PRONOUNS.her : PRONOUNS.their
 }
 
@@ -306,7 +314,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
       ...eyeTraits(of("eyes")),
       ...of("anatomy").filter((t) => !isTag(t)).map((t) => own(t) ?? (isPluralNoun(t) ? t : withArticle(t))),
     ], 4)
-    const wearList = tidy(CLOTHING_ORDER.flatMap(of).map((t) => (phrases[t]?.kind === "wears" ? own(t)! : withArticle(t))), 4)
+    const wearList = tidy(CLOTHING_ORDER.flatMap(of).map((t) => (phrases[t]?.kind === "wears" ? own(t)! : garmentPhrase(t, possessive))), 4)
     const items = describeItems([...(slots.weapon ?? []), ...(slots.handheld ?? [])], possessive)
     const holdList = tidy([...items.held, ...items.loose], 2)
     const clauses = [
@@ -333,6 +341,12 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   // A noun phrase ("a mature woman") cannot follow "They are"; with several people it gets its own sentence.
   const bodyRoles: string[] = []
   const hairColors = new Set(slot("hair").map((h) => h.replace(/ hair$/, "")))
+  const demographics = new Set(scene.slots.demographics ?? [])
+  const demographicPhrase = (tag: string) => {
+    if (!demographics.has(tag)) return null
+    if (DEMOGRAPHIC_WORDING[tag]) return { kind: "is" as const, text: DEMOGRAPHIC_WORDING[tag] }
+    return PERSON_NOUN_RE.test(tag) ? { kind: "is" as const, text: withArticle(tag) } : null
+  }
   for (const tag of anatomy) {
     if (BODY_ADJECTIVES.has(tag) || BODY_VISIBLE.has(tag)) continue
     // "curvy female", "mature female": the adjective is the description; "blonde female" repeats the hair.
@@ -341,11 +355,12 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
       if (!hairColors.has(gendered[1]) && !HAIR_COLOR_RE.test(gendered[1])) bodyAdjectives.push(gendered[1])
       continue
     }
-    const phrase = dictionary(tag)
+    const phrase = dictionary(tag) ?? demographicPhrase(tag)
     if (phrase?.kind === "is" && p.plural && /^an? /.test(phrase.text)) bodyRoles.push(phrase.text)
     else if (phrase?.kind === "is") bodyAdjectives.push(phrase.text)
     else if (phrase?.kind === "with") bodyWith.push(phrase.text)
     else if (phrase) bodyNouns.push(phrase.text)
+    else if (demographics.has(tag)) raw.push(tag)
     else bodyNouns.push(isPluralNoun(tag) ? tag : withArticle(tag))
   }
   const adjectiveList = tidy(bodyAdjectives, 3)
@@ -357,7 +372,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     adjectiveList.length ? `${Subject} ${is} ${joinList(adjectiveList)}.` : "",
     roleList.length ? `One of them is ${joinList(roleList)}.` : "",
     nounList.length ? `${Subject} ${has} ${joinList(nounList)}.` : "",
-    visibleList.length ? `${Possessive} ${joinList(visibleList)} ${visibleList.length > 1 || /s$/.test(visibleList[0]) ? "are" : "is"} visible.` : "",
+    visibleList.length ? `${Possessive} ${joinList(visibleList)} ${visibleList.length > 1 || isPluralNoun(visibleList[0]) ? "are" : "is"} visible.` : "",
     bodyWithList.length ? `${Subject} ${is} shown with ${joinList(bodyWithList)}.` : "",
     relations.length ? `They are ${joinList(relations)}.` : "",
   ].filter(Boolean).join(" ")
@@ -376,7 +391,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     const phrase = dictionary(tag)
     if (phrase?.kind === "with") wornPhrases.push(phrase.text)
     else if (phrase?.kind === "is") beings.push(phrase.text)
-    else garments.push(phrase?.kind === "wears" ? phrase.text : withArticle(tag))
+    else garments.push(phrase?.kind === "wears" ? phrase.text : garmentPhrase(tag, p.possessive))
   }
   const garmentList = tidy(garments, 5)
   const wornList = tidy(wornPhrases, 2)
