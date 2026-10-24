@@ -130,11 +130,18 @@ const COSPLAY_RE = /^(.+?) \(cosplay\)$/
 
 const SMALL_WORDS = new Set(["x", "of", "the", "no", "to", "and", "in", "a", "an", "on", "wo", "ga", "wa", "de", "na"])
 
-/** "spy x family" -> "Spy x Family", "fate/grand order" -> "Fate/Grand Order". */
+// Roman numerals after the first word: "final fantasy vii" -> "Final Fantasy VII".
+const ROMAN_RE = /^(i{1,3}|iv|vi{0,3}|ix|xi{0,3}|xiv|xvi{0,3})$/
+
+/** "spy x family" -> "Spy x Family", "fate/grand order" -> "Fate/Grand Order", "final fantasy vii" -> "Final Fantasy VII". */
 export function titleCase(text: string): string {
   return text
     .split(" ")
-    .map((w, i) => (i > 0 && SMALL_WORDS.has(w) ? w : w.replace(/(^|[/-])([a-z])/g, (_, sep, c) => sep + c.toUpperCase())))
+    .map((w, i) => {
+      if (i > 0 && SMALL_WORDS.has(w)) return w
+      if (i > 0 && ROMAN_RE.test(w)) return w.toUpperCase()
+      return w.replace(/(^|[/-])([a-z])/g, (_, sep, c) => sep + c.toUpperCase())
+    })
     .join(" ")
 }
 
@@ -145,7 +152,8 @@ function qualifier(tag: string): string | null {
 }
 
 function seriesNames(copyrights: string[]): string[] {
-  const names = copyrights.map(normalizeTag).map((c) => titleCase(c.replace(/\s*\([^)]*\)$/, "")))
+  // "touhou" + "touhou (pc-98)" are one series once the qualifier goes.
+  const names = [...new Set(copyrights.map(normalizeTag).map((c) => titleCase(c.replace(/\s*\([^)]*\)$/, ""))))]
   // "arknights" + "arknights: endfield": keep the more specific one.
   return names.filter((n, i) => !names.some((o, j) => j !== i && o.length > n.length && o.toLowerCase().startsWith(n.toLowerCase())))
 }

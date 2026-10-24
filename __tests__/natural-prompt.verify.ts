@@ -16,11 +16,12 @@
  *   11. One character under several names; placeholder names.
  *   12. Gender per character: sexual anatomy stays shared, possessives follow it.
  *   13. Cleaned-prompt input: merged hair tags, skin colour redundancy.
+ *   14. Things said twice: held items and their generic words, series, relations, phrases.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
 import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, renderMoss, splitPromptTags, titleCase } from "../lib/prompt/natural"
-import { dropImplied, splitHairCompound } from "../lib/prompt/natural/english"
+import { dropImplied, mergeSharedPrefix, splitHairCompound, withArticle } from "../lib/prompt/natural/english"
 
 let passed = 0
 let failed = 0
@@ -284,6 +285,43 @@ const overrides: Record<string, string> = {
   assert(text.includes("long blue hair") && !text.includes("blue long hair"), "merged hair reads as length then colour")
   assert(text.includes("grey skin") && !text.includes("colored skin"), "a specific skin colour makes colored skin redundant")
   assert(dropImplied(["colored skin", "dark skin"]).includes("colored skin"), "a natural skin tone does not replace colored skin")
+}
+
+// 14. Things said twice, which a model may draw twice.
+{
+  const vocab: Record<string, string> = {
+    ...overrides,
+    "holding umbrella": "equipment:handheld", parasol: "equipment:handheld", "umbrella over shoulder": "equipment:handheld",
+    "holding knife": "equipment:weapon", weapon: "equipment:weapon", "holding gun": "equipment:weapon", handgun: "equipment:weapon",
+    "buster sword": "equipment:weapon", "sword on back": "equipment:weapon", "weapon on back": "equipment:weapon",
+    watch: "clothing:accents", wristwatch: "clothing:accents", "lily (flower)": "scenery:props",
+    "husband and wife": "appearance:demographics",
+  }
+  const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}, phrases = {}) =>
+    renderFlux2(buildScene({ general, ...extra }, vocab), { maxWords: null, phrases }).text
+
+  const umbrella = flux(["1girl", "holding umbrella", "parasol", "umbrella over shoulder"])
+  assert(umbrella.includes("holding a parasol over her shoulder") && !/has [^.]*(parasol|umbrella)/.test(umbrella), "one umbrella: the kind is held, the placement joins it")
+  assert(!flux(["1girl", "holding knife", "weapon"]).includes("weapon"), "a held knife makes the generic weapon redundant")
+  const gun = flux(["2girls", "holding gun", "weapon", "handgun"])
+  assert(gun.includes("holding a handgun") && !/\ba gun\b|weapon/.test(gun), "a held gun takes the specific kind, and the generic weapon goes")
+  const sword = flux(["1boy", "buster sword", "sword on back", "weapon on back"])
+  assert(sword.includes("a buster sword on his back") && !sword.includes("weapon"), "a placement joins the item it describes")
+  assert(!/\ba watch\b/.test(flux(["1girl", "watch", "wristwatch"])), "a wristwatch is the watch")
+  assert(flux(["1girl", "lily (flower)", "outdoors"]).includes("a lily") && !flux(["1girl", "lily (flower)"]).includes("(flower)"), "a tag's qualifier stays out of the sentence")
+
+  const touhou = buildScene({ general: ["1girl"], characters: ["kazami yuuka"], copyrights: ["touhou", "touhou (pc-98)"] }, vocab)
+  assert(touhou.series.join() === "Touhou", "a series and its qualified variant are one series")
+  assert(titleCase("final fantasy vii remake") === "Final Fantasy VII Remake" && titleCase("spy x family") === "Spy x Family", "Roman numerals are upper case; x between words is not")
+
+  const married = flux(["1girl", "1boy", "husband and wife", "couple"])
+  assert(married.includes("They are husband and wife.") && !married.includes("a couple"), "relations read as relations, and husband and wife already says couple")
+  assert(!married.includes("One of them") && !married.includes("Additional details"), "a relation is neither one person's role nor a raw tag")
+  assert(flux(["1girl", "1boy", "couple"]).includes("They are a couple."), "an unclassified couple still reads as a relation")
+
+  const kiss = mergeSharedPrefix(["kissing another person's hair", "kissing another person's head", "blushing"])
+  assert(kiss.join("|") === "kissing another person's hair and head|blushing", "phrases that differ only in the last word are said once")
+  assert(withArticle("arms around another's back") === "arms around another's back", "no article before a plural body part")
 }
 
 console.log(`${passed} passed, ${failed} failed`)
