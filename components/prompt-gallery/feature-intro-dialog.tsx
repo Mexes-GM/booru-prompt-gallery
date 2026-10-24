@@ -212,7 +212,7 @@ export function FeatureIntroDialog({
             New in v{FEATURE_INTRO_RELEASE}
           </p>
           <DialogTitle className={cn(RISE, "mt-1.5 pr-10 text-lg text-balance")} style={delay(1)}>
-            Prompts in plain English
+            Tags to Natural Language
           </DialogTitle>
           <DialogDescription id="feature-intro-description" className={cn(RISE, "mt-2 text-pretty")} style={delay(2)}>
             Each card can show its prompt as a description written for Anima, FLUX.2 · Krea 2 or MOSS-Image. It appears
