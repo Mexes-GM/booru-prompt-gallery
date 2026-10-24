@@ -11,7 +11,7 @@ export const PROMPT_FORMATS: readonly PromptFormat[] = ["tags", "anima", "flux2"
 export interface PromptFormatInfo {
   /** Menu and settings label. */
   label: string
-  /** Short name shown on the card next to the prompt. */
+  /** Short name for the Customize prompt summary. */
   badge: string
   /** One line under the setting. */
   description: string
