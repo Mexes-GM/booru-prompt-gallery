@@ -95,12 +95,13 @@ function describeItems(tags: string[], possessive: string): { held: string[]; lo
   const kept = new Set(dropImplied([...new Set([...holding, ...others])]))
   const isKind = (specific: string, generic: string) =>
     specific === generic || specific.endsWith(` ${generic}`) || genericsOf(specific).includes(generic)
-  const held: string[] = []
+  const heldSet = new Set<string>()
   for (const name of holding) {
     const item = kept.has(name) ? name : others.find((o) => kept.has(o) && isKind(o, name))
-    if (item && !held.includes(item)) held.push(item)
+    if (item) heldSet.add(item)
   }
-  const loose = others.filter((o) => kept.has(o) && !held.includes(o))
+  const held = [...heldSet]
+  const loose = others.filter((o) => kept.has(o) && !heldSet.has(o))
   const heldText = held.map(withArticle)
   const looseText = loose.map(withArticle)
   const where = (place: string) => place.replace(/(shoulder|back|hip|mouth)$/, `${possessive} $1`)
