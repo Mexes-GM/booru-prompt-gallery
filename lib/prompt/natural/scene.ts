@@ -24,6 +24,8 @@ export interface NaturalPromptInput {
   artists?: string[]
   /** Booru rating letter: g, s, q or e. */
   rating?: string
+  /** General tags `resolveNames` read as character names: still worth looking up, in case the taxonomy files them otherwise. */
+  inferredNames?: string[]
 }
 
 export type SceneSlot = (typeof TAG_SUBCATEGORIES)[keyof typeof TAG_SUBCATEGORIES][number]
@@ -72,6 +74,8 @@ export interface Scene {
   cosplayAs: string[]
   /** Series names for prose ("Pokemon", not "Nintendo and Pokemon"; never "Original" or "Patreon"). */
   series: string[]
+  /** The series of the characters in `cosplayAs`, when the named characters' own qualifiers tell them apart. */
+  cosplaySeries: string[]
   /** Copyright tags as given, less sites and misfiled text tags (tag renderers keep them). */
   copyrightTags: string[]
   artists: string[]
@@ -201,15 +205,23 @@ const SMALL_WORDS = new Set(["x", "of", "the", "no", "to", "and", "in", "a", "an
 
 // Roman numerals after the first word: "final fantasy vii" -> "Final Fantasy VII".
 const ROMAN_RE = /^(i{1,3}|iv|vi{0,3}|ix|xi{0,3}|xiv|xvi{0,3})$/
+// Japanese honorifics stay lowercase after their hyphen: "Dan'in-san", "Kobayashi-san".
+const HONORIFIC_RE = /^(san|chan|kun|sama|senpai|sensei|tan|dono)$/
 
-/** "spy x family" -> "Spy x Family", "fate/grand order" -> "Fate/Grand Order", "final fantasy vii" -> "Final Fantasy VII". */
+/**
+ * "spy x family" -> "Spy x Family", "fate/grand order" -> "Fate/Grand Order",
+ * "final fantasy vii" -> "Final Fantasy VII", "pokemon x and y" -> "Pokemon X and Y".
+ */
 export function titleCase(text: string): string {
-  return text
-    .split(" ")
+  const words = text.split(" ")
+  return words
     .map((w, i) => {
+      // "x" joins two titles ("hunter x hunter"); next to "and" or at the end it is a letter of the title.
+      if (w === "x" && (i === 0 || i === words.length - 1 || words[i - 1] === "and" || words[i + 1] === "and")) return "X"
       if (i > 0 && SMALL_WORDS.has(w)) return w
       if (i > 0 && ROMAN_RE.test(w)) return w.toUpperCase()
-      return w.replace(/(^|[/-])([a-z])/g, (_, sep, c) => sep + c.toUpperCase())
+      return w.replace(/(^|[/-])([a-z])/g, (match, sep, c, at) =>
+        sep === "-" && HONORIFIC_RE.test(w.slice(at + 1).split(/[/-]/)[0]) ? match : sep + c.toUpperCase())
     })
     .join(" ")
 }
@@ -220,9 +232,12 @@ function qualifier(tag: string): string | null {
   return m && !/^(cosplay|costume|swimsuit|young|adult|alternate|human|male|female)\b/.test(m[1]) ? m[1] : null
 }
 
-// Copyright tags that name no franchise: an original character, the site a post
-// was published on, and text in the picture that taxonomies file as a copyright.
-const NOT_A_FRANCHISE_RE = /^(original|patreon|fanbox|pixiv fanbox|pixiv|fantia|gumroad|ko-fi|subscribestar|onlyfans|boosty|twitter|deviantart|newgrounds|tumblr|instagram|youtube|twitch|tiktok|discord|copyright name|copyright logo|character name|artist name|company name)$/
+// Copyright tags that name no franchise: an original character or an independent
+// VTuber, the site a post was published on, text in the picture that taxonomies
+// file as a copyright, and plain words Rule34 types as a series ("under", "series").
+const NOT_A_FRANCHISE_RE = /^(original|indie virtual youtuber|patreon|fanbox|pixiv fanbox|pixiv|fantia|gumroad|ko-fi|subscribestar|onlyfans|boosty|twitter|deviantart|newgrounds|tumblr|instagram|youtube|twitch|tiktok|discord|copyright name|copyright logo|character name|artist name|company name|series|under)$/
+// Of those, the real tags that tag renderers keep.
+const NO_FRANCHISE_TAGS = new Set(["original", "indie virtual youtuber"])
 // Companies and labels: named only when nothing more specific is ("Pokemon", not "Nintendo and Pokemon").
 const COMPANY_RE = /^(nintendo|game freak|the pokemon company|sega|sonic team|capcom|square enix|bandai namco|namco|konami|atlus|koei tecmo|nippon ichi software|level-5|falcom|arc system works|spike chunsoft|microsoft|xbox|sony|playstation|valve|riot games|blizzard entertainment|mihoyo|hoyoverse|cygames|nexon|netmarble|yostar|shift up|kuro games|epic games|bethesda softworks|bethesda|ubisoft|electronic arts|activision|fromsoftware|kadokawa|aniplex|toei animation|kyoto animation|disney|pixar|dreamworks|warner bros|hasbro|mattel|glitch productions|cover corp|anycolor)$/
 
@@ -282,8 +297,11 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   const characters: SceneCharacter[] = []
   for (const tag of characterTags) {
     const name = displayName(tag)
-    if (PLACEHOLDER_CHARACTER_RE.test(tag) || cosplayNames.has(name) || characters.some((c) => c.name === name)) continue
-    characters.push({ tag, name })
+    if (PLACEHOLDER_CHARACTER_RE.test(tag) || cosplayNames.has(name)) continue
+    const same = characters.find((c) => c.name === name)
+    // A costume variant is the same person, known by whichever tag has a trait profile.
+    if (same && !options.traits?.[same.tag] && options.traits?.[tag]) same.tag = tag
+    if (!same) characters.push({ tag, name })
   }
 
   const scene: Scene = {
@@ -295,11 +313,12 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     characters,
     characterTags,
     cosplayAs: [...cosplayNames],
+    cosplaySeries: [],
     // Without copyright tags (a pasted prompt), the character qualifiers still name the series.
     series: seriesNames(input.copyrights?.length
       ? input.copyrights
       : [...new Set(characterTags.map(qualifier).filter((q): q is string => !!q && isSeriesQualifier(q, overrides)))]),
-    copyrightTags: [...copyrightTags].filter((c) => !NOT_A_FRANCHISE_RE.test(c) || c === "original"),
+    copyrightTags: [...copyrightTags].filter((c) => !NOT_A_FRANCHISE_RE.test(c) || NO_FRANCHISE_TAGS.has(c)),
     artists: [...artistTags],
     rating: input.rating,
     slots: {},
@@ -401,7 +420,8 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     else scene.unclassified.push(tag)
   }
 
-  scene.characters = mergeAliases(scene.characters, options, scene.girls + scene.boys + scene.others)
+  resolvePeople(scene, options, new Set(general.map(normalizeTag)))
+  splitCosplaySeries(scene)
   assignGenders(scene, options.traits)
   scene.people = scenePeople(scene)
   attributeTraits(scene, options.traits ?? {}, options.genderAffinity ?? GENDER_AFFINITY)
@@ -492,34 +512,153 @@ function nameKey(name: string): string {
   return name.toLowerCase().replace(/o[uh](?![aeiou])/g, "o").replace(/uu/g, "u").split(" ").sort().join(" ")
 }
 
-/** "Marceline" and "Marceline the Vampire Queen", or the same words in another order or romanisation. */
+/**
+ * "Marceline" and "Marceline the Vampire Queen", "Hinata" and "Uzumaki Hinata":
+ * one name's words all in the other, in any order or romanisation.
+ */
 function similarNames(a: string, b: string): boolean {
-  const [x, y] = [a.toLowerCase(), b.toLowerCase()]
-  return nameKey(x) === nameKey(y) || x.startsWith(`${y} `) || y.startsWith(`${x} `)
+  const [x, y] = [nameKey(a).split(" "), nameKey(b).split(" ")]
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
+  return short.every((w) => long.includes(w))
+}
+
+// A gender the profile leaves no doubt about (1boy over 1girl in the character's solo posts).
+const CLEAR_SOLO = { male: 5, female: 0.2 }
+
+function profileGender(tag: string, traits: CharacterTraits | undefined): "female" | "male" | undefined {
+  const qualified = tag.match(/\((male|female)\)/)?.[1] as "female" | "male" | undefined
+  if (qualified) return qualified
+  const g = genderRatio(traits?.[tag])
+  const limits = g?.solo ? CLEAR_SOLO : ALL_POSTS
+  return !g ? undefined : g.ratio >= limits.male ? "male" : g.ratio <= limits.female ? "female" : undefined
+}
+
+/** False when the count tags give only a lower bound ("6+girls", "multiple boys" with no number). */
+function exactCount(scene: Scene): boolean {
+  const tags = new Set(scene.subjectTags)
+  return !scene.subjectTags.some((t) => /^\d+\+/.test(t)) &&
+    !(tags.has("multiple girls") && scene.girls < 2) && !(tags.has("multiple boys") && scene.boys < 2) && !(tags.has("multiple others") && scene.others < 2)
 }
 
 /**
- * Joins names that are one person. The alias map is always trusted; similar
- * spellings could also be two people ("Jeanne d'Arc" and "Jeanne d'Arc Alter"),
- * so they only merge while the post has more names than people. Each merged
- * person keeps the canonical tag, or else one with a trait profile.
+ * One person per name, and no more people than the count tags allow.
+ *
+ * - Certainly one person: the alias map, and the same words in another order or
+ *   romanisation ("Retsu Unohana" and "Unohana Retsu").
+ * - Similar names ("Hinata", "Hyuuga Hinata", "Jeanne d'Arc Alter") may be two
+ *   people, so they merge only while the post has more names than people, in all
+ *   or of one gender (two women's names in a "1girl, 1boy" post); with too many
+ *   names of one gender, so do two of that gender that share a name.
+ * - Names still left over on a post with an exact count are not extra people:
+ *   Danbooru tags Surtr next to her counterpart Laevatain on a solo picture, or a
+ *   companion robot. The best-known ones are kept (never a mascot named after
+ *   another character, then a trait profile, the one that fits the tags best,
+ *   the first); see `peopleInPicture`. The rest stay in `characterTags` for tag
+ *   renderers.
+ *
+ * Each merged person keeps the canonical tag, or else one with a trait profile.
+ * `characterTags` loses the spellings merged away ("ichigo kurosaki" next to
+ * "kurosaki ichigo", "assaultron" next to "assaultron (fallout)"); costume
+ * variants ("kazami yuuka (pc-98)") and the tag they vary stay.
  */
-function mergeAliases(characters: SceneCharacter[], options: BuildSceneOptions, people: number): SceneCharacter[] {
+function resolvePeople(scene: Scene, options: BuildSceneOptions, postTags: Set<string>): void {
   const aliases = options.characterAliases ?? {}
   const canonical = (c: SceneCharacter) => aliases[c.tag] ?? c.tag
   const groups: SceneCharacter[][] = []
-  for (const character of characters) {
-    const group = groups.find((g) => g.some((c) => canonical(c) === canonical(character)))
+  for (const character of scene.characters) {
+    const group = groups.find((g) => g.some((c) => canonical(c) === canonical(character) || nameKey(c.name) === nameKey(character.name)))
     if (group) group.push(character)
     else groups.push([character])
   }
-  while (people > 0 && groups.length > people) {
-    const i = groups.findIndex((g, i) => groups.slice(i + 1).some((o) => g.some((a) => o.some((b) => similarNames(a.name, b.name)))))
-    if (i === -1) break
-    const j = groups.findIndex((o, j) => j > i && groups[i].some((a) => o.some((b) => similarNames(a.name, b.name))))
-    groups[i].push(...groups.splice(j, 1)[0])
+
+  const people = scene.girls + scene.boys + scene.others
+  const capacity = { female: scene.girls, male: scene.boys }
+  const genderOf = (g: SceneCharacter[]) => g.map((c) => profileGender(c.tag, options.traits)).find(Boolean)
+  const overfull = (gender: "female" | "male") => capacity[gender] > 0 && groups.filter((g) => genderOf(g) === gender).length > capacity[gender]
+  const similar = (a: SceneCharacter[], b: SceneCharacter[]) => {
+    const [ga, gb] = [genderOf(a), genderOf(b)]
+    return (!ga || !gb || ga === gb) && a.some((x) => b.some((y) => similarNames(x.name, y.name)))
   }
-  return groups.map((g) => g.find((c) => g.some((o) => canonical(o) === c.tag)) ?? g.find((c) => options.traits?.[c.tag]) ?? g[0])
+  // With more women's (or men's) names than women, two of them sharing a name are
+  // one person: "Hyuuga Hinata" and her married name "Uzumaki Hinata".
+  const sharesName = (a: SceneCharacter[], b: SceneCharacter[]) => {
+    const gender = genderOf(a)
+    return !!gender && gender === genderOf(b) && overfull(gender) &&
+      a.some((x) => b.some((y) => nameKey(x.name).split(" ").some((w) => w.length >= 3 && nameKey(y.name).split(" ").includes(w))))
+  }
+  while (people > 0 && (groups.length > people || overfull("female") || overfull("male"))) {
+    const match = [similar, sharesName].map((test) => {
+      const i = groups.findIndex((g, i) => groups.slice(i + 1).some((o) => test(g, o)))
+      return i === -1 ? null : [i, groups.findIndex((o, j) => j > i && test(groups[i], o))]
+    }).find(Boolean)
+    if (!match) break
+    groups[match[0]].push(...groups.splice(match[1], 1)[0])
+  }
+
+  const costume = scene.subjectTags.some((t) => t === "cosplay" || t === "costume switch")
+  const named = new Set(scene.characters.flatMap((c) => [c.tag, c.name.toLowerCase()]))
+  const kept = people > 0 && groups.length > people && !costume && exactCount(scene)
+    ? peopleInPicture(groups, people, capacity, genderOf, (g) => {
+      // Someone's mascot or companion is named after them: "kronie (ouro kronii)".
+      if (g.some((c) => named.has(c.tag.match(/\(([^)]+)\)$/)?.[1] ?? ""))) return -1
+      // A trait profile (a character known well enough to have one), then how well it fits the tags.
+      const profiles = g.map((c) => options.traits?.[c.tag]).filter((p): p is Record<string, number> => !!p)
+      const fit = Math.max(0, ...profiles.map((p) => [...postTags].reduce((sum, t) => sum + (p[t] ?? 0), 0)))
+      return profiles.length ? 1 + fit / (fit + 1) : 0
+    })
+    : groups
+
+  // The alias map's own name ("hyuuga hinata" for "hinata"), else one with a profile, else one the map does not send elsewhere.
+  scene.characters = kept.map((g) => g.find((c) => g.some((o) => aliases[o.tag] === c.tag)) ??
+    g.find((c) => options.traits?.[c.tag]) ?? g.find((c) => !aliases[c.tag]) ?? g[0])
+  const mergedAway = new Set(kept.flatMap((g, i) => g.filter((c) => c !== scene.characters[i]).map((c) => c.tag)))
+  // "assaultron" says no more than "assaultron (fallout)" in a Fallout post; "kazami yuuka" next to her "(pc-98)" costume does.
+  const series = scene.series.map((s) => s.toLowerCase())
+  const bySeries = new Set(scene.characterTags.filter((t) => { const q = qualifier(t); return !!q && series.some((s) => sameSeries(q, s)) }).map(displayName))
+  scene.characterTags = scene.characterTags.filter((t) => !mergedAway.has(t) && (t.endsWith(")") || !bySeries.has(displayName(t))))
+}
+
+/**
+ * Which of more names than people are the people. One person: the best-scored
+ * name. Several: the names of a known gender fill that gender's places, and the
+ * places left go to the others by score; when a gender has more known names than
+ * places, or the scores tie where the cut falls, the tags do not tell who is
+ * extra (counts often leave out monsters and mascots), so every name stays.
+ */
+function peopleInPicture<T>(
+  groups: T[],
+  people: number,
+  capacity: { female: number; male: number },
+  genderOf: (g: T) => "female" | "male" | undefined,
+  score: (g: T) => number,
+): T[] {
+  const ranked = [...groups].sort((a, b) => score(b) - score(a))
+  if (people === 1) return [ranked[0]]
+  const known = groups.filter((g) => genderOf(g))
+  if ((["female", "male"] as const).some((gender) => known.filter((g) => genderOf(g) === gender).length > capacity[gender])) return groups
+  const open = ranked.filter((g) => !genderOf(g))
+  const places = people - known.length
+  if (places > 0 && places < open.length && score(open[places - 1]) === score(open[places])) return groups
+  const keep = new Set([...known, ...open.slice(0, Math.max(0, places))])
+  return groups.filter((g) => keep.has(g))
+}
+
+/** "fallout" names "fallout 4", "edgerunners" names "cyberpunk: edgerunners". */
+function sameSeries(qualifier: string, series: string): boolean {
+  return series === qualifier || series.startsWith(`${qualifier} `) || series.startsWith(`${qualifier}:`) || series.endsWith(` ${qualifier}`)
+}
+
+/**
+ * "Gentildonna from Umamusume, cosplaying as Mash Kyrielight from Fate/Grand
+ * Order": the series a named character's qualifier gives is hers, the others
+ * are the costume's.
+ */
+function splitCosplaySeries(scene: Scene): void {
+  if (!scene.cosplayAs.length || scene.series.length < 2) return
+  const own = scene.series.filter((s) => scene.characters.some((c) => { const q = qualifier(c.tag); return !!q && sameSeries(q, s.toLowerCase()) }))
+  if (!own.length || own.length === scene.series.length) return
+  scene.cosplaySeries = scene.series.filter((s) => !own.includes(s))
+  scene.series = own
 }
 
 const ATTRIBUTABLE_SLOTS: SceneSlot[] = [
@@ -782,6 +921,75 @@ export function splitPromptTags(
     else input.general.push(cleaned)
   }
   return input
+}
+
+// Character qualifiers that name a kind of creature, not one person: "pokemon (species)".
+const KIND_QUALIFIER_RE = /^(species|race|creature)$/
+// Words that make a category of the series they go with: "generation 5 pokemon", "legendary pokemon", "countryhumans oc".
+const CATEGORY_WORD_RE = /^(generation|gen|\d+|legendary|mythical|fossil|starter|oc|ocs|characters?|protagonists?)$/
+
+/** "generation 5 pokemon" in a Pokemon post: the series' words plus category words only. */
+function isSeriesCategory(tag: string, series: string[]): boolean {
+  const words = tag.split(" ")
+  return series.some((s) => {
+    const name = s.split(" ")
+    const at = words.findIndex((_, i) => name.every((w, j) => words[i + j] === w))
+    const rest = at === -1 ? [] : [...words.slice(0, at), ...words.slice(at + name.length)]
+    return rest.length > 0 && rest.every((w) => CATEGORY_WORD_RE.test(w))
+  })
+}
+
+/**
+ * Names read from the post itself, where its fields fall short (Rule34 leaves
+ * some name tags untyped, and types some kinds of creature as characters):
+ * - with `inferNames`, an unknown general tag qualified by one of the post's
+ *   series or another character's ("sugar (fortnite)", "capri (edgerunners)"),
+ *   or by an artist (Rule34 names original characters "robot commander
+ *   (bingbingzi)"), is a character. Leave it off for boorus whose posts carry
+ *   their own character field: there such a tag is an item ("excalibur (fate/stay night)");
+ * - a "character" that is a kind ("pokemon (species)") or a category of the
+ *   series ("generation 5 pokemon") is a general tag;
+ * - an unknown general tag that spells a character the post names another way
+ *   ("retsu unohana" for "unohana retsu", "assaultron" for "assaultron (fallout)")
+ *   or is one word of that name ("hyuuga") is that name again and goes.
+ */
+export function resolveNames(input: NaturalPromptInput, overrides: Record<string, string>, options: { inferNames?: boolean } = {}): NaturalPromptInput {
+  const inferNames = options.inferNames ?? true
+  const known = (t: string) => !!(overrides[t] ?? overrides[t.replace(/ /g, "_")])
+  const series = (input.copyrights ?? []).map((c) => normalizeTag(c).replace(/\s*\([^)]*\)$/, ""))
+  const general: string[] = []
+  const characters: string[] = []
+  for (const raw of input.characters ?? []) {
+    const tag = normalizeTag(raw)
+    const q = tag.match(/ \(([^)]+)\)$/)?.[1]
+    if (q ? KIND_QUALIFIER_RE.test(q) : isSeriesCategory(tag, series)) general.push(raw)
+    else characters.push(raw)
+  }
+
+  const qualifiers = new Set(characters.map((c) => qualifier(normalizeTag(c))).filter((q): q is string => !!q))
+  const artists = new Set((input.artists ?? []).map(normalizeTag))
+  const ownerOf = (q: string) => series.some((s) => sameSeries(q, s)) || qualifiers.has(q) || artists.has(q) ||
+    (overrides[q] ?? overrides[q.replace(/ /g, "_")]) === "other:artist"
+  const rest: string[] = []
+  const inferred: string[] = []
+  for (const raw of input.general) {
+    const tag = normalizeTag(raw)
+    const m = tag.match(/^(.+) \(([^)]+)\)$/)
+    if (inferNames && m && !known(tag) && !COSPLAY_RE.test(tag) && qualifier(tag) && ownerOf(m[2])) inferred.push(raw)
+    else rest.push(raw)
+  }
+  characters.push(...inferred)
+
+  const names = characters.map((c) => displayName(normalizeTag(c)).toLowerCase())
+  const keys = new Set(names.map(nameKey))
+  const nameWords = new Set(names.filter((n) => n.includes(" ")).flatMap((n) => n.split(" ")))
+  const spellsName = (tag: string) => !known(tag) && !tag.includes("(") && (keys.has(nameKey(tag)) || (tag.length >= 3 && nameWords.has(tag)))
+  return {
+    ...input,
+    general: [...general, ...rest.filter((raw) => !spellsName(normalizeTag(raw)))],
+    characters,
+    ...(inferred.length ? { inferredNames: inferred } : {}),
+  }
 }
 
 function push(scene: Scene, slot: SceneSlot, tag: string) {

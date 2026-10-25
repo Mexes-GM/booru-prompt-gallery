@@ -15,6 +15,7 @@ import {
   renderAnima,
   renderFlux2,
   renderMoss,
+  resolveNames,
   splitPromptTags,
   type CharacterTraits,
   type NaturalPromptInput,
@@ -65,19 +66,22 @@ function uniqueTags(tags: string[]): string[] {
   })
 }
 
+// Boorus whose posts carry their own character field: no general tag of theirs is read as a name.
+const TYPED_PROVIDERS = new Set(["danbooru", "aibooru", "e621"])
+
 export function naturalPromptInput(source: NaturalPromptSource, overrides: Record<string, string>): NaturalPromptInput {
   const split = splitPromptTags(source.prompt, overrides, { guessNames: !!source.handWritten })
   const characters = uniqueTags([...fieldTags(source.characters), ...(split.characters ?? [])])
   const copyrights = uniqueTags([...fieldTags(source.copyrights), ...(split.copyrights ?? [])])
   // The card's prompt also lists the names the post fields carry.
   const names = new Set([...characters, ...copyrights].map(normalizeTag))
-  return {
+  return resolveNames({
     general: split.general.filter((tag) => !names.has(normalizeTag(tag))),
     characters,
     copyrights,
     artists: split.artists,
     rating: ratingLetter(source.rating, source.provider),
-  }
+  }, overrides, { inferNames: !TYPED_PROVIDERS.has(source.provider ?? "") })
 }
 
 /**
@@ -85,10 +89,11 @@ export function naturalPromptInput(source: NaturalPromptSource, overrides: Recor
  * rendering. That includes tags the scene would place through a suffix: the
  * suffix is a guess, right for "frilled red dress" (a dress) but wrong for a
  * series or a creature named after an object ("youkai watch" is not a watch).
+ * So do the general tags read as names (`inferredNames`): "x (series)" may be an item.
  */
 export function unclassifiedTags(input: NaturalPromptInput, overrides: Record<string, string>): string[] {
   const tags = new Set<string>()
-  for (const raw of input.general) {
+  for (const raw of [...input.general, ...(input.inferredNames ?? [])]) {
     const tag = normalizeTag(raw)
     if (tag && !overrides[tag] && !overrides[tag.replace(/ /g, "_")]) tags.add(tag)
   }
