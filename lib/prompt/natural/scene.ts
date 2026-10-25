@@ -119,6 +119,11 @@ export interface BuildSceneOptions {
    * Names with the same canonical tag are one person.
    */
   characterAliases?: Record<string, string>
+  /**
+   * The phrase dictionary (prose.ts `PhraseDictionary`): a tag the taxonomy has no
+   * slot for goes where its phrase reads (see `phraseSlot`).
+   */
+  phrases?: Record<string, { kind: string; text: string; slot?: string }>
 }
 
 /** Lowercase, spaces instead of underscores, booru escapes and HTML entities (Rule34's "another&#039;s") removed. */
@@ -127,13 +132,13 @@ export function normalizeTag(tag: string): string {
     .replace(/\s{2,}/g, " ").trim()
 }
 
-// "1girl", "2boys", and Rule34's "1girls", "1female", "1futa", "1boy1girl".
+// "1girl", "2boys", and Rule34's "1girls", "1female", "1futa", "1boy1girl", "3girls1boy".
 const COUNT_RE = /^(\d+)\+?(girl|boy|other|female|male|futa)s?$/
-const PAIR_COUNT_RE = /^(\d+)(boy|girl)(\d+)(boy|girl)s?$/
+const PAIR_COUNT_RE = /^(\d+)(boy|girl)s?(\d+)(boy|girl)s?$/
 const COUNT_WORDS = new Set([
   "solo", "multiple girls", "multiple boys", "multiple others", "solo focus", "male focus", "female focus",
   // Gender tags as other boorus write them (Rule34, Gelbooru): subject information, not description.
-  "female", "male", "solo female", "solo male", "female only", "male only",
+  "female", "male", "solo female", "solo male", "female only", "male only", "multiple females", "multiple males", "duo", "trio",
   // Rule34 pairing and species-scope tags ("straight" there means a man and a woman).
   "male/female", "female/female", "male/male", "human", "human only", "hetero", "straight", "humanoid only",
 ])
@@ -267,6 +272,34 @@ function fallbackSlot(tag: string, category?: string): SceneSlot | null {
   }
 }
 
+// Slots whose sentence reads a "scene" phrase as a noun ("The background features a potted plant").
+const NOUN_SLOTS = new Set<string>(["setting", "props", "weapon", "handheld", "animal", "layout"])
+
+/**
+ * Where a tag the taxonomy has no slot for goes, from its phrase entry. The kind
+ * decides which sentences can read the phrase ("wears" is clothing, "framing" the
+ * camera); the slot the phrase pass gave the tag, when it fits that kind, picks
+ * among them. Hair and eye sentences are built from colour and length words, so
+ * other traits go with the body. A noun phrase ("a robot") is what someone is.
+ */
+function phraseSlot(entry: { kind: string; text: string; slot?: string } | undefined): SceneSlot | "framing" | "gaze" | null {
+  if (!entry) return null
+  const [category, sub] = (entry.slot ?? "").split(":")
+  const known = !!sub && ((TAG_SUBCATEGORIES as Record<string, readonly string[]>)[category]?.includes(sub) ?? false)
+  const own = (...categories: string[]) => (known && categories.includes(category) ? (sub === "hair" || sub === "eyes" ? "anatomy" : sub as SceneSlot) : null)
+  switch (entry.kind) {
+    case "wears": return own("clothing") ?? "accents"
+    case "has": return own("appearance") ?? "anatomy"
+    case "with": return own("clothing", "appearance") ?? (category === "pose" && sub !== "camera" ? own("pose") : null) ?? "gesture"
+    case "is":
+      if (category === "pose" && sub === "camera") return "gaze"
+      return own("clothing", "appearance", "pose") ?? (/^an? /.test(entry.text) ? "demographics" : "posture")
+    case "framing": return "framing"
+    case "scene": return known && NOUN_SLOTS.has(sub) ? sub as SceneSlot : sub === "style" ? "layout" : "atmosphere"
+    default: return null
+  }
+}
+
 export function buildScene(input: NaturalPromptInput, overrides: Record<string, string>, options: BuildSceneOptions = {}): Scene {
   const characterTags = (input.characters ?? []).map(normalizeTag)
   const copyrightTags = new Set((input.copyrights ?? []).map(normalizeTag))
@@ -354,6 +387,12 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     if (ANGLE_RE.test(tag)) { scene.camera.angle.push(tag); continue }
     if (GAZE_RE.test(tag)) { scene.camera.gaze.push(tag); continue }
 
+    const exact = overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
+    // The phrase dictionary knows tags the taxonomy left without a slot ("makeup",
+    // "girl on top"); its placement is a judgment about this tag, so it beats the guesses below.
+    const phrased = exact ? null : phraseSlot(options.phrases?.[tag])
+    if (phrased === "framing" || phrased === "gaze") { scene.camera[phrased].push(tag); continue }
+    if (phrased) { push(scene, phrased, tag); continue }
     // Hand-written tags ("lying on stomach") are not in the taxonomy; the suffix
     // fallback would file them by their last word (stomach -> anatomy), so a tag
     // that starts with a verb is read as a pose instead.
@@ -361,7 +400,6 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
       push(scene, "posture", tag)
       continue
     }
-    const exact = overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
     const slot = getTagSlotFromOverrides(tag, overrides)
     // A name slot reached through the suffix fallback is a guess ("sakura haruno"
     // ends in an artist's name), so only an exact match may drop the tag.

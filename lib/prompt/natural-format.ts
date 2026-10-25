@@ -139,8 +139,8 @@ export function formatPrompt(
   overrides: Record<string, string>,
   options: FormatPromptOptions = {},
 ): FormattedPrompt {
-  const scene = buildScene(input, overrides, { traits: options.traits, characterAliases: options.characterAliases })
   const { phrases } = options
+  const scene = buildScene(input, overrides, { traits: options.traits, characterAliases: options.characterAliases, phrases })
   const maxWords = options.fullDetail ? null : undefined
   const result = format === "anima"
     ? renderAnima(scene, { phrases })

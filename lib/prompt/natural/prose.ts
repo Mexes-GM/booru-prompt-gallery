@@ -37,10 +37,12 @@ import { describeLayout, describeStyle } from "./style"
  * How a dictionary phrase plugs into a sentence: "is" continues "She is ___",
  * "with" continues "..., with ___", "has" continues "She has ___", "wears"
  * continues "She wears ___", "framing" continues "The image is ___", "scene" is
- * a noun phrase for the atmosphere. `{pos}` stands for the possessive pronoun.
+ * a noun phrase for the atmosphere, or for a place or object ("a potted plant").
+ * `{pos}` stands for the possessive pronoun. `slot` ("clothing:accents") comes
+ * with tags the taxonomy has no slot for, so the scene knows where they go.
  */
 export type PhraseKind = "is" | "with" | "has" | "wears" | "framing" | "scene"
-export type PhraseDictionary = Record<string, { kind: PhraseKind; text: string }>
+export type PhraseDictionary = Record<string, { kind: PhraseKind; text: string; slot?: string }>
 
 export interface SceneProse {
   /** What the picture is, from its style tags: "An anime-style illustration", "A 3D render". */
@@ -103,9 +105,10 @@ const RELATION_WORDING: Record<string, string> = { couple: "a couple" }
  * Held and carried items, each said once. "holding X" names the item; a kind
  * replaces its generic word ("holding gun" + "handgun" -> "a handgun", "weapon"
  * next to "knife" goes); a placement joins its item ("umbrella over shoulder" ->
- * "a parasol over her shoulder") instead of adding a second one.
+ * "a parasol over her shoulder") instead of adding a second one. `wording` writes
+ * an item (its dictionary phrase, or the tag with its article).
  */
-function describeItems(tags: string[], possessive: string): { held: string[]; loose: string[] } {
+function describeItems(tags: string[], possessive: string, wording: (tag: string) => string = withArticle): { held: string[]; loose: string[] } {
   const holding = tags.filter((t) => t.startsWith("holding ")).map((t) => t.slice("holding ".length))
   const placed = tags.filter((t) => !t.startsWith("holding ") && splitPlacement(t).place)
   const others = tags.filter((t) => t !== "holding" && !t.startsWith("holding ") && !splitPlacement(t).place)
@@ -119,8 +122,8 @@ function describeItems(tags: string[], possessive: string): { held: string[]; lo
   }
   const held = [...heldSet]
   const loose = others.filter((o) => kept.has(o) && !heldSet.has(o))
-  const heldText = held.map(withArticle)
-  const looseText = loose.map(withArticle)
+  const heldText = held.map(wording)
+  const looseText = loose.map(wording)
   const where = (place: string) => place.replace(/(shoulder|back|hip|mouth)$/, `${possessive} $1`)
   // "sword on back" already says "weapon on back".
   for (const tag of dropImplied(placed)) {
@@ -309,6 +312,8 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     const entry = phrases[tag]
     return entry ? { kind: entry.kind, text: entry.text.replace(/\{pos\}/g, p.possessive) } : null
   }
+  // Places, objects and creatures read a "scene" phrase as the noun itself.
+  const nounPhrase = (tag: string) => (phrases[tag]?.kind === "scene" ? dictionary(tag)!.text : undefined)
   // Medium and style first: some style-slot tags describe the outfit or the setting instead.
   const styleParts = describeStyle(slot("style"), slot("layout"))
   const elsewhere = (kind: "being" | "prop" | "mood") => styleParts.elsewhere.filter((e) => e.kind === kind).map((e) => e.text)
@@ -363,7 +368,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
       withList.push(phrases[t]?.kind === "with" ? own(t)! : `${possessive} ${t.replace(/ lift$/, " lifted").replace(/ pull$/, " pulled")}`)
     }
     const wearList = tidy(clothes.filter((c) => !WORN_STATE_RE.test(c)).map((t) => (phrases[t]?.kind === "wears" ? own(t)! : garmentPhrase(t, possessive))), 4)
-    const items = describeItems([...(slots.weapon ?? []), ...(slots.handheld ?? [])], possessive)
+    const items = describeItems([...(slots.weapon ?? []), ...(slots.handheld ?? [])], possessive, (t) => (phrases[t]?.kind === "scene" ? own(t)! : withArticle(t)))
     const holdList = tidy([...items.held, ...items.loose], 2)
     const withText = tidy(withList, 2)
     const clauses = [
@@ -484,7 +489,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   ].filter(Boolean).join(" ")
 
   // Held and carried items, each said once (see describeItems).
-  const items = describeItems([...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])], p.possessive)
+  const items = describeItems([...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])], p.possessive, (t) => nounPhrase(t) ?? withArticle(t))
   const heldList = tidy(items.held, 2)
   const looseList = tidy(items.loose, 2)
   const held = [
@@ -553,7 +558,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const backgrounds = sceneryTags.filter((t) => / background$/.test(t))
   // "scenery" only says the background is detailed; the place tags carry the content.
   const places = tidy(sceneryTags.filter((t) => !ADVERB_PLACES.has(t) && !/ background$/.test(t) && t !== "scenery"), 4)
-  const placeTexts = [...places.map(articleForScenery), ...tidy(elsewhere("prop"), 2)]
+  const placeTexts = [...places.map((t) => nounPhrase(t) ?? articleForScenery(t)), ...tidy(elsewhere("prop"), 2)]
   const settingParts: string[] = []
   if (adverbs.length || times.length) {
     settingParts.push(`The scene takes place ${[adverbs[0], ...times].filter(Boolean).join(" ")}${placeTexts.length ? `, with ${joinList(placeTexts)}` : ""}.`)
@@ -605,10 +610,10 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const style = styleParts.sentence
   raw.push(...styleParts.raw)
   const animalTags = slot("animal")
-  const animals = tidy(animalTags.map(withArticle), 2)
+  const animals = tidy(animalTags.map((t) => nounPhrase(t) ?? withArticle(t)), 2)
   const extras = [
-    animals.length ? `There ${animals.length > 1 || takesPluralVerb(animalTags[0]) ? "are" : "is"} also ${joinList(animals)}.` : "",
-    describeLayout(slot("layout")),
+    animals.length ? `There ${animals.length > 1 || takesPluralVerb(animals[0]) ? "are" : "is"} also ${joinList(animals)}.` : "",
+    describeLayout(slot("layout"), nounPhrase),
   ].filter(Boolean).join(" ")
 
   const people = [
