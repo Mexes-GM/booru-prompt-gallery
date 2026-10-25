@@ -518,8 +518,8 @@ function nameKey(name: string): string {
  */
 function similarNames(a: string, b: string): boolean {
   const [x, y] = [nameKey(a).split(" "), nameKey(b).split(" ")]
-  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
-  return short.every((w) => long.includes(w))
+  const [short, long] = x.length <= y.length ? [x, new Set(y)] : [y, new Set(x)]
+  return short.every((w) => long.has(w))
 }
 
 // A gender the profile leaves no doubt about (1boy over 1girl in the character's solo posts).
@@ -583,8 +583,9 @@ function resolvePeople(scene: Scene, options: BuildSceneOptions, postTags: Set<s
   // one person: "Hyuuga Hinata" and her married name "Uzumaki Hinata".
   const sharesName = (a: SceneCharacter[], b: SceneCharacter[]) => {
     const gender = genderOf(a)
-    return !!gender && gender === genderOf(b) && overfull(gender) &&
-      a.some((x) => b.some((y) => nameKey(x.name).split(" ").some((w) => w.length >= 3 && nameKey(y.name).split(" ").includes(w))))
+    if (!gender || gender !== genderOf(b) || !overfull(gender)) return false
+    const words = new Set(b.flatMap((y) => nameKey(y.name).split(" ")))
+    return a.some((x) => nameKey(x.name).split(" ").some((w) => w.length >= 3 && words.has(w)))
   }
   while (people > 0 && (groups.length > people || overfull("female") || overfull("male"))) {
     const match = [similar, sharesName].map((test) => {
@@ -657,7 +658,8 @@ function splitCosplaySeries(scene: Scene): void {
   if (!scene.cosplayAs.length || scene.series.length < 2) return
   const own = scene.series.filter((s) => scene.characters.some((c) => { const q = qualifier(c.tag); return !!q && sameSeries(q, s.toLowerCase()) }))
   if (!own.length || own.length === scene.series.length) return
-  scene.cosplaySeries = scene.series.filter((s) => !own.includes(s))
+  const ownSet = new Set(own)
+  scene.cosplaySeries = scene.series.filter((s) => !ownSet.has(s))
   scene.series = own
 }
 
