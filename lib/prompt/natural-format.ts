@@ -66,22 +66,26 @@ function uniqueTags(tags: string[]): string[] {
   })
 }
 
-// Boorus whose posts carry their own character field: no general tag of theirs is read as a name.
+// Boorus whose posts carry their own character and copyright fields.
 const TYPED_PROVIDERS = new Set(["danbooru", "aibooru", "e621"])
 
 export function naturalPromptInput(source: NaturalPromptSource, overrides: Record<string, string>): NaturalPromptInput {
   const split = splitPromptTags(source.prompt, overrides, { guessNames: !!source.handWritten })
+  // Such a post's fields are complete, and the card leaves its series out of the
+  // prompt: a series the taxonomy finds there is a misfiled tag ("twitter logo"),
+  // and no general tag of theirs is a name.
+  const trusted = TYPED_PROVIDERS.has(source.provider ?? "") && !source.handWritten
   const characters = uniqueTags([...fieldTags(source.characters), ...(split.characters ?? [])])
-  const copyrights = uniqueTags([...fieldTags(source.copyrights), ...(split.copyrights ?? [])])
+  const copyrights = uniqueTags([...fieldTags(source.copyrights), ...(trusted ? [] : split.copyrights ?? [])])
   // The card's prompt also lists the names the post fields carry.
   const names = new Set([...characters, ...copyrights].map(normalizeTag))
   return resolveNames({
-    general: split.general.filter((tag) => !names.has(normalizeTag(tag))),
+    general: [...split.general, ...(trusted ? split.copyrights ?? [] : [])].filter((tag) => !names.has(normalizeTag(tag))),
     characters,
     copyrights,
     artists: split.artists,
     rating: ratingLetter(source.rating, source.provider),
-  }, overrides, { inferNames: !TYPED_PROVIDERS.has(source.provider ?? "") })
+  }, overrides, { inferNames: !trusted })
 }
 
 /**

@@ -71,6 +71,16 @@ const names = (input: NaturalPromptInput, traits: CharacterTraits = {}, characte
   }, overrides)
   const flux = renderFlux2(cosplay, { maxWords: null }).text
   assert(flux.includes("Gentildonna from Umamusume") && flux.includes("cosplaying as Mash Kyrielight from Fate/Grand Order"), "the costume's series goes with the costume")
+
+  // The taxonomy files some general tags as copyrights ("twitter logo"); a Danbooru card's series come from its own field.
+  const misfiled = { ...overrides, "twitter logo": "other:copyright", "copyright logo": "other:copyright", "blue archive": "other:copyright" }
+  const card = { prompt: "1girl, aris (blue archive), twitter logo, copyright logo, smile", characters: "aris_(blue_archive)", copyrights: "blue_archive" }
+  const danbooru = naturalPromptInput({ ...card, provider: "danbooru" }, misfiled)
+  assert(danbooru.copyrights?.join() === "blue_archive" && danbooru.general.includes("twitter logo"), "a typed booru's series are its own field")
+  const scene = buildScene(danbooru, misfiled)
+  assert(scene.series.join() === "Blue Archive" && scene.unclassified.includes("twitter logo") && scene.dropped.includes("copyright logo"), "a misfiled logo is content to keep, a copyright logo text is dropped")
+  const pasted = naturalPromptInput({ prompt: "1girl, aris (blue archive), blue archive, smile" }, misfiled)
+  assert(pasted.copyrights?.join() === "blue archive", "a pasted prompt still gets its series from the taxonomy")
 }
 
 // 3. Names read from the post.

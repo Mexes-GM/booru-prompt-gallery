@@ -388,7 +388,8 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
       scene.unclassified.push(tag)
       continue
     }
-    if (slot?.category === "other" && (slot.subcategory === "meta" || slot.subcategory === "artist")) {
+    // Text in the picture and sites filed as a copyright ("copyright logo", "patreon") say nothing to draw.
+    if (slot?.category === "other" && (slot.subcategory === "meta" || slot.subcategory === "artist" || (slot.subcategory === "copyright" && NOT_A_FRANCHISE_RE.test(tag) && !NO_FRANCHISE_TAGS.has(tag)))) {
       scene.dropped.push(tag)
       continue
     }
