@@ -524,11 +524,12 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   const sharedColors = sharedHair.filter((t) => / hair$/.test(t) && HAIR_COLOR_RE.test(t.slice(0, -5)))
   const peopleCount = scene.girls + scene.boys + scene.others
   const splitColors = open && sharedColors.length > 1 && sharedColors.length <= peopleCount
+  const colorSet = new Set(sharedColors)
   const colorSentence = splitColors
     ? `${sharedColors.map((c, i) => `${i === 0 ? "One of them has" : i === sharedColors.length - 1 ? "and another" : "another"} ${c}`).join(", ")}.`
     : ""
   const traits = [
-    ...tidy(hairTraits(splitColors ? sharedHair.filter((t) => !sharedColors.includes(t)) : sharedHair, p.plural && !open), 3),
+    ...tidy(hairTraits(splitColors ? sharedHair.filter((t) => !colorSet.has(t)) : sharedHair, p.plural && !open), 3),
     ...tidy(eyeTraits(slot("eyes").filter(notOwned)), 1),
   ]
   const subject = subjectPhrase(scene, species)
@@ -659,7 +660,7 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   // Women only, one of them a futanari the tags do not name: the male anatomy is one of them's, not theirs.
   const futaGroup = p.plural && scene.boys === 0 && [...scene.subjectTags, ...Object.values(scene.slots).flat()].some((t) => !!t && FUTA_RE.test(t))
   const maleVisible = futaGroup ? visible.filter((t) => MALE_PART_RE.test(t)) : []
-  const visibleList = tidy(visible.filter((t) => !maleVisible.includes(t)), 3)
+  const visibleList = tidy(visible.filter((t) => !futaGroup || !MALE_PART_RE.test(t)), 3)
   const maleVisibleList = tidy(maleVisible, 2)
   const bodyWithList = tidy(bodyWith, 2)
   const body = [
