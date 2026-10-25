@@ -44,6 +44,15 @@ const ANIMA_TAG_SLOTS: SceneSlot[] = [
 
 export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phrases?: PhraseDictionary } = {}): RenderResult {
   const prose = describeScene(scene, options.phrases, { compact: true })
+  // A tag the card joined ("black elbow grey gloves") stays as the card wrote it.
+  const joined = new Set<string>()
+  const slotTags = ANIMA_TAG_SLOTS.flatMap((s) => scene.slots[s] ?? []).flatMap((tag) => {
+    const card = scene.joinedTags[tag]
+    if (!card) return [tag]
+    if (joined.has(card)) return []
+    joined.add(card)
+    return [card]
+  })
   const tags = [
     ...(options.qualityTags ?? []),
     ...scene.quality,
@@ -52,7 +61,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
     ...scene.characterTags,
     ...scene.copyrightTags,
     ...scene.artists.map((a) => `@${a}`),
-    ...ANIMA_TAG_SLOTS.flatMap((s) => scene.slots[s] ?? []),
+    ...slotTags,
     ...scene.camera.framing,
     ...scene.camera.angle,
     ...scene.unclassified,
@@ -140,7 +149,7 @@ function proseSections(prose: SceneProse, medium: string): { text: string; prior
     // A long pose sentence is cut to its first actions rather than lost.
     { text: prose.pose, priority: 1, short: prose.poseShort },
     { text: prose.body, priority: 4 },
-    { text: prose.clothing, priority: 2 },
+    { text: prose.clothing, priority: 2, short: prose.clothingShort },
     { text: prose.held, priority: 5 },
     { text: prose.setting, priority: 3 },
     { text: prose.lighting, priority: 6 },

@@ -20,12 +20,16 @@
  *   15. No phrase for content involving minors.
  *   16. Wording: demographic tags, garments worn somewhere, "is/are visible", "it" for a robot.
  *   17. Several people: who has what (named or not), gendered tags, pairings, acts between two.
- *   18. What a tag means: who does an act to whom, poses of several bodies, tags in the wrong sentence.
+ *   18. Medium, style, series and wording.
+ *   19. What a tag means: who does an act to whom, poses of several bodies, tags in the wrong sentence.
+ *   20. Said once: tags another implies (Danbooru's implications), one thing named several
+ *       ways (merged modifiers), other boorus' spellings (Danbooru's aliases).
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
 import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, renderMoss, splitPromptTags, titleCase, type PhraseDictionary } from "../lib/prompt/natural"
-import { dropImplied, mergeSharedPrefix, splitHairCompound, withArticle } from "../lib/prompt/natural/english"
+import { dropContainedPhrases, dropImplied, mergeSameThing, mergeSharedPrefix, saysAll, splitHairCompound, withArticle } from "../lib/prompt/natural/english"
+import { canonicalTag, impliedBy, nounParents } from "../lib/prompt/natural/relations"
 import { readFileSync } from "fs"
 import path from "path"
 
@@ -477,7 +481,7 @@ const overrides: Record<string, string> = {
   assert(flux(["1girl", "indoor"]).includes("indoors") && !/\bindoor\b/.test(flux(["1girl", "indoor"])), "another booru's spelling reads as Danbooru's")
 }
 
-// 18. What a tag means: who does an act and to whom, poses of several bodies,
+// 19. What a tag means: who does an act and to whom, poses of several bodies,
 // tags written in the wrong sentence (not every clothing tag is worn, a halo is
 // no atmosphere), and things that are not in the picture at all.
 {
@@ -587,6 +591,99 @@ const overrides: Record<string, string> = {
   assert(role("cunnilingus") === "doer/female" && role("fellatio") === "doer/male" && role("paizuri") === "female/male", "oral sex and paizuri name who does them")
   assert(role("imminent penetration") === "receiver/male" && role("cum in pussy") === "female/male" && role("prone bone") === "receiver/male", "the receiving position is the woman's")
   assert(published.halo?.kind === "has" && published["eye contact"]?.who === "together", "halos are worn above the head, eye contact is mutual")
+}
+
+// 20. The general tag next to the specific one, one thing named several ways, other boorus' spellings.
+{
+  const vocab: Record<string, string> = {
+    "animal ears": "appearance:anatomy", "cat ears": "appearance:anatomy", lying: "pose:posture", "on back": "pose:posture",
+    swimsuit: "clothing:outfit", bikini: "clothing:outfit", "black bikini": "clothing:outfit", earrings: "clothing:accents", jewelry: "clothing:accents",
+    "black jacket": "clothing:top", "multicolored jacket": "clothing:top", "open jacket": "clothing:top", "red jacket": "clothing:top",
+    "two-tone jacket": "clothing:top", jacket: "clothing:top", bodysuit: "clothing:outfit", "black bodysuit": "clothing:outfit",
+    "turtleneck bodysuit": "clothing:outfit", "white hat": "clothing:headwear", "mob cap": "clothing:headwear", hat: "clothing:headwear",
+    "coat on shoulders": "clothing:top", "fur-trimmed coat": "clothing:top", "fur trim": "clothing:accents",
+    "cherry hair ornament": "clothing:headwear", "pearl hair ornament": "clothing:headwear", "hair ribbon": "clothing:headwear",
+    "neck ribbon": "clothing:accents", "black shorts": "clothing:bottom", "short shorts": "clothing:bottom",
+    "black gloves": "clothing:accents", "elbow gloves": "clothing:accents", "grey gloves": "clothing:accents",
+    boobs: "appearance:anatomy", tits: "appearance:anatomy", "big ass": "appearance:anatomy", "big butt": "appearance:anatomy",
+    furry: "appearance:demographics", femboy: "appearance:demographics", "breast grab": "pose:interaction",
+    "light-skinned female": "appearance:anatomy", "light skin": "appearance:anatomy", "huge breasts": "appearance:anatomy",
+    "massive breasts": "appearance:anatomy", "cowgirl position": "pose:interaction", straddling: "pose:posture",
+    "military uniform": "clothing:outfit", "long sleeves": "clothing:top", "pencil skirt": "clothing:bottom",
+    "purple thighhighs": "clothing:legwear", "black thighhighs": "clothing:legwear", "fur-trimmed thighhighs": "clothing:legwear",
+  }
+  const scene = (general: string[]) => buildScene({ general }, { ...overrides, ...vocab })
+  const moss = (general: string[], phrases = {}) => renderMoss(scene(general), { maxWords: null, phrases }).text
+
+  // Danbooru's implications (tag-relations.ts), followed through chains and the head-noun rule.
+  assert(impliedBy("black bikini").has("bikini") && impliedBy("black bikini").has("swimsuit"), "a tag implies its noun and what that implies")
+  assert(nounParents("hand on own ass").length === 0 && nounParents("fur-trimmed coat").join() === "coat", "only a compound noun is a kind of its last word")
+  assert(!/animal ears/.test(moss(["1girl", "animal ears", "cat ears"])), "cat ears make animal ears redundant")
+  const lying = moss(["1girl", "lying", "on back"])
+  assert(lying.includes("lying on her back") && !lying.includes("lying down"), "on back says she is lying")
+  assert(!/swimsuit/.test(moss(["1girl", "black bikini", "bikini", "swimsuit"])), "a black bikini is a bikini and a swimsuit")
+  assert(!/jewelry/.test(moss(["1girl", "earrings", "jewelry"])), "earrings are jewelry")
+  assert(dropImplied(["animal ears"], ["cat ears"]).length === 0, "a shared generic tag goes when someone has the specific one")
+  // A tag only listed raw does not say what it implies: "straddling" stays when "cowgirl position" has no phrase.
+  assert(moss(["1girl", "cowgirl position", "straddling"]).includes("straddling"), "a raw tag does not hide the tag it implies")
+
+  // One thing named several ways, one person: said as one phrase.
+  assert(moss(["1girl", "black jacket", "multicolored jacket", "open jacket", "red jacket", "two-tone jacket"]).includes("She wears an open black and red two-tone jacket."), "one jacket, all its modifiers in order")
+  assert(moss(["1girl", "black bodysuit", "bodysuit", "turtleneck bodysuit"]).includes("a black turtleneck bodysuit"), "colour and kind make one bodysuit")
+  assert(moss(["1girl", "white hat", "mob cap", "hat"]).includes("a white mob cap"), "a coloured generic joins the one kind of it")
+  const coat = moss(["1girl", "coat on shoulders", "fur-trimmed coat", "fur trim"])
+  assert(coat.includes("a fur-trimmed coat on her shoulders") && !/fur trim\b/.test(coat), "where a garment is worn joins the garment")
+  assert(moss(["1girl", "black shorts", "short shorts"]).includes("black short shorts"), "the word a noun is made of stays next to it")
+  assert(moss(["1girl", "black thighhighs", "fur-trimmed thighhighs"]).includes("black fur-trimmed thighhighs"), "a plural garment merges without an article")
+  const ornaments = moss(["1girl", "cherry hair ornament", "pearl hair ornament"])
+  assert(ornaments.includes("a cherry hair ornament") && ornaments.includes("a pearl hair ornament"), "two kinds of an accessory are two accessories")
+  const ribbons = moss(["1girl", "hair ribbon", "neck ribbon"])
+  assert(ribbons.includes("a hair ribbon") && ribbons.includes("a neck ribbon"), "a thing worn in two places is two things")
+  const group = moss(["2girls", "black jacket", "red jacket"])
+  assert(group.includes("a black jacket") && group.includes("a red jacket"), "a group's garments are not merged into one")
+  assert(mergeSameThing([{ tag: "large breasts", text: "large breasts" }, { tag: "sagging breasts", text: "sagging breasts" }]).join() === "large sagging breasts", "one body part's modifiers merge")
+  const necktie = mergeSameThing(["diagonal-striped necktie", "green necktie", "striped necktie"].map((tag) => ({ tag, text: withArticle(tag), several: true })))
+  assert(necktie.join() === "a green diagonal-striped necktie", "a modifier another one says is not repeated")
+  assert(mergeSameThing([{ tag: "large breasts", text: "large breasts" }, { tag: "alternate breast size", text: "larger breasts than usual" }]).length === 2, "a phrase that is more than modifiers and a noun stays whole")
+  // The site's tag cleanup joins a noun's tags ("black elbow grey gloves"); the converter reads them back.
+  const gloves = scene(["1girl", "black elbow grey gloves"])
+  assert(["black gloves", "elbow gloves", "grey gloves"].every((t) => gloves.slots.accents?.includes(t)), "a merged garment tag splits back into its tags")
+  assert(renderMoss(gloves, { maxWords: null }).text.includes("black and grey elbow gloves"), "and is said as one pair of gloves")
+  const animaGloves = renderAnima(gloves).text
+  assert(animaGloves.includes("black elbow grey gloves") && !animaGloves.includes("elbow gloves,"), "Anima keeps the card's own tag")
+
+  // Other boorus' spellings of one Danbooru tag.
+  const breasts = scene(["1girl", "boobs", "breasts", "tits"])
+  assert(breasts.slots.anatomy?.join() === "breasts" && breasts.dropped.length === 2, "boobs, breasts and tits are one tag, in Danbooru's spelling")
+  assert(sceneTagCount(breasts) + breasts.dropped.length === 4, "the other spellings are accounted for")
+  assert((moss(["1girl", "big ass", "big butt"]).match(/\b(ass|butt)\b/g) ?? []).length === 1, "big ass and big butt are said once")
+  assert(moss(["1girl", "boobs"], { breasts: { kind: "has", text: "breasts" } }).includes("She has breasts."), "a spelling without a phrase says the Danbooru tag's")
+  assert(!!scene(["1girl", "anthro"]).slots.demographics?.includes("furry"), "a spelling the taxonomy does not know reads as Danbooru's")
+  assert(!!scene(["1girl", "femboy"]).slots.demographics?.includes("femboy"), "a spelling the taxonomy knows stays as it is")
+  assert(canonicalTag("breast grab") === "breast grab", "an alias that decides who does what is not used")
+  assert(canonicalTag("butt focus", (t) => t === "ass focus") === "ass focus" && canonicalTag("butt focus") === "butt focus", "a word's alias respells a longer tag only into a known one")
+  const skin = moss(["1girl", "light-skinned female", "light skin"])
+  assert(skin.includes("light-skinned") && !skin.includes("light skin"), "a skin-toned woman has that skin already")
+  const sizes = moss(["1girl", "huge breasts", "massive breasts"])
+  assert(sizes.includes("massive breasts") && !sizes.includes("huge breasts"), "of two sizes of one body part, the largest is said")
+
+  // Phrases another phrase already says, whatever tags they came from.
+  assert(saysAll("making an ahegao face with eyes rolled up and tongue out", "rolling their eyes"), "rolled eyes are said once, in any wording")
+  assert(saysAll("seen from a first-person point of view", "a first-person view"), "a first-person view is said once")
+  assert(!saysAll("a hand on another person's shoulder", "a hand on her shoulder"), "someone else's shoulder is not her own")
+  assert(saysAll("sitting on another person's face", "sitting on another person") && saysAll("undressing another person", "undressing a partner"), "a part of someone says the someone; a partner is another person")
+  assert(dropContainedPhrases(["smiling", "smiling faintly", "blushing"]).join() === "smiling faintly,blushing", "the plainer phrase goes")
+  const pov = renderMoss(buildScene({ general: ["1girl", "point of view", "pov"] }, { ...overrides, "point of view": "pose:camera" }), {
+    maxWords: null, phrases: { "point of view": { kind: "framing", text: "a first-person view" } },
+  }).text
+  assert(pov.includes("seen from a first-person point of view") && !pov.includes("a first-person view"), "a framing the angle already says is not repeated")
+
+  // FLUX.2: garment parts come after garments, so the budget keeps the skirt and the legwear.
+  const outfit = renderMoss(scene(["1girl", "military uniform", "long sleeves", "pencil skirt", "purple thighhighs"]), { maxWords: null }).text
+  assert(outfit.includes("a military uniform, a pencil skirt, purple thighhighs and long sleeves"), "sleeves follow the garments")
+  // An outfit too long for the budget is cut to its main garments, not lost.
+  const tight = renderFlux2(scene(["1girl", "military uniform", "pencil skirt", "purple thighhighs", "black gloves", "long sleeves"]), { maxWords: 18 }).text
+  assert(tight.includes("She wears a military uniform, a pencil skirt and purple thighhighs."), "a long outfit keeps its main garments within the budget")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

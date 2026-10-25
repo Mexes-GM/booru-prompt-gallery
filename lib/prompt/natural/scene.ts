@@ -16,6 +16,7 @@ import { HAIR_COLOR_RE, isClothingState, splitHairCompound } from "./english"
 import { GENDER_AFFINITY } from "./gender-affinity"
 import { CROSSDRESSING_RE, FUTA_RE, genderedTraits, personNoun, ruleGender } from "./people"
 import type { PhraseDictionary, PhraseEntry, PhraseKind } from "./prose"
+import { canonicalTag } from "./relations"
 
 export interface NaturalPromptInput {
   /** General tags, as on the post (underscores or spaces). */
@@ -98,6 +99,11 @@ export interface Scene {
    * `attributeTraits`), in `people` order. Empty with fewer than two people.
    */
   assigned: { character: SceneCharacter; slots: Partial<Record<SceneSlot, string[]>> }[]
+  /**
+   * The card's joined tags ("black elbow grey gloves") by each tag they were split
+   * back into ("black gloves"): the prose reads the tags, tag renderers keep the card's.
+   */
+  joinedTags: Record<string, string>
 }
 
 /**
@@ -441,11 +447,13 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     dropped: [],
     people: [],
     assigned: [],
+    joinedTags: {},
   }
 
   const seen = new Set<string>()
   const seenSpellings = new Set<string>()
   const entryOf = (tag: string) => overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
+  const isKnownTag = (tag: string) => !!entryOf(tag)
   // A "keep" entry says the tag has no phrase on purpose: it is no wording.
   const phraseOf = (tag: string) => (options.phrases?.[tag]?.kind === "keep" ? undefined : options.phrases?.[tag])
   // A spelling is worth reading as another tag only if that tag says something: not a name.
@@ -453,11 +461,33 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     const kind = entryOf(tag)
     return kind ? !/^other:(artist|character|copyright)$/.test(kind) : !!phraseOf(tag)
   }
-  // Cleaned prompts merge one noun's adjectives ("blue long hair"); hair goes back to plain tags.
-  const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? [raw])
+  // Cleaned prompts merge one noun's adjectives ("blue long hair", "black elbow grey gloves"); they go back to plain tags.
+  const general = input.general.flatMap((raw) => {
+    const tag = normalizeTag(raw)
+    const hair = splitHairCompound(tag)
+    if (hair) return hair
+    const parts = splitMergedTag(tag, isKnownTag)
+    for (const part of parts ?? []) scene.joinedTags[part] = tag
+    return parts ?? [raw]
+  })
+  // Rule34's "boobs", "tits" and "breasts" are one Danbooru tag (relations.ts): it is said
+  // once, in Danbooru's spelling when the post has it. A lone spelling the taxonomy knows
+  // stays as it is ("femboy"); one it does not know reads as the Danbooru tag ("anthro" -> "furry").
+  const canonicalOf = (tag: string) => SPELLINGS[tag] ?? canonicalTag(tag, isKnownTag)
+  const spelling = new Map<string, string>()
   for (const raw of general) {
     const given = normalizeTag(raw)
-    let tag = SPELLINGS[given] ?? given
+    const canonical = canonicalOf(given)
+    if (!spelling.has(canonical) || given === canonical) spelling.set(canonical, given)
+  }
+  const spellingOf = (given: string) => {
+    const canonical = canonicalOf(given)
+    const kept = spelling.get(canonical) ?? given
+    return !isKnownTag(kept) && isKnownTag(canonical) ? canonical : kept
+  }
+  for (const raw of general) {
+    const given = normalizeTag(raw)
+    let tag = SPELLINGS[given] ?? spellingOf(given)
     if (!tag || seenSpellings.has(given)) continue
     seenSpellings.add(given)
     // A second spelling of a tag already there ("indoor" next to "indoors") says nothing new.
@@ -567,6 +597,20 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   scene.people = scenePeople(scene)
   attributeTraits(scene, options.traits ?? {}, options.genderAffinity ?? GENDER_AFFINITY)
   return scene
+}
+
+/**
+ * "black elbow grey gloves" -> ["black gloves", "elbow gloves", "grey gloves"]:
+ * the card's tag cleanup joins two-word tags that share a noun; the prose needs
+ * the tags back to tell what each implies. Null unless the joined tag is unknown
+ * and every piece is a known tag.
+ */
+function splitMergedTag(tag: string, isKnown: (tag: string) => boolean): string[] | null {
+  const words = tag.split(" ")
+  if (words.length < 3 || isKnown(tag)) return null
+  const noun = words[words.length - 1]
+  const parts = words.slice(0, -1).map((word) => `${word} ${noun}`)
+  return parts.every(isKnown) ? parts : null
 }
 
 /**
