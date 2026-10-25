@@ -177,6 +177,34 @@ export function namePartner(text: string, label: string, partner: ActPartner): s
   return out
 }
 
+/** True when a phrase names someone else by role ("standing behind another person", "a partner's hand"). */
+export function namesPartner(text: string): boolean {
+  return new RegExp(PARTNER_NOUN_RE.source).test(text) || new RegExp(PARTNER_POSSESSIVE_RE.source).test(text)
+}
+
+// "with an anthropomorphic partner", "a larger dominant partner and a smaller submissive partner".
+const PARTNER_ONLY_RE = /^an? (?:(?![a-z]+ing\b)[a-z-]+ )*partner$/
+/** A phrase that only says who else is there, for pairing tags ("human on anthro"). */
+export function onlyPartners(text: string): boolean {
+  return text.split(" and ").every((part) => PARTNER_ONLY_RE.test(part))
+}
+
+const NUMBER_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, several: 3, multiple: 2 }
+const COUNTED_PEOPLE_RE = /\b(two|three|four|five|several|multiple) (partners|others|people|persons|men|women|girls|boys|males|females)\b/g
+/**
+ * How many people a phrase needs ("three women together" -> 3, "between two
+ * partners" -> the subject and two more), or 0 when it counts nobody.
+ */
+export function peopleNamed(text: string): number {
+  let named = 0
+  let others = false
+  for (const [, number, who] of text.matchAll(COUNTED_PEOPLE_RE)) {
+    named = Math.max(named, NUMBER_WORDS[number])
+    if (who === "partners" || who === "others") others = true
+  }
+  return named && others ? named + 1 : named
+}
+
 /** A mutual act said of everyone: "hugging a partner" -> "hugging each other" ("with two women and a man" stays). */
 export function eachOther(text: string): string {
   return text.replace(PARTNER_POSSESSIVE_RE, "each other's").replace(PARTNER_NOUN_RE, "each other")

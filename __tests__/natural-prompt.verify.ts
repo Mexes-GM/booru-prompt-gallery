@@ -24,6 +24,7 @@
  *   19. What a tag means: who does an act to whom, poses of several bodies, tags in the wrong sentence.
  *   20. Said once: tags another implies (Danbooru's implications), one thing named several
  *       ways (merged modifiers), other boorus' spellings (Danbooru's aliases).
+ *   21. No one the picture does not have: acts on another person, counted people, pairings, species.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
@@ -684,6 +685,42 @@ const overrides: Record<string, string> = {
   // An outfit too long for the budget is cut to its main garments, not lost.
   const tight = renderFlux2(scene(["1girl", "military uniform", "pencil skirt", "purple thighhighs", "black gloves", "long sleeves"]), { maxWords: 18 }).text
   assert(tight.includes("She wears a military uniform, a pencil skirt and purple thighhighs."), "a long outfit keeps its main garments within the budget")
+}
+
+// 21. No one the picture does not have: acts on "another person" said of everyone, phrases
+// that count more people than there are, pairing tags, the people's own species as animals.
+{
+  const vocab: Record<string, string> = {
+    "behind another": "pose:interaction", "double team": "pose:interaction", "human on anthro": "pose:interaction",
+    straddling: "pose:interaction", "lifting person": "pose:interaction", "hand on another's chin": "pose:interaction",
+    furry: "appearance:demographics", anthro: "appearance:demographics", "arctic fox": "creature:animal", "female fox": "creature:animal",
+    fox: "creature:animal", canid: "creature:animal", canine: "creature:animal", feline: "creature:animal", cat: "creature:animal", dog: "creature:animal",
+  }
+  const phrases: PhraseDictionary = {
+    "behind another": { kind: "is", text: "standing behind another person" },
+    "double team": { kind: "is", text: "being double-teamed by two partners" },
+    "human on anthro": { kind: "with", text: "an anthropomorphic partner" },
+    straddling: { kind: "is", text: "straddling another person", who: "doer", partner: "anyone" },
+    "lifting person": { kind: "is", text: "lifting another person", who: "doer", partner: "anyone" },
+    "hand on another's chin": { kind: "with", text: "a hand on another person's chin", who: "doer", partner: "anyone" },
+  }
+  const moss = (general: string[]) => renderMoss(buildScene({ general }, vocab, { phrases, genderAffinity: {} }), { phrases, maxWords: null }).text
+
+  const behind = moss(["2girls", "behind another"])
+  assert(behind.includes("One of the girls is standing behind the other.") && !behind.includes("They are standing behind another person"), "an act on someone else is one of the two's")
+  assert(moss(["solo", "1girl", "behind another"]).includes("She is standing behind another person."), "alone in the picture, the other person stays someone else")
+  const team = moss(["2girls", "double team"])
+  assert(!team.includes("two partners") && team.includes("double team"), "a phrase counting more people than the picture has stays a tag")
+  assert(moss(["3girls", "double team"]).includes("being double-teamed by two partners"), "with enough people the phrase is said")
+  assert(!moss(["1girl", "1boy", "human on anthro"]).includes("partner"), "a pairing tag adds no partner to two people")
+  const acts = moss(["2girls", "straddling", "lifting person", "hand on another's chin"])
+  assert(!/, and one /.test(acts) && acts.includes("One of the girls is straddling the other and lifting the other"), "two women's acts are never three people's")
+  assert(/One of the girls is \w+ing the other, and one is/.test(moss(["2girls", "straddling", "lifting person"])), "two acts of two women may be two people's")
+
+  const fox = moss(["1girl", "furry", "arctic fox", "female fox", "fox", "canid", "canine"])
+  assert(fox.includes("She is an anthropomorphic arctic fox.") && !fox.includes("There are also"), "a furry picture's animal tags are her species")
+  assert(!moss(["2girls", "furry", "feline"]).includes("feline"), "a taxonomic rank alone adds nothing")
+  assert(moss(["1girl", "dog"]).includes("There is also a dog."), "without furry tags an animal is another creature")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

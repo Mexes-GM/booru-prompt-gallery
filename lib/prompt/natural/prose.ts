@@ -35,7 +35,24 @@ import {
   takesPluralVerb,
   withArticle,
 } from "./english"
-import { eachOther, genderedTraits, oneOfSentence, personNoun, posesSentence, possessivePronoun, roleAct, sceneRoles, splitPoses, visibleSentence, type ActPartner, type ActWho, type Role } from "./people"
+import {
+  eachOther,
+  genderedTraits,
+  namesPartner,
+  oneOfSentence,
+  onlyPartners,
+  peopleNamed,
+  personNoun,
+  posesSentence,
+  possessivePronoun,
+  roleAct,
+  sceneRoles,
+  splitPoses,
+  visibleSentence,
+  type ActPartner,
+  type ActWho,
+  type Role,
+} from "./people"
 import { canonicalTag, canonicalWord } from "./relations"
 import { describeLayout, describeStyle } from "./style"
 
@@ -248,6 +265,23 @@ const WORN_STATE_RE = / (up|down|aside|removed|tucked in|rolled up|lift|pull|aro
 // Parts of a garment ("long sleeves", "sailor collar") come after the garments, so a short list keeps the skirt.
 const GARMENT_PART_RE = /(^|\s)(sleeves?|collar|cuffs?|hood|buttons|pockets?|zipper|trim|lining|neckline|hem)$/
 const garmentsFirst = <T extends { tag: string }>(items: T[]) => [...items.filter((i) => !GARMENT_PART_RE.test(i.tag)), ...items.filter((i) => GARMENT_PART_RE.test(i.tag))]
+
+// Furry pictures: Rule34 tags the people's species down the taxonomy ("arctic fox", "canid", "canine", "canis").
+const FURRY_RE = /^(?:anthro|furry|kemono|anthrofied)(?: (?:female|male|girl|boy|only))?$/
+const HUMAN_PARTNER_RE = /\bhuman\b|\bhumanoid\b/
+const TAXON_RANKS = new Set([
+  "mammal", "canid", "canine", "canis", "vulpine", "vulpes", "feline", "felid", "felis", "equine", "equid", "bovine", "bovid",
+  "caprine", "cervid", "ursid", "ursine", "mustelid", "procyonid", "lagomorph", "leporid", "rodent", "murid", "avian",
+  "reptile", "scalie", "squamate", "amphibian", "primate", "marsupial", "pinniped", "cetacean", "arthropod", "insect", "animal",
+])
+/** "fox" -> "foxes", "wolf" -> "wolves", "bunny" -> "bunnies". */
+function pluralNoun(noun: string): string {
+  if (/(?:s|x|ch|sh)$/.test(noun)) return `${noun}es`
+  if (/[^aeiou]y$/.test(noun)) return `${noun.slice(0, -1)}ies`
+  if (/(?:wolf|elf)$/.test(noun)) return `${noun.slice(0, -1)}ves`
+  if (/(?:sheep|deer|fish|moose)$/.test(noun)) return noun
+  return `${noun}s`
+}
 
 const ADVERB_PLACES = new Set(["outdoors", "indoors", "underwater", "outside", "inside"])
 // Whole words only: "fitting room", "bedroom", but not "mushroom" or "chocolate bar".
@@ -670,7 +704,14 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
     if (tag === "holding" || RELATIONS.has(tag)) continue
     // "embarrassed female": an adjective for that person, not "an embarrassed woman".
     if (gendered(tag, statesOut)) continue
-    const act = roleAct(tag, phrases[tag], roles)
+    const phrased = phrases[tag]?.kind === "keep" ? undefined : phrases[tag]
+    // A phrase that needs more people than the picture has ("between two partners" with two women) describes another picture.
+    if (phrased && peopleNamed(phrased.text) > (roles?.count ?? 1)) { raw.push(tag); continue }
+    // With several people, a pairing tag ("human on anthro": "an anthropomorphic partner") only says who is there.
+    if (roles && phrased?.kind === "with" && onlyPartners(phrased.text)) continue
+    // Said of everyone, an act on someone else adds a person ("They are standing behind another person"): it is one of theirs.
+    const asAct = roles && phrased && !phrased.who && namesPartner(phrased.text) ? { ...phrased, who: "doer" as const, partner: "anyone" as const } : phrases[tag]
+    const act = roleAct(tag, asAct, roles)
     if (act) {
       if (!acts.has(act.role.label)) acts.set(act.role.label, { role: act.role, states: [], withs: [] })
       const entry = acts.get(act.role.label)!
@@ -715,9 +756,11 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
     const doing = tidy(done, 2)
     const extra = tidy(shown, 1)
     // "One of the men" is nobody in particular: two of his acts may be two men's,
-    // so each is its own clause ("One of the men is A, one is B, and one is C").
-    if (!role.person && doing.length + extra.length > 1) {
-      const clauses = [...doing.map((d) => `${verb} ${d}`), ...extra.map((e) => `${verb} shown with ${e}`)]
+    // so each is its own clause ("One of the men is A, one is B, and one is C"),
+    // but never more clauses than there are people: two women's three acts stay one sentence.
+    const pool = role.pool === "female" ? scene.girls : role.pool === "male" ? scene.boys : roles?.count ?? 0
+    const clauses = [...doing.map((d) => `${verb} ${d}`), ...extra.map((e) => `${verb} shown with ${e}`)]
+    if (!role.person && clauses.length > 1 && clauses.length <= pool) {
       const rest = clauses.slice(1).map((c, i) => `${i === clauses.length - 2 ? "and " : ""}one ${c}`)
       return `${Label} ${clauses[0]}, ${rest.join(", ")}.`
     }
@@ -797,9 +840,23 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   // Style (see style.ts), layout and other elements.
   const style = styleParts.sentence
   raw.push(...styleParts.raw)
+  // In a furry picture the animal tags are the people's own species ("arctic fox, canid,
+  // canine"), not more creatures: the most specific says what they are, the ranks say nothing more.
+  const sceneTags = [...scene.subjectTags, ...Object.values(scene.slots).flat()].filter((t): t is string => !!t)
+  const furry = sceneTags.some((t) => FURRY_RE.test(t))
   const animalTags = slot("animal")
-  const animals = tidy(animalTags.map((t) => nounPhrase(t) ?? withArticle(t)), 2)
+  const animalSpecies = furry
+    ? dropImplied([...new Set(animalTags.filter((t) => !TAXON_RANKS.has(t)).map((t) => t.replace(/^(?:female|male) /, "")))], sayable)
+    : []
+  const animals = furry ? [] : tidy(animalTags.map((t) => nounPhrase(t) ?? withArticle(t)), 2)
+  // With a human in the picture too ("human on anthro"), the species is only one of them's.
+  const allFurry = !p.plural || !sceneTags.some((t) => HUMAN_PARTNER_RE.test(t))
+  const speciesList = tidy(animalSpecies.map((t) => (p.plural && allFurry ? pluralNoun(t) : withArticle(`anthropomorphic ${t}`))), 2)
+  const speciesSentence = !speciesList.length ? ""
+    : !p.plural ? `${Subject} ${is} ${joinList(speciesList)}.`
+      : allFurry ? `They are anthropomorphic ${joinList(speciesList)}.` : `One of them is ${joinList(speciesList)}.`
   const extras = [
+    speciesSentence,
     animals.length ? `There ${animals.length > 1 || takesPluralVerb(animals[0]) ? "are" : "is"} also ${joinList(animals)}.` : "",
     describeLayout(slot("layout"), nounPhrase),
   ].filter(Boolean).join(" ")

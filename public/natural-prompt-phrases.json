@@ -73898,7 +73898,9 @@
  },
  "pussy sandwich": {
   "kind": "is",
-  "text": "sandwiched between two partners, one in front and one behind"
+  "text": "lying on top of each other with their vulvas pressed together",
+  "who": "together",
+  "partner": "female"
  },
  "pussy slit": {
   "kind": "has",
@@ -101064,8 +101066,9 @@
  },
  "yaoi": {
   "kind": "is",
-  "text": "two men romantically involved with each other",
-  "slot": "pose:interaction"
+  "text": "romantically involved with another man",
+  "who": "male",
+  "partner": "male"
  },
  "yaopei": {
   "kind": "wears",
