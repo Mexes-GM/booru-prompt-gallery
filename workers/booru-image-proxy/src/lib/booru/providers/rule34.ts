@@ -4,8 +4,14 @@ import { PROVIDER_URLS, PROVIDER_REFERERS } from '../../constants'
 import type { ProviderEnv } from '../factory'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '../../../logger'
-import { decodeTagEntities } from '../tag-lookup'
+import { decodeTagEntities, toTagLookupKey } from '../tag-lookup'
 import { UpstreamError } from '../../upstream'
+
+interface Rule34TagInfo {
+  tag: string
+  /** Rule34's own type: tag, artist, character, copyright, metadata... */
+  type: string
+}
 
 interface Rule34PostResponse {
   id: string | number
@@ -18,11 +24,63 @@ interface Rule34PostResponse {
   score: string | number
   width: string | number
   height: string | number
+  /** Present with `fields=tag_info`. */
+  tag_info?: Rule34TagInfo[]
+}
+
+// ---------------------------------------------------------------------------
+// Rule34's own tag types.
+//
+// With `fields=tag_info` every post carries the type Rule34 gives each of its
+// tags, at no extra request. They file the names neither category table knows
+// yet: a new artist (`zynox`) or a character tagged "name_(series)"
+// (`sugar_(fortnite)`), which otherwise reached the prompt as content. Only the
+// name types are taken: Rule34's `metadata` also holds visual tags (`pinup`,
+// `jack-o_pose`), so meta stays with the curated tables. Kept per isolate for
+// an hour, so a later enrich() of the same posts (the favorites batch) still
+// has them.
+// ---------------------------------------------------------------------------
+const RULE34_NAME_CATEGORIES: Record<string, number> = { artist: 1, copyright: 3, character: 4 }
+const TYPE_CACHE_TTL_MS = 60 * 60 * 1000
+const TYPE_CACHE_MAX = 50_000
+const typeCache = new Map<string, { category: number; at: number }>()
+
+/** Remembers the name types the posts' `tag_info` gives (and forgets tags Rule34 now types as content). */
+export function rememberRule34Types(posts: Pick<Rule34PostResponse, 'tag_info'>[], now = Date.now()): void {
+  for (const post of posts) {
+    for (const info of post.tag_info ?? []) {
+      if (!info?.tag) continue
+      const key = toTagLookupKey(info.tag)
+      const category = RULE34_NAME_CATEGORIES[String(info.type)]
+      typeCache.delete(key) // re-insert at the end so eviction stays oldest-first
+      if (category !== undefined) typeCache.set(key, { category, at: now })
+    }
+  }
+  if (typeCache.size > TYPE_CACHE_MAX) {
+    let excess = typeCache.size - TYPE_CACHE_MAX
+    for (const key of typeCache.keys()) {
+      if (excess-- <= 0) break
+      typeCache.delete(key)
+    }
+  }
+}
+
+/** The remembered Rule34 name types of the posts' tags, keyed by `toTagLookupKey`. */
+export function rule34TypesFor(posts: BooruPost[], now = Date.now()): Map<string, number> {
+  const types = new Map<string, number>()
+  for (const post of posts) {
+    for (const tag of post.tag_string?.split(/\s+/) ?? []) {
+      const key = toTagLookupKey(tag)
+      const entry = key ? typeCache.get(key) : undefined
+      if (entry && now - entry.at < TYPE_CACHE_TTL_MS) types.set(key, entry.category)
+    }
+  }
+  return types
 }
 
 export class Rule34Provider extends BaseBooruProvider {
   protected baseUrl = PROVIDER_URLS.RULE34
-  protected defaultParams = { limit: '100', page: 'dapi', s: 'post', q: 'index', json: '1' }
+  protected defaultParams = { limit: '100', page: 'dapi', s: 'post', q: 'index', json: '1', fields: 'tag_info' }
 
   private apiKey: string
   private userId: string
@@ -95,6 +153,8 @@ export class Rule34Provider extends BaseBooruProvider {
     }
 
     const validPosts = this.filterValidPosts<Rule34PostResponse>(postsList)
+    rememberRule34Types(validPosts)
+    // `tag_info` is only read here: the posts handed on (and cached) stay as small as before.
     const finalPosts: BooruPost[] = validPosts.map((post) => ({
       id: parseInt(String(post.id)),
       file_url: post.file_url,
@@ -114,6 +174,6 @@ export class Rule34Provider extends BaseBooruProvider {
   }
 
   override async enrich(posts: BooruPost[]): Promise<BooruPost[]> {
-    return this.enrichPostsWithCategories(posts, this.supabase, 'rule34')
+    return this.enrichPostsWithCategories(posts, this.supabase, 'rule34', rule34TypesFor(posts))
   }
 }
