@@ -18,7 +18,7 @@
  *   poorly there, so names are written out.
  */
 import type { Scene, SceneSlot } from "./scene"
-import { describeScene, type PhraseDictionary } from "./prose"
+import { describeScene, type PhraseDictionary, type SceneProse } from "./prose"
 import { capitalize, joinList, properNouns } from "./english"
 
 export interface RenderResult {
@@ -110,18 +110,28 @@ export function renderMoss(scene: Scene, options: ProseOptions = {}): RenderResu
   return renderProse(scene, options, MOSS_DEFAULT_MAX_WORDS)
 }
 
+// Light, camera, style, extras and raw details: worth less than any list item of the sentences above them.
+const MINOR_PRIORITY = 6
+
 function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: number): RenderResult {
   const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? defaultMaxWords
-  // Full detail when it fits; otherwise cap every list first, then drop sentences.
+  // Full detail when it fits, or when leaving out minor sentences is enough;
+  // otherwise cap every list first, then drop sentences.
   const full = describeScene(scene, options.phrases)
   const medium = options.medium ?? full.medium
-  const fullWords = wordCount([full.identity, ...full.characters, ...full.people, full.pose, full.body, full.clothing, full.held, full.setting, full.lighting, full.camera, full.style, full.extras, full.raw.join(" ")].join(" ")) + wordCount(medium) + 2
-  const prose = fullWords > maxWords ? describeScene(scene, options.phrases, { compact: true }) : full
-  const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
+  const fullFit = fitBudget(proseSections(full, medium), maxWords)
+  const minorOnly = fullFit.sentences.every((s) => (fullFit.kept.has(s) && !s.cut) || s.priority >= MINOR_PRIORITY)
+  const prose = minorOnly ? full : describeScene(scene, options.phrases, { compact: true })
+  const { sentences, kept } = minorOnly ? fullFit : fitBudget(proseSections(prose, medium), maxWords)
+  const text = properNouns(sentences.filter((s) => kept.has(s)).map((s) => s.text).join(" "))
+  return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }
+}
 
+function proseSections(prose: SceneProse, medium: string): { text: string; priority: number; short?: string }[] {
+  const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
   // Output order reads naturally; `priority` decides what survives the budget.
   // `short` stands in for a section's first sentence when that one does not fit.
-  const sections: { text: string; priority: number; short?: string }[] = [
+  return [
     { text: opening, priority: 0 },
     // Who has which trait matters as much as who is there.
     { text: prose.characters.join(" "), priority: 0.5 },
@@ -139,12 +149,20 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
     { text: prose.extras, priority: 9 },
     { text: prose.raw.length ? `Additional details: ${joinList(prose.raw)}.` : "", priority: 10 },
   ]
-  const sentences = sections.flatMap((section, order) =>
+}
+
+interface BudgetSentence { text: string; order: number; index: number; priority: number; words: number; short?: string; cut?: boolean }
+
+/**
+ * Greedy by priority: a sentence that does not fit is skipped (or cut to its
+ * short form, marked `cut`); a shorter later one may still fit. `sentences` stay
+ * in output order.
+ */
+function fitBudget(sections: { text: string; priority: number; short?: string }[], maxWords: number): { sentences: BudgetSentence[]; kept: Set<BudgetSentence> } {
+  const sentences: BudgetSentence[] = sections.flatMap((section, order) =>
     sentencesOf(section.text).map((text, index) => ({ text, order, index, priority: section.priority, words: wordCount(text), short: index === 0 ? section.short : undefined })),
   )
-  // Greedy by priority: a sentence that does not fit is skipped (or cut to its
-  // short form); a shorter later one may still fit.
-  const kept = new Set<(typeof sentences)[number]>()
+  const kept = new Set<BudgetSentence>()
   let words = 0
   for (const sentence of [...sentences].sort((a, b) => a.priority - b.priority || a.index - b.index)) {
     if (sentence.priority > 0 && words + sentence.words > maxWords) {
@@ -152,10 +170,10 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
       if (words + shortWords > maxWords) continue
       sentence.text = sentence.short!
       sentence.words = shortWords
+      sentence.cut = true
     }
     kept.add(sentence)
     words += sentence.words
   }
-  const text = properNouns(sentences.filter((s) => kept.has(s)).map((s) => s.text).join(" "))
-  return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }
+  return { sentences, kept }
 }
