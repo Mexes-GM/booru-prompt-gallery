@@ -31,9 +31,9 @@ export interface RenderResult {
 
 const RATING_TAGS: Record<string, string> = { g: "safe", s: "sensitive", q: "nsfw", e: "explicit" }
 
-/** ComfyUI/A1111 read bare parentheses as weights. */
-function escapeTag(tag: string): string {
-  return tag.replace(/\(/g, "\\(").replace(/\)/g, "\\)")
+/** ComfyUI/A1111 read bare parentheses as weights and a backslash as an escape ("\m/" stays "\m/"). */
+export function escapeTag(tag: string): string {
+  return tag.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)")
 }
 
 const ANIMA_TAG_SLOTS: SceneSlot[] = [

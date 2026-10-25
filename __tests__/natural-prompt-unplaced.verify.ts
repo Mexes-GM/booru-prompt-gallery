@@ -14,6 +14,7 @@
  */
 import { buildScene, normalizeTag, peopleCount, renderAnima, renderFlux2, renderMoss, sceneTagCount, type PhraseDictionary } from "../lib/prompt/natural"
 import { formatPrompt } from "../lib/prompt/natural-format"
+import { escapeTag } from "../lib/prompt/natural/renderers"
 
 let passed = 0
 let failed = 0
@@ -118,8 +119,9 @@ const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]
   assert(moss.endsWith("Additional details: mystery tag and netorare."), "a tag with no slot and no phrase is still written verbatim")
   const anima = renderAnima(scene, { phrases }).text
   const block = anima.split(". ")[0].split(", ")
-  const tagsKept = general.filter((t) => t !== "girl on top").every((t) => block.includes(normalizeTag(t).replace(/\(/g, "\\(").replace(/\)/g, "\\)")))
+  const tagsKept = general.filter((t) => t !== "girl on top").every((t) => block.includes(escapeTag(normalizeTag(t))))
   assert(tagsKept && anima.includes("with the woman on top"), "Anima keeps the tags in its tag block and the pose in its prose")
+  assert(escapeTag("\\m/") === "\\\\m/" && escapeTag("star (symbol)") === "star \\(symbol\\)", "a backslash is escaped before the parentheses")
 }
 
 // 6. The card's path.
