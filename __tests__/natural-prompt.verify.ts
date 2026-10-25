@@ -27,7 +27,7 @@
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
 import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, renderMoss, splitPromptTags, titleCase } from "../lib/prompt/natural"
-import { dropImplied, mergeSameThing, mergeSharedPrefix, splitHairCompound, withArticle } from "../lib/prompt/natural/english"
+import { dropContainedPhrases, dropImplied, mergeSameThing, mergeSharedPrefix, saysAll, splitHairCompound, withArticle } from "../lib/prompt/natural/english"
 import { canonicalTag, impliedBy, nounParents } from "../lib/prompt/natural/relations"
 import { readFileSync } from "fs"
 import path from "path"
@@ -547,6 +547,16 @@ const overrides: Record<string, string> = {
   assert(skin.includes("light-skinned") && !skin.includes("light skin"), "a skin-toned woman has that skin already")
   const sizes = moss(["1girl", "huge breasts", "massive breasts"])
   assert(sizes.includes("massive breasts") && !sizes.includes("huge breasts"), "of two sizes of one body part, the largest is said")
+
+  // Phrases another phrase already says, whatever tags they came from.
+  assert(saysAll("making an ahegao face with eyes rolled up and tongue out", "rolling their eyes"), "rolled eyes are said once, in any wording")
+  assert(saysAll("seen from a first-person point of view", "a first-person view"), "a first-person view is said once")
+  assert(!saysAll("a hand on another person's shoulder", "a hand on her shoulder") && !saysAll("kissing the man's penis", "kissing the man"), "someone else's is not the same thing")
+  assert(dropContainedPhrases(["smiling", "smiling faintly", "blushing"]).join() === "smiling faintly,blushing", "the plainer phrase goes")
+  const pov = renderMoss(buildScene({ general: ["1girl", "point of view", "pov"] }, { ...overrides, "point of view": "pose:camera" }), {
+    maxWords: null, phrases: { "point of view": { kind: "framing", text: "a first-person view" } },
+  }).text
+  assert(pov.includes("seen from a first-person point of view") && !pov.includes("a first-person view"), "a framing the angle already says is not repeated")
 
   // FLUX.2: garment parts come after garments, so the budget keeps the skirt and the legwear.
   const outfit = renderMoss(scene(["1girl", "military uniform", "long sleeves", "pencil skirt", "purple thighhighs"]), { maxWords: null }).text

@@ -28,6 +28,7 @@ import {
   mergeSharedPrefix,
   mergeThings,
   posePhrase,
+  saysAll,
   splitPlacement,
   takesPluralVerb,
   withArticle,
@@ -659,8 +660,11 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   ].filter(Boolean).join(" ")
 
   // Camera.
-  const framing = tidy([...dropImplied(scene.camera.framing, sayable).map((t) => framingPhrase(t, dictionary(t)?.text)), ...extraFraming], 1)
-  const angle = tidy(scene.camera.angle.map((t) => anglePhrase(t, dictionary(t)?.text)), 1)
+  // A framing the angle already says goes ("a first-person view", "seen from a first-person point of view").
+  const anglePhrases = scene.camera.angle.map((t) => anglePhrase(t, dictionary(t)?.text))
+  const framingPhrases = [...dropImplied(scene.camera.framing, sayable).map((t) => framingPhrase(t, dictionary(t)?.text)), ...extraFraming]
+  const framing = tidy(framingPhrases.filter((f) => !anglePhrases.some((a) => saysAll(a, f))), 1)
+  const angle = tidy(anglePhrases, 1)
   const camera = framing.length
     ? `The image is ${joinList(framing)}${angle.length ? `, ${joinList(angle)}` : ""}.`
     : angle.length ? `The image is ${joinList(angle)}.` : ""

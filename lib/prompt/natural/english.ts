@@ -210,14 +210,47 @@ export function dropImplied(tags: string[], context: Iterable<string> = tags): s
   })
 }
 
+// Words that add no detail of their own to a phrase.
+const FILLER_WORDS = new Set(["a", "an", "the", "and", "with", "of", "is", "are", "being", "seen", "shown", "making", "having"])
+
+/** "rolling", "rolled" -> "roll"; "eyes", "eye" -> "ey": close enough to compare two phrases' words. */
+function stem(word: string): string {
+  if (word.endsWith("'s")) return word
+  const bare = word.replace(/(ing|ed)$/, (end, _, offset) => (offset >= 3 ? "" : end)).replace(/s$/, "").replace(/e$/, "")
+  return bare.replace(/([^aeiou])\1$/, "$1")
+}
+
+/** The words of a phrase that say something, stemmed. Possessives stay whole ("the man's" is not "the man"). */
+function contentWords(phrase: string): Set<string> {
+  return new Set(phrase.toLowerCase().split(/[\s,]+/).filter((w) => w && !FILLER_WORDS.has(w)).map(stem))
+}
+
+const PRONOUNS_RE = /^(her|his|their|its|own)$/
+// Someone else's: "a hand on another person's shoulder" does not say "a hand on her shoulder".
+const OTHER_OWNER_RE = /'s$|^(another|someone|partner|each|other)$/
+
+/**
+ * True when phrase `b` says everything `a` says: "rolling her eyes" next to
+ * "making an ahegao face with eyes rolled up", "a first-person view" next to
+ * "seen from a first-person point of view", "smiling" next to "smiling faintly".
+ * Whose it is counts only when `b` names someone else.
+ */
+export function saysAll(b: string, a: string): boolean {
+  const [inA, inB] = [contentWords(a), contentWords(b)]
+  const owned = [...inB].some((w) => OTHER_OWNER_RE.test(w))
+  const said = [...inA].filter((w) => owned || !PRONOUNS_RE.test(w))
+  return said.length > 0 && said.every((w) => inB.has(w))
+}
+
 /**
  * Drops phrases another phrase in the list already says, after the dictionary
  * has turned tags into words: "performing oral sex" next to "performing oral
- * sex on a penis", or two tags that map to the same phrase.
+ * sex on a penis", "rolling her eyes" next to "making an ahegao face with eyes
+ * rolled up", or two tags that come out as the same words (the first stays).
  */
 export function dropContainedPhrases(phrases: string[]): string[] {
   const unique = [...new Set(phrases)]
-  return unique.filter((phrase) => !unique.some((other) => other !== phrase && ` ${other} `.includes(` ${phrase} `)))
+  return unique.filter((phrase, i) => !unique.some((other, j) => j !== i && saysAll(other, phrase) && (j < i || !saysAll(phrase, other))))
 }
 
 // Modifiers by kind, in the order they come before the noun: "multiple", "open", "large",
