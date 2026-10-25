@@ -14,9 +14,9 @@
 import { getTagSlotFromOverrides, TAG_SUBCATEGORIES } from "@/lib/tag-taxonomy"
 import { HAIR_COLOR_RE, isClothingState, splitHairCompound } from "./english"
 import { GENDER_AFFINITY } from "./gender-affinity"
-import { CROSSDRESSING_RE, FUTA_RE, genderedTraits, personNoun, ruleGender } from "./people"
+import { CROSSDRESSING_RE, FUTA_RE, genderedTraits, personNoun, ruleGender, type Gender } from "./people"
 import type { PhraseDictionary, PhraseEntry, PhraseKind } from "./prose"
-import { canonicalTag } from "./relations"
+import { canonicalTag, impliedBy } from "./relations"
 
 export interface NaturalPromptInput {
   /** General tags, as on the post (underscores or spaces). */
@@ -156,6 +156,9 @@ const COUNT_WORDS = new Set([
   // Rule34 pairing and species-scope tags ("straight" there means a man and a woman).
   "male/female", "female/female", "male/male", "human", "human only", "hetero", "straight", "humanoid only",
 ])
+// Words that say nothing alone, left when a pasted prompt splits a tag ("no", "on", "after", "black").
+// The taxonomy files some of them ("hair", "large"), but alone they still say nothing.
+const STRAY_WORD_RE = /^(no|on|off|in|at|of|after|before|with|without|and|or|the|a|an|used|implied|parted|blunt|short|long|large|small|big|black|white|grey|gray|red|blue|green|yellow|purple|pink|brown|orange|hair|eyes|pupils)$/
 // Other boorus' spellings of a Danbooru tag, read as the Danbooru one.
 const SPELLINGS: Record<string, string> = { indoor: "indoors", outdoor: "outdoors" }
 // Plurals that name another thing ("glasses" are not several glass), never swapped.
@@ -520,6 +523,9 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
       scene.quality.push(raw.trim().toLowerCase().startsWith("score_") ? raw.trim().toLowerCase() : tag)
       continue
     }
+    // The dictionary's verdict that a picture cannot show it (a premise, a judgment, a lone
+    // word left from a split tag) beats any slot: "netorare", "sexy", "crossover", "no".
+    if (options.phrases?.[tag]?.kind === "none" || STRAY_WORD_RE.test(tag)) { scene.dropped.push(tag); continue }
 
     if (FRAMING_RE.test(tag)) { scene.camera.framing.push(tag); continue }
     if (ANGLE_RE.test(tag)) { scene.camera.angle.push(tag); continue }
@@ -878,6 +884,11 @@ const SEXUAL_ANATOMY_RE = /\b(penis(es)?|pussy|vulva|vagina|labia|clitoris|testi
 // Traits only one gender can own; a profile's "breasts" share for a male character is his partners'.
 const FEMALE_ONLY_RE = /\b(breasts?|cleavage|underboob|sideboob|female)\b/
 const MALE_ONLY_RE = /\b(male|pectorals|beard|facial hair|mustache|stubble)\b/
+// Gendered tags that say one person is nude ("nude male") or furry ("furry female", "anthro female").
+const NUDE_RE = /^(nude|naked|completely nude)$/
+const FURRY_TRAIT_RE = /^(furry|anthro|kemono)$/
+// The animal parts of an anthro body.
+const ANIMAL_BODY_RE = /\b(animal ears|(?:cat|dog|fox|wolf|rabbit|bunny|horse|cow|mouse|bear|tiger|lion) (?:ears|tail)|fur|tail|paws?|pawpads|paw pads|muzzle|snout|whiskers)\b/
 
 type PersonSlots = Partial<Record<SceneSlot, string[]>>
 
@@ -962,9 +973,28 @@ export function attributeTraits(scene: Scene, traits: CharacterTraits, affinity:
     return best && best.share >= MIN_SHARE && best.share >= MIN_RATIO * (second?.share ?? 0) ? best.person : null
   }
 
+  // What another tag of the post says about one gender: "dark-skinned male" makes "dark skin"
+  // his; with "clothed female nude male" the clothes are hers; with "furry female" and a human
+  // partner the animal ears and fur are hers.
+  const gendered = postTags.flatMap((t) => genderedTraits(t).map((g) => ({ ...g, tag: t })))
+  const impliedFor = new Map<string, Gender>()
+  for (const g of gendered) for (const t of impliedBy(g.tag)) if (!genderedTraits(t).length) impliedFor.set(t, g.gender)
+  const nudeGenders = new Set(gendered.filter((g) => NUDE_RE.test(g.trait)).map((g) => g.gender))
+  const clothedGender = mixed && nudeGenders.size === 1 ? (nudeGenders.has("male") ? "female" : "male") : null
+  const furryGenders = new Set(gendered.filter((g) => FURRY_TRAIT_RE.test(g.trait)).map((g) => g.gender))
+  const furryGender = mixed && furryGenders.size === 1 ? [...furryGenders][0] : null
+  const hintGender = (tag: string, slot: SceneSlot): Gender | null => {
+    if (impliedFor.has(tag)) return impliedFor.get(tag)!
+    if (furryGender && ANIMAL_BODY_RE.test(tag)) return furryGender
+    if (clothedGender && CLOTHING_SLOTS.has(slot) && !isClothingState(tag)) return clothedGender
+    // What someone is ("milf", "bat girl") says whose it is, like "muscular male".
+    if (slot === "demographics" || slot === "anatomy") return ruleGender(tag) && /\b(girl|woman|boy|man|milf|gilf|dilf|mother|mom|mommy|father|dad|daddy|wife|husband)$/.test(tag) ? ruleGender(tag) : null
+    return null
+  }
+
   const ownerOf = (tag: string, slot: SceneSlot): SceneCharacter | null => {
     const named = genderedTraits(tag)
-    const fromTag = named.length === 1 ? named[0].gender : null
+    const fromTag = named.length === 1 ? named[0].gender : hintGender(tag, slot)
     // Other slots (expression, pose) only hand out tags that name their person ("embarrassed female").
     if (!fromTag && !ATTRIBUTABLE.has(slot)) return null
     // "bare shoulders", "sleeveless": how the outfit is worn, not an item someone owns

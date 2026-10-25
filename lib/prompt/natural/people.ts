@@ -37,9 +37,14 @@ const MALE_BODY_RE = /\b(penis(es)?|cock|dick|erection|testicles|balls|scrotum|f
 const RELATION_RE = /\b(on|in|into|inside|between|against|under|over|from|to|through|around|with)\b/
 const FEMALE_GARMENT_RE = /\b(bikini|bra|panties|lingerie|negligee|babydoll|nightgown|dress|sundress|skirt|miniskirt|microskirt|thighhighs|pantyhose|stockings|garter belt|garter straps|leotard|swimsuit|bodystocking|high heels|corset|bustier|camisole|chemise|playboy bunny|serafuku|pasties)\b/
 const MALE_GARMENT_RE = /\b(male swimwear|swim trunks|swim briefs|boxers|boxer briefs|jockstrap|fundoshi|male underwear)\b/
+// What someone is: "bat girl", "jester girl", "milf", "cat boy".
+const FEMALE_KIND_RE = /^(?:\S+ )+(?:girl|woman)$|^(milf|gilf|mother|mom|mommy|housewife|wife|girlfriend)$/
+const MALE_KIND_RE = /^(?:\S+ )+(?:boy|man)$|^(dilf|father|dad|daddy|husband|boyfriend)$/
 
 /** The gender a body or garment tag implies by its words alone, or null. */
 export function ruleGender(tag: string): "female" | "male" | null {
+  if (FEMALE_KIND_RE.test(tag)) return "female"
+  if (MALE_KIND_RE.test(tag)) return "male"
   if (RELATION_RE.test(tag)) return null
   if (MALE_GARMENT_RE.test(tag) || MALE_BODY_RE.test(tag)) return "male"
   if (FEMALE_BODY_RE.test(tag) || (FEMALE_GARMENT_RE.test(tag) && !/\bdress shirt\b/.test(tag))) return "female"

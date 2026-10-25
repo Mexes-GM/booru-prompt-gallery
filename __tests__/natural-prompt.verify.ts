@@ -25,6 +25,7 @@
  *   20. Said once: tags another implies (Danbooru's implications), one thing named several
  *       ways (merged modifiers), other boorus' spellings (Danbooru's aliases).
  *   21. No one the picture does not have: acts on another person, counted people, pairings, species.
+ *   22. Only what the tags settle: owners from other tags, "one of them", tags no picture shows.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
@@ -721,6 +722,48 @@ const overrides: Record<string, string> = {
   assert(fox.includes("She is an anthropomorphic arctic fox.") && !fox.includes("There are also"), "a furry picture's animal tags are her species")
   assert(!moss(["2girls", "furry", "feline"]).includes("feline"), "a taxonomic rank alone adds nothing")
   assert(moss(["1girl", "dog"]).includes("There is also a dog."), "without furry tags an animal is another creature")
+}
+
+// 22. What the tags settle, and nothing they do not: whose a trait is from another tag of the
+// post, "one of them" for what they leave open, tags no picture shows.
+{
+  const vocab: Record<string, string> = {
+    "clothed female nude male": "appearance:demographics", "black gloves": "clothing:accents", "long sleeves": "clothing:top",
+    "dark-skinned male": "appearance:demographics", "dark skin": "appearance:anatomy", "furry female": "appearance:demographics",
+    "animal ears": "appearance:anatomy", "black fur": "appearance:anatomy", "light-skinned male": "appearance:demographics",
+    "bat girl": "appearance:demographics", "long hair": "appearance:hair", "mechanical wings": "appearance:anatomy",
+    blush: "pose:expression", smile: "pose:expression", sex: "pose:physiological", netorare: "pose:interaction", hair: "appearance:hair",
+  }
+  const phrases: PhraseDictionary = { netorare: { kind: "none", text: "netorare" }, sex: { kind: "is", text: "having sex", who: "together", partner: "anyone" } }
+  const scene = (general: string[]) => buildScene({ general, rating: "e" }, vocab, { phrases, genderAffinity: {} })
+  const ownerOf = (s: ReturnType<typeof scene>, tag: string) => s.assigned.find((a) => Object.values(a.slots).flat().includes(tag))?.character.name
+  const moss = (general: string[]) => renderMoss(scene(general), { phrases, maxWords: null }).text
+
+  const clothed = scene(["1girl", "1boy", "clothed female nude male", "black gloves", "long sleeves"])
+  assert(ownerOf(clothed, "black gloves") === "the woman" && ownerOf(clothed, "long sleeves") === "the woman", "with the man nude, the clothes are the woman's")
+  assert(ownerOf(scene(["1girl", "1boy", "dark-skinned male", "dark skin"]), "dark skin") === "the man", "a gendered tag says whose the shared one is")
+  const furry = scene(["1girl", "1boy", "furry female", "light-skinned male", "animal ears", "black fur"])
+  assert(ownerOf(furry, "animal ears") === "the woman" && ownerOf(furry, "black fur") === "the woman", "with a human partner, the animal parts are the furry one's")
+  assert(ownerOf(scene(["1girl", "1boy", "bat girl"]), "bat girl") === "the woman", "a kind of girl is the woman")
+
+  const open = moss(["1girl", "1boy", "long hair", "mechanical wings", "blush", "sex"])
+  assert(open.includes("One of them has long hair and mechanical wings.") && !open.includes("They have"), "with a woman and a man, what the tags give nobody is one of them's")
+  assert(open.includes("One of them is blushing.") && open.includes("They are having sex"), "a face is one person's, a mutual act everyone's")
+  assert(moss(["2girls", "long hair"]).includes("long hair") && !moss(["2girls", "long hair"]).includes("One of them has long hair"), "two women still share what the tags say of both")
+
+  const dropped = scene(["1girl", "netorare", "hair"])
+  assert(dropped.dropped.includes("netorare") && dropped.dropped.includes("hair"), "a premise and a lone word are dropped")
+
+  const more: Record<string, string> = {
+    ...vocab, "no humans": "appearance:demographics", "aqua panties": "clothing:underwear", penis: "appearance:anatomy", pussy: "appearance:anatomy",
+    futanari: "appearance:demographics", "futa with female": "appearance:demographics", "black hair": "appearance:hair", "red hair": "appearance:hair",
+    "cynthia (pokemon)": "other:character", "dawn (pokemon)": "other:character",
+  }
+  const text = (input: Parameters<typeof buildScene>[0]) => renderMoss(buildScene({ rating: "e", ...input }, more, { phrases, genderAffinity: {} }), { phrases, maxWords: null }).text
+  assert(text({ general: ["no humans", "aqua panties"] }).includes("The image shows aqua panties.") && !/They wear/.test(text({ general: ["no humans", "aqua panties"] })), "with nobody in the picture, clothes are things in it")
+  const futa = text({ general: ["2girls", "futa with female", "futanari", "penis", "pussy"], characters: ["cynthia (pokemon)", "dawn (pokemon)"] })
+  assert(futa.includes("One of them has their penis visible.") && !/Their[^.]*penis/.test(futa), "a futanari the tags do not name has the penis, not both women")
+  assert(text({ general: ["1girl", "1boy", "black hair", "red hair"] }).includes("One of them has black hair, and another red hair."), "two hair colours nobody owns are two people's")
 }
 
 console.log(`${passed} passed, ${failed} failed`)
