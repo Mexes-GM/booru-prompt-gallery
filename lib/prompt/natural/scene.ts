@@ -144,6 +144,44 @@ const COUNT_WORDS = new Set([
 ])
 // Other boorus' spellings of a Danbooru tag, read as the Danbooru one.
 const SPELLINGS: Record<string, string> = { indoor: "indoors", outdoor: "outdoors" }
+// Plurals that name another thing ("glasses" are not several glass), never swapped.
+const OWN_PLURALS = new Set(["glasses", "sunglasses", "shorts", "pants", "boxers", "briefs", "tights", "balls", "arms", "goods"])
+
+/**
+ * The known tag an unknown one is a spelling of, as other boorus write tags:
+ * without an apostrophe ("hand on anothers chin"), with a space for a hyphen,
+ * as one word ("succubustail"), or with the head noun in the other number
+ * ("body marking" -> "body markings"; only in tags of several words, where the
+ * number does not change what the tag is). Null unless exactly one tag that
+ * `isKnown` accepts matches; of its spellings, a `preferred` one wins.
+ */
+function knownSpelling(tag: string, isKnown: (tag: string) => boolean, preferred: (tag: string) => boolean): string | null {
+  const words = tag.split(" ")
+  const replace = (i: number, word: string) => [...words.slice(0, i), word, ...words.slice(i + 1)].join(" ")
+  const candidates: string[] = []
+  const head = words[words.length - 1]
+  if (words.length > 1 && !OWN_PLURALS.has(head)) {
+    const last = words.length - 1
+    candidates.push(...(head.endsWith("s") ? [replace(last, head.slice(0, -1)), ...(head.endsWith("es") ? [replace(last, head.slice(0, -2))] : [])] : [replace(last, `${head}s`), replace(last, `${head}es`)]))
+  }
+  words.forEach((word, i) => {
+    if (/^[a-z]{3,}s$/.test(word)) candidates.push(replace(i, `${word.slice(0, -1)}'s`))
+    // One word for two: "wideeyed" -> "wide-eyed", "crosssection" -> "cross-section".
+    if (/^[a-z]{7,}$/.test(word)) {
+      for (let cut = 3; cut <= word.length - 3; cut++) {
+        for (const rest of [word.slice(cut), word.slice(cut - 1)]) {
+          for (const sep of [" ", "-"]) candidates.push(replace(i, `${word.slice(0, cut)}${sep}${rest}`))
+        }
+      }
+    }
+  })
+  if (tag.includes("-")) candidates.push(tag.replace(/-/g, " "))
+  if (tag.includes(" ")) candidates.push(tag.replace(/ /g, "-"))
+  const found = [...new Set(candidates)].filter(isKnown)
+  // "cross section" and "cross-section" are one tag written two ways.
+  const same = new Set(found.map((t) => t.replace(/-/g, " ")))
+  return same.size === 1 ? found.find(preferred) ?? found[0] : null
+}
 
 // Rule34 pairings ("futa with female", "male on futa"): who is in the picture, like
 // the count tags. A futanari counts as a girl, as "1futa" does.
@@ -345,11 +383,17 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
 
   const seen = new Set<string>()
   const seenSpellings = new Set<string>()
+  const entryOf = (tag: string) => overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
+  // A spelling is worth reading as another tag only if that tag says something: not a name.
+  const describes = (tag: string) => {
+    const kind = entryOf(tag)
+    return kind ? !/^other:(artist|character|copyright)$/.test(kind) : !!options.phrases?.[tag]
+  }
   // Cleaned prompts merge one noun's adjectives ("blue long hair"); hair goes back to plain tags.
   const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? [raw])
   for (const raw of general) {
     const given = normalizeTag(raw)
-    const tag = SPELLINGS[given] ?? given
+    let tag = SPELLINGS[given] ?? given
     if (!tag || seenSpellings.has(given)) continue
     seenSpellings.add(given)
     // A second spelling of a tag already there ("indoor" next to "indoors") says nothing new.
@@ -387,7 +431,12 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     if (ANGLE_RE.test(tag)) { scene.camera.angle.push(tag); continue }
     if (GAZE_RE.test(tag)) { scene.camera.gaze.push(tag); continue }
 
-    const exact = overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
+    // Another booru's spelling of a known tag ("body marking") is read as that tag,
+    // in the taxonomy's spelling when it has one ("dark-skinned female", not "dark skinned female").
+    const spelled = !entryOf(tag) && !options.phrases?.[tag] ? knownSpelling(tag, describes, (t) => !!entryOf(t)) : null
+    if (spelled && seen.has(spelled)) { scene.dropped.push(given); continue }
+    if (spelled) { seen.add(spelled); tag = spelled }
+    const exact = entryOf(tag)
     // The phrase dictionary knows tags the taxonomy left without a slot ("makeup",
     // "girl on top"); its placement is a judgment about this tag, so it beats the guesses below.
     const phrased = exact ? null : phraseSlot(options.phrases?.[tag])

@@ -136,5 +136,29 @@ const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]
   assert(short.text.split(/\s+/).length <= 20 && !short.text.includes("a wool hat"), "when a main sentence would not fit, the lists are shortened")
 }
 
+// 8. Other boorus' spellings of a known tag.
+{
+  const vocab = {
+    ...overrides,
+    "hand on another's chin": "pose:gesture", "body markings": "appearance:anatomy", "succubus tail": "appearance:anatomy",
+    "wide-eyed": "pose:expression", "cracked glass": "scenery:props", shorts: "clothing:bottom",
+    "cat ears": "appearance:anatomy", "cat-ear": "clothing:headwear", "hatsune miku": "other:character",
+  }
+  const scene = buildScene({ general: ["1girl", "hand on anothers chin", "body marking", "succubustail", "wideeyed"] }, vocab)
+  assert(scene.slots.gesture?.includes("hand on another's chin") === true, "a missing apostrophe reads as the known tag")
+  assert(scene.slots.anatomy?.includes("body markings") === true, "the other number of the head noun reads as the known tag")
+  assert(scene.slots.anatomy?.includes("succubus tail") === true && scene.slots.expression?.includes("wide-eyed") === true, "words written together read as the known tag")
+  const kept = buildScene({ general: ["1girl", "cracked glasses", "short", "cat ear", "hatsune mikus"] }, vocab)
+  assert(kept.unclassified.join() === "cracked glasses,short,cat ear,hatsune mikus", "no reading when the number changes the thing, the match is not unique, or it is a name")
+  const twice = buildScene({ general: ["1girl", "body marking", "body markings"] }, vocab)
+  assert(twice.slots.anatomy?.join() === "body markings" && twice.dropped.join() === "body markings", "two spellings of one tag say it once")
+  assert(sceneTagCount(twice) + twice.dropped.length === 3, "no tag is lost")
+  const known = buildScene({ general: ["1girl", "makeup"] }, vocab, { phrases })
+  assert(known.slots.accents?.includes("makeup") === true, "a tag with an entry of its own keeps it")
+  const spellings: PhraseDictionary = { "dark skinned female": { kind: "is", text: "a dark-skinned woman", slot: "appearance:demographics" } }
+  const dark = buildScene({ general: ["1girl", "darkskinned female"] }, { ...vocab, "dark-skinned female": "appearance:anatomy" }, { phrases: spellings })
+  assert(dark.slots.anatomy?.includes("dark-skinned female") === true, "of two spellings, the taxonomy's wins")
+}
+
 console.log(`${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
