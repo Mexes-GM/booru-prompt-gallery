@@ -324,11 +324,12 @@ function clothingPhrase(tag: string, possessive: string, entry: PhraseEntry | un
 
 /** "her bra taken off", "her panties taken off" -> "her bra and panties taken off". */
 function mergeTakenOff(items: string[]): string[] {
-  const off = items.filter((i) => / taken off$/.test(i))
+  const isOff = (i: string) => i.endsWith(" taken off")
+  const off = items.filter(isOff)
   const owner = off[0]?.split(" ")[0]
   if (off.length < 2 || !off.every((i) => i.startsWith(`${owner} `))) return items
   const merged = `${owner} ${joinList(off.map((i) => i.slice(owner.length + 1, -" taken off".length)))} taken off`
-  return items.flatMap((i) => (i === off[0] ? [merged] : off.includes(i) ? [] : [i]))
+  return items.flatMap((i) => (i === off[0] ? [merged] : isOff(i) ? [] : [i]))
 }
 
 /** "hood down", "shirt lift": how a garment is worn ("her hood down"); a phrase is used only when it says whose. */
@@ -390,7 +391,9 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const elsewhere = (kind: "being" | "prop" | "mood") => styleParts.elsewhere.filter((e) => e.kind === kind).map((e) => e.text)
 
   // Identity: name or count, species, cosplay, hair and eyes.
-  const anatomyAll = dropImplied([...(scene.slots.demographics ?? []).filter((t) => t !== "no humans"), ...(scene.slots.anatomy ?? [])])
+  // A trait one person was given ("light-skinned male") already says the shared one ("light skin").
+  const saidOfSomeone = impliedTags(scene.assigned.flatMap((a) => Object.values(a.slots).flat()).filter((t): t is string => !!t))
+  const anatomyAll = dropImplied([...(scene.slots.demographics ?? []).filter((t) => t !== "no humans"), ...(scene.slots.anatomy ?? [])]).filter((t) => !saidOfSomeone.has(t))
   const species = p.plural ? [] : anatomyAll.filter((t) => SPECIES_RE.test(t))
   // A shared "long hair" says nothing once a character owns "very long hair".
   const ownedTraits = scene.assigned.flatMap((a) => [...(a.slots.hair ?? []), ...(a.slots.eyes ?? [])])
@@ -630,6 +633,13 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     const verb = role.plural ? "are" : "is"
     const doing = tidy(done, 2)
     const extra = tidy(shown, 1)
+    // "One of the men" is nobody in particular: two of his acts may be two men's,
+    // so each is its own clause ("One of the men is A, one is B, and one is C").
+    if (!role.person && doing.length + extra.length > 1) {
+      const clauses = [...doing.map((d) => `${verb} ${d}`), ...extra.map((e) => `${verb} shown with ${e}`)]
+      const rest = clauses.slice(1).map((c, i) => `${i === clauses.length - 2 ? "and " : ""}one ${c}`)
+      return `${Label} ${clauses[0]}, ${rest.join(", ")}.`
+    }
     if (doing.length) return `${Label} ${verb} ${joinList(doing)}${extra.length ? `, with ${joinList(extra)}` : ""}.`
     return extra.length ? `${Label} ${verb} shown with ${joinList(extra)}.` : ""
   })

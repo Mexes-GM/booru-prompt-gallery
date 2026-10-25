@@ -170,7 +170,7 @@ export function posePhrase(tag: string, p: Pronouns): { kind: "state" | "with"; 
 
 // After a verb, words that are not a thing it acts on: adverbs, particles,
 // participles, people and body parts ("smiling faintly", "lying down", "biting lip").
-const NOT_AN_OBJECT_RE = /(ly|ed|ing)$|^(forward|backward|backwards|back|down|up|away|over|out|in|off|on|around|together|apart|aside|alone|still|sideways|hard|another|someone|each|both|all|viewer|ass|butt|breast|breasts|chest|penis|pussy|nipple|nipples|thigh|thighs|head|face|hair|tail|ears|neck|belly|stomach|foot|feet|hand|hands|arm|arms|leg|legs|lip|lips|mouth|tongue|teeth|finger|fingers)$/
+const NOT_AN_OBJECT_RE = /(ly|ed|ing)$|^(forward|backward|backwards|back|down|up|away|over|out|in|off|on|around|together|apart|aside|alone|still|sideways|hard|another|someone|each|both|all|viewer|sex|ass|butt|breast|breasts|chest|penis|pussy|nipple|nipples|thigh|thighs|head|face|hair|tail|ears|neck|belly|stomach|foot|feet|hand|hands|arm|arms|leg|legs|lip|lips|mouth|tongue|teeth|finger|fingers)$/
 
 /** "closed eyes" -> "her eyes closed"; smile/blush style words come from the lexicon. */
 export function expressionPhrase(tag: string, p: Pronouns): { kind: "state" | "with"; text: string } | null {
@@ -225,7 +225,10 @@ export function dropImplied(tags: string[]): string[] {
 
 /** Tags that some tag of the list says already, wherever each is filed ("clothed female nude male" -> "clothed sex"). */
 export function impliedTags(tags: string[]): Set<string> {
-  return new Set(tags.flatMap((tag) => IMPLIES[tag] ?? []))
+  return new Set(tags.flatMap((tag) => {
+    const skinned = tag.match(/^([a-z]+)-skinned (?:female|male|futa)$/)
+    return [...(IMPLIES[tag] ?? []), ...(skinned ? [`${skinned[1]} skin`] : [])]
+  }))
 }
 
 /**

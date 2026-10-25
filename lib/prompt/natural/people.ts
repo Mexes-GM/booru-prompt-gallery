@@ -110,8 +110,15 @@ export function sceneRoles(scene: Scene): SceneRoles | null {
     if (g === "futa" || count(g) < 2) return null
     return { label: `one of the ${personNoun(scene, g, true)}`, plural: false, possessive: g === "female" ? "her" : "his", pool: g }
   }
+  // Named characters are never marked futa (only "the futanari" nobody names is), so the tags tell.
+  const futaTagged = [...scene.subjectTags, ...Object.values(scene.slots).flat(), ...scene.unclassified].some((t) => !!t && FUTA_RE.test(t))
   const body = (anatomy: "female" | "male"): Role | null => {
-    if (anatomy === "male") return scene.boys > 0 || !futa ? one("male") : one("futa")
+    if (anatomy === "male") {
+      if (scene.boys > 0) return one("male")
+      if (futa) return one("futa")
+      // Women only, one of them a futanari: the penis is "one of the women"'s.
+      return futaTagged && scene.girls > 1 ? one("female") : null
+    }
     const women = scene.people.filter((p) => p.gender === "female" && !p.futa)
     if (women.length === 1 && !women[0].plural) return asRole(women[0])
     // "2girls" with no names has no entries in `scene.people`, only the count.
@@ -141,15 +148,17 @@ export type ActWho = "together" | "self" | "female" | "male" | "doer" | "receive
 export type ActPartner = "female" | "male" | "anyone" | "none"
 
 const PENETRATION_RE = /^(female|male|futa) (penetrated|penetrating)(?: (female|male|futa))?$/
-// "a man having vaginal intercourse with a woman": the act with its subject in it.
-const NOUN_SUBJECT_RE = /^an? (man|woman) ([a-z]+ing\b.*)$/
+// "a man having vaginal intercourse with a woman", "a woman on top of a man", "a person
+// with a vagina being penetrated": the act with its subject in it, which the role replaces.
+const NOUN_SUBJECT_RE = /^(?:an?|the) (?:(?:male|female) )?(?:man|woman|girl|boy|futanari|male|female|anthro|human|person|partner)(?: with (?:[a-z]+ )+?)? ?(?=(?:[a-z]+ly )?[a-z]+ing\b|on top\b)/
 // How a phrase written for one person names the other: "another person's", "someone", "a partner".
 const PARTNER_POSSESSIVE_RE = /\b(?:another person's|another's|someone(?: else)?'s|(?:a|another|the|her|his|their) (?:(?:female|male) )?partner's)/g
 const PARTNER_NOUN_RE = /\b(?:another person|someone(?: else)?|(?:a|another|the|her|his|their) (?:(?:female|male) )?partner)\b/g
 // ... or by sex ("a woman"), which names the partner only when the partner is of that sex.
+// ("a female" as a noun too, but not "a female body").
 const PARTNER_BY_SEX_RE = {
-  female: /\b(?:a|another) (?:woman|girl)('s)?\b/g,
-  male: /\b(?:a|another) (?:man|boy)('s)?\b/g,
+  female: /\b(?:a|another) (?:woman|girl|female)('s)?\b(?! (?:body|figure|form|anatomy|genitalia|character)\b)/g,
+  male: /\b(?:a|another) (?:man|boy|male)('s)?\b(?! (?:body|figure|form|anatomy|genitalia|character)\b)/g,
 }
 const ORGAN_RE = { male: /\b(?:a|the) (penis|cock|testicles)\b/g, female: /\b(?:a|the) (vulva|vagina|pussy|clitoris)\b/g }
 const ONE_OF_THEM: Role = { label: "one of them", plural: false, possessive: "their" }
@@ -222,7 +231,7 @@ export function roleAct(
   const partner = entry.partner ?? "none"
   const cast = castAct(entry.who, partner, roles)
   if (!cast) return null
-  let text = entry.text.replace(NOUN_SUBJECT_RE, "$2").replace(/\{pos\}/g, cast.subject.possessive)
+  let text = entry.text.replace(NOUN_SUBJECT_RE, "").replace(/\{pos\}/g, cast.subject.possessive)
   // "The man is shown with a penis ...": an organ of the subject's own sex is the subject's, not the partner's.
   if (entry.who === "female" || entry.who === "male") text = text.replace(ORGAN_RE[entry.who], `${cast.subject.possessive} $1`)
   if (cast.partner) text = namePartner(text, cast.partner, partner === entry.who ? "anyone" : partner)

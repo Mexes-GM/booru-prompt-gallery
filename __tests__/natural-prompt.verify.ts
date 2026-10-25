@@ -491,6 +491,7 @@ const overrides: Record<string, string> = {
     "blood type": "appearance:anatomy", heart: "appearance:anatomy", "text bubble": "scenery:atmosphere", "size difference": "appearance:anatomy", holding: "pose:gesture",
     basket: "equipment:handheld", bedroom: "scenery:setting", indoors: "scenery:setting", pillow: "scenery:props", "large breasts": "appearance:anatomy",
     "clothed female nude male": "appearance:anatomy", "clothed sex": "pose:physiological", "eye contact": "pose:camera", "arm rest": "scenery:props",
+    "girl on top": "pose:physiological", lezdom: "pose:physiological", futanari: "appearance:demographics", erection: "pose:physiological",
   }
   const phrases: PhraseDictionary = {
     "imminent penetration": { kind: "is", text: "about to be penetrated", who: "receiver", partner: "male" },
@@ -517,6 +518,9 @@ const overrides: Record<string, string> = {
     military: { kind: "keep", text: "military" },
     "eye contact": { kind: "is", text: "making eye contact with another person", who: "together", partner: "anyone" },
     "arm rest": { kind: "with", text: "{pos} arm resting on something" },
+    "girl on top": { kind: "is", text: "a woman on top of a man", who: "female", partner: "male" },
+    lezdom: { kind: "is", text: "a woman gently dominating a partner", who: "doer", partner: "female" },
+    erection: { kind: "with", text: "an erect penis", who: "male", partner: "none" },
   }
   const scene = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}) => buildScene({ general, ...extra }, vocab, { phrases, genderAffinity: {} })
   const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}) => renderFlux2(scene(general, extra), { phrases, maxWords: null }).text
@@ -533,7 +537,11 @@ const overrides: Record<string, string> = {
   assert(threesome.includes("with two women and a man") && !threesome.includes("each other"), "a mutual act keeps the people it names")
   assert(threesome.includes("One of the women is performing oral sex on the man's penis together with another woman."), "a woman the act names next to a male partner is not the partner")
   assert(flux(["futa with female", "fellatio"], { rating: "e" }).includes("The woman is performing oral sex on the futanari's penis."), "with no man, the penis is the futanari's")
+  const namedFuta = flux(["2girls", "futanari", "erection"], { rating: "e", characters: ["lute (hazbin hotel)", "sera (hazbin hotel)"] })
+  assert(namedFuta.includes("One of the women is shown with an erect penis.") && !namedFuta.includes("They are shown with an erect penis"), "among named women one of whom is a futanari, the penis is one woman's")
   assert(flux(["2girls", "eye contact"]).includes("making eye contact with each other"), "a mutual act among several is with each other")
+  assert(flux(["1girl", "1boy", "girl on top"], { rating: "e" }).includes("The woman is on top of the man.") &&
+    flux(["2girls", "lezdom"], { rating: "e" }).includes("One of the women is gently dominating the other."), "a phrase that names its own subject loses it to the role")
   assert(flux(["1girl", "1boy", "clothed female nude male", "clothed sex"], { rating: "e" }).includes("The woman is clothed.") &&
     !flux(["1girl", "1boy", "clothed female nude male", "clothed sex"], { rating: "e" }).includes("while clothed"), "a pair tag says who is clothed during sex")
 
