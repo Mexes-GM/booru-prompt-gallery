@@ -129,6 +129,7 @@ const names = (input: NaturalPromptInput, traits: CharacterTraits = {}, characte
   assert(names(omori, { "aubrey (omori)": female, "omori (omori)": male }).join() === "Aubrey,Omori", "known women and men fill the places; an unknown extra name goes")
   assert(names({ general: ["2girls"], characters: ["irritable ghost (deltarune)", "mad mew mew", "pink (deltarune)"] }).length === 3, "when nothing tells who is extra, every name stays")
   assert(names({ general: ["1girl", "multiple boys"], characters: ["a", "b", "c"] }).length === 3, "a lower-bound count trims nothing")
+  assert(names({ general: ["1girls", "multiple males"], characters: ["a", "b", "c"] }).length === 3, "nor does Rule34's spelling of one")
   assert(names({ general: ["1girl", "cosplay"], characters: ["aozaki aoko", "mash kyrielight"] }).length === 2, "a cosplay post without 'x (cosplay)' trims nothing")
 }
 

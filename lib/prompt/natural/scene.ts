@@ -534,11 +534,13 @@ function profileGender(tag: string, traits: CharacterTraits | undefined): "femal
   return !g ? undefined : g.ratio >= limits.male ? "male" : g.ratio <= limits.female ? "female" : undefined
 }
 
-/** False when the count tags give only a lower bound ("6+girls", "multiple boys" with no number). */
-function exactCount(scene: Scene): boolean {
-  const tags = new Set(scene.subjectTags)
-  return !scene.subjectTags.some((t) => /^\d+\+/.test(t)) &&
-    !(tags.has("multiple girls") && scene.girls < 2) && !(tags.has("multiple boys") && scene.boys < 2) && !(tags.has("multiple others") && scene.others < 2)
+/** False when the count tags give only a lower bound ("6+girls", "multiple boys" or Rule34's "multiple females" with no number). */
+function exactCount(scene: Scene, postTags: Set<string>): boolean {
+  const counted = { girls: scene.girls, females: scene.girls, boys: scene.boys, males: scene.boys, others: scene.others }
+  return ![...postTags].some((t) => {
+    const many = t.match(/^multiple (girls|females|boys|males|others)$/)?.[1] as keyof typeof counted | undefined
+    return /^\d+\+/.test(t) || (many !== undefined && counted[many] < 2)
+  })
 }
 
 /**
@@ -599,7 +601,7 @@ function resolvePeople(scene: Scene, options: BuildSceneOptions, postTags: Set<s
 
   const costume = scene.subjectTags.some((t) => t === "cosplay" || t === "costume switch")
   const named = new Set(scene.characters.flatMap((c) => [c.tag, c.name.toLowerCase()]))
-  const kept = people > 0 && groups.length > people && !costume && exactCount(scene)
+  const kept = people > 0 && groups.length > people && !costume && exactCount(scene, postTags)
     ? peopleInPicture(groups, people, capacity, genderOf, (g) => {
       // Someone's mascot or companion is named after them: "kronie (ouro kronii)".
       if (g.some((c) => named.has(c.tag.match(/\(([^)]+)\)$/)?.[1] ?? ""))) return -1
