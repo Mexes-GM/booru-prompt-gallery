@@ -117,6 +117,9 @@ export function describeStyle(style: string[], layout: string[]): StyleParts {
 
 // Layout tags: the comic ones are the medium; the rest is what the frame holds.
 const LAYOUT_WORDING: Record<string, string> = {
+  heart: "heart symbols",
+  hearts: "heart symbols",
+  "spoken heart": "a heart symbol in a speech bubble",
   "outside border": "a border around the picture",
   "reference inset": "an inset reference picture",
   "art program in frame": "an art program window",
