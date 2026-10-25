@@ -19,7 +19,7 @@
  */
 import type { Scene, SceneSlot } from "./scene"
 import { describeScene, type PhraseDictionary } from "./prose"
-import { capitalize, joinList } from "./english"
+import { capitalize, joinList, properNouns } from "./english"
 
 export interface RenderResult {
   text: string
@@ -50,7 +50,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
     ...(scene.rating && RATING_TAGS[scene.rating] ? [RATING_TAGS[scene.rating]] : []),
     ...scene.subjectTags,
     ...scene.characterTags,
-    ...scene.series.map((s) => s.toLowerCase()),
+    ...scene.copyrightTags,
     ...scene.artists.map((a) => `@${a}`),
     ...ANIMA_TAG_SLOTS.flatMap((s) => scene.slots[s] ?? []),
     ...scene.camera.framing,
@@ -73,7 +73,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
   const poseRaw = prose.raw.filter((t) => !inBlock.has(escapeTag(t)))
   const tagBlock = [...tags, ...poseRaw.map(escapeTag)].join(", ")
   return {
-    text: sentences.length ? `${tagBlock}. ${sentences.join(" ")}` : tagBlock,
+    text: sentences.length ? `${tagBlock}. ${properNouns(sentences.join(" "))}` : tagBlock,
     rawTags: poseRaw,
     omitted: prose.omitted,
   }
@@ -92,6 +92,7 @@ export const FLUX2_DEFAULT_MAX_WORDS = 80
 export const MOSS_DEFAULT_MAX_WORDS = 180
 
 export interface ProseOptions {
+  /** Opening words ("An anime-style illustration"); defaults to what the style tags say (style.ts). */
   medium?: string
   phrases?: PhraseDictionary
   /**
@@ -111,9 +112,9 @@ export function renderMoss(scene: Scene, options: ProseOptions = {}): RenderResu
 
 function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: number): RenderResult {
   const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? defaultMaxWords
-  const medium = options.medium ?? "An anime-style illustration"
   // Full detail when it fits; otherwise cap every list first, then drop sentences.
   const full = describeScene(scene, options.phrases)
+  const medium = options.medium ?? full.medium
   const fullWords = wordCount([full.identity, ...full.characters, ...full.people, full.pose, full.body, full.clothing, full.held, full.setting, full.lighting, full.camera, full.style, full.extras, full.raw.join(" ")].join(" ")) + wordCount(medium) + 2
   const prose = fullWords > maxWords ? describeScene(scene, options.phrases, { compact: true }) : full
   const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
@@ -155,6 +156,6 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
     kept.add(sentence)
     words += sentence.words
   }
-  const text = sentences.filter((s) => kept.has(s)).map((s) => s.text).join(" ")
+  const text = properNouns(sentences.filter((s) => kept.has(s)).map((s) => s.text).join(" "))
   return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }
 }

@@ -33,26 +33,41 @@ export function joinList(items: string[]): string {
 /** A colour word as hair and eye tags use it ("blonde" in "blonde hair", "light blue" in "light blue eyes"). */
 export const HAIR_COLOR_RE = /^((light|dark) )?(black|white|blonde|blond|brown|red|orange|yellow|green|aqua|blue|purple|pink|grey|gray|silver|rainbow)$/
 
-// Nouns used without an article: plurals, pairs and mass nouns.
-const MASS_NOUNS = /\b(teeth|cleavage|food|sclera|grass|pantyhose|underwear|lingerie|clothes|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|bandages|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear)$/
-const SINGULAR_S = /(ss|us|is|dress|bodysuit|swimsuit|jumpsuit|tracksuit|catsuit|leotards?)$/
+// Plurals and pairs used without an article: "teeth", "clothes", "pantyhose".
+const PLURAL_FORMS = /\b(teeth|pantyhose|clothes|bandages)$/
+// Uncountable nouns: no article and a singular verb ("sand", "her cleavage is visible").
+const UNCOUNTABLE = /\b(cleavage|food|sclera|grass|underwear|lingerie|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear|sand|money|water|snow|rain|mud|dirt|smoke|steam|fog|mist|sweat|blood|milk|slime|foam|confetti|furniture|equipment|luggage|architecture|scenery|lightning|sunlight|moonlight|darkness|ice|magic|electricity|saliva|drool|semen|cum|ink|paint)$/
+const SINGULAR_S = /(ss|us|is|dress|bodysuit|swimsuit|jumpsuit|tracksuit|catsuit|leotards?|thermos|canvas|lens|atlas)$/
 const IRREGULAR_PLURALS = /^(feet|teeth|people|men|women)$/
 
 // "arms around another's back", "hands on own chest": the plural body part comes first.
 const PLURAL_HEAD = /^(arms|hands|legs|feet|fingers|knees|thighs|wings|ears|eyes|breasts) /
 
-// Mass nouns take no article but a singular verb: "her cleavage is visible".
-const SINGULAR_MASS = /\b(cleavage|food|sclera|grass|underwear|lingerie|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear)$/
-
 /** Verb agreement: "feet are", "breasts are", but "cleavage is", "underwear is". */
 export function takesPluralVerb(phrase: string): boolean {
-  return isPluralNoun(phrase) && !SINGULAR_MASS.test(phrase)
+  return isPluralNoun(phrase) && !UNCOUNTABLE.test(phrase)
 }
 
+/** Nouns used without an article: plurals, pairs and uncountable nouns. */
 export function isPluralNoun(phrase: string): boolean {
   const last = phrase.split(" ").pop() ?? phrase
-  if (MASS_NOUNS.test(phrase) || PLURAL_HEAD.test(phrase) || IRREGULAR_PLURALS.test(last)) return true
+  if (PLURAL_FORMS.test(phrase) || UNCOUNTABLE.test(phrase) || PLURAL_HEAD.test(phrase) || IRREGULAR_PLURALS.test(last)) return true
   return last.endsWith("s") && !SINGULAR_S.test(last)
+}
+
+// Proper words that tags write in lowercase: "japanese clothes" -> "Japanese clothes".
+const PROPER_WORDS: Record<string, string> = {
+  english: "English", japanese: "Japanese", chinese: "Chinese", korean: "Korean", russian: "Russian",
+  french: "French", german: "German", spanish: "Spanish", italian: "Italian", arabian: "Arabian",
+  american: "American", british: "British", "east asian": "East Asian", asian: "Asian", egyptian: "Egyptian",
+  greek: "Greek", roman: "Roman", nordic: "Nordic", hogwarts: "Hogwarts", christmas: "Christmas",
+  halloween: "Halloween", easter: "Easter", "valentine's day": "Valentine's Day", "new year": "New Year",
+}
+const PROPER_RE = new RegExp(`\\b(${Object.keys(PROPER_WORDS).sort((a, b) => b.length - a.length).join("|")})\\b`, "g")
+
+/** Capitalizes the proper words a tag left in lowercase, in finished prose. */
+export function properNouns(text: string): string {
+  return text.replace(PROPER_RE, (word) => PROPER_WORDS[word])
 }
 
 /**
@@ -127,10 +142,17 @@ export function posePhrase(tag: string, p: Pronouns): { kind: "state" | "with"; 
     return { kind: entry.kind, text: entry.text.replace(/\{pos\}/g, p.possessive) }
   }
   if (BODY_PART_START.test(tag)) return { kind: "with", text: `${p.possessive} ${own(tag)}` }
-  const first = tag.split(" ")[0]
-  if (first.endsWith("ing") && first.length > 4) return { kind: "state", text: own(tag) }
-  return null
+  const [first, ...rest] = tag.split(" ")
+  if (!first.endsWith("ing") || first.length <= 4) return null
+  // "holding thermos" -> "holding a thermos": a bare object noun takes its article.
+  const object = rest.join(" ")
+  if (rest.length === 1 && !NOT_AN_OBJECT_RE.test(object)) return { kind: "state", text: `${first} ${withArticle(object)}` }
+  return { kind: "state", text: own(tag) }
 }
+
+// After a verb, words that are not a thing it acts on: adverbs, particles,
+// participles, people and body parts ("smiling faintly", "lying down", "biting lip").
+const NOT_AN_OBJECT_RE = /(ly|ed|ing)$|^(forward|backward|backwards|back|down|up|away|over|out|in|off|on|around|together|apart|aside|alone|still|sideways|hard|another|someone|each|both|all|viewer|ass|butt|breast|breasts|chest|penis|pussy|nipple|nipples|thigh|thighs|head|face|hair|tail|ears|neck|belly|stomach|foot|feet|hand|hands|arm|arms|leg|legs|lip|lips|mouth|tongue|teeth|finger|fingers)$/
 
 /** "closed eyes" -> "her eyes closed"; smile/blush style words come from the lexicon. */
 export function expressionPhrase(tag: string, p: Pronouns): { kind: "state" | "with"; text: string } | null {

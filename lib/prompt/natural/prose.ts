@@ -31,6 +31,7 @@ import {
   withArticle,
 } from "./english"
 import { genderedTraits, oneOfSentence, personNoun, possessivePronoun, roleAct, sceneRoles, visibleSentence, type Role } from "./people"
+import { describeLayout, describeStyle } from "./style"
 
 /**
  * How a dictionary phrase plugs into a sentence: "is" continues "She is ___",
@@ -42,6 +43,8 @@ export type PhraseKind = "is" | "with" | "has" | "wears" | "framing" | "scene"
 export type PhraseDictionary = Record<string, { kind: PhraseKind; text: string }>
 
 export interface SceneProse {
+  /** What the picture is, from its style tags: "An anime-style illustration", "A 3D render". */
+  medium: string
   /** "Yor Briar from Spy x Family, with long black hair and red eyes" (no final period). */
   identity: string
   /** One sentence per character with attributed traits ("Hatsune Miku has aqua hair…"). */
@@ -306,6 +309,9 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     const entry = phrases[tag]
     return entry ? { kind: entry.kind, text: entry.text.replace(/\{pos\}/g, p.possessive) } : null
   }
+  // Medium and style first: some style-slot tags describe the outfit or the setting instead.
+  const styleParts = describeStyle(slot("style"), slot("layout"))
+  const elsewhere = (kind: "being" | "prop" | "mood") => styleParts.elsewhere.filter((e) => e.kind === kind).map((e) => e.text)
 
   // Identity: name or count, species, cosplay, hair and eyes.
   const anatomyAll = dropImplied([...(scene.slots.demographics ?? []).filter((t) => t !== "no humans"), ...(scene.slots.anatomy ?? [])])
@@ -452,7 +458,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const states = clothingTags.filter(isClothingState)
   const worn = clothingTags.filter((t) => !isClothingState(t) && WORN_STATE_RE.test(t))
   const adjectives = states.filter((t) => OUTFIT_ADJECTIVES.has(t)).map((t) => OUTFIT_WORDING[t] ?? t.replace(/ clothes$/, ""))
-  const beings = states.filter((t) => BEING_STATES[t]).map((t) => BEING_STATES[t])
+  const beings = [...states.filter((t) => BEING_STATES[t]).map((t) => BEING_STATES[t]), ...elsewhere("being")]
   const showing = states.filter((t) => !OUTFIT_ADJECTIVES.has(t) && !BEING_STATES[t]).map((t) => (/cutout$/.test(t) ? withArticle(t) : t))
   const wornPhrases = worn.map((t) => dictionary(t)?.kind === "with" ? dictionary(t)!.text : `${p.possessive} ${t.replace(/ lift$/, " lifted").replace(/ pull$/, " pulled")}`)
   const garments: string[] = []
@@ -547,11 +553,12 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const backgrounds = sceneryTags.filter((t) => / background$/.test(t))
   // "scenery" only says the background is detailed; the place tags carry the content.
   const places = tidy(sceneryTags.filter((t) => !ADVERB_PLACES.has(t) && !/ background$/.test(t) && t !== "scenery"), 4)
+  const placeTexts = [...places.map(articleForScenery), ...tidy(elsewhere("prop"), 2)]
   const settingParts: string[] = []
   if (adverbs.length || times.length) {
-    settingParts.push(`The scene takes place ${[adverbs[0], ...times].filter(Boolean).join(" ")}${places.length ? `, with ${joinList(places.map(articleForScenery))}` : ""}.`)
-  } else if (places.length) {
-    settingParts.push(`The background features ${joinList(places.map(articleForScenery))}.`)
+    settingParts.push(`The scene takes place ${[adverbs[0], ...times].filter(Boolean).join(" ")}${placeTexts.length ? `, with ${joinList(placeTexts)}` : ""}.`)
+  } else if (placeTexts.length) {
+    settingParts.push(`The background features ${joinList(placeTexts)}.`)
   }
   const allBackgrounds = scene.slots.setting?.filter((t) => / background$/.test(t)) ?? []
   if (backgrounds.length || allBackgrounds.length) {
@@ -576,6 +583,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
       .filter((t) => !moodAdjectiveSet.has(t))
       .map((t) => (dictionary(t)?.kind === "scene" ? dictionary(t)!.text : isPluralNoun(t) || /^(rain|snow|fog|mist|steam|wind|smoke|fire|water)$/.test(t) ? t : withArticle(t))),
     ...extraMood,
+    ...elsewhere("mood"),
   ]
   const lightList = tidy(lightingAdjectives, 2)
   const moodList = tidy(mood, 3)
@@ -593,17 +601,14 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     ? `The image is ${joinList(framing)}${angle.length ? `, ${joinList(angle)}` : ""}.`
     : angle.length ? `The image is ${joinList(angle)}.` : ""
 
-  // Style, layout and other elements.
-  const styles = tidy(slot("style"), 2)
-  const style = styles.length
-    ? `The artwork uses a ${joinList(styles.map((t) => t.replace(/\s*\(medium\)$/, "")))} style.`
-    : ""
+  // Style (see style.ts), layout and other elements.
+  const style = styleParts.sentence
+  raw.push(...styleParts.raw)
   const animalTags = slot("animal")
   const animals = tidy(animalTags.map(withArticle), 2)
-  const layout = tidy(slot("layout").map((t) => (isPluralNoun(t) || / text$/.test(t) ? t : withArticle(t))), 2)
   const extras = [
-    animals.length ? `There ${animals.length > 1 || isPluralNoun(animalTags[0]) ? "are" : "is"} also ${joinList(animals)}.` : "",
-    layout.length ? `The image includes ${joinList(layout)}.` : "",
+    animals.length ? `There ${animals.length > 1 || takesPluralVerb(animalTags[0]) ? "are" : "is"} also ${joinList(animals)}.` : "",
+    describeLayout(slot("layout")),
   ].filter(Boolean).join(" ")
 
   const people = [
@@ -612,5 +617,5 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   ].filter(Boolean)
 
   raw.push(...scene.unclassified.filter((t) => !RELATIONS.has(t)))
-  return { identity, characters, people, body, clothing, held, pose, poseShort, setting, lighting, camera, style, extras, pronouns: p, raw, omitted }
+  return { medium: styleParts.medium, identity, characters, people, body, clothing, held, pose, poseShort, setting, lighting, camera, style, extras, pronouns: p, raw, omitted }
 }

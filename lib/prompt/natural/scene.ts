@@ -70,7 +70,10 @@ export interface Scene {
   characterTags: string[]
   /** Characters someone is dressed as ("x (cosplay)" tags), not extra people. */
   cosplayAs: string[]
+  /** Series names for prose ("Pokemon", not "Nintendo and Pokemon"; never "Original" or "Patreon"). */
   series: string[]
+  /** Copyright tags as given, less sites and misfiled text tags (tag renderers keep them). */
+  copyrightTags: string[]
   artists: string[]
   rating?: string
   /** Tags per taxonomy slot, in input order. Camera tags live in `camera`. */
@@ -134,6 +137,9 @@ const COUNT_WORDS = new Set([
   // Rule34 pairing and species-scope tags ("straight" there means a man and a woman).
   "male/female", "female/female", "male/male", "human", "human only", "hetero", "straight", "humanoid only",
 ])
+// Other boorus' spellings of a Danbooru tag, read as the Danbooru one.
+const SPELLINGS: Record<string, string> = { indoor: "indoors", outdoor: "outdoors" }
+
 // Rule34 pairings ("futa with female", "male on futa"): who is in the picture, like
 // the count tags. A futanari counts as a girl, as "1futa" does.
 const PAIRING_RE = /^(futa|futanari|female|male|girl|boy)s? (with|on|x) (futa|futanari|female|male|girl|boy)s?$|^(futa|futanari) only$/
@@ -214,9 +220,31 @@ function qualifier(tag: string): string | null {
   return m && !/^(cosplay|costume|swimsuit|young|adult|alternate|human|male|female)\b/.test(m[1]) ? m[1] : null
 }
 
+// Copyright tags that name no franchise: an original character, the site a post
+// was published on, and text in the picture that taxonomies file as a copyright.
+const NOT_A_FRANCHISE_RE = /^(original|patreon|fanbox|pixiv fanbox|pixiv|fantia|gumroad|ko-fi|subscribestar|onlyfans|boosty|twitter|deviantart|newgrounds|tumblr|instagram|youtube|twitch|tiktok|discord|copyright name|copyright logo|character name|artist name|company name)$/
+// Companies and labels: named only when nothing more specific is ("Pokemon", not "Nintendo and Pokemon").
+const COMPANY_RE = /^(nintendo|game freak|the pokemon company|sega|sonic team|capcom|square enix|bandai namco|namco|konami|atlus|koei tecmo|nippon ichi software|level-5|falcom|arc system works|spike chunsoft|microsoft|xbox|sony|playstation|valve|riot games|blizzard entertainment|mihoyo|hoyoverse|cygames|nexon|netmarble|yostar|shift up|kuro games|epic games|bethesda softworks|bethesda|ubisoft|electronic arts|activision|fromsoftware|kadokawa|aniplex|toei animation|kyoto animation|disney|pixar|dreamworks|warner bros|hasbro|mattel|glitch productions|cover corp|anycolor)$/
+
+// Character qualifiers that are kinds, not series: "little red riding hood (fairy tale character)".
+const GENERIC_QUALIFIER_RE = /^(fairy tale( character)?|folklore|mythology|legend|real life|original|oc|vtuber|mascot|meme)$/
+
+/**
+ * A character qualifier as a series: "kancolle" in "kashima (kancolle)". The
+ * taxonomy rarely files the short forms, so an unknown one counts; one it files
+ * as anything else (Rule34's "draco malfoy (redteneri)" names an artist) does not.
+ */
+function isSeriesQualifier(qualifier: string, overrides: Record<string, string>): boolean {
+  if (GENERIC_QUALIFIER_RE.test(qualifier) || NOT_A_FRANCHISE_RE.test(qualifier)) return false
+  const kind = overrides[qualifier] ?? overrides[qualifier.replace(/ /g, "_")]
+  return !kind || kind === "other:copyright"
+}
+
 function seriesNames(copyrights: string[]): string[] {
+  const franchises = copyrights.map(normalizeTag).filter((c) => !NOT_A_FRANCHISE_RE.test(c))
+  const specific = franchises.filter((c) => !COMPANY_RE.test(c))
   // "touhou" + "touhou (pc-98)" are one series once the qualifier goes.
-  const names = [...new Set(copyrights.map(normalizeTag).map((c) => titleCase(c.replace(/\s*\([^)]*\)$/, ""))))]
+  const names = [...new Set((specific.length ? specific : franchises).map((c) => titleCase(c.replace(/\s*\([^)]*\)$/, ""))))]
   // "arknights" + "arknights: endfield": keep the more specific one.
   return names.filter((n, i) => !names.some((o, j) => j !== i && o.length > n.length && o.toLowerCase().startsWith(n.toLowerCase())))
 }
@@ -268,7 +296,10 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     characterTags,
     cosplayAs: [...cosplayNames],
     // Without copyright tags (a pasted prompt), the character qualifiers still name the series.
-    series: seriesNames(input.copyrights?.length ? input.copyrights : [...new Set(characterTags.map(qualifier).filter((q): q is string => !!q))]),
+    series: seriesNames(input.copyrights?.length
+      ? input.copyrights
+      : [...new Set(characterTags.map(qualifier).filter((q): q is string => !!q && isSeriesQualifier(q, overrides)))]),
+    copyrightTags: [...copyrightTags].filter((c) => !NOT_A_FRANCHISE_RE.test(c) || c === "original"),
     artists: [...artistTags],
     rating: input.rating,
     slots: {},
@@ -280,11 +311,16 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   }
 
   const seen = new Set<string>()
+  const seenSpellings = new Set<string>()
   // Cleaned prompts merge one noun's adjectives ("blue long hair"); hair goes back to plain tags.
   const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? [raw])
   for (const raw of general) {
-    const tag = normalizeTag(raw)
-    if (!tag || seen.has(tag)) continue
+    const given = normalizeTag(raw)
+    const tag = SPELLINGS[given] ?? given
+    if (!tag || seenSpellings.has(given)) continue
+    seenSpellings.add(given)
+    // A second spelling of a tag already there ("indoor" next to "indoors") says nothing new.
+    if (seen.has(tag)) { scene.dropped.push(given); continue }
     seen.add(tag)
     // Providers without split tag fields mix names into the general list.
     if (characterSet.has(tag) || copyrightTags.has(tag) || artistTags.has(tag)) continue

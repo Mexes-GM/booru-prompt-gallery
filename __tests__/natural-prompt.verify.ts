@@ -438,5 +438,39 @@ const overrides: Record<string, string> = {
   assert(busy.includes("She is sitting and dancing."), "a long pose keeps its first actions within the budget")
 }
 
+// 18. Medium, style, series and wording ("The artwork uses a meme style", "from Patreon", "a sand").
+{
+  const vocab: Record<string, string> = {
+    "3d": "other:style", greyscale: "other:style", monochrome: "other:style", "anime coloring": "other:style", "white outline": "other:style",
+    meme: "other:style", gyaru: "other:style", "1990s (style)": "other:style", "2koma": "other:layout", letterboxed: "other:layout",
+    "speech bubble": "other:layout", sand: "scenery:setting", beach: "scenery:setting", indoors: "scenery:setting",
+    "holding thermos": "pose:gesture", "smiling faintly": "pose:expression", "japanese clothes": "clothing:outfit",
+    patreon: "other:copyright", original: "other:copyright", nintendo: "other:copyright", pokemon: "other:copyright",
+    "fate (series)": "other:copyright", "fate/grand order": "other:copyright", redteneri: "other:artist",
+  }
+  const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}) =>
+    renderFlux2(buildScene({ general, ...extra }, vocab), { maxWords: null }).text
+
+  assert(flux(["1girl", "3d"]).startsWith("A 3D render of a girl.") && !flux(["1girl", "3d"]).includes("3d style"), "a 3D post opens as a 3D render")
+  assert(flux(["1girl", "greyscale", "monochrome"]).startsWith("A greyscale anime-style illustration of a girl."), "greyscale says monochrome already")
+  assert(flux(["1girl", "2koma"]).startsWith("A two-panel anime-style comic of a girl."), "a comic layout is the medium")
+  const styled = flux(["1girl", "anime coloring", "white outline", "1990s (style)"])
+  assert(styled.includes("The artwork has anime coloring and a white outline.") && styled.includes("It is drawn in a 1990s style."), "art-style details are written as such")
+  const misfiled = flux(["1girl", "meme", "gyaru"])
+  assert(!/meme|artwork/.test(misfiled) && misfiled.includes("She is dressed in gyaru fashion."), "style-slot tags that are not styles go where they belong")
+  assert(flux(["1girl", "letterboxed", "speech bubble"]).includes("The image is letterboxed, with a speech bubble."), "a layout state reads as one")
+
+  assert(flux(["1girl"], { characters: ["mari (original)"], copyrights: ["original"] }).startsWith("An anime-style illustration of Mari."), "an original character is from no series")
+  assert(flux(["1girl"], { characters: ["zoroark"], copyrights: ["nintendo", "pokemon", "patreon"] }).includes("Zoroark from Pokemon."), "a company and a site are not series next to the franchise")
+  assert(flux(["1boy"], { characters: ["draco malfoy (redteneri)"] }).startsWith("An anime-style illustration of Draco Malfoy."), "a qualifier the taxonomy files as an artist is not a series")
+  const anima = renderAnima(buildScene({ general: ["1girl"], characters: ["mash kyrielight"], copyrights: ["fate (series)", "fate/grand order", "patreon"] }, vocab)).text
+  assert(anima.includes("fate \\(series\\), fate/grand order") && !anima.includes("patreon"), "Anima keeps the copyright tags as given, less sites")
+
+  assert(flux(["1girl", "beach", "sand"]).includes("the beach and sand") && !flux(["1girl", "beach", "sand"]).includes("a sand"), "an uncountable noun takes no article")
+  assert(flux(["1girl", "holding thermos"]).includes("holding a thermos") && flux(["1girl", "smiling faintly"]).includes("smiling faintly"), "a bare object takes its article, an adverb does not")
+  assert(flux(["1girl", "japanese clothes"]).includes("Japanese clothes"), "proper words are capitalized")
+  assert(flux(["1girl", "indoor"]).includes("indoors") && !/\bindoor\b/.test(flux(["1girl", "indoor"])), "another booru's spelling reads as Danbooru's")
+}
+
 console.log(`${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
