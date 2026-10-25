@@ -163,6 +163,10 @@ const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]
   const spellings: PhraseDictionary = { "dark skinned female": { kind: "is", text: "a dark-skinned woman", slot: "appearance:demographics" } }
   const dark = buildScene({ general: ["1girl", "darkskinned female"] }, { ...vocab, "dark-skinned female": "appearance:anatomy" }, { phrases: spellings })
   assert(dark.slots.anatomy?.includes("dark-skinned female") === true, "of two spellings, the taxonomy's wins")
+  // A "keep" entry marks a tag left without a phrase on purpose.
+  const keep = { ...phrases, "body markings": { kind: "keep", text: "body markings" }, military: { kind: "keep", text: "military" } } as unknown as PhraseDictionary
+  const marked = buildScene({ general: ["1girl", "body marking", "military"] }, overrides, { phrases: keep })
+  assert(marked.unclassified.join() === "body marking,military", "a keep entry places nothing and is no spelling to read a tag as")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

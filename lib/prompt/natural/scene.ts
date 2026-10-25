@@ -395,10 +395,12 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   const seen = new Set<string>()
   const seenSpellings = new Set<string>()
   const entryOf = (tag: string) => overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
+  // A "keep" entry says the tag has no phrase on purpose: it is no wording.
+  const phraseOf = (tag: string) => (options.phrases?.[tag]?.kind === "keep" ? undefined : options.phrases?.[tag])
   // A spelling is worth reading as another tag only if that tag says something: not a name.
   const describes = (tag: string) => {
     const kind = entryOf(tag)
-    return kind ? !/^other:(artist|character|copyright)$/.test(kind) : !!options.phrases?.[tag]
+    return kind ? !/^other:(artist|character|copyright)$/.test(kind) : !!phraseOf(tag)
   }
   // Cleaned prompts merge one noun's adjectives ("blue long hair"); hair goes back to plain tags.
   const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? [raw])
@@ -444,13 +446,13 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
 
     // Another booru's spelling of a known tag ("body marking") is read as that tag,
     // in the taxonomy's spelling when it has one ("dark-skinned female", not "dark skinned female").
-    const spelled = !entryOf(tag) && !options.phrases?.[tag] ? knownSpelling(tag, describes, (t) => !!entryOf(t)) : null
+    const spelled = !entryOf(tag) && !phraseOf(tag) ? knownSpelling(tag, describes, (t) => !!entryOf(t)) : null
     if (spelled && seen.has(spelled)) { scene.dropped.push(given); continue }
     if (spelled) { seen.add(spelled); tag = spelled }
     const exact = entryOf(tag)
     // The phrase dictionary knows tags the taxonomy left without a slot ("makeup",
     // "girl on top"); its placement is a judgment about this tag, so it beats the guesses below.
-    const phrased = exact ? null : phraseSlot(options.phrases?.[tag])
+    const phrased = exact ? null : phraseSlot(phraseOf(tag))
     if (phrased === "framing" || phrased === "gaze") { scene.camera[phrased].push(tag); continue }
     if (phrased) { push(scene, phrased, tag); continue }
     // Hand-written tags ("lying on stomach") are not in the taxonomy; the suffix
