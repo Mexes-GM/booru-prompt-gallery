@@ -11,9 +11,11 @@
 import {
   buildScene,
   normalizeTag,
+  peopleCount,
   renderAnima,
   renderFlux2,
   renderMoss,
+  resolveNames,
   splitPromptTags,
   type CharacterTraits,
   type NaturalPromptInput,
@@ -64,19 +66,26 @@ function uniqueTags(tags: string[]): string[] {
   })
 }
 
+// Boorus whose posts carry their own character and copyright fields.
+const TYPED_PROVIDERS = new Set(["danbooru", "aibooru", "e621"])
+
 export function naturalPromptInput(source: NaturalPromptSource, overrides: Record<string, string>): NaturalPromptInput {
   const split = splitPromptTags(source.prompt, overrides, { guessNames: !!source.handWritten })
+  // Such a post's fields are complete, and the card leaves its series out of the
+  // prompt: a series the taxonomy finds there is a misfiled tag ("twitter logo"),
+  // and no general tag of theirs is a name.
+  const trusted = TYPED_PROVIDERS.has(source.provider ?? "") && !source.handWritten
   const characters = uniqueTags([...fieldTags(source.characters), ...(split.characters ?? [])])
-  const copyrights = uniqueTags([...fieldTags(source.copyrights), ...(split.copyrights ?? [])])
+  const copyrights = uniqueTags([...fieldTags(source.copyrights), ...(trusted ? [] : split.copyrights ?? [])])
   // The card's prompt also lists the names the post fields carry.
   const names = new Set([...characters, ...copyrights].map(normalizeTag))
-  return {
-    general: split.general.filter((tag) => !names.has(normalizeTag(tag))),
+  return resolveNames({
+    general: [...split.general, ...(trusted ? split.copyrights ?? [] : [])].filter((tag) => !names.has(normalizeTag(tag))),
     characters,
     copyrights,
     artists: split.artists,
     rating: ratingLetter(source.rating, source.provider),
-  }
+  }, overrides, { inferNames: !trusted })
 }
 
 /**
@@ -84,10 +93,11 @@ export function naturalPromptInput(source: NaturalPromptSource, overrides: Recor
  * rendering. That includes tags the scene would place through a suffix: the
  * suffix is a guess, right for "frilled red dress" (a dress) but wrong for a
  * series or a creature named after an object ("youkai watch" is not a watch).
+ * So do the general tags read as names (`inferredNames`): "x (series)" may be an item.
  */
 export function unclassifiedTags(input: NaturalPromptInput, overrides: Record<string, string>): string[] {
   const tags = new Set<string>()
-  for (const raw of input.general) {
+  for (const raw of [...input.general, ...(input.inferredNames ?? [])]) {
     const tag = normalizeTag(raw)
     if (tag && !overrides[tag] && !overrides[tag.replace(/ /g, "_")]) tags.add(tag)
   }
@@ -95,12 +105,13 @@ export function unclassifiedTags(input: NaturalPromptInput, overrides: Record<st
 }
 
 /**
- * The card's character names whose trait profiles are worth loading:
- * attribution only starts with two or more characters.
+ * The card's character names whose trait profiles are worth loading: with two
+ * or more characters, or one next to someone unnamed ("1girl, 1boy" naming only
+ * her), where the profile tells which of the two she is.
  */
 export function traitNames(input: NaturalPromptInput): string[] {
   const names = [...new Set((input.characters ?? []).map(normalizeTag))]
-  return names.length >= 2 ? names : []
+  return names.length >= 2 || (names.length === 1 && peopleCount(input.general) >= 2) ? names : []
 }
 
 /**
@@ -137,8 +148,8 @@ export function formatPrompt(
   overrides: Record<string, string>,
   options: FormatPromptOptions = {},
 ): FormattedPrompt {
-  const scene = buildScene(input, overrides, { traits: options.traits, characterAliases: options.characterAliases })
   const { phrases } = options
+  const scene = buildScene(input, overrides, { traits: options.traits, characterAliases: options.characterAliases, phrases })
   const maxWords = options.fullDetail ? null : undefined
   const result = format === "anima"
     ? renderAnima(scene, { phrases })

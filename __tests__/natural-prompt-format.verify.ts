@@ -146,7 +146,8 @@ const overrides: Record<string, string> = {
 
 // 6. Character traits: which names load, how they are looked up, what they change.
 {
-  assert(traitNames(naturalPromptInput({ prompt: "1girl, smile", characters: "yor_briar" }, overrides)).length === 0, "one character loads no profiles")
+  assert(traitNames(naturalPromptInput({ prompt: "1girl, smile", characters: "yor_briar" }, overrides)).length === 0, "one character alone loads no profiles")
+  assert(traitNames(naturalPromptInput({ prompt: "1girl, 1boy, smile", characters: "yor_briar" }, overrides)).join() === "yor briar", "one character next to someone unnamed loads hers")
   const pair = naturalPromptInput({ prompt: "2girls, aqua hair, blonde hair, twintails, hair bow", characters: "hatsune_miku kagamine_rin" }, overrides)
   assert(traitNames(pair).join("|") === "hatsune miku|kagamine rin", "two characters load their profiles, by normalized name")
 

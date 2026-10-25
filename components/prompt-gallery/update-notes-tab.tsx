@@ -34,6 +34,9 @@ const NOTES: UpdateNote[] = [
   { kind: 'new', title: 'Copy as Another Format', body: "A card's copy menu now has Copy as, to copy that prompt once in any format without changing your setting." },
   { kind: 'new', title: 'Each Character Described Apart', body: "When a post has two or more popular characters, the description gives each one their own hair, eyes and outfit, so models are less likely to mix them up." },
   { kind: 'new', title: 'Short or Full Descriptions', body: "FLUX.2 and MOSS-Image prompts stay short by default, FLUX.2 under 80 words. Turn on Keep every detail for the full version." },
+  { kind: 'improved', title: 'Clearer Scenes With Several People', body: "Hair, clothes and actions go to the right person more often. What the tags don't say about who has what is no longer given to everyone, and nobody extra is added to the picture." },
+  { kind: 'improved', title: 'More Tags in Plain English', body: "Many more tags, Rule34's included, now read as plain sentences instead of a list at the end, and each thing is said once." },
+  { kind: 'fixed', title: 'Only What the Picture Shows', body: "Story labels, ratings of looks and notes about the post are left out of descriptions, and halos, animal ears and drawn symbols land in the right sentence." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)

@@ -18,8 +18,8 @@
  *   poorly there, so names are written out.
  */
 import type { Scene, SceneSlot } from "./scene"
-import { describeScene, type PhraseDictionary } from "./prose"
-import { capitalize, joinList } from "./english"
+import { describeScene, type PhraseDictionary, type SceneProse } from "./prose"
+import { capitalize, joinList, properNouns } from "./english"
 
 export interface RenderResult {
   text: string
@@ -31,9 +31,9 @@ export interface RenderResult {
 
 const RATING_TAGS: Record<string, string> = { g: "safe", s: "sensitive", q: "nsfw", e: "explicit" }
 
-/** ComfyUI/A1111 read bare parentheses as weights. */
-function escapeTag(tag: string): string {
-  return tag.replace(/\(/g, "\\(").replace(/\)/g, "\\)")
+/** ComfyUI/A1111 read bare parentheses as weights and a backslash as an escape ("\m/" stays "\m/"). */
+export function escapeTag(tag: string): string {
+  return tag.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)")
 }
 
 const ANIMA_TAG_SLOTS: SceneSlot[] = [
@@ -44,15 +44,24 @@ const ANIMA_TAG_SLOTS: SceneSlot[] = [
 
 export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phrases?: PhraseDictionary } = {}): RenderResult {
   const prose = describeScene(scene, options.phrases, { compact: true })
+  // A tag the card joined ("black elbow grey gloves") stays as the card wrote it.
+  const joined = new Set<string>()
+  const slotTags = ANIMA_TAG_SLOTS.flatMap((s) => scene.slots[s] ?? []).flatMap((tag) => {
+    const card = scene.joinedTags[tag]
+    if (!card) return [tag]
+    if (joined.has(card)) return []
+    joined.add(card)
+    return [card]
+  })
   const tags = [
     ...(options.qualityTags ?? []),
     ...scene.quality,
     ...(scene.rating && RATING_TAGS[scene.rating] ? [RATING_TAGS[scene.rating]] : []),
     ...scene.subjectTags,
     ...scene.characterTags,
-    ...scene.series.map((s) => s.toLowerCase()),
+    ...scene.copyrightTags,
     ...scene.artists.map((a) => `@${a}`),
-    ...ANIMA_TAG_SLOTS.flatMap((s) => scene.slots[s] ?? []),
+    ...slotTags,
     ...scene.camera.framing,
     ...scene.camera.angle,
     ...scene.unclassified,
@@ -63,6 +72,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
     prose.identity ? `${capitalize(prose.identity)}.` : "",
     // Anima's card asks for each character to be described separately.
     ...prose.characters,
+    ...prose.people,
     prose.pose,
     prose.camera,
   ].filter(Boolean)
@@ -72,7 +82,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
   const poseRaw = prose.raw.filter((t) => !inBlock.has(escapeTag(t)))
   const tagBlock = [...tags, ...poseRaw.map(escapeTag)].join(", ")
   return {
-    text: sentences.length ? `${tagBlock}. ${sentences.join(" ")}` : tagBlock,
+    text: sentences.length ? `${tagBlock}. ${properNouns(sentences.join(" "))}` : tagBlock,
     rawTags: poseRaw,
     omitted: prose.omitted,
   }
@@ -91,6 +101,7 @@ export const FLUX2_DEFAULT_MAX_WORDS = 80
 export const MOSS_DEFAULT_MAX_WORDS = 180
 
 export interface ProseOptions {
+  /** Opening words ("An anime-style illustration"); defaults to what the style tags say (style.ts). */
   medium?: string
   phrases?: PhraseDictionary
   /**
@@ -108,23 +119,37 @@ export function renderMoss(scene: Scene, options: ProseOptions = {}): RenderResu
   return renderProse(scene, options, MOSS_DEFAULT_MAX_WORDS)
 }
 
+// Light, camera, style, extras and raw details: worth less than any list item of the sentences above them.
+const MINOR_PRIORITY = 6
+
 function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: number): RenderResult {
   const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? defaultMaxWords
-  const medium = options.medium ?? "An anime-style illustration"
-  // Full detail when it fits; otherwise cap every list first, then drop sentences.
+  // Full detail when it fits, or when leaving out minor sentences is enough;
+  // otherwise cap every list first, then drop sentences.
   const full = describeScene(scene, options.phrases)
-  const fullWords = wordCount([full.identity, ...full.characters, full.pose, full.body, full.clothing, full.held, full.setting, full.lighting, full.camera, full.style, full.extras, full.raw.join(" ")].join(" ")) + wordCount(medium) + 2
-  const prose = fullWords > maxWords ? describeScene(scene, options.phrases, { compact: true }) : full
-  const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
+  const medium = options.medium ?? full.medium
+  const fullFit = fitBudget(proseSections(full, medium), maxWords)
+  const minorOnly = fullFit.sentences.every((s) => (fullFit.kept.has(s) && !s.cut) || s.priority >= MINOR_PRIORITY)
+  const prose = minorOnly ? full : describeScene(scene, options.phrases, { compact: true })
+  const { sentences, kept } = minorOnly ? fullFit : fitBudget(proseSections(prose, medium), maxWords)
+  const text = properNouns(sentences.filter((s) => kept.has(s)).map((s) => s.text).join(" "))
+  return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }
+}
 
+function proseSections(prose: SceneProse, medium: string): { text: string; priority: number; short?: string }[] {
+  const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
   // Output order reads naturally; `priority` decides what survives the budget.
-  const sections = [
+  // `short` stands in for a section's first sentence when that one does not fit.
+  return [
     { text: opening, priority: 0 },
     // Who has which trait matters as much as who is there.
     { text: prose.characters.join(" "), priority: 0.5 },
-    { text: prose.pose, priority: 1 },
+    // Unnamed people's own details ("The woman has large breasts") matter less than what is happening.
+    { text: prose.people.join(" "), priority: 1.5 },
+    // A long pose sentence is cut to its first actions rather than lost.
+    { text: prose.pose, priority: 1, short: prose.poseShort },
     { text: prose.body, priority: 4 },
-    { text: prose.clothing, priority: 2 },
+    { text: prose.clothing, priority: 2, short: prose.clothingShort },
     { text: prose.held, priority: 5 },
     { text: prose.setting, priority: 3 },
     { text: prose.lighting, priority: 6 },
@@ -133,17 +158,31 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
     { text: prose.extras, priority: 9 },
     { text: prose.raw.length ? `Additional details: ${joinList(prose.raw)}.` : "", priority: 10 },
   ]
-  const sentences = sections.flatMap((section, order) =>
-    sentencesOf(section.text).map((text, index) => ({ text, order, index, priority: section.priority, words: wordCount(text) })),
+}
+
+interface BudgetSentence { text: string; order: number; index: number; priority: number; words: number; short?: string; cut?: boolean }
+
+/**
+ * Greedy by priority: a sentence that does not fit is skipped (or cut to its
+ * short form, marked `cut`); a shorter later one may still fit. `sentences` stay
+ * in output order.
+ */
+function fitBudget(sections: { text: string; priority: number; short?: string }[], maxWords: number): { sentences: BudgetSentence[]; kept: Set<BudgetSentence> } {
+  const sentences: BudgetSentence[] = sections.flatMap((section, order) =>
+    sentencesOf(section.text).map((text, index) => ({ text, order, index, priority: section.priority, words: wordCount(text), short: index === 0 ? section.short : undefined })),
   )
-  // Greedy by priority: a sentence that does not fit is skipped, a shorter later one may still fit.
-  const kept = new Set<(typeof sentences)[number]>()
+  const kept = new Set<BudgetSentence>()
   let words = 0
   for (const sentence of [...sentences].sort((a, b) => a.priority - b.priority || a.index - b.index)) {
-    if (sentence.priority > 0 && words + sentence.words > maxWords) continue
+    if (sentence.priority > 0 && words + sentence.words > maxWords) {
+      const shortWords = sentence.short ? wordCount(sentence.short) : Infinity
+      if (words + shortWords > maxWords) continue
+      sentence.text = sentence.short!
+      sentence.words = shortWords
+      sentence.cut = true
+    }
     kept.add(sentence)
     words += sentence.words
   }
-  const text = sentences.filter((s) => kept.has(s)).map((s) => s.text).join(" ")
-  return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }
+  return { sentences, kept }
 }

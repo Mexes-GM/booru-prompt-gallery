@@ -5,6 +5,7 @@
  * A rule that cannot place a tag returns null; the renderer then keeps the tag
  * verbatim and reports it, so the eval can see which tags still need a phrase.
  */
+import { canonicalWord, impliedAmong, impliedBy, isKindOf, nounParents } from "./relations"
 
 export interface Pronouns {
   subject: string
@@ -17,6 +18,7 @@ export const PRONOUNS = {
   her: { subject: "she", possessive: "her", plural: false },
   his: { subject: "he", possessive: "his", plural: false },
   their: { subject: "they", possessive: "their", plural: true },
+  its: { subject: "it", possessive: "its", plural: false },
 } satisfies Record<string, Pronouns>
 
 export function capitalize(text: string): string {
@@ -29,17 +31,44 @@ export function joinList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
 }
 
-// Nouns used without an article: plurals, pairs and mass nouns.
-const MASS_NOUNS = /\b(teeth|cleavage|food|sclera|grass|pantyhose|underwear|lingerie|clothes|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|bandages|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear)$/
-const SINGULAR_S = /(ss|us|is|dress|bodysuit|swimsuit|jumpsuit|tracksuit|catsuit|leotards?)$/
+/** A colour word as hair and eye tags use it ("blonde" in "blonde hair", "light blue" in "light blue eyes"). */
+export const HAIR_COLOR_RE = /^((light|dark) )?(black|white|blonde|blond|brown|red|orange|yellow|green|aqua|blue|purple|pink|grey|gray|silver|rainbow)$/
+
+// Plurals and pairs used without an article: "teeth", "clothes", "pantyhose".
+const PLURAL_FORMS = /\b(teeth|pantyhose|clothes|bandages)$/
+// Uncountable nouns: no article and a singular verb ("sand", "her cleavage is visible").
+const UNCOUNTABLE = /\b(cleavage|food|sclera|grass|underwear|lingerie|clothing|armor|armour|makeup|jewelry|lipstick|eyeshadow|nail polish|fur|hair|skin|tape|swimwear|sportswear|footwear|headwear|eyewear|legwear|neckwear|sand|money|water|snow|rain|mud|dirt|smoke|steam|fog|mist|sweat|blood|milk|slime|foam|confetti|furniture|equipment|luggage|architecture|scenery|lightning|sunlight|moonlight|darkness|ice|magic|electricity|saliva|drool|semen|cum|ink|paint)$/
+const SINGULAR_S = /(ss|us|is|dress|bodysuit|swimsuit|jumpsuit|tracksuit|catsuit|leotards?|thermos|canvas|lens|atlas)$/
+const IRREGULAR_PLURALS = /^(feet|teeth|people|men|women)$/
 
 // "arms around another's back", "hands on own chest": the plural body part comes first.
 const PLURAL_HEAD = /^(arms|hands|legs|feet|fingers|knees|thighs|wings|ears|eyes|breasts) /
 
+/** Verb agreement: "feet are", "breasts are", but "cleavage is", "underwear is". */
+export function takesPluralVerb(phrase: string): boolean {
+  return isPluralNoun(phrase) && !UNCOUNTABLE.test(phrase)
+}
+
+/** Nouns used without an article: plurals, pairs and uncountable nouns. */
 export function isPluralNoun(phrase: string): boolean {
   const last = phrase.split(" ").pop() ?? phrase
-  if (MASS_NOUNS.test(phrase) || PLURAL_HEAD.test(phrase)) return true
+  if (PLURAL_FORMS.test(phrase) || UNCOUNTABLE.test(phrase) || PLURAL_HEAD.test(phrase) || IRREGULAR_PLURALS.test(last)) return true
   return last.endsWith("s") && !SINGULAR_S.test(last)
+}
+
+// Proper words that tags write in lowercase: "japanese clothes" -> "Japanese clothes".
+const PROPER_WORDS: Record<string, string> = {
+  english: "English", japanese: "Japanese", chinese: "Chinese", korean: "Korean", russian: "Russian",
+  french: "French", german: "German", spanish: "Spanish", italian: "Italian", arabian: "Arabian",
+  american: "American", british: "British", "east asian": "East Asian", asian: "Asian", egyptian: "Egyptian",
+  greek: "Greek", roman: "Roman", nordic: "Nordic", hogwarts: "Hogwarts", christmas: "Christmas",
+  halloween: "Halloween", easter: "Easter", "valentine's day": "Valentine's Day", "new year": "New Year",
+}
+const PROPER_RE = new RegExp(`\\b(${Object.keys(PROPER_WORDS).sort((a, b) => b.length - a.length).join("|")})\\b`, "g")
+
+/** Capitalizes the proper words a tag left in lowercase, in finished prose. */
+export function properNouns(text: string): string {
+  return text.replace(PROPER_RE, (word) => PROPER_WORDS[word])
 }
 
 /**
@@ -51,8 +80,9 @@ export function mergeSharedPrefix(phrases: string[]): string[] {
   const groups = new Map<string, string[]>()
   for (const phrase of new Set(phrases)) {
     const cut = phrase.lastIndexOf(" ")
-    // Phrases of one or two words ("smiling", "looking up") never merge.
-    const key = phrase.split(" ").length >= 3 ? phrase.slice(0, cut) : `\0${phrase}`
+    // Phrases of one or two words ("smiling", "looking up") never merge, nor phrases
+    // that share only up to an article: "resting on a knee" + "resting on a surface".
+    const key = phrase.split(" ").length >= 3 && !/ (a|an|the)$/.test(phrase.slice(0, cut)) ? phrase.slice(0, cut) : `\0${phrase}`
     groups.set(key, [...(groups.get(key) ?? []), phrase.slice(cut + 1)])
   }
   return [...groups].map(([key, lasts]) => (key.startsWith("\0") ? key.slice(1) : `${key} ${joinList(lasts)}`))
@@ -64,17 +94,57 @@ export function withArticle(phrase: string): string {
   return `${/^[aeiou]/.test(phrase) && !/^(uni|one|eu)/.test(phrase) ? "an" : "a"} ${phrase}`
 }
 
+// Clothing tags that name a style rather than a garment: "a gothic lolita" reads as a person.
+const GARMENT_WORDING: Record<string, string> = {
+  "gothic lolita": "a gothic lolita outfit",
+  "classic lolita": "a classic lolita outfit",
+  "sweet lolita": "a sweet lolita outfit",
+  "lolita fashion": "a lolita fashion outfit",
+}
+const WORN_ON_RE = /^(.+) (on head|on back|around waist|on shoulders)$/
+
+// "print garter belt" (a printed pattern), "picot trim panties" (a garment's trim).
+const PRINT_RE = /^print (.+)$/
+const TRIM_RE = /^(.+) trim (.+)$/
+
+/** "goggles on head" -> "goggles on her head", "gothic lolita" -> "a gothic lolita outfit", "skirt" -> "a skirt". */
+export function garmentPhrase(tag: string, possessive: string): string {
+  if (GARMENT_WORDING[tag]) return GARMENT_WORDING[tag]
+  const print = tag.match(PRINT_RE)
+  if (print) return withArticle(`patterned ${print[1]}`)
+  const trim = tag.match(TRIM_RE)
+  if (trim) return `${withArticle(trim[2])} with ${trim[1]} trim`
+  const worn = tag.match(WORN_ON_RE)
+  if (!worn) return withArticle(tag)
+  const [preposition, part] = worn[2].split(" ")
+  return `${withArticle(worn[1])} ${preposition} ${possessive} ${part}`
+}
+
+/** "coat on shoulders" -> "coat": the garment a worn-somewhere tag names. */
+function wornItem(tag: string): string | null {
+  return tag.match(WORN_ON_RE)?.[1] ?? null
+}
+
 // Clothing tags that describe the outfit instead of naming a garment.
 const CLOTHING_STATES = new Set([
   "sleeveless", "strapless", "backless", "single off shoulder", "topless", "bottomless", "barefoot", "nude", "naked",
   "see-through", "wet clothes", "open clothes", "torn clothes", "no bra", "no panties", "completely nude",
   "off shoulder", "off-shoulder", "covered navel", "highleg", "sideboob", "underboob", "cleavage",
-  "midriff", "navel", "bare shoulders", "bare arms", "bare legs", "zettai ryouiki", "clothing cutout",
+  "midriff", "navel", "bare shoulders", "single bare shoulder", "bare arms", "bare legs", "bare back", "zettai ryouiki", "clothing cutout",
   "cleavage cutout", "shoulder cutout", "taut clothes", "skindentation", "frills", "lace trim",
 ])
 
 export function isClothingState(tag: string): boolean {
   return CLOTHING_STATES.has(tag) || / cutout$/.test(tag)
+}
+
+const BARE_RE = /^(single )?bare (shoulders?|arms?|legs?|back)$/
+
+/** "bare shoulders" -> "her shoulders bare", "single bare shoulder" -> "one shoulder bare": the body, not a garment. */
+export function bareState(tag: string, possessive: string): string | null {
+  const m = tag.match(BARE_RE)
+  if (!m) return null
+  return m[1] ? `one ${m[2].replace(/s$/, "")} bare` : `${possessive} ${m[2]} bare`
 }
 
 const BODY_PART_START = /^(hand|hands|arm|arms|finger|fingers|leg|legs|knee|knees|foot|feet|head|hip|hips|elbow|elbows|thigh|thighs|own hands|both hands)\b/
@@ -96,10 +166,17 @@ export function posePhrase(tag: string, p: Pronouns): { kind: "state" | "with"; 
     return { kind: entry.kind, text: entry.text.replace(/\{pos\}/g, p.possessive) }
   }
   if (BODY_PART_START.test(tag)) return { kind: "with", text: `${p.possessive} ${own(tag)}` }
-  const first = tag.split(" ")[0]
-  if (first.endsWith("ing") && first.length > 4) return { kind: "state", text: own(tag) }
-  return null
+  const [first, ...rest] = tag.split(" ")
+  if (!first.endsWith("ing") || first.length <= 4) return null
+  // "holding thermos" -> "holding a thermos": a bare object noun takes its article.
+  const object = rest.join(" ")
+  if (rest.length === 1 && !NOT_AN_OBJECT_RE.test(object)) return { kind: "state", text: `${first} ${withArticle(object)}` }
+  return { kind: "state", text: own(tag) }
 }
+
+// After a verb, words that are not a thing it acts on: adverbs, particles,
+// participles, people and body parts ("smiling faintly", "lying down", "biting lip").
+const NOT_AN_OBJECT_RE = /(ly|ed|ing)$|^(forward|backward|backwards|back|down|up|away|over|out|in|off|on|around|together|apart|aside|alone|still|sideways|hard|another|someone|each|both|all|viewer|sex|ass|butt|breast|breasts|chest|penis|pussy|nipple|nipples|thigh|thighs|head|face|hair|tail|ears|neck|belly|stomach|foot|feet|hand|hands|arm|arms|leg|legs|lip|lips|mouth|tongue|teeth|finger|fingers)$/
 
 /** "closed eyes" -> "her eyes closed"; smile/blush style words come from the lexicon. */
 export function expressionPhrase(tag: string, p: Pronouns): { kind: "state" | "with"; text: string } | null {
@@ -118,69 +195,317 @@ export function gazePhrase(tag: string, p: Pronouns): string {
 }
 
 /**
- * Drops tags another tag in the list already implies, as Danbooru tags both:
- * "shirt" next to "grey shirt", "long hair" next to "very long hair",
- * "reaching" next to "reaching towards viewer". Prose only; tag output keeps
- * the redundancy on purpose.
+ * Drops tags another tag already implies, as booru posts carry both: "animal
+ * ears" next to "cat ears", "lying" next to "on back", "swimsuit" next to
+ * "black bikini" (Danbooru's implications, see relations.ts), "shirt" next to
+ * "grey shirt", "reaching" next to "reaching towards viewer". `context` holds
+ * the tags the prose says (by default the list itself): a shared "animal ears"
+ * goes when one person has "cat ears", but a tag only listed raw implies
+ * nothing. Prose only; tag output keeps the redundancy on purpose.
  */
-export function dropImplied(tags: string[]): string[] {
-  const implied = new Set<string>()
-  for (const tag of tags) for (const other of IMPLIES[tag] ?? []) implied.add(other)
+export function dropImplied(tags: string[], context: Iterable<string> = tags): string[] {
+  const all = [...new Set(context)]
+  const implied = impliedAmong(tags, all)
+  for (const tag of all) for (const other of IMPLIES[tag] ?? []) implied.add(other)
   // "colored skin" only says the skin is an unnatural colour; "grey skin" says which.
-  if (tags.some((tag) => SKIN_COLOR_RE.test(tag))) implied.add("colored skin")
+  if (all.some((tag) => SKIN_COLOR_RE.test(tag))) implied.add("colored skin")
   // A kind of thing implies the generic word, where it was placed too:
   // "parasol" -> "umbrella", "handgun" -> "gun" and "weapon", "sword on back" -> "weapon on back".
-  for (const tag of tags) {
+  for (const tag of all) {
     const { item, place } = splitPlacement(tag)
     for (const generic of genericsOf(item)) implied.add(place ? `${generic} ${place}` : generic)
   }
-  // Several sizes of one body part ("big ass, huge ass, large ass"): keep the largest.
-  const largest = new Map<string, number>()
+  // Several sizes of one body part ("big ass, huge ass, large ass"): keep the largest, the first of a tie.
+  const largest = new Map<string, { rank: number; tag: string }>()
   for (const tag of tags) {
     const size = sizeOf(tag)
-    if (size) largest.set(size.noun, Math.max(largest.get(size.noun) ?? 0, size.rank))
+    if (size && size.rank > (largest.get(size.noun)?.rank ?? 0)) largest.set(size.noun, { rank: size.rank, tag })
   }
   return tags.filter((tag) => {
     const size = sizeOf(tag)
-    if (size && size.rank < (largest.get(size.noun) ?? 0)) return false
+    if (size && largest.get(size.noun)?.tag !== tag) return false
     return !implied.has(tag) && !tags.some((other) => other !== tag && (other.endsWith(` ${tag}`) || other.startsWith(`${tag} `)))
   })
+}
+
+/** Tags that some tag of the list says already, wherever each is filed ("clothed female nude male" -> "clothed sex"). */
+export function impliedTags(tags: string[]): Set<string> {
+  return new Set(tags.flatMap((tag) => {
+    const skinned = tag.match(/^([a-z]+)-skinned (?:female|male|futa)$/)
+    return [...(IMPLIES[tag] ?? []), ...(skinned ? [`${skinned[1]} skin`] : [])]
+  }))
+}
+
+// Words that add no detail of their own to a phrase.
+const FILLER_WORDS = new Set(["a", "an", "the", "and", "with", "of", "is", "are", "being", "seen", "shown", "making", "having"])
+
+/** "rolling", "rolled" -> "roll"; "eyes", "eye" -> "ey": close enough to compare two phrases' words. */
+function stem(word: string): string {
+  if (word.endsWith("'s")) return word
+  const bare = word.replace(/(ing|ed)$/, (end, _, offset) => (offset >= 3 ? "" : end)).replace(/s$/, "").replace(/e$/, "")
+  return bare.replace(/([^aeiou])\1$/, "$1")
+}
+
+// The phrase dictionary's own words for a Danbooru tag's ("buttocks" for "ass"); Danbooru's
+// aliases cover the rest ("butt" -> "ass", "naked" -> "nude").
+const DICTIONARY_WORDS: Record<string, string> = { buttocks: "ass" }
+
+/** "butt", "buttocks" -> "ass": one word for one thing, whoever wrote it. */
+function sameWord(word: string): string {
+  return DICTIONARY_WORDS[word] ?? canonicalWord(word)
+}
+
+/**
+ * The words of a phrase that say something, stemmed. A possessive names its
+ * owner too ("another person's face" mentions another person). The dictionary
+ * says one thing two ways: "a partner" and "another person", "sexual
+ * intercourse" and "sex".
+ */
+function contentWords(phrase: string): Set<string> {
+  const words = phrase.toLowerCase()
+    .replace(/\ba partner\b/g, "another person").replace(/\bpartner's\b/g, "another person's").replace(/\bsexual intercourse\b/g, "sex")
+    .split(/[\s,]+/).filter((w) => w && !FILLER_WORDS.has(w))
+  return new Set(words.flatMap((w) => (w.endsWith("'s") ? [w, stem(sameWord(w.slice(0, -2)))] : [stem(sameWord(w))])))
+}
+
+const PRONOUNS_RE = /^(her|his|their|its|own)$/
+// Someone else's: "a hand on another person's shoulder" does not say "a hand on her shoulder".
+const OTHER_OWNER_RE = /'s$|^(another|someone|partner|each|other)$/
+
+/**
+ * True when phrase `b` says everything `a` says: "rolling her eyes" next to
+ * "making an ahegao face with eyes rolled up", "a first-person view" next to
+ * "seen from a first-person point of view", "smiling" next to "smiling faintly",
+ * "sitting on another person" next to "sitting on another person's face".
+ * Whose it is counts only when `b` names someone else.
+ */
+export function saysAll(b: string, a: string): boolean {
+  const [inA, inB] = [contentWords(a), contentWords(b)]
+  const owned = [...inB].some((w) => OTHER_OWNER_RE.test(w))
+  const said = [...inA].filter((w) => owned || !PRONOUNS_RE.test(w))
+  return said.length > 0 && said.every((w) => inB.has(w))
 }
 
 /**
  * Drops phrases another phrase in the list already says, after the dictionary
  * has turned tags into words: "performing oral sex" next to "performing oral
- * sex on a penis", or two tags that map to the same phrase.
+ * sex on a penis", "rolling her eyes" next to "making an ahegao face with eyes
+ * rolled up", or two tags that come out as the same words (the first stays).
  */
 export function dropContainedPhrases(phrases: string[]): string[] {
   const unique = [...new Set(phrases)]
-  return unique.filter((phrase) => !unique.some((other) => other !== phrase && ` ${other} `.includes(` ${phrase} `)))
+  return unique.filter((phrase, i) => !unique.some((other, j) => j !== i && saysAll(other, phrase) && (j < i || !saysAll(phrase, other))))
 }
 
-const SIZE_RANK: Record<string, number> = { flat: 1, small: 2, medium: 3, big: 4, large: 5, huge: 6, gigantic: 7, enormous: 7 }
+// Modifiers by kind, in the order they come before the noun: "multiple", "large", "short",
+// "open", colours, patterns, materials ("leather", "fur-trimmed"), kinds ("turtleneck"), then where it is worn.
+const QUANTITY_MODIFIERS = new Set(["multiple", "single", "many", "extra"])
+const STATE_MODIFIERS = new Set(["open", "torn", "wet", "unworn", "unbuttoned", "unzipped", "untied", "loose", "lifted", "partially unbuttoned", "partially unzipped"])
+const SIZE_MODIFIERS = new Set(["tiny", "small", "big", "large", "huge", "oversized", "giant", "gigantic", "massive", "enormous", "very large", "medium-sized"])
+const LENGTH_MODIFIERS = new Set(["short", "long", "very long", "medium", "mini", "micro", "knee-length", "ankle-length", "thigh-length", "floor-length"])
+const COLOR_MODIFIER_RE = /^((light|dark|pale|deep|bright|hot|navy) )?(black|white|blonde|blond|brown|red|orange|yellow|green|aqua|blue|purple|pink|grey|gray|silver|gold|golden|beige|navy|teal|cyan|magenta|maroon|violet|lavender|cream)$/
+const PATTERN_MODIFIERS = new Set([
+  "multicolored", "two-tone", "two-sided", "gradient", "rainbow", "striped", "vertical-striped", "horizontal-striped",
+  "diagonal-striped", "plaid", "checkered", "polka dot", "argyle", "camouflage", "houndstooth", "leopard print", "floral print",
+])
+// What it is made of or how it is finished: one garment can be all of these ("black leather fur-trimmed").
+const MATERIAL_MODIFIER_RE = /^(denim|leather|latex|lace|silk|satin|velvet|wool|woolen|knit|knitted|ribbed|cotton|metal|metallic|wooden|plastic|rubber|vinyl|fur|frilled|ruffled|pleated|studded|sequined|feathered|see-through|sheer|shiny|glossy|transparent|\S+-trimmed)$/
+// Where a thing is worn or grows: "hair ribbon" and "neck ribbon" are two ribbons, never one "hair neck ribbon".
+const PLACE_MODIFIERS = new Set(["hair", "neck", "wrist", "ankle", "arm", "leg", "thigh", "knee", "elbow", "waist", "back", "chest", "head", "ear", "shoulder", "hip", "finger", "toe", "foot", "footwear", "tail"])
+// Two-word modifiers read as one ("light blue", "polka dot", "very large").
+const PAIRED_MODIFIER_RE = /^((light|dark|pale|deep|bright|hot|navy) \S+|polka dot|leopard print|floral print|(very|partially) \S+)$/
+// A phrase that is not a modifier list in front of a noun: prepositions, possessives, lists.
+const NOT_A_NOUN_PHRASE_RE = /\b(on|in|into|over|under|behind|between|around|from|with|without|at|to|of|for|through|than|as|like|by|near|towards?|inside|outside|and|or|her|his|their|its|own)\b|[,()]/
+const COLOR_RANK = 4
+const KIND_RANK = 7
 
+function modifierRank(word: string, head: string): number {
+  if (QUANTITY_MODIFIERS.has(word)) return 0
+  if (SIZE_MODIFIERS.has(word)) return 1
+  // "black short shorts": the word the noun is made of stays next to it.
+  if (LENGTH_MODIFIERS.has(word)) return head.startsWith(word) ? 9 : 2
+  // "a large wet", "a short open": the state after size and length, before colour.
+  if (STATE_MODIFIERS.has(word)) return 3
+  if (COLOR_MODIFIER_RE.test(word)) return COLOR_RANK
+  if (PATTERN_MODIFIERS.has(word)) return 5
+  if (MATERIAL_MODIFIER_RE.test(word)) return 6
+  if (PLACE_MODIFIERS.has(word)) return 8
+  return KIND_RANK
+}
+
+/** "light blue fur-trimmed" -> ["light blue", "fur-trimmed"]. */
+function modifierWords(words: string[]): string[] {
+  const out: string[] = []
+  for (let i = 0; i < words.length; i++) {
+    const pair = `${words[i]} ${words[i + 1]}`
+    if (i + 1 < words.length && PAIRED_MODIFIER_RE.test(pair)) { out.push(pair); i++ }
+    else out.push(words[i])
+  }
+  return out
+}
+
+/** Two lengths, sizes or places in one modifier list say two things ("hair ribbon", "neck ribbon"). */
+function clash(modifiers: string[]): boolean {
+  return [LENGTH_MODIFIERS, SIZE_MODIFIERS, PLACE_MODIFIERS].some((family) => new Set(modifiers.filter((m) => family.has(m))).size > 1)
+}
+
+/** "cherry hair ornament" -> "cherry": the modifiers that say which kind of thing it is. */
+const kindKey = (modifiers: string[], head: string) => modifiers.filter((m) => modifierRank(m, head) === KIND_RANK).sort().join(" ")
+
+export interface ThingPhrase {
+  tag: string
+  /** The phrase the tag would get on its own ("a black jacket", "elbow-length gloves"). */
+  text: string
+  /**
+   * Things a person often has several of (accessories): two kinds of one are two
+   * things ("a cherry hair ornament" and "a pearl hair ornament"), while a
+   * garment's kinds describe the one garment ("a white collared dress shirt").
+   */
+  several?: boolean
+}
+
+/**
+ * One person's tags that name one thing several ways, said as one phrase:
+ * "black jacket", "red jacket", "open jacket", "two-tone jacket" -> "an open red
+ * and black two-tone jacket"; "black bodysuit", "turtleneck bodysuit" -> "a black
+ * turtleneck bodysuit"; "white hat" next to "mob cap" (a kind of hat) -> "a white
+ * mob cap"; "coat on shoulders" next to "fur-trimmed coat" -> "a fur-trimmed coat
+ * on her shoulders". Phrases that are not plain modifiers before a noun stay as
+ * they are, and so do things that are two (`clash`, `several`). Each result
+ * lists the tags it says, in the order of each thing's first phrase.
+ */
+export function mergeThings(items: ThingPhrase[]): { tags: string[]; text: string }[] {
+  const words = items.map(({ text }) => {
+    const plain = text.replace(/^an? /, "")
+    return NOT_A_NOUN_PHRASE_RE.test(plain) ? null : plain.split(" ")
+  })
+  const owner = items.map((_, i) => i)
+  const find = (i: number): number => (owner[i] === i ? i : (owner[i] = find(owner[i])))
+  // What an item adds to the thing it joins, and the items whose whole phrase is the noun ("mob cap").
+  const added = new Map<number, string[]>()
+  const bases = new Set<number>()
+  const modifiersOf = (i: number) => modifierWords(added.get(i) ?? words[i]!.slice(0, -1))
+
+  // A generic noun with modifiers joins the one kind of it the list names: "white hat" + "mob cap".
+  // "hat ribbon" implies a hat without being one, so a kind never starts with the generic word;
+  // "perfect boobs" is the same noun as "large breasts", not a kind of it (see below).
+  const nounOf = (phrase: string) => sameWord(phrase.split(" ").pop()!)
+  items.forEach(({ tag }, i) => {
+    const own = words[i]
+    if (!own || own.length < 2) return
+    const generic = nounParents(tag).find((g) => own.slice(-g.split(" ").length).join(" ") === g)
+    if (!generic) return
+    const kinds = items.flatMap((other, j) => (
+      j !== i && words[j] && isKindOf(other.tag, generic) && nounOf(other.tag) !== nounOf(generic) && !other.tag.startsWith(`${generic} `) ? [j] : []
+    ))
+    if (kinds.length !== 1) return
+    owner[find(i)] = find(kinds[0])
+    added.set(i, own.slice(0, -generic.split(" ").length))
+    bases.add(kinds[0])
+  })
+  // Phrases with the same noun are one thing. Of something people have several of,
+  // each kind is one; the plain ones ("red ribbon") join the only kind there is.
+  const byNoun = new Map<string, number[]>()
+  words.forEach((own, i) => {
+    if (!own || own.length < 2 || added.has(i)) return
+    const noun = sameWord(own[own.length - 1])
+    byNoun.set(noun, [...(byNoun.get(noun) ?? []), i])
+  })
+  for (const [head, group] of byNoun) {
+    const clusters = new Map<string, number[]>()
+    for (const i of group) {
+      const key = items[i].several ? kindKey(modifierWords(words[i]!.slice(0, -1)), head) : ""
+      clusters.set(key, [...(clusters.get(key) ?? []), i])
+    }
+    const kinds = [...clusters.keys()].filter(Boolean)
+    if (kinds.length === 1 && clusters.has("")) {
+      clusters.set(kinds[0], [...clusters.get("")!, ...clusters.get(kinds[0])!])
+      clusters.delete("")
+    }
+    for (const cluster of clusters.values()) {
+      if (cluster.length < 2 || clash(cluster.flatMap((i) => modifierWords(words[i]!.slice(0, -1))))) continue
+      for (const i of cluster.slice(1)) owner[find(i)] = find(cluster[0])
+    }
+  }
+
+  const members = new Map<number, number[]>()
+  items.forEach((_, i) => members.set(find(i), [...(members.get(find(i)) ?? []), i]))
+  const things: { tags: string[]; text: string }[] = []
+  for (const group of members.values()) {
+    const base = group.find((j) => bases.has(j))
+    const first = words[group[0]]
+    // The noun as the dictionary or Danbooru writes it when one of the phrases has it ("buttocks" over "butt").
+    const nouns = group.map((j) => words[j]?.[words[j]!.length - 1]).filter((w): w is string => !!w)
+    const spelled = nouns.find((w) => DICTIONARY_WORDS[w]) ?? nouns.find((w) => canonicalWord(w) === w)
+    const nounWords = base !== undefined ? words[base]! : first ? [spelled ?? first[first.length - 1]] : undefined
+    const inNoun = new Set(nounWords)
+    const modifiers = group.length > 1 ? [...new Set(group.filter((j) => j !== base).flatMap(modifiersOf))].filter((m) => !inNoun.has(m)) : []
+    if (group.length === 1 || !nounWords || clash(modifiers)) {
+      things.push(...group.map((j) => ({ tags: [items[j].tag], text: items[j].text })))
+      continue
+    }
+    const head = nounWords[nounWords.length - 1]
+    // "diagonal-striped" already says "striped", and any pattern says "multicolored".
+    const said = (m: string) => modifiers.some((other) => other !== m && (other.endsWith(`-${m}`) || (m === "multicolored" && PATTERN_MODIFIERS.has(other))))
+    const noun = nounWords.filter((w, i) => i === nounWords.length - 1 || !said(w))
+    const ranked = modifiers.filter((m) => !said(m)).map((m, order) => ({ m, order, rank: modifierRank(m, head) })).sort((a, b) => a.rank - b.rank || a.order - b.order)
+    const colors = ranked.filter((r) => r.rank === COLOR_RANK).map((r) => r.m)
+    const phrase = [
+      ...ranked.filter((r) => r.rank < COLOR_RANK).map((r) => r.m),
+      ...(colors.length ? [joinList(colors)] : []),
+      ...ranked.filter((r) => r.rank > COLOR_RANK).map((r) => r.m),
+      ...noun,
+    ].join(" ")
+    things.push({ tags: group.map((j) => items[j].tag), text: withArticle(phrase) })
+  }
+
+  // "coat on shoulders" says where the one coat the list names is worn.
+  for (let w = things.length - 1; w >= 0; w--) {
+    const item = things[w].tags.length === 1 ? wornItem(things[w].tags[0]) : null
+    const { text } = things[w]
+    if (!item || !text.startsWith(`${withArticle(item)} `)) continue
+    const garments = things.filter((t, i) => i !== w && t.tags.some((tag) => tag === item || isKindOf(tag, item)))
+    if (garments.length !== 1) continue
+    garments[0].text += text.slice(withArticle(item).length)
+    garments[0].tags.push(things[w].tags[0])
+    things.splice(w, 1)
+  }
+  return things
+}
+
+/** mergeThings, as phrases. */
+export function mergeSameThing(items: ThingPhrase[]): string[] {
+  return mergeThings(items).map((thing) => thing.text)
+}
+
+// Rule34 writes sizes Danbooru does not use ("massive breasts", "hyper penis", "absurdly large cock").
+const SIZE_RANK: Record<string, number> = {
+  flat: 1, small: 2, medium: 3, big: 4, thick: 4, large: 5, huge: 6, "very large": 6, gigantic: 7, enormous: 7, massive: 7, giant: 7,
+  colossal: 8, humongous: 8, "absurdly large": 8, "extremely large": 8, hyper: 9,
+}
+
+/** "huge breasts" -> { noun: "breasts", rank: 6 }; "absurdly large cock" -> { noun: "penis", rank: 8 }. */
 function sizeOf(tag: string): { noun: string; rank: number } | null {
-  const [first, ...rest] = tag.split(" ")
-  return SIZE_RANK[first] && rest.length ? { noun: rest.join(" "), rank: SIZE_RANK[first] } : null
+  const words = tag.split(" ")
+  const size = SIZE_RANK[words.slice(0, 2).join(" ")] ? 2 : SIZE_RANK[words[0]] ? 1 : 0
+  if (!size || words.length <= size) return null
+  return { noun: words.slice(size).map(canonicalWord).join(" "), rank: SIZE_RANK[words.slice(0, size).join(" ")] }
 }
 
+// What Danbooru's implications (relations.ts) do not say.
 const IMPLIES: Record<string, string[]> = {
-  ":d": ["smile", "open mouth"],
-  ";d": ["smile", "open mouth", "one eye closed"],
-  grin: ["smile"],
-  "completely nude": ["nude"],
-  "double v": ["v"],
+  ":d": ["open mouth"],
+  ";d": ["open mouth"],
   "husband and wife": ["couple"],
+  // Who is clothed during sex is said by the pair: "The woman is clothed. The man is nude."
+  "clothed female nude male": ["clothed sex"],
+  "clothed male nude female": ["clothed sex"],
 }
 
 const SKIN_COLOR_RE = /^(grey|gray|blue|green|red|purple|pink|orange|yellow|black|white|aqua|multicolored|two-tone) skin$/
 
-// Kinds of a thing that Danbooru tags next to the generic word (a suffix match already covers "transparent umbrella").
-const HYPONYMS: Record<string, string> = {
-  wristwatch: "watch", parasol: "umbrella",
-  handgun: "gun", pistol: "gun", revolver: "gun", rifle: "gun", shotgun: "gun",
-  katana: "sword", rapier: "sword", saber: "sword", sabre: "sword", scimitar: "sword", claymore: "sword",
-}
+// Kinds of a thing Danbooru implies nothing for (its implications cover "parasol" -> "umbrella" and the like).
+const HYPONYMS: Record<string, string> = { pistol: "gun", saber: "sword", sabre: "sword", claymore: "sword" }
 // Weapons by their last word; "bow" alone is a ribbon, so only "bow (weapon)" counts.
 const WEAPON_RE = /(^|\s)(sword|katana|knife|dagger|gun|handgun|pistol|revolver|rifle|shotgun|spear|polearm|lance|axe|scythe|staff|mace|whip|trident|halberd|naginata|kunai|shuriken|blade|rapier|saber|sabre|scimitar|claymore|crossbow|bow \(weapon\))$/
 const PLACEMENT_RE = /^(.+?) (over shoulder|on shoulder|on back|on hip|at hip|in mouth)$/
@@ -195,9 +520,10 @@ export function splitPlacement(tag: string): { item: string; place: string | nul
 export function genericsOf(item: string): string[] {
   const last = item.split(" ").pop() ?? item
   const generic = HYPONYMS[item] ?? HYPONYMS[last]
-  const out = generic ? [generic] : []
-  if (item !== "weapon" && WEAPON_RE.test(item)) out.push("weapon")
-  return out
+  const out = new Set(impliedBy(item))
+  if (generic) out.add(generic)
+  if (item !== "weapon" && WEAPON_RE.test(item)) out.add("weapon")
+  return [...out]
 }
 
 const HAIR_LENGTH_WORDS = new Set(["absurdly long", "very long", "very short", "long", "medium", "short"])
@@ -314,6 +640,9 @@ const POSE_LEXICON: Record<string, LexiconEntry> = {
   "jumping": { kind: "state", text: "jumping" },
   "running": { kind: "state", text: "running" },
   "walking": { kind: "state", text: "walking" },
+  // The tag says who is penetrated, not by whom: "by a man" adds a man who may not be there.
+  "male penetrated": { kind: "state", text: "being penetrated" },
+  "female penetrated": { kind: "state", text: "being penetrated" },
 }
 
 const EXPRESSION_LEXICON: Record<string, LexiconEntry> = {

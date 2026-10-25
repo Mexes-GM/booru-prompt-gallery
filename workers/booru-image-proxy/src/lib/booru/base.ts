@@ -146,6 +146,50 @@ interface TagCategoryRow {
   category: number
 }
 
+/**
+ * Danbooru's categories, filled in by the provider table where Danbooru has no
+ * row. Keyed by `toTagLookupKey`: Gelbooru/Rule34 do not spell tags the way
+ * `auto_suggest_tags` (Danbooru) does — `self_upload` vs `self-upload`,
+ * `absurd_res` vs `absurdres` — and an exact `in('name', tags)` silently missed
+ * those, so the tag was never classified as meta and reached the prompt as
+ * content. See ./tag-lookup.ts. Both lookups run concurrently so the provider
+ * table adds no latency.
+ */
+async function resolveTableCategories(
+  supabase: SupabaseClient,
+  tags: Set<string>,
+  provider?: string
+): Promise<Map<string, number>> {
+  const [tagMap, providerTagMap] = await Promise.all([
+    resolveTagCategoriesCached(supabase, tags, null),
+    provider
+      ? resolveTagCategoriesCached(supabase, tags, provider)
+      : Promise.resolve(new Map<string, number>()),
+  ])
+  for (const [key, category] of providerTagMap) {
+    if (!tagMap.has(key)) tagMap.set(key, category)
+  }
+  return tagMap
+}
+
+// Danbooru numbering: 3 copyright, 4 character.
+const NAME_CATEGORIES = new Set([3, 4])
+
+/**
+ * Adds the categories a provider serves with its own posts to the table ones.
+ * They file what neither table knows yet (a new artist, a "name_(series)"
+ * character), and they settle a name both boorus have under different kinds:
+ * on Rule34 `harry_potter` is the series, on Danbooru the character. Any other
+ * disagreement keeps the table's answer, which is curated.
+ */
+export function mergeProviderTypes(categories: Map<string, number>, ownTypes: ReadonlyMap<string, number>): void {
+  for (const [key, category] of ownTypes) {
+    const known = categories.get(key)
+    const otherName = known !== undefined && known !== category && NAME_CATEGORIES.has(known) && NAME_CATEGORIES.has(category)
+    if (known === undefined || otherName) categories.set(key, category)
+  }
+}
+
 export abstract class BaseBooruProvider {
   protected abstract baseUrl: string
   protected abstract defaultParams: Record<string, string>
@@ -205,14 +249,18 @@ export abstract class BaseBooruProvider {
    * @param provider When set, tags `auto_suggest_tags` does not know are also
    *   resolved against `provider_tag_categories` (precomputed offline by
    *   scripts/classify-rule34-tags.ts). Danbooru's category always wins.
+   * @param ownTypes Categories the provider served with the posts (Rule34's
+   *   `tag_info`), keyed by `toTagLookupKey`; see `mergeProviderTypes`. They
+   *   also apply when the tables cannot be read.
    */
   protected async enrichPostsWithCategories(
     posts: BooruPost[],
     supabase: SupabaseClient | null,
-    provider?: string
+    provider?: string,
+    ownTypes?: ReadonlyMap<string, number>
   ): Promise<BooruPost[]> {
     if (!posts || posts.length === 0) return posts
-    if (!supabase) return posts
+    if (!supabase && !ownTypes?.size) return posts
 
     const allTags = new Set<string>()
     posts.forEach((p) => {
@@ -226,21 +274,14 @@ export abstract class BaseBooruProvider {
     if (allTags.size === 0) return posts
 
     try {
-      // Keyed by `toTagLookupKey`: Gelbooru/Rule34 do not spell tags the way
-      // `auto_suggest_tags` (Danbooru) does — `self_upload` vs `self-upload`,
-      // `absurd_res` vs `absurdres` — and the previous exact `in('name', tags)`
-      // silently missed those, so the tag was never classified as meta and
-      // reached the prompt as content. See ./tag-lookup.ts.
-      // Both lookups run concurrently so the provider table adds no latency.
-      const [tagMap, providerTagMap] = await Promise.all([
-        resolveTagCategoriesCached(supabase, allTags, null),
-        provider
-          ? resolveTagCategoriesCached(supabase, allTags, provider)
-          : Promise.resolve(new Map<string, number>()),
-      ])
-      for (const [key, category] of providerTagMap) {
-        if (!tagMap.has(key)) tagMap.set(key, category)
+      let tagMap = new Map<string, number>()
+      try {
+        if (supabase) tagMap = await resolveTableCategories(supabase, allTags, provider)
+      } catch (e) {
+        if (!ownTypes?.size) throw e
+        logger.warn('booru_enrich_error', { error: e instanceof Error ? e.message : String(e) })
       }
+      if (ownTypes) mergeProviderTypes(tagMap, ownTypes)
 
       return posts.map((post) => {
         if (!post.tag_string) return post

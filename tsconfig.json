@@ -41,6 +41,7 @@
     "video",
     "scripts",
     "__tests__/booru-upstream.verify.ts",
-    "__tests__/redis-fail-fast.verify.ts"
+    "__tests__/redis-fail-fast.verify.ts",
+    "__tests__/rule34-tag-types.verify.ts"
   ]
 }
