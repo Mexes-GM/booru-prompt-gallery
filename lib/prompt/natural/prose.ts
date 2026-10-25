@@ -269,7 +269,7 @@ function subjectPhrase(scene: Scene, species: string[]): string {
   if (!subject) return ""
   const appositive = [
     species.length ? speciesPhrase(species) : "",
-    scene.cosplayAs.length ? `cosplaying as ${joinList(scene.cosplayAs)}` : "",
+    scene.cosplayAs.length ? `cosplaying as ${joinList(scene.cosplayAs)}${scene.cosplaySeries.length ? ` from ${joinList(scene.cosplaySeries.slice(0, 2))}` : ""}` : "",
   ].filter(Boolean).join(", ")
   return appositive ? `${subject}, ${appositive}` : subject
 }
