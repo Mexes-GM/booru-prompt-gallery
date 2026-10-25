@@ -123,8 +123,9 @@ function describeItems(tags: string[], possessive: string, context: string[]): {
   }
   // "parasol" held next to "white umbrella" is one white parasol (mergeThings).
   const things = mergeThings([...heldSet, ...others.filter((o) => kept.has(o) && !heldSet.has(o))].map((tag) => ({ tag, text: withArticle(tag), several: true })))
-  const held = things.filter((thing) => thing.tags.some((tag) => heldSet.has(tag)))
-  const loose = things.filter((thing) => !held.includes(thing))
+  const isHeld = (thing: (typeof things)[number]) => thing.tags.some((tag) => heldSet.has(tag))
+  const held = things.filter(isHeld)
+  const loose = things.filter((thing) => !isHeld(thing))
   const where = (place: string) => place.replace(/(shoulder|back|hip|mouth)$/, `${possessive} $1`)
   const holder = (list: typeof things, item: string) => list.find((thing) => thing.tags.some((tag) => isKind(tag, item)))
   // "sword on back" already says "weapon on back".

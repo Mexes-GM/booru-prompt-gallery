@@ -205,7 +205,7 @@ export function dropImplied(tags: string[], context: Iterable<string> = tags): s
   }
   return tags.filter((tag) => {
     const size = sizeOf(tag)
-    if (size && largest.get(size.noun)!.tag !== tag) return false
+    if (size && largest.get(size.noun)?.tag !== tag) return false
     return !implied.has(tag) && !tags.some((other) => other !== tag && (other.endsWith(` ${tag}`) || other.startsWith(`${tag} `)))
   })
 }
@@ -355,10 +355,12 @@ export function mergeThings(items: ThingPhrase[]): { tags: string[]; text: strin
   const things: { tags: string[]; text: string }[] = []
   for (const group of members.values()) {
     const base = group.find((j) => bases.has(j))
+    const first = words[group[0]]
     // The noun in Danbooru's spelling when one of the phrases has it ("breasts" over "boobs").
     const spelled = group.map((j) => words[j]?.[words[j]!.length - 1]).find((w) => w && canonicalWord(w) === w)
-    const nounWords = base !== undefined ? words[base]! : words[group[0]] ? [spelled ?? words[group[0]]![words[group[0]]!.length - 1]] : undefined
-    const modifiers = group.length > 1 ? [...new Set(group.filter((j) => j !== base).flatMap(modifiersOf))].filter((m) => !nounWords?.includes(m)) : []
+    const nounWords = base !== undefined ? words[base]! : first ? [spelled ?? first[first.length - 1]] : undefined
+    const inNoun = new Set(nounWords)
+    const modifiers = group.length > 1 ? [...new Set(group.filter((j) => j !== base).flatMap(modifiersOf))].filter((m) => !inNoun.has(m)) : []
     if (group.length === 1 || !nounWords || clash(modifiers)) {
       things.push(...group.map((j) => ({ tags: [items[j].tag], text: items[j].text })))
       continue
