@@ -209,14 +209,25 @@ function countsIn(tag: string): PeopleCount | null {
   return people
 }
 
+// "duo", "trio": how many people there are, whoever they are. A floor, not a sum:
+// "1girl, 1boy, duo" are two people.
+const GROUP_SIZES: Record<string, number> = { duo: 2, trio: 3 }
+
+/** People a group tag says are there beyond what the count tags name ("1girl, duo" -> 1). */
+function unnamedByGroup(people: PeopleCount, tags: string[]): number {
+  const least = Math.max(0, ...tags.map((t) => GROUP_SIZES[t] ?? 0))
+  return Math.max(0, least - people.girls - people.boys - people.others)
+}
+
 /** How many people a tag list's count tags say there are ("1girl, 1boy" -> 2). */
 export function peopleCount(general: string[]): number {
   const total: PeopleCount = { girls: 0, boys: 0, others: 0 }
-  for (const raw of general) {
-    const counts = countsIn(normalizeTag(raw))
+  const tags = general.map(normalizeTag)
+  for (const tag of tags) {
+    const counts = countsIn(tag)
     if (counts) for (const key of ["girls", "boys", "others"] as const) total[key] = Math.max(total[key], counts[key])
   }
-  return total.girls + total.boys + total.others
+  return total.girls + total.boys + total.others + unnamedByGroup(total, tags)
 }
 const COSTUME_WORDS = new Set(["cosplay", "alternate costume", "official alternate costume", "alternate hairstyle", "costume switch"])
 // Placeholders some boorus file as character tags ("anonymous male"): they name nobody.
@@ -488,6 +499,7 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     else scene.unclassified.push(tag)
   }
 
+  scene.others += unnamedByGroup(scene, scene.subjectTags)
   scene.characters = mergeAliases(scene.characters, options, scene.girls + scene.boys + scene.others)
   assignGenders(scene, options.traits)
   scene.people = scenePeople(scene)

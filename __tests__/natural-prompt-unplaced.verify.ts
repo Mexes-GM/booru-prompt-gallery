@@ -12,7 +12,7 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt-unplaced.verify.ts
  */
-import { buildScene, normalizeTag, renderAnima, renderFlux2, renderMoss, sceneTagCount, type PhraseDictionary } from "../lib/prompt/natural"
+import { buildScene, normalizeTag, peopleCount, renderAnima, renderFlux2, renderMoss, sceneTagCount, type PhraseDictionary } from "../lib/prompt/natural"
 import { formatPrompt } from "../lib/prompt/natural-format"
 
 let passed = 0
@@ -65,6 +65,11 @@ const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]
   assert(group.girls === 3 && group.boys === 1, "3girls1boy counts three girls and a boy")
   assert(group.subjectTags.length === 4 && group.unclassified.length === 0, "duo, trio and multiple females are subject information")
   assert(!flux(["2girls", "duo"]).includes("Additional details"), "duo is not a raw detail")
+  const pair = buildScene({ general: ["1girl", "1boy", "duo"] }, overrides)
+  assert(pair.girls + pair.boys + pair.others === 2, "a group tag is a floor, not more people")
+  const named = buildScene({ general: ["duo", "female"], characters: ["ankha (animal crossing)"] }, overrides)
+  assert(named.others === 2 && flux(["duo", "female", "sitting"], { characters: ["ankha (animal crossing)"] }).includes("They are sitting"), "duo says two people are there, even with one name")
+  assert(peopleCount(["1girl", "duo"]) === 2 && peopleCount(["trio", "2girls"]) === 3, "the people count reads group tags too")
 }
 
 // 2. Placement by phrase.
