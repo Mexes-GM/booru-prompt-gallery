@@ -220,14 +220,26 @@ function stem(word: string): string {
   return bare.replace(/([^aeiou])\1$/, "$1")
 }
 
+// The phrase dictionary's own words for a Danbooru tag's ("buttocks" for "ass"); Danbooru's
+// aliases cover the rest ("butt" -> "ass", "naked" -> "nude").
+const DICTIONARY_WORDS: Record<string, string> = { buttocks: "ass" }
+
+/** "butt", "buttocks" -> "ass": one word for one thing, whoever wrote it. */
+function sameWord(word: string): string {
+  return DICTIONARY_WORDS[word] ?? canonicalWord(word)
+}
+
 /**
  * The words of a phrase that say something, stemmed. A possessive names its
- * owner too ("another person's face" mentions another person); the dictionary's
- * "a partner" is its "another person".
+ * owner too ("another person's face" mentions another person). The dictionary
+ * says one thing two ways: "a partner" and "another person", "sexual
+ * intercourse" and "sex".
  */
 function contentWords(phrase: string): Set<string> {
-  const words = phrase.toLowerCase().replace(/\ba partner\b/g, "another person").replace(/\bpartner's\b/g, "another person's").split(/[\s,]+/)
-  return new Set(words.filter((w) => w && !FILLER_WORDS.has(w)).flatMap((w) => (w.endsWith("'s") ? [w, stem(w.slice(0, -2))] : [stem(w)])))
+  const words = phrase.toLowerCase()
+    .replace(/\ba partner\b/g, "another person").replace(/\bpartner's\b/g, "another person's").replace(/\bsexual intercourse\b/g, "sex")
+    .split(/[\s,]+/).filter((w) => w && !FILLER_WORDS.has(w))
+  return new Set(words.flatMap((w) => (w.endsWith("'s") ? [w, stem(sameWord(w.slice(0, -2)))] : [stem(sameWord(w))])))
 }
 
 const PRONOUNS_RE = /^(her|his|their|its|own)$/
@@ -259,8 +271,8 @@ export function dropContainedPhrases(phrases: string[]): string[] {
   return unique.filter((phrase, i) => !unique.some((other, j) => j !== i && saysAll(other, phrase) && (j < i || !saysAll(phrase, other))))
 }
 
-// Modifiers by kind, in the order they come before the noun: "multiple", "open", "large",
-// "short", colours, patterns, materials ("leather", "fur-trimmed"), kinds ("turtleneck"), then where it is worn.
+// Modifiers by kind, in the order they come before the noun: "multiple", "large", "short",
+// "open", colours, patterns, materials ("leather", "fur-trimmed"), kinds ("turtleneck"), then where it is worn.
 const QUANTITY_MODIFIERS = new Set(["multiple", "single", "many", "extra"])
 const STATE_MODIFIERS = new Set(["open", "torn", "wet", "unworn", "unbuttoned", "unzipped", "untied", "loose", "lifted", "partially unbuttoned", "partially unzipped"])
 const SIZE_MODIFIERS = new Set(["tiny", "small", "big", "large", "huge", "oversized", "giant", "gigantic", "massive", "enormous", "very large", "medium-sized"])
@@ -283,10 +295,11 @@ const KIND_RANK = 7
 
 function modifierRank(word: string, head: string): number {
   if (QUANTITY_MODIFIERS.has(word)) return 0
-  if (STATE_MODIFIERS.has(word)) return 1
-  if (SIZE_MODIFIERS.has(word)) return 2
+  if (SIZE_MODIFIERS.has(word)) return 1
   // "black short shorts": the word the noun is made of stays next to it.
-  if (LENGTH_MODIFIERS.has(word)) return head.startsWith(word) ? 9 : 3
+  if (LENGTH_MODIFIERS.has(word)) return head.startsWith(word) ? 9 : 2
+  // "a large wet", "a short open": the state after size and length, before colour.
+  if (STATE_MODIFIERS.has(word)) return 3
   if (COLOR_MODIFIER_RE.test(word)) return COLOR_RANK
   if (PATTERN_MODIFIERS.has(word)) return 5
   if (MATERIAL_MODIFIER_RE.test(word)) return 6
@@ -350,7 +363,7 @@ export function mergeThings(items: ThingPhrase[]): { tags: string[]; text: strin
   // A generic noun with modifiers joins the one kind of it the list names: "white hat" + "mob cap".
   // "hat ribbon" implies a hat without being one, so a kind never starts with the generic word;
   // "perfect boobs" is the same noun as "large breasts", not a kind of it (see below).
-  const nounOf = (phrase: string) => canonicalWord(phrase.split(" ").pop()!)
+  const nounOf = (phrase: string) => sameWord(phrase.split(" ").pop()!)
   items.forEach(({ tag }, i) => {
     const own = words[i]
     if (!own || own.length < 2) return
@@ -369,7 +382,7 @@ export function mergeThings(items: ThingPhrase[]): { tags: string[]; text: strin
   const byNoun = new Map<string, number[]>()
   words.forEach((own, i) => {
     if (!own || own.length < 2 || added.has(i)) return
-    const noun = canonicalWord(own[own.length - 1])
+    const noun = sameWord(own[own.length - 1])
     byNoun.set(noun, [...(byNoun.get(noun) ?? []), i])
   })
   for (const [head, group] of byNoun) {
@@ -395,8 +408,9 @@ export function mergeThings(items: ThingPhrase[]): { tags: string[]; text: strin
   for (const group of members.values()) {
     const base = group.find((j) => bases.has(j))
     const first = words[group[0]]
-    // The noun in Danbooru's spelling when one of the phrases has it ("breasts" over "boobs").
-    const spelled = group.map((j) => words[j]?.[words[j]!.length - 1]).find((w) => w && canonicalWord(w) === w)
+    // The noun as the dictionary or Danbooru writes it when one of the phrases has it ("buttocks" over "butt").
+    const nouns = group.map((j) => words[j]?.[words[j]!.length - 1]).filter((w): w is string => !!w)
+    const spelled = nouns.find((w) => DICTIONARY_WORDS[w]) ?? nouns.find((w) => canonicalWord(w) === w)
     const nounWords = base !== undefined ? words[base]! : first ? [spelled ?? first[first.length - 1]] : undefined
     const inNoun = new Set(nounWords)
     const modifiers = group.length > 1 ? [...new Set(group.filter((j) => j !== base).flatMap(modifiersOf))].filter((m) => !inNoun.has(m)) : []
