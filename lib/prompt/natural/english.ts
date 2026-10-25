@@ -238,7 +238,7 @@ const PLACE_MODIFIERS = new Set(["hair", "neck", "wrist", "ankle", "arm", "leg",
 // Two-word modifiers read as one ("light blue", "polka dot", "very large").
 const PAIRED_MODIFIER_RE = /^((light|dark|pale|deep|bright|hot|navy) \S+|polka dot|leopard print|floral print|(very|partially) \S+)$/
 // A phrase that is not a modifier list in front of a noun: prepositions, possessives, lists.
-const NOT_A_NOUN_PHRASE_RE = /\b(on|in|into|over|under|behind|between|around|from|with|without|at|to|of|for|through|and|or|her|his|their|its|own)\b|[,()]/
+const NOT_A_NOUN_PHRASE_RE = /\b(on|in|into|over|under|behind|between|around|from|with|without|at|to|of|for|through|than|as|like|by|near|towards?|inside|outside|and|or|her|his|their|its|own)\b|[,()]/
 const COLOR_RANK = 4
 const KIND_RANK = 7
 
@@ -366,13 +366,16 @@ export function mergeThings(items: ThingPhrase[]): { tags: string[]; text: strin
       continue
     }
     const head = nounWords[nounWords.length - 1]
-    const ranked = modifiers.map((m, order) => ({ m, order, rank: modifierRank(m, head) })).sort((a, b) => a.rank - b.rank || a.order - b.order)
+    // "diagonal-striped" already says "striped", and any pattern says "multicolored".
+    const said = (m: string) => modifiers.some((other) => other !== m && (other.endsWith(`-${m}`) || (m === "multicolored" && PATTERN_MODIFIERS.has(other))))
+    const noun = nounWords.filter((w, i) => i === nounWords.length - 1 || !said(w))
+    const ranked = modifiers.filter((m) => !said(m)).map((m, order) => ({ m, order, rank: modifierRank(m, head) })).sort((a, b) => a.rank - b.rank || a.order - b.order)
     const colors = ranked.filter((r) => r.rank === COLOR_RANK).map((r) => r.m)
     const phrase = [
       ...ranked.filter((r) => r.rank < COLOR_RANK).map((r) => r.m),
       ...(colors.length ? [joinList(colors)] : []),
       ...ranked.filter((r) => r.rank > COLOR_RANK).map((r) => r.m),
-      ...nounWords,
+      ...noun,
     ].join(" ")
     things.push({ tags: group.map((j) => items[j].tag), text: withArticle(phrase) })
   }

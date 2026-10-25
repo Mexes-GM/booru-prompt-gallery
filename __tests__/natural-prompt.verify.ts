@@ -525,6 +525,9 @@ const overrides: Record<string, string> = {
   const group = moss(["2girls", "black jacket", "red jacket"])
   assert(group.includes("a black jacket") && group.includes("a red jacket"), "a group's garments are not merged into one")
   assert(mergeSameThing([{ tag: "large breasts", text: "large breasts" }, { tag: "sagging breasts", text: "sagging breasts" }]).join() === "large sagging breasts", "one body part's modifiers merge")
+  const necktie = mergeSameThing(["diagonal-striped necktie", "green necktie", "striped necktie"].map((tag) => ({ tag, text: withArticle(tag), several: true })))
+  assert(necktie.join() === "a green diagonal-striped necktie", "a modifier another one says is not repeated")
+  assert(mergeSameThing([{ tag: "large breasts", text: "large breasts" }, { tag: "alternate breast size", text: "larger breasts than usual" }]).length === 2, "a phrase that is more than modifiers and a noun stays whole")
   // The site's tag cleanup joins a noun's tags ("black elbow grey gloves"); the converter reads them back.
   const gloves = scene(["1girl", "black elbow grey gloves"])
   assert(["black gloves", "elbow gloves", "grey gloves"].every((t) => gloves.slots.accents?.includes(t)), "a merged garment tag splits back into its tags")
