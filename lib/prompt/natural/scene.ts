@@ -15,6 +15,7 @@ import { getTagSlotFromOverrides, TAG_SUBCATEGORIES } from "@/lib/tag-taxonomy"
 import { HAIR_COLOR_RE, isClothingState, splitHairCompound } from "./english"
 import { GENDER_AFFINITY } from "./gender-affinity"
 import { CROSSDRESSING_RE, FUTA_RE, genderedTraits, personNoun, ruleGender } from "./people"
+import { canonicalTag } from "./relations"
 
 export interface NaturalPromptInput {
   /** General tags, as on the post (underscores or spaces). */
@@ -312,11 +313,27 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
 
   const seen = new Set<string>()
   const seenSpellings = new Set<string>()
-  // Cleaned prompts merge one noun's adjectives ("blue long hair"); hair goes back to plain tags.
-  const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? [raw])
+  const isKnownTag = (tag: string) => !!(overrides[tag] ?? overrides[tag.replace(/ /g, "_")])
+  // Cleaned prompts merge one noun's adjectives ("blue long hair", "black elbow grey gloves"); they go back to plain tags.
+  const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? splitMergedTag(normalizeTag(raw), isKnownTag) ?? [raw])
+  // Rule34's "boobs", "tits" and "breasts" are one Danbooru tag (relations.ts): it is said
+  // once, in Danbooru's spelling when the post has it. A lone spelling the taxonomy knows
+  // stays as it is ("femboy"); one it does not know reads as the Danbooru tag ("anthro" -> "furry").
+  const canonicalOf = (tag: string) => SPELLINGS[tag] ?? canonicalTag(tag, isKnownTag)
+  const spelling = new Map<string, string>()
   for (const raw of general) {
     const given = normalizeTag(raw)
-    const tag = SPELLINGS[given] ?? given
+    const canonical = canonicalOf(given)
+    if (!spelling.has(canonical) || given === canonical) spelling.set(canonical, given)
+  }
+  const spellingOf = (given: string) => {
+    const canonical = canonicalOf(given)
+    const kept = spelling.get(canonical) ?? given
+    return !isKnownTag(kept) && isKnownTag(canonical) ? canonical : kept
+  }
+  for (const raw of general) {
+    const given = normalizeTag(raw)
+    const tag = SPELLINGS[given] ?? spellingOf(given)
     if (!tag || seenSpellings.has(given)) continue
     seenSpellings.add(given)
     // A second spelling of a tag already there ("indoor" next to "indoors") says nothing new.
@@ -406,6 +423,20 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   scene.people = scenePeople(scene)
   attributeTraits(scene, options.traits ?? {}, options.genderAffinity ?? GENDER_AFFINITY)
   return scene
+}
+
+/**
+ * "black elbow grey gloves" -> ["black gloves", "elbow gloves", "grey gloves"]:
+ * the card's tag cleanup joins two-word tags that share a noun; the prose needs
+ * the tags back to tell what each implies. Null unless the joined tag is unknown
+ * and every piece is a known tag.
+ */
+function splitMergedTag(tag: string, isKnown: (tag: string) => boolean): string[] | null {
+  const words = tag.split(" ")
+  if (words.length < 3 || isKnown(tag)) return null
+  const noun = words[words.length - 1]
+  const parts = words.slice(0, -1).map((word) => `${word} ${noun}`)
+  return parts.every(isKnown) ? parts : null
 }
 
 /**

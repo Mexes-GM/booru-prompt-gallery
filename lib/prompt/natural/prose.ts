@@ -24,13 +24,16 @@ import {
   isPluralNoun,
   joinList,
   lexiconPhrase,
+  mergeSameThing,
   mergeSharedPrefix,
+  mergeThings,
   posePhrase,
   splitPlacement,
   takesPluralVerb,
   withArticle,
 } from "./english"
 import { genderedTraits, oneOfSentence, personNoun, possessivePronoun, roleAct, sceneRoles, visibleSentence, type Role } from "./people"
+import { canonicalTag, canonicalWord } from "./relations"
 import { describeLayout, describeStyle } from "./style"
 
 /**
@@ -105,11 +108,12 @@ const RELATION_WORDING: Record<string, string> = { couple: "a couple" }
  * next to "knife" goes); a placement joins its item ("umbrella over shoulder" ->
  * "a parasol over her shoulder") instead of adding a second one.
  */
-function describeItems(tags: string[], possessive: string): { held: string[]; loose: string[] } {
+function describeItems(tags: string[], possessive: string, context: string[]): { held: string[]; loose: string[] } {
   const holding = tags.filter((t) => t.startsWith("holding ")).map((t) => t.slice("holding ".length))
   const placed = tags.filter((t) => !t.startsWith("holding ") && splitPlacement(t).place)
   const others = tags.filter((t) => t !== "holding" && !t.startsWith("holding ") && !splitPlacement(t).place)
-  const kept = new Set(dropImplied([...new Set([...holding, ...others])]))
+  // "holding thermos" names the thermos held; it does not make "thermos" redundant here.
+  const kept = new Set(dropImplied([...new Set([...holding, ...others])], [...holding, ...context.filter((t) => !t.startsWith("holding "))]))
   const isKind = (specific: string, generic: string) =>
     specific === generic || specific.endsWith(` ${generic}`) || genericsOf(specific).includes(generic)
   const heldSet = new Set<string>()
@@ -117,28 +121,74 @@ function describeItems(tags: string[], possessive: string): { held: string[]; lo
     const item = kept.has(name) ? name : others.find((o) => kept.has(o) && isKind(o, name))
     if (item) heldSet.add(item)
   }
-  const held = [...heldSet]
-  const loose = others.filter((o) => kept.has(o) && !heldSet.has(o))
-  const heldText = held.map(withArticle)
-  const looseText = loose.map(withArticle)
+  // "parasol" held next to "white umbrella" is one white parasol (mergeThings).
+  const things = mergeThings([...heldSet, ...others.filter((o) => kept.has(o) && !heldSet.has(o))].map((tag) => ({ tag, text: withArticle(tag), several: true })))
+  const held = things.filter((thing) => thing.tags.some((tag) => heldSet.has(tag)))
+  const loose = things.filter((thing) => !held.includes(thing))
   const where = (place: string) => place.replace(/(shoulder|back|hip|mouth)$/, `${possessive} $1`)
+  const holder = (list: typeof things, item: string) => list.find((thing) => thing.tags.some((tag) => isKind(tag, item)))
   // "sword on back" already says "weapon on back".
-  for (const tag of dropImplied(placed)) {
+  for (const tag of dropImplied(placed, context)) {
     const { item, place } = splitPlacement(tag)
-    const h = held.findIndex((x) => isKind(x, item))
+    const h = holder(held, item)
     // A held item is in the hand: only "over shoulder" still describes it.
-    if (h >= 0) { if (/shoulder$/.test(place!)) heldText[h] += ` ${where(place!)}`; continue }
-    const l = loose.findIndex((x) => isKind(x, item))
-    if (l >= 0) looseText[l] += ` ${where(place!)}`
-    else looseText.push(`${withArticle(item)} ${where(place!)}`)
+    if (h) { if (/shoulder$/.test(place!)) h.text += ` ${where(place!)}`; continue }
+    const l = holder(loose, item)
+    if (l) l.text += ` ${where(place!)}`
+    else loose.push({ tags: [tag], text: `${withArticle(item)} ${where(place!)}` })
   }
-  return { held: heldText, loose: looseText }
+  return { held: held.map((thing) => thing.text), loose: loose.map((thing) => thing.text) }
 }
 // More names than this read as a list, not a description.
 const MAX_NAMED_CHARACTERS = 4
 
 const CLOTHING_ORDER: SceneSlot[] = ["outfit", "top", "bottom", "underwear", "legwear", "footwear", "headwear", "eyewear", "accents"]
 const POSE_ORDER: SceneSlot[] = ["posture", "kinetic", "combat", "interaction", "gesture", "physiological"]
+// Slots whose tags always become a noun phrase; tags of the others need a phrase rule to be said.
+const NOUN_SLOTS = new Set<SceneSlot>(["hair", "eyes", "anatomy", ...CLOTHING_ORDER, "weapon", "handheld", "setting", "props", "animal"])
+// Accessories come several to a person (two kinds of hair ornament are two); garments and body parts one of each.
+const SEVERAL_SLOTS = new Set<SceneSlot>(["accents", "headwear", "eyewear"])
+
+/**
+ * The dictionary as other boorus' spellings read it: "boobs" or "big ass" have no
+ * phrase of their own, so they say what the Danbooru tag's phrase says ("breasts",
+ * "large buttocks"); see canonicalTag. The tag itself stays as given, so rules
+ * that know the spelling ("femboy") still apply.
+ */
+function withSpellingPhrases(phrases: PhraseDictionary, tags: string[]): PhraseDictionary {
+  const borrowed: PhraseDictionary = {}
+  for (const tag of tags) {
+    if (phrases[tag]) continue
+    const danbooru = canonicalTag(tag, (t) => !!phrases[t])
+    if (danbooru !== tag && phrases[danbooru]) borrowed[tag] = phrases[danbooru]
+  }
+  return Object.keys(borrowed).length ? Object.assign(Object.create(phrases) as PhraseDictionary, borrowed) : phrases
+}
+
+function tagSlots(scene: Scene): Map<string, SceneSlot> {
+  const slotOf = new Map<string, SceneSlot>()
+  for (const slots of [scene.slots, ...scene.assigned.map((a) => a.slots)]) {
+    for (const [slot, tags] of Object.entries(slots) as [SceneSlot, string[] | undefined][]) for (const tag of tags ?? []) slotOf.set(tag, slot)
+  }
+  return slotOf
+}
+
+/**
+ * The tags the prose puts into words, which is what may leave out a tag they
+ * imply (dropImplied): a tag only listed raw ("Additional details: ...") must
+ * not hide the plainer tag it implies.
+ */
+function sayableTags(scene: Scene, phrases: PhraseDictionary, p: Pronouns): string[] {
+  const said = [...scene.camera.framing, ...scene.camera.angle, ...scene.camera.gaze]
+  for (const slots of [scene.slots, ...scene.assigned.map((a) => a.slots)]) {
+    for (const [slot, tags] of Object.entries(slots) as [SceneSlot, string[] | undefined][]) {
+      for (const tag of tags ?? []) {
+        if (NOUN_SLOTS.has(slot) || phrases[tag] || lexiconPhrase(tag, p) || posePhrase(tag, p) || expressionPhrase(tag, p)) said.push(tag)
+      }
+    }
+  }
+  return said
+}
 
 const OUTFIT_ADJECTIVES = new Set(["sleeveless", "strapless", "backless", "see-through", "off shoulder", "off-shoulder", "single off shoulder", "highleg", "open clothes", "torn clothes", "wet clothes", "taut clothes"])
 const OUTFIT_WORDING: Record<string, string> = {
@@ -158,6 +208,9 @@ const BEING_STATES: Record<string, string> = {
 }
 // "hood down", "sleeves rolled up": a garment in a state, phrased as "with her hood down".
 const WORN_STATE_RE = / (up|down|aside|removed|tucked in|rolled up|lift|pull|around neck)$/
+// Parts of a garment ("long sleeves", "sailor collar") come after the garments, so a short list keeps the skirt.
+const GARMENT_PART_RE = /(^|\s)(sleeves?|collar|cuffs?|hood|buttons|pockets?|zipper|trim|lining|neckline|hem)$/
+const garmentsFirst = <T extends { tag: string }>(items: T[]) => [...items.filter((i) => !GARMENT_PART_RE.test(i.tag)), ...items.filter((i) => GARMENT_PART_RE.test(i.tag))]
 
 const ADVERB_PLACES = new Set(["outdoors", "indoors", "underwater", "outside", "inside"])
 const TIME_PHRASES: Record<string, string> = {
@@ -274,7 +327,9 @@ function articleForScenery(tag: string): string {
  * It is passed in rather than imported so the browser can load it lazily.
  * Hand-written wording in english.ts wins over it; the generic rules come last.
  */
-export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, options: { compact?: boolean } = {}): SceneProse {
+export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {}, options: { compact?: boolean } = {}): SceneProse {
+  const slotOf = tagSlots(scene)
+  const phrases = withSpellingPhrases(givenPhrases, [...slotOf.keys(), ...scene.camera.framing, ...scene.camera.angle, ...scene.camera.gaze])
   const p = pronounsFor(scene)
   const Subject = capitalize(p.subject)
   const Possessive = capitalize(p.possessive)
@@ -282,14 +337,21 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const has = p.plural ? "have" : "has"
   const wears = p.plural ? "wear" : "wears"
   const raw: string[] = []
-  const slot = (s: SceneSlot) => dropImplied(scene.slots[s] ?? [])
+  const sayable = sayableTags(scene, phrases, p)
+  const slot = (s: SceneSlot) => dropImplied(scene.slots[s] ?? [], sayable)
+  // One person's tags that name one thing several ways become one phrase; a group's stay apart.
+  const sameThing = (items: { tag: string; text: string }[], plural: boolean) => (plural
+    ? items.map((i) => i.text)
+    : mergeSameThing(items.map((i) => ({ ...i, several: SEVERAL_SLOTS.has(slotOf.get(i.tag) ?? "anatomy") }))))
   // Lists are built in priority order (the taxonomy slot order), so `compact`
   // keeps the first items of each and counts what it leaves out.
   let omitted = 0
   // Phrases already written in an earlier section ("completely naked" in the body,
-  // then "completely nude" for the outfit); naked/nude count as the same word.
+  // then "completely nude" for the outfit). Words Danbooru aliases count as one
+  // ("naked" and "nude", "curvaceous" and "curvy"), and so do body and figure, as
+  // the dictionary writes both ("a curvy body", "a curvy figure").
   const said: string[] = []
-  const sameAs = (text: string) => ` ${text.replace(/\bnaked\b/g, "nude")} `
+  const sameAs = (text: string) => ` ${text.split(" ").map(canonicalWord).join(" ").replace(/\bbody\b/g, "figure")} `
   const tidy = (items: string[], max: number) => {
     const keys = new Set<string>()
     // A tag's qualifier is for the booru, not the sentence: "a lily (flower)" -> "a lily".
@@ -314,7 +376,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const elsewhere = (kind: "being" | "prop" | "mood") => styleParts.elsewhere.filter((e) => e.kind === kind).map((e) => e.text)
 
   // Identity: name or count, species, cosplay, hair and eyes.
-  const anatomyAll = dropImplied([...(scene.slots.demographics ?? []).filter((t) => t !== "no humans"), ...(scene.slots.anatomy ?? [])])
+  const anatomyAll = dropImplied([...(scene.slots.demographics ?? []).filter((t) => t !== "no humans"), ...(scene.slots.anatomy ?? [])], sayable)
   const species = p.plural ? [] : anatomyAll.filter((t) => SPECIES_RE.test(t))
   // A shared "long hair" says nothing once a character owns "very long hair".
   const ownedTraits = scene.assigned.flatMap((a) => [...(a.slots.hair ?? []), ...(a.slots.eyes ?? [])])
@@ -333,37 +395,38 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     const [isVerb, hasVerb, wearVerb, holdVerb] = character.plural ? ["are", "have", "wear", "hold"] : ["is", "has", "wears", "holds"]
     const own = (tag: string) => phrases[tag]?.text.replace(/\{pos\}/g, possessive)
     // Gendered tags read as adjectives (below), whatever slot they are in.
-    const of = (s: SceneSlot) => dropImplied(slots[s] ?? []).filter((t) => !genderedTraits(t).length)
+    const of = (s: SceneSlot) => dropImplied(slots[s] ?? [], sayable).filter((t) => !genderedTraits(t).length)
     // "muscular male", "embarrassed female": the adjective, whichever slot the tag is in.
     const genderedOwn = Object.values(slots).flat().filter((t): t is string => !!t)
       .flatMap((t) => genderedTraits(t).map((g) => g.trait)).filter((t) => !HAIR_COLOR_RE.test(t))
     const isList: string[] = []
-    const hasBody: string[] = []
+    const hasBody: { tag: string; text: string }[] = []
     const withList: string[] = []
     const visibleList: string[] = []
-    for (const t of dropImplied([...(slots.demographics ?? []), ...(slots.anatomy ?? [])])) {
+    for (const t of dropImplied([...(slots.demographics ?? []), ...(slots.anatomy ?? [])], sayable)) {
       if (genderedTraits(t).length) continue
       const phrase = phrases[t]
       // "reptile girl", "a mature woman": what the person is, not something they have.
       if (SPECIES_RE.test(t)) isList.push(withArticle(t))
       else if (phrase?.kind === "is") isList.push(own(t)!)
       else if (phrase?.kind === "with") withList.push(own(t)!)
-      else if (phrase) hasBody.push(own(t)!)
+      else if (phrase) hasBody.push({ tag: t, text: own(t)! })
       else if (BODY_ADJECTIVES.has(t)) isList.push(t)
       else if (BODY_VISIBLE.has(t)) visibleList.push(t)
-      else hasBody.push(isPluralNoun(t) ? t : withArticle(t))
+      else hasBody.push({ tag: t, text: isPluralNoun(t) ? t : withArticle(t) })
     }
     // Several people together ("the women") are not all "smaller": one of them is.
     const oneOf = character.plural ? oneOfSentence({ label: `one of ${character.name}`, plural: false, possessive }, tidy(genderedOwn, 3)) : ""
     const isText = tidy([...(character.plural ? [] : genderedOwn), ...isList], 3)
-    const hasList = tidy([...hairTraits(of("hair")), ...eyeTraits(of("eyes")), ...hasBody], 4)
+    const hasList = tidy([...hairTraits(of("hair")), ...eyeTraits(of("eyes")), ...sameThing(hasBody, !!character.plural)], 4)
     const clothes = CLOTHING_ORDER.flatMap(of)
     // "leotard aside": how a garment is worn ("with her leotard aside"), not another garment.
     for (const t of clothes.filter((c) => WORN_STATE_RE.test(c))) {
       withList.push(phrases[t]?.kind === "with" ? own(t)! : `${possessive} ${t.replace(/ lift$/, " lifted").replace(/ pull$/, " pulled")}`)
     }
-    const wearList = tidy(clothes.filter((c) => !WORN_STATE_RE.test(c)).map((t) => (phrases[t]?.kind === "wears" ? own(t)! : garmentPhrase(t, possessive))), 4)
-    const items = describeItems([...(slots.weapon ?? []), ...(slots.handheld ?? [])], possessive)
+    const wearItems = clothes.filter((c) => !WORN_STATE_RE.test(c)).map((t) => ({ tag: t, text: phrases[t]?.kind === "wears" ? own(t)! : garmentPhrase(t, possessive) }))
+    const wearList = tidy(sameThing(garmentsFirst(wearItems), !!character.plural), 4)
+    const items = describeItems([...(slots.weapon ?? []), ...(slots.handheld ?? [])], possessive, sayable)
     const holdList = tidy([...items.held, ...items.loose], 2)
     const withText = tidy(withList, 2)
     const clauses = [
@@ -411,7 +474,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   }
   const bodyAdjectives = anatomy.filter((t) => BODY_ADJECTIVES.has(t))
   const visible = anatomy.filter((t) => BODY_VISIBLE.has(t))
-  const bodyNouns: string[] = []
+  const bodyNouns: { tag: string; text: string }[] = []
   const bodyWith: string[] = []
   // A noun phrase ("a mature woman") cannot follow "They are"; with several people it gets its own sentence.
   const bodyRoles: string[] = []
@@ -428,9 +491,9 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     if (phrase?.kind === "is" && p.plural && /^an? /.test(phrase.text)) bodyRoles.push(phrase.text)
     else if (phrase?.kind === "is") bodyAdjectives.push(phrase.text)
     else if (phrase?.kind === "with") bodyWith.push(phrase.text)
-    else if (phrase) bodyNouns.push(phrase.text)
+    else if (phrase) bodyNouns.push({ tag, text: phrase.text })
     else if (demographics.has(tag)) raw.push(tag)
-    else bodyNouns.push(isPluralNoun(tag) ? tag : withArticle(tag))
+    else bodyNouns.push({ tag, text: isPluralNoun(tag) ? tag : withArticle(tag) })
   }
   // What a gendered tag says of one person ("clothed female nude male") is not said of everyone ("They are nude").
   const personal = new Set([
@@ -440,7 +503,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const notPersonal = (text: string) => !personal.has(text)
   const adjectiveList = tidy(bodyAdjectives.filter(notPersonal), 3)
   const roleList = tidy(bodyRoles, 1)
-  const nounList = tidy(bodyNouns, 4)
+  const nounList = tidy(sameThing(bodyNouns, p.plural), 4)
   const visibleList = tidy(visible, 3)
   const bodyWithList = tidy(bodyWith, 2)
   const body = [
@@ -454,23 +517,23 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   ].filter(Boolean).join(" ")
 
   // Clothing: garments, then how the outfit is worn.
-  const clothingTags = dropImplied(CLOTHING_ORDER.flatMap((s) => scene.slots[s] ?? []))
+  const clothingTags = dropImplied(CLOTHING_ORDER.flatMap((s) => scene.slots[s] ?? []), sayable)
   const states = clothingTags.filter(isClothingState)
   const worn = clothingTags.filter((t) => !isClothingState(t) && WORN_STATE_RE.test(t))
   const adjectives = states.filter((t) => OUTFIT_ADJECTIVES.has(t)).map((t) => OUTFIT_WORDING[t] ?? t.replace(/ clothes$/, ""))
   const beings = [...states.filter((t) => BEING_STATES[t]).map((t) => BEING_STATES[t]), ...elsewhere("being")]
   const showing = states.filter((t) => !OUTFIT_ADJECTIVES.has(t) && !BEING_STATES[t]).map((t) => (/cutout$/.test(t) ? withArticle(t) : t))
   const wornPhrases = worn.map((t) => dictionary(t)?.kind === "with" ? dictionary(t)!.text : `${p.possessive} ${t.replace(/ lift$/, " lifted").replace(/ pull$/, " pulled")}`)
-  const garments: string[] = []
+  const garments: { tag: string; text: string }[] = []
   for (const tag of clothingTags) {
     if (gendered(tag, beings)) continue
     if (isClothingState(tag) || WORN_STATE_RE.test(tag)) continue
     const phrase = dictionary(tag)
     if (phrase?.kind === "with") wornPhrases.push(phrase.text)
     else if (phrase?.kind === "is") beings.push(phrase.text)
-    else garments.push(phrase?.kind === "wears" ? phrase.text : garmentPhrase(tag, p.possessive))
+    else garments.push({ tag, text: phrase?.kind === "wears" ? phrase.text : garmentPhrase(tag, p.possessive) })
   }
-  const garmentList = tidy(garments, 5)
+  const garmentList = tidy(sameThing(garmentsFirst(garments), p.plural), 5)
   const wornList = tidy(wornPhrases, 2)
   const adjectiveOutfit = tidy(adjectives, 2)
   const beingList = tidy(beings.filter(notPersonal), 2)
@@ -484,7 +547,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   ].filter(Boolean).join(" ")
 
   // Held and carried items, each said once (see describeItems).
-  const items = describeItems([...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])], p.possessive)
+  const items = describeItems([...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])], p.possessive, sayable)
   const heldList = tidy(items.held, 2)
   const looseList = tidy(items.loose, 2)
   const held = [
@@ -497,7 +560,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const withs: string[] = []
   const extraFraming: string[] = []
   const extraMood: string[] = []
-  const poseTags = dropImplied([...POSE_ORDER.flatMap((s) => scene.slots[s] ?? []), ...(scene.slots.expression ?? [])])
+  const poseTags = dropImplied([...POSE_ORDER.flatMap((s) => scene.slots[s] ?? []), ...(scene.slots.expression ?? [])], sayable)
   // Acts with a known subject ("The man is performing oral sex on the woman"), one sentence per person.
   const acts = new Map<string, { role: Role; states: string[]; withs: string[] }>()
   for (const tag of poseTags) {
@@ -525,7 +588,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     if (!ruled) { raw.push(tag); continue }
     ;(ruled.kind === "state" ? statesOut : withs).push(ruled.text)
   }
-  statesOut.push(...dropImplied(scene.camera.gaze).map((t) => (dictionary(t)?.kind === "is" ? dictionary(t)!.text : gazePhrase(t, p))))
+  statesOut.push(...dropImplied(scene.camera.gaze, sayable).map((t) => (dictionary(t)?.kind === "is" ? dictionary(t)!.text : gazePhrase(t, p))))
   const stateList = tidy(mergeSharedPrefix(statesOut), 4)
   const withList = tidy(mergeSharedPrefix(withs), 3)
   let pose = ""
@@ -546,7 +609,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   pose = [pose, ...actSentences].filter(Boolean).join(" ")
 
   // Setting.
-  const sceneryTags = dropImplied([...(scene.slots.setting ?? []), ...(scene.slots.props ?? [])])
+  const sceneryTags = dropImplied([...(scene.slots.setting ?? []), ...(scene.slots.props ?? [])], sayable)
   const atmosphere = slot("atmosphere")
   const adverbs = sceneryTags.filter((t) => ADVERB_PLACES.has(t))
   const times = atmosphere.filter((t) => TIME_PHRASES[t]).map((t) => TIME_PHRASES[t])
@@ -595,7 +658,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   ].filter(Boolean).join(" ")
 
   // Camera.
-  const framing = tidy([...dropImplied(scene.camera.framing).map((t) => framingPhrase(t, dictionary(t)?.text)), ...extraFraming], 1)
+  const framing = tidy([...dropImplied(scene.camera.framing, sayable).map((t) => framingPhrase(t, dictionary(t)?.text)), ...extraFraming], 1)
   const angle = tidy(scene.camera.angle.map((t) => anglePhrase(t, dictionary(t)?.text)), 1)
   const camera = framing.length
     ? `The image is ${joinList(framing)}${angle.length ? `, ${joinList(angle)}` : ""}.`
