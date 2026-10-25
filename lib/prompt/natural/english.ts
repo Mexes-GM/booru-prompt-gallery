@@ -220,9 +220,14 @@ function stem(word: string): string {
   return bare.replace(/([^aeiou])\1$/, "$1")
 }
 
-/** The words of a phrase that say something, stemmed. Possessives stay whole ("the man's" is not "the man"). */
+/**
+ * The words of a phrase that say something, stemmed. A possessive names its
+ * owner too ("another person's face" mentions another person); the dictionary's
+ * "a partner" is its "another person".
+ */
 function contentWords(phrase: string): Set<string> {
-  return new Set(phrase.toLowerCase().split(/[\s,]+/).filter((w) => w && !FILLER_WORDS.has(w)).map(stem))
+  const words = phrase.toLowerCase().replace(/\ba partner\b/g, "another person").replace(/\bpartner's\b/g, "another person's").split(/[\s,]+/)
+  return new Set(words.filter((w) => w && !FILLER_WORDS.has(w)).flatMap((w) => (w.endsWith("'s") ? [w, stem(w.slice(0, -2))] : [stem(w)])))
 }
 
 const PRONOUNS_RE = /^(her|his|their|its|own)$/
@@ -232,7 +237,8 @@ const OTHER_OWNER_RE = /'s$|^(another|someone|partner|each|other)$/
 /**
  * True when phrase `b` says everything `a` says: "rolling her eyes" next to
  * "making an ahegao face with eyes rolled up", "a first-person view" next to
- * "seen from a first-person point of view", "smiling" next to "smiling faintly".
+ * "seen from a first-person point of view", "smiling" next to "smiling faintly",
+ * "sitting on another person" next to "sitting on another person's face".
  * Whose it is counts only when `b` names someone else.
  */
 export function saysAll(b: string, a: string): boolean {

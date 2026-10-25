@@ -551,7 +551,8 @@ const overrides: Record<string, string> = {
   // Phrases another phrase already says, whatever tags they came from.
   assert(saysAll("making an ahegao face with eyes rolled up and tongue out", "rolling their eyes"), "rolled eyes are said once, in any wording")
   assert(saysAll("seen from a first-person point of view", "a first-person view"), "a first-person view is said once")
-  assert(!saysAll("a hand on another person's shoulder", "a hand on her shoulder") && !saysAll("kissing the man's penis", "kissing the man"), "someone else's is not the same thing")
+  assert(!saysAll("a hand on another person's shoulder", "a hand on her shoulder"), "someone else's shoulder is not her own")
+  assert(saysAll("sitting on another person's face", "sitting on another person") && saysAll("undressing another person", "undressing a partner"), "a part of someone says the someone; a partner is another person")
   assert(dropContainedPhrases(["smiling", "smiling faintly", "blushing"]).join() === "smiling faintly,blushing", "the plainer phrase goes")
   const pov = renderMoss(buildScene({ general: ["1girl", "point of view", "pov"] }, { ...overrides, "point of view": "pose:camera" }), {
     maxWords: null, phrases: { "point of view": { kind: "framing", text: "a first-person view" } },
