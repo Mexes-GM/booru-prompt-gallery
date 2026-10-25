@@ -126,10 +126,13 @@ const LAYOUT_WORDING: Record<string, string> = {
 }
 const LAYOUT_STATES = new Set(["letterboxed", "pillarboxed"])
 
-/** "The image is letterboxed, with a speech bubble and a yellow border." */
-export function describeLayout(layout: string[]): string {
+/**
+ * "The image is letterboxed, with a speech bubble and a yellow border."
+ * `wording` gives a tag's dictionary phrase ("a star symbol"), if it has one.
+ */
+export function describeLayout(layout: string[], wording: (tag: string) => string | undefined = () => undefined): string {
   const items = layout.filter((t) => !COMICS[t] && !LAYOUT_STATES.has(t))
-    .map((t) => LAYOUT_WORDING[t] ?? (/ text$|lines$|^text$/.test(t) ? t : withArticle(t)))
+    .map((t) => LAYOUT_WORDING[t] ?? wording(t) ?? (/ text$|lines$|^text$/.test(t) ? t : withArticle(t)))
   const states = layout.filter((t) => LAYOUT_STATES.has(t))
   if (states.length) return `The image is ${joinList(states)}${items.length ? `, with ${joinList(items)}` : ""}.`
   return items.length ? `The image includes ${joinList(items)}.` : ""

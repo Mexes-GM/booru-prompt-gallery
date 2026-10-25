@@ -39,16 +39,18 @@ import { describeLayout, describeStyle } from "./style"
  * How a dictionary phrase plugs into a sentence: "is" continues "She is ___",
  * "with" continues "..., with ___", "has" continues "She has ___", "wears"
  * continues "She wears ___", "framing" continues "The image is ___", "scene" is
- * a noun phrase for the atmosphere. `{pos}` stands for the possessive pronoun.
- * "keep" marks a clothing-slot tag that is not a garment and has no phrase
+ * a noun phrase for the atmosphere, or for a place or object ("a potted plant").
+ * `{pos}` stands for the possessive pronoun. "keep" marks a tag with no phrase
  * ("military", "costume switch"): it stays a tag instead of "She wears a military".
  */
 export type PhraseKind = "is" | "with" | "has" | "wears" | "framing" | "scene" | "keep"
 /**
  * `who` and `partner` say who does an act and to whom when the picture has
  * several people (see people.ts `roleAct`); without them the act is everyone's.
+ * `slot` ("clothing:accents") comes with tags the taxonomy has no slot for, so
+ * the scene knows where they go.
  */
-export interface PhraseEntry { kind: PhraseKind; text: string; who?: ActWho; partner?: ActPartner }
+export interface PhraseEntry { kind: PhraseKind; text: string; who?: ActWho; partner?: ActPartner; slot?: string }
 export type PhraseDictionary = Record<string, PhraseEntry>
 
 export interface SceneProse {
@@ -122,9 +124,10 @@ const RELATION_WORDING: Record<string, string> = {
  * Held and carried items, each said once. "holding X" names the item; a kind
  * replaces its generic word ("holding gun" + "handgun" -> "a handgun", "weapon"
  * next to "knife" goes); a placement joins its item ("umbrella over shoulder" ->
- * "a parasol over her shoulder") instead of adding a second one.
+ * "a parasol over her shoulder") instead of adding a second one. `wording` writes
+ * an item (its dictionary phrase, or the tag with its article).
  */
-function describeItems(tags: string[], possessive: string, holdsSomething = false): { held: string[]; loose: string[] } {
+function describeItems(tags: string[], possessive: string, wording: (tag: string) => string = withArticle, holdsSomething = false): { held: string[]; loose: string[] } {
   const holding = tags.filter((t) => t.startsWith("holding ")).map((t) => t.slice("holding ".length))
   const placed = tags.filter((t) => !t.startsWith("holding ") && splitPlacement(t).place)
   const others = tags.filter((t) => t !== "holding" && !t.startsWith("holding ") && !splitPlacement(t).place)
@@ -140,8 +143,8 @@ function describeItems(tags: string[], possessive: string, holdsSomething = fals
   if (holdsSomething && !heldSet.size) for (const o of others) if (kept.has(o)) heldSet.add(o)
   const held = [...heldSet]
   const loose = others.filter((o) => kept.has(o) && !heldSet.has(o))
-  const heldText = held.map(withArticle)
-  const looseText = loose.map(withArticle)
+  const heldText = held.map(wording)
+  const looseText = loose.map(wording)
   const where = (place: string) => place.replace(/(shoulder|back|hip|mouth)$/, `${possessive} $1`)
   // "sword on back" already says "weapon on back".
   for (const tag of dropImplied(placed)) {
@@ -386,6 +389,8 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     // Said of everyone, a mutual act has no one else to name: "hugging a partner" -> "hugging each other".
     return { kind: entry.kind, text: p.plural && entry.who === "together" ? eachOther(text) : text }
   }
+  // Places, objects and creatures read a "scene" phrase as the noun itself.
+  const nounPhrase = (tag: string) => (phrases[tag]?.kind === "scene" ? dictionary(tag)!.text : undefined)
   // Medium and style first: some style-slot tags describe the outfit or the setting instead.
   const styleParts = describeStyle(slot("style"), slot("layout"))
   const elsewhere = (kind: "being" | "prop" | "mood") => styleParts.elsewhere.filter((e) => e.kind === kind).map((e) => e.text)
@@ -444,7 +449,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
     const isText = tidy([...(character.plural ? [] : genderedOwn), ...isList], 3)
     const hasList = tidy([...hairTraits(of("hair")), ...eyeTraits(of("eyes")), ...hasBody], 4)
     const wearList = tidy(wearing, 4)
-    const items = describeItems([...(slots.weapon ?? []), ...(slots.handheld ?? [])], possessive)
+    const items = describeItems([...(slots.weapon ?? []), ...(slots.handheld ?? [])], possessive, (t) => (phrases[t]?.kind === "scene" ? own(t)! : withArticle(t)))
     const holdList = tidy([...items.held, ...items.loose], 2)
     const withText = tidy(mergeTakenOff(withList), 2)
     const clauses = [
@@ -565,7 +570,7 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
 
   // Held and carried items, each said once (see describeItems).
   const holdsSomething = POSE_ORDER.some((s) => scene.slots[s]?.includes("holding"))
-  const items = describeItems([...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])], p.possessive, holdsSomething)
+  const items = describeItems([...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])], p.possessive, (t) => nounPhrase(t) ?? withArticle(t), holdsSomething)
   const heldList = tidy(items.held, 2)
   const looseList = tidy(items.loose, 2)
   const held = [
@@ -655,10 +660,11 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const places = tidy(sceneryTags.filter((t) => !ADVERB_PLACES.has(t) && !/ background$/.test(t) && t !== "scenery"), 4)
   // A room is where the scene takes place ("in a bedroom"), not something it is "with".
   const room = !adverbs.length || adverbs[0] === "indoors" ? places.find((t) => ROOM_RE.test(t)) : undefined
-  const placeTexts = [...places.filter((t) => t !== room).map(articleForScenery), ...tidy(elsewhere("prop"), 2)]
+  const placeText = (t: string) => nounPhrase(t) ?? articleForScenery(t)
+  const placeTexts = [...places.filter((t) => t !== room).map(placeText), ...tidy(elsewhere("prop"), 2)]
   const settingParts: string[] = []
   if (room) {
-    settingParts.push(`The scene takes place in ${articleForScenery(room)}${times.length ? ` ${times.join(" ")}` : ""}${placeTexts.length ? `, with ${joinList(placeTexts)}` : ""}.`)
+    settingParts.push(`The scene takes place in ${placeText(room)}${times.length ? ` ${times.join(" ")}` : ""}${placeTexts.length ? `, with ${joinList(placeTexts)}` : ""}.`)
   } else if (adverbs.length || times.length) {
     settingParts.push(`The scene takes place ${[adverbs[0], ...times].filter(Boolean).join(" ")}${placeTexts.length ? `, with ${joinList(placeTexts)}` : ""}.`)
   } else if (placeTexts.length) {
@@ -713,10 +719,10 @@ export function describeScene(scene: Scene, phrases: PhraseDictionary = {}, opti
   const style = styleParts.sentence
   raw.push(...styleParts.raw)
   const animalTags = slot("animal")
-  const animals = tidy(animalTags.map(withArticle), 2)
+  const animals = tidy(animalTags.map((t) => nounPhrase(t) ?? withArticle(t)), 2)
   const extras = [
-    animals.length ? `There ${animals.length > 1 || takesPluralVerb(animalTags[0]) ? "are" : "is"} also ${joinList(animals)}.` : "",
-    describeLayout(slot("layout")),
+    animals.length ? `There ${animals.length > 1 || takesPluralVerb(animals[0]) ? "are" : "is"} also ${joinList(animals)}.` : "",
+    describeLayout(slot("layout"), nounPhrase),
   ].filter(Boolean).join(" ")
 
   const people = [

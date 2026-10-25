@@ -15,7 +15,7 @@ import { getTagSlotFromOverrides, TAG_SUBCATEGORIES } from "@/lib/tag-taxonomy"
 import { HAIR_COLOR_RE, isClothingState, splitHairCompound } from "./english"
 import { GENDER_AFFINITY } from "./gender-affinity"
 import { CROSSDRESSING_RE, FUTA_RE, genderedTraits, personNoun, ruleGender } from "./people"
-import type { PhraseDictionary, PhraseKind } from "./prose"
+import type { PhraseDictionary, PhraseEntry, PhraseKind } from "./prose"
 
 export interface NaturalPromptInput {
   /** General tags, as on the post (underscores or spaces). */
@@ -121,9 +121,11 @@ export interface BuildSceneOptions {
    */
   characterAliases?: Record<string, string>
   /**
-   * The phrase dictionary. Its entries are reviewed tag by tag, so where a tag's
-   * phrase cannot be said in its taxonomy slot's sentence ("halo" filed under the
-   * atmosphere but phrased as something a person has), the phrase decides the slot.
+   * The phrase dictionary. Its entries are reviewed tag by tag, so a tag the
+   * taxonomy has no slot for goes where its phrase reads (see `phraseSlot`), and
+   * where a tag's phrase cannot be said in its taxonomy slot's sentence ("halo"
+   * filed under the atmosphere but phrased as something a person has), the
+   * phrase decides the slot (see `slotForPhrase`).
    */
   phrases?: PhraseDictionary
 }
@@ -134,20 +136,56 @@ export function normalizeTag(tag: string): string {
     .replace(/\s{2,}/g, " ").trim()
 }
 
-// "1girl", "2boys", and Rule34's "1girls", "1female", "1futa", "1boy1girl".
+// "1girl", "2boys", and Rule34's "1girls", "1female", "1futa", "1boy1girl", "3girls1boy".
 const COUNT_RE = /^(\d+)\+?(girl|boy|other|female|male|futa)s?$/
-const PAIR_COUNT_RE = /^(\d+)(boy|girl)(\d+)(boy|girl)s?$/
+const PAIR_COUNT_RE = /^(\d+)(boy|girl)s?(\d+)(boy|girl)s?$/
 const COUNT_WORDS = new Set([
   "solo", "multiple girls", "multiple boys", "multiple others", "solo focus", "male focus", "female focus",
   // Gender tags as other boorus write them (Rule34, Gelbooru): subject information, not description.
-  "female", "male", "solo female", "solo male", "female only", "male only",
+  "female", "male", "solo female", "solo male", "female only", "male only", "multiple females", "multiple males", "duo", "trio",
   // Rule34 pairing and species-scope tags ("straight" there means a man and a woman).
   "male/female", "female/female", "male/male", "human", "human only", "hetero", "straight", "humanoid only",
-  // Rule34 head counts without genders.
-  "duo", "trio",
 ])
 // Other boorus' spellings of a Danbooru tag, read as the Danbooru one.
 const SPELLINGS: Record<string, string> = { indoor: "indoors", outdoor: "outdoors" }
+// Plurals that name another thing ("glasses" are not several glass), never swapped.
+const OWN_PLURALS = new Set(["glasses", "sunglasses", "shorts", "pants", "boxers", "briefs", "tights", "balls", "arms", "goods"])
+
+/**
+ * The known tag an unknown one is a spelling of, as other boorus write tags:
+ * without an apostrophe ("hand on anothers chin"), with a space for a hyphen,
+ * as one word ("succubustail"), or with the head noun in the other number
+ * ("body marking" -> "body markings"; only in tags of several words, where the
+ * number does not change what the tag is). Null unless exactly one tag that
+ * `isKnown` accepts matches; of its spellings, a `preferred` one wins.
+ */
+function knownSpelling(tag: string, isKnown: (tag: string) => boolean, preferred: (tag: string) => boolean): string | null {
+  const words = tag.split(" ")
+  const replace = (i: number, word: string) => [...words.slice(0, i), word, ...words.slice(i + 1)].join(" ")
+  const candidates: string[] = []
+  const head = words[words.length - 1]
+  if (words.length > 1 && !OWN_PLURALS.has(head)) {
+    const last = words.length - 1
+    candidates.push(...(head.endsWith("s") ? [replace(last, head.slice(0, -1)), ...(head.endsWith("es") ? [replace(last, head.slice(0, -2))] : [])] : [replace(last, `${head}s`), replace(last, `${head}es`)]))
+  }
+  words.forEach((word, i) => {
+    if (/^[a-z]{3,}s$/.test(word)) candidates.push(replace(i, `${word.slice(0, -1)}'s`))
+    // One word for two: "wideeyed" -> "wide-eyed", "crosssection" -> "cross-section".
+    if (/^[a-z]{7,}$/.test(word)) {
+      for (let cut = 3; cut <= word.length - 3; cut++) {
+        for (const rest of [word.slice(cut), word.slice(cut - 1)]) {
+          for (const sep of [" ", "-"]) candidates.push(replace(i, `${word.slice(0, cut)}${sep}${rest}`))
+        }
+      }
+    }
+  })
+  if (tag.includes("-")) candidates.push(tag.replace(/-/g, " "))
+  if (tag.includes(" ")) candidates.push(tag.replace(/ /g, "-"))
+  const found = [...new Set(candidates)].filter(isKnown)
+  // "cross section" and "cross-section" are one tag written two ways.
+  const same = new Set(found.map((t) => t.replace(/-/g, " ")))
+  return same.size === 1 ? found.find(preferred) ?? found[0] : null
+}
 
 // Rule34 pairings ("futa with female", "male on futa"): who is in the picture, like
 // the count tags. A futanari counts as a girl, as "1futa" does.
@@ -175,14 +213,25 @@ function countsIn(tag: string): PeopleCount | null {
   return people
 }
 
+// "duo", "trio": how many people there are, whoever they are. A floor, not a sum:
+// "1girl, 1boy, duo" are two people.
+const GROUP_SIZES: Record<string, number> = { duo: 2, trio: 3 }
+
+/** People a group tag says are there beyond what the count tags name ("1girl, duo" -> 1). */
+function unnamedByGroup(people: PeopleCount, tags: string[]): number {
+  const least = Math.max(0, ...tags.map((t) => GROUP_SIZES[t] ?? 0))
+  return Math.max(0, least - people.girls - people.boys - people.others)
+}
+
 /** How many people a tag list's count tags say there are ("1girl, 1boy" -> 2). */
 export function peopleCount(general: string[]): number {
   const total: PeopleCount = { girls: 0, boys: 0, others: 0 }
-  for (const raw of general) {
-    const counts = countsIn(normalizeTag(raw))
+  const tags = general.map(normalizeTag)
+  for (const tag of tags) {
+    const counts = countsIn(tag)
     if (counts) for (const key of ["girls", "boys", "others"] as const) total[key] = Math.max(total[key], counts[key])
   }
-  return total.girls + total.boys + total.others
+  return total.girls + total.boys + total.others + unnamedByGroup(total, tags)
 }
 const COSTUME_WORDS = new Set(["cosplay", "alternate costume", "official alternate costume", "alternate hairstyle", "costume switch"])
 // Placeholders some boorus file as character tags ("anonymous male"): they name nobody.
@@ -304,6 +353,34 @@ function slotForPhrase(slot: SceneSlot, kind: PhraseKind | undefined): SceneSlot
   return null
 }
 
+// Slots whose sentence reads a "scene" phrase as a noun ("The background features a potted plant").
+const NOUN_SLOTS = new Set<string>(["setting", "props", "weapon", "handheld", "animal", "layout"])
+
+/**
+ * Where a tag the taxonomy has no slot for goes, from its phrase entry. The kind
+ * decides which sentences can read the phrase ("wears" is clothing, "framing" the
+ * camera); the slot the phrase pass gave the tag, when it fits that kind, picks
+ * among them. Hair and eye sentences are built from colour and length words, so
+ * other traits go with the body. A noun phrase ("a robot") is what someone is.
+ */
+function phraseSlot(entry: PhraseEntry | undefined): SceneSlot | "framing" | "gaze" | null {
+  if (!entry) return null
+  const [category, sub] = (entry.slot ?? "").split(":")
+  const known = !!sub && ((TAG_SUBCATEGORIES as Record<string, readonly string[]>)[category]?.includes(sub) ?? false)
+  const own = (...categories: string[]) => (known && categories.includes(category) ? (sub === "hair" || sub === "eyes" ? "anatomy" : sub as SceneSlot) : null)
+  switch (entry.kind) {
+    case "wears": return own("clothing") ?? "accents"
+    case "has": return own("appearance") ?? "anatomy"
+    case "with": return own("clothing", "appearance") ?? (category === "pose" && sub !== "camera" ? own("pose") : null) ?? "gesture"
+    case "is":
+      if (category === "pose" && sub === "camera") return "gaze"
+      return own("clothing", "appearance", "pose") ?? (/^an? /.test(entry.text) ? "demographics" : "posture")
+    case "framing": return "framing"
+    case "scene": return known && NOUN_SLOTS.has(sub) ? sub as SceneSlot : sub === "style" ? "layout" : "atmosphere"
+    default: return null
+  }
+}
+
 export function buildScene(input: NaturalPromptInput, overrides: Record<string, string>, options: BuildSceneOptions = {}): Scene {
   const characterTags = (input.characters ?? []).map(normalizeTag)
   const copyrightTags = new Set((input.copyrights ?? []).map(normalizeTag))
@@ -349,11 +426,19 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
 
   const seen = new Set<string>()
   const seenSpellings = new Set<string>()
+  const entryOf = (tag: string) => overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
+  // A "keep" entry says the tag has no phrase on purpose: it is no wording.
+  const phraseOf = (tag: string) => (options.phrases?.[tag]?.kind === "keep" ? undefined : options.phrases?.[tag])
+  // A spelling is worth reading as another tag only if that tag says something: not a name.
+  const describes = (tag: string) => {
+    const kind = entryOf(tag)
+    return kind ? !/^other:(artist|character|copyright)$/.test(kind) : !!phraseOf(tag)
+  }
   // Cleaned prompts merge one noun's adjectives ("blue long hair"); hair goes back to plain tags.
   const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? [raw])
   for (const raw of general) {
     const given = normalizeTag(raw)
-    const tag = SPELLINGS[given] ?? given
+    let tag = SPELLINGS[given] ?? given
     if (!tag || seenSpellings.has(given)) continue
     seenSpellings.add(given)
     // A second spelling of a tag already there ("indoor" next to "indoors") says nothing new.
@@ -394,6 +479,17 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     if (GRAPHIC_RE.test(tag)) { push(scene, "layout", tag); continue }
     if (HALO_RE.test(tag) && !tag.startsWith("no ")) { push(scene, "anatomy", tag); continue }
 
+    // Another booru's spelling of a known tag ("body marking") is read as that tag,
+    // in the taxonomy's spelling when it has one ("dark-skinned female", not "dark skinned female").
+    const spelled = !entryOf(tag) && !phraseOf(tag) ? knownSpelling(tag, describes, (t) => !!entryOf(t)) : null
+    if (spelled && seen.has(spelled)) { scene.dropped.push(given); continue }
+    if (spelled) { seen.add(spelled); tag = spelled }
+    const exact = entryOf(tag)
+    // The phrase dictionary knows tags the taxonomy left without a slot ("makeup",
+    // "girl on top"); its placement is a judgment about this tag, so it beats the guesses below.
+    const phrased = exact ? null : phraseSlot(phraseOf(tag))
+    if (phrased === "framing" || phrased === "gaze") { scene.camera[phrased].push(tag); continue }
+    if (phrased) { push(scene, phrased, tag); continue }
     // Hand-written tags ("lying on stomach") are not in the taxonomy; the suffix
     // fallback would file them by their last word (stomach -> anatomy), so a tag
     // that starts with a verb is read as a pose instead.
@@ -401,7 +497,6 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
       push(scene, "posture", tag)
       continue
     }
-    const exact = overrides[tag] ?? overrides[tag.replace(/ /g, "_")]
     const slot = getTagSlotFromOverrides(tag, overrides)
     // A name slot reached through the suffix fallback is a guess ("sakura haruno"
     // ends in an artist's name), so only an exact match may drop the tag.
@@ -444,6 +539,7 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     else scene.unclassified.push(tag)
   }
 
+  scene.others += unnamedByGroup(scene, scene.subjectTags)
   scene.characters = mergeAliases(scene.characters, options, scene.girls + scene.boys + scene.others)
   assignGenders(scene, options.traits)
   scene.people = scenePeople(scene)

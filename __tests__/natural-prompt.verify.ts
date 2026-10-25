@@ -178,7 +178,7 @@ const overrides: Record<string, string> = {
   const many: Record<string, string> = { ...overrides }
   const garments = ["red dress", "white gloves", "black boots", "blue scarf", "gold necklace", "silver ring", "lace choker", "fur coat", "wool hat", "leather belt"]
   garments.forEach((g) => (many[g] = "clothing:accents"))
-  const places = ["forest", "river", "bridge", "castle", "mountain", "village"]
+  const places = ["forest", "river", "bridge", "castle", "mountain", "village", "lake"]
   places.forEach((t) => (many[t] = "scenery:setting"))
   const scene = buildScene({ general: ["1girl", "1girls", "long hair", "black hair", "red eyes", "smile", "sitting", ...garments, ...places, "warm lighting", "cowboy shot"], characters: ["kashima (kancolle)"] }, many)
   assert(scene.girls === 1, "1girl and 1girls count one girl, not two")
