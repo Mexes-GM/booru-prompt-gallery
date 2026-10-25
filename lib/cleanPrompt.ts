@@ -1155,7 +1155,11 @@ export function cleanPrompt(
 
   // Parse inputs
   let allTags = parseTagList(tagString)
-  const artistTagsSet = new Set(parseTagList(artistTags).map((t) => normalize(t)))
+  // The artist field is always the booru's own space-separated list: "oniiyanna
+  // oniyanna" is two artists, although parseTagList would read one cleaned tag.
+  const artistTagsSet = new Set(
+    (artistTags?.includes(",") ? parseTagList(artistTags) : splitTags(artistTags ?? "")).map((t) => normalize(t)),
+  )
 
   // Collects every "Find & Replace" hit across all tag sources for this call,
   // reported to the caller via options.onWordReplacementsApplied.
