@@ -532,6 +532,8 @@ const overrides: Record<string, string> = {
   const gloves = scene(["1girl", "black elbow grey gloves"])
   assert(["black gloves", "elbow gloves", "grey gloves"].every((t) => gloves.slots.accents?.includes(t)), "a merged garment tag splits back into its tags")
   assert(renderMoss(gloves, { maxWords: null }).text.includes("black and grey elbow gloves"), "and is said as one pair of gloves")
+  const animaGloves = renderAnima(gloves).text
+  assert(animaGloves.includes("black elbow grey gloves") && !animaGloves.includes("elbow gloves,"), "Anima keeps the card's own tag")
 
   // Other boorus' spellings of one Danbooru tag.
   const breasts = scene(["1girl", "boobs", "breasts", "tits"])
@@ -562,6 +564,9 @@ const overrides: Record<string, string> = {
   // FLUX.2: garment parts come after garments, so the budget keeps the skirt and the legwear.
   const outfit = renderMoss(scene(["1girl", "military uniform", "long sleeves", "pencil skirt", "purple thighhighs"]), { maxWords: null }).text
   assert(outfit.includes("a military uniform, a pencil skirt, purple thighhighs and long sleeves"), "sleeves follow the garments")
+  // An outfit too long for the budget is cut to its main garments, not lost.
+  const tight = renderFlux2(scene(["1girl", "military uniform", "pencil skirt", "purple thighhighs", "black gloves", "long sleeves"]), { maxWords: 18 }).text
+  assert(tight.includes("She wears a military uniform, a pencil skirt and purple thighhighs."), "a long outfit keeps its main garments within the budget")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

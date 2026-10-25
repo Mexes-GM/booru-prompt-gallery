@@ -64,6 +64,8 @@ export interface SceneProse {
   pose: string
   /** The pose sentence cut to its first actions, for when the whole one does not fit the word budget. */
   poseShort: string
+  /** The outfit sentence cut to its main garments, for the same reason. */
+  clothingShort: string
   setting: string
   lighting: string
   camera: string
@@ -547,6 +549,8 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
     beingList.length ? `${Subject} ${is} ${joinList(beingList)}.` : "",
     showingList.length ? `The outfit shows ${joinList(showingList)}.` : "",
   ].filter(Boolean).join(" ")
+  // The main garments, for when the whole outfit does not fit the word budget: better than no outfit.
+  const clothingShort = garmentList.length > 3 || (garmentList.length && wornList.length) ? `${Subject} ${wears} ${joinList(garmentList.slice(0, 3))}.` : ""
 
   // Held and carried items, each said once (see describeItems).
   const items = describeItems([...(scene.slots.weapon ?? []), ...(scene.slots.handheld ?? [])], p.possessive, sayable)
@@ -685,5 +689,5 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   ].filter(Boolean)
 
   raw.push(...scene.unclassified.filter((t) => !RELATIONS.has(t)))
-  return { medium: styleParts.medium, identity, characters, people, body, clothing, held, pose, poseShort, setting, lighting, camera, style, extras, pronouns: p, raw, omitted }
+  return { medium: styleParts.medium, identity, characters, people, body, clothing, clothingShort, held, pose, poseShort, setting, lighting, camera, style, extras, pronouns: p, raw, omitted }
 }

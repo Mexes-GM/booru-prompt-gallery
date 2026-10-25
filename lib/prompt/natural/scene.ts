@@ -94,6 +94,11 @@ export interface Scene {
    * `attributeTraits`), in `people` order. Empty with fewer than two people.
    */
   assigned: { character: SceneCharacter; slots: Partial<Record<SceneSlot, string[]>> }[]
+  /**
+   * The card's joined tags ("black elbow grey gloves") by each tag they were split
+   * back into ("black gloves"): the prose reads the tags, tag renderers keep the card's.
+   */
+  joinedTags: Record<string, string>
 }
 
 /**
@@ -309,13 +314,21 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     dropped: [],
     people: [],
     assigned: [],
+    joinedTags: {},
   }
 
   const seen = new Set<string>()
   const seenSpellings = new Set<string>()
   const isKnownTag = (tag: string) => !!(overrides[tag] ?? overrides[tag.replace(/ /g, "_")])
   // Cleaned prompts merge one noun's adjectives ("blue long hair", "black elbow grey gloves"); they go back to plain tags.
-  const general = input.general.flatMap((raw) => splitHairCompound(normalizeTag(raw)) ?? splitMergedTag(normalizeTag(raw), isKnownTag) ?? [raw])
+  const general = input.general.flatMap((raw) => {
+    const tag = normalizeTag(raw)
+    const hair = splitHairCompound(tag)
+    if (hair) return hair
+    const parts = splitMergedTag(tag, isKnownTag)
+    for (const part of parts ?? []) scene.joinedTags[part] = tag
+    return parts ?? [raw]
+  })
   // Rule34's "boobs", "tits" and "breasts" are one Danbooru tag (relations.ts): it is said
   // once, in Danbooru's spelling when the post has it. A lone spelling the taxonomy knows
   // stays as it is ("femboy"); one it does not know reads as the Danbooru tag ("anthro" -> "furry").
