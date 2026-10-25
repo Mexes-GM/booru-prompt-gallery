@@ -20,10 +20,11 @@
  *   15. No phrase for content involving minors.
  *   16. Wording: demographic tags, garments worn somewhere, "is/are visible", "it" for a robot.
  *   17. Several people: who has what (named or not), gendered tags, pairings, acts between two.
+ *   18. What a tag means: who does an act to whom, poses of several bodies, tags in the wrong sentence.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
-import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, renderMoss, splitPromptTags, titleCase } from "../lib/prompt/natural"
+import { buildScene, normalizeTag, sceneTagCount, renderAnima, renderFlux2, renderMoss, splitPromptTags, titleCase, type PhraseDictionary } from "../lib/prompt/natural"
 import { dropImplied, mergeSharedPrefix, splitHairCompound, withArticle } from "../lib/prompt/natural/english"
 import { readFileSync } from "fs"
 import path from "path"
@@ -383,7 +384,10 @@ const overrides: Record<string, string> = {
   }
   // Fixed gender profiles, so the test does not move when the bundled ones are regenerated.
   const genderAffinity = { "long hair": [0.59, 0.2, 0.52, 0.15], "short hair": [0.16, 0.48, 0.14, 0.27] } as const
-  const phrases = { cunnilingus: { kind: "is" as const, text: "performing oral sex on a woman" }, "male penetrated": { kind: "is" as const, text: "being penetrated by a man" } }
+  const phrases = {
+    cunnilingus: { kind: "is" as const, text: "performing oral sex on a woman", who: "doer" as const, partner: "female" as const },
+    "male penetrated": { kind: "is" as const, text: "being penetrated by a man" },
+  }
   const scene = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}, options: Parameters<typeof buildScene>[2] = {}) =>
     buildScene({ general, ...extra }, vocab, { genderAffinity, ...options })
   const flux = (...args: Parameters<typeof scene>) => renderFlux2(scene(...args), { phrases, maxWords: null }).text
@@ -470,6 +474,110 @@ const overrides: Record<string, string> = {
   assert(flux(["1girl", "holding thermos"]).includes("holding a thermos") && flux(["1girl", "smiling faintly"]).includes("smiling faintly"), "a bare object takes its article, an adverb does not")
   assert(flux(["1girl", "japanese clothes"]).includes("Japanese clothes"), "proper words are capitalized")
   assert(flux(["1girl", "indoor"]).includes("indoors") && !/\bindoor\b/.test(flux(["1girl", "indoor"])), "another booru's spelling reads as Danbooru's")
+}
+
+// 18. What a tag means: who does an act and to whom, poses of several bodies,
+// tags written in the wrong sentence (not every clothing tag is worn, a halo is
+// no atmosphere), and things that are not in the picture at all.
+{
+  const vocab: Record<string, string> = {
+    "imminent penetration": "pose:physiological", "cum in pussy": "pose:physiological", paizuri: "pose:physiological", "precum drip": "pose:physiological",
+    spanking: "pose:interaction", hug: "pose:interaction", "ddf threesome": "pose:physiological", fellatio: "pose:physiological", "cooperative fellatio": "pose:physiological",
+    "hands behind back": "pose:posture", "hands on hips": "pose:posture", "hands on knees": "pose:posture", lying: "pose:posture", tiptoes: "pose:posture", sitting: "pose:posture", "arms up": "pose:gesture",
+    "red halo": "scenery:atmosphere", "mechanical halo": "scenery:atmosphere", "breast focus": "appearance:anatomy", "tiger ears": "clothing:headwear",
+    "long sleeves": "clothing:top", "jacket on shoulders": "clothing:top", condom: "clothing:underwear", crossdressing: "clothing:outfit", "clothes focus": "clothing:outfit",
+    "unworn panties": "clothing:underwear", "unworn bra": "clothing:underwear", military: "clothing:outfit", "bare shoulders": "clothing:top", "single bare shoulder": "clothing:top",
+    dress: "clothing:outfit", "off shoulder": "clothing:top", "print garter belt": "clothing:underwear", "picot trim panties": "clothing:underwear",
+    "blood type": "appearance:anatomy", heart: "appearance:anatomy", "text bubble": "scenery:atmosphere", "size difference": "appearance:anatomy", holding: "pose:gesture",
+    basket: "equipment:handheld", bedroom: "scenery:setting", indoors: "scenery:setting", pillow: "scenery:props", "large breasts": "appearance:anatomy",
+    "clothed female nude male": "appearance:anatomy", "clothed sex": "pose:physiological", "eye contact": "pose:camera", "arm rest": "scenery:props",
+  }
+  const phrases: PhraseDictionary = {
+    "imminent penetration": { kind: "is", text: "about to be penetrated", who: "receiver", partner: "male" },
+    "cum in pussy": { kind: "with", text: "semen inside {pos} vagina", who: "female", partner: "male" },
+    paizuri: { kind: "is", text: "pressing {pos} breasts around a penis", who: "female", partner: "male" },
+    "precum drip": { kind: "with", text: "pre-ejaculate dripping from a penis", who: "male", partner: "none" },
+    spanking: { kind: "is", text: "spanking another person", who: "doer", partner: "anyone" },
+    hug: { kind: "is", text: "hugging a partner", who: "together", partner: "anyone" },
+    "ddf threesome": { kind: "is", text: "having sex in a threesome with two women and a man", who: "together", partner: "female" },
+    fellatio: { kind: "is", text: "performing oral sex on a penis", who: "doer", partner: "male" },
+    "cooperative fellatio": { kind: "is", text: "performing oral sex on a penis together with another woman", who: "doer", partner: "male" },
+    "hands behind back": { kind: "with", text: "both hands behind {pos} back" },
+    "hands on hips": { kind: "with", text: "both hands on {pos} hips" },
+    "hands on knees": { kind: "with", text: "{pos} hands on {pos} knees" },
+    tiptoes: { kind: "is", text: "standing on tiptoes" },
+    "red halo": { kind: "has", text: "a red halo above {pos} head" },
+    "breast focus": { kind: "framing", text: "focused on the breasts" },
+    "tiger ears": { kind: "has", text: "tiger ears" },
+    "long sleeves": { kind: "with", text: "long sleeves" },
+    "jacket on shoulders": { kind: "with", text: "a jacket draped over {pos} shoulders" },
+    condom: { kind: "with", text: "a condom" },
+    crossdressing: { kind: "is", text: "crossdressing" },
+    "clothes focus": { kind: "framing", text: "focused on the clothes" },
+    military: { kind: "keep", text: "military" },
+    "eye contact": { kind: "is", text: "making eye contact with another person", who: "together", partner: "anyone" },
+    "arm rest": { kind: "with", text: "{pos} arm resting on something" },
+  }
+  const scene = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}) => buildScene({ general, ...extra }, vocab, { phrases, genderAffinity: {} })
+  const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]> = {}) => renderFlux2(scene(general, extra), { phrases, maxWords: null }).text
+
+  // Who does an act: the partner is found by their body, the subject is the other person.
+  const pen = flux(["1girl", "1boy", "imminent penetration", "cum in pussy"], { rating: "e" })
+  assert(pen.includes("The woman is about to be penetrated, with semen inside her vagina.") && !/They are[^.]*penetrated/.test(pen), "a receiver of a penis is the woman, not everyone")
+  const paizuri = flux(["1girl", "1boy", "paizuri", "precum drip"], { rating: "e" })
+  assert(paizuri.includes("The woman is pressing her breasts around the man's penis."), "an act of her body names his penis")
+  assert(paizuri.includes("The man is shown with pre-ejaculate dripping from his penis."), "an organ of the subject's own sex is the subject's")
+  const unsure = flux(["1girl", "1boy", "spanking", "hug"], { rating: "e" })
+  assert(unsure.includes("One of them is spanking the other.") && unsure.includes("They are hugging."), "an act whose doer the tags do not tell is one of them on the other")
+  const threesome = flux(["2girls", "1boy", "ddf threesome", "cooperative fellatio"], { rating: "e" })
+  assert(threesome.includes("with two women and a man") && !threesome.includes("each other"), "a mutual act keeps the people it names")
+  assert(threesome.includes("One of the women is performing oral sex on the man's penis together with another woman."), "a woman the act names next to a male partner is not the partner")
+  assert(flux(["futa with female", "fellatio"], { rating: "e" }).includes("The woman is performing oral sex on the futanari's penis."), "with no man, the penis is the futanari's")
+  assert(flux(["2girls", "eye contact"]).includes("making eye contact with each other"), "a mutual act among several is with each other")
+  assert(flux(["1girl", "1boy", "clothed female nude male", "clothed sex"], { rating: "e" }).includes("The woman is clothed.") &&
+    !flux(["1girl", "1boy", "clothed female nude male", "clothed sex"], { rating: "e" }).includes("while clothed"), "a pair tag says who is clothed during sex")
+
+  // Poses one body cannot hold together are several people's.
+  assert(flux(["3girls", "hands behind back", "hands on hips", "hands on knees"]).includes("One of them is shown with both hands behind their back, another with both hands on their hips, and another with their hands on their knees."), "three hand placements are three women's")
+  assert(flux(["2girls", "lying", "tiptoes"]).includes("One of them is lying down, and another is standing on tiptoes."), "lying and standing are two people")
+  assert(flux(["1girl", "lying", "tiptoes"]).includes("She is lying down and standing on tiptoes."), "one person's tags are kept as they are")
+  assert(flux(["2girls", "sitting", "arms up"]).includes("They are sitting, with their arms raised."), "poses that fit one body stay shared")
+
+  // The phrase decides the sentence when the taxonomy slot cannot say it.
+  const halo = flux(["1girl", "red halo", "mechanical halo", "breast focus", "tiger ears"])
+  assert(halo.includes("She has a red halo above her head, a mechanical halo and tiger ears.") && !halo.includes("atmosphere"), "halos and animal ears are hers, not the atmosphere or her clothes")
+  assert(halo.includes("The image is focused on the breasts.") && !halo.includes("has focused"), "a focus tag is framing, not a body trait")
+  assert(flux(["1girl", "arm rest"]).includes("with her arm resting on something") && !flux(["1girl", "arm rest"]).includes("background"), "a pose filed as a prop is a pose")
+
+  // Not every clothing tag is a garment.
+  const clothes = flux(["1girl", "dress", "long sleeves", "jacket on shoulders", "condom", "crossdressing", "clothes focus", "military"])
+  assert(clothes.includes("She wears a dress, with long sleeves, a jacket draped over her shoulders and a condom.") && clothes.includes("She is crossdressing."), "details, placements and states are not worn")
+  assert(clothes.includes("The image is focused on the clothes.") && clothes.includes("Additional details: military.") && !clothes.includes("a military"), "a clothing tag with no phrase stays a tag")
+  assert(flux(["1girl", "dress", "unworn panties", "unworn bra", "bare shoulders"]).includes("She wears a dress, with her shoulders bare and her panties and bra taken off."), "unworn garments are taken off, bare shoulders are the body")
+  assert(flux(["1girl", "satin unworn panties"]).includes("her satin panties taken off"), "unworn inside a merged tag")
+  const shoulder = flux(["1girl", "dress", "single bare shoulder", "off shoulder"])
+  assert(shoulder.includes("with one shoulder bare") && shoulder.includes("Her outfit is worn off the shoulders.") && !shoulder.includes("wears a single"), "shoulder states read as states")
+  assert(flux(["1girl", "print garter belt", "picot trim panties"]).includes("She wears a patterned garter belt and panties with picot trim."), "print and trim describe the garment")
+
+  // Things that are not drawn, or drawn over the picture.
+  const misc = scene(["1girl", "blood type", "heart", "text bubble", "duo"])
+  assert(misc.dropped.includes("blood type") && misc.subjectTags.includes("duo"), "a profile field is not drawn; duo is a head count")
+  assert(flux(["1girl", "heart", "text bubble"]).includes("The image includes heart symbols and a text bubble."), "symbols and bubbles are drawn over the picture")
+  assert(flux(["1girl", "holding", "basket"]).includes("She is holding a basket."), "a bare holding puts the item in hand")
+  assert(flux(["1girl", "bedroom", "indoors", "pillow"]).includes("The scene takes place in a bedroom, with a pillow."), "a room is where the scene takes place")
+  assert(flux(["1girl", "1boy", "size difference"]).includes("They are very different in size.") && !flux(["1girl", "1boy", "size difference"]).includes("a size difference"), "a difference between them is a relation")
+  const versions = flux(["2girls", "dual persona", "large breasts"], { characters: ["shelly (pokemon)"] })
+  assert(versions.includes("two versions of Shelly") && !versions.includes("and a woman") && !versions.includes("dual persona"), "two versions of one character are not a stranger")
+
+  assert(!mergeSharedPrefix(["an elbow resting on a knee", "an elbow resting on a surface"]).includes("an elbow resting on a knee and surface"), "phrases sharing only up to an article do not merge")
+  assert(!dropImplied(["light-skinned male", "light skin"]).includes("light skin"), "a gendered skin tag says the skin tone")
+
+  // The published dictionary carries who does the main acts.
+  const published: PhraseDictionary = JSON.parse(readFileSync(path.join(__dirname, "../public/natural-prompt-phrases.json"), "utf8"))
+  const role = (tag: string) => `${published[tag]?.who}/${published[tag]?.partner}`
+  assert(role("cunnilingus") === "doer/female" && role("fellatio") === "doer/male" && role("paizuri") === "female/male", "oral sex and paizuri name who does them")
+  assert(role("imminent penetration") === "receiver/male" && role("cum in pussy") === "female/male" && role("prone bone") === "receiver/male", "the receiving position is the woman's")
+  assert(published.halo?.kind === "has" && published["eye contact"]?.who === "together", "halos are worn above the head, eye contact is mutual")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

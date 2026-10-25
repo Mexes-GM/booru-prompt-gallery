@@ -79,8 +79,9 @@ export function mergeSharedPrefix(phrases: string[]): string[] {
   const groups = new Map<string, string[]>()
   for (const phrase of new Set(phrases)) {
     const cut = phrase.lastIndexOf(" ")
-    // Phrases of one or two words ("smiling", "looking up") never merge.
-    const key = phrase.split(" ").length >= 3 ? phrase.slice(0, cut) : `\0${phrase}`
+    // Phrases of one or two words ("smiling", "looking up") never merge, nor phrases
+    // that share only up to an article: "resting on a knee" + "resting on a surface".
+    const key = phrase.split(" ").length >= 3 && !/ (a|an|the)$/.test(phrase.slice(0, cut)) ? phrase.slice(0, cut) : `\0${phrase}`
     groups.set(key, [...(groups.get(key) ?? []), phrase.slice(cut + 1)])
   }
   return [...groups].map(([key, lasts]) => (key.startsWith("\0") ? key.slice(1) : `${key} ${joinList(lasts)}`))
@@ -101,9 +102,17 @@ const GARMENT_WORDING: Record<string, string> = {
 }
 const WORN_ON_RE = /^(.+) (on head|on back|around waist)$/
 
+// "print garter belt" (a printed pattern), "picot trim panties" (a garment's trim).
+const PRINT_RE = /^print (.+)$/
+const TRIM_RE = /^(.+) trim (.+)$/
+
 /** "goggles on head" -> "goggles on her head", "gothic lolita" -> "a gothic lolita outfit", "skirt" -> "a skirt". */
 export function garmentPhrase(tag: string, possessive: string): string {
   if (GARMENT_WORDING[tag]) return GARMENT_WORDING[tag]
+  const print = tag.match(PRINT_RE)
+  if (print) return withArticle(`patterned ${print[1]}`)
+  const trim = tag.match(TRIM_RE)
+  if (trim) return `${withArticle(trim[2])} with ${trim[1]} trim`
   const worn = tag.match(WORN_ON_RE)
   if (!worn) return withArticle(tag)
   const [preposition, part] = worn[2].split(" ")
@@ -115,12 +124,21 @@ const CLOTHING_STATES = new Set([
   "sleeveless", "strapless", "backless", "single off shoulder", "topless", "bottomless", "barefoot", "nude", "naked",
   "see-through", "wet clothes", "open clothes", "torn clothes", "no bra", "no panties", "completely nude",
   "off shoulder", "off-shoulder", "covered navel", "highleg", "sideboob", "underboob", "cleavage",
-  "midriff", "navel", "bare shoulders", "bare arms", "bare legs", "zettai ryouiki", "clothing cutout",
+  "midriff", "navel", "bare shoulders", "single bare shoulder", "bare arms", "bare legs", "bare back", "zettai ryouiki", "clothing cutout",
   "cleavage cutout", "shoulder cutout", "taut clothes", "skindentation", "frills", "lace trim",
 ])
 
 export function isClothingState(tag: string): boolean {
   return CLOTHING_STATES.has(tag) || / cutout$/.test(tag)
+}
+
+const BARE_RE = /^(single )?bare (shoulders?|arms?|legs?|back)$/
+
+/** "bare shoulders" -> "her shoulders bare", "single bare shoulder" -> "one shoulder bare": the body, not a garment. */
+export function bareState(tag: string, possessive: string): string | null {
+  const m = tag.match(BARE_RE)
+  if (!m) return null
+  return m[1] ? `one ${m[2].replace(/s$/, "")} bare` : `${possessive} ${m[2]} bare`
 }
 
 const BODY_PART_START = /^(hand|hands|arm|arms|finger|fingers|leg|legs|knee|knees|foot|feet|head|hip|hips|elbow|elbows|thigh|thighs|own hands|both hands)\b/
@@ -181,6 +199,11 @@ export function dropImplied(tags: string[]): string[] {
   for (const tag of tags) for (const other of IMPLIES[tag] ?? []) implied.add(other)
   // "colored skin" only says the skin is an unnatural colour; "grey skin" says which.
   if (tags.some((tag) => SKIN_COLOR_RE.test(tag))) implied.add("colored skin")
+  // "light-skinned male" already says "light skin", and says whose it is.
+  for (const tag of tags) {
+    const skinned = tag.match(/^([a-z]+)-skinned (?:female|male|futa)$/)
+    if (skinned) implied.add(`${skinned[1]} skin`)
+  }
   // A kind of thing implies the generic word, where it was placed too:
   // "parasol" -> "umbrella", "handgun" -> "gun" and "weapon", "sword on back" -> "weapon on back".
   for (const tag of tags) {
@@ -198,6 +221,11 @@ export function dropImplied(tags: string[]): string[] {
     if (size && size.rank < (largest.get(size.noun) ?? 0)) return false
     return !implied.has(tag) && !tags.some((other) => other !== tag && (other.endsWith(` ${tag}`) || other.startsWith(`${tag} `)))
   })
+}
+
+/** Tags that some tag of the list says already, wherever each is filed ("clothed female nude male" -> "clothed sex"). */
+export function impliedTags(tags: string[]): Set<string> {
+  return new Set(tags.flatMap((tag) => IMPLIES[tag] ?? []))
 }
 
 /**
@@ -224,8 +252,9 @@ const IMPLIES: Record<string, string[]> = {
   "completely nude": ["nude"],
   "double v": ["v"],
   "husband and wife": ["couple"],
-  "dark-skinned female": ["dark skin"],
-  "dark-skinned male": ["dark skin"],
+  // Who is clothed during sex is said by the pair: "The woman is clothed. The man is nude."
+  "clothed female nude male": ["clothed sex"],
+  "clothed male nude female": ["clothed sex"],
   "gothic lolita": ["lolita fashion"],
   "classic lolita": ["lolita fashion"],
   "sweet lolita": ["lolita fashion"],

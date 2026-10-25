@@ -15,6 +15,7 @@ import { getTagSlotFromOverrides, TAG_SUBCATEGORIES } from "@/lib/tag-taxonomy"
 import { HAIR_COLOR_RE, isClothingState, splitHairCompound } from "./english"
 import { GENDER_AFFINITY } from "./gender-affinity"
 import { CROSSDRESSING_RE, FUTA_RE, genderedTraits, personNoun, ruleGender } from "./people"
+import type { PhraseDictionary, PhraseKind } from "./prose"
 
 export interface NaturalPromptInput {
   /** General tags, as on the post (underscores or spaces). */
@@ -119,6 +120,12 @@ export interface BuildSceneOptions {
    * Names with the same canonical tag are one person.
    */
   characterAliases?: Record<string, string>
+  /**
+   * The phrase dictionary. Its entries are reviewed tag by tag, so where a tag's
+   * phrase cannot be said in its taxonomy slot's sentence ("halo" filed under the
+   * atmosphere but phrased as something a person has), the phrase decides the slot.
+   */
+  phrases?: PhraseDictionary
 }
 
 /** Lowercase, spaces instead of underscores, booru escapes and HTML entities (Rule34's "another&#039;s") removed. */
@@ -136,6 +143,8 @@ const COUNT_WORDS = new Set([
   "female", "male", "solo female", "solo male", "female only", "male only",
   // Rule34 pairing and species-scope tags ("straight" there means a man and a woman).
   "male/female", "female/female", "male/male", "human", "human only", "hetero", "straight", "humanoid only",
+  // Rule34 head counts without genders.
+  "duo", "trio",
 ])
 // Other boorus' spellings of a Danbooru tag, read as the Danbooru one.
 const SPELLINGS: Record<string, string> = { indoor: "indoors", outdoor: "outdoors" }
@@ -189,6 +198,13 @@ const EFFECT_RE = /^(depth of field|bokeh|blurry|blurry background|blurry foregr
 // Meta tags that describe the file or the post, not the picture.
 const QUALITY_RE = /^(masterpiece|best quality|high quality|good quality|normal quality|amazing quality|very aesthetic|aesthetic|newest|recent|score \d+( up)?|score_\d+(_up)?|year \d{4})$/
 const META_RE = /(commentary|translat|request|^bad |md5|duplicate|revision|third-party|^highres$|^absurdres$|^lowres$|resolution|^tagme$|^check |^official art$|^variant set$|^image sample$|^paid reward)/
+// Character profile fields the taxonomy files as body traits: nothing to draw ("She has a blood type").
+const PROFILE_RE = /^(blood type( [a-z]+)?|zodiac sign)$/
+// Symbols and text drawn over the picture, whatever slot the taxonomy gives them
+// ("text bubble" under the atmosphere, "heart" as a body part): "The image includes ...".
+const GRAPHIC_RE = /^(heart|hearts|(speech|text|thought) bubbles?|text box|spoken (heart|question mark|exclamation mark|ellipsis|musical note))$/
+// The taxonomy files halos ("red halo", "mechanical halo") under the atmosphere; a halo floats above someone's head.
+const HALO_RE = /(^|\s)halo$/
 
 /** "rapi (red hood) (nikke)" -> "Rapi". */
 function displayName(tag: string): string {
@@ -265,6 +281,27 @@ function fallbackSlot(tag: string, category?: string): SceneSlot | null {
     case "creature": return "animal"
     default: return null
   }
+}
+
+const BODY_SLOTS = new Set<SceneSlot>(["anatomy", "demographics"])
+
+/**
+ * Where a tag goes when its phrase cannot be said in its slot's sentence, or
+ * null to keep the slot: "close-up focused on the breasts" (filed under
+ * anatomy) is framing, "a red halo above her head" (filed under the
+ * atmosphere) is something she has, "tiger ears" (filed as headwear) too.
+ */
+function slotForPhrase(slot: SceneSlot, kind: PhraseKind | undefined): SceneSlot | "framing" | null {
+  if (!kind) return null
+  const body = BODY_SLOTS.has(slot)
+  const clothing = CLOTHING_SLOTS.has(slot)
+  if (kind === "framing" && (body || clothing)) return "framing"
+  if (kind === "scene" && (body || clothing)) return "atmosphere"
+  if (kind === "has" && (clothing || slot === "atmosphere")) return "anatomy"
+  if (kind === "wears" && (body || slot === "atmosphere")) return "accents"
+  // Places have no phrases of their own: one written as an action is a pose ("arm rest").
+  if ((kind === "is" || kind === "with") && (slot === "props" || slot === "setting")) return "posture"
+  return null
 }
 
 export function buildScene(input: NaturalPromptInput, overrides: Record<string, string>, options: BuildSceneOptions = {}): Scene {
@@ -353,6 +390,9 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     if (FRAMING_RE.test(tag)) { scene.camera.framing.push(tag); continue }
     if (ANGLE_RE.test(tag)) { scene.camera.angle.push(tag); continue }
     if (GAZE_RE.test(tag)) { scene.camera.gaze.push(tag); continue }
+    if (PROFILE_RE.test(tag)) { scene.dropped.push(tag); continue }
+    if (GRAPHIC_RE.test(tag)) { push(scene, "layout", tag); continue }
+    if (HALO_RE.test(tag) && !tag.startsWith("no ")) { push(scene, "anatomy", tag); continue }
 
     // Hand-written tags ("lying on stomach") are not in the taxonomy; the suffix
     // fallback would file them by their last word (stomach -> anatomy), so a tag
@@ -397,7 +437,10 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
     const resolved = known && known !== "character" && known !== "copyright"
       ? known
       : fallbackSlot(tag, slot?.category)
-    if (resolved) push(scene, resolved, tag)
+    const moved = resolved ? slotForPhrase(resolved, options.phrases?.[tag]?.kind) : null
+    if (moved === "framing") scene.camera.framing.push(tag)
+    else if (moved) push(scene, moved, tag)
+    else if (resolved) push(scene, resolved, tag)
     else scene.unclassified.push(tag)
   }
 
