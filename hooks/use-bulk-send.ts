@@ -26,6 +26,8 @@ import type { BooruPost } from "@/lib/booru/types"
 import { seedPages as seedPagesShared, type SeedPagesSearchSlice } from "@/lib/booru/seed-pages"
 import { computeGenerationResolution } from "@/lib/extension/generation-resolution"
 import { derivePostPrompt, type DerivePostPromptOptions } from "@/lib/prompt/derive-post-prompt"
+import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
+import { isAibooruPost } from "@/lib/api-client"
 import { extractLockedTagsFromSearch, buildAxesFromSeedPosts, detectCharacterTags, generateAndFilterPrompts, type BulkSendCleanOptions } from "@/lib/pack/bulk-send"
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from "@/lib/pack/prompt-similarity"
 
@@ -36,6 +38,8 @@ export interface BulkSendQueueItem {
   /** Generation resolution derived from the source post, "real" mode only. */
   width?: number
   height?: number
+  /** "real" mode only: the post's names and rating, for the natural-language formats. */
+  source?: NaturalPromptSource
 }
 
 export interface BulkSendResult {
@@ -149,7 +153,7 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
         const built: BulkSendQueueItem[] = []
         for (const post of candidatePosts) {
           if (built.length >= count) break
-          const { displayContent } = derivePostPrompt(post, realCleanOptions)
+          const { displayContent, baseContent } = derivePostPrompt(post, realCleanOptions)
           const prompt = displayContent.trim()
           if (!prompt) continue
           if (dupFilter && !dupFilter.tryAccept(prompt)) continue
@@ -159,9 +163,19 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
           if (process.env.NODE_ENV !== "production") {
             console.log("%c[BooruMatchRes:BulkSend]", "color:#8b5cf6;font-weight:bold", `post.width=${post.width} post.height=${post.height} maxLongSide=${maxLongSide} strictResolutionCap=${strictResolutionCap} snapToBucket=${snapToBucket} -> resolution=${resolution ? `${resolution.width}x${resolution.height}` : "null"}`)
           }
+          const isAiPost = isAibooruPost(post)
+          const keepNames = realCleanOptions.includeCharacters && !isAiPost
           built.push({
             prompt,
             ...(resolution ? { width: resolution.width, height: resolution.height } : {}),
+            source: {
+              prompt: baseContent,
+              characters: keepNames ? post.tag_string_character : undefined,
+              copyrights: keepNames ? post.tag_string_copyright : undefined,
+              rating: post.rating,
+              provider: post._provider,
+              handWritten: isAiPost,
+            },
           })
         }
         return built

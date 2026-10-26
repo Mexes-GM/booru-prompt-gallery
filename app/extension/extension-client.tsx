@@ -27,7 +27,10 @@ import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { useDebounce } from "@/hooks/use-debounce"
 import type { UseCardPromptOptions } from "@/hooks/use-card-prompt"
-import { useBulkSend, type BulkSendMode } from "@/hooks/use-bulk-send"
+import { useBulkSend, type BulkSendMode, type BulkSendQueueItem } from "@/hooks/use-bulk-send"
+import { usePromptFormat } from "@/hooks/use-natural-prompt"
+import { convertPromptOnce } from "@/lib/prompt/natural-prompt-loader"
+import { getCachedTagOverrides } from "@/lib/supabase/client-queries"
 import { useTagCounts } from "@/hooks/use-tag-counts"
 import { useBlacklist } from "@/hooks/use-blacklist"
 import { useToast } from "@/hooks/use-toast"
@@ -452,6 +455,15 @@ export default function ExtensionClient() {
   const cardIsGlobalWeightsEnabled = useDeferredValue(isGlobalWeightsEnabled)
   const debouncedSimpleBackgroundReplacementTags = useDebounce(simpleBackgroundReplacementTags, 350)
 
+  // Tag taxonomy (same cache as the web app): classifies tags for the cards
+  // and lets the natural-language formats place them.
+  const [tagOverrides, setTagOverrides] = useState<Record<string, string>>({})
+  useEffect(() => {
+    getCachedTagOverrides()
+      .then(setTagOverrides)
+      .catch((error) => console.error("Failed to load tag overrides:", error))
+  }, [])
+
   // Prompt options bundle passed to PocketCard, which derives the prompt via
   // the shared useCardPrompt hook — the same pipeline MasonryItem uses.
   const cardPromptOptions: UseCardPromptOptions = useMemo(() => ({
@@ -474,6 +486,7 @@ export default function ExtensionClient() {
     randomBackgroundIncludeGradients,
     detailedBackgroundsList,
     backgroundMatchStrictness,
+    tagOverrides,
   }), [
     debouncedExcludeInput, debouncedAddInput, search.debouncedSearchTags, cardAutoAppendSearchTags,
     debouncedFindInput, debouncedReplaceInput, tagAppendRules,
@@ -481,6 +494,7 @@ export default function ExtensionClient() {
     cardRemoveLoRaTags, cardRemoveQualityTags,
     cardBackgroundMode, debouncedSimpleBackgroundReplacementTags,
     randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness,
+    tagOverrides,
   ])
 
   const cardGlobalWeights = useMemo(
@@ -528,6 +542,18 @@ export default function ExtensionClient() {
     }
   )
 
+  // Bulk Send builds tag prompts; with a natural-language format chosen, each
+  // one is rewritten the way its card would show it.
+  const { format: promptFormat, fullDetail: promptFullDetail } = usePromptFormat()
+  const formatBulkPrompts = useCallback(async (items: BulkSendQueueItem[]): Promise<BulkSendQueueItem[]> => {
+    if (promptFormat === "tags") return items
+    return Promise.all(items.map(async (item) => {
+      const source = { provider: search.booruProvider, ...item.source, prompt: item.source?.prompt ?? item.prompt }
+      const converted = await convertPromptOnce(promptFormat, source, tagOverrides, promptFullDetail)
+      return { ...item, prompt: converted.text }
+    }))
+  }, [promptFormat, promptFullDetail, search.booruProvider, tagOverrides])
+
   const enqueueBulkPrompts = useCallback((items: { prompt: string; width?: number; height?: number }[]) => {
     // Micro-stagger so N postMessages don't fire in one tick — the sidepanel's
     // own queue throttles processing, this only avoids bursting the channel.
@@ -558,7 +584,7 @@ export default function ExtensionClient() {
         })
         return
       }
-      enqueueBulkPrompts(result.items)
+      enqueueBulkPrompts(await formatBulkPrompts(result.items))
       toast({
         title: result.produced === result.requested
           ? `${result.produced} prompts queued`
@@ -574,7 +600,7 @@ export default function ExtensionClient() {
         errorSource: "extension_bulk_send_error",
       })
     }
-  }, [hasTarget, guideToTarget, bulkSend, bulkSendMode, search.searchTags, enqueueBulkPrompts, toast])
+  }, [hasTarget, guideToTarget, bulkSend, bulkSendMode, search.searchTags, formatBulkPrompts, enqueueBulkPrompts, toast])
 
   // ── Import Prompt List ─────────────────────────────────────────────────────
   // Paste prompts (one per line) and enqueue them all at once. A prompt may

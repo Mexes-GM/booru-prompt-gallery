@@ -722,6 +722,9 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   if (isCompact) {
     return (
       <>
+        <div className="flex flex-col gap-1 border-t pt-2">
+          <PromptFormatSetting variant="compact" onSettingChange={trackSetting} />
+        </div>
         {switchesSection}
         {renderBackgroundOptionsSection("compact")}
       </>

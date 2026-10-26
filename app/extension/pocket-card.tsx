@@ -1,6 +1,6 @@
 "use client"
 
-import React, { Fragment, memo, useEffect, useRef, useState } from "react"
+import React, { Fragment, memo, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import {
   Check,
@@ -22,7 +22,11 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { InteractivePrompt } from "@/components/prompt-gallery/interactive-prompt"
 import { CopyOptionsDropdown } from "@/components/prompt-gallery/copy-options-dropdown"
+import { NaturalPromptBody } from "@/components/prompt-gallery/natural-prompt-body"
 import { useCardPrompt, type UseCardPromptOptions } from "@/hooks/use-card-prompt"
+import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
+import { convertPromptOnce } from "@/lib/prompt/natural-prompt-loader"
+import { PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { toast } from "@/hooks/use-toast"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
@@ -43,6 +47,9 @@ const CATEGORY_BREAKDOWN = [
 // footerHeight must match the card-content-medium CSS class including padding:
 // p-3 (24px) + prompt container max-h-20 (80px) + gap + button h-8 (32px).
 export const POCKET_FOOTER_HEIGHT = 152
+
+const NO_OVERRIDES: Record<string, string> = {}
+const noop = () => {}
 
 export interface PocketCardProps {
   post: BooruPost
@@ -130,6 +137,7 @@ export const PocketCard = memo(function PocketCard({
 
   const {
     isAiPost,
+    baseContent,
     displayContent,
     pureDisplayContent,
     classifiedTags,
@@ -150,11 +158,35 @@ export const PocketCard = memo(function PocketCard({
     onBaseContentChange: () => setModifiedContent(null),
   })
 
-  const displayPrompt = modifiedContent ?? displayContent
   const imageHeight = Math.max(80, height - POCKET_FOOTER_HEIGHT)
 
   const itemProvider = (post._provider || booruProvider) as BooruProvider
   const postUrl = getPostUrl(itemProvider, post.id, isAiPost)
+
+  // Same prompt format as the web card (shared setting): the natural-language
+  // formats rewrite the cleaned prompt, and Copy and Send use that text.
+  const { format: promptFormat, fullDetail } = usePromptFormat()
+  const keepNames = promptOptions.includeCharacters && !isAiPost
+  const naturalSource = useMemo(() => ({
+    prompt: baseContent,
+    characters: keepNames ? post.tag_string_character : undefined,
+    copyrights: keepNames ? post.tag_string_copyright : undefined,
+    rating: post.rating,
+    provider: itemProvider,
+    handWritten: isAiPost,
+  }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost])
+  const tagOverrides = promptOptions.tagOverrides ?? NO_OVERRIDES
+  const natural = useNaturalPrompt({
+    enabled: true,
+    format: promptFormat,
+    fullDetail,
+    source: naturalSource,
+    overrides: tagOverrides,
+  })
+  // A converter that failed to load leaves the card on tags.
+  const showsNatural = natural.status === "loading" || natural.status === "ready"
+  const tagPrompt = modifiedContent ?? displayContent
+  const displayPrompt = showsNatural ? natural.prompt?.text ?? "" : tagPrompt
 
   const flashCopied = () => {
     setCopied(true)
@@ -162,15 +194,31 @@ export const PocketCard = memo(function PocketCard({
     copyTimerRef.current = setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleCopy = async (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const copyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(displayPrompt)
+      await navigator.clipboard.writeText(text)
       flashCopied()
       onUsedPrompt(post)
     } catch (err) {
       console.warn("Clipboard copy failed:", err)
       toast({ title: "Couldn't copy", description: "Clipboard access was blocked. Use Send instead.", variant: "destructive", duration: 3000 })
+    }
+  }
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    copyText(displayPrompt)
+  }
+
+  // "Copy as": this card in another format, once, without changing the setting.
+  const copyAs = async (format: PromptFormat) => {
+    if (format === "tags") return copyText(tagPrompt)
+    if (format === promptFormat && natural.prompt) return copyText(natural.prompt.text)
+    try {
+      const converted = await convertPromptOnce(format, naturalSource, tagOverrides, fullDetail)
+      await copyText(converted.text)
+    } catch {
+      toast({ description: "Couldn't load the prompt converter. Check your connection and try again.", variant: "destructive", duration: 3000 })
     }
   }
 
@@ -394,14 +442,24 @@ export const PocketCard = memo(function PocketCard({
 
       <div className="card-content-medium flex flex-col justify-between" style={{ height: POCKET_FOOTER_HEIGHT }}>
         <div className="bg-muted/50 rounded-lg overflow-hidden prompt-container">
-          <InteractivePrompt
-            initialPrompt={displayContent}
-            onUpdate={setModifiedContent}
-            globalWeights={globalWeights}
-            onSearch={onSearch}
-            onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
-            conflictingTags={conflictingTags}
-          />
+          {showsNatural ? (
+            <NaturalPromptBody
+              format={promptFormat}
+              view={natural}
+              fullDetail={fullDetail}
+              isExpanded={false}
+              onToggleFullDetail={noop}
+            />
+          ) : (
+            <InteractivePrompt
+              initialPrompt={displayContent}
+              onUpdate={setModifiedContent}
+              globalWeights={globalWeights}
+              onSearch={onSearch}
+              onPromoteToGlobal={isGlobalWeightsEnabled ? onGlobalWeightChange : undefined}
+              conflictingTags={conflictingTags}
+            />
+          )}
         </div>
 
         {/* Copy · per-category copy options · Send (primary). */}
@@ -413,7 +471,8 @@ export const PocketCard = memo(function PocketCard({
               copied ? "bg-success-soft text-success-text border-success-border hover:bg-success-soft" : ""
             }`}
             title={isPreviouslyCopied ? "Copy prompt again" : "Copy prompt"}
-            aria-label={copied ? "Copied" : "Copy prompt"}
+            aria-label={copied ? "Copied" : showsNatural ? `Copy ${PROMPT_FORMAT_INFO[promptFormat].label} prompt` : "Copy prompt"}
+            aria-busy={natural.status === "loading" || undefined}
             disabled={!displayPrompt}
           >
             {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -421,15 +480,16 @@ export const PocketCard = memo(function PocketCard({
           <CopyOptionsDropdown
             classifiedTags={classifiedTags}
             onCopyCategory={copyCategory}
-            disabled={!displayPrompt}
+            disabled={!tagPrompt}
             contentClassName="z-[10005]"
+            copyAs={{ current: showsNatural ? promptFormat : "tags", onSelect: copyAs }}
             trigger={
               <Button
                 variant="outline"
                 className="flex-none w-5 px-0 h-8 rounded-none border-r-0 focus-ring text-muted-foreground"
-                disabled={!displayPrompt}
+                disabled={!tagPrompt}
                 aria-label="Copy options"
-                title="Copy by category"
+                title="Copy as another format or by category"
               >
                 <ChevronDown className="h-3 w-3" aria-hidden="true" />
               </Button>
