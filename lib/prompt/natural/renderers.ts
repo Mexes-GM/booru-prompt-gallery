@@ -18,7 +18,7 @@
  *   poorly there, so names are written out.
  */
 import type { Scene, SceneSlot } from "./scene"
-import { describeScene, type PhraseDictionary, type SceneProse } from "./prose"
+import { describeScene, type PhraseDictionary, type SceneProse, type SubjectClause } from "./prose"
 import { capitalize, joinList, properNouns } from "./english"
 
 export interface RenderResult {
@@ -132,8 +132,48 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
   const minorOnly = fullFit.sentences.every((s) => (fullFit.kept.has(s) && !s.cut) || s.priority >= MINOR_PRIORITY)
   const prose = minorOnly ? full : describeScene(scene, options.phrases, { compact: true })
   const { sentences, kept } = minorOnly ? fullFit : fitBudget(proseSections(prose, medium), maxWords)
-  const text = properNouns(sentences.filter((s) => kept.has(s)).map((s) => s.text).join(" "))
+  const text = properNouns(joinSameSubject(sentences.filter((s) => kept.has(s)).map((s) => s.text), prose.clauses).join(" "))
   return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }
+}
+
+// Most clauses, and words, in one joined sentence: past that it reads as a list of lists.
+const MAX_JOINED_CLAUSES = 3
+const MAX_JOINED_WORDS = 30
+
+/**
+ * Adjacent kept sentences about the same subject become one ("She has X,
+ * wears Y, and holds Z.") rather than a run of "She ... She ...". It runs after
+ * fitBudget on whole sentences, so what is said and what is left out stay the
+ * same: two sentences joined have as many words, three have one fewer.
+ */
+function joinSameSubject(texts: string[], clauses: SubjectClause[]): string[] {
+  const byText = new Map<string, SubjectClause>()
+  for (const c of clauses) if (!byText.has(c.text)) byText.set(c.text, c)
+  const out: string[] = []
+  let group: SubjectClause[] = []
+  const flush = () => {
+    if (group.length) out.push(joinedSentence(group))
+    group = []
+  }
+  for (const text of texts) {
+    const c = byText.get(text)
+    if (!c) { flush(); out.push(text); continue }
+    const last = group[group.length - 1]
+    const joins = !!last && last.key === c.key && !last.tail && last.verb !== "shown"
+      && group.length < MAX_JOINED_CLAUSES && !group.some((g) => g.verb === c.verb)
+      && wordCount(joinedSentence([...group, c])) <= MAX_JOINED_WORDS
+    if (!joins) flush()
+    group.push(c)
+  }
+  flush()
+  return out
+}
+
+/** "She has X, wears Y, and holds Z, with W.": the comma before "and" parts the clauses, as lists inside them have none. */
+function joinedSentence(group: SubjectClause[]): string {
+  if (group.length === 1) return group[0].text
+  const last = group[group.length - 1]
+  return `${group[0].subject} ${group.slice(0, -1).map((c) => c.predicate).join(", ")}, and ${last.predicate}${last.tail ? `, with ${last.tail}` : ""}.`
 }
 
 function proseSections(prose: SceneProse, medium: string): { text: string; priority: number; short?: string }[] {

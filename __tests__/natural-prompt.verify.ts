@@ -26,6 +26,7 @@
  *       ways (merged modifiers), other boorus' spellings (Danbooru's aliases).
  *   21. No one the picture does not have: acts on another person, counted people, pairings, species.
  *   22. Only what the tags settle: owners from other tags, "one of them", tags no picture shows.
+ *   23. Adjacent sentences about the same subject are joined ("She has X, wears Y, and ...").
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/natural-prompt.verify.ts
  */
@@ -764,6 +765,29 @@ const overrides: Record<string, string> = {
   const futa = text({ general: ["2girls", "futa with female", "futanari", "penis", "pussy"], characters: ["cynthia (pokemon)", "dawn (pokemon)"] })
   assert(futa.includes("One of them has their penis visible.") && !/Their[^.]*penis/.test(futa), "a futanari the tags do not name has the penis, not both women")
   assert(text({ general: ["1girl", "1boy", "black hair", "red hair"] }).includes("One of them has black hair, and another red hair."), "two hair colours nobody owns are two people's")
+}
+
+// 23. Adjacent sentences about one subject read as one, after the budget chose them.
+{
+  const vocab: Record<string, string> = {
+    "large breasts": "appearance:anatomy", curvy: "appearance:anatomy", "grey shirt": "clothing:top", "black skirt": "clothing:bottom",
+    "bare shoulders": "clothing:top", "holding weapon": "equipment:weapon", sword: "equipment:weapon", barefoot: "clothing:footwear",
+    "long hair": "appearance:hair", "mechanical wings": "appearance:anatomy", "dark skin": "appearance:anatomy", smile: "pose:expression",
+  }
+  const scene = (general: string[]) => buildScene({ general }, vocab)
+  const flux = (general: string[], maxWords: number | null = null) => renderFlux2(scene(general), { maxWords }).text
+
+  assert(flux(["1girl", "large breasts", "grey shirt", "holding weapon", "sword"]).includes("She has large breasts, wears a grey shirt, and is holding a sword."), "has, wears and holds join with a comma before the last")
+  assert(flux(["1girl", "grey shirt", "barefoot"]).includes("She wears a grey shirt, and is barefoot."), "a state of the outfit joins what she wears")
+  const tail = flux(["1girl", "large breasts", "grey shirt", "bare shoulders", "holding weapon", "sword"])
+  assert(tail.includes("She has large breasts, and wears a grey shirt, with her shoulders bare. She is holding a sword."), "a ', with' tail ends the joined sentence")
+  const four = flux(["1girl", "curvy", "large breasts", "grey shirt", "holding weapon", "sword"])
+  assert(four.includes("She is curvy, has large breasts, and wears a grey shirt. She is holding a sword."), "at most three clauses in one sentence")
+  const open = flux(["1girl", "1boy", "long hair", "mechanical wings", "dark skin", "curvy", "grey shirt"])
+  assert(open.includes("One of them has mechanical wings and dark skin. One of them wears a grey shirt."), "two 'One of them' sentences may be two people and stay apart")
+  const tight = renderFlux2(scene(["1girl", "curvy", "large breasts", "grey shirt", "black skirt", "holding weapon", "sword", "smile"]), { maxWords: 20 })
+  assert(tight.text.split(/\s+/).length <= 20, "joined sentences stay within the word budget")
+  assert(renderAnima(scene(["1girl", "curvy", "large breasts"])).text.endsWith("She is curvy. She has large breasts."), "Anima's prose block is not joined")
 }
 
 console.log(`${passed} passed, ${failed} failed`)

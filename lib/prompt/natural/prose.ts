@@ -107,6 +107,30 @@ export interface SceneProse {
   raw: string[]
   /** Phrases left out by `compact` to keep the prose short. */
   omitted: number
+  /** The sentences above that say one thing of one subject, for the renderer to join (SubjectClause). */
+  clauses: SubjectClause[]
+}
+
+/**
+ * One sentence of the body, clothing, held or extras sections, kept as its
+ * parts so adjacent sentences about the same subject can be joined
+ * ("She has X, wears Y, and holds Z.") without reading the finished text back.
+ */
+export interface SubjectClause {
+  /** The sentence as written on its own. */
+  text: string
+  subject: string
+  /**
+   * Only clauses with the same key join. The main subject's share one; each
+   * "One of them" sentence has its own, as two of them may be two people.
+   */
+  key: string
+  /** Two clauses with the same verb never join ("has X, and has Y"); "shown" ("is shown with") only ends one. */
+  verb: "is" | "has" | "wears" | "holds" | "shown"
+  /** The clause without its subject: "wears a red sweater". */
+  predicate: string
+  /** What follows ", with": only the last clause of a joined sentence may have it. */
+  tail?: string
 }
 
 const NUMBER_WORDS = ["no", "a", "two", "three", "four", "five", "six"]
@@ -519,6 +543,16 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   const open = p.plural && scene.girls > 0 && scene.boys > 0
   const Someone = open ? "One of them" : Subject
   const [someoneIs, someoneHas, someoneWears] = open ? ["is", "has", "wears"] : [is, has, wears]
+  const clauses: SubjectClause[] = []
+  /** A sentence of the main subject ("subject") or of "One of them" when `open`, recorded for the renderer. */
+  const clause = (who: "subject" | "someone", verb: SubjectClause["verb"], predicate: string, tail: string[] = []) => {
+    const subject = who === "someone" ? Someone : Subject
+    const key = who === "someone" && open ? `someone ${clauses.length}` : "subject"
+    const withTail = tail.length ? joinList(tail) : undefined
+    const text = `${subject} ${predicate}${withTail ? `, with ${withTail}` : ""}.`
+    clauses.push({ text, subject, key, verb, predicate, tail: withTail })
+    return text
+  }
   // Several hair colours nobody owns are several people's: "one has black hair, another blue hair".
   const sharedHair = slot("hair").filter(notOwned)
   const sharedColors = sharedHair.filter((t) => / hair$/.test(t) && HAIR_COLOR_RE.test(t.slice(0, -5)))
@@ -665,12 +699,12 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   const bodyWithList = tidy(bodyWith, 2)
   const body = [
     colorSentence,
-    adjectiveList.length ? `${Someone} ${someoneIs} ${joinList(adjectiveList)}.` : "",
+    adjectiveList.length ? clause("someone", "is", `${someoneIs} ${joinList(adjectiveList)}`) : "",
     roleList.length ? `One of them is ${joinList(roleList)}.` : "",
-    nounList.length ? `${Someone} ${someoneHas} ${joinList(nounList)}.` : "",
+    nounList.length ? clause("someone", "has", `${someoneHas} ${joinList(nounList)}`) : "",
     visibleList.length ? `${Possessive} ${joinList(visibleList)} ${visibleList.length > 1 || takesPluralVerb(visibleList[0]) ? "are" : "is"} visible.` : "",
     maleVisibleList.length ? `One of them has their ${joinList(maleVisibleList)} visible.` : "",
-    bodyWithList.length ? `${Someone} ${someoneIs} shown with ${joinList(bodyWithList)}.` : "",
+    bodyWithList.length ? clause("someone", "shown", `${someoneIs} shown with ${joinList(bodyWithList)}`) : "",
     relations.length ? `They are ${joinList(relations)}.` : "",
     ...described.map((d) => d.visible),
   ].filter(Boolean).join(" ")
@@ -701,15 +735,15 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   const noOne = scene.girls + scene.boys + scene.others === 0 && !scene.characters.length && (scene.slots.demographics ?? []).includes("no humans")
   const clothing = [
     garmentList.length && noOne ? `The image shows ${joinList(garmentList)}.` : "",
-    garmentList.length && !noOne ? `${Someone} ${someoneWears} ${joinList(garmentList)}${wornList.length ? `, with ${joinList(wornList)}` : ""}.` : "",
-    !garmentList.length && wornList.length ? `${Someone} ${someoneIs} shown with ${joinList(wornList)}.` : "",
+    garmentList.length && !noOne ? clause("someone", "wears", `${someoneWears} ${joinList(garmentList)}`, wornList) : "",
+    !garmentList.length && wornList.length ? clause("someone", "shown", `${someoneIs} shown with ${joinList(wornList)}`) : "",
     adjectiveOutfit.length ? `${Possessive} outfit is ${joinList(adjectiveOutfit)}.` : "",
-    beingList.length ? `${Subject} ${is} ${joinList(beingList)}.` : "",
+    beingList.length ? clause("subject", "is", `${is} ${joinList(beingList)}`) : "",
     showingList.length ? `The outfit shows ${joinList(showingList)}.` : "",
   ].filter(Boolean).join(" ")
   // The main garments, for when the whole outfit does not fit the word budget: better than no outfit.
   const clothingShort = garmentList.length > 3 || (garmentList.length && wornList.length)
-    ? noOne ? `The image shows ${joinList(garmentList.slice(0, 3))}.` : `${Someone} ${someoneWears} ${joinList(garmentList.slice(0, 3))}.`
+    ? noOne ? `The image shows ${joinList(garmentList.slice(0, 3))}.` : clause("someone", "wears", `${someoneWears} ${joinList(garmentList.slice(0, 3))}`)
     : ""
 
   // Held and carried items, each said once (see describeItems).
@@ -718,8 +752,8 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   const heldList = tidy(items.held, 2)
   const looseList = tidy(items.loose, 2)
   const held = [
-    heldList.length ? `${Subject} ${is} holding ${joinList(heldList)}.` : "",
-    looseList.length ? `${Subject} ${has} ${joinList(looseList)}.` : "",
+    heldList.length ? clause("subject", "holds", `${is} holding ${joinList(heldList)}`) : "",
+    looseList.length ? clause("subject", "has", `${has} ${joinList(looseList)}`) : "",
   ].filter(Boolean).join(" ")
 
   // Pose, expression and gaze in one sentence.
@@ -899,7 +933,7 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   const allFurry = !p.plural || !sceneTags.some((t) => HUMAN_PARTNER_RE.test(t))
   const speciesList = tidy(animalSpecies.map((t) => (p.plural && allFurry ? pluralNoun(t) : withArticle(`anthropomorphic ${t}`))), 2)
   const speciesSentence = !speciesList.length ? ""
-    : !p.plural ? `${Subject} ${is} ${joinList(speciesList)}.`
+    : !p.plural ? clause("subject", "is", `${is} ${joinList(speciesList)}`)
       : allFurry ? `They are anthropomorphic ${joinList(speciesList)}.` : `One of them is ${joinList(speciesList)}.`
   const extras = [
     speciesSentence,
@@ -915,5 +949,5 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   raw.push(...scene.unclassified.filter((t) => !RELATIONS.has(t)))
   // "dual persona" is said by the subject ("two versions of Shelly").
   const rawLeft = selfVersions(scene) ? raw.filter((t) => !SELF_RE.test(t)) : raw
-  return { medium: styleParts.medium, identity, characters, people, body, clothing, clothingShort, held, pose, poseShort, setting, lighting, camera, style, extras, pronouns: p, raw: rawLeft, omitted }
+  return { medium: styleParts.medium, identity, characters, people, body, clothing, clothingShort, held, pose, poseShort, setting, lighting, camera, style, extras, pronouns: p, raw: rawLeft, omitted, clauses }
 }
