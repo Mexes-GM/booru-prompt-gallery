@@ -129,6 +129,14 @@ if (process.env.NEXT_PUBLIC_POSTHOG_KEY && !isLocalHost) {
       // $pageview). ?tags= rewrites are searches, not pageviews.
       capture_pageview: "history_change",
       capture_pageleave: true,
+      // Each flush is one request through the Worker proxy, which also serves
+      // the app's API. Send queued events every 5s (the SDK maximum; default 3s).
+      request_queue_config: { flush_interval_ms: 5000 },
+      // Heatmap data otherwise goes out every 5s while the mouse moves, which
+      // keeps the queue flushing for the whole visit. It is still sent on
+      // beforeunload, so slower batches lose nothing. An object here turns
+      // heatmaps on even if they are later switched off in PostHog's settings.
+      capture_heatmaps: { flush_interval_milliseconds: 30000 },
       capture_exceptions: true,
       before_send: filterExceptions,
       // Multi-clicking a text field is caret placement / word-line selection,
