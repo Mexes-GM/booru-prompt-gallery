@@ -87,7 +87,7 @@ const flux = (general: string[], extra: Partial<Parameters<typeof buildScene>[0]
 
   const text = flux(["1girl", "school uniform", "makeup", "floral print", "robot", "shaded face"])
   assert(text.includes("makeup") && text.includes("a floral print on her clothes"), "clothing phrases are written out")
-  assert(text.includes("She is a robot.") && text.includes("her face partly in shadow"), "body phrases are written out")
+  assert(text.includes("She is a robot and is shown with her face partly in shadow."), "body phrases are written out")
   assert(!text.includes("Additional details"), "nothing with a phrase is left raw")
   assert(flux(["1girl", "1boy", "kissing", "girl on top"]).includes("They are kissing, with the woman on top."), "a 'with' pose phrase joins the pose sentence")
   assert(flux(["1girl", "male pov"]).includes("The image is a first-person view from a man's perspective."), "a framing phrase reads as the shot")
