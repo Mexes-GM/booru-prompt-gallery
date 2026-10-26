@@ -169,11 +169,17 @@ function joinSameSubject(texts: string[], clauses: SubjectClause[]): string[] {
   return out
 }
 
-/** "She has X, wears Y, and holds Z, with W.": the comma before "and" parts the clauses, as lists inside them have none. */
+/**
+ * "She has X, wears Y, and holds Z, with W.": the comma before "and" parts the
+ * clauses, as lists inside them have none. Two clauses need it only when the
+ * first is a list ("has A, B and C, and wears D", but "has A and wears D").
+ */
 function joinedSentence(group: SubjectClause[]): string {
   if (group.length === 1) return group[0].text
   const last = group[group.length - 1]
-  return `${group[0].subject} ${group.slice(0, -1).map((c) => c.predicate).join(", ")}, and ${last.predicate}${last.tail ? `, with ${last.tail}` : ""}.`
+  const first = group[0].predicate
+  const and = group.length === 2 && !/,| and /.test(first) ? " and " : ", and "
+  return `${group[0].subject} ${group.slice(0, -1).map((c) => c.predicate).join(", ")}${and}${last.predicate}${last.tail ? `, with ${last.tail}` : ""}.`
 }
 
 function proseSections(prose: SceneProse, medium: string): { text: string; priority: number; short?: string }[] {

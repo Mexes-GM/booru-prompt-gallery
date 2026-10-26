@@ -778,9 +778,9 @@ const overrides: Record<string, string> = {
   const flux = (general: string[], maxWords: number | null = null) => renderFlux2(scene(general), { maxWords }).text
 
   assert(flux(["1girl", "large breasts", "grey shirt", "holding weapon", "sword"]).includes("She has large breasts, wears a grey shirt, and is holding a sword."), "has, wears and holds join with a comma before the last")
-  assert(flux(["1girl", "grey shirt", "barefoot"]).includes("She wears a grey shirt, and is barefoot."), "a state of the outfit joins what she wears")
+  assert(flux(["1girl", "grey shirt", "barefoot"]).includes("She wears a grey shirt and is barefoot."), "a state of the outfit joins what she wears")
   const tail = flux(["1girl", "large breasts", "grey shirt", "bare shoulders", "holding weapon", "sword"])
-  assert(tail.includes("She has large breasts, and wears a grey shirt, with her shoulders bare. She is holding a sword."), "a ', with' tail ends the joined sentence")
+  assert(tail.includes("She has large breasts and wears a grey shirt, with her shoulders bare. She is holding a sword."), "a ', with' tail ends the joined sentence")
   const four = flux(["1girl", "curvy", "large breasts", "grey shirt", "holding weapon", "sword"])
   assert(four.includes("She is curvy, has large breasts, and wears a grey shirt. She is holding a sword."), "at most three clauses in one sentence")
   const open = flux(["1girl", "1boy", "long hair", "mechanical wings", "dark skin", "curvy", "grey shirt"])
