@@ -31,6 +31,8 @@ export interface UseCardPromptArgs {
   includeCharacters: boolean
   optimizeTags: boolean
   smartTagExclusion?: boolean
+  /** Opt-in prompt rules that guess from indirect signals (see derivePostPrompt). */
+  experimentalPromptRules?: boolean
   /**
    * Prepends the post's first artist tag as "@artist," at the start of the
    * prompt. Only meaningful for the Anima Pencil-XL checkpoint family.
@@ -88,6 +90,7 @@ export function useCardPrompt({
   includeCharacters,
   optimizeTags,
   smartTagExclusion = true,
+  experimentalPromptRules = false,
   prependAnimaArtist = false,
   removeLoRaTags,
   removeQualityTags,
@@ -111,7 +114,7 @@ export function useCardPrompt({
   // "Real posts" mode) without risking the two paths drifting apart.
   const derived = useMemo(() => derivePostPrompt(post, {
     excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
-    includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
+    includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules, prependAnimaArtist,
     removeLoRaTags, removeQualityTags,
     backgroundMode, simpleBackgroundReplacementTags,
     randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
@@ -119,7 +122,7 @@ export function useCardPrompt({
     tagOverrides, globalWeights, isGlobalWeightsEnabled,
   }), [
     post, excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
-    includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
+    includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules, prependAnimaArtist,
     removeLoRaTags, removeQualityTags,
     backgroundMode, simpleBackgroundReplacementTags,
     randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,

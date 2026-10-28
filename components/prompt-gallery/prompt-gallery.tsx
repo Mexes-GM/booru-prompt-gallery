@@ -571,9 +571,9 @@ export function PromptGallery() {
   const {
     promptOptions, setPromptOptions,
     includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
-    autoAppendSearchTags,
+    autoAppendSearchTags, experimentalPromptRules,
     setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
-    setAutoAppendSearchTags,
+    setAutoAppendSearchTags, setExperimentalPromptRules,
   } = usePromptOptions()
   const { format: promptFormat, fullDetail: promptFullDetail } = usePromptFormat()
 
@@ -759,7 +759,8 @@ export function PromptGallery() {
     includeCharacters,
     optimizeTags,
     smartTagExclusion,
-  }), [debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion])
+    experimentalPromptRules,
+  }), [debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules])
   const packMode = usePackMode(tagOverrides, globalWeights, isGlobalWeightsEnabled, packCleanOptions, search.booruProvider)
   const packSeed = usePackSeed()
 
@@ -1469,6 +1470,7 @@ export function PromptGallery() {
   const cardOptimizeTags = useDeferredValue(optimizeTags)
   const cardSmartTagExclusion = useDeferredValue(smartTagExclusion)
   const cardPrependAnimaArtist = useDeferredValue(prependAnimaArtist)
+  const cardExperimentalPromptRules = useDeferredValue(experimentalPromptRules)
   const cardAutoAppendSearchTags = useDeferredValue(autoAppendSearchTags)
   const cardRemoveLoRaTags = useDeferredValue(search.removeLoRaTags)
   const cardRemoveQualityTags = useDeferredValue(search.removeQualityTags)
@@ -1603,6 +1605,7 @@ export function PromptGallery() {
       optimizeTags={cardOptimizeTags}
       smartTagExclusion={cardSmartTagExclusion}
       prependAnimaArtist={cardPrependAnimaArtist}
+      experimentalPromptRules={cardExperimentalPromptRules}
       removeLoRaTags={cardRemoveLoRaTags}
       removeQualityTags={cardRemoveQualityTags}
       backgroundMode={deferredBackgroundMode}
@@ -1635,7 +1638,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -1785,7 +1788,7 @@ export function PromptGallery() {
                     const addedTagCount = splitCommaSeparatedTags(addInput).length
                     const outputFlags = search.booruProvider === 'aibooru'
                       ? [search.removeLoRaTags, search.removeQualityTags, autoAppendSearchTags, isGlobalWeightsEnabled]
-                      : [includeCharacters, optimizeTags, autoAppendSearchTags, prependAnimaArtist, isGlobalWeightsEnabled]
+                      : [includeCharacters, optimizeTags, autoAppendSearchTags, prependAnimaArtist, experimentalPromptRules, isGlobalWeightsEnabled]
                     const promptSummary = [
                       promptFormat !== 'tags'
                         ? `${PROMPT_FORMAT_INFO[promptFormat].badge}${hasWordBudget(promptFormat) && promptFullDetail ? " (every detail)" : ""}`
@@ -1922,6 +1925,8 @@ export function PromptGallery() {
                                 setSmartTagExclusion={setSmartTagExclusion}
                                 prependAnimaArtist={prependAnimaArtist}
                                 setPrependAnimaArtist={setPrependAnimaArtist}
+                                experimentalPromptRules={experimentalPromptRules}
+                                setExperimentalPromptRules={setExperimentalPromptRules}
                                 autoAppendSearchTags={autoAppendSearchTags}
                                 setAutoAppendSearchTags={setAutoAppendSearchTags}
                                 removeLoRaTags={search.removeLoRaTags}
