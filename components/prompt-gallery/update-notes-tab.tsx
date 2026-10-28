@@ -41,6 +41,7 @@ const NOTES: UpdateNote[] = [
   { kind: 'fixed', title: 'No More Extra Pictures in the Corner', body: "Tags for a second picture pasted onto the post, like a reference photo or a screenshot, are left out of prompts, so the character is no longer drawn a second time in a box." },
   { kind: 'improved', title: 'Smoother FLUX.2 and MOSS-Image Prompts', body: "Sentences about the same person are joined, so descriptions read less like a list." },
   { kind: 'fixed', title: 'Only What the Picture Shows', body: "Story labels, ratings of looks and notes about the post are left out of descriptions, and halos, animal ears and drawn symbols land in the right sentence." },
+  { kind: 'fixed', title: 'Option Panels Stay on Screen', body: "On short windows, Search filters and Customize prompt no longer open upward with their top cut off. When they don't fit either way, they open downward and the page scrolls to show them." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
