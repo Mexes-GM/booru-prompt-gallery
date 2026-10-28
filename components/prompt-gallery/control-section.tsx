@@ -70,13 +70,15 @@ export function ControlSection({
   const panelId = useId()
   const [placement, setPlacement] = useState<"bottom" | "top">("bottom")
 
-  // Desktop placement: drop down when the panel fits below its anchor,
-  // otherwise open upward if there's more room above. Measured before paint
-  // on open and on window resize only — never while scrolling, so the panel
-  // doesn't flip (or jitter) under the user's cursor mid-scroll.
+  // Desktop placement: drop down when the panel fits below its anchor, open
+  // upward only when it fits above in full. When it fits neither way it drops
+  // down and the page scrolls just enough to show it — opening upward there
+  // would push its top off screen. Measured before paint on open and on
+  // window resize only — never while scrolling, so the panel doesn't flip
+  // (or jitter) under the user's cursor mid-scroll.
   useLayoutEffect(() => {
     if (!open || isMobile) return
-    const measure = () => {
+    const measure = (revealOverflow: boolean) => {
       const panel = panelRef.current
       // The anchor is the panel's containing block: this card, or the whole
       // two-column grid for `wide` sections.
@@ -87,11 +89,21 @@ export function ControlSection({
       const height = panel.offsetHeight
       const spaceBelow = window.innerHeight - rect.bottom - gap
       const spaceAbove = rect.top - gap
-      setPlacement(height <= spaceBelow || spaceBelow >= spaceAbove ? "bottom" : "top")
+      const fitsBelow = height <= spaceBelow
+      setPlacement(fitsBelow || height > spaceAbove ? "bottom" : "top")
+      if (revealOverflow && !fitsBelow && height > spaceAbove) {
+        // Scroll the panel's bottom into view, but never past the anchor's top.
+        const overflow = Math.min(height - spaceBelow + gap, rect.top - gap)
+        if (overflow > 0) {
+          const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          window.scrollBy({ top: overflow, behavior: smooth ? "smooth" : "auto" })
+        }
+      }
     }
-    measure()
-    window.addEventListener("resize", measure)
-    return () => window.removeEventListener("resize", measure)
+    measure(true)
+    const onResize = () => measure(false)
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
   }, [open, isMobile])
 
   // Desktop dismissal: outside pointerdown and Escape. Skipped while a layer
