@@ -206,6 +206,9 @@ interface PromptGenerationOptionsPanelProps {
   setSmartTagExclusion: (val: boolean) => void
   prependAnimaArtist: boolean
   setPrependAnimaArtist: (val: boolean) => void
+  /** Opt-in rules that guess from indirect signals (see derivePostPrompt). */
+  experimentalPromptRules?: boolean
+  setExperimentalPromptRules?: (val: boolean) => void
   /** Whether tags typed in the search bar but missing from a post's own
    *  prompt get silently appended to the final prompt. */
   autoAppendSearchTags?: boolean
@@ -264,6 +267,8 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   setSmartTagExclusion: _setSmartTagExclusion,
   prependAnimaArtist,
   setPrependAnimaArtist: _setPrependAnimaArtist,
+  experimentalPromptRules = false,
+  setExperimentalPromptRules: _setExperimentalPromptRules,
   autoAppendSearchTags = true,
   setAutoAppendSearchTags: _setAutoAppendSearchTags,
   removeLoRaTags,
@@ -306,6 +311,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   const setOptimizeTags = (val: boolean) => { trackSetting('optimizeTags', val); _setOptimizeTags(val); };
   const setSmartTagExclusion = (val: boolean) => { trackSetting('smartTagExclusion', val); _setSmartTagExclusion(val); };
   const setPrependAnimaArtist = (val: boolean) => { trackSetting('prependAnimaArtist', val); _setPrependAnimaArtist(val); };
+  const setExperimentalPromptRules = (val: boolean) => { trackSetting('experimentalPromptRules', val); _setExperimentalPromptRules?.(val); };
   const setAutoAppendSearchTags = (val: boolean) => { trackSetting('autoAppendSearchTags', val); _setAutoAppendSearchTags?.(val); };
   const setRemoveLoRaTags = (val: boolean) => { trackSetting('removeLoRaTags', val); _setRemoveLoRaTags(val); };
   const setRemoveQualityTags = (val: boolean) => { trackSetting('removeQualityTags', val); _setRemoveQualityTags(val); };
@@ -388,7 +394,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             {isCompact ? (
               <InfoTooltip
                 title="Tag Exclusion"
-                description="Leaves out added tags that the post's picture can't show. If the post is an upper-body shot, a portrait or a close selfie, body tags from 'Tags to add' such as thighs or hips are dropped for that card, so the camera doesn't pull back to show them. The same goes for other contradictions, like facial features on a view from behind."
+                description="Leaves out added tags that the post's picture can't show. If the post is an upper-body shot, a portrait or a close-up, body tags from 'Tags to add' such as thighs or hips are dropped for that card, so the camera doesn't pull back to show them. The same goes for other contradictions, like facial features on a view from behind."
               >
                 <Label htmlFor="smart-exclusion" className="text-xs select-none cursor-pointer flex-1">Tag Exclusion</Label>
               </InfoTooltip>
@@ -396,7 +402,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               <div className="flex items-center gap-2">
                 <InfoTooltip
                   title="Tag Exclusion"
-                  description="Leaves out added tags that the post's picture can't show. If the post is an upper-body shot, a portrait or a close selfie, body tags from 'Tags to add' such as thighs or hips are dropped for that card, so the camera doesn't pull back to show them. The same goes for other contradictions, like facial features on a view from behind."
+                  description="Leaves out added tags that the post's picture can't show. If the post is an upper-body shot, a portrait or a close-up, body tags from 'Tags to add' such as thighs or hips are dropped for that card, so the camera doesn't pull back to show them. The same goes for other contradictions, like facial features on a view from behind."
                   visual={SMART_TAG_EXCLUSION_VISUAL}
                 >
                   <Label htmlFor="smart-exclusion" className="text-sm select-none cursor-pointer">Tag Exclusion</Label>
@@ -429,6 +435,25 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               aria-label="Prepend the post's artist as @artist"
             />
           </div>
+          {_setExperimentalPromptRules && (
+            <div className={rowClass}>
+              <div className="flex items-center gap-2">
+                <InfoTooltip
+                  title="Experimental Rules"
+                  description="Rules that guess from indirect signals, so they can be wrong. Body tags from 'Tags to add' such as thighs or hips are dropped when the post looks like a close shot of faces (a selfie, hands on someone's cheeks) and nothing in it shows the legs. Tags of posts made of several pictures (comic, 4koma, multiple views, reference sheet) are dropped, so you get one picture. Tags you add yourself are always kept."
+                >
+                  <Label htmlFor="experimental-prompt-rules" className={isCompact ? "text-xs select-none cursor-pointer flex-1" : "text-sm select-none cursor-pointer whitespace-nowrap"}>Experimental Rules</Label>
+                </InfoTooltip>
+              </div>
+              <Switch
+                id="experimental-prompt-rules"
+                checked={experimentalPromptRules}
+                onCheckedChange={setExperimentalPromptRules}
+                className={switchClass}
+                aria-label="Enable experimental prompt rules"
+              />
+            </div>
+          )}
         </>
       ) : (
         <>
@@ -751,6 +776,9 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
     )
     if (booruProvider !== 'aibooru') {
       options.push({ id: "prepend-anima-artist", label: "Start with @artist", hint: "Only for checkpoints that support Anima's @artist syntax", checked: prependAnimaArtist, onChange: setPrependAnimaArtist })
+      if (_setExperimentalPromptRules) {
+        options.push({ id: "experimental-prompt-rules", label: "Experimental rules", hint: "Drop leg tags you add from close shots and the tags of multi-panel posts. Can be wrong", checked: experimentalPromptRules, onChange: setExperimentalPromptRules })
+      }
     }
     options.push({
       id: "global-weights-toggle",

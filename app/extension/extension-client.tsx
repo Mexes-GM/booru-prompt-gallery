@@ -391,8 +391,8 @@ export default function ExtensionClient() {
   }
 
   const {
-    includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist, autoAppendSearchTags,
-    setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist, setAutoAppendSearchTags,
+    includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist, autoAppendSearchTags, experimentalPromptRules,
+    setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist, setAutoAppendSearchTags, setExperimentalPromptRules,
   } = usePromptOptions()
 
   const {
@@ -448,6 +448,7 @@ export default function ExtensionClient() {
   const cardOptimizeTags = useDeferredValue(optimizeTags)
   const cardSmartTagExclusion = useDeferredValue(smartTagExclusion)
   const cardPrependAnimaArtist = useDeferredValue(prependAnimaArtist)
+  const cardExperimentalPromptRules = useDeferredValue(experimentalPromptRules)
   const cardAutoAppendSearchTags = useDeferredValue(autoAppendSearchTags)
   const cardRemoveLoRaTags = useDeferredValue(search.removeLoRaTags)
   const cardRemoveQualityTags = useDeferredValue(search.removeQualityTags)
@@ -478,6 +479,7 @@ export default function ExtensionClient() {
     optimizeTags: cardOptimizeTags,
     smartTagExclusion: cardSmartTagExclusion,
     prependAnimaArtist: cardPrependAnimaArtist,
+    experimentalPromptRules: cardExperimentalPromptRules,
     removeLoRaTags: cardRemoveLoRaTags,
     removeQualityTags: cardRemoveQualityTags,
     backgroundMode: cardBackgroundMode,
@@ -490,7 +492,7 @@ export default function ExtensionClient() {
   }), [
     debouncedExcludeInput, debouncedAddInput, search.debouncedSearchTags, cardAutoAppendSearchTags,
     debouncedFindInput, debouncedReplaceInput, tagAppendRules,
-    cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist,
+    cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules,
     cardRemoveLoRaTags, cardRemoveQualityTags,
     cardBackgroundMode, debouncedSimpleBackgroundReplacementTags,
     randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness,
@@ -914,6 +916,8 @@ export default function ExtensionClient() {
                   setSmartTagExclusion={setSmartTagExclusion}
                   prependAnimaArtist={prependAnimaArtist}
                   setPrependAnimaArtist={setPrependAnimaArtist}
+                  experimentalPromptRules={experimentalPromptRules}
+                  setExperimentalPromptRules={setExperimentalPromptRules}
                   autoAppendSearchTags={autoAppendSearchTags}
                   setAutoAppendSearchTags={setAutoAppendSearchTags}
                   removeLoRaTags={search.removeLoRaTags}

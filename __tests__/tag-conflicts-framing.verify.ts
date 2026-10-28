@@ -20,13 +20,15 @@ function assert(condition: boolean, label: string) {
 
 const key = (t: string) => t.toLowerCase().replace(/_/g, " ")
 
-function blocked(base: string[], added: string[], target: string, reasonPart?: string): boolean {
-  const conflict = resolveTagConflicts(base, added).conflictingTags.find((c) => key(c.tag) === key(target))
+const EXPERIMENTAL = { experimental: true }
+
+function blocked(base: string[], added: string[], target: string, reasonPart?: string, options = EXPERIMENTAL): boolean {
+  const conflict = resolveTagConflicts(base, added, options).conflictingTags.find((c) => key(c.tag) === key(target))
   return !!conflict && (!reasonPart || conflict.reason.includes(reasonPart))
 }
 
-function kept(base: string[], added: string[], target: string): boolean {
-  return resolveTagConflicts(base, added).validTags.some((t) => key(t) === key(target))
+function kept(base: string[], added: string[], target: string, options = EXPERIMENTAL): boolean {
+  return resolveTagConflicts(base, added, options).validTags.some((t) => key(t) === key(target))
 }
 
 const BODY = ["thick thighs", "wide hips", "shiny skin"]
@@ -42,6 +44,9 @@ const BODY = ["thick thighs", "wide hips", "shiny skin"]
   assert(blocked(base, BODY, "thick thighs", "Close shot"), "cheek squeeze without legs drops thick thighs")
   assert(blocked(base, BODY, "wide hips", "Close shot"), "cheek squeeze without legs drops wide hips")
   assert(kept(base, BODY, "shiny skin"), "region-free tags are still added")
+  // The close-shot rule is experimental: off unless the option is on.
+  assert(kept(base, BODY, "thick thighs", {}), "without experimental rules thick thighs stays")
+  assert(kept(base, BODY, "wide hips", {}), "without experimental rules wide hips stays")
 }
 
 // ── 2) A close-shot hint loses to tags that show the legs ──
@@ -57,7 +62,11 @@ const BODY = ["thick thighs", "wide hips", "shiny skin"]
   assert(kept(["1girl", "smile", "school uniform"], BODY, "wide hips"), "neutral post keeps wide hips")
 }
 
-// ── 4) Framing tags in the post ──
+// ── 4) Framing tags in the post (always on, experimental or not) ──
+{
+  assert(blocked(["1girl", "upper body"], BODY, "thick thighs", "upper body", {}), "upper body drops thick thighs without experimental rules")
+  assert(blocked(["1boy", "1girl", "close-up"], BODY, "wide hips", undefined, {}), "close-up in a two-character post, no experimental rules")
+}
 {
   assert(blocked(["1girl", "upper body"], BODY, "thick thighs", "upper body"), "upper body drops thick thighs")
   assert(blocked(["1girl", "upper body"], ["huge ass"], "huge ass"), "upper body drops huge ass")

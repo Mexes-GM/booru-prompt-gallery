@@ -209,6 +209,11 @@ export interface PromptOptions {
    * — exposed as a switch in the options panel.
    */
   autoAppendSearchTags?: boolean
+  /**
+   * Opt-in prompt rules that guess from indirect signals: drop added leg tags
+   * from close shots, drop tags of posts made of several pictures. Off by default.
+   */
+  experimentalPromptRules?: boolean
 }
 
 // History entries embed a self-contained snapshot of the copied post

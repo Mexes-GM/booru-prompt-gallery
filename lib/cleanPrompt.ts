@@ -111,6 +111,14 @@ export interface CleanPromptOptions {
    * (e.g. Anima Pencil-XL); harmless no-op literal tag on other checkpoints.
    */
   prependArtistTag?: string
+
+  /**
+   * Experimental prompt rules: drops tags for posts made of several pictures
+   * ("comic", "4koma", "multiple views", "reference sheet"...), which make the
+   * model draw panels or repeat the character. Off by default: some people
+   * want exactly those. Added tags are never dropped.
+   */
+  dropMultiPanelTags?: boolean
 }
 
 // --------------- Utilities ---------------
@@ -798,6 +806,27 @@ function withHyphenVariants(entries: Iterable<string>): Set<string> {
   return set
 }
 
+/**
+ * Insets are a second picture pasted onto the post: the reference photo, a
+ * screenshot, official art, a chibi in the corner. In a prompt they make the
+ * model draw that extra picture, usually a second copy of the character. Kept
+ * apart from META_TAGS_SET so a searched-for inset can still be appended.
+ */
+const isInsetTag = (normalized: string) => /(^| )inset( border)?$/.test(flattenHyphens(normalized))
+
+/** Posts made of several pictures. Dropped only by the experimental rules. */
+const MULTI_PANEL_TAGS = withHyphenVariants([
+  "comic", "4koma", "multiple 4koma", "2koma", "3koma", "multiple views", "reference sheet",
+  "character sheet", "multiple expressions", "clothes variants", "variations", "comparison",
+  "before and after", "split screen", "split crop", "column lineup", "collage", "sequential",
+  "progress", "artist progress", "character profile", "color guide", "zoom layer",
+])
+
+export function isMultiPanelTag(tag: string): boolean {
+  const normalized = normalize(tag)
+  return MULTI_PANEL_TAGS.has(normalized) || MULTI_PANEL_TAGS.has(flattenHyphens(normalized))
+}
+
 export const META_TAGS_SET = withHyphenVariants([
   ...loadTagsToRemove(5),
   ...CURATED_META_LIST,
@@ -884,6 +913,7 @@ export function isMetaTag(tag: string, postMetaTags?: ReadonlySet<string>): bool
   const normalized = normalize(tag)
   if (META_TAGS_SET.has(normalized)) return true
   if (postMetaTags?.has(normalized)) return true
+  if (isInsetTag(normalized)) return true
 
   const flat = flattenHyphens(normalized)
   if (flat === normalized) return false
@@ -1271,6 +1301,7 @@ export function cleanPrompt(
     if (artistTagsSet.has(lower)) return false
     if (artistTagsSet.has(normalize(lower))) return false
     if (isMetaTag(lower, apiMetaTagsSet)) return false
+    if (options?.dropMultiPanelTags && isMultiPanelTag(lower)) return false
     if (numberRegex.test(raw)) return false
     if (raw.includes("@") || raw.includes("#") || hasUrlLike.test(raw)) return false
     if (invalidBracketOnly.test(raw)) return false

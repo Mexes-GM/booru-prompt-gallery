@@ -2006,20 +2006,29 @@ export interface ConflictResolution {
     return count;
   }
 
+  export interface ConflictOptions {
+    /**
+     * Experimental prompt rules: guesses from indirect signals, opt-in. Today
+     * that is the close-shot rule (no framing tag, but the post describes a
+     * close shot of faces and nothing shows the legs).
+     */
+    experimental?: boolean;
+  }
+
   /**
    * Smart Tag Exclusion. Added framing tags ("upper body" in Tags to add) are
    * resolved first and then act as part of the post, so they block added
    * lower-body tags just like a framing tag the post already has.
    */
-  export function resolveTagConflicts(baseTags: string[], addedTags: string[]): ConflictResolution {
+  export function resolveTagConflicts(baseTags: string[], addedTags: string[], options: ConflictOptions = {}): ConflictResolution {
     const isFraming = (tag: string) => FRAMING_TRIGGERS.has(triggerKey(tag));
     const addedFraming = addedTags.filter(isFraming);
     if (addedFraming.length === 0 || addedFraming.length === addedTags.length) {
-      return resolveAgainstBase(baseTags, addedTags);
+      return resolveAgainstBase(baseTags, addedTags, options);
     }
 
-    const framing = resolveAgainstBase(baseTags, addedFraming);
-    const rest = resolveAgainstBase([...baseTags, ...framing.validTags], addedTags.filter((t) => !isFraming(t)));
+    const framing = resolveAgainstBase(baseTags, addedFraming, options);
+    const rest = resolveAgainstBase([...baseTags, ...framing.validTags], addedTags.filter((t) => !isFraming(t)), options);
     const valid = new Set([...framing.validTags, ...rest.validTags]);
     const reasons = new Map([...framing.conflictingTags, ...rest.conflictingTags].map((c) => [c.tag, c.reason]));
     return {
@@ -2028,7 +2037,7 @@ export interface ConflictResolution {
     };
   }
 
-  function resolveAgainstBase(baseTags: string[], addedTags: string[]): ConflictResolution {
+  function resolveAgainstBase(baseTags: string[], addedTags: string[], options: ConflictOptions): ConflictResolution {
     const validTags: string[] = [];
     const conflictingTags: {tag: string, reason: string}[] = [];
 
@@ -2054,7 +2063,7 @@ export interface ConflictResolution {
       LOWER_BODY_PARTS.some(part => isRelatedTag(part, t)) ||
       LEGS_VISIBLE_TAGS.some(word => hasWord(flattenHyphens(t), word))
     );
-    const closeShotTag = hasFramingTag || legsVisible
+    const closeShotTag = !options.experimental || hasFramingTag || legsVisible
       ? undefined
       : baseTagsArray.find(t => CLOSE_SHOT_TAGS.has(flattenHyphens(t)));
   
@@ -2139,8 +2148,8 @@ export interface ConflictResolution {
       }
     }
 
-    // No framing tag: lower-body tags stay out only when the post points to a
-    // close shot of the faces and nothing in it shows the legs.
+    // Experimental, no framing tag: lower-body tags stay out only when the post
+    // points to a close shot of the faces and nothing in it shows the legs.
     if (!isBlocked && closeShotTag && LOWER_BODY_PARTS.some(part => isRelatedTag(part, added))) {
       isBlocked = true;
       reason = `Close shot ('${closeShotTag}'): legs aren't in frame`;

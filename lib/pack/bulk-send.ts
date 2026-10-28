@@ -44,6 +44,8 @@ export interface BulkSendCleanOptions {
   includeCharacters: boolean
   optimizeTags: boolean
   smartTagExclusion?: boolean
+  /** Opt-in rules that guess from indirect signals (see derivePostPrompt). */
+  experimentalPromptRules?: boolean
   tagOverrides?: Record<string, string>
   globalWeights?: Record<string, number>
   isGlobalWeightsEnabled?: boolean
@@ -191,6 +193,7 @@ export function cleanSyntheticPrompt(
     includeCharacters,
     optimizeTags,
     smartTagExclusion = true,
+    experimentalPromptRules = false,
     tagOverrides,
     globalWeights = {},
     isGlobalWeightsEnabled = false,
@@ -235,6 +238,7 @@ export function cleanSyntheticPrompt(
       backgroundMode: "keep",
       escapeOutput: false,
       wordReplacements,
+      dropMultiPanelTags: experimentalPromptRules,
     }
     const cleanedSampledContent = generalSampledTags.length > 0
       ? cleanPrompt(generalSampledTags.join(", "), "", characterTags.join(" "), "", sharedOpts)
@@ -250,7 +254,7 @@ export function cleanSyntheticPrompt(
     const combinedForConflictCheck = [...activeLocked, ...cleanedSampledList]
     const conflictResolution = !combinedForConflictCheck.length || addList.length === 0 || !smartTagExclusion
       ? { validTags: addList, conflictingTags: [] }
-      : resolveTagConflicts(combinedForConflictCheck, addList)
+      : resolveTagConflicts(combinedForConflictCheck, addList, { experimental: experimentalPromptRules })
 
     const finalTags = [
       ...conflictResolution.validTags,
@@ -279,12 +283,13 @@ export function cleanSyntheticPrompt(
     backgroundMode: "keep",
     escapeOutput: false,
     wordReplacements,
+    dropMultiPanelTags: experimentalPromptRules,
   }
   const pureContent = cleanPrompt(generalTags.join(", "), "", characterTags.join(" "), "", sharedOpts)
 
   const conflictResolution = !pureContent || addList.length === 0 || !smartTagExclusion
     ? { validTags: addList, conflictingTags: [] }
-    : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()), addList)
+    : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()), addList, { experimental: experimentalPromptRules })
 
   const finalOpts: CleanPromptOptions = {
     ...sharedOpts,

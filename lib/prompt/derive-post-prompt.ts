@@ -50,6 +50,8 @@ export interface DerivePostPromptOptions {
   includeCharacters: boolean
   optimizeTags: boolean
   smartTagExclusion?: boolean
+  /** Opt-in rules that guess from indirect signals (see ConflictOptions, dropMultiPanelTags). */
+  experimentalPromptRules?: boolean
   prependAnimaArtist?: boolean
   removeLoRaTags?: boolean
   removeQualityTags?: boolean
@@ -148,6 +150,7 @@ export function derivePostPrompt(
     includeCharacters,
     optimizeTags,
     smartTagExclusion = true,
+    experimentalPromptRules = false,
     prependAnimaArtist = false,
     removeLoRaTags,
     removeQualityTags,
@@ -185,6 +188,7 @@ export function derivePostPrompt(
   const effectiveOptimizeTags = isAiPost ? false : optimizeTags
   const effectiveSmartTagExclusion = isAiPost ? false : smartTagExclusion
   const effectivePrependAnimaArtist = isAiPost ? false : prependAnimaArtist
+  const effectiveExperimental = isAiPost ? false : experimentalPromptRules
 
   // sharedCleaned: base pipeline with 'keep' background, no added tags — used
   // to resolve conflicts against the tags the user wants to add.
@@ -193,6 +197,7 @@ export function derivePostPrompt(
     exclude: excludeList, addedTags: [] as string[], tagOverrides,
     backgroundMode: "keep" as BackgroundMode, simpleBackgroundReplacementTags,
     escapeOutput: false, metaTags: post.tag_string_meta,
+    dropMultiPanelTags: effectiveExperimental,
     wordReplacements,
     tagAppendRules,
   }
@@ -251,7 +256,7 @@ export function derivePostPrompt(
 
   const conflictResolution = (!pureContent || effectiveAddedTags.length === 0 || !effectiveSmartTagExclusion)
     ? { validTags: effectiveAddedTags, conflictingTags: [] }
-    : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()), effectiveAddedTags)
+    : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()), effectiveAddedTags, { experimental: effectiveExperimental })
 
   const firstArtistTag = (() => {
     if (!effectivePrependAnimaArtist) return undefined
@@ -270,6 +275,7 @@ export function derivePostPrompt(
     backgroundContext,
     backgroundMatchStrictness,
     metaTags: post.tag_string_meta,
+    dropMultiPanelTags: effectiveExperimental,
     wordReplacements,
     tagAppendRules,
     prependArtistTag: firstArtistTag,

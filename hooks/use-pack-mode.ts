@@ -295,7 +295,7 @@ export function usePackMode(
   isGlobalWeightsEnabled: boolean = false,
   cleanOptions: Pick<
     BulkSendCleanOptions,
-    'excludeInput' | 'addInput' | 'findInput' | 'replaceInput' | 'includeCharacters' | 'optimizeTags' | 'smartTagExclusion'
+    'excludeInput' | 'addInput' | 'findInput' | 'replaceInput' | 'includeCharacters' | 'optimizeTags' | 'smartTagExclusion' | 'experimentalPromptRules'
   > = { excludeInput: '', addInput: '', includeCharacters: true, optimizeTags: true },
   booruProvider: BooruProvider = 'danbooru'
 ): UsePackModeResult {

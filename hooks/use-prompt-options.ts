@@ -18,7 +18,7 @@ export function usePromptOptions() {
     STORAGE_KEYS.PROMPT_OPTIONS
   )
 
-  const { includeCharacters, optimizeTags, smartTagExclusion = true, prependAnimaArtist = false, autoAppendSearchTags = true } = promptOptions
+  const { includeCharacters, optimizeTags, smartTagExclusion = true, prependAnimaArtist = false, autoAppendSearchTags = true, experimentalPromptRules = false } = promptOptions
 
   const setIncludeCharacters = (val: boolean) =>
     setPromptOptions(prev => ({ ...prev, includeCharacters: val }))
@@ -35,6 +35,9 @@ export function usePromptOptions() {
   const setAutoAppendSearchTags = (val: boolean) =>
     setPromptOptions(prev => ({ ...prev, autoAppendSearchTags: val }))
 
+  const setExperimentalPromptRules = (val: boolean) =>
+    setPromptOptions(prev => ({ ...prev, experimentalPromptRules: val }))
+
   return {
     promptOptions,
     setPromptOptions,
@@ -43,10 +46,12 @@ export function usePromptOptions() {
     smartTagExclusion,
     prependAnimaArtist,
     autoAppendSearchTags,
+    experimentalPromptRules,
     setIncludeCharacters,
     setOptimizeTags,
     setSmartTagExclusion,
     setPrependAnimaArtist,
     setAutoAppendSearchTags,
+    setExperimentalPromptRules,
   }
 }
