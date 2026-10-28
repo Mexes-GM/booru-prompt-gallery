@@ -174,7 +174,8 @@ export const PocketCard = memo(function PocketCard({
     rating: post.rating,
     provider: itemProvider,
     handWritten: isAiPost,
-  }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost])
+    experimental: !!promptOptions.experimentalPromptRules,
+  }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost, promptOptions.experimentalPromptRules])
   const tagOverrides = promptOptions.tagOverrides ?? NO_OVERRIDES
   const natural = useNaturalPrompt({
     enabled: true,

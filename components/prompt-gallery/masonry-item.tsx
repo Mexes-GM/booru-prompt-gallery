@@ -390,7 +390,8 @@ export const MasonryItem = memo(function MasonryItem({
         rating: post.rating,
         provider: itemProvider,
         handWritten: isAiPost,
-    }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost])
+        experimental: experimentalPromptRules,
+    }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost, experimentalPromptRules])
     const natural = useNaturalPrompt({
         enabled: !isMergeMode && !isPackMode && !isNaturalLanguageMode,
         format: promptFormat,

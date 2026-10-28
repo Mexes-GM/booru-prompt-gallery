@@ -486,6 +486,12 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   const is = p.plural ? "are" : "is"
   const has = p.plural ? "have" : "has"
   const wears = p.plural ? "wear" : "wears"
+  // Experimental: in a point-of-view picture of a woman and a man, the man is the
+  // camera, so the pose, the expression, the gaze and the traits nobody owns are hers.
+  const pov = scene.povSubject
+  const poseP: Pronouns = pov ? { subject: pov.name, possessive: "her", plural: false } : p
+  const PoseSubject = pov ? capitalize(pov.name) : Subject
+  const poseIs = pov ? "is" : is
   const raw: string[] = []
   const sayable = sayableTags(scene, phrases, p)
   const slot = (s: SceneSlot) => dropImplied(scene.slots[s] ?? [], sayable)
@@ -541,8 +547,8 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   // With a woman and a man, a trait the tags give to nobody is not everyone's ("They have
   // animal ears" would give them to a human man too): "One of them has ..." says no more than the tags.
   const open = p.plural && scene.girls > 0 && scene.boys > 0
-  const Someone = open ? "One of them" : Subject
-  const [someoneIs, someoneHas, someoneWears] = open ? ["is", "has", "wears"] : [is, has, wears]
+  const Someone = pov ? PoseSubject : open ? "One of them" : Subject
+  const [someoneIs, someoneHas, someoneWears] = open || pov ? ["is", "has", "wears"] : [is, has, wears]
   const clauses: SubjectClause[] = []
   /** A sentence of the main subject ("subject") or of "One of them" when `open`, recorded for the renderer. */
   const clause = (who: "subject" | "someone", verb: SubjectClause["verb"], predicate: string, tail: string[] = []) => {
@@ -756,7 +762,13 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
     looseList.length ? clause("subject", "has", `${has} ${joinList(looseList)}`) : "",
   ].filter(Boolean).join(" ")
 
-  // Pose, expression and gaze in one sentence.
+  // Pose, expression and gaze in one sentence (in a point-of-view picture, hers: see `pov`).
+  const poseDictionary = (tag: string) => {
+    if (!pov) return dictionary(tag)
+    const entry = phrases[tag]
+    if (!entry || entry.kind === "keep" || entry.kind === "none") return null
+    return { kind: entry.kind, text: entry.text.replace(/\{pos\}/g, poseP.possessive) }
+  }
   const statesOut: string[] = []
   const withs: string[] = []
   const extraFraming: string[] = []
@@ -786,9 +798,9 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
       ;(phrases[tag]?.kind === "with" ? entry.withs : entry.states).push(act.text)
       continue
     }
-    const curated = lexiconPhrase(tag, p)
+    const curated = lexiconPhrase(tag, poseP)
     if (curated) { posed.push({ tag, kind: curated.kind, text: curated.text }); continue }
-    const phrase = dictionary(tag)
+    const phrase = poseDictionary(tag)
     if (phrase) {
       if (phrase.kind === "is") posed.push({ tag, kind: "state", text: phrase.text })
       else if (phrase.kind === "framing") extraFraming.push(phrase.text)
@@ -796,16 +808,16 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
       else posed.push({ tag, kind: "with", text: phrase.text })
       continue
     }
-    const ruled = posePhrase(tag, p) ?? expressionPhrase(tag, p)
+    const ruled = posePhrase(tag, poseP) ?? expressionPhrase(tag, poseP)
     if (!ruled) { raw.push(tag); continue }
     posed.push({ tag, kind: ruled.kind, text: ruled.text })
   }
   // Two people can be one lying and one standing, but not both at once: poses one body
   // cannot hold together go to different people ("One of them ..., and another ...").
-  const groups = roles ? splitPoses(posed) : []
+  const groups = roles && !pov ? splitPoses(posed) : []
   const apart = new Set(groups.length > 1 && groups.length <= roles!.count ? groups.flat() : [])
   // A face is one person's: with a woman and a man, an expression the tags give to nobody is "one of them"'s.
-  const expressions = new Set(open ? scene.slots.expression ?? [] : [])
+  const expressions = new Set(open && !pov ? scene.slots.expression ?? [] : [])
   const faces = { states: [] as string[], withs: [] as string[] }
   for (const x of posed) {
     if (apart.has(x)) continue
@@ -820,16 +832,16 @@ export function describeScene(scene: Scene, givenPhrases: PhraseDictionary = {},
   const faceSentence = faceStates.length
     ? `One of them is ${joinList(faceStates)}${faceWiths.length ? `, with ${joinList(faceWiths)}` : ""}.`
     : faceWiths.length ? `One of them is shown with ${joinList(faceWiths)}.` : ""
-  statesOut.push(...dropImplied(scene.camera.gaze, sayable).map((t) => (dictionary(t)?.kind === "is" ? dictionary(t)!.text : gazePhrase(t, p))))
+  statesOut.push(...dropImplied(scene.camera.gaze, sayable).map((t) => (poseDictionary(t)?.kind === "is" ? poseDictionary(t)!.text : gazePhrase(t, poseP))))
   const stateList = tidy(mergeSharedPrefix(statesOut), 4)
   const withList = tidy(mergeSharedPrefix(withs), 3)
   let pose = ""
-  if (stateList.length) pose = `${Subject} ${is} ${joinList(stateList)}${withList.length ? `, with ${joinList(withList)}` : ""}.`
-  else if (withList.length) pose = `${Subject} ${is} shown with ${joinList(withList)}.`
+  if (stateList.length) pose = `${PoseSubject} ${poseIs} ${joinList(stateList)}${withList.length ? `, with ${joinList(withList)}` : ""}.`
+  else if (withList.length) pose = `${PoseSubject} ${poseIs} shown with ${joinList(withList)}.`
   // The short form keeps what they do with someone ("having sex", "hugging") over how they stand.
-  const interactionTexts = new Set((scene.slots.interaction ?? []).flatMap((t) => [dictionary(t)?.text, lexiconPhrase(t, p)?.text].filter(Boolean)))
+  const interactionTexts = new Set((scene.slots.interaction ?? []).flatMap((t) => [poseDictionary(t)?.text, lexiconPhrase(t, poseP)?.text].filter(Boolean)))
   const firstActions = [...stateList.filter((s) => interactionTexts.has(s)), ...stateList.filter((s) => !interactionTexts.has(s))].slice(0, 2)
-  const poseShort = stateList.length > 2 || (stateList.length && withList.length) ? `${Subject} ${is} ${joinList(firstActions)}.` : ""
+  const poseShort = stateList.length > 2 || (stateList.length && withList.length) ? `${PoseSubject} ${poseIs} ${joinList(firstActions)}.` : ""
   const actSentences = [...acts.values()].map(({ role, states: done, withs: shown }) => {
     const Label = capitalize(role.label)
     const verb = role.plural ? "are" : "is"

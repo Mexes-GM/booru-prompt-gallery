@@ -33,6 +33,8 @@ export interface NaturalPromptSource {
   provider?: string
   /** A prompt someone typed (AI-generated posts): names may lack their series qualifier. */
   handWritten?: boolean
+  /** Experimental prompt rules (see NaturalPromptInput.experimental). */
+  experimental?: boolean
 }
 
 export interface FormattedPrompt {
@@ -79,13 +81,14 @@ export function naturalPromptInput(source: NaturalPromptSource, overrides: Recor
   const copyrights = uniqueTags([...fieldTags(source.copyrights), ...(trusted ? [] : split.copyrights ?? [])])
   // The card's prompt also lists the names the post fields carry.
   const names = new Set([...characters, ...copyrights].map(normalizeTag))
-  return resolveNames({
+  const input = resolveNames({
     general: [...split.general, ...(trusted ? split.copyrights ?? [] : [])].filter((tag) => !names.has(normalizeTag(tag))),
     characters,
     copyrights,
     artists: split.artists,
     rating: ratingLetter(source.rating, source.provider),
   }, overrides, { inferNames: !trusted })
+  return source.experimental ? { ...input, experimental: true } : input
 }
 
 /**

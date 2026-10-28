@@ -28,6 +28,8 @@ export interface NaturalPromptInput {
   rating?: string
   /** General tags `resolveNames` read as character names: still worth looking up, in case the taxonomy files them otherwise. */
   inferredNames?: string[]
+  /** Experimental prompt rules: today, the point-of-view rule (see `povSubject`). */
+  experimental?: boolean
 }
 
 export type SceneSlot = (typeof TAG_SUBCATEGORIES)[keyof typeof TAG_SUBCATEGORIES][number]
@@ -99,6 +101,11 @@ export interface Scene {
    * `attributeTraits`), in `people` order. Empty with fewer than two people.
    */
   assigned: { character: SceneCharacter; slots: Partial<Record<SceneSlot, string[]>> }[]
+  /**
+   * Experimental: in a point-of-view picture of a woman and a man, the man is the
+   * camera, so every pose, expression and gaze nobody owns is hers.
+   */
+  povSubject?: SceneCharacter
   /**
    * The card's joined tags ("black elbow grey gloves") by each tag they were split
    * back into ("black gloves"): the prose reads the tags, tag renderers keep the card's.
@@ -602,7 +609,29 @@ export function buildScene(input: NaturalPromptInput, overrides: Record<string, 
   assignGenders(scene, options.traits)
   scene.people = scenePeople(scene)
   attributeTraits(scene, options.traits ?? {}, options.genderAffinity ?? GENDER_AFFINITY)
+  if (input.experimental) scene.povSubject = povSubject(scene, input.general.map(normalizeTag))
   return scene
+}
+
+// "female pov", "futanari pov": the camera is not the man.
+const NOT_MALE_POV_RE = /\b(female|futa|futanari|girl|woman) pov\b|\bpov (female|girl)\b/
+
+/**
+ * The woman of a point-of-view picture of one woman and one man, where the man
+ * holds the camera: he cannot lie in front of it or look at it, so what the
+ * tags give to nobody is hers.
+ */
+function povSubject(scene: Scene, general: string[]): SceneCharacter | undefined {
+  if (!scene.camera.angle.includes("pov")) return undefined
+  if (scene.girls !== 1 || scene.boys !== 1 || scene.others !== 0) return undefined
+  if (general.some((t) => NOT_MALE_POV_RE.test(t))) return undefined
+  // With 1girl and 1boy, whoever is not the man is the woman: the named character when
+  // there is one (without a profile her gender is unknown, and "the woman" stands in for her).
+  if (scene.people.filter((p) => p.gender === "male").length !== 1) return undefined
+  const others = scene.people.filter((p) => p.gender !== "male" && !p.futa && !p.plural)
+  const named = others.filter((p) => !p.generic)
+  if (named.length > 1) return undefined
+  return named[0] ?? (others.length === 1 ? others[0] : undefined)
 }
 
 /**

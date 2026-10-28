@@ -175,6 +175,7 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
               rating: post.rating,
               provider: post._provider,
               handWritten: isAiPost,
+              experimental: !!realCleanOptions.experimentalPromptRules,
             },
           })
         }
