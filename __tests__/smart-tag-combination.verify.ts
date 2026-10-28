@@ -107,6 +107,16 @@ function has(tags: string[], tag: string) {
   assert(once === twice, `idempotency (multi-tag): stable ('${once}')`)
 }
 
+// ── 8b) Hair states are not merged with colour and length ──
+{
+  const t = cleanTags("1girl floating_hair grey_hair long_hair", { optimizeTags: true })
+  assert(has(t, "floating hair"), "floating hair stays its own tag")
+  assert(!t.some((x) => x.includes("floating") && x !== "floating hair"), "no 'floating grey long hair'")
+  assert(has(t, "long grey hair") || has(t, "grey long hair"), "colour and length still merge")
+  const wet = cleanTags("1girl wet_hair black_hair", { optimizeTags: true })
+  assert(has(wet, "wet hair") && has(wet, "black hair"), "wet hair stays apart from black hair")
+}
+
 // ── 9) parseTagList unit behavior ──
 assert(JSON.stringify(parseTagList("long white hair")) === JSON.stringify(["long white hair"]),
   "parseTagList: cleaned multi-word single tag kept intact")

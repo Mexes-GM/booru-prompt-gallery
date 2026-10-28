@@ -168,11 +168,19 @@ export function posePhrase(tag: string, p: Pronouns): { kind: "state" | "with"; 
   if (BODY_PART_START.test(tag)) return { kind: "with", text: `${p.possessive} ${own(tag)}` }
   const [first, ...rest] = tag.split(" ")
   if (!first.endsWith("ing") || first.length <= 4) return null
+  // "floating hair": the hair floats, she does not float it ("with her hair floating").
+  if (rest.length === 1 && BODY_STATE_VERB_RE.test(first) && BODY_STATE_NOUN_RE.test(rest[0])) {
+    return { kind: "with", text: `${p.possessive} ${rest[0]} ${first}` }
+  }
   // "holding thermos" -> "holding a thermos": a bare object noun takes its article.
   const object = rest.join(" ")
   if (rest.length === 1 && !NOT_AN_OBJECT_RE.test(object)) return { kind: "state", text: `${first} ${withArticle(object)}` }
   return { kind: "state", text: own(tag) }
 }
+
+// Verbs that say what a body part does by itself, not what the person does to it.
+const BODY_STATE_VERB_RE = /^(floating|flowing|fluttering|swaying|glowing|dripping|blowing|billowing)$/
+const BODY_STATE_NOUN_RE = /^(hair|tail|tails|ears|wings|cape|scarf|ribbon|ribbons)$/
 
 // After a verb, words that are not a thing it acts on: adverbs, particles,
 // participles, people and body parts ("smiling faintly", "lying down", "biting lip").

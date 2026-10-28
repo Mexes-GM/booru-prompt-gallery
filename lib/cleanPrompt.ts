@@ -1003,6 +1003,10 @@ function optimizeTags(tags: string[]): string[] {
   return working
 }
 
+// Lo único que se fusiona en "X Y hair": color, largo y textura (como lee
+// splitHairCompound en lib/prompt/natural/english.ts).
+const HAIR_MERGE_ADJECTIVES = /^(black|white|blonde|blond|brown|red|orange|yellow|green|aqua|blue|purple|pink|grey|gray|silver|long|medium|short|wavy|curly|straight|messy|spiked|fluffy|multicolored|two-tone|gradient|streaked)$/
+
 // Adjetivos que en realidad son verbos/interacciones (gerundios). Un tag como
 // "grabbing shirt" describe una acción, no una prenda, por lo que NO debe
 // fusionarse como si "grabbing" fuera un adjetivo descriptivo.
@@ -1082,6 +1086,9 @@ function combineSharedNounTags(original: string[]): string[] {
     if (!MERGE_NOUNS.has(normalize(noun))) return
     // No fusionar tags de acción/interacción ("grabbing shirt", "holding hat", ...)
     if (ACTION_VERB_ADJECTIVES.has(normalize(adj))) return
+    // Pelo: solo color, largo y textura. "floating hair" o "wet hair" describen un
+    // estado, y "floating grey long hair" no es un tag que el modelo conozca.
+    if (normalize(noun) === "hair" && !HAIR_MERGE_ADJECTIVES.test(normalize(adj))) return
 
     if (!groups[noun]) groups[noun] = { indices: [], adjectives: [] }
     groups[noun].indices.push(idx)
