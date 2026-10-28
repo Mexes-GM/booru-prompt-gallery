@@ -60,11 +60,11 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
       "legs", "feet", "barefoot", "boots", "shoes", "sneakers", "high_heels", "sandals", "slippers",
       "pants", "skirt", "underwear", "panties", "jeans", "shorts", "leggings",
       "thighhighs", "kneehighs", "pantyhose", "stockings", "tights", "socks",
-      "pelvis", "crotch", "hips", "thighs", "knees", "calves", "ankles", "toes",
+      "pelvis", "crotch", "hips", "thighs", "butt", "knees", "calves", "ankles", "toes",
       "full_body", "lower_body", "standing", "kneeling", "squatting"
     ],
     exceptions: {
-      "cowboy_shot": ["thighs", "skirt", "shorts", "panties", "pelvis", "crotch", "hips"]
+      "cowboy_shot": ["thighs", "skirt", "shorts", "panties", "pelvis", "crotch", "hips", "butt"]
     }
   },
   "lower_body": {
@@ -87,7 +87,7 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
   "close_up": {
     blocks: [
       "full_body", "standing", "walking", "running", "kneeling", "squatting", "sitting",
-      "legs", "lower_body", "feet", "shoes", "pants", "skirt", "thighs", "hips", "waist"
+      "legs", "lower_body", "feet", "shoes", "pants", "skirt", "thighs", "hips", "butt", "waist"
     ],
     exceptions: {
       "portrait": ["full_body", "lower_body"]
@@ -97,7 +97,7 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
     blocks: [
       "full_body", "lower_body", "upper_body",
       "legs", "feet", "barefoot", "boots", "shoes", "sneakers", "high_heels",
-      "pants", "skirt", "underwear", "thighs", "hips", "waist", "pelvis", "crotch",
+      "pants", "skirt", "underwear", "thighs", "hips", "butt", "waist", "pelvis", "crotch",
       "chest", "breasts", "cleavage", "navel", "stomach",
       "arms", "hands", "fingers",
       "standing", "kneeling", "sitting", "squatting", "walking", "running"
@@ -112,7 +112,7 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
     blocks: [
       "full_body", "lower_body",
       "legs", "feet", "barefoot", "shoes", "boots", "sneakers", "high_heels",
-      "pants", "skirt", "shorts", "thighs", "knees", "calves", "pelvis", "crotch",
+      "pants", "skirt", "shorts", "thighs", "hips", "butt", "knees", "calves", "pelvis", "crotch",
       "navel", "stomach", "standing", "walking", "running", "kneeling"
     ],
     exceptions: {}
@@ -1847,8 +1847,9 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
 export function isRelatedTag(blockedTag: string, targetTag: string): boolean {
   const normBlocked = normalize(blockedTag);
   const normTarget = normalize(targetTag);
-  
-  if (normBlocked === normTarget) return true;
+
+  // "close_up" in a rule must match Danbooru's "close-up"
+  if (flattenHyphens(normBlocked) === flattenHyphens(normTarget)) return true;
   
   // Suffix-based fuzzy matching for compound tags
   const suffixMap: Record<string, string[]> = {
@@ -1957,24 +1958,105 @@ export interface ConflictResolution {
   // on every added-tag iteration inside resolveTagConflicts (hot path per card).
   const TAG_CONFLICT_ENTRIES = Object.entries(TAG_CONFLICTS);
 
+  // Rule keys and booru tags spell hyphens differently ("close_up" vs "close-up"),
+  // so trigger lookups compare with hyphens read as spaces.
+  function flattenHyphens(tag: string): string {
+    return tag.replace(/-/g, " ").replace(/\s{2,}/g, " ").trim();
+  }
+  const triggerKey = (tag: string) => flattenHyphens(normalize(tag));
+
+  // Shot types. The camera frames the whole scene, so these rules still apply
+  // when several characters are present.
+  const FRAMING_TRIGGERS = new Set(
+    ["upper_body", "lower_body", "full_body", "close_up", "headshot", "portrait", "cowboy_shot"].map(triggerKey)
+  );
+
+  // Added tags that are only visible when the legs are in frame.
+  const LOWER_BODY_PARTS = ["legs", "thighs", "hips", "butt", "knees", "calves", "ankles", "feet", "toes", "pelvis", "crotch"];
+
+  // Post tags showing the legs are in frame (besides LOWER_BODY_PARTS themselves).
+  const LEGS_VISIBLE_TAGS = [
+    "skirt", "pants", "shorts", "jeans", "leggings", "panties",
+    "thighhighs", "kneehighs", "pantyhose", "socks", "tights", "stockings",
+    "shoes", "boots", "sneakers", "sandals", "high heels", "slippers", "barefoot",
+    "standing", "sitting", "kneeling", "squatting", "lying", "walking", "running",
+    "full body", "cowboy shot", "lower body", "feet out of frame",
+  ].map(triggerKey);
+
+  // Post tags that only happen in a close shot of the faces. With no framing tag
+  // and no sign of the legs, these keep added lower-body tags out.
+  const CLOSE_SHOT_TAGS = new Set([
+    "selfie", "eye focus",
+    "cheek-to-cheek", "cheek squash", "cheek press", "cheek pinching",
+    "hands on another's cheeks", "hand on another's cheek",
+    "hands on another's face", "hand on another's face",
+  ].map(triggerKey));
+
+  /** "black skirt" counts as "skirt", "sitting on chair" as "sitting". */
+  function hasWord(tag: string, word: string): boolean {
+    return tag === word || tag.endsWith(" " + word) || tag.startsWith(word + " ");
+  }
+
+  function countCharacters(tags: string[]): number {
+    let count = 0;
+    for (const tag of tags) {
+      const match = /^(\d+)\+?(girl|boy|other)s?$/.exec(tag);
+      if (match) count += Number(match[1]);
+    }
+    return count;
+  }
+
+  /**
+   * Smart Tag Exclusion. Added framing tags ("upper body" in Tags to add) are
+   * resolved first and then act as part of the post, so they block added
+   * lower-body tags just like a framing tag the post already has.
+   */
   export function resolveTagConflicts(baseTags: string[], addedTags: string[]): ConflictResolution {
+    const isFraming = (tag: string) => FRAMING_TRIGGERS.has(triggerKey(tag));
+    const addedFraming = addedTags.filter(isFraming);
+    if (addedFraming.length === 0 || addedFraming.length === addedTags.length) {
+      return resolveAgainstBase(baseTags, addedTags);
+    }
+
+    const framing = resolveAgainstBase(baseTags, addedFraming);
+    const rest = resolveAgainstBase([...baseTags, ...framing.validTags], addedTags.filter((t) => !isFraming(t)));
+    const valid = new Set([...framing.validTags, ...rest.validTags]);
+    const reasons = new Map([...framing.conflictingTags, ...rest.conflictingTags].map((c) => [c.tag, c.reason]));
+    return {
+      validTags: addedTags.filter((t) => valid.has(t)),
+      conflictingTags: addedTags.filter((t) => reasons.has(t)).map((t) => ({ tag: t, reason: reasons.get(t)! })),
+    };
+  }
+
+  function resolveAgainstBase(baseTags: string[], addedTags: string[]): ConflictResolution {
     const validTags: string[] = [];
     const conflictingTags: {tag: string, reason: string}[] = [];
-    
+
     const normalizedBase = new Set(baseTags.map(t => normalize(t)));
     const normalizedAdded = addedTags.map(t => normalize(t));
-  
+
     const baseTagsArray = Array.from(normalizedBase);
-  
-    // Global Context: Are there multiple characters?
-    const hasMultipleCharacters = baseTagsArray.some(t => 
-      /^[2-9]+(girls|boys)$/.test(t) || 
-      t.includes("multiple ") || 
+    const baseKeys = new Set(baseTagsArray.map(flattenHyphens));
+
+    // Global Context: Are there multiple characters? ("1boy, 1girl" counts.)
+    const hasMultipleCharacters = countCharacters(baseTagsArray) >= 2 || baseTagsArray.some(t =>
+      /^[2-9]+(girls|boys)$/.test(t) ||
+      t.includes("multiple ") ||
       /\band\b/.test(t) || // e.g. "boy and girl"
-      t === "girls" || 
+      t === "girls" ||
       t === "boys" ||
       t === "group"
     );
+
+    // Global Context: Where is the camera? Only consulted when the post has no framing tag.
+    const hasFramingTag = baseTagsArray.some(t => FRAMING_TRIGGERS.has(flattenHyphens(t)));
+    const legsVisible = baseTagsArray.some(t =>
+      LOWER_BODY_PARTS.some(part => isRelatedTag(part, t)) ||
+      LEGS_VISIBLE_TAGS.some(word => hasWord(flattenHyphens(t), word))
+    );
+    const closeShotTag = hasFramingTag || legsVisible
+      ? undefined
+      : baseTagsArray.find(t => CLOSE_SHOT_TAGS.has(flattenHyphens(t)));
   
     // Global Context: Are there explicit face indicators active?
     const hasFaceIndicators = baseTagsArray.some(t => 
@@ -2004,15 +2086,16 @@ export interface ConflictResolution {
       }
   
       for (const [trigger, rule] of TAG_CONFLICT_ENTRIES) {
-        if (normalizedBase.has(trigger) || normalizedBase.has(normalize(trigger))) {
+        if (baseKeys.has(triggerKey(trigger))) {
           const blocksAdded = rule.blocks.some(blocked => isRelatedTag(blocked, added));
-          
+
           if (blocksAdded) {
             let unblocked = false;
-  
+
             // GLOBAL EXCEPTION 1: Multiple characters invalidate character-specific blocks
             // e.g. 1girl might wear a dress, while 1boy wears a shirt.
-            if (hasMultipleCharacters && !GLOBAL_ENVIRONMENT_TAGS.includes(trigger) && !["1girl", "1boy", "solo"].includes(trigger)) {
+            // Framing is not character-specific: an upper-body shot crops everyone.
+            if (hasMultipleCharacters && !GLOBAL_ENVIRONMENT_TAGS.includes(trigger) && !FRAMING_TRIGGERS.has(triggerKey(trigger)) && !["1girl", "1boy", "solo"].includes(trigger)) {
               unblocked = true;
             }
   
@@ -2036,7 +2119,7 @@ export interface ConflictResolution {
           // SPECIFIC EXCEPTIONS (Iterate rules)
           if (!unblocked && rule.exceptions) {
             for (const [exceptionTrigger, unblockedList] of Object.entries(rule.exceptions)) {
-              if (normalizedBase.has(exceptionTrigger) || normalizedBase.has(normalize(exceptionTrigger))) {
+              if (baseKeys.has(triggerKey(exceptionTrigger))) {
                 if (unblockedList.some(unblockedTag => isRelatedTag(unblockedTag, added))) {
                   unblocked = true;
                   break; // Found an exception, tag is safe
@@ -2047,15 +2130,24 @@ export interface ConflictResolution {
 
           if (!unblocked) {
             isBlocked = true;
-            reason = trigger;
+            reason = FRAMING_TRIGGERS.has(triggerKey(trigger))
+              ? `Out of frame in a '${normalize(trigger)}' shot`
+              : `Conflicts with '${trigger}'`;
             break; // Already proven blocked, no need to check other triggers
           }
         }
       }
     }
 
+    // No framing tag: lower-body tags stay out only when the post points to a
+    // close shot of the faces and nothing in it shows the legs.
+    if (!isBlocked && closeShotTag && LOWER_BODY_PARTS.some(part => isRelatedTag(part, added))) {
+      isBlocked = true;
+      reason = `Close shot ('${closeShotTag}'): legs aren't in frame`;
+    }
+
     if (isBlocked) {
-      conflictingTags.push({ tag: originalAddedTag, reason: `Conflicts with '${reason}'` });
+      conflictingTags.push({ tag: originalAddedTag, reason });
     } else {
       validTags.push(originalAddedTag);
     }

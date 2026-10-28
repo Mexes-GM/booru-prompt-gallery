@@ -36,6 +36,8 @@ const NOTES: UpdateNote[] = [
   { kind: 'new', title: 'Short or Full Descriptions', body: "FLUX.2 and MOSS-Image prompts stay short by default, FLUX.2 under 80 words. Turn on Keep every detail for the full version." },
   { kind: 'improved', title: 'Clearer Scenes With Several People', body: "Hair, clothes and actions go to the right person more often. What the tags don't say about who has what is no longer given to everyone, and nobody extra is added to the picture." },
   { kind: 'improved', title: 'More Tags in Plain English', body: "Many more tags, Rule34's and less common ones included, now read as plain sentences instead of a list at the end, and each thing is said once." },
+  { kind: 'improved', title: 'Added Tags Respect the Shot', body: "With Tag Exclusion on, body tags from Tags to add, such as thighs or hips, are left out when the post is an upper-body shot, a portrait, a close-up or a close selfie, so the camera no longer pulls back to show them. This also works in scenes with two or more characters, and a framing tag in your own Tags to add counts too." },
+  { kind: 'improved', title: 'Smoother FLUX.2 and MOSS-Image Prompts', body: "Sentences about the same person are joined, so descriptions read less like a list." },
   { kind: 'fixed', title: 'Only What the Picture Shows', body: "Story labels, ratings of looks and notes about the post are left out of descriptions, and halos, animal ears and drawn symbols land in the right sentence." },
 ]
 

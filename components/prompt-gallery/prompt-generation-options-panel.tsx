@@ -388,7 +388,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             {isCompact ? (
               <InfoTooltip
                 title="Tag Exclusion"
-                description="Makes added tags work smartly. For example, if the original prompt implies a back view without a face, and your 'Tags to add' contains facial features like 'lips, nose, blue eyes', it automatically disables them for that specific card to keep the generated result faithful."
+                description="Leaves out added tags that the post's picture can't show. If the post is an upper-body shot, a portrait or a close selfie, body tags from 'Tags to add' such as thighs or hips are dropped for that card, so the camera doesn't pull back to show them. The same goes for other contradictions, like facial features on a view from behind."
               >
                 <Label htmlFor="smart-exclusion" className="text-xs select-none cursor-pointer flex-1">Tag Exclusion</Label>
               </InfoTooltip>
@@ -396,7 +396,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               <div className="flex items-center gap-2">
                 <InfoTooltip
                   title="Tag Exclusion"
-                  description="Makes added tags work smartly. For example, if the original prompt implies a back view without a face, and your 'Tags to add' contains facial features like 'lips, nose, blue eyes', it automatically disables them for that specific card to keep the generated result faithful."
+                  description="Leaves out added tags that the post's picture can't show. If the post is an upper-body shot, a portrait or a close selfie, body tags from 'Tags to add' such as thighs or hips are dropped for that card, so the camera doesn't pull back to show them. The same goes for other contradictions, like facial features on a view from behind."
                   visual={SMART_TAG_EXCLUSION_VISUAL}
                 >
                   <Label htmlFor="smart-exclusion" className="text-sm select-none cursor-pointer">Tag Exclusion</Label>
