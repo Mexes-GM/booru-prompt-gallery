@@ -4,7 +4,7 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/tag-conflicts-framing.verify.ts
  */
-import { resolveTagConflicts } from "../lib/tag-conflicts"
+import { resolveTagConflicts, type ConflictOptions } from "../lib/tag-conflicts"
 
 let passed = 0
 let failed = 0
@@ -20,14 +20,14 @@ function assert(condition: boolean, label: string) {
 
 const key = (t: string) => t.toLowerCase().replace(/_/g, " ")
 
-const EXPERIMENTAL = { experimental: true }
+const EXPERIMENTAL: ConflictOptions = { experimental: true }
 
-function blocked(base: string[], added: string[], target: string, reasonPart?: string, options = EXPERIMENTAL): boolean {
+function blocked(base: string[], added: string[], target: string, reasonPart?: string, options: ConflictOptions = EXPERIMENTAL): boolean {
   const conflict = resolveTagConflicts(base, added, options).conflictingTags.find((c) => key(c.tag) === key(target))
   return !!conflict && (!reasonPart || conflict.reason.includes(reasonPart))
 }
 
-function kept(base: string[], added: string[], target: string, options = EXPERIMENTAL): boolean {
+function kept(base: string[], added: string[], target: string, options: ConflictOptions = EXPERIMENTAL): boolean {
   return resolveTagConflicts(base, added, options).validTags.some((t) => key(t) === key(target))
 }
 
