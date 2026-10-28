@@ -59,6 +59,9 @@ function prompt(tagString: string, extra: { addInput?: string; searchTags?: stri
     assert(!on.includes(tag), `${tag} dropped with experimental rules`)
   }
   assert(on.includes("smile"), "scene tags stay with experimental rules")
+  const twice = prompt("1girl television juxtaposition performance_juxtaposition", { experimental: true })
+  assert(!twice.includes("juxtaposition") && !twice.includes("performance juxtaposition"), "juxtaposition dropped with experimental rules")
+  assert(twice.includes("television"), "the screen itself stays")
 }
 
 // ── 3) Tags the user adds or searches for are kept ──

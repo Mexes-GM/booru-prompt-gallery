@@ -114,8 +114,9 @@ export interface CleanPromptOptions {
 
   /**
    * Experimental prompt rules: drops tags for posts made of several pictures
-   * ("comic", "4koma", "multiple views", "reference sheet"...), which make the
-   * model draw panels or repeat the character. Off by default: some people
+   * ("comic", "4koma", "multiple views", "reference sheet"...) or showing the
+   * character twice ("juxtaposition"), which make the model draw panels or
+   * repeat the character. Off by default: some people
    * want exactly those. Added tags are never dropped.
    */
   dropMultiPanelTags?: boolean
@@ -814,8 +815,12 @@ function withHyphenVariants(entries: Iterable<string>): Set<string> {
  */
 const isInsetTag = (normalized: string) => /(^| )inset( border)?$/.test(flattenHyphens(normalized))
 
-/** Posts made of several pictures. Dropped only by the experimental rules. */
+/**
+ * Posts made of several pictures, or showing the character twice (on a screen
+ * and in person). Dropped only by the experimental rules.
+ */
 const MULTI_PANEL_TAGS = withHyphenVariants([
+  "juxtaposition", "performance juxtaposition",
   "comic", "4koma", "multiple 4koma", "2koma", "3koma", "multiple views", "reference sheet",
   "character sheet", "multiple expressions", "clothes variants", "variations", "comparison",
   "before and after", "split screen", "split crop", "column lineup", "collage", "sequential",
