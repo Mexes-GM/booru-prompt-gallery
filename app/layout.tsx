@@ -39,7 +39,7 @@ export const metadata: Metadata = {
   },
   description: "Generate clean prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 posts. Extract and format tags for AI art generation.",
   keywords: [
-    "AI art", "prompts", "danbooru", "aibooru", "rule34", "gelbooru", "e621", "image generation", "stable diffusion",
+    "AI art", "prompts", "danbooru", "aibooru", "rule34", "gelbooru", "e621", "e6ai", "image generation", "stable diffusion",
     "midjourney", "dall-e", "prompt engineering", "tag extraction", "anime art",
     "digital art", "art generator", "prompt gallery", "booru", "tag database",
     "lora tags", "quality tags", "prompt cleaning", "tag removal"

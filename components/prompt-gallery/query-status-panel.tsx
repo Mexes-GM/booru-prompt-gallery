@@ -13,6 +13,7 @@ import {
   type BooruProvider,
   type ScoreTier,
 } from "@/lib/api-client"
+import { PROVIDER_NAMES } from "@/lib/booru/tag-limits"
 
 interface QueryStatusPanelProps {
   searchTags: string
@@ -55,7 +56,7 @@ export function QueryStatusPanel({
         const queryMeta = getFinalQueryTagsWithMeta(searchTags, ratingFilter, order, appliedTagCountFilter, booruProvider, appliedScoreTier)
         const isUnlimited = queryMeta.slotLimit === Infinity
         const isAtLimit = !isUnlimited && queryMeta.slotsUsed >= queryMeta.slotLimit
-        const providerLabel = booruProvider.charAt(0).toUpperCase() + booruProvider.slice(1)
+        const providerLabel = PROVIDER_NAMES[booruProvider] ?? booruProvider
 
         return (
           <div className="flex flex-col gap-1.5 px-0.5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -133,7 +134,7 @@ export function QueryStatusPanel({
 
         const isUnlimited = queryMeta.slotLimit === Infinity
         const isAtLimit = !isUnlimited && queryMeta.slotsUsed >= queryMeta.slotLimit
-        const providerLabel = booruProvider.charAt(0).toUpperCase() + booruProvider.slice(1)
+        const providerLabel = PROVIDER_NAMES[booruProvider] ?? booruProvider
 
         return (
           <div className="flex flex-col gap-2 text-xs text-foreground/80 bg-muted/30 p-2 rounded-md border border-border/30">
@@ -229,7 +230,7 @@ export function QueryStatusPanel({
         <Alert variant="destructive" className="py-2">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className="text-xs">
-            {booruProvider.charAt(0).toUpperCase() + booruProvider.slice(1)} API limit: Only first {getProviderTagLimit(booruProvider)} user tag{getProviderTagLimit(booruProvider) === 1 ? '' : 's'} will be used.
+            {PROVIDER_NAMES[booruProvider] ?? booruProvider} API limit: Only first {getProviderTagLimit(booruProvider)} user tag{getProviderTagLimit(booruProvider) === 1 ? '' : 's'} will be used.
           </AlertDescription>
         </Alert>
       )}

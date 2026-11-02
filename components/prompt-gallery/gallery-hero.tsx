@@ -160,7 +160,7 @@ const EXAMPLES: Example[] = [
 
 const ROTATE_MS = 6000
 
-const BOORUS = ["Danbooru", "Aibooru", "Rule34", "Gelbooru", "e621"]
+const BOORUS = ["Danbooru", "Aibooru", "Rule34", "Gelbooru", "e621", "e6AI"]
 
 const SOCIALS = [
   { id: "social-civitai", label: "CivitAI", href: SOCIAL_URLS.CIVITAI_PROFILE },

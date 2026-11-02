@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
     if (urlDomain.endsWith('rule34.xxx')) referer = PROVIDER_REFERERS.RULE34
     else if (urlDomain.endsWith('aibooru.download')) referer = PROVIDER_REFERERS.AIBOORU
     else if (urlDomain.endsWith('e621.net') || urlDomain.endsWith('e926.net')) referer = PROVIDER_REFERERS.E621
+    else if (urlDomain.endsWith('e6ai.net')) referer = PROVIDER_REFERERS.E6AI
     else if (urlDomain.endsWith('gelbooru.com')) referer = PROVIDER_REFERERS.GELBOORU
 
     const fetchHeaders: HeadersInit = {

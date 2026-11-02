@@ -167,7 +167,7 @@ export default function PrivacyPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              Images and tags are fetched from external providers (Danbooru, Gelbooru, e621, Aibooru, Rule34). When you
+              Images and tags are fetched from external providers (Danbooru, Gelbooru, e621, e6AI, Aibooru, Rule34). When you
               browse, requests to these providers (sometimes via our image proxy) may expose your IP address to them as
               part of the normal web request process. We do not control their data practices and recommend reviewing the
               privacy policy of any provider you use.

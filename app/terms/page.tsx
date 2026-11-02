@@ -52,7 +52,7 @@ export default function TermsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              Some supported providers (including Rule34 and e621) contain explicit or mature (NSFW) material. You must be
+              Some supported providers (including Rule34, e621 and e6AI) contain explicit or mature (NSFW) material. You must be
               of legal age in your jurisdiction — <strong>at least 18 years old</strong> — to view such content. You are
               solely responsible for enabling or disabling the content filter and for the material you choose to display.
             </p>

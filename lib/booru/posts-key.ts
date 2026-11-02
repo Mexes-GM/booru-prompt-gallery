@@ -128,10 +128,10 @@ export function createPostsKey({
       return buildDirectDanbooruUrl(query, String(effectivePage), order, randomSeed, pageIndex)
     }
 
-    // E621: direct client fetch — CORS *, no auth required.
+    // E621 (and e6ai, same engine): direct client fetch — CORS *, no auth required.
     // Each user's browser has its own IP, eliminating shared rate-limit contention.
     // ponytail: direct URL, no transform needed (handled by fetcher).
-    if (provider === 'e621') {
+    if (provider === 'e621' || provider === 'e6ai') {
       const isRandom = order === 'random' || /order:random|random:\d+/i.test(tags)
       const effectivePage = isRandom ? "1" : (pageIndex + 1).toString()
       const params = new URLSearchParams({
@@ -143,7 +143,7 @@ export function createPostsKey({
       if (isRandom) {
         params.append("seed", `${randomSeed}_${pageIndex}`)
       }
-      return `https://e621.net/posts.json?${params.toString()}`
+      return `${provider === 'e6ai' ? PROVIDER_URLS.E6AI : PROVIDER_URLS.E621}/posts.json?${params.toString()}`
     }
 
     // Other providers — route through the Worker API

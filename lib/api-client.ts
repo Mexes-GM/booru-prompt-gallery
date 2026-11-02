@@ -24,7 +24,7 @@ export type { BooruPost }
 // Export function
 export const isAibooruPost = checkIsAibooruPost
 
-export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru'
+export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru'
 
 // Helper function to get prompt from a post
 // Function to clean and extract prompt from malformed JSON data
@@ -243,10 +243,12 @@ const detectProviderFromUrl = (url: string): TagLimitsBooruProvider | null => {
   if (url.startsWith(PROVIDER_URLS.AIBOORU)) return 'aibooru'
   if (urlHasHost(url, 'danbooru.donmai.us')) return 'danbooru'
   if (urlHasHost(url, 'e621.net')) return 'e621'
+  if (urlHasHost(url, 'e6ai.net')) return 'e6ai'
   if (url.includes('/api/posts')) {
     if (url.includes('provider=gelbooru')) return 'gelbooru'
     if (url.includes('provider=rule34')) return 'rule34'
     if (url.includes('provider=e621')) return 'e621'
+    if (url.includes('provider=e6ai')) return 'e6ai'
     if (url.includes('provider=aibooru')) return 'aibooru'
     return 'danbooru'
   }
@@ -361,7 +363,7 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
         const data = await res.json()
 
         let resultPosts = data
-        let identifiedProvider: 'danbooru' | 'aibooru' | 'e621' | null = null
+        let identifiedProvider: 'danbooru' | 'aibooru' | 'e621' | 'e6ai' | null = null
 
         if (isDirectAibooru) {
           identifiedProvider = 'aibooru'
@@ -394,10 +396,11 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
           } else {
             resultPosts = []
           }
-        } else if (urlHasHost(url, 'e621.net')) {
-          // Direct E621 API response — { posts: [...] } format
+        } else if (urlHasHost(url, 'e621.net') || urlHasHost(url, 'e6ai.net')) {
+          // Direct E621/e6ai API response — { posts: [...] } format
           // ponytail: direct client fetch, no server enrichment. Tags come pre-categorized from E621.
-          identifiedProvider = 'e621'
+          const e621Family = urlHasHost(url, 'e6ai.net') ? 'e6ai' : 'e621'
+          identifiedProvider = e621Family
           const posts = (data as { posts?: unknown[] })?.posts
           if (Array.isArray(posts)) {
             resultPosts = posts
@@ -405,7 +408,7 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
                 post && (post as Record<string, unknown>).id &&
                 ((post as Record<string, unknown>).file as Record<string, unknown>)?.url
               )
-              .map(transformE621Post)
+              .map(post => transformE621Post(post, e621Family))
           } else {
             resultPosts = []
           }

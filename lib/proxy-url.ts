@@ -5,6 +5,7 @@ import type { HTMLAttributeReferrerPolicy } from "react"
 // Direct <img> (no proxy):
 //   Aibooru (cdn.aibooru.download) — permissive CORS, no Referer needed
 //   E621 (static1.e621.net)        — permissive CORS, no Referer needed
+//   e6ai (static1.e6ai.net)        — same engine and CDN setup as e621
 //
 // Via /api/download (Netlify → origin, no cross-Cloudflare):
 //   Danbooru (cdn.donmai.us)       — Cloudflare WAF blocks cross-origin browser
@@ -35,6 +36,8 @@ const DIRECT_DOMAINS = [
   'cdn.aibooru.download',
   'e621.net',
   'static1.e621.net',
+  'e6ai.net',
+  'static1.e6ai.net',
 ]
 
 // Domains that must go through the Netlify server proxy (/api/download?inline=1)
@@ -59,7 +62,7 @@ function isDomain(url: string, domains: string[]): boolean {
 // It fetches the source image from its own servers, so it can ONLY be applied
 // to publicly-fetchable origins. Danbooru (Cloudflare WAF) and Gelbooru
 // (Referer-based hotlink protection) would fail if wrapped, so they are never
-// routed through weserv — only DIRECT_DOMAINS (Aibooru, e621) are eligible.
+// routed through weserv — only DIRECT_DOMAINS (Aibooru, e621, e6ai) are eligible.
 //
 // Opt-in: set NEXT_PUBLIC_WESERV_ENABLED=1. When disabled (default), every URL
 // is returned untouched, so this is a zero-risk addition until you turn it on.
@@ -149,12 +152,12 @@ function proxyUrl(imageUrl: string): string {
 /**
  * Referrer policy for a booru <img>. Most CDNs are loaded with no Referer
  * (privacy, and the Worker proxy gates on Sec-Fetch-Dest instead). Aibooru and
- * e621 are the exceptions: e621's CDN now rejects browser image loads that
+ * e621/e6ai are the exceptions: e621's CDN now rejects browser image loads that
  * carry no Referer at all, so they get the default policy, which sends only
  * our origin cross-site.
  */
 export function imageReferrerPolicy(provider: string | undefined): HTMLAttributeReferrerPolicy | undefined {
-  return provider === 'aibooru' || provider === 'e621' ? undefined : 'no-referrer'
+  return provider === 'aibooru' || provider === 'e621' || provider === 'e6ai' ? undefined : 'no-referrer'
 }
 
 export function getDanbooruProxyUrl(imageUrl: string): string {

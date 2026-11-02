@@ -57,9 +57,11 @@ export const transformAibooruPost = (post: unknown): BooruPost => {
 
 // Helper to transform raw E621 posts to BooruPost (direct client fetch — CORS *, no auth)
 // ponytail: minimal mapping, only fields the gallery uses. Add more when needed.
-export const transformE621Post = (post: unknown): BooruPost => {
+// e6ai runs the same engine; its artist category is called "director" and its
+// copyright category "franchise", so both spellings are read.
+export const transformE621Post = (post: unknown, provider: 'e621' | 'e6ai' = 'e621'): BooruPost => {
   if (!post || typeof post !== 'object') {
-    throw new Error('Invalid post data from E621')
+    throw new Error(`Invalid post data from ${provider}`)
   }
   const p = post as Record<string, unknown>
   const file = (p.file as Record<string, unknown>) || {}
@@ -69,7 +71,7 @@ export const transformE621Post = (post: unknown): BooruPost => {
   const score = (p.score as Record<string, number>) || {}
 
   // Collect content tags (exclude meta/invalid categories)
-  const contentCategories = ['general', 'species', 'character', 'copyright', 'artist', 'lore']
+  const contentCategories = ['general', 'species', 'character', 'copyright', 'franchise', 'artist', 'director', 'lore']
   const allTags: string[] = []
   contentCategories.forEach(cat => {
     if (tags[cat]) allTags.push(...tags[cat])
@@ -81,13 +83,13 @@ export const transformE621Post = (post: unknown): BooruPost => {
     large_file_url: (sample.url as string) || (file.url as string) || '',
     preview_file_url: (preview.url as string) || (file.url as string) || '',
     tag_string: allTags.join(' '),
-    tag_string_artist: (tags.artist || []).join(' '),
+    tag_string_artist: [...(tags.artist || []), ...(tags.director || [])].join(' '),
     tag_string_character: (tags.character || []).join(' '),
-    tag_string_copyright: (tags.copyright || []).join(' '),
+    tag_string_copyright: [...(tags.copyright || []), ...(tags.franchise || [])].join(' '),
     rating: (p.rating as string) || 'q',
     score: score.total ?? 0,
     width: (file.width as number) || 0,
     height: (file.height as number) || 0,
-    _provider: 'e621',
+    _provider: provider,
   }
 }

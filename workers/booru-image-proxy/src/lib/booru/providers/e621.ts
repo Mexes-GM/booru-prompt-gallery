@@ -9,12 +9,16 @@ interface E621FileData {
   height?: number
 }
 
+// e6ai runs the same engine but calls its artist category "director" and its
+// copyright category "franchise".
 interface E621TagsData {
   general?: string[]
   species?: string[]
   character?: string[]
   copyright?: string[]
+  franchise?: string[]
   artist?: string[]
+  director?: string[]
   lore?: string[]
 }
 
@@ -34,7 +38,7 @@ interface E621Response {
 }
 
 export class E621Provider extends BaseBooruProvider {
-  protected baseUrl = PROVIDER_URLS.E621
+  protected baseUrl: string = PROVIDER_URLS.E621
   protected defaultParams = { limit: '100' }
 
   async search(options: SearchOptions): Promise<BooruPost[]> {
@@ -56,7 +60,7 @@ export class E621Provider extends BaseBooruProvider {
       if (!data?.posts) return []
 
       const contentCategories: (keyof E621TagsData)[] = [
-        'general', 'species', 'character', 'copyright', 'artist', 'lore',
+        'general', 'species', 'character', 'copyright', 'franchise', 'artist', 'director', 'lore',
       ]
 
       const mappedPosts: BooruPost[] = data.posts.map((post) => {
@@ -72,9 +76,9 @@ export class E621Provider extends BaseBooruProvider {
           large_file_url: post.sample?.url || post.file?.url || '',
           preview_file_url: post.preview?.url || post.file?.url || '',
           tag_string: allTags.join(' '),
-          tag_string_artist: (post.tags?.artist || []).join(' '),
-          tag_string_character: (post.tags?.character || []).join(' '),
-          tag_string_copyright: (post.tags?.copyright || []).join(' '),
+          tag_string_artist: [...(tagsObj.artist || []), ...(tagsObj.director || [])].join(' '),
+          tag_string_character: (tagsObj.character || []).join(' '),
+          tag_string_copyright: [...(tagsObj.copyright || []), ...(tagsObj.franchise || [])].join(' '),
           rating: post.rating,
           score: post.score?.total ?? 0,
           width: post.file?.width ?? 0,
@@ -91,4 +95,9 @@ export class E621Provider extends BaseBooruProvider {
       throw error
     }
   }
+}
+
+/** e6ai.net: e621's engine and API, AI-generated posts only. */
+export class E6aiProvider extends E621Provider {
+  protected baseUrl: string = PROVIDER_URLS.E6AI
 }

@@ -26,6 +26,7 @@ const PROVIDER_LABELS: Record<string, string> = {
     rule34: "Rule34",
     gelbooru: "Gelbooru",
     e621: "e621",
+    e6ai: "e6AI",
 }
 
 export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {

@@ -30,18 +30,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'Tags to Natural Language', body: "Pick a Prompt format in Customize prompt: Anima, FLUX.2 · Krea 2 or MOSS-Image. Every card then shows its prompt as a description written for that model, right away. The AI conversion is still in the card menu, now called Rewrite with AI." },
-  { kind: 'new', title: 'Copy as Another Format', body: "A card's copy menu now has Copy as, to copy that prompt once in any format without changing your setting." },
-  { kind: 'new', title: 'Each Character Described Apart', body: "When a post has two or more popular characters, the description gives each one their own hair, eyes and outfit, so models are less likely to mix them up." },
-  { kind: 'new', title: 'Short or Full Descriptions', body: "FLUX.2 and MOSS-Image prompts stay short by default, FLUX.2 under 80 words. Turn on Keep every detail for the full version." },
-  { kind: 'improved', title: 'Clearer Scenes With Several People', body: "Hair, clothes and actions go to the right person more often. What the tags don't say about who has what is no longer given to everyone, and nobody extra is added to the picture." },
-  { kind: 'improved', title: 'More Tags in Plain English', body: "Many more tags, Rule34's and less common ones included, now read as plain sentences instead of a list at the end, and each thing is said once." },
-  { kind: 'new', title: 'Experimental Rules', body: "A new switch in Customize prompt for rules that guess from indirect signals. It drops leg and hip tags you add when the post looks like a close shot of faces, and drops the tags of posts made of several pictures (comic, 4koma, multiple views) so you get one picture. Off by default; tags you add yourself are always kept." },
-  { kind: 'improved', title: 'Added Tags Respect the Shot', body: "With Tag Exclusion on, body tags from Tags to add, such as thighs or hips, are left out when the post is an upper-body shot, a portrait or a close-up, so the camera no longer pulls back to show them. This now also works in scenes with two or more characters, and a framing tag in your own Tags to add counts too." },
-  { kind: 'fixed', title: 'No More Extra Pictures in the Corner', body: "Tags for a second picture pasted onto the post, like a reference photo or a screenshot, are left out of prompts, so the character is no longer drawn a second time in a box." },
-  { kind: 'improved', title: 'Smoother FLUX.2 and MOSS-Image Prompts', body: "Sentences about the same person are joined, so descriptions read less like a list." },
-  { kind: 'fixed', title: 'Only What the Picture Shows', body: "Story labels, ratings of looks and notes about the post are left out of descriptions, and halos, animal ears and drawn symbols land in the right sentence." },
-  { kind: 'fixed', title: 'Option Panels Stay on Screen', body: "On short windows, Search filters and Customize prompt no longer open upward with their top cut off. When they don't fit either way, they open downward and the page scrolls to show them." },
+  { kind: 'new', title: 'New Source: e6AI', body: "e6AI, a booru for AI-generated art that runs on the same software as e621, is now in the source list. Search, Pack Mode, favorites and history work with it the same way they do with e621." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
