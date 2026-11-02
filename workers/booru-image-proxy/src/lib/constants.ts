@@ -94,7 +94,7 @@ export function refererForImageHost(hostname: string): string | undefined {
   if (hostname.endsWith('rule34.xxx')) return PROVIDER_REFERERS.RULE34
   if (hostname.endsWith('aibooru.download')) return PROVIDER_REFERERS.AIBOORU
   if (hostname.endsWith('e621.net') || hostname.endsWith('e926.net')) return PROVIDER_REFERERS.E621
-  if (hostname.endsWith('e6ai.net')) return PROVIDER_REFERERS.E6AI
+  if (hostname === 'e6ai.net' || hostname.endsWith('.e6ai.net')) return PROVIDER_REFERERS.E6AI
   if (hostname.endsWith('gelbooru.com')) return PROVIDER_REFERERS.GELBOORU
   return undefined
 }
