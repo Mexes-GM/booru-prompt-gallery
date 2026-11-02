@@ -35,7 +35,7 @@ export function AppShell() {
           <div className="text-center space-y-3 pt-8 sm:pt-4">
             <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-balance">Booru Prompt Gallery</h1>
             <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4 text-pretty leading-relaxed">
-              Generate prompts from Danbooru, Aibooru, Rule34, Gelbooru and e621 image collections.
+              Generate prompts from Danbooru, Aibooru, Rule34, Gelbooru, e621 and e6AI image collections.
               Extract and format tags from posts or access AI-generated prompts directly,
               creating clean, ready-to-use prompts for your AI art generation.
             </p>

@@ -1379,7 +1379,8 @@ export function PromptGallery() {
       const needsVercelProxy = urlHasHost(imageUrl, 'donmai.us') ||
         urlHasHost(imageUrl, 'rule34.xxx') ||
         urlHasHost(imageUrl, 'gelbooru.com') ||
-        urlHasHost(imageUrl, 'e621.net')
+        urlHasHost(imageUrl, 'e621.net') ||
+        urlHasHost(imageUrl, 'e6ai.net')
 
       // Danbooru: prefer the CloudFront proxy (edge cache + CORS) when configured.
       const cdnUrl = getDanbooruCdnUrl(imageUrl)

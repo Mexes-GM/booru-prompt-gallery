@@ -1,14 +1,14 @@
 import { DanbooruProvider } from './providers/danbooru'
 import { Rule34Provider } from './providers/rule34'
 import { AibooruProvider } from './providers/aibooru'
-import { E621Provider } from './providers/e621'
+import { E621Provider, E6aiProvider } from './providers/e621'
 import { GelbooruProvider } from './providers/gelbooru'
 import { IBooruProvider } from './types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type ProviderEnv = Record<string, string | undefined>
 
-export const BOORU_PROVIDERS = ['danbooru', 'rule34', 'aibooru', 'e621', 'gelbooru'] as const
+export const BOORU_PROVIDERS = ['danbooru', 'rule34', 'aibooru', 'e621', 'e6ai', 'gelbooru'] as const
 export type BooruProviderType = (typeof BOORU_PROVIDERS)[number]
 
 export function isBooruProvider(value: unknown): value is BooruProviderType {
@@ -51,6 +51,8 @@ export class BooruFactory {
         return new AibooruProvider()
       case 'e621':
         return new E621Provider()
+      case 'e6ai':
+        return new E6aiProvider()
       case 'gelbooru':
         return new GelbooruProvider(env, supabase)
       default:

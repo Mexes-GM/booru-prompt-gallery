@@ -2,7 +2,17 @@
 // Extracted from lib/api-client.ts so it can be unit-tested without pulling in
 // React/Next/Supabase — see __tests__/tag-limits.verify.ts.
 
-export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru'
+export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru'
+
+/** Each booru's name as the site itself writes it, for UI text. */
+export const PROVIDER_NAMES: Record<BooruProvider, string> = {
+  danbooru: 'Danbooru',
+  aibooru: 'Aibooru',
+  rule34: 'Rule34',
+  e621: 'e621',
+  e6ai: 'e6AI',
+  gelbooru: 'Gelbooru',
+}
 
 // Per-provider fixed tag search limits, confirmed against each API's official docs
 // and empirically (curl) as of 2026-07:
@@ -11,6 +21,7 @@ export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelboo
 // - Aibooru: same Rails/PostQuery engine as Danbooru (identical error class), but its own
 //   configured limit is 4, not 2. Confirmed: 4 normal tags OK, 5 => 422.
 // - e621: help/cheatsheet → "up to 40 tags in a single search". Confirmed: 40 terms OK, 41 => 422.
+// - e6ai: runs e621's engine — same limit, confirmed 2026-11: 40 terms OK, 41 => 422.
 // - Gelbooru / Rule34: official docs state no tag-count limit ("Any tag combination that works
 //   on the web site will work here"). Confirmed empirically (with real API credentials) up to
 //   60 simultaneous tags with no rejection. The only hard requirement is authentication
@@ -19,6 +30,7 @@ export const PROVIDER_TAG_LIMITS: Record<BooruProvider, number> = {
   danbooru: 2,
   aibooru: 4,
   e621: 40,
+  e6ai: 40,
   gelbooru: Infinity,
   rule34: Infinity,
 }
@@ -59,7 +71,7 @@ const FREE_META_TAG_PATTERNS = [
 // - e621: has no "general" rating tier (only safe/questionable/explicit). rating:general is
 //   an unrecognized value and is SILENTLY IGNORED — a query for "rating:general" on e621
 //   returns posts of every rating (confirmed: e, q, and e in a 5-post sample). The correct
-//   equivalent is rating:safe.
+//   equivalent is rating:safe. e6ai (same engine) behaves the same, confirmed 2026-11.
 // - Gelbooru/Rule34 (Gelbooru 0.2 engine): rating:general IS a valid, working value (confirmed:
 //   3.4M matching posts) — Gelbooru's official howto:search wiki also confirms it supports the
 //   full 4-tier vocabulary (general/sensitive/questionable/explicit), same as modern Danbooru.
@@ -70,6 +82,7 @@ const FREE_META_TAG_PATTERNS = [
 // actually expects; providers not listed use the value as-is.
 const RATING_GENERAL_OVERRIDE: Partial<Record<BooruProvider, string>> = {
   e621: 'rating:safe',
+  e6ai: 'rating:safe',
 }
 
 export const mapRatingForProvider = (ratingFilter: string, provider: BooruProvider): string => {
@@ -96,7 +109,7 @@ export const mapRatingForProvider = (ratingFilter: string, provider: BooruProvid
 //   itself excludes those posts before paginating, so every page is always "full". Fixing that
 //   properly would require restructuring pagination (over-fetching + client-side padding),
 //   which was out of scope here. Documented as a known limitation instead of half-implemented.
-const TAGCOUNT_SUPPORTED_PROVIDERS = new Set<BooruProvider>(['danbooru', 'aibooru', 'e621'])
+const TAGCOUNT_SUPPORTED_PROVIDERS = new Set<BooruProvider>(['danbooru', 'aibooru', 'e621', 'e6ai'])
 
 export const isTagCountSupportedProvider = (provider: BooruProvider): boolean => TAGCOUNT_SUPPORTED_PROVIDERS.has(provider)
 
@@ -123,6 +136,8 @@ export const SCORE_FLOOR_BY_PROVIDER: Record<BooruProvider, Record<Exclude<Score
   danbooru: { good: 8, great: 15, best: 25 },
   aibooru: { good: 7, great: 12, best: 20 },
   e621: { good: 50, great: 130, best: 300 },
+  // e6ai: p50/p75/p90 of three 320-post random image samples, 2026-11.
+  e6ai: { good: 70, great: 120, best: 175 },
   gelbooru: { good: 5, great: 18, best: 50 },
   rule34: { good: 35, great: 90, best: 180 },
 }
@@ -290,16 +305,18 @@ export const getFinalQueryTagsWithMeta = (userTags: string, ratingFilter: string
 
   // Order/random metatag — confirmed to consume one slot of the limit, same as a normal tag.
   // Syntax differs by provider (confirmed empirically):
-  // - Danbooru/Aibooru/e621: order:rank (or order:score on e621) / random:N.
+  // - Danbooru/Aibooru: order:rank / random:N.
+  // - e621/e6ai: order:rank / order:random (random:N is Danbooru-only).
   // - Gelbooru/Rule34 (Gelbooru 0.2 engine): order:* is NOT recognized (curl: order:score
   //   matches 0 posts); the correct metatag is sort:score / sort:random instead.
   let systemOrderTagCount = 0
   const usesSortSyntax = provider === 'gelbooru' || provider === 'rule34'
+  const randomTag = usesSortSyntax ? 'sort:random' : provider === 'e621' || provider === 'e6ai' ? 'order:random' : 'random:60'
   if (order === 'popular') {
     tags.push({ value: usesSortSyntax ? 'sort:score' : 'order:rank', countsTowardsLimit: true, dropped: false })
     systemOrderTagCount = 1
   } else if (order === 'random') {
-    tags.push({ value: usesSortSyntax ? 'sort:random' : 'random:60', countsTowardsLimit: true, dropped: false })
+    tags.push({ value: randomTag, countsTowardsLimit: true, dropped: false })
     systemOrderTagCount = 1
   }
 
@@ -351,7 +368,7 @@ export const detectMisusedMetatags = (userTags: string, provider: BooruProvider)
   const warnings: MisusedMetatagWarning[] = []
   const rawTags = splitRawTags(userTags)
   const usesSortSyntax = provider === 'gelbooru' || provider === 'rule34'
-  const providerLabel = provider.charAt(0).toUpperCase() + provider.slice(1)
+  const providerLabel = PROVIDER_NAMES[provider] ?? provider
 
   rawTags.forEach(tag => {
     const lower = tag.toLowerCase()
@@ -391,10 +408,10 @@ export const detectMisusedMetatags = (userTags: string, provider: BooruProvider)
     }
 
     // rating:general typed on e621 — silently ignored there (no "general" tier).
-    if (/^rating:general$/i.test(lower) && provider === 'e621') {
+    if (/^rating:general$/i.test(lower) && (provider === 'e621' || provider === 'e6ai')) {
       warnings.push({
         tag,
-        message: 'e621 has no "general" rating — this tag is silently ignored (matches every rating).',
+        message: `${providerLabel} has no "general" rating — this tag is silently ignored (matches every rating).`,
         suggestion: 'rating:safe',
       })
     }

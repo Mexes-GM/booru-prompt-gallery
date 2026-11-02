@@ -63,13 +63,14 @@ const NSFW_SUB_OPTIONS: { value: "questionable" | "explicit" | "both"; label: st
   { value: "both", label: "Both", description: "Half questionable, half explicit" },
 ]
 
-export const PROVIDERS: BooruProvider[] = ['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621']
+export const PROVIDERS: BooruProvider[] = ['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621', 'e6ai']
 export const PROVIDER_LABELS: Record<BooruProvider, string> = {
   danbooru: 'Danbooru',
   gelbooru: 'Gelbooru',
   aibooru: 'Aibooru',
   rule34: 'Rule34',
   e621: 'e621',
+  e6ai: 'e6AI',
 }
 
 /** Counts how many limit-consuming tags a raw comma-separated string has —

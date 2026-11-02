@@ -37,7 +37,7 @@ export interface IBooruProvider {
   search(options: SearchOptions): Promise<BooruPost[]>
 }
 
-export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru'
+export type BooruProvider = 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru'
 
 export const isAibooruPost = (post: BooruPost): boolean => {
   return 'ai_metadata' in post && post.ai_metadata !== undefined

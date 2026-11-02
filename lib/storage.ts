@@ -293,10 +293,10 @@ export const userPreferences = {
   setPromptFullDetail: (fullDetail: boolean) =>
     storage.set(STORAGE_KEYS.PROMPT_FULL_DETAIL, fullDetail),
 
-  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru' =>
+  getBooruProvider: (): 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru' =>
     storage.get(STORAGE_KEYS.BOORU_PROVIDER, 'gelbooru'),
 
-  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'gelbooru') =>
+  setBooruProvider: (provider: 'danbooru' | 'aibooru' | 'rule34' | 'e621' | 'e6ai' | 'gelbooru') =>
     storage.set(STORAGE_KEYS.BOORU_PROVIDER, provider),
 
   getBlacklist: (): string[] =>

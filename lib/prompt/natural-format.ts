@@ -44,12 +44,12 @@ export interface FormattedPrompt {
 
 const RATING_WORDS: Record<string, string> = { general: "g", safe: "g", sensitive: "s", questionable: "q", explicit: "e" }
 
-/** Danbooru's rating letter. Gelbooru and Rule34 spell ratings out; e621's "s" means safe. */
+/** Danbooru's rating letter. Gelbooru and Rule34 spell ratings out; e621's and e6ai's "s" means safe. */
 export function ratingLetter(rating?: string, provider?: string): string | undefined {
   const value = rating?.trim().toLowerCase()
   if (!value) return undefined
   if (RATING_WORDS[value]) return RATING_WORDS[value]
-  if (provider === "e621" && value === "s") return "g"
+  if ((provider === "e621" || provider === "e6ai") && value === "s") return "g"
   return /^[gsqe]$/.test(value) ? value : undefined
 }
 
@@ -67,7 +67,7 @@ function uniqueTags(tags: string[]): string[] {
 }
 
 // Boorus whose posts carry their own character and copyright fields.
-const TYPED_PROVIDERS = new Set(["danbooru", "aibooru", "e621"])
+const TYPED_PROVIDERS = new Set(["danbooru", "aibooru", "e621", "e6ai"])
 
 export function naturalPromptInput(source: NaturalPromptSource, overrides: Record<string, string>): NaturalPromptInput {
   const split = splitPromptTags(source.prompt, overrides, { guessNames: !!source.handWritten })

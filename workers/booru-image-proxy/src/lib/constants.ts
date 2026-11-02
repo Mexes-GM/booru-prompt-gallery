@@ -6,6 +6,7 @@ export const PROVIDER_URLS = {
   RULE34_WEB: 'https://rule34.xxx',
   E621: 'https://e621.net',
   E926: 'https://e926.net',
+  E6AI: 'https://e6ai.net',
   GELBOORU: 'https://gelbooru.com',
 } as const
 
@@ -63,6 +64,7 @@ const IMAGE_HOSTS = [
   'cdn.aibooru.download',
   'static1.e621.net',
   'static1.e926.net',
+  'static1.e6ai.net',
   'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com',
   'img4.gelbooru.com', 'img5.gelbooru.com', 'video-cdn1.gelbooru.com',
   'video-cdn2.gelbooru.com', 'video-cdn3.gelbooru.com', 'video-cdn4.gelbooru.com',
@@ -92,6 +94,7 @@ export function refererForImageHost(hostname: string): string | undefined {
   if (hostname.endsWith('rule34.xxx')) return PROVIDER_REFERERS.RULE34
   if (hostname.endsWith('aibooru.download')) return PROVIDER_REFERERS.AIBOORU
   if (hostname.endsWith('e621.net') || hostname.endsWith('e926.net')) return PROVIDER_REFERERS.E621
+  if (hostname === 'e6ai.net' || hostname.endsWith('.e6ai.net')) return PROVIDER_REFERERS.E6AI
   if (hostname.endsWith('gelbooru.com')) return PROVIDER_REFERERS.GELBOORU
   return undefined
 }
@@ -147,5 +150,6 @@ export const PROVIDER_REFERERS: Record<string, string> = {
   AIBOORU: `${PROVIDER_URLS.AIBOORU}/`,
   RULE34: `${PROVIDER_URLS.RULE34_WEB}/`,
   E621: `${PROVIDER_URLS.E621}/`,
+  E6AI: `${PROVIDER_URLS.E6AI}/`,
   GELBOORU: `${PROVIDER_URLS.GELBOORU}/`,
 }

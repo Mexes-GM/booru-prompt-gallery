@@ -40,7 +40,7 @@ export default function AboutPage() {
           <CardContent>
             <ul className="list-disc pl-6 space-y-2">
               <li>
-                <strong>Multi-provider support:</strong> browse Danbooru, Gelbooru, e621, Aibooru, and Rule34.
+                <strong>Multi-provider support:</strong> browse Danbooru, Gelbooru, e621, e6AI, Aibooru, and Rule34.
               </li>
               <li>
                 <strong>Smart prompt cleaning:</strong> strips metadata and resolves 180+ contradictory-tag rules (e.g.

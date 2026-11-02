@@ -29,6 +29,7 @@ const ID_LIST_BATCH: Partial<Record<BooruProviderType, number>> = {
   danbooru: 100,
   aibooru: 100,
   e621: 100,
+  e6ai: 100,
   rule34: 20,
 }
 const DANBOORU_BATCH_DELAY_MS = 1100

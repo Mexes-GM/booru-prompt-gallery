@@ -8,6 +8,7 @@ export const PROVIDER_URLS = {
   RULE34_WEB: 'https://rule34.xxx',
   E621: 'https://e621.net',
   E926: 'https://e926.net',
+  E6AI: 'https://e6ai.net',
   GELBOORU: 'https://gelbooru.com',
 } as const
 
@@ -17,6 +18,7 @@ export const PROVIDER_POST_URLS = {
   AIBOORU: (id: number | string) => `${PROVIDER_URLS.AIBOORU}/posts/${id}`,
   RULE34: (id: number | string) => `${PROVIDER_URLS.RULE34_WEB}/index.php?page=post&s=view&id=${id}`,
   E621: (id: number | string) => `${PROVIDER_URLS.E621}/posts/${id}`,
+  E6AI: (id: number | string) => `${PROVIDER_URLS.E6AI}/posts/${id}`,
   GELBOORU: (id: number | string) => `${PROVIDER_URLS.GELBOORU}/index.php?page=post&s=view&id=${id}`,
 } as const
 
@@ -28,6 +30,7 @@ export function getPostUrl(provider: string, id: number | string, isAiPost = fal
     case 'aibooru': return PROVIDER_POST_URLS.AIBOORU(id)
     case 'rule34': return PROVIDER_POST_URLS.RULE34(id)
     case 'e621': return PROVIDER_POST_URLS.E621(id)
+    case 'e6ai': return PROVIDER_POST_URLS.E6AI(id)
     case 'gelbooru': return PROVIDER_POST_URLS.GELBOORU(id)
     case 'danbooru': return isAiPost ? PROVIDER_POST_URLS.AIBOORU(id) : PROVIDER_POST_URLS.DANBOORU(id)
     default: return PROVIDER_POST_URLS.DANBOORU(id)
@@ -46,6 +49,8 @@ export function getProviderSearchUrl(provider: string, tag: string): string {
       return `${PROVIDER_URLS.RULE34_WEB}/index.php?page=post&s=list&tags=${encoded}`
     case 'e621':
       return `${PROVIDER_URLS.E621}/posts?tags=${encoded}`
+    case 'e6ai':
+      return `${PROVIDER_URLS.E6AI}/posts?tags=${encoded}`
     case 'gelbooru':
       return `${PROVIDER_URLS.GELBOORU}/index.php?page=post&s=list&tags=${encoded}`
     default:
@@ -72,6 +77,8 @@ export function getProviderWikiUrl(provider: string, tag: string): string {
       return `${PROVIDER_URLS.GELBOORU}/index.php?page=wiki&s=view&title=${slug}`
     case 'e621':
       return `${PROVIDER_URLS.E621}/wiki_pages/${slug}`
+    case 'e6ai':
+      return `${PROVIDER_URLS.E6AI}/wiki_pages/${slug}`
     case 'gelbooru':
       return `${PROVIDER_URLS.GELBOORU}/index.php?page=wiki&s=view&title=${slug}`
     default:
@@ -147,6 +154,7 @@ const IMAGE_HOSTS = new Set([
   'cdn.aibooru.download',
   'static1.e621.net',
   'static1.e926.net',
+  'static1.e6ai.net',
   'img1.gelbooru.com', 'img2.gelbooru.com', 'img3.gelbooru.com',
   'img4.gelbooru.com', 'img5.gelbooru.com', 'video-cdn1.gelbooru.com',
   'video-cdn2.gelbooru.com', 'video-cdn3.gelbooru.com', 'video-cdn4.gelbooru.com',
@@ -172,6 +180,7 @@ export const PROVIDER_REFERERS: Record<string, string> = {
   AIBOORU: `${PROVIDER_URLS.AIBOORU}/`,
   RULE34: `${PROVIDER_URLS.RULE34_WEB}/`,
   E621: `${PROVIDER_URLS.E621}/`,
+  E6AI: `${PROVIDER_URLS.E6AI}/`,
   GELBOORU: `${PROVIDER_URLS.GELBOORU}/`,
 }
 
