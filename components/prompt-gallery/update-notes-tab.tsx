@@ -31,6 +31,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
   { kind: 'new', title: 'New Source: e6AI', body: "e6AI, a booru for AI-generated art that runs on the same software as e621, is now in the source list. Search, Pack Mode, favorites and history work with it the same way they do with e621." },
+  { kind: 'fixed', title: 'Shuffle and Popular on e621', body: "On e621, Shuffle and the Popular order showed the newest posts every time. They now show random and popular posts, on e621 and e6AI alike." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)

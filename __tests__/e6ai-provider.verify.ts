@@ -93,5 +93,19 @@ assert(refererForImageHost('static1.e6ai.net') === 'https://e6ai.net/', 'worker:
 assert(imageReferrerPolicy('e6ai') === undefined, 'e6ai images keep the default referrer policy, like e621')
 assert(isBooruProvider('e6ai'), 'worker: e6ai is a known provider')
 
+// ── Order: Shuffle and Popular reach the e621-family API ──
+// Without an order metatag the engine returns its newest posts for every order.
+;(['e621', 'e6ai'] as const).forEach(provider => {
+  const tagsFor = (order: string) => {
+    const key = createPostsKey({ tags: 'wolf', ratingFilter: 'all', order, randomSeed: 7, provider, hasPrompt: false, scoreTier: 'off' })
+    return new URL(key(0, null) ?? '').searchParams.get('tags') ?? ''
+  }
+  assert(tagsFor('random').split(' ').includes('order:random'), `${provider}: shuffle sends order:random (${tagsFor('random')})`)
+  assert(tagsFor('popular').split(' ').includes('order:rank'), `${provider}: popular sends order:rank (${tagsFor('popular')})`)
+  assert(!/order:/.test(tagsFor('recent')), `${provider}: recent sends no order (${tagsFor('recent')})`)
+  const shown = getFinalQueryTagsWithMeta('wolf', 'all', 'random', undefined, provider)
+  assert(shown.tags.some(t => t.value === 'order:random') && !shown.tags.some(t => t.value.startsWith('random:')), `${provider}: query panel shows order:random`)
+})
+
 console.log(`e6ai-provider: ${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

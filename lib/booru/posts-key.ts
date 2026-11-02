@@ -133,11 +133,14 @@ export function createPostsKey({
     // ponytail: direct URL, no transform needed (handled by fetcher).
     if (provider === 'e621' || provider === 'e6ai') {
       const isRandom = order === 'random' || /order:random|random:\d+/i.test(tags)
-      const effectivePage = isRandom ? "1" : (pageIndex + 1).toString()
+      const effectivePage = isRandom ? "1" : pageAt(pageIndex).toString()
+      // buildBooruQuery leaves the order metatag to each provider. Without it the
+      // engine returns its newest posts, whatever Shuffle or Popular asked for.
+      const orderTag = order === 'random' ? 'order:random' : order === 'popular' ? 'order:rank' : ''
       const params = new URLSearchParams({
         limit: "60",
         page: effectivePage,
-        tags: query,
+        tags: [query, orderTag].filter(Boolean).join(' '),
         _client: USER_AGENT,
       })
       if (isRandom) {

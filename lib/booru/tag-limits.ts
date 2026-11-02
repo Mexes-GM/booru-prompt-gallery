@@ -305,16 +305,18 @@ export const getFinalQueryTagsWithMeta = (userTags: string, ratingFilter: string
 
   // Order/random metatag — confirmed to consume one slot of the limit, same as a normal tag.
   // Syntax differs by provider (confirmed empirically):
-  // - Danbooru/Aibooru/e621: order:rank (or order:score on e621) / random:N.
+  // - Danbooru/Aibooru: order:rank / random:N.
+  // - e621/e6ai: order:rank / order:random (random:N is Danbooru-only).
   // - Gelbooru/Rule34 (Gelbooru 0.2 engine): order:* is NOT recognized (curl: order:score
   //   matches 0 posts); the correct metatag is sort:score / sort:random instead.
   let systemOrderTagCount = 0
   const usesSortSyntax = provider === 'gelbooru' || provider === 'rule34'
+  const randomTag = usesSortSyntax ? 'sort:random' : provider === 'e621' || provider === 'e6ai' ? 'order:random' : 'random:60'
   if (order === 'popular') {
     tags.push({ value: usesSortSyntax ? 'sort:score' : 'order:rank', countsTowardsLimit: true, dropped: false })
     systemOrderTagCount = 1
   } else if (order === 'random') {
-    tags.push({ value: usesSortSyntax ? 'sort:random' : 'random:60', countsTowardsLimit: true, dropped: false })
+    tags.push({ value: randomTag, countsTowardsLimit: true, dropped: false })
     systemOrderTagCount = 1
   }
 
