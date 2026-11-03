@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 export const PACK_TOUR_STORAGE_KEY = "pack_builder_tour_done"
+/**
+ * Set once the "source moved to the header" hint has shown. Only people who
+ * already finished the tour see that hint; a first visit gets the tour instead.
+ */
+export const PACK_SOURCE_HINT_STORAGE_KEY = "pack_source_hint_seen"
 
 interface TourStep {
   /** `data-pack-tour` value to spotlight; omitted = centered card. */
@@ -125,7 +130,7 @@ const STEPS: TourStep[] = [
     target: "source",
     icon: <Database />,
     title: "Where variations come from",
-    body: "New tags are sampled from real posts of your current search. Collected posts are saved, so next time it opens instantly and keeps growing. Select the source to change it.",
+    body: "Varied tags come from real posts. Select this chip to choose the content rating, the booru, and which posts to sample (your current search by default). Collected posts are saved, so the next pack opens faster.",
   },
   {
     target: "category-role",

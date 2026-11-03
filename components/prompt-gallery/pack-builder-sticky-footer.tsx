@@ -33,7 +33,7 @@ import { summarizePackSourceAnswers, type PackSourceAnswers } from './pack-sourc
 import { PackVarietySelect } from './pack-variety-select'
 import { PackCategoryList, PackStepper } from './pack-category-list'
 import { TagAutocompleteTextarea } from './tag-autocomplete-textarea'
-import { PackBuilderTour, findPackTourTargets, PACK_TOUR_OPEN_PARTS_EVENT, PACK_TOUR_STORAGE_KEY } from './pack-builder-tour'
+import { PackBuilderTour, findPackTourTargets, PACK_SOURCE_HINT_STORAGE_KEY, PACK_TOUR_OPEN_PARTS_EVENT, PACK_TOUR_STORAGE_KEY } from './pack-builder-tour'
 import type { VarietyLevel, VarietySetting } from '@/lib/pack/variety-presets'
 
 export interface PackBuilderStickyFooterProps {
@@ -392,9 +392,14 @@ function CollectionStatus({
     loadedPostCount,
     savedPostCount,
     poolSize,
+    showSourceHint,
+    onDismissSourceHint,
 }: {
     sourceAnswers: PackSourceAnswers
     onOpenSource: () => void
+    /** One-time callout under the chip: where the source settings live now. */
+    showSourceHint: boolean
+    onDismissSourceHint: () => void
     isCollecting: boolean
     seedProgress: { current: number; target: number } | null
     loadedPostCount: number
@@ -404,24 +409,44 @@ function CollectionStatus({
     const noPosts = !isCollecting && loadedPostCount === 0
     return (
         <div className="flex items-center gap-2 min-w-0">
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <button
-                        type="button"
-                        onClick={onOpenSource}
-                        data-pack-tour="source"
-                        className="h-8 pointer-coarse:h-11 min-w-0 px-2.5 rounded-lg border border-border/60 bg-muted/40 hover:bg-muted text-xs font-medium text-foreground/90 transition-colors inline-flex items-center gap-1.5 max-w-[18rem]"
+            <div className="relative min-w-0 flex">
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <button
+                            type="button"
+                            onClick={onOpenSource}
+                            data-pack-tour="source"
+                            className="h-8 pointer-coarse:h-11 min-w-0 px-2.5 rounded-lg border border-border/60 bg-muted/40 hover:bg-muted text-xs font-medium text-foreground/90 transition-colors inline-flex items-center gap-1.5 max-w-[18rem]"
+                        >
+                            <Database className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                            <span className="truncate">{summarizePackSourceAnswers(sourceAnswers)}</span>
+                            {sourceAnswers.searchTags.trim() && (
+                                <span className="hidden sm:inline truncate text-muted-foreground font-mono">· {sourceAnswers.searchTags}</span>
+                            )}
+                            <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                        </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Where the varied tags are sampled from. Select to change it.</TooltipContent>
+                </Tooltip>
+                {showSourceHint && (
+                    <div
+                        role="note"
+                        aria-labelledby="pack-source-hint-title"
+                        className="absolute left-0 top-full mt-2 z-30 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-mode-pack-border bg-popover text-popover-foreground shadow-lg p-3"
                     >
-                        <Database className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="truncate">{summarizePackSourceAnswers(sourceAnswers)}</span>
-                        {sourceAnswers.searchTags.trim() && (
-                            <span className="hidden sm:inline truncate text-muted-foreground font-mono">· {sourceAnswers.searchTags}</span>
-                        )}
-                        <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                    </button>
-                </TooltipTrigger>
-                <TooltipContent>Where the varied tags are sampled from. Select to change it.</TooltipContent>
-            </Tooltip>
+                        <span aria-hidden className="absolute -top-1.5 left-5 h-3 w-3 rotate-45 border-l border-t border-mode-pack-border bg-popover" />
+                        <p id="pack-source-hint-title" className="text-sm font-semibold">Content rating and source are here now</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Select this chip to choose the content rating, the booru, and which posts the variations come from.
+                        </p>
+                        <div className="mt-2.5 flex justify-end">
+                            <Button type="button" size="sm" variant="outline" onClick={onDismissSourceHint} className="h-8 pointer-coarse:h-11 px-3 text-xs">
+                                Got it
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             <div className="inline-flex items-center gap-1.5 min-w-0 text-xs tabular-nums whitespace-nowrap" aria-live="polite">
                 {isCollecting ? (
@@ -617,22 +642,51 @@ const PackBuilderStickyFooterComponent = ({
         requestAnimationFrame(() => setTourTargets(findPackTourTargets(contentRef.current)))
     }, [])
     const builderOpen = isOpen && hasSetupAnswers
+
+    // One-time hint on the source chip for people who finished the tour before
+    // the source settings moved there (they used to be a step of their own).
+    const [showSourceHint, setShowSourceHint] = useState(false)
+    if (!builderOpen && showSourceHint) setShowSourceHint(false)
+
     useEffect(() => {
         if (!builderOpen) return
+        let tourDone: boolean
+        let hintSeen: boolean
         try {
-            if (localStorage.getItem(PACK_TOUR_STORAGE_KEY) === '1') return
+            tourDone = localStorage.getItem(PACK_TOUR_STORAGE_KEY) === '1'
+            hintSeen = localStorage.getItem(PACK_SOURCE_HINT_STORAGE_KEY) === '1'
         } catch {
+            // Storage blocked: neither could be remembered, so show neither.
             return
         }
-        // Let the dialog and the first pools render so every target exists.
+        if (!tourDone) {
+            // First visit: the tour covers the source chip, so the hint is never needed.
+            // Let the dialog and the first pools render so every target exists.
+            const timer = setTimeout(() => {
+                try {
+                    localStorage.setItem(PACK_TOUR_STORAGE_KEY, '1')
+                    localStorage.setItem(PACK_SOURCE_HINT_STORAGE_KEY, '1')
+                } catch {}
+                startTour()
+            }, 900)
+            return () => clearTimeout(timer)
+        }
+        if (hintSeen) return
+        // Marked as seen the moment it shows, like the release dialog.
         const timer = setTimeout(() => {
             try {
-                localStorage.setItem(PACK_TOUR_STORAGE_KEY, '1')
+                localStorage.setItem(PACK_SOURCE_HINT_STORAGE_KEY, '1')
             } catch {}
-            startTour()
-        }, 900)
+            setShowSourceHint(true)
+        }, 600)
         return () => clearTimeout(timer)
     }, [builderOpen, startTour])
+
+    const dismissSourceHint = useCallback(() => setShowSourceHint(false), [])
+    const handleOpenSource = useCallback(() => {
+        setShowSourceHint(false)
+        onOpenSource()
+    }, [onOpenSource])
 
     // Closing the builder — the X, Escape or a click outside — always does the
     // same thing: it drops the base and goes back to the gallery to pick
@@ -696,7 +750,9 @@ const PackBuilderStickyFooterComponent = ({
                         <div className="flex-1 min-w-0">
                             <CollectionStatus
                                 sourceAnswers={sourceAnswers}
-                                onOpenSource={onOpenSource}
+                                onOpenSource={handleOpenSource}
+                                showSourceHint={showSourceHint && !tourTargets}
+                                onDismissSourceHint={dismissSourceHint}
                                 isCollecting={isCollecting}
                                 seedProgress={seedProgress}
                                 loadedPostCount={loadedPostCount}
