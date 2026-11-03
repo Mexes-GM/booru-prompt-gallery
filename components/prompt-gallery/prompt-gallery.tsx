@@ -2388,12 +2388,13 @@ export function PromptGallery() {
         savedPostCount={packSeedSnapshot?.savedCount ?? 0}
         onClearSavedPosts={handleClearSavedPackPosts}
         prompts={packMode.generatedPrompts}
-        onCopyPrompt={async (prompt, text) => {
-          const copied = await copyToClipboard(text, 0, true)
+        naturalSourceOf={packMode.naturalSourceOf}
+        onCopyPrompt={async (prompt, text, format) => {
+          const copied = await copyToClipboard(text, 0, true, undefined, format)
           if (copied) packMode.recordPromptCopied(prompt)
           return copied
         }}
-        onCopyAll={(text) => copyToClipboard(text, 0, true)}
+        onCopyAll={(text, format) => copyToClipboard(text, 0, true, undefined, format)}
         onResetLearning={packMode.resetLearning}
       />}
 

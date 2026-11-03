@@ -200,16 +200,16 @@ export const ADULT_OUTFIT_STYLES: readonly OutfitStyle[] = ["lingerie", "sexy"]
 
 /**
  * A random draw of whole outfits for Pack Mode's clothing pool: `size` outfits
- * of the chosen styles at the chosen detail, each as its tag list. The same
+ * of the chosen styles at the chosen detail, each with its tag list. The same
  * seed gives the same draw, so a new seed is "pick other outfits".
  */
-export function outfitPackPool(
+export function outfitPackDraw(
   library: readonly Outfit[],
   styles: readonly OutfitStyle[],
   detail: OutfitDetail,
   seed: number,
   size: number,
-): string[][] {
+): { outfit: Outfit; tags: string[] }[] {
   const styleSet = new Set(styles)
   const pool = library.filter((o) => styleSet.has(o.style))
   const rng = seededRandom(seed)
@@ -217,7 +217,46 @@ export function outfitPackPool(
     const j = Math.floor(rng() * (i + 1))
     ;[pool[i], pool[j]] = [pool[j], pool[i]]
   }
-  return pool.slice(0, size).map((o) => outfitTags(o, detail)).filter((tags) => tags.length > 0)
+  return pool.slice(0, size).map((outfit) => ({ outfit, tags: outfitTags(outfit, detail) })).filter((o) => o.tags.length > 0)
+}
+
+/** The tag lists of outfitPackDraw. */
+export function outfitPackPool(
+  library: readonly Outfit[],
+  styles: readonly OutfitStyle[],
+  detail: OutfitDetail,
+  seed: number,
+  size: number,
+): string[][] {
+  return outfitPackDraw(library, styles, detail, seed, size).map((o) => o.tags)
+}
+
+/** The outfit slots each kind of description sentence is about. */
+const SENTENCE_SLOTS: Record<(typeof SENTENCE_KINDS)[number]["kind"], readonly OutfitSlot[]> = {
+  main: ["outfit", "top", "bottom", "underwear"],
+  footwear: ["footwear"],
+  legwear: ["legwear"],
+  accessory: ["headwear", "eyewear", "accents", "handheld"],
+}
+
+/** A prompt tag without its weight: "(red dress:1.2)" -> "red dress". */
+const bareTag = (tag: string) => norm(/^\s*\((.+):\s*-?\d+(?:\.\d+)?\)\s*$/.exec(tag)?.[1] ?? tag)
+
+/**
+ * A library outfit's sentences for one Pack Mode prompt. Pack prompts lose
+ * outfit tags to the detail level, muted slots and the cleaner, so a sentence
+ * stays only while the prompt still has a tag from the part of the outfit it
+ * is about. Undefined when none of the outfit's tags made it into the prompt.
+ */
+export function packOutfitDescription(outfit: Outfit, text: string, prompt: string): string | undefined {
+  const present = new Set(prompt.split(",").map(bareTag))
+  const shown = (slots: readonly OutfitSlot[]) => slots.some((slot) => (outfit.slots[slot] ?? []).some((t) => present.has(norm(t))))
+  if (!text || !shown(OUTFIT_SLOTS)) return undefined
+  const kept = text.split(/(?<=[.!?])\s+/).filter((sentence) => {
+    const kind = sentenceKind(sentence)
+    return !kind || shown(SENTENCE_SLOTS[kind])
+  })
+  return kept.join(" ") || undefined
 }
 
 /**

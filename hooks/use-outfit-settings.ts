@@ -78,6 +78,11 @@ export function useOutfitLibrary(enabled: boolean): readonly Outfit[] {
   return useOutfitFile("/outfits.json", parseOutfitLibrary, EMPTY, enabled)
 }
 
+/** Each outfit's description by outfit id, for the natural-language formats. */
+export function useOutfitDescriptions(enabled: boolean): readonly string[] {
+  return useOutfitFile("/outfit-descriptions.json", parseOutfitDescriptions, NO_DESCRIPTIONS, enabled)
+}
+
 const isStyle =(s: string): s is OutfitStyle => (OUTFIT_STYLES as readonly string[]).includes(s)
 
 /**
@@ -118,7 +123,7 @@ export function useOutfitSettings(safeOnly = false) {
   const library = useOutfitLibrary(isRandom)
   // The sentences only matter to the natural-language formats, so they load
   // after the tags and cards fall back to the tag-built outfit until then.
-  const descriptions = useOutfitFile("/outfit-descriptions.json", parseOutfitDescriptions, NO_DESCRIPTIONS, isRandom && library.length > 0)
+  const descriptions = useOutfitDescriptions(isRandom && library.length > 0)
 
   // With the search on safe ratings, adult styles sit out without being unticked.
   const activeStyles = useMemo(

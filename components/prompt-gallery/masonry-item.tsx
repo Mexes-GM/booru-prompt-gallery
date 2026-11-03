@@ -380,8 +380,9 @@ export const MasonryItem = memo(function MasonryItem({
     })
 
     // Natural-language formats rewrite the card's cleaned prompt (baseContent:
-    // the user's edits applied, no weights). Merge, Pack and AI modes work on
-    // tags, so cards stay on tags there.
+    // the user's edits applied, no weights). Merge and AI modes work on tags,
+    // so cards stay on tags there; Pack Mode's cards follow the format like
+    // its generated prompts do.
     const { format: promptFormat, fullDetail: globalFullDetail } = usePromptFormat()
     // "Show every detail" on one card holds until the global setting changes.
     const [detailOverride, setDetailOverride] = useState<{ fullDetail: boolean; global: boolean } | null>(null)
@@ -398,7 +399,7 @@ export const MasonryItem = memo(function MasonryItem({
         outfitDescription: cardOutfitDescription,
     }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost, cardOutfitDescription])
     const natural = useNaturalPrompt({
-        enabled: !isMergeMode && !isPackMode && !isNaturalLanguageMode,
+        enabled: !isMergeMode && !isNaturalLanguageMode,
         format: promptFormat,
         fullDetail,
         source: naturalSource,
