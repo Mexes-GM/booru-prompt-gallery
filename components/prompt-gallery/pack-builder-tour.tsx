@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 export const PACK_TOUR_STORAGE_KEY = "pack_builder_tour_done"
+/**
+ * Set once the "source moved to the header" hint has shown. Only people who
+ * already finished the tour see that hint; a first visit gets the tour instead.
+ */
+export const PACK_SOURCE_HINT_STORAGE_KEY = "pack_source_hint_seen"
 
 interface TourStep {
   /** `data-pack-tour` value to spotlight; omitted = centered card. */
@@ -41,7 +46,7 @@ function expandParts() {
 /** Side-by-side example of the two pool modes. */
 function ModeExample() {
   return (
-    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
       <div className="rounded-lg border bg-muted/40 p-2.5">
         <div className="flex items-center gap-1.5 font-semibold text-foreground">
           <Shuffle className="w-3 h-3" /> Loose tags
@@ -70,12 +75,12 @@ function PackExample() {
     ["swimsuit", "running", "beach"],
   ]
   return (
-    <div className="mt-3 rounded-lg border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">
-      <div className="flex items-center gap-1.5 text-[10px] font-sans font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="mt-3 rounded-lg border bg-muted/40 p-3 font-mono text-xs leading-relaxed">
+      <div className="flex items-center gap-1.5 text-xs font-sans font-semibold uppercase tracking-wider text-muted-foreground">
         <Lock className="w-3 h-3" /> Kept from the base
       </div>
       <div className="text-muted-foreground">1girl, hatsune miku, long hair, twintails</div>
-      <div className="mt-2 flex items-center gap-1.5 text-[10px] font-sans font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="mt-2 flex items-center gap-1.5 text-xs font-sans font-semibold uppercase tracking-wider text-muted-foreground">
         <Shuffle className="w-3 h-3" /> Varied on each prompt
       </div>
       {rows.map((row, i) => (
@@ -119,13 +124,13 @@ const STEPS: TourStep[] = [
     target: "base",
     icon: <UserRound />,
     title: "Your base",
-    body: "The card or prompt you started from. Its tags are sorted into the categories below, where you can remove any you don't want. “Always add” goes into every prompt (LoRA triggers, quality tags).",
+    body: "The card or prompt you started from. Its tags are sorted into the categories below: open one to see them and remove any you don't want. “Always add” goes into every prompt (LoRA triggers, quality tags).",
   },
   {
     target: "source",
     icon: <Database />,
     title: "Where variations come from",
-    body: "New tags are sampled from real posts of this source. Collected posts are saved, so next time it opens instantly and keeps growing. Click the source to change it.",
+    body: "Varied tags come from real posts. Select this chip to choose the content rating, the booru, and which posts to sample (your current search by default). Collected posts are saved, so the next pack opens faster.",
   },
   {
     target: "category-role",
@@ -146,7 +151,7 @@ const STEPS: TourStep[] = [
     title: "Each part can go its own way",
     body: (
       <>
-        Every category is split into parts — Clothing into outfit, top, headwear, footwear… Click one to pick its role:
+        Every category is split into parts — Clothing into outfit, top, headwear, footwear… Select one to set its role:
         <ul className="mt-2 space-y-1.5">
           <RoleLine icon={<Lock />} name="Keep from base" text="your base's tags for that part stay." />
           <RoleLine icon={<Shuffle />} name="Vary" text="it changes with the rest of the category." />
@@ -175,19 +180,19 @@ const STEPS: TourStep[] = [
     target: "category-pool",
     icon: <ListChecks />,
     title: "The pool",
-    body: "Every candidate for this category, grouped by part. × removes one, the box below adds your own, and Re-sample rebuilds it from the collected posts. “Tags per prompt” (top of the row) sets how many are picked each time.",
+    body: "Every candidate for this category, grouped by part. × removes one, the box below adds your own, and Re-sample rebuilds it from the collected posts. “Per prompt” sets how many are picked each time.",
   },
   {
     target: "batch",
     icon: <SlidersHorizontal />,
     title: "Shape the batch",
-    body: "How many prompts, how wild the mix gets (Variety), and an optional minimum of tags per prompt. Then Generate.",
+    body: "How many prompts and how wild the mix gets (Variety). A minimum of tags per prompt is under More. Then Generate.",
   },
   {
     target: "results",
     icon: <Shuffle />,
     title: "Copy what you like",
-    body: "Bold tags are the varied ones. Re-roll a single prompt with the dice, copy one, or Copy all. Replay this tour anytime from “How it works”.",
+    body: "Bold tags are the varied ones. Re-roll a single prompt with the dice, copy one, or Copy all. Replay this tour anytime from the ⋯ menu.",
   },
 ]
 
@@ -202,7 +207,11 @@ interface Rect { top: number; left: number; width: number; height: number }
 /** `data-pack-tour` targets currently present in `container` — call when starting the tour. */
 export function findPackTourTargets(container: HTMLElement | null): string[] {
   if (!container) return []
-  return STEPS.flatMap((s) => (s.target && container.querySelector(`[data-pack-tour="${s.target}"]`) ? [s.target] : []))
+  // Only targets actually on screen: below lg, one of the Setup/Prompts tabs is hidden.
+  return STEPS.flatMap((s) => {
+    const el = s.target ? container.querySelector(`[data-pack-tour="${s.target}"]`) : null
+    return s.target && el && el.getClientRects().length > 0 ? [s.target] : []
+  })
 }
 
 export interface PackBuilderTourProps {

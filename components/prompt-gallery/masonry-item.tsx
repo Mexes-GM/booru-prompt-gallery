@@ -899,7 +899,7 @@ export const MasonryItem = memo(function MasonryItem({
                         )}
                     </div>
 
-                    <div className="flex button-group items-stretch isolate shrink-0" {...(index === 0 ? { 'data-tour': 'copy-options' } : {})}>
+                    <div className="flex button-group items-stretch isolate shrink-0" {...(index === 0 && !isPackMode ? { 'data-tour': 'copy-options' } : {})}>
                         {isPackMode ? (
                             <Button
                                 onClick={() => onSetAsPackBase?.(post)}
@@ -908,7 +908,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 aria-label={isPackBase ? "Pack Mode base card" : "Use as base for Pack Mode"}
                             >
                                 <Package className={`${getIconClass()} mr-1.5`} />
-                                {isPackBase ? "Base ✓" : "Use as Base"}
+                                {isPackBase ? "Base ✓" : "Use as base"}
                             </Button>
                         ) : isNaturalLanguageMode ? (
                             <Button

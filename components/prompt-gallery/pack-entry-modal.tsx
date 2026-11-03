@@ -67,8 +67,8 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
               >
                 <ImageIcon className="w-6 h-6 text-mode-pack-text" />
                 <span className="text-sm font-medium">From a card</span>
-                <span className="text-[11px] text-muted-foreground">
-                  Choose a post from the gallery; its character (and what you decide to lock) becomes the base.
+                <span className="text-xs text-muted-foreground">
+                  Choose a post from the gallery; its character (and anything else you keep) becomes the base.
                 </span>
               </button>
               <button
@@ -78,7 +78,7 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
               >
                 <PenLine className="w-6 h-6 text-mode-pack-text" />
                 <span className="text-sm font-medium">From my prompt</span>
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   Already have your character or OC&apos;s prompt? Paste it and vary everything else without searching.
                 </span>
               </button>

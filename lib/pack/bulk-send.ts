@@ -240,8 +240,10 @@ export function cleanSyntheticPrompt(
       wordReplacements,
       dropMultiPanelTags: experimentalPromptRules,
     }
+    // Character tags are joined with commas: they're display-normalized
+    // ("hatsune miku"), and a space-joined list parses back as ONE tag.
     const cleanedSampledContent = generalSampledTags.length > 0
-      ? cleanPrompt(generalSampledTags.join(", "), "", characterTags.join(" "), "", sharedOpts)
+      ? cleanPrompt(generalSampledTags.join(", "), "", characterTags.join(", "), "", sharedOpts)
       : ""
 
     const cleanedSampledList = cleanedSampledContent
@@ -285,7 +287,7 @@ export function cleanSyntheticPrompt(
     wordReplacements,
     dropMultiPanelTags: experimentalPromptRules,
   }
-  const pureContent = cleanPrompt(generalTags.join(", "), "", characterTags.join(" "), "", sharedOpts)
+  const pureContent = cleanPrompt(generalTags.join(", "), "", characterTags.join(", "), "", sharedOpts)
 
   const conflictResolution = !pureContent || addList.length === 0 || !smartTagExclusion
     ? { validTags: addList, conflictingTags: [] }
@@ -295,7 +297,7 @@ export function cleanSyntheticPrompt(
     ...sharedOpts,
     addedTags: conflictResolution.validTags,
   }
-  const baseContent = cleanPrompt(generalTags.join(", "), "", characterTags.join(" "), "", finalOpts)
+  const baseContent = cleanPrompt(generalTags.join(", "), "", characterTags.join(", "), "", finalOpts)
 
   return isGlobalWeightsEnabled && baseContent ? applyWeights(baseContent, globalWeights) : baseContent
 }

@@ -151,6 +151,7 @@ import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
 import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
+import { searchedCharacterOf } from "@/lib/pack/character-focus"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
 import { PackSourceModal, type PackSourceAnswers } from "./pack-source-modal"
@@ -754,9 +755,9 @@ export function PromptGallery() {
   // Setup questionnaire. `packEntryOpen` shows the "From a card"/"From my
   // prompt" choice; `packSourceAnswers` (always populated, unlike the old
   // nullable packSetupAnswers) is what <PackSeedFetcher> below seeds from.
-  // `sourceStep` drives the "Source of variations" modal: "setup" is the
-  // step shown right after picking a new base (builder and seeding wait for
-  // it), "edit" is reopening it from the builder header's chip.
+  // A new base starts on the default source (see defaultPackSource) right
+  // away; `packSourceOpen` is the "Source of variations" modal, opened only
+  // from the builder header's chip.
   const [packEntryOpen, setPackEntryOpen] = useState(false)
   // True when the entry modal should open straight into the prompt-editing
   // view (the builder's "Edit" button on an existing prompt base) instead of
@@ -774,7 +775,7 @@ export function PromptGallery() {
       booruProvider: search.booruProvider,
     })
   })
-  const [sourceStep, setSourceStep] = useState<'setup' | 'edit' | null>(null)
+  const [packSourceOpen, setPackSourceOpen] = useState(false)
   // Curated per-slot vocabulary that tops up sparse pools (rating-aware).
   const packAxisFallbacks = usePackAxisFallbacks(packMode.isPackMode, packSourceAnswers.ratingMode)
   // Generated prompts follow the source's content rating (see contentRating).
@@ -850,25 +851,55 @@ export function PromptGallery() {
     setPackSeedSnapshot(null)
   }, [])
 
-  // Picking a new base (card or pasted prompt) always goes through the
-  // "Source of variations" step before the builder opens. Editing an
-  // existing prompt base skips it — the source is already chosen.
+  /** Makes `rawAnswers` the source, re-seeding the pools (refetching only if the source changed). */
+  const applyPackSource = useCallback((rawAnswers: PackSourceAnswers) => {
+    const answers = normalizePackSourceRating(rawAnswers)
+    const nextKey = poolCacheKey(answers.booruProvider, answers.ratingMode, answers.searchTags)
+    setPackSourceAnswers(answers)
+    try {
+      userPreferences.setPackSourceAnswers(answers)
+    } catch {
+      // Non-fatal: best-effort, same as every other localStorage write here.
+    }
+    setPackFetcherActive(true)
+    // A different source remounts <PackSeedFetcher> (keyed by the answers);
+    // the same one keeps its posts and only needs the pools re-seeded.
+    if (nextKey !== packSourceKeyRef.current) resetPackSeeding()
+    else rebasePackSeeding()
+  }, [resetPackSeeding, rebasePackSeeding])
+
+  // Source for a new base: "Current search" follows the gallery's search and
+  // provider as they are now; a custom or empty source the user chose stays.
+  // The content rating is always the last one picked (safe until changed).
+  const defaultPackSource = useCallback((): PackSourceAnswers => (
+    packSourceAnswers.tagsSource === 'current'
+      ? { ...packSourceAnswers, searchTags: search.searchTags, booruProvider: search.booruProvider }
+      : packSourceAnswers
+  ), [packSourceAnswers, search.searchTags, search.booruProvider])
+
+  // A new base (card or pasted prompt) opens the builder straight away on the
+  // default source; the header chip changes it. Editing an existing prompt
+  // base keeps the source as it is.
+  const packModeSetFocusCharacter = packMode.setFocusCharacter
   const handleSetAsPackBase = useCallback((post: BooruPost) => {
+    const source = defaultPackSource()
     packModeSetBaseCard(post)
-    rebasePackSeeding()
+    // A multi-character post keeps the character the search is about, if any;
+    // otherwise the builder asks which one to keep.
+    packModeSetFocusCharacter(searchedCharacterOf(post, source.searchTags))
+    applyPackSource(source)
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
-    setSourceStep('setup')
-  }, [packModeSetBaseCard, rebasePackSeeding])
+  }, [packModeSetBaseCard, packModeSetFocusCharacter, applyPackSource, defaultPackSource])
 
   const packModeSetBasePrompt = packMode.setBasePrompt
   const handleSubmitPackPrompt = useCallback((text: string) => {
     packModeSetBasePrompt(text)
-    rebasePackSeeding()
+    if (packEntryStartInPrompt) rebasePackSeeding()
+    else applyPackSource(defaultPackSource())
     setPackEntryOpen(false)
-    if (!packEntryStartInPrompt) setSourceStep('setup')
     setPackEntryStartInPrompt(false)
-  }, [packModeSetBasePrompt, rebasePackSeeding, packEntryStartInPrompt])
+  }, [packModeSetBasePrompt, rebasePackSeeding, applyPackSource, defaultPackSource, packEntryStartInPrompt])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
@@ -880,33 +911,10 @@ export function PromptGallery() {
     setPackEntryOpen(true)
   }, [])
 
-  const handleApplyPackSourceAnswers = useCallback((rawAnswers: PackSourceAnswers) => {
-    const answers = normalizePackSourceRating(rawAnswers)
-    const nextKey = poolCacheKey(answers.booruProvider, answers.ratingMode, answers.searchTags)
-    setPackSourceAnswers(answers)
-    try {
-      userPreferences.setPackSourceAnswers(answers)
-    } catch {
-      // Non-fatal: best-effort, same as every other localStorage write here.
-    }
-    setSourceStep(null)
-    setPackFetcherActive(true)
-    // A different source remounts <PackSeedFetcher> (keyed by the answers);
-    // the same one keeps its posts and only needs the pools re-seeded.
-    if (nextKey !== packSourceKeyRef.current) resetPackSeeding()
-    else rebasePackSeeding()
-  }, [resetPackSeeding, rebasePackSeeding])
-
-  // Cancelling the setup step abandons the freshly-picked base (back to
-  // picking one); cancelling an edit just closes the modal.
-  const handleCancelPackSource = useCallback(() => {
-    if (sourceStep === 'setup') {
-      packModeSetBaseCard(null)
-      packModeSetBasePrompt('')
-      hasSeededRef.current = false
-    }
-    setSourceStep(null)
-  }, [sourceStep, packModeSetBaseCard, packModeSetBasePrompt])
+  const handleApplyPackSourceAnswers = useCallback((answers: PackSourceAnswers) => {
+    setPackSourceOpen(false)
+    applyPackSource(answers)
+  }, [applyPackSource])
 
   // Seed-search view whose `allPosts` is the whole pool (fresh + saved,
   // deduped), so seeding targets count UNIQUE posts. Danbooru pages by
@@ -981,12 +989,12 @@ export function PromptGallery() {
     await persistPackPool(key)
   }, [packModeReseedAllAxes, packAxisFallbacks, packSeed, makeLiveReseed, packPoolPosts, poolSearch, updatePackSnapshot, persistPackPool])
 
-  // Runs a pending seed once a base, a confirmed source and fetched results all exist.
+  // Runs a pending seed once a base and fetched results both exist.
   const packHasBase = packMode.hasBase
   useEffect(() => {
-    if (hasSeededRef.current || !packSeedSearchRef.current || !packHasBase || sourceStep === 'setup') return
+    if (hasSeededRef.current || !packSeedSearchRef.current || !packHasBase) return
     void seedPackPools()
-  }, [seedRequest, packHasBase, sourceStep, seedPackPools])
+  }, [seedRequest, packHasBase, seedPackPools])
 
   const handlePackSeedSearchReady = useCallback((seedSearch: UsePackSeedSearchResult) => {
     packSeedSearchRef.current = seedSearch
@@ -1257,11 +1265,11 @@ export function PromptGallery() {
   // --- Helpers ---
   // Ref-stabilized callbacks: stable references that always call the latest version.
   // Prevents renderMasonryItem from recreating when toast or other deps change.
-  const copyToClipboardRef = useRef<(content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string, format?: PromptFormat) => Promise<void>>(async () => {})
+  const copyToClipboardRef = useRef<(content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string, format?: PromptFormat) => Promise<boolean>>(async () => false)
   const downloadImageRef = useRef<(post: BooruPost) => Promise<void>>(async () => {})
 
   const stableCopyToClipboard = useCallback(async (content: string, postId: number, isPrompt?: boolean, thumbnailUrl?: string, format?: PromptFormat) => {
-    return copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl, format)
+    await copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl, format)
   }, [])
 
   const stableDownloadImage = useCallback(async (post: BooruPost) => {
@@ -1316,6 +1324,7 @@ export function PromptGallery() {
       }
       setTimeout(() => setCopiedId(null), 2000)
       recordPromptCopy()
+      return true
     } catch (error) {
       toastError({
         title: "Error",
@@ -1323,6 +1332,7 @@ export function PromptGallery() {
         errorSource: "copy_to_clipboard",
         context: { provider: search.booruProvider, postId, isPrompt },
       })
+      return false
     }
   }, [toast, addToHistory, posthog, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts, isAiConvertMode])
 
@@ -2234,14 +2244,13 @@ export function PromptGallery() {
         onCancel={handlePackEntryCancel}
       />
       <PackSourceModal
-        open={packModeIsPackMode && packMode.hasBase && sourceStep !== null}
+        open={packModeIsPackMode && packMode.hasBase && packSourceOpen}
         answers={packSourceAnswers}
         onApply={handleApplyPackSourceAnswers}
-        onCancel={handleCancelPackSource}
+        onCancel={() => setPackSourceOpen(false)}
         currentSearchTags={search.searchTags}
-        postCount={sourceStep === 'edit' ? (packSeedSnapshot?.postCount ?? 0) : null}
-        ratingBreakdown={sourceStep === 'edit' ? packSeedSnapshot?.ratings : null}
-        confirmLabel={sourceStep === 'setup' ? 'Continue' : 'Apply'}
+        postCount={packSeedSnapshot?.postCount ?? 0}
+        ratingBreakdown={packSeedSnapshot?.ratings}
       />
       <PackBuilderStickyFooter
         isOpen={packModeIsPackMode}
@@ -2249,7 +2258,11 @@ export function PromptGallery() {
         basePrompt={packMode.basePrompt}
         onEditBasePrompt={handleEditBasePrompt}
         hasMultipleCharacters={packMode.hasMultipleCharacters}
-        hasSetupAnswers={packMode.hasBase && sourceStep !== 'setup'}
+        hasSetupAnswers={packMode.hasBase}
+        baseCharacters={packMode.baseCharacters}
+        focusCharacter={packMode.focusCharacter}
+        onSetFocusCharacter={packMode.setFocusCharacter}
+        needsCharacterChoice={packMode.needsCharacterChoice}
         categoryStates={packMode.categoryStates}
         onSetCategoryState={packMode.setCategoryState}
         slotStateOf={packMode.slotStateOf}
@@ -2281,7 +2294,7 @@ export function PromptGallery() {
         canLoadMorePosts={packSeedSnapshot?.canLoadMore ?? true}
         onLoadMorePosts={handleLoadMorePacks}
         sourceAnswers={packSourceAnswers}
-        onOpenSource={() => setSourceStep('edit')}
+        onOpenSource={() => setPackSourceOpen(true)}
         varietyLevel={packMode.varietyLevel}
         onVarietyLevelChange={packMode.setVarietyLevel}
         minTotalTags={packMode.minTotalTags}
@@ -2310,9 +2323,10 @@ export function PromptGallery() {
         savedPostCount={packSeedSnapshot?.savedCount ?? 0}
         onClearSavedPosts={handleClearSavedPackPosts}
         prompts={packMode.generatedPrompts}
-        onCopyPrompt={(prompt, text) => {
-          copyToClipboard(text, 0, true)
-          packMode.recordPromptCopied(prompt)
+        onCopyPrompt={async (prompt, text) => {
+          const copied = await copyToClipboard(text, 0, true)
+          if (copied) packMode.recordPromptCopied(prompt)
+          return copied
         }}
         onCopyAll={(text) => copyToClipboard(text, 0, true)}
         onResetLearning={packMode.resetLearning}
