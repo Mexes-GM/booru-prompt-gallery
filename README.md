@@ -6,7 +6,7 @@
 
 **Pick a post, get a prompt you can paste straight into your generator.**
 
-[🌐 Open the app](https://booru-prompt-gallery.vercel.app) · [🪞 Mirror](https://booru-prompt-gallery.netlify.app) · [📝 Changelog](https://civitai.com/articles/17747) · [☕ Buy me a coffee](https://buymeacoffee.com/Mexes)
+[Open the app](https://booru-prompt-gallery.vercel.app) · [Backup site](https://booru-prompt-gallery.netlify.app) · [Changelog](https://civitai.com/articles/17747) · [Buy me a coffee](https://buymeacoffee.com/Mexes)
 
 ![Booru Prompt Gallery home screen](.github/assets/home.jpg)
 
@@ -19,6 +19,26 @@ I make LoRAs and checkpoints, and I was spending way too much time writing promp
 You search for a character, an outfit, a pose or anything else, scroll through real posts, and copy a prompt with one click. The app throws away the stuff that hurts your generations (artist names, metadata, "white background", watermarks...), merges redundant tags and avoids contradictions, so what you copy is something your model can actually use.
 
 It works with Illustrious, Pony, SDXL, Anima and pretty much any tag-based checkpoint.
+
+### Example
+
+These are the tags of [Danbooru post #12509109](https://danbooru.donmai.us/posts/12509109) (general, then character, series, artist and meta):
+
+```
+1girl aqua_eyes aqua_hair aqua_necktie black_pantyhose black_skirt bow breasts dress food full_body gloves hair_between_eyes hair_bow hair_ornament headset index_finger_raised long_hair medium_breasts necktie official_alternate_costume official_alternate_hairstyle ok_sign one_eye_closed onigiri open_mouth pantyhose simple_background skirt sleeveless sleeveless_dress smile solo twintails very_long_hair white_dress white_gloves
+hatsune_miku magical_mirai_miku magical_mirai_miku_(2016)
+magical_mirai_(vocaloid) vocaloid
+aoiyui
+commentary highres
+```
+
+With the default settings, the card gives you:
+
+```
+hatsune miku, magical mirai miku, magical mirai miku \(2016\), 1girl, aqua eyes, aqua hair, full body, hair between eyes, hair bow, hair ornament, medium breasts, smile, twintails, very long hair, aqua necktie, black pantyhose, black skirt, official alternate costume, sleeveless white dress, white gloves, simple background, food, headset, index finger raised, official alternate hairstyle, ok sign, one eye closed, onigiri, open mouth, solo
+```
+
+The artist, the series and the metadata are gone. `dress`, `sleeveless`, `sleeveless_dress` and `white_dress` became `sleeveless white dress`, and tags that a more specific one already covers (`long_hair`, `skirt`, `gloves`, `necktie`...) were dropped. The characters come first and the rest is grouped by category.
 
 ![Gallery with prompt cards](.github/assets/gallery.jpg)
 
@@ -38,7 +58,7 @@ It works with Illustrious, Pony, SDXL, Anima and pretty much any tag-based check
 
 - **Tag cleaning**: removes artist names, ratings, metadata and tags that restrict the generation.
 - **Smart Tag Combination**: `hair, long hair, white hair` becomes `long white hair`.
-- **Smart Tag Exclusion**: 180+ conflict rules, so a character seen "from behind" doesn't also get tags that only make sense from the front.
+- **Smart Tag Exclusion**: 300+ conflict rules, so a character seen "from behind" doesn't also get tags that only make sense from the front.
 - **Background Options**: keep the original background, remove it, replace it with your own tags, or randomize it (simple colors and gradients, or full detailed scenes).
 
 ### Make them yours
@@ -122,6 +142,7 @@ Only the worker URL is required. Everything else switches itself off when missin
 | `NEXT_PUBLIC_CDN_PROXY_URL` | CDN for Danbooru images | Images go through the app's own download route. |
 | `NEXT_PUBLIC_POSTHOG_KEY` | Analytics | Disabled. |
 | `DISCORD_FEEDBACK_WEBHOOK_URL` | Feedback form | Feedback form disabled. |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` | CAPTCHA on the feedback form | The form works without a challenge. |
 
 Full list with comments in [`.env.example`](.env.example). The worker's own (optional) secrets are listed in `workers/booru-image-proxy/wrangler.toml`, and the database schema is in `supabase/migrations/`.
 
@@ -132,6 +153,8 @@ Full list with comments in [`.env.example`](.env.example). The worker's own (opt
 | `npm run dev` | Start the dev server |
 | `npm run build` | Production build |
 | `npm test` | Run the tests |
+| `npm run lint` | Lint with ESLint |
+| `npm run typecheck` | Type-check without building |
 
 ---
 
@@ -145,24 +168,7 @@ Full list with comments in [`.env.example`](.env.example). The worker's own (opt
 | Data | SWR, Cloudflare Worker (data API + image proxy) |
 | Database & auth | Supabase (PostgreSQL, magic-link login) |
 
-```
-app/                  → pages, admin panel and server actions
-components/
-  prompt-gallery/     → the gallery, cards, panels and modes
-  ui/                 → shadcn/ui primitives
-lib/
-  cleanPrompt.ts      → prompt cleaning and tag combination
-  tag-conflicts.ts    → Smart Tag Exclusion rules
-  tag-taxonomy.ts     → the 7 categories and 33 subcategories
-  prompt/             → how a post becomes a prompt
-  pack/               → Pack Mode generator and learning
-  booru/              → site URLs, tag limits and helpers
-hooks/                → React hooks (search, favorites, modes...)
-workers/              → the Cloudflare Worker
-supabase/             → database migrations
-scripts/              → data and classification scripts
-__tests__/            → verification tests
-```
+For a map of where each part of the code lives, see [CONTRIBUTING.md](CONTRIBUTING.md#where-things-live).
 
 ---
 
