@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import {
+  ADULT_OUTFIT_STYLES,
   DEFAULT_OUTFIT_STYLES,
   OUTFIT_STYLES,
   parseOutfitDescriptions,
@@ -84,7 +85,7 @@ const isStyle =(s: string): s is OutfitStyle => (OUTFIT_STYLES as readonly strin
  * `outfitSettings` is the bundle the prompt pipeline takes: undefined while
  * the mode is "keep", so cards don't re-derive for a library they don't use.
  */
-export function useOutfitSettings() {
+export function useOutfitSettings(safeOnly = false) {
   const [outfitMode, setOutfitMode] = usePersistentState<OutfitMode>(
     "keep",
     userPreferences.getOutfitMode,
@@ -119,17 +120,21 @@ export function useOutfitSettings() {
   // after the tags and cards fall back to the tag-built outfit until then.
   const descriptions = useOutfitFile("/outfit-descriptions.json", parseOutfitDescriptions, NO_DESCRIPTIONS, isRandom && library.length > 0)
 
+  // With the search on safe ratings, adult styles sit out without being unticked.
+  const activeStyles = useMemo(
+    () => (safeOnly ? outfitStyles.filter((s) => !ADULT_OUTFIT_STYLES.includes(s)) : outfitStyles),
+    [safeOnly, outfitStyles]
+  )
   const outfitSettings = useMemo<OutfitSettings | undefined>(
     () =>
       isRandom && library.length > 0
-        ? { mode: outfitMode, styles: outfitStyles, detail: outfitDetail, library, ...(descriptions.length ? { descriptions } : {}) }
+        ? { mode: outfitMode, styles: activeStyles, detail: outfitDetail, library, ...(descriptions.length ? { descriptions } : {}) }
         : undefined,
-    [isRandom, outfitMode, outfitStyles, outfitDetail, library, descriptions]
+    [isRandom, outfitMode, activeStyles, outfitDetail, library, descriptions]
   )
-
   const outfitCount = useMemo(
-    () => (library.length > 0 ? library.filter((o) => outfitStyles.includes(o.style)).length : null),
-    [library, outfitStyles]
+    () => (library.length > 0 ? library.filter((o) => activeStyles.includes(o.style)).length : null),
+    [library, activeStyles]
   )
 
   return {

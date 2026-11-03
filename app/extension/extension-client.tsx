@@ -409,7 +409,7 @@ export default function ExtensionClient() {
     outfitStyles, setOutfitStyles,
     outfitDetail, setOutfitDetail,
     outfitSettings, outfitCount,
-  } = useOutfitSettings()
+  } = useOutfitSettings(search.ratingFilter === SAFE_RATING)
 
   const {
     globalWeights,
@@ -953,6 +953,7 @@ export default function ExtensionClient() {
                   outfitDetail={outfitDetail}
                   setOutfitDetail={setOutfitDetail}
                   outfitCount={outfitCount}
+                  outfitSafeOnly={search.ratingFilter === SAFE_RATING}
                 />
 
                 {/* Generator (host) settings — Pocket-only */}

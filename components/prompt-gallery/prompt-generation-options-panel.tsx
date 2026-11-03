@@ -13,8 +13,8 @@ import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import type { BackgroundMode } from "@/lib/background-detector"
 import type { MatchStrictness } from "@/lib/background-context"
-import { OUTFIT_STYLES, type OutfitDetail, type OutfitMode, type OutfitStyle } from "@/lib/outfit-swap"
-import { Flame, Flower2, Heart, Leaf, PartyPopper, Snowflake, Sun, Waves, type LucideIcon } from "lucide-react"
+import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, type OutfitDetail, type OutfitMode, type OutfitStyle } from "@/lib/outfit-swap"
+import { Flame, Flower2, Heart, Leaf, PartyPopper, Snowflake, Sun, TriangleAlert, Waves, type LucideIcon } from "lucide-react"
 import { PromptFormatSetting } from "./prompt-format-setting"
 
 const OUTFIT_MODES: { value: OutfitMode; label: string }[] = [
@@ -126,6 +126,8 @@ interface PromptGenerationOptionsPanelProps {
   outfitDetail?: OutfitDetail
   /** Outfits the chosen styles can draw from; null until the library loads. */
   outfitCount?: number | null
+  /** Search limited to safe ratings: the adult styles stay visible but switched off. */
+  outfitSafeOnly?: boolean
   setOutfitDetail?: (detail: OutfitDetail) => void
 
   /**
@@ -199,6 +201,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   setOutfitStyles: _setOutfitStyles,
   outfitDetail = "simple",
   outfitCount = null,
+  outfitSafeOnly = false,
   setOutfitDetail: _setOutfitDetail,
   variant = "embedded",
 }: PromptGenerationOptionsPanelProps) {
@@ -389,21 +392,25 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             <div className="flex flex-col gap-2">
               <div className="flex items-baseline justify-between gap-2">
                 <span id={`${idPrefix}-outfit-styles-label`} className="text-xs font-medium text-muted-foreground">Styles</span>
-                {outfitCount !== null && outfitStyles.length > 0 && (
+                {outfitCount !== null && outfitCount > 0 && (
                   <span className="text-[11px] tabular-nums text-muted-foreground">{outfitCount.toLocaleString("en")} outfits</span>
                 )}
               </div>
               <div role="group" aria-labelledby={`${idPrefix}-outfit-styles-label`} className="grid grid-cols-4 gap-1">
                 {OUTFIT_STYLES.map((style) => {
-                  const isOn = outfitStyles.includes(style)
+                  // Kept as chosen, just not used, so turning NSFW on brings them back.
+                  const blocked = outfitSafeOnly && ADULT_OUTFIT_STYLES.includes(style)
+                  const isOn = outfitStyles.includes(style) && !blocked
                   const { label, Icon } = OUTFIT_STYLE_META[style]
                   return (
                     <button
                       key={style}
                       type="button"
                       onClick={() => toggleOutfitStyle(style)}
+                      disabled={blocked}
                       aria-pressed={isOn}
-                      className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-center gap-1.5 px-1 py-2", isOn ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
+                      aria-describedby={blocked ? `${idPrefix}-outfit-nsfw-note` : undefined}
+                      className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-center gap-1.5 px-1 py-2 disabled:cursor-not-allowed disabled:opacity-40", isOn ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
                     >
                       <Icon className={cn("h-4 w-4 transition-colors", isOn ? "text-primary-text" : "opacity-70")} aria-hidden="true" />
                       <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
@@ -411,6 +418,12 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
                   )
                 })}
               </div>
+              {outfitSafeOnly && (
+                <p id={`${idPrefix}-outfit-nsfw-note`} className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+                  <TriangleAlert className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+                  Lingerie and Sexy are off while NSFW is off.
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <span id={`${idPrefix}-outfit-detail-label`} className="text-xs font-medium text-muted-foreground">Detail</span>
@@ -434,7 +447,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               </div>
             </div>
             <p className="border-t border-border/40 pt-2.5 text-[11px] leading-snug text-muted-foreground">
-              {outfitStyles.length === 0
+              {outfitCount === 0 || outfitStyles.length === 0
                 ? "Pick at least one style to change outfits."
                 : "Only posts with one girl change. Beach and snow scenes get clothes that fit."}
             </p>

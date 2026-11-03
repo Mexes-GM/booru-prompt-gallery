@@ -30,7 +30,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'Random outfit', body: "Customize prompt has a new Outfit option. Set it to Random outfit and every card with one girl gets different clothes, picked from more than 1,300 outfits. You choose the styles (seasons, party, swimwear and more) and whether to add only the main pieces or the whole outfit with legwear, bag and jewelry. Beach and snow scenes get clothes that fit them. In the Anima, FLUX.2 and MOSS-Image formats, the outfit is written out in full sentences, with its cut, fabric and trims." },
+  { kind: 'new', title: 'Random outfit', body: "Customize prompt has a new Outfit option. Set it to Random outfit and every card with one girl gets different clothes, picked from more than 1,300 outfits. You choose the styles (seasons, party, swimwear and more) and whether to add only the main pieces or the whole outfit with legwear, bag and jewelry. Beach and snow scenes get clothes that fit them, and with NSFW off the styles meant for adult content are switched off. In the Anima, FLUX.2 and MOSS-Image formats, the outfit is written out in full sentences, with its cut, fabric and trims." },
   { kind: 'new', title: 'Outfits in Pack Mode', body: "The Clothing category of a pack can now take whole outfits from the same library instead of the collected posts, with the styles and detail you chose for Outfit. Re-sample draws other outfits. Safe packs leave out the styles meant for adult content." },
 ]
 
