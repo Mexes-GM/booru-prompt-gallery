@@ -30,8 +30,10 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'New Source: e6AI', body: "e6AI, a booru for AI-generated art that runs on the same software as e621, is now in the source list. Search, Pack Mode, favorites and history work with it the same way they do with e621." },
-  { kind: 'fixed', title: 'Shuffle and Popular on e621', body: "On e621, Shuffle and the Popular order showed the newest posts every time. They now show random and popular posts, on e621 and e6AI alike." },
+  { kind: 'improved', title: 'Easier-to-read small text', body: "Hints, counters and placeholders that used to be faint grey now have enough contrast to read in both light and dark themes. The smallest labels are also a little bigger." },
+  { kind: 'improved', title: 'A loading screen that matches the page', body: "While the site loads you now see the real title and the outline of the search panel and cards, so the page moves much less when it finishes. If loading takes long, a note says so, and if it fails you get a link to reload." },
+  { kind: 'improved', title: 'Easier to use on phones and with a keyboard', body: "On phones, the Browse, Merge and Pack tabs and the tabs above the search panel are easier to tap. With a keyboard, the prompt word you are on now shows an outline." },
+  { kind: 'fixed', title: 'Less motion', body: "The glow in the Merge and AI Convert panels and the dot on Manage no longer pulse nonstop. With reduced motion turned on, loading spinners fade instead of freezing, so you can still tell something is loading." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
@@ -266,7 +268,7 @@ export function UpdateNotesTab({ version }: UpdateNotesTabProps) {
             )}
           </AnimatePresence>
           Update Notes
-          <span className="hidden tabular-nums text-muted-foreground/70 sm:inline">v{version}</span>
+          <span className="hidden tabular-nums text-faint-foreground sm:inline">v{version}</span>
           {!seen && <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />}
         </button>
       </PopoverTrigger>
