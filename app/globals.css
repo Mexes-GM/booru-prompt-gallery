@@ -837,7 +837,8 @@ input[type="number"] {
      image, whose own tap expands the card (short landscape images would
      otherwise have their center covered). */
   .touch-hit-up::after {
-    bottom: 0;
+    bottom: auto;
+    height: max(44px, calc(100% + 8px));
   }
 }
 
