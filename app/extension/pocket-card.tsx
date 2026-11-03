@@ -339,7 +339,7 @@ export const PocketCard = memo(function PocketCard({
 
         {!displayImageUrl || imageGaveUp ? (
           <div className="absolute inset-0 flex items-center justify-center bg-muted">
-            <ImageOff className="w-7 h-7 text-muted-foreground/50" aria-label="Image unavailable" />
+            <ImageOff className="w-7 h-7 text-faint-foreground" aria-label="Image unavailable" />
           </div>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element

@@ -21,6 +21,7 @@
   --secondary-foreground: oklch(0.24 0.02 253);
   --muted: oklch(0.885 0.016 250);
   --muted-foreground: oklch(0.46 0.022 252);
+  --faint-foreground: oklch(0.52 0.02 252);
   --accent: oklch(0.885 0.016 250);
   --accent-foreground: oklch(0.24 0.02 253);
   --border: oklch(0.83 0.02 248);
@@ -109,6 +110,7 @@
   --secondary-foreground: oklch(0.94 0.014 248);
   --muted: oklch(0.37 0.022 250);
   --muted-foreground: oklch(0.78 0.02 250);
+  --faint-foreground: oklch(0.68 0.02 250);
   --accent: oklch(0.37 0.022 250);
   --accent-foreground: oklch(0.94 0.014 248);
   --border: oklch(0.4 0.024 250);
@@ -198,6 +200,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-faint-foreground: var(--faint-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-border: var(--border);
@@ -323,7 +326,7 @@
  *   - ring defaulted to a 3px blue-500 ring in v3, now 1px currentColor
  *     → 3px, mapped to the --ring token.
  *   - placeholder text used gray-400 in v3, now text color at 50% opacity
- *     → mapped to a softened --muted-foreground.
+ *     → mapped to the --faint-foreground token (AA on background and card).
  *   - buttons used cursor: pointer in v3, now cursor: default (browser
  *     default) in v4.
  * See https://tailwindcss.com/docs/upgrade-guide for each of these.
@@ -358,7 +361,7 @@
 
   input::placeholder,
   textarea::placeholder {
-    color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+    color: var(--faint-foreground);
   }
 
   button:not(:disabled),

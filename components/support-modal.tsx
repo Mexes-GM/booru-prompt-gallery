@@ -115,7 +115,7 @@ export function SupportModal() {
           </Button>
         </DialogFooter>
 
-        <p className="text-center text-xs text-muted-foreground/80">You won&apos;t see this message again.</p>
+        <p className="text-center text-xs text-muted-foreground">You won&apos;t see this message again.</p>
       </DialogContent>
     </Dialog>
   )

@@ -74,7 +74,7 @@ function TagChip({
     tone === "kept"
       ? "bg-foreground/[0.07] border-border text-foreground"
       : tone === "faded"
-        ? "border-dashed border-border/60 text-muted-foreground/70"
+        ? "border-dashed border-border/60 text-faint-foreground"
         : "bg-muted/40 border-border/50 text-foreground/85"
   return (
     <motion.span
@@ -91,7 +91,7 @@ function TagChip({
           type="button"
           onClick={onRemove}
           aria-label={removeLabel ?? `Remove ${text}`}
-          className="-mr-0.5 rounded p-0.5 text-muted-foreground/60 hover:text-destructive-text hover:bg-destructive-soft transition-colors"
+          className="-mr-0.5 rounded p-0.5 text-faint-foreground hover:text-destructive-text hover:bg-destructive-soft transition-colors"
         >
           <X className="w-3 h-3" />
         </button>
@@ -505,7 +505,7 @@ const CategoryRow = memo(function CategoryRow({
                         ariaLabel={`${label} minimum tags per set`}
                       />
                       {hiddenThinSets > 0 && (
-                        <span className="tabular-nums text-muted-foreground/80">{hiddenThinSets} hidden</span>
+                        <span className="tabular-nums text-muted-foreground">{hiddenThinSets} hidden</span>
                       )}
                     </div>
                   )}
@@ -518,7 +518,7 @@ const CategoryRow = memo(function CategoryRow({
                         <motion.span
                           key={`h:${group.slot ?? "none"}`}
                           layout={!lowMotion}
-                          className="basis-full flex items-center gap-2 pt-1 first:pt-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80"
+                          className="basis-full flex items-center gap-2 pt-1 first:pt-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
                         >
                           {slotLabel(group.slot)}
                           <span className="h-px flex-1 bg-border/50" />

@@ -166,7 +166,7 @@ export function SmoothFilterSlider({
           {labelPrefix}
         </InfoTooltip>
         {disabled && disabledReason && (
-          <span className="text-[10px] font-normal text-muted-foreground/70">— {disabledReason}</span>
+          <span className="text-[10px] font-normal text-faint-foreground">— {disabledReason}</span>
         )}
       </label>
       )}

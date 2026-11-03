@@ -76,7 +76,7 @@ function PanelSection({ title, hint, activeCount, onReset, resetLabel, compact, 
         <h3 className={cn("shrink-0 font-semibold uppercase tracking-wider text-foreground/80", compact ? "text-[10px]" : "text-[11px]")}>
           {title}
         </h3>
-        <span className={cn("truncate text-muted-foreground/70", compact ? "text-[10px]" : "text-[11px]")}>{hint}</span>
+        <span className={cn("truncate text-faint-foreground", compact ? "text-[10px]" : "text-[11px]")}>{hint}</span>
         {activeCount > 0 && (
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-medium">
@@ -368,7 +368,7 @@ function TagRulesEditor({
           >
             Tag rules
           </InfoTooltip>
-          <span className="text-[10px] font-normal text-muted-foreground/70">(Replace or append exact tags)</span>
+          <span className="text-[10px] font-normal text-faint-foreground">(Replace or append exact tags)</span>
         </span>
       )}
 
@@ -877,7 +877,7 @@ export function TagsManagementPanel({
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs font-medium">Tags</Label>
-                          <div className="p-2 bg-muted rounded text-[10px] font-mono break-all max-h-20 overflow-y-auto">
+                          <div className="p-2 bg-muted rounded text-[10px] font-mono wrap-anywhere max-h-20 overflow-y-auto">
                             {addInput || <span className="text-muted-foreground italic">No tags entered</span>}
                           </div>
                         </div>
@@ -942,7 +942,7 @@ export function TagsManagementPanel({
                         </div>
                         <div className="space-y-2">
                           <Label>Tags</Label>
-                          <div className="p-2 bg-muted rounded-md text-sm font-mono break-all max-h-32 overflow-y-auto">
+                          <div className="p-2 bg-muted rounded-md text-sm font-mono wrap-anywhere max-h-32 overflow-y-auto">
                             {addInput || <span className="text-muted-foreground italic">No tags entered</span>}
                           </div>
                         </div>

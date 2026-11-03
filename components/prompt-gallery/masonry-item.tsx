@@ -851,7 +851,7 @@ export const MasonryItem = memo(function MasonryItem({
                         to the image container's toggle handler. */}
                     {!isMergeMode && (
                         <div className="absolute inset-x-0 bottom-2 flex justify-center pointer-events-none z-10">
-                            <div className={`flex items-center gap-1 rounded-full bg-overlay/65 text-overlay-foreground/95 px-2 py-0.5 text-[10px] font-medium shadow-sm backdrop-blur-sm transition-opacity duration-200 ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
+                            <div className={`flex items-center gap-1 rounded-full bg-overlay/65 text-overlay-foreground/95 px-2 py-0.5 text-xs font-medium shadow-sm backdrop-blur-sm transition-opacity duration-200 ${isExpanded ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
                                 <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
                                 {isExpanded ? "Collapse" : "Full prompt"}
                             </div>

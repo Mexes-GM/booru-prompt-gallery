@@ -178,7 +178,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
                   className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium rounded-md border transition-all duration-200 disabled:cursor-not-allowed ${isSelected ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
                 >
                   <span>{opt.label}</span>
-                  <span className="text-[10px] font-normal opacity-70">{opt.description}</span>
+                  <span className="text-[10px] font-normal">{opt.description}</span>
                 </button>
               )
             })}
@@ -197,7 +197,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
                     className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium rounded-md border transition-all duration-200 disabled:cursor-not-allowed ${isSelected ? 'bg-warning-soft border-warning-border text-warning-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
                   >
                     <span>{opt.label}</span>
-                    <span className="text-[9px] font-normal opacity-70 leading-tight text-center">{opt.description}</span>
+                    <span className="text-[10px] font-normal leading-tight text-center">{opt.description}</span>
                   </button>
                 )
               })}

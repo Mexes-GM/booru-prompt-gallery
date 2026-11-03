@@ -555,7 +555,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
                   className={cn(
                     "group relative flex items-center gap-1.5 font-semibold select-none border border-primary/45 bg-card/95 backdrop-blur-md text-primary-text hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all duration-200 shadow-md active:scale-[0.96] cursor-pointer",
                     isCompact
-                      ? "h-5 pl-1.5 pr-2 text-[9px] rounded-r-md rounded-l-xs"
+                      ? "h-5 pl-1.5 pr-2 text-[10px] rounded-r-md rounded-l-xs"
                       : "h-6 pl-2 pr-2.5 text-xs rounded-r-lg rounded-l-xs before:absolute before:-left-1 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-3 before:bg-primary/50 before:rounded-l-xs"
                   )}
                   title="Manage active global weights"
