@@ -60,9 +60,18 @@ export function capture(event: string, props?: Record<string, unknown>): void {
   withPostHog((ph) => ph.capture(event, props, { timestamp }))
 }
 
-/** Called once from PostHog's `loaded` callback: replays everything queued, in order. */
-export function setPostHogClient(ph: PostHog): void {
+/**
+ * Called once from PostHog's `loaded` callback: replays everything queued, in
+ * order. `beforeReplay` runs first, with calls going straight to PostHog, so
+ * page-level super properties registered there also apply to queued events.
+ */
+export function setPostHogClient(ph: PostHog, beforeReplay?: () => void): void {
   client = ph
+  try {
+    beforeReplay?.()
+  } catch {
+    /* non-fatal */
+  }
   for (const fn of pending.splice(0)) {
     try {
       fn(ph)
@@ -70,6 +79,25 @@ export function setPostHogClient(ph: PostHog): void {
       /* non-fatal */
     }
   }
+}
+
+/**
+ * before_send step: moves the QUEUED_* properties of an exception reported
+ * before PostHog loaded onto the event itself (its timestamp and the uuid
+ * already handed out), and drops them from the properties.
+ */
+export function applyQueuedMetadata<T extends { properties?: Record<string, unknown>; timestamp?: Date; uuid: string }>(
+  event: T,
+): T {
+  const props = event.properties
+  if (!props) return event
+  const queuedAt = props[QUEUED_TIMESTAMP_PROP]
+  const queuedUuid = props[QUEUED_UUID_PROP]
+  delete props[QUEUED_TIMESTAMP_PROP]
+  delete props[QUEUED_UUID_PROP]
+  if (typeof queuedAt === "number") event.timestamp = new Date(queuedAt)
+  if (typeof queuedUuid === "string") event.uuid = queuedUuid
+  return event
 }
 
 /**

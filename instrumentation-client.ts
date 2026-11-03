@@ -9,7 +9,7 @@ import type { CaptureResult, PostHogInterface } from "posthog-js";
 import { getTranslationState, initTranslationTracing } from "@/lib/error-context";
 import {
   QUEUED_TIMESTAMP_PROP,
-  QUEUED_UUID_PROP,
+  applyQueuedMetadata,
   setPostHogClient,
   withPostHog,
 } from "@/lib/posthog-queue";
@@ -185,29 +185,34 @@ let initialPageviewSeen = false;
 // paint, so it gets back the time the page was first shown.
 function restoreQueuedTiming(event: CaptureResult | null): CaptureResult | null {
   if (!event) return event;
-  const props = event.properties;
-  const queuedAt = props?.[QUEUED_TIMESTAMP_PROP];
-  const queuedUuid = props?.[QUEUED_UUID_PROP];
-  if (props) {
-    delete props[QUEUED_TIMESTAMP_PROP];
-    delete props[QUEUED_UUID_PROP];
-  }
-  if (typeof queuedAt === "number") event.timestamp = new Date(queuedAt);
-  if (typeof queuedUuid === "string") event.uuid = queuedUuid;
-
+  applyQueuedMetadata(event);
   if (event.event === "$pageview" && !initialPageviewSeen) {
     initialPageviewSeen = true;
-    if (landing?.visibleAt && props?.$pathname === landing.pathname) {
+    if (landing?.visibleAt && event.properties?.$pathname === landing.pathname) {
       event.timestamp = new Date(landing.visibleAt);
     }
   }
   return event;
 }
 
-// Unhandled errors before the SDK loads would otherwise be missed: its
-// exception autocapture only starts at init. Queue them as unhandled exceptions,
-// built the same way the autocapture builds them, with their original time.
-function queueEarlyException(input: unknown) {
+// Unhandled errors before the SDK's exception autocapture runs would otherwise
+// be missed. It starts well after the first paint: the SDK loads after `load`,
+// and then fetches the autocapture script before it wraps window.onerror and
+// window.onunhandledrejection. Until those handlers are wrapped, these listeners
+// report errors as unhandled exceptions, built the way the autocapture builds
+// them, with their original time.
+let pageOnError: typeof window.onerror = null;
+let pageOnRejection: typeof window.onunhandledrejection = null;
+function stopEarlyExceptionCapture() {
+  window.removeEventListener("error", onEarlyError);
+  window.removeEventListener("unhandledrejection", onEarlyRejection);
+}
+function captureEarlyException(input: unknown) {
+  if (window.onerror !== pageOnError || window.onunhandledrejection !== pageOnRejection) {
+    // The SDK's handlers are in place and report this one themselves.
+    stopEarlyExceptionCapture();
+    return;
+  }
   const at = Date.now();
   withPostHog((ph) => {
     if (!ph.exceptions) return;
@@ -215,10 +220,12 @@ function queueEarlyException(input: unknown) {
     ph.exceptions.sendExceptionEvent({ ...props, [QUEUED_TIMESTAMP_PROP]: at });
   });
 }
-const onEarlyError = (e: ErrorEvent) => queueEarlyException(e.error ?? e);
-const onEarlyRejection = (e: PromiseRejectionEvent) => queueEarlyException(e);
+const onEarlyError = (e: ErrorEvent) => captureEarlyException(e.error ?? e);
+const onEarlyRejection = (e: PromiseRejectionEvent) => captureEarlyException(e);
 
 if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_POSTHOG_KEY && !isLocalHost) {
+  pageOnError = window.onerror;
+  pageOnRejection = window.onunhandledrejection;
   window.addEventListener("error", onEarlyError);
   window.addEventListener("unhandledrejection", onEarlyRejection);
   if (landing && landing.visibleAt === null) {
@@ -243,9 +250,10 @@ if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_POSTHOG_KEY && !isL
 
   loadAfterFirstPaint(() => {
     import("posthog-js").then(({ default: posthog }) => {
-      // The SDK's own exception autocapture takes over from here.
-      window.removeEventListener("error", onEarlyError);
-      window.removeEventListener("unhandledrejection", onEarlyRejection);
+      // Normally the first error after the SDK wraps the handlers removes the
+      // early listeners. If exception autocapture is switched off in PostHog's
+      // settings it never wraps them, so stop on a timer too.
+      setTimeout(stopEarlyExceptionCapture, 10000);
       posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
         api_host: posthogApiHost,
         ui_host: "https://us.posthog.com",
@@ -285,24 +293,26 @@ if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_POSTHOG_KEY && !isL
         // start only once PostHog is loaded.
         loaded: (ph) => {
           startDeferredFeatures(ph);
-          // A client-side navigation before the SDK loaded: its initial $pageview
-          // is for the current path, so record the landing page as well.
-          if (landing && window.location.pathname !== landing.pathname) {
-            ph.capture(
-              "$pageview",
-              { $current_url: landing.href, $pathname: landing.pathname },
-              { timestamp: new Date(landing.visibleAt ?? Date.now()) },
-            );
-          }
           // Calls made before init (app_open, early exceptions, identify...) were
           // queued by lib/posthog-queue.ts; replay them now, in order, with their
-          // original timestamps.
-          setPostHogClient(posthog);
-          if (document.readyState === "loading") {
-            window.addEventListener("DOMContentLoaded", () => initTranslationTracing(), { once: true });
-          } else {
-            initTranslationTracing();
-          }
+          // original timestamps. The translation super properties go first so
+          // the queued events carry them too.
+          setPostHogClient(posthog, () => {
+            if (document.readyState === "loading") {
+              window.addEventListener("DOMContentLoaded", () => initTranslationTracing(), { once: true });
+            } else {
+              initTranslationTracing();
+            }
+            // A client-side navigation before the SDK loaded: its initial
+            // $pageview is for the current path, so record the landing page too.
+            if (landing && window.location.pathname !== landing.pathname) {
+              ph.capture(
+                "$pageview",
+                { $current_url: landing.href, $pathname: landing.pathname },
+                { timestamp: new Date(landing.visibleAt ?? Date.now()) },
+              );
+            }
+          });
         },
       });
     });
