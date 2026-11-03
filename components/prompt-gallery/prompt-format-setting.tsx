@@ -17,10 +17,10 @@ const retry = () => {
 /** Row styles: the main panel's Output column, or the extension's compact settings. */
 const VARIANTS = {
   embedded: {
-    row: "flex min-h-[56px] items-center justify-between gap-3 border-b border-border/50 py-2",
+    row: "flex min-h-[52px] items-center justify-between gap-3 py-2",
     label: "text-sm text-foreground",
     hint: "text-xs text-muted-foreground",
-    select: "h-8 w-[9.75rem] shrink-0 bg-background text-xs",
+    select: "h-10 w-full bg-background text-sm",
     switch: undefined,
     button: "h-8 shrink-0 px-2.5 text-xs",
   },
@@ -40,9 +40,8 @@ interface PromptFormatSettingProps {
 }
 
 /**
- * "Prompt format" and "Keep every detail" rows. Same row shape as the
- * switches around them: Customize prompt's Output column ("embedded") or the
- * extension's settings ("compact").
+ * "Prompt format" and "Keep every detail" rows: the top of Customize prompt
+ * ("embedded") or the extension's settings ("compact").
  */
 export function PromptFormatSetting({ onSettingChange, variant = "embedded" }: PromptFormatSettingProps) {
   const { format, fullDetail, setFormat, setFullDetail } = usePromptFormat()
@@ -53,38 +52,61 @@ export function PromptFormatSetting({ onSettingChange, variant = "embedded" }: P
   const formatId = `prompt-format-${variant}`
   const fullDetailId = `prompt-full-detail-${variant}`
 
+  const isEmbedded = variant === "embedded"
+  const select = (
+    <Select
+      value={format}
+      onValueChange={(value) => {
+        if (!isPromptFormat(value)) return
+        onSettingChange?.("promptFormat", value)
+        setFormat(value)
+      }}
+      onOpenChange={(open) => {
+        if (open) preloadNaturalPrompt()
+      }}
+    >
+      <SelectTrigger
+        id={formatId}
+        aria-describedby={`${formatId}-hint`}
+        className={styles.select}
+      >
+        {/* The trigger shows the name only; the menu adds what each one writes. */}
+        <SelectValue>{info.label}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {PROMPT_FORMATS.map((option) => (
+          <SelectItem key={option} value={option} className={isEmbedded ? "py-2" : undefined}>
+            {isEmbedded ? (
+              <span className="flex flex-col gap-0.5">
+                <span>{PROMPT_FORMAT_INFO[option].label}</span>
+                <span className="text-xs text-muted-foreground">{PROMPT_FORMAT_INFO[option].description}</span>
+              </span>
+            ) : PROMPT_FORMAT_INFO[option].label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+
   return (
     <>
-      <div className={styles.row}>
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <label htmlFor={formatId} className={`cursor-pointer ${styles.label}`}>Prompt format</label>
+      {isEmbedded ? (
+        // The setting that changes the prompt most: label above a full-width
+        // select, ahead of the switches.
+        <div className="flex flex-col gap-1.5 pb-1">
+          <label htmlFor={formatId} className="cursor-pointer text-sm font-medium text-foreground">Prompt format</label>
+          {select}
           <span id={`${formatId}-hint`} className={styles.hint}>{info.description}</span>
         </div>
-        <Select
-          value={format}
-          onValueChange={(value) => {
-            if (!isPromptFormat(value)) return
-            onSettingChange?.("promptFormat", value)
-            setFormat(value)
-          }}
-          onOpenChange={(open) => {
-            if (open) preloadNaturalPrompt()
-          }}
-        >
-          <SelectTrigger
-            id={formatId}
-            aria-describedby={`${formatId}-hint`}
-            className={styles.select}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PROMPT_FORMATS.map((option) => (
-              <SelectItem key={option} value={option}>{PROMPT_FORMAT_INFO[option].label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      ) : (
+        <div className={styles.row}>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <label htmlFor={formatId} className={`cursor-pointer ${styles.label}`}>Prompt format</label>
+            <span id={`${formatId}-hint`} className={styles.hint}>{info.description}</span>
+          </div>
+          {select}
+        </div>
+      )}
       {hasWordBudget(format) && (
         <div className={styles.row}>
           <label htmlFor={fullDetailId} className="flex min-w-0 cursor-pointer flex-col gap-0.5">

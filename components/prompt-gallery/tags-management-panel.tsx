@@ -24,7 +24,6 @@ import {
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { SmoothFilterSlider } from "@/components/ui/smooth-filter-slider"
 import { ScoreTierControl } from "@/components/prompt-gallery/score-tier-control"
 import { Check, ChevronDown, ListPlus, Plus, Save, Trash2, X, Replace, RotateCcw } from "lucide-react"
@@ -354,11 +353,14 @@ function TagRulesEditor({
   ].filter(Boolean).join(" · ")
 
   return (
-    <div className={compact ? "flex flex-col gap-1" : "space-y-2"}>
+    <div className={embedded ? "flex min-h-[52px] items-center justify-between gap-3 py-2" : compact ? "flex flex-col gap-1" : "space-y-2"}>
       {compact ? (
         <Label className="text-xs font-semibold">Tag rules</Label>
       ) : embedded ? (
-        <span className="text-sm font-medium text-foreground">Find &amp; replace rules</span>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-sm text-foreground">Tag rules</span>
+          <span className="text-xs text-muted-foreground">{summary ? `${summary} rules` : "Replace or append exact tags"}</span>
+        </div>
       ) : (
         <span className="text-xs font-medium text-muted-foreground flex items-center gap-2">
           <InfoTooltip
@@ -374,6 +376,17 @@ function TagRulesEditor({
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogTrigger asChild>
+          {embedded ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={summary ? `Edit tag rules (${summary})` : "Edit tag rules"}
+              className="h-9 shrink-0 px-3 text-xs"
+            >
+              Edit
+            </Button>
+          ) : (
           <Button
             type="button"
             variant="outline"
@@ -388,6 +401,7 @@ function TagRulesEditor({
               <span className={cn("text-muted-foreground", compact ? "text-[10px]" : "text-xs")}>{summary}</span>
             )}
           </Button>
+          )}
         </DialogTrigger>
         <DialogContent className="sm:max-w-[540px] p-0 gap-0 overflow-hidden">
           <DialogHeader className="p-5 pb-3">
@@ -397,7 +411,9 @@ function TagRulesEditor({
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="h-[400px] border-t border-border/50">
+          {/* Grows with its rules up to a cap, then scrolls: no empty block
+              under a single rule. */}
+          <div className="max-h-[min(400px,60dvh)] overflow-y-auto overscroll-contain border-t border-border/50">
             <div className="px-5 py-4 flex flex-col gap-5">
               <TagRulesGroup
                 icon={<Replace className="h-3.5 w-3.5" />}
@@ -493,7 +509,7 @@ function TagRulesEditor({
                 ))}
               </TagRulesGroup>
             </div>
-          </ScrollArea>
+          </div>
 
           <DialogFooter className="p-4 bg-secondary/20 border-t border-border/50 flex-row justify-end">
             <Button size="sm" onClick={() => handleOpenChange(false)} className="px-6">
@@ -624,8 +640,9 @@ interface TagsManagementPanelProps {
    * labels + hints instead of ⓘ tooltips and preset-only numeric filters.
    */
   embedded?: boolean
-  /** Which section to render. Defaults to both. */
-  section?: "all" | "filters" | "edits"
+  /** Which section to render. Defaults to both. Embedded only: "edits" is
+   *  Add + Remove, and "rules" is the Tag rules row on its own. */
+  section?: "all" | "filters" | "edits" | "rules"
   /** Embedded "filters": the blacklist editor trigger, shown as a row. */
   blacklistSlot?: React.ReactNode
   blacklistCount?: number
@@ -803,6 +820,19 @@ export function TagsManagementPanel({
           disabledReason={isEmbedded ? "turn on character names" : "turn on Character Tags"}
         />
       </>
+  )
+
+  const tagRulesEditor = (
+    <TagRulesEditor
+      findInput={findInput}
+      replaceInput={replaceInput}
+      setFindInput={setFindInput}
+      setReplaceInput={setReplaceInput}
+      appendRules={tagAppendRules}
+      setAppendRules={setTagAppendRules}
+      compact={isCompact}
+      embedded={isEmbedded}
+    />
   )
 
   const editsBody = (
@@ -992,8 +1022,10 @@ export function TagsManagementPanel({
         </div>
 
         {/* Tag Exclusion — moved here from the generation options on the main
-            panel: it only ever filters the "Tags to Add" list above. */}
-        {isEmbedded && setSmartTagExclusion && (
+            panel: it only ever filters the "Tags to Add" list above, so it
+            shows once that list has tags (or when it's off, so a changed
+            setting is never hidden). */}
+        {isEmbedded && setSmartTagExclusion && (addInput.trim() !== "" || smartTagExclusion === false) && (
           <div className="-mt-1 flex items-center justify-between gap-3">
             <label htmlFor="smart-exclusion-embedded" className="flex cursor-pointer flex-col gap-0.5">
               <span className="text-sm text-foreground">Skip added tags that don&apos;t fit the image</span>
@@ -1053,18 +1085,13 @@ export function TagsManagementPanel({
           </div>
         </div>
 
-        <TagRulesEditor
-          findInput={findInput}
-          replaceInput={replaceInput}
-          setFindInput={setFindInput}
-          setReplaceInput={setReplaceInput}
-          appendRules={tagAppendRules}
-          setAppendRules={setTagAppendRules}
-          compact={isCompact}
-          embedded={isEmbedded}
-        />
+        {/* Embedded: Tag rules render on their own (section "rules"),
+            under Customize prompt's Advanced. */}
+        {!isEmbedded && tagRulesEditor}
       </>
   )
+
+  if (isEmbedded && section === "rules") return tagRulesEditor
 
   if (isEmbedded) {
     const resetLink = (label: string, onClick: () => void) => (
@@ -1121,12 +1148,8 @@ export function TagsManagementPanel({
             )}
           </>
         )}
-        {section !== "filters" && (
-          <>
-            {editsBody}
-            {activeEditCount > 0 && resetLink("Clear tag edits", resetEdits)}
-          </>
-        )}
+        {/* Edits are cleared by Customize prompt's "Reset to defaults". */}
+        {section !== "filters" && editsBody}
       </div>
     )
   }
