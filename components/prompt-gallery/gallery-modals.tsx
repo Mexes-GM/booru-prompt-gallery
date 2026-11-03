@@ -1,6 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import dynamic from "next/dynamic"
+import { loadGlobalWeightsModal, loadQuickTeachModal, loadReversePromptParserModal } from "@/components/prompt-gallery/gallery-modals-loader"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,10 +14,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 
-const QuickTeachModal = dynamic(() => import("@/components/quick-teach-modal").then(m => m.QuickTeachModal), { ssr: false, loading: () => null })
-const ReversePromptParserModal = dynamic(() => import("@/components/prompt-gallery/reverse-prompt-parser-modal").then(m => m.ReversePromptParserModal), { ssr: false, loading: () => null })
-const GlobalWeightsModal = dynamic(() => import("@/components/prompt-gallery/global-weights-modal").then(m => m.GlobalWeightsModal), { ssr: false, loading: () => null })
+const QuickTeachModal = dynamic(() => loadQuickTeachModal().then(m => m.QuickTeachModal), { ssr: false, loading: () => null })
+const ReversePromptParserModal = dynamic(() => loadReversePromptParserModal().then(m => m.ReversePromptParserModal), { ssr: false, loading: () => null })
+const GlobalWeightsModal = dynamic(() => loadGlobalWeightsModal().then(m => m.GlobalWeightsModal), { ssr: false, loading: () => null })
 const SupportModal = dynamic(() => import("@/components/support-modal").then(m => m.SupportModal), { ssr: false, loading: () => null })
+
+/** False until `open` is first true, then true for good: each dialog's code
+ *  loads on first use, and the dialog stays mounted to animate closed. */
+function useOpenedOnce(open: boolean): boolean {
+  const [opened, setOpened] = useState(open)
+  if (open && !opened) setOpened(true)
+  return opened || open
+}
 
 interface GalleryModalsProps {
   onTeachSuccess: () => void
@@ -75,18 +85,22 @@ export function GalleryModals({
   setFolderToDelete,
   onConfirmDeleteFolder,
 }: GalleryModalsProps) {
+  const quickTeachOpened = useOpenedOnce(isQuickTeachOpen)
+  const globalWeightsOpened = useOpenedOnce(isGlobalWeightsModalOpen)
+  const reverseParserOpened = useOpenedOnce(isReverseParserModalOpen)
+
   return (
     <>
       <SupportModal />
 
-      <QuickTeachModal
+      {quickTeachOpened && <QuickTeachModal
         open={isQuickTeachOpen}
         onOpenChange={setIsQuickTeachOpen}
         tagOverrides={tagOverrides}
         onSuccess={onTeachSuccess}
-      />
+      />}
 
-      <GlobalWeightsModal
+      {globalWeightsOpened && <GlobalWeightsModal
         open={isGlobalWeightsModalOpen}
         onOpenChange={setIsGlobalWeightsModalOpen}
         weights={globalWeights}
@@ -95,13 +109,13 @@ export function GalleryModals({
         onRemoveWeight={onRemoveGlobalWeight}
         onClearWeights={onClearGlobalWeights}
         onSaveWeight={onGlobalWeightChange}
-      />
+      />}
 
-      <ReversePromptParserModal
+      {reverseParserOpened && <ReversePromptParserModal
         open={isReverseParserModalOpen}
         onOpenChange={setIsReverseParserModalOpen}
         onImport={onImportRawPrompt}
-      />
+      />}
 
       <AlertDialog open={!!folderToDelete} onOpenChange={(open) => !open && setFolderToDelete(null)}>
         <AlertDialogContent>

@@ -56,7 +56,6 @@ import dynamic from "next/dynamic"
 import { getCachedTagOverrides } from "@/lib/supabase/client-queries"
 import { DeploymentStatusBadges, MirrorLink } from "@/components/prompt-gallery/deployment-status"
 
-const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
 
 import pkg from "@/package.json"
 import { useToast } from "@/hooks/use-toast"
@@ -174,6 +173,7 @@ import { useDebounce } from "@/hooks/use-debounce"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { GalleryModals } from "@/components/prompt-gallery/gallery-modals"
+import { loadGlobalWeightsModal } from "@/components/prompt-gallery/gallery-modals-loader"
 import { SiteCornerMenu } from "@/components/prompt-gallery/site-corner-menu"
 import { MainTour } from "@/components/prompt-gallery/main-tour"
 import { FeatureIntro } from "@/components/prompt-gallery/feature-intro"
@@ -187,7 +187,7 @@ const loadPromptGenerationOptionsPanel = () => import("@/components/prompt-galle
 const TagsManagementPanel = lazy(() => loadTagsManagementPanel().then(m => ({ default: m.TagsManagementPanel })))
 const PromptGenerationOptionsPanel = lazy(() => loadPromptGenerationOptionsPanel().then(m => ({ default: m.PromptGenerationOptionsPanel })))
 const preloadFiltersSection = () => { void loadTagsManagementPanel() }
-const preloadPromptSection = () => { void loadTagsManagementPanel(); void loadPromptGenerationOptionsPanel() }
+const preloadPromptSection = () => { void loadTagsManagementPanel(); void loadPromptGenerationOptionsPanel(); void loadGlobalWeightsModal() }
 const preloadMode = (mode: "browse" | "merge" | "pack") => {
   if (mode === "merge") void loadMergeStickyFooter()
   if (mode === "pack") { void loadPackEntryModal(); void loadPackSourceModal(); void loadPackBuilderStickyFooter() }

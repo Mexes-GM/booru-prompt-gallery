@@ -14,6 +14,7 @@ import { ChevronDown, GraduationCap, Heart, History, Sparkles, Wrench } from "lu
 import { SEGMENT_PILL_SPRING } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { CardScaleControl } from "@/components/prompt-gallery/card-scale-control"
+import { preloadToolDialogs } from "@/components/prompt-gallery/gallery-modals-loader"
 
 type Mode = "browse" | "merge" | "pack"
 
@@ -190,7 +191,7 @@ export function GalleryToolbar({
 
         <div className="mx-1 hidden h-5 w-px bg-border sm:block" />
 
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => { if (open) preloadToolDialogs() }}>
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="outline" className="h-11 gap-2 px-3 sm:h-10">
               <Wrench className="h-4 w-4" />
