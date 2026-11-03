@@ -325,10 +325,8 @@ const AiConvertStickyFooterComponent = ({
           {/* Border Glow Effect */}
           {!shouldReduceMotion && (
             <div className="absolute inset-0 z-[-1] overflow-hidden rounded-2xl pointer-events-none">
-              <motion.div
-                animate={{ opacity: [0.6, 1, 0.6] }}
-                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--primary)_14%,transparent)_0%,transparent_65%)]"
+              <div
+                className="absolute inset-0 opacity-80 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--primary)_14%,transparent)_0%,transparent_65%)]"
               />
             </div>
           )}
@@ -648,11 +646,8 @@ const AiConvertStickyFooterComponent = ({
               >
                 {isLoading ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-4">
-                    <div className="relative flex items-center justify-center">
-                      <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-primary to-accent opacity-50 blur animate-pulse" />
-                      <div className="relative bg-background rounded-full p-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-primary-text" aria-hidden="true" />
-                      </div>
+                    <div className="rounded-full bg-primary/10 p-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary-text" aria-hidden="true" />
                     </div>
                     <span className="text-xs text-muted-foreground animate-pulse font-medium">Translating tags into natural language…</span>
                   </div>
@@ -667,7 +662,7 @@ const AiConvertStickyFooterComponent = ({
                 ) : (
                   <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground/60 select-none">
                     <Sparkles
-                      className={cn("h-6 w-6 text-primary-text/30 mb-1.5", !shouldReduceMotion && "animate-pulse")}
+                      className="h-6 w-6 text-primary-text/30 mb-1.5"
                       aria-hidden="true"
                     />
                     <p className="text-xs italic">Waiting for input… click Convert on any card to get started</p>

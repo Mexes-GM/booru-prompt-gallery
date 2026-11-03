@@ -561,7 +561,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
                   title="Manage active global weights"
                   aria-label="Manage global tag weights"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:bg-primary-foreground transition-colors shrink-0 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:bg-primary-foreground transition-colors shrink-0" />
                   <span className="leading-none tracking-tight">Manage</span>
                 </button>
               </motion.div>
