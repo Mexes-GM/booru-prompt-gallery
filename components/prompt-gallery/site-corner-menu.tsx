@@ -17,8 +17,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Activity, HelpCircle, Info, MessageSquarePlus, MoreHorizontal, Shield } from "lucide-react"
 import { CARD_SCALE_STEPS } from "@/components/prompt-gallery/card-scale-control"
+import { preloadMainTour } from "@/components/prompt-gallery/main-tour-loader"
+import { useFeedbackPrefill } from "@/components/feedback-prefill-context"
 
-const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
+const loadFeedbackDialog = () => import("@/components/feedback-dialog")
+const FeedbackDialog = dynamic(() => loadFeedbackDialog().then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
 
 interface SiteCornerMenuProps {
   scaleValue: number[]
@@ -40,12 +43,19 @@ interface SiteCornerMenuProps {
 export function SiteCornerMenu({ scaleValue, setScaleValue, onOpenTour }: SiteCornerMenuProps) {
   const { theme, setTheme } = useTheme()
   const [feedbackOpen, setFeedbackOpen] = useState(false)
+  // The dialog mounts when first needed: opened from this menu, or asked for
+  // by an error toast's "Report" button (it picks that request up on mount).
+  const { request: feedbackRequest } = useFeedbackPrefill()
+  const [feedbackMounted, setFeedbackMounted] = useState(false)
+  if ((feedbackOpen || feedbackRequest) && !feedbackMounted) setFeedbackMounted(true)
 
   return (
     <div className="absolute right-4 top-3 z-30 flex items-center gap-1 sm:right-6 sm:top-4">
       <UserNav />
 
-      <DropdownMenu>
+      {/* Opening the menu fetches the tour's and the feedback form's code,
+          so "Replay tour" and "Send feedback" open at once. */}
+      <DropdownMenu onOpenChange={(open) => { if (open) { preloadMainTour(); void loadFeedbackDialog() } }}>
         {/* No Tooltip wrapper: nesting TooltipTrigger asChild + DropdownMenuTrigger
             asChild on one <button> triggers a Radix ref loop (React #185, see
             SENTRY-FULVOUS-ANCHOR-7). The aria-label names the button. */}
@@ -113,7 +123,7 @@ export function SiteCornerMenu({ scaleValue, setScaleValue, onOpenTour }: SiteCo
       </DropdownMenu>
 
       {/* Always mounted: toastError() "Report" buttons open it pre-filled. */}
-      <FeedbackDialog triggerVariant="none" open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+      {feedbackMounted && <FeedbackDialog triggerVariant="none" open={feedbackOpen} onOpenChange={setFeedbackOpen} />}
     </div>
   )
 }

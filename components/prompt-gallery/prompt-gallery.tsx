@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue } from "react"
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -56,7 +56,6 @@ import dynamic from "next/dynamic"
 import { getCachedTagOverrides } from "@/lib/supabase/client-queries"
 import { DeploymentStatusBadges, MirrorLink } from "@/components/prompt-gallery/deployment-status"
 
-const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
 
 import pkg from "@/package.json"
 import { useToast } from "@/hooks/use-toast"
@@ -143,7 +142,8 @@ const BlacklistManager = dynamic(() => import("@/components/prompt-gallery/black
 import { NoResultsState } from "@/components/prompt-gallery/no-results-state"
 
 import { useMergeMode } from "@/hooks/use-merge-mode"
-const MergeStickyFooter = dynamic(() => import("./merge-sticky-footer").then(m => m.MergeStickyFooter), { ssr: false, loading: () => null })
+const loadMergeStickyFooter = () => import("./merge-sticky-footer")
+const MergeStickyFooter = dynamic(() => loadMergeStickyFooter().then(m => m.MergeStickyFooter), { ssr: false, loading: () => null })
 const AiConvertStickyFooter = dynamic(() => import("./ai-convert-sticky-footer").then(m => m.AiConvertStickyFooter), { ssr: false, loading: () => null })
 import type { ConvertMeta } from "./ai-convert-sticky-footer"
 import { usePackMode } from "@/hooks/use-pack-mode"
@@ -154,9 +154,14 @@ import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
 import { searchedCharacterOf } from "@/lib/pack/character-focus"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
-import { PackSourceModal, type PackSourceAnswers } from "./pack-source-modal"
-import { PackEntryModal } from "./pack-entry-modal"
-const PackBuilderStickyFooter = dynamic(() => import("./pack-builder-sticky-footer").then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
+import type { PackSourceAnswers } from "./pack-source-modal"
+// Pack Mode's dialogs and builder load when Pack is first picked (or hovered).
+const loadPackEntryModal = () => import("./pack-entry-modal")
+const loadPackSourceModal = () => import("./pack-source-modal")
+const loadPackBuilderStickyFooter = () => import("./pack-builder-sticky-footer")
+const PackEntryModal = dynamic(() => loadPackEntryModal().then(m => m.PackEntryModal), { ssr: false, loading: () => null })
+const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSourceModal), { ssr: false, loading: () => null })
+const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, PenLine, SlidersHorizontal } from "lucide-react"
 import { ControlSection } from "@/components/prompt-gallery/control-section"
@@ -168,13 +173,36 @@ import { useDebounce } from "@/hooks/use-debounce"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { usePreferencesSync } from "@/hooks/use-preferences-sync"
 import { GalleryModals } from "@/components/prompt-gallery/gallery-modals"
+import { loadGlobalWeightsModal } from "@/components/prompt-gallery/gallery-modals-loader"
 import { SiteCornerMenu } from "@/components/prompt-gallery/site-corner-menu"
 import { MainTour } from "@/components/prompt-gallery/main-tour"
 import { FeatureIntro } from "@/components/prompt-gallery/feature-intro"
 import { recordPromptCopy } from "@/lib/support-prompt"
 import { GalleryHero } from "@/components/prompt-gallery/gallery-hero"
-import { TagsManagementPanel } from "@/components/prompt-gallery/tags-management-panel"
-import { PromptGenerationOptionsPanel } from "@/components/prompt-gallery/prompt-generation-options-panel"
+// The two option sections' content loads when a section header is hovered,
+// focused or pressed. React.lazy, not next/dynamic: ControlSection holds the
+// section closed in its own Suspense boundary until the content is ready.
+const loadTagsManagementPanel = () => import("@/components/prompt-gallery/tags-management-panel")
+const loadPromptGenerationOptionsPanel = () => import("@/components/prompt-gallery/prompt-generation-options-panel")
+const TagsManagementPanel = lazy(() => loadTagsManagementPanel().then(m => ({ default: m.TagsManagementPanel })))
+const PromptGenerationOptionsPanel = lazy(() => loadPromptGenerationOptionsPanel().then(m => ({ default: m.PromptGenerationOptionsPanel })))
+const preloadFiltersSection = () => { void loadTagsManagementPanel() }
+const preloadPromptSection = () => { void loadTagsManagementPanel(); void loadPromptGenerationOptionsPanel(); void loadGlobalWeightsModal() }
+const preloadMode = (mode: "browse" | "merge" | "pack") => {
+  if (mode === "merge") void loadMergeStickyFooter()
+  if (mode === "pack") { void loadPackEntryModal(); void loadPackSourceModal(); void loadPackBuilderStickyFooter() }
+}
+
+/**
+ * False until `active` is first true, then true for good. Code-split
+ * dialogs and footers render from their first opening on, so their code
+ * loads only when needed and they stay mounted to animate closed.
+ */
+function useMountedOnceActive(active: boolean): boolean {
+  const [mounted, setMounted] = useState(active)
+  if (active && !mounted) setMounted(true)
+  return mounted || active
+}
 import { QueryStatusPanel } from "@/components/prompt-gallery/query-status-panel"
 import { FavoritesFolderTabs } from "@/components/prompt-gallery/favorites-folder-tabs"
 import { GalleryFooter } from "@/components/prompt-gallery/gallery-footer"
@@ -659,9 +687,12 @@ export function PromptGallery() {
     if (top !== undefined && Math.abs(top - 16) > 8) {
       window.scrollTo({ top: window.scrollY + top - 16, behavior: "instant" })
     }
-    setPromptOptionsOpen(true)
-    // The setting renders once the section (or the mobile sheet) has opened.
-    window.setTimeout(() => document.getElementById("prompt-format-embedded")?.focus({ preventScroll: true }), 350)
+    // Opened once its content has loaded; the setting renders when the
+    // section (or the mobile sheet) has opened.
+    void Promise.all([loadTagsManagementPanel(), loadPromptGenerationOptionsPanel()]).finally(() => {
+      setPromptOptionsOpen(true)
+      window.setTimeout(() => document.getElementById("prompt-format-embedded")?.focus({ preventScroll: true }), 350)
+    })
   }, [])
 
   // Folder Delete State
@@ -723,6 +754,7 @@ export function PromptGallery() {
   // Extract stable mergeMode pieces to avoid dependency churn
   const mergeModeIsMergeMode = mergeMode.isMergeMode
   const mergeModeDisableMergeMode = mergeMode.disableMergeMode
+  const mergeFooterMounted = useMountedOnceActive(mergeModeIsMergeMode)
   const mergeModeToggleMergeMode = mergeMode.toggleMergeMode
   const mergeModeSelectedPosts = mergeMode.selectedPosts
   const mergeModeTogglePostPart = mergeMode.togglePostPart
@@ -776,6 +808,10 @@ export function PromptGallery() {
     })
   })
   const [packSourceOpen, setPackSourceOpen] = useState(false)
+  const packSourceShown = packModeIsPackMode && packMode.hasBase && packSourceOpen
+  const packEntryMounted = useMountedOnceActive(packEntryOpen)
+  const packSourceMounted = useMountedOnceActive(packSourceShown)
+  const packBuilderMounted = useMountedOnceActive(packModeIsPackMode)
   // Curated per-slot vocabulary that tops up sparse pools (rating-aware).
   const packAxisFallbacks = usePackAxisFallbacks(packMode.isPackMode, packSourceAnswers.ratingMode)
   // Generated prompts follow the source's content rating (see contentRating).
@@ -1065,6 +1101,7 @@ export function PromptGallery() {
 
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
+  const aiConvertFooterMounted = useMountedOnceActive(isAiConvertMode)
   const [aiConvertTags, setAiConvertTags] = useState("")
   const [aiConvertImage, setAiConvertImage] = useState<string | undefined>(undefined)
   const [aiConvertMeta, setAiConvertMeta] = useState<ConvertMeta | undefined>(undefined)
@@ -1756,6 +1793,7 @@ export function PromptGallery() {
                     }}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onOpenQuickTeach={() => setIsQuickTeachOpen(true)}
+                    onModeIntent={preloadMode}
                     scaleValue={scaleValue}
                     setScaleValue={setScaleValue}
                   />
@@ -1814,6 +1852,7 @@ export function PromptGallery() {
                           icon={<SlidersHorizontal />}
                           open={filtersOpen}
                           onOpenChange={setFiltersOpen}
+                          onIntent={preloadFiltersSection}
                           data-tour="search-filters"
                         >
                           <TagsManagementPanel
@@ -1870,6 +1909,7 @@ export function PromptGallery() {
                           wide
                           open={promptOptionsOpen}
                           onOpenChange={setPromptOptionsOpen}
+                          onIntent={preloadPromptSection}
                           data-tour="customize-prompt"
                         >
                           {/* Two columns on desktop (Tags | Output) so the whole
@@ -2203,7 +2243,7 @@ export function PromptGallery() {
           }
         }}
       />
-      <MergeStickyFooter
+      {mergeFooterMounted && <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}
         mergedPrompt={mergeMode.mergedPrompt}
@@ -2218,15 +2258,15 @@ export function PromptGallery() {
         onRandomize={() => mergeMode.setRandomSelection(finalPosts)}
         randomSettings={mergeMode.randomSettings}
         setRandomSettings={mergeMode.setRandomSettings}
-      />
+      />}
       <NaturalPromptStatus />
-      <AiConvertStickyFooter
+      {aiConvertFooterMounted && <AiConvertStickyFooter
         isOpen={isAiConvertMode}
         tags={aiConvertTags}
         image={aiConvertImage}
         meta={aiConvertMeta}
         onExit={() => setIsAiConvertMode(false)}
-      />
+      />}
       {packModeIsPackMode && packFetcherActive && (
         <PackSeedFetcher
           key={JSON.stringify(packSourceAnswers)}
@@ -2235,24 +2275,24 @@ export function PromptGallery() {
           onReady={handlePackSeedSearchReady}
         />
       )}
-      <PackEntryModal
+      {packEntryMounted && <PackEntryModal
         isOpen={packEntryOpen}
         initialPrompt={packMode.basePrompt || userPreferences.getLastPackBasePrompt()}
         startInPromptView={packEntryStartInPrompt}
         onChooseCard={() => setPackEntryOpen(false)}
         onSubmitPrompt={handleSubmitPackPrompt}
         onCancel={handlePackEntryCancel}
-      />
-      <PackSourceModal
-        open={packModeIsPackMode && packMode.hasBase && packSourceOpen}
+      />}
+      {packSourceMounted && <PackSourceModal
+        open={packSourceShown}
         answers={packSourceAnswers}
         onApply={handleApplyPackSourceAnswers}
         onCancel={() => setPackSourceOpen(false)}
         currentSearchTags={search.searchTags}
         postCount={packSeedSnapshot?.postCount ?? 0}
         ratingBreakdown={packSeedSnapshot?.ratings}
-      />
-      <PackBuilderStickyFooter
+      />}
+      {packBuilderMounted && <PackBuilderStickyFooter
         isOpen={packModeIsPackMode}
         baseCard={packMode.baseCard}
         basePrompt={packMode.basePrompt}
@@ -2330,7 +2370,7 @@ export function PromptGallery() {
         }}
         onCopyAll={(text) => copyToClipboard(text, 0, true)}
         onResetLearning={packMode.resetLearning}
-      />
+      />}
 
       <GalleryModals
         onTeachSuccess={refreshOverrides}
