@@ -623,7 +623,7 @@ export function PromptGallery() {
     outfitMode, setOutfitMode,
     outfitStyles, setOutfitStyles,
     outfitDetail, setOutfitDetail,
-    outfitSettings,
+    outfitSettings, outfitCount,
   } = useOutfitSettings()
 
   const [excludeInput, setExcludeInput] = usePersistentState(
@@ -2006,6 +2006,7 @@ export function PromptGallery() {
                                 setOutfitStyles={setOutfitStyles}
                                 outfitDetail={outfitDetail}
                                 setOutfitDetail={setOutfitDetail}
+                                outfitCount={outfitCount}
                               />
                             </div>
                             </div>

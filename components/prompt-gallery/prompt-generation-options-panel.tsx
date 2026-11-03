@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import type { BackgroundMode } from "@/lib/background-detector"
 import type { MatchStrictness } from "@/lib/background-context"
 import { OUTFIT_STYLES, type OutfitDetail, type OutfitMode, type OutfitStyle } from "@/lib/outfit-swap"
+import { Flame, Flower2, Heart, Leaf, PartyPopper, Snowflake, Sun, Waves, type LucideIcon } from "lucide-react"
 import { PromptFormatSetting } from "./prompt-format-setting"
 
 const OUTFIT_MODES: { value: OutfitMode; label: string }[] = [
@@ -21,21 +22,28 @@ const OUTFIT_MODES: { value: OutfitMode; label: string }[] = [
   { value: "random", label: "Random outfit" },
 ]
 
-const OUTFIT_STYLE_LABELS: Record<OutfitStyle, string> = {
-  spring: "Spring",
-  summer: "Summer",
-  autumn: "Autumn",
-  winter: "Winter",
-  party: "Party",
-  swimwear: "Swimwear",
-  lingerie: "Lingerie",
-  sexy: "Sexy",
+// Seasons on the first row, occasions on the second (OUTFIT_STYLES order).
+const OUTFIT_STYLE_META: Record<OutfitStyle, { label: string; Icon: LucideIcon }> = {
+  spring: { label: "Spring", Icon: Flower2 },
+  summer: { label: "Summer", Icon: Sun },
+  autumn: { label: "Autumn", Icon: Leaf },
+  winter: { label: "Winter", Icon: Snowflake },
+  party: { label: "Party", Icon: PartyPopper },
+  swimwear: { label: "Swimwear", Icon: Waves },
+  lingerie: { label: "Lingerie", Icon: Heart },
+  sexy: { label: "Sexy", Icon: Flame },
 }
 
 const OUTFIT_DETAILS: { value: OutfitDetail; label: string; hint: string }[] = [
-  { value: "simple", label: "Main pieces", hint: "Top, bottom and shoes." },
-  { value: "full", label: "Full outfit", hint: "Also legwear, bag, jewelry and other accessories." },
+  { value: "simple", label: "Main pieces", hint: "Top, bottom and shoes" },
+  { value: "full", label: "Full outfit", hint: "Plus legwear, bag and jewelry" },
 ]
+
+/** Shared look of the style and detail tiles: picked ones lift onto the panel surface. */
+const OUTFIT_TILE_CLASS =
+  "rounded-md border text-xs transition-[background-color,border-color,color] duration-150 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]"
+const OUTFIT_TILE_ON = "border-primary/60 bg-background text-foreground shadow-xs"
+const OUTFIT_TILE_OFF = "border-border/50 text-muted-foreground hover:border-border hover:bg-background/50 hover:text-foreground"
 
 /**
  * Labels + tooltip copy for the "Detailed Random" scene-matching strictness.
@@ -116,6 +124,8 @@ interface PromptGenerationOptionsPanelProps {
   outfitStyles?: OutfitStyle[]
   setOutfitStyles?: (styles: OutfitStyle[]) => void
   outfitDetail?: OutfitDetail
+  /** Outfits the chosen styles can draw from; null until the library loads. */
+  outfitCount?: number | null
   setOutfitDetail?: (detail: OutfitDetail) => void
 
   /**
@@ -188,6 +198,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   outfitStyles = [],
   setOutfitStyles: _setOutfitStyles,
   outfitDetail = "simple",
+  outfitCount = null,
   setOutfitDetail: _setOutfitDetail,
   variant = "embedded",
 }: PromptGenerationOptionsPanelProps) {
@@ -621,72 +632,60 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
                 transition={{ duration: 0.2, ease: EASE_OUT_STRONG }}
                 className="overflow-hidden"
               >
-                <div className="flex flex-col gap-3 border-l border-border/60 pb-2 pl-3">
+                {/* The mode's own tray: picks sit on the panel surface when on. */}
+                <div className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3">
                   <div className="flex flex-col gap-2">
-                    <span id="outfit-styles-label" className="text-sm text-foreground">Styles</span>
-                    <div role="group" aria-labelledby="outfit-styles-label" className="flex flex-wrap gap-1.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span id="outfit-styles-label" className="text-xs font-medium text-muted-foreground">Styles</span>
+                      {outfitCount !== null && outfitStyles.length > 0 && (
+                        <span className="text-[11px] tabular-nums text-muted-foreground">{outfitCount.toLocaleString("en")} outfits</span>
+                      )}
+                    </div>
+                    <div role="group" aria-labelledby="outfit-styles-label" className="grid grid-cols-4 gap-1">
                       {OUTFIT_STYLES.map((style) => {
                         const isOn = outfitStyles.includes(style)
+                        const { label, Icon } = OUTFIT_STYLE_META[style]
                         return (
                           <button
                             key={style}
                             type="button"
                             onClick={() => toggleOutfitStyle(style)}
                             aria-pressed={isOn}
-                            className={cn(
-                              "h-7 rounded-full border px-2.5 text-xs font-medium transition-colors select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:scale-[0.97]",
-                              isOn
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border bg-background text-muted-foreground hover:text-foreground"
-                            )}
+                            className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-center gap-1.5 px-1 py-2", isOn ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
                           >
-                            {OUTFIT_STYLE_LABELS[style]}
+                            <Icon className={cn("h-4 w-4 transition-colors", isOn ? "text-primary-text" : "opacity-70")} aria-hidden="true" />
+                            <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
                           </button>
                         )
                       })}
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {outfitStyles.length === 0
-                        ? "Pick at least one style to change outfits."
-                        : "Only posts with one girl change. Beach and snow scenes get clothes that fit."}
-                    </span>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <span id="outfit-detail-label" className="text-sm text-foreground">Detail</span>
-                    <div
-                      role="group"
-                      aria-labelledby="outfit-detail-label"
-                      className="relative grid h-9 grid-cols-2 gap-1 rounded-lg border border-border/50 bg-muted/60 p-1"
-                    >
-                      {OUTFIT_DETAILS.map(({ value, label }) => {
+                    <span id="outfit-detail-label" className="text-xs font-medium text-muted-foreground">Detail</span>
+                    <div role="radiogroup" aria-labelledby="outfit-detail-label" className="grid grid-cols-2 gap-1">
+                      {OUTFIT_DETAILS.map(({ value, label, hint }) => {
                         const isSelected = outfitDetail === value
                         return (
                           <button
                             key={value}
                             type="button"
+                            role="radio"
+                            aria-checked={isSelected}
                             onClick={() => setOutfitDetail(value)}
-                            aria-pressed={isSelected}
-                            className={cn(
-                              "relative z-10 flex items-center justify-center rounded-md text-xs font-medium transition-colors select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:scale-[0.98]",
-                              isSelected ? "text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-                            )}
+                            className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-start gap-0.5 px-2.5 py-2 text-left", isSelected ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
                           >
-                            {isSelected && (
-                              <motion.div
-                                layoutId="outfit-detail-active-pill"
-                                className="absolute inset-0 rounded-md bg-primary shadow-xs"
-                                transition={shouldReduceMotion ? { duration: 0 } : SEGMENT_PILL_SPRING}
-                              />
-                            )}
-                            <span className="relative z-20">{label}</span>
+                            <span className="font-medium">{label}</span>
+                            <span className="text-[11px] leading-snug text-muted-foreground">{hint}</span>
                           </button>
                         )
                       })}
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {OUTFIT_DETAILS.find((d) => d.value === outfitDetail)?.hint}
-                    </span>
                   </div>
+                  <p className="border-t border-border/40 pt-2.5 text-[11px] leading-snug text-muted-foreground">
+                    {outfitStyles.length === 0
+                      ? "Pick at least one style to change outfits."
+                      : "Only posts with one girl change. Beach and snow scenes get clothes that fit."}
+                  </p>
                 </div>
               </motion.div>
             )}
