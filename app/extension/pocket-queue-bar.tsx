@@ -222,7 +222,7 @@ export function PocketQueueBar({ targetState, onTarget, onOpenWizard }: PocketQu
               title={`${tally.completed} completed, ${tally.failed} failed, ${tally.rejected} rejected, ${tally.stalled} stalled. Click to retry the ${lostCount} lost.`}
               onClick={requeueLost}
             >
-              <RotateCcw className={`w-3 h-3 ${isRequeuing && !lowMotion ? "animate-spin" : ""}`} />
+              <RotateCcw className={`w-3 h-3 ${isRequeuing ? (lowMotion ? "animate-spin-reduced" : "animate-spin") : ""}`} />
               {isRequeuing ? "Retrying…" : `${lostCount} lost · Retry`}
             </Button>
             <Button
@@ -267,7 +267,7 @@ export function PocketQueueBar({ targetState, onTarget, onOpenWizard }: PocketQu
             }`}
           >
             {targetState === "arming" ? (
-              <><Loader2 className={`w-3 h-3 ${lowMotion ? "" : "animate-spin"}`} /> Detecting…</>
+              <><Loader2 className={`w-3 h-3 ${lowMotion ? "animate-spin-reduced" : "animate-spin"}`} /> Detecting…</>
             ) : targetState === "waiting" ? (
               <><MousePointerClick className={`w-3 h-3 ${lowMotion ? "" : "animate-nudge"}`} /> Click field…</>
             ) : targetState === "selected" ? (

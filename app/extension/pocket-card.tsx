@@ -505,7 +505,7 @@ export const PocketCard = memo(function PocketCard({
             title="Send to generator (or double-click the card)"
           >
             {sendState === "queued"
-              ? <Loader2 className={`w-3.5 h-3.5 shrink-0 ${lowMotion ? "" : "animate-spin"}`} />
+              ? <Loader2 className={`w-3.5 h-3.5 shrink-0 ${lowMotion ? "animate-spin-reduced" : "animate-spin"}`} />
               : <Send className="w-3.5 h-3.5 shrink-0" />}
             <span className="ml-1 truncate">{sendState === "queued" ? "Queued" : "Send"}</span>
           </Button>
