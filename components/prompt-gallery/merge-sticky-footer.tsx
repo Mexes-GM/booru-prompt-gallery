@@ -187,10 +187,8 @@ const MergeStickyFooterComponent = ({
                     <div className="absolute inset-0 z-[-1] overflow-hidden rounded-2xl pointer-events-none">
                         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] bg-gradient-to-r from-transparent via-foreground/20 to-transparent opacity-50" />
                         {!lowMotion && (
-                            <motion.div
-                                animate={{ opacity: [0.6, 1, 0.6] }}
-                                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                                className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--primary)_14%,transparent)_0%,transparent_65%)]"
+                            <div
+                                className="absolute inset-0 opacity-80 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--primary)_14%,transparent)_0%,transparent_65%)]"
                             />
                         )}
                     </div>

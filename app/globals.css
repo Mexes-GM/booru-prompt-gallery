@@ -804,7 +804,8 @@ nav,
  * Desktop keeps the compact height; only touch devices get the larger hit area. */
 @media (pointer: coarse) {
   .card-content-small .button-group button,
-  .card-content-medium .button-group button {
+  .card-content-medium .button-group button,
+  .card-content-large .button-group button {
     min-height: 44px;
   }
   button,
@@ -842,6 +843,22 @@ input[type="number"] {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Reduced-motion stand-in for animate-spin: fades instead of rotating.
+   Use it directly where a spinner is gated on useLowMotion. */
+@keyframes spin-reduced {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-spin-reduced {
+  animation: spin-reduced 1.6s ease-in-out infinite;
+}
+
 /* Respect user's reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -852,7 +869,14 @@ input[type="number"] {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  
+
+  /* A frozen spinner reads as a hung page. Spinners only run while something
+     is loading, so they get a slow opacity pulse instead of the rotation. */
+  .animate-spin,
+  .animate-spin-reduced {
+    animation: spin-reduced 1.6s ease-in-out infinite !important;
+  }
+
   .card-hover {
     transform: none !important;
   }
