@@ -38,6 +38,7 @@ export function SearchWithAutocomplete({
   
   // Debounce logic
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null)
+  const requestIdRef = useRef(0)
 
   const getCurrentTag = (text: string, position: number) => {
     // Find the tag boundary around the cursor
@@ -66,12 +67,15 @@ export function SearchWithAutocomplete({
     cursorPositionRef.current = e.target.selectionStart || 0
 
     if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+    const requestId = ++requestIdRef.current
 
     const { tag } = getCurrentTag(newValue, e.target.selectionStart || 0)
 
     if (tag.length < 2) {
       setSuggestions([])
       setIsOpen(false)
+      setActiveIndex(-1)
+      setIsLoading(false)
       return
     }
 
@@ -79,13 +83,14 @@ export function SearchWithAutocomplete({
     debounceTimeout.current = setTimeout(async () => {
       try {
         const results = await searchTags(tag)
+        if (requestId !== requestIdRef.current) return
         setSuggestions(results)
         setIsOpen(results.length > 0)
         setActiveIndex(-1)
       } catch (error) {
         console.error("Autosuggest error:", error)
       } finally {
-        setIsLoading(false)
+        if (requestId === requestIdRef.current) setIsLoading(false)
       }
     }, 300)
   }
@@ -118,7 +123,22 @@ export function SearchWithAutocomplete({
     // We update the state, which updates the input value.
   }
 
+  // Escape closes the list, drops the highlighted suggestion and cancels any
+  // lookup still in flight, so a late response can't reopen it and Enter
+  // searches the text as typed.
+  const dismissSuggestions = () => {
+    if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+    requestIdRef.current++
+    setIsOpen(false)
+    setActiveIndex(-1)
+    setIsLoading(false)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && (isOpen || isLoading)) {
+      dismissSuggestions()
+      return
+    }
     if (!isOpen) return
 
     if (e.key === 'ArrowDown') {
@@ -137,7 +157,7 @@ export function SearchWithAutocomplete({
         setIsOpen(false)
       }
     } else if (e.key === 'Escape') {
-      setIsOpen(false)
+      dismissSuggestions()
     }
   }
 
