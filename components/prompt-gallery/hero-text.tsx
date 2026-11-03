@@ -41,7 +41,7 @@ export function HeroText({ onSocialClick }: { onSocialClick?: (href: string) => 
               rel="noopener noreferrer"
               onClick={onSocialClick ? () => onSocialClick(s.href) : undefined}
               aria-label={`Visit Mexes on ${s.label}`}
-              className="rounded-sm pointer-coarse:py-2 underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              className="rounded-sm pointer-coarse:relative pointer-coarse:py-2 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-[5px] pointer-coarse:after:-inset-x-px pointer-coarse:after:content-[''] underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             >
               {s.label}
             </a>

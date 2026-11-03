@@ -195,7 +195,7 @@ export function SearchBar({
           >
             <ShuffleLabel playKey={shuffleFx} />
           </button>
-          {/* Always mounted so it can animate: width 0 → 44px + fade/scale.
+          {/* Always mounted so it can animate: width 0 → 44px (instant) + fade/scale.
               `inert` while hidden keeps it out of the tab order and clicks. */}
           <button
             type="button"
@@ -212,7 +212,7 @@ export function SearchBar({
               width: isShuffle ? 44 : 0,
               opacity: isShuffle ? 1 : 0,
               borderLeftWidth: isShuffle ? 1 : 0,
-              transition: reduceMotion ? "none" : `width ${SHUFFLE_EASE}, opacity ${SHUFFLE_EASE}, border-width ${SHUFFLE_EASE}`,
+              transition: reduceMotion ? "none" : `opacity ${SHUFFLE_EASE}`,
             }}
             className="flex shrink-0 items-center justify-center overflow-hidden border-primary/40 text-primary-text transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-60"
           >

@@ -14,7 +14,7 @@ import { SOCIAL_URLS } from "@/lib/constants"
  */
 export function PanelLinkTabs() {
   return (
-    <div className="flex items-end gap-1">
+    <div className="flex items-end gap-1 pointer-coarse:gap-2.5">
       <SupportButton />
       <a
         id="github-repo"

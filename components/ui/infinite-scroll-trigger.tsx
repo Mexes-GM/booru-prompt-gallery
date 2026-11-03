@@ -106,7 +106,7 @@ export function InfiniteScrollTrigger({
  </div>
  ) : (
  <div className="flex flex-col items-center gap-3">
- <Button onClick={onIntersect} variant="outline" size="sm" className="gap-2">
+ <Button onClick={onIntersect} variant="outline" size="sm" className="gap-2 pointer-coarse:h-11">
  <ChevronDown className="w-4 h-4" />
  Load More
  </Button>
