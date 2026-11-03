@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useEffect, useId, useState, type ReactNode } from "react"
+import { memo } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { EASE_OUT_STRONG, SEGMENT_PILL_SPRING } from "@/lib/motion"
 import { Button } from "@/components/ui/button"
@@ -10,11 +10,10 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { usePostHog } from 'posthog-js/react'
 import { Switch } from "@/components/ui/switch"
-import { ChevronDown, Plus } from "lucide-react"
+import { Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { BackgroundMode } from "@/lib/background-detector"
 import type { MatchStrictness } from "@/lib/background-context"
-import { usePromptFormat } from "@/hooks/use-natural-prompt"
 import { PromptFormatSetting } from "./prompt-format-setting"
 
 /**
@@ -34,17 +33,14 @@ export const MATCH_STRICTNESS_DESCRIPTIONS: Record<MatchStrictness, string> = {
   strict: "Tries even harder to keep the scenery close to the original post.",
 }
 
-/** Background modes as Customize prompt names and explains them. */
-const BACKGROUND_MODES: { value: BackgroundMode; label: string; hint: string }[] = [
-  { value: "keep", label: "Keep original", hint: "The post's background tags stay as they are" },
-  { value: "remove_all", label: "Remove", hint: "Drops every background tag" },
-  { value: "force_simple", label: "Replace", hint: "Swaps background tags for the ones below" },
-  { value: "random", label: "Random plain", hint: "A random color, pattern or gradient per card" },
-  { value: "detailed_random", label: "Random scenery", hint: "A random detailed scene per card" },
+/** Background modes in Customize prompt (the extension keeps its own labels). */
+const BACKGROUND_MODES: { value: BackgroundMode; label: string }[] = [
+  { value: "keep", label: "Keep original" },
+  { value: "remove_all", label: "Remove all" },
+  { value: "force_simple", label: "Replace" },
+  { value: "random", label: "Simple random" },
+  { value: "detailed_random", label: "Detailed random" },
 ]
-
-/** Whether Customize prompt's Advanced group was left open (per browser). */
-const ADVANCED_OPEN_KEY = "customize-prompt-advanced-open"
 
 interface PromptGenerationOptionsPanelProps {
   /** Unused; kept so existing callers still compile. */
@@ -93,17 +89,9 @@ interface PromptGenerationOptionsPanelProps {
   backgroundMatchStrictness: MatchStrictness
   setBackgroundMatchStrictness: (val: MatchStrictness) => void
 
-  /** Embedded: "Add to every prompt" and "Remove from every prompt". */
-  tagEdits?: ReactNode
-  /** Embedded: the Tag rules row, shown under Advanced. */
-  tagRules?: ReactNode
-  /** Embedded: whether any tag rule applies (counts as an Advanced change). */
-  hasTagRules?: boolean
-
   /**
-   * "embedded" is Customize prompt on the main page: one column with the
-   * everyday controls first and the rest under Advanced. "compact" is the
-   * extension's settings: every control in a row, tighter markup.
+   * "embedded" is the Output column of Customize prompt on the main page;
+   * "compact" is the extension's settings, with tighter markup.
    */
   variant?: "compact" | "embedded"
 }
@@ -166,9 +154,6 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   setRandomBackgroundIncludeGradients: _setRandomBackgroundIncludeGradients,
   backgroundMatchStrictness,
   setBackgroundMatchStrictness: _setBackgroundMatchStrictness,
-  tagEdits,
-  tagRules,
-  hasTagRules = false,
   variant = "embedded",
 }: PromptGenerationOptionsPanelProps) {
   const posthog = usePostHog();
@@ -228,7 +213,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               value={simpleBackgroundReplacementTags}
               onChange={setSimpleBackgroundReplacementTags}
               debounceTime={400}
-              placeholder={isCompact ? "e.g., white background, simple background" : "simple background, white background"}
+              placeholder={isCompact ? "e.g., white background, simple background" : "e.g. simple background, white background"}
               className={cn("bg-background min-w-0 flex-1", isCompact ? "h-7 text-xs" : "h-9 text-sm")}
               aria-label="Tags to replace background with"
             />
@@ -472,149 +457,70 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
     )
   }
 
-  return (
-    <EmbeddedOptions
-      isAibooru={isAibooru}
-      includeCharacters={includeCharacters}
-      setIncludeCharacters={setIncludeCharacters}
-      optimizeTags={optimizeTags}
-      setOptimizeTags={setOptimizeTags}
-      prependAnimaArtist={prependAnimaArtist}
-      setPrependAnimaArtist={setPrependAnimaArtist}
-      experimentalPromptRules={experimentalPromptRules}
-      setExperimentalPromptRules={_setExperimentalPromptRules ? setExperimentalPromptRules : undefined}
-      autoAppendSearchTags={autoAppendSearchTags}
-      setAutoAppendSearchTags={setAutoAppendSearchTags}
-      removeLoRaTags={removeLoRaTags}
-      setRemoveLoRaTags={setRemoveLoRaTags}
-      removeQualityTags={removeQualityTags}
-      setRemoveQualityTags={setRemoveQualityTags}
-      globalWeightCount={globalWeightCount}
-      isGlobalWeightsPaused={isGlobalWeightsPaused}
-      openWeights={() => setIsGlobalWeightsModalOpen(true)}
-      backgroundMode={backgroundMode}
-      setBackgroundMode={setBackgroundMode}
-      backgroundSubOptions={renderBackgroundSubOptions("embedded")}
-      tagEdits={tagEdits}
-      tagRules={tagRules}
-      hasTagRules={hasTagRules}
-      trackSetting={trackSetting}
-    />
+  // "embedded": the Output column of Customize prompt. One switch per row,
+  // each with a plain one-line explanation instead of an ⓘ tooltip. Tag
+  // Exclusion lives under "Add to every prompt" in the Tags column, the
+  // only list it affects.
+  const options: { id: string; label: string; hint: string; checked: boolean; onChange: (v: boolean) => void }[] =
+    !isAibooru
+      ? [
+          { id: "include-characters", label: "Include character names", hint: "Keep the post's character tags", checked: includeCharacters, onChange: setIncludeCharacters },
+          { id: "smart-tag", label: "Merge redundant tags", hint: "“hair, long hair, white hair” → “long white hair”", checked: optimizeTags, onChange: setOptimizeTags },
+        ]
+      : [
+          { id: "remove-lora", label: "Remove LoRA tags", hint: "Strip <lora:…> tags from Aibooru prompts", checked: removeLoRaTags, onChange: setRemoveLoRaTags },
+          { id: "remove-quality", label: "Remove quality tags", hint: "Strip masterpiece, best quality, …", checked: removeQualityTags, onChange: setRemoveQualityTags },
+        ]
+  options.push(
+    { id: "auto-append-search-tags", label: "Add my search tags", hint: "Append the tags you searched for if the post lacks them", checked: autoAppendSearchTags, onChange: setAutoAppendSearchTags },
   )
-})
-
-/**
- * Customize prompt, one column: format first (it changes the prompt most),
- * then the tag lists, character names and tag weights. Everything else waits
- * under "Advanced", which says how many of its options differ from the
- * defaults and remembers whether it was left open.
- */
-function EmbeddedOptions({
-  isAibooru,
-  includeCharacters, setIncludeCharacters,
-  optimizeTags, setOptimizeTags,
-  prependAnimaArtist, setPrependAnimaArtist,
-  experimentalPromptRules, setExperimentalPromptRules,
-  autoAppendSearchTags, setAutoAppendSearchTags,
-  removeLoRaTags, setRemoveLoRaTags,
-  removeQualityTags, setRemoveQualityTags,
-  globalWeightCount, isGlobalWeightsPaused, openWeights,
-  backgroundMode, setBackgroundMode, backgroundSubOptions,
-  tagEdits, tagRules, hasTagRules,
-  trackSetting,
-}: {
-  isAibooru: boolean
-  includeCharacters: boolean
-  setIncludeCharacters: (v: boolean) => void
-  optimizeTags: boolean
-  setOptimizeTags: (v: boolean) => void
-  prependAnimaArtist: boolean
-  setPrependAnimaArtist: (v: boolean) => void
-  experimentalPromptRules: boolean
-  setExperimentalPromptRules?: (v: boolean) => void
-  autoAppendSearchTags: boolean
-  setAutoAppendSearchTags: (v: boolean) => void
-  removeLoRaTags: boolean
-  setRemoveLoRaTags: (v: boolean) => void
-  removeQualityTags: boolean
-  setRemoveQualityTags: (v: boolean) => void
-  globalWeightCount: number
-  isGlobalWeightsPaused: boolean
-  openWeights: () => void
-  backgroundMode: BackgroundMode
-  setBackgroundMode: (mode: BackgroundMode) => void
-  backgroundSubOptions: ReactNode
-  tagEdits?: ReactNode
-  tagRules?: ReactNode
-  hasTagRules: boolean
-  trackSetting: (setting: string, value: string | boolean) => void
-}) {
-  const { format } = usePromptFormat()
-  const advancedId = useId()
-  const [advancedOpen, setAdvancedOpen] = useState(() => {
-    if (typeof window === "undefined") return false
-    try {
-      return localStorage.getItem(ADVANCED_OPEN_KEY) === "true"
-    } catch {
-      return false
+  if (!isAibooru) {
+    options.push({ id: "prepend-anima-artist", label: "Start with @artist", hint: "Only for checkpoints that support Anima's @artist syntax", checked: prependAnimaArtist, onChange: setPrependAnimaArtist })
+    if (_setExperimentalPromptRules) {
+      options.push({ id: "experimental-prompt-rules", label: "Experimental rules", hint: "Drop leg tags you add from close shots and the tags of multi-panel posts. Can be wrong", checked: experimentalPromptRules, onChange: setExperimentalPromptRules })
     }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem(ADVANCED_OPEN_KEY, String(advancedOpen))
-    } catch {
-      // Storage may be unavailable (private mode); non-fatal.
-    }
-  }, [advancedOpen])
+  }
 
-  // @artist only means something to checkpoints that read tags; it stays
-  // visible while on, so an active option is never hidden.
-  const showArtist = !isAibooru && (format === "tags" || format === "anima" || prependAnimaArtist)
-
-  const advancedChanged =
-    (!isAibooru && !optimizeTags ? 1 : 0) +
-    (!autoAppendSearchTags ? 1 : 0) +
-    (!isAibooru && experimentalPromptRules ? 1 : 0) +
-    (backgroundMode !== "keep" ? 1 : 0) +
-    (hasTagRules ? 1 : 0)
-
-  const background = BACKGROUND_MODES.find((mode) => mode.value === backgroundMode) ?? BACKGROUND_MODES[0]
+  const backgroundLabel = BACKGROUND_MODES.find((mode) => mode.value === backgroundMode)?.label ?? BACKGROUND_MODES[0].label
 
   return (
-    <div className="flex flex-col" data-tour="generation-options">
-      <PromptFormatSetting onSettingChange={trackSetting} />
-      {showArtist && (
-        <SwitchRow id="prepend-anima-artist-embedded" label="Start with @artist" hint="For checkpoints that read Anima's @artist syntax" checked={prependAnimaArtist} onChange={setPrependAnimaArtist} />
-      )}
-
-      {tagEdits && <div className="mt-3 border-t border-border/60 pt-4">{tagEdits}</div>}
-
-      <div className="mt-3 flex flex-col border-t border-border/60 pt-1">
-        {isAibooru ? (
-          <>
-            <SwitchRow id="remove-lora-embedded" label="Remove LoRA tags" hint="Strip <lora:…> tags from Aibooru prompts" checked={removeLoRaTags} onChange={setRemoveLoRaTags} />
-            <SwitchRow id="remove-quality-embedded" label="Remove quality tags" hint="Strip masterpiece, best quality, …" checked={removeQualityTags} onChange={setRemoveQualityTags} />
-          </>
-        ) : (
-          <SwitchRow id="include-characters-embedded" label="Include character names" hint="Keep the post's character tags" checked={includeCharacters} onChange={setIncludeCharacters} />
-        )}
+    <div className="flex flex-col gap-4" data-tour="generation-options">
+      <div className="flex flex-col">
+        <PromptFormatSetting onSettingChange={trackSetting} />
+        {options.map((o) => (
+          <div key={o.id} className="flex min-h-[56px] items-center justify-between gap-3 border-b border-border/50 py-2">
+            <label htmlFor={`${o.id}-embedded`} className="flex min-w-0 cursor-pointer flex-col gap-0.5">
+              <span className="text-sm text-foreground">{o.label}</span>
+              <span className="text-xs text-muted-foreground">{o.hint}</span>
+            </label>
+            <Switch id={`${o.id}-embedded`} checked={o.checked} onCheckedChange={o.onChange} className="shrink-0" />
+          </div>
+        ))}
+        {/* Tag weights apply whenever one exists: no switch, just their state. */}
         {globalWeightCount > 0 ? (
-          <div className="flex min-h-[52px] items-center justify-between gap-3 py-2">
+          <div className="flex min-h-[56px] items-center justify-between gap-3 py-2">
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="text-sm text-foreground">Tag weights</span>
               <span className="text-xs text-muted-foreground">
                 {globalWeightCount} {isGlobalWeightsPaused ? "paused" : "active"}
               </span>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={openWeights} className="h-9 shrink-0 px-3 text-xs" aria-label={`Edit tag weights (${globalWeightCount} ${isGlobalWeightsPaused ? "paused" : "active"})`}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsGlobalWeightsModalOpen(true)}
+              className="h-8 shrink-0 px-2.5 text-xs"
+              aria-label={`Edit tag weights (${globalWeightCount} ${isGlobalWeightsPaused ? "paused" : "active"})`}
+            >
               Edit
             </Button>
           </div>
         ) : (
           <button
             type="button"
-            onClick={openWeights}
-            className="-ml-1 flex min-h-9 items-center gap-1.5 self-start rounded-md px-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setIsGlobalWeightsModalOpen(true)}
+            className="-ml-1 flex min-h-11 items-center gap-1.5 self-start rounded-md px-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             Add tag weights
@@ -622,54 +528,31 @@ function EmbeddedOptions({
         )}
       </div>
 
-      <div className="mt-2 border-t border-border/60 pt-1">
-        <button
-          type="button"
-          onClick={() => setAdvancedOpen((open) => !open)}
-          aria-expanded={advancedOpen}
-          aria-controls={advancedId}
-          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span className="text-sm font-medium text-foreground">
-            Advanced
-            {advancedChanged > 0 && <span className="font-normal text-muted-foreground"> · {advancedChanged} changed</span>}
-          </span>
-          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none", advancedOpen && "rotate-180")} aria-hidden="true" />
-        </button>
-        {advancedOpen && (
-          <div id={advancedId} className="flex flex-col pb-1">
-            {!isAibooru && (
-              <SwitchRow id="smart-tag-embedded" label="Merge redundant tags" hint="“hair, long hair, white hair” → “long white hair”" checked={optimizeTags} onChange={setOptimizeTags} />
-            )}
-            <SwitchRow id="auto-append-search-tags-embedded" label="Add my search tags" hint="Append the tags you searched for if the post lacks them" checked={autoAppendSearchTags} onChange={setAutoAppendSearchTags} />
-            {!isAibooru && setExperimentalPromptRules && (
-              <SwitchRow id="experimental-prompt-rules-embedded" label="Experimental rules" hint="Drop leg tags you add from close shots and the tags of multi-panel posts. Can be wrong" checked={experimentalPromptRules} onChange={setExperimentalPromptRules} />
-            )}
-            <div className="flex min-h-[52px] items-center justify-between gap-3 py-2">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <label htmlFor="background-handling-select-embedded" className="cursor-pointer text-sm text-foreground">Background</label>
-                <span id="background-options-desc-embedded" className="text-xs text-muted-foreground">{background.hint}</span>
-              </div>
-              <Select value={backgroundMode} onValueChange={(value) => setBackgroundMode(value as BackgroundMode)}>
-                <SelectTrigger
-                  id="background-handling-select-embedded"
-                  aria-describedby="background-options-desc-embedded"
-                  className="h-9 w-[9.5rem] shrink-0 bg-background text-xs"
-                >
-                  <SelectValue>{background.label}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {BACKGROUND_MODES.map((mode) => (
-                    <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {backgroundSubOptions}
-            {tagRules}
+      <div className="flex flex-col gap-2.5 border-t border-border/50 pt-3">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <label htmlFor="background-handling-select-embedded" className="cursor-pointer text-sm font-medium text-foreground">Background</label>
+            <span id="background-options-desc-embedded" className="text-xs text-muted-foreground">Change the post&apos;s scenery tags</span>
           </div>
-        )}
+          <div className="w-full sm:w-auto sm:min-w-[160px]">
+            <Select value={backgroundMode} onValueChange={(value) => setBackgroundMode(value as BackgroundMode)}>
+              <SelectTrigger
+                id="background-handling-select-embedded"
+                aria-describedby="background-options-desc-embedded"
+                className="h-8 bg-background text-xs"
+              >
+                <SelectValue>{backgroundLabel}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {BACKGROUND_MODES.map((mode) => (
+                  <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {renderBackgroundSubOptions("embedded")}
       </div>
     </div>
   )
-}
+})

@@ -60,7 +60,6 @@ const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then
 
 import pkg from "@/package.json"
 import { useToast } from "@/hooks/use-toast"
-import { ToastAction } from "@/components/ui/toast"
 import { toastError } from "@/lib/toast-error"
 import { describeSearchError } from "@/lib/booru/search-error-reason"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -576,7 +575,7 @@ export function PromptGallery() {
     setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
     setAutoAppendSearchTags, setExperimentalPromptRules,
   } = usePromptOptions()
-  const { format: promptFormat, fullDetail: promptFullDetail, setFormat: setPromptFormat, setFullDetail: setPromptFullDetail } = usePromptFormat()
+  const { format: promptFormat, fullDetail: promptFullDetail } = usePromptFormat()
 
   const [showCategoryTagBadges, setShowCategoryTagBadges] = useState(true)
 
@@ -1797,50 +1796,6 @@ export function PromptGallery() {
                       tagRuleCount > 0 ? plural(tagRuleCount, "tag rule") : null,
                     ].filter(Boolean).join(" · ") || "Defaults"
 
-                    // Every Customize prompt option back to its default, undoable.
-                    // Tag weights stay: they're saved data with their own dialog.
-                    const resetPromptOptions = () => {
-                      const snapshot = {
-                        promptFormat, promptFullDetail, promptOptions, addInput, excludeInput,
-                        findInput, replaceInput, tagAppendRules: tagAppendRules || [], backgroundMode,
-                        removeLoRaTags: search.removeLoRaTags, removeQualityTags: search.removeQualityTags,
-                      }
-                      setPromptFormat('tags')
-                      setPromptFullDetail(false)
-                      setPromptOptions({ includeCharacters: true, optimizeTags: true, smartTagExclusion: true, prependAnimaArtist: false, autoAppendSearchTags: true, experimentalPromptRules: false })
-                      setAddInput("")
-                      setExcludeInput("")
-                      setFindInput("")
-                      setReplaceInput("")
-                      setTagAppendRules([])
-                      setBackgroundMode('keep')
-                      search.setRemoveLoRaTags(false)
-                      search.setRemoveQualityTags(false)
-                      toast({
-                        title: "Prompt options reset",
-                        action: (
-                          <ToastAction
-                            altText="Undo resetting prompt options"
-                            onClick={() => {
-                              setPromptFormat(snapshot.promptFormat)
-                              setPromptFullDetail(snapshot.promptFullDetail)
-                              setPromptOptions(snapshot.promptOptions)
-                              setAddInput(snapshot.addInput)
-                              setExcludeInput(snapshot.excludeInput)
-                              setFindInput(snapshot.findInput)
-                              setReplaceInput(snapshot.replaceInput)
-                              setTagAppendRules(snapshot.tagAppendRules)
-                              setBackgroundMode(snapshot.backgroundMode)
-                              search.setRemoveLoRaTags(snapshot.removeLoRaTags)
-                              search.setRemoveQualityTags(snapshot.removeQualityTags)
-                            }}
-                          >
-                            Undo
-                          </ToastAction>
-                        ),
-                      })
-                    }
-
                     return (
                       <div className="relative grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start" data-tour="controls">
                         <ControlSection
@@ -1902,46 +1857,17 @@ export function PromptGallery() {
                           summary={promptSummary}
                           icon={<PenLine />}
                           accent
+                          wide
                           open={promptOptionsOpen}
                           onOpenChange={setPromptOptionsOpen}
-                          onReset={resetPromptOptions}
-                          resetLabel="Reset to defaults"
                           data-tour="customize-prompt"
                         >
-                          <PromptGenerationOptionsPanel
-                            variant="embedded"
-                            booruProvider={search.booruProvider}
-                            includeCharacters={includeCharacters}
-                            setIncludeCharacters={setIncludeCharacters}
-                            optimizeTags={optimizeTags}
-                            setOptimizeTags={setOptimizeTags}
-                            smartTagExclusion={smartTagExclusion}
-                            setSmartTagExclusion={setSmartTagExclusion}
-                            prependAnimaArtist={prependAnimaArtist}
-                            setPrependAnimaArtist={setPrependAnimaArtist}
-                            experimentalPromptRules={experimentalPromptRules}
-                            setExperimentalPromptRules={setExperimentalPromptRules}
-                            autoAppendSearchTags={autoAppendSearchTags}
-                            setAutoAppendSearchTags={setAutoAppendSearchTags}
-                            removeLoRaTags={search.removeLoRaTags}
-                            setRemoveLoRaTags={search.setRemoveLoRaTags}
-                            removeQualityTags={search.removeQualityTags}
-                            setRemoveQualityTags={search.setRemoveQualityTags}
-                            setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
-                            globalWeightCount={globalWeightCount}
-                            isGlobalWeightsPaused={isGlobalWeightsPaused}
-                            backgroundMode={backgroundMode}
-                            setBackgroundMode={setBackgroundMode}
-                            simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
-                            setSimpleBackgroundReplacementTags={setSimpleBackgroundReplacementTags}
-                            randomBackgroundPatterns={randomBackgroundPatterns}
-                            setRandomBackgroundPatterns={setRandomBackgroundPatterns}
-                            randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
-                            setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
-                            backgroundMatchStrictness={backgroundMatchStrictness}
-                            setBackgroundMatchStrictness={setBackgroundMatchStrictness}
-                            hasTagRules={tagRuleCount > 0}
-                            tagEdits={
+                          {/* Two columns on desktop (Tags | Output) so the whole
+                              section fits on screen without an inner scroll. */}
+                          <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-2">
+                            <div className="flex flex-col gap-3">
+                            <span className="text-xs font-semibold text-muted-foreground">Tags</span>
+                            <div>
                               <TagsManagementPanel
                                 embedded
                                 section="edits"
@@ -1978,44 +1904,47 @@ export function PromptGallery() {
                                 setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
                                 includeCharacters={includeCharacters}
                               />
-                            }
-                            tagRules={
-                              <TagsManagementPanel
-                                embedded
-                                section="rules"
-                                addInput={addInput}
-                                setAddInput={setAddInput}
-                                isPresetDialogOpen={isPresetDialogOpen}
-                                setIsPresetDialogOpen={setIsPresetDialogOpen}
-                                presetName={presetName}
-                                setPresetName={setPresetName}
-                                savePreset={savePreset}
-                                presets={presets}
-                                loadPreset={loadPreset}
-                                deletePreset={deletePreset}
-                                excludeInput={excludeInput}
-                                setExcludeInput={setExcludeInput}
-                                findInput={findInput}
-                                setFindInput={setFindInput}
-                                replaceInput={replaceInput}
-                                setReplaceInput={setReplaceInput}
-                                tagAppendRules={tagAppendRules}
-                                setTagAppendRules={setTagAppendRules}
-                                tagCountFilter={search.tagCountFilter}
-                                setTagCountFilter={search.setTagCountFilter}
-                                setAppliedTagCountFilter={search.setAppliedTagCountFilter}
-                                isTagCountSupported={isTagCountSupported}
-                                isTagCountValid={isTagCountValid}
-                                scoreTier={search.scoreTier}
-                                setScoreTier={search.setScoreTier}
-                                setAppliedScoreTier={search.setAppliedScoreTier}
-                                characterCountFilter={search.characterCountFilter}
-                                setCharacterCountFilter={search.setCharacterCountFilter}
-                                setAppliedCharacterCountFilter={search.setAppliedCharacterCountFilter}
+                            </div>
+                            </div>
+                            <div className="flex flex-col gap-1 border-t border-border/60 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+                            <span className="text-xs font-semibold text-muted-foreground">Output</span>
+                            <div>
+                              <PromptGenerationOptionsPanel
+                                variant="embedded"
+                                booruProvider={search.booruProvider}
                                 includeCharacters={includeCharacters}
+                                setIncludeCharacters={setIncludeCharacters}
+                                optimizeTags={optimizeTags}
+                                setOptimizeTags={setOptimizeTags}
+                                smartTagExclusion={smartTagExclusion}
+                                setSmartTagExclusion={setSmartTagExclusion}
+                                prependAnimaArtist={prependAnimaArtist}
+                                setPrependAnimaArtist={setPrependAnimaArtist}
+                                experimentalPromptRules={experimentalPromptRules}
+                                setExperimentalPromptRules={setExperimentalPromptRules}
+                                autoAppendSearchTags={autoAppendSearchTags}
+                                setAutoAppendSearchTags={setAutoAppendSearchTags}
+                                removeLoRaTags={search.removeLoRaTags}
+                                setRemoveLoRaTags={search.setRemoveLoRaTags}
+                                removeQualityTags={search.removeQualityTags}
+                                setRemoveQualityTags={search.setRemoveQualityTags}
+                                setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
+                                globalWeightCount={globalWeightCount}
+                                isGlobalWeightsPaused={isGlobalWeightsPaused}
+                                backgroundMode={backgroundMode}
+                                setBackgroundMode={setBackgroundMode}
+                                simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
+                                setSimpleBackgroundReplacementTags={setSimpleBackgroundReplacementTags}
+                                randomBackgroundPatterns={randomBackgroundPatterns}
+                                setRandomBackgroundPatterns={setRandomBackgroundPatterns}
+                                randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
+                                setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
+                                backgroundMatchStrictness={backgroundMatchStrictness}
+                                setBackgroundMatchStrictness={setBackgroundMatchStrictness}
                               />
-                            }
-                          />
+                            </div>
+                            </div>
+                          </div>
                         </ControlSection>
                       </div>
                     )

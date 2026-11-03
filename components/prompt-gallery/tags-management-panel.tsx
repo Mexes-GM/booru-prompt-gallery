@@ -286,7 +286,7 @@ interface TagRulesEditorProps {
   appendRules: TagAppendRule[]
   setAppendRules: (rules: TagAppendRule[]) => void
   compact?: boolean
-  /** Main-panel label: plain "Find & replace rules" text, no ⓘ tooltip. */
+  /** Main-panel label: plain "Tag rules" text, no ⓘ tooltip. */
   embedded?: boolean
 }
 
@@ -353,14 +353,11 @@ function TagRulesEditor({
   ].filter(Boolean).join(" · ")
 
   return (
-    <div className={embedded ? "flex min-h-[52px] items-center justify-between gap-3 py-2" : compact ? "flex flex-col gap-1" : "space-y-2"}>
+    <div className={compact ? "flex flex-col gap-1" : "space-y-2"}>
       {compact ? (
         <Label className="text-xs font-semibold">Tag rules</Label>
       ) : embedded ? (
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-sm text-foreground">Tag rules</span>
-          <span className="text-xs text-muted-foreground">{summary ? `${summary} rules` : "Replace or append exact tags"}</span>
-        </div>
+        <span className="text-sm font-medium text-foreground">Tag rules</span>
       ) : (
         <span className="text-xs font-medium text-muted-foreground flex items-center gap-2">
           <InfoTooltip
@@ -376,17 +373,6 @@ function TagRulesEditor({
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogTrigger asChild>
-          {embedded ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label={summary ? `Edit tag rules (${summary})` : "Edit tag rules"}
-              className="h-9 shrink-0 px-3 text-xs"
-            >
-              Edit
-            </Button>
-          ) : (
           <Button
             type="button"
             variant="outline"
@@ -401,7 +387,6 @@ function TagRulesEditor({
               <span className={cn("text-muted-foreground", compact ? "text-[10px]" : "text-xs")}>{summary}</span>
             )}
           </Button>
-          )}
         </DialogTrigger>
         <DialogContent className="sm:max-w-[540px] p-0 gap-0 overflow-hidden">
           <DialogHeader className="p-5 pb-3">
@@ -640,9 +625,8 @@ interface TagsManagementPanelProps {
    * labels + hints instead of ⓘ tooltips and preset-only numeric filters.
    */
   embedded?: boolean
-  /** Which section to render. Defaults to both. Embedded only: "edits" is
-   *  Add + Remove, and "rules" is the Tag rules row on its own. */
-  section?: "all" | "filters" | "edits" | "rules"
+  /** Which section to render. Defaults to both. */
+  section?: "all" | "filters" | "edits"
   /** Embedded "filters": the blacklist editor trigger, shown as a row. */
   blacklistSlot?: React.ReactNode
   blacklistCount?: number
@@ -820,19 +804,6 @@ export function TagsManagementPanel({
           disabledReason={isEmbedded ? "turn on character names" : "turn on Character Tags"}
         />
       </>
-  )
-
-  const tagRulesEditor = (
-    <TagRulesEditor
-      findInput={findInput}
-      replaceInput={replaceInput}
-      setFindInput={setFindInput}
-      setReplaceInput={setReplaceInput}
-      appendRules={tagAppendRules}
-      setAppendRules={setTagAppendRules}
-      compact={isCompact}
-      embedded={isEmbedded}
-    />
   )
 
   const editsBody = (
@@ -1022,10 +993,8 @@ export function TagsManagementPanel({
         </div>
 
         {/* Tag Exclusion — moved here from the generation options on the main
-            panel: it only ever filters the "Tags to Add" list above, so it
-            shows once that list has tags (or when it's off, so a changed
-            setting is never hidden). */}
-        {isEmbedded && setSmartTagExclusion && (addInput.trim() !== "" || smartTagExclusion === false) && (
+            panel: it only ever filters the "Tags to Add" list above. */}
+        {isEmbedded && setSmartTagExclusion && (
           <div className="-mt-1 flex items-center justify-between gap-3">
             <label htmlFor="smart-exclusion-embedded" className="flex cursor-pointer flex-col gap-0.5">
               <span className="text-sm text-foreground">Skip added tags that don&apos;t fit the image</span>
@@ -1085,13 +1054,18 @@ export function TagsManagementPanel({
           </div>
         </div>
 
-        {/* Embedded: Tag rules render on their own (section "rules"),
-            under Customize prompt's Advanced. */}
-        {!isEmbedded && tagRulesEditor}
+        <TagRulesEditor
+          findInput={findInput}
+          replaceInput={replaceInput}
+          setFindInput={setFindInput}
+          setReplaceInput={setReplaceInput}
+          appendRules={tagAppendRules}
+          setAppendRules={setTagAppendRules}
+          compact={isCompact}
+          embedded={isEmbedded}
+        />
       </>
   )
-
-  if (isEmbedded && section === "rules") return tagRulesEditor
 
   if (isEmbedded) {
     const resetLink = (label: string, onClick: () => void) => (
@@ -1148,8 +1122,12 @@ export function TagsManagementPanel({
             )}
           </>
         )}
-        {/* Edits are cleared by Customize prompt's "Reset to defaults". */}
-        {section !== "filters" && editsBody}
+        {section !== "filters" && (
+          <>
+            {editsBody}
+            {activeEditCount > 0 && resetLink("Clear tag edits", resetEdits)}
+          </>
+        )}
       </div>
     )
   }
