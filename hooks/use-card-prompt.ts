@@ -11,7 +11,21 @@ import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
 import { classifyTags, computeRichnessScore, type ClassifiedTags, type RichnessScore } from "@/lib/tag-classifier"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
-import { derivePostPrompt } from "@/lib/prompt/derive-post-prompt"
+import { derivePostPrompt, type DerivePostPromptResult } from "@/lib/prompt/derive-post-prompt"
+
+// Cards in the virtualized grid unmount when scrolled away and mount again on
+// the way back, which used to rerun the whole derivation for posts that were
+// already processed. The last result per post object is kept (post objects are
+// stable across pages, see allPosts in use-booru-search) and reused while every
+// input is unchanged. Random background modes are not cached: their output is
+// meant to differ between derivations.
+const derivedByPost = new WeakMap<BooruPost, { deps: readonly unknown[]; value: DerivePostPromptResult }>()
+
+function sameDeps(a: readonly unknown[], b: readonly unknown[]) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return false
+  return true
+}
 
 export interface UseCardPromptArgs {
   post: BooruPost
@@ -112,7 +126,7 @@ export function useCardPrompt({
   // hook-free derivePostPrompt (lib/prompt/derive-post-prompt.ts) so the exact
   // same pipeline can be called imperatively in a batch loop (Bulk Send's
   // "Real posts" mode) without risking the two paths drifting apart.
-  const derived = useMemo(() => derivePostPrompt(post, {
+  const derivationDeps = [
     excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
     includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules, prependAnimaArtist,
     removeLoRaTags, removeQualityTags,
@@ -120,15 +134,26 @@ export function useCardPrompt({
     randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
     backgroundMatchStrictness,
     tagOverrides, globalWeights, isGlobalWeightsEnabled,
-  }), [
-    post, excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
-    includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules, prependAnimaArtist,
-    removeLoRaTags, removeQualityTags,
-    backgroundMode, simpleBackgroundReplacementTags,
-    randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
-    backgroundMatchStrictness,
-    tagOverrides, globalWeights, isGlobalWeightsEnabled,
-  ])
+  ]
+  const cacheable = !randomBackgroundPatterns && backgroundMode !== "random" && backgroundMode !== "detailed_random"
+  const derived = useMemo(() => {
+    if (cacheable) {
+      const hit = derivedByPost.get(post)
+      if (hit && sameDeps(hit.deps, derivationDeps)) return hit.value
+    }
+    const value = derivePostPrompt(post, {
+      excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
+      includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules, prependAnimaArtist,
+      removeLoRaTags, removeQualityTags,
+      backgroundMode, simpleBackgroundReplacementTags,
+      randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
+      backgroundMatchStrictness,
+      tagOverrides, globalWeights, isGlobalWeightsEnabled,
+    })
+    if (cacheable) derivedByPost.set(post, { deps: derivationDeps, value })
+    return value
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post, ...derivationDeps])
 
   const {
     displayContent,
