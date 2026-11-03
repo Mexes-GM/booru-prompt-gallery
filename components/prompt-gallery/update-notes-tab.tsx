@@ -30,9 +30,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'improved', title: 'A simpler Pack Builder', body: "Each category now shows a one-line summary with Keep, Vary and Off, and opens to show its tags and options. Content rating and source moved to the chip at the top, so a new pack starts right away." },
-  { kind: 'fixed', title: 'Packs from posts with several characters', body: "When the base post has more than one character, you now pick the one to keep, and the pack no longer mixes in the others." },
-  { kind: 'improved', title: 'Smaller improvements', body: "Tag weights are easier to find in Customize prompt and work with the keyboard, the panel summary shows what you changed, and loading more results is smoother." },
+  { kind: 'improved', title: 'Faster loading', body: "The page appears sooner, especially on phones. Panels and tools you haven't opened yet now load when you first use them." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
