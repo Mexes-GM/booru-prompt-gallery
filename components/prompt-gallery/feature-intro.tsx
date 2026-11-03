@@ -9,8 +9,8 @@ const loadDialog = () => import("@/components/prompt-gallery/feature-intro-dialo
 const FeatureIntroDialog = dynamic(() => loadDialog().then((m) => m.FeatureIntroDialog), { ssr: false, loading: () => null })
 
 /** Release whose feature this dialog presents. It only shows while the site is on this minor version. */
-export const FEATURE_INTRO_RELEASE = "10.4"
-export const FEATURE_INTRO_POSTER = "/whats-new/10.4.0-prompt-formats-poster.jpg"
+export const FEATURE_INTRO_RELEASE = "10.7"
+export const FEATURE_INTRO_POSTER = "/whats-new/10.7.0-random-outfit-poster.jpg"
 
 const SEEN_KEY = "feature_intro_seen"
 

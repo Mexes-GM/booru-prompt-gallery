@@ -684,9 +684,9 @@ export function PromptGallery() {
   const [showStickyPanel, setShowStickyPanel] = useState(false)
   const controlPanelRef = useRef<HTMLDivElement>(null)
 
-  // "Choose a format" in the release dialog: open Customize prompt and put
-  // focus on its Prompt format setting.
-  const openPromptFormatSetting = useCallback(() => {
+  // "Try Random outfit" in the release dialog: open Customize prompt and put
+  // focus on its Outfit setting.
+  const openOutfitSetting = useCallback(() => {
     // Bring the control panel to the top so the section drops down below it.
     // A jump, not the page's smooth scroll: the section measures where to
     // open as it renders, so the panel must already be in place.
@@ -698,7 +698,11 @@ export function PromptGallery() {
     // section (or the mobile sheet) has opened.
     void Promise.all([loadTagsManagementPanel(), loadPromptGenerationOptionsPanel()]).finally(() => {
       setPromptOptionsOpen(true)
-      window.setTimeout(() => document.getElementById("prompt-format-embedded")?.focus({ preventScroll: true }), 350)
+      window.setTimeout(() => {
+        const select = document.getElementById("outfit-mode-select-embedded")
+        select?.focus({ preventScroll: true })
+        select?.scrollIntoView({ block: "nearest" })
+      }, 350)
     })
   }, [])
 
@@ -1702,7 +1706,7 @@ export function PromptGallery() {
         {/* Tour steps point at the section headers, which are always visible. */}
         <MainTour runSignal={tourRunSignal} />
 
-        <FeatureIntro version={pkg.version} onTry={openPromptFormatSetting} />
+        <FeatureIntro version={pkg.version} onTry={openOutfitSetting} />
 
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
