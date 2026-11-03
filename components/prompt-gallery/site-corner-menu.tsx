@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Activity, HelpCircle, Info, MessageSquarePlus, MoreHorizontal, Shield } from "lucide-react"
 import { CARD_SCALE_STEPS } from "@/components/prompt-gallery/card-scale-control"
+import { preloadMainTour } from "@/components/prompt-gallery/main-tour"
 
 const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
 
@@ -45,7 +46,8 @@ export function SiteCornerMenu({ scaleValue, setScaleValue, onOpenTour }: SiteCo
     <div className="absolute right-4 top-3 z-30 flex items-center gap-1 sm:right-6 sm:top-4">
       <UserNav />
 
-      <DropdownMenu>
+      {/* Opening the menu fetches the tour's code, so "Replay tour" starts at once. */}
+      <DropdownMenu onOpenChange={(open) => { if (open) preloadMainTour() }}>
         {/* No Tooltip wrapper: nesting TooltipTrigger asChild + DropdownMenuTrigger
             asChild on one <button> triggers a Radix ref loop (React #185, see
             SENTRY-FULVOUS-ANCHOR-7). The aria-label names the button. */}
