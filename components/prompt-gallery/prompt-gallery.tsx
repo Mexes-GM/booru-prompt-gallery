@@ -695,33 +695,14 @@ export function PromptGallery() {
 
   // Global Weights State — syncs across tabs/extension via localStorage
   const {
-    globalWeights, setGlobalWeights,
-    isGlobalWeightsEnabled, setIsGlobalWeightsEnabled,
+    globalWeights, setGlobalWeights, globalWeightCount,
+    isGlobalWeightsEnabled, setIsGlobalWeightsEnabled, isGlobalWeightsPaused,
     isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen,
     handleGlobalWeightChange, handleClearGlobalWeights, handleRemoveGlobalWeight,
     toggleGlobalWeights,
   } = useGlobalWeights(toast)
 
   const [isReverseParserModalOpen, setIsReverseParserModalOpen] = useState(false)
-
-  // Prompt Generation Options: collapsible on mobile only (always expanded on
-  // desktop, where it lives in the right column). Mobile choice persisted.
-  const [isPromptOptionsExpanded, setIsPromptOptionsExpanded] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    try {
-      return localStorage.getItem('prompt_options_expanded') === 'true'
-    } catch {
-      return false
-    }
-  })
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('prompt_options_expanded', String(isPromptOptionsExpanded))
-    } catch {
-      // Storage may be unavailable (private mode); non-fatal.
-    }
-  }, [isPromptOptionsExpanded])
 
   // Merge Mode Hook
   // Find & Replace pairs (find[i] -> replace[i]), same pairing rule as useCardPrompt.
@@ -1662,14 +1643,8 @@ export function PromptGallery() {
           onOpenTour={() => setTourRunSignal((n) => n + 1)}
         />
 
-        <MainTour
-          runSignal={tourRunSignal}
-          onStart={() => {
-            // Tour steps point at the section headers, which are always
-            // visible — no need to expand (or, on mobile, open sheets).
-            setIsPromptOptionsExpanded(true)
-          }}
-        />
+        {/* Tour steps point at the section headers, which are always visible. */}
+        <MainTour runSignal={tourRunSignal} />
 
         <FeatureIntro version={pkg.version} onTry={openPromptFormatSetting} />
 
@@ -1786,19 +1761,40 @@ export function PromptGallery() {
                       blacklist.length > 0 ? `${blacklist.length} blacklisted` : null,
                     ].filter(Boolean).join(" · ")
 
+                    // Customize prompt's summary names only what differs from
+                    // the defaults, so a changed prompt never looks untouched.
+                    const isAibooruProvider = search.booruProvider === 'aibooru'
                     const addedTagCount = splitCommaSeparatedTags(addInput).length
-                    const outputFlags = search.booruProvider === 'aibooru'
-                      ? [search.removeLoRaTags, search.removeQualityTags, autoAppendSearchTags, isGlobalWeightsEnabled]
-                      : [includeCharacters, optimizeTags, autoAppendSearchTags, prependAnimaArtist, experimentalPromptRules, isGlobalWeightsEnabled]
+                    const removedTagCount = splitCommaSeparatedTags(excludeInput).length
+                    const tagRuleCount =
+                      Math.min(splitCommaSeparatedTags(findInput).length, splitCommaSeparatedTags(replaceInput).length) +
+                      (tagAppendRules || []).filter((rule) => rule.find.trim() && rule.append.length > 0).length
+                    const backgroundSummary: Record<string, string | null> = {
+                      keep: null,
+                      remove_all: "no background",
+                      force_simple: "background replaced",
+                      random: "random plain background",
+                      detailed_random: "random scenery",
+                    }
+                    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
                     const promptSummary = [
                       promptFormat !== 'tags'
                         ? `${PROMPT_FORMAT_INFO[promptFormat].badge}${hasWordBudget(promptFormat) && promptFullDetail ? " (every detail)" : ""}`
                         : null,
-                      addedTagCount > 0 ? `+${addedTagCount} tag${addedTagCount === 1 ? '' : 's'} added` : "No tags added",
-                      excludeInput.trim() ? `${splitCommaSeparatedTags(excludeInput).length} removed` : null,
-                      `${outputFlags.filter(Boolean).length} of ${outputFlags.length} options on`,
-                      backgroundMode !== 'keep' ? "custom background" : null,
-                    ].filter(Boolean).join(" · ")
+                      addedTagCount > 0 ? `+${plural(addedTagCount, "tag")}` : null,
+                      removedTagCount > 0 ? `−${plural(removedTagCount, "tag")}` : null,
+                      !isAibooruProvider && !includeCharacters ? "no character names" : null,
+                      !isAibooruProvider && prependAnimaArtist ? "@artist" : null,
+                      isAibooruProvider && search.removeLoRaTags ? "no LoRA tags" : null,
+                      isAibooruProvider && search.removeQualityTags ? "no quality tags" : null,
+                      globalWeightCount > 0 ? `${plural(globalWeightCount, "weight")}${isGlobalWeightsPaused ? " paused" : ""}` : null,
+                      !isAibooruProvider && addedTagCount > 0 && !smartTagExclusion ? "keeps every added tag" : null,
+                      !isAibooruProvider && !optimizeTags ? "no tag merging" : null,
+                      !autoAppendSearchTags ? "no search tags" : null,
+                      !isAibooruProvider && experimentalPromptRules ? "experimental rules" : null,
+                      backgroundSummary[backgroundMode] ?? null,
+                      tagRuleCount > 0 ? plural(tagRuleCount, "tag rule") : null,
+                    ].filter(Boolean).join(" · ") || "Defaults"
 
                     return (
                       <div className="relative grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start" data-tour="controls">
@@ -1915,8 +1911,6 @@ export function PromptGallery() {
                             <div>
                               <PromptGenerationOptionsPanel
                                 variant="embedded"
-                                isPromptOptionsExpanded={isPromptOptionsExpanded}
-                                setIsPromptOptionsExpanded={setIsPromptOptionsExpanded}
                                 booruProvider={search.booruProvider}
                                 includeCharacters={includeCharacters}
                                 setIncludeCharacters={setIncludeCharacters}
@@ -1934,9 +1928,9 @@ export function PromptGallery() {
                                 setRemoveLoRaTags={search.setRemoveLoRaTags}
                                 removeQualityTags={search.removeQualityTags}
                                 setRemoveQualityTags={search.setRemoveQualityTags}
-                                isGlobalWeightsEnabled={isGlobalWeightsEnabled}
-                                toggleGlobalWeights={toggleGlobalWeights}
                                 setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
+                                globalWeightCount={globalWeightCount}
+                                isGlobalWeightsPaused={isGlobalWeightsPaused}
                                 backgroundMode={backgroundMode}
                                 setBackgroundMode={setBackgroundMode}
                                 simpleBackgroundReplacementTags={simpleBackgroundReplacementTags}
@@ -2165,6 +2159,7 @@ export function PromptGallery() {
         globalWeights={globalWeights}
         onRemoveGlobalWeight={handleRemoveGlobalWeight}
         onClearGlobalWeights={handleClearGlobalWeights}
+        onGlobalWeightsEnabledChange={setIsGlobalWeightsEnabled}
         onGlobalWeightChange={handleGlobalWeightChange}
         isReverseParserModalOpen={isReverseParserModalOpen}
         setIsReverseParserModalOpen={setIsReverseParserModalOpen}
@@ -2181,7 +2176,9 @@ export function PromptGallery() {
         }}
       />
       <StickyMiniControlPanel
-        isVisible={showStickyPanel}
+        // Hidden while a control section is open, so it never sits on top of
+        // the dropdown the user is working in.
+        isVisible={showStickyPanel && !promptOptionsOpen && !filtersOpen}
         addInput={addInput}
         setAddInput={setAddInput}
         isMergeMode={mergeMode.isMergeMode}
@@ -2332,6 +2329,7 @@ export function PromptGallery() {
         globalWeights={globalWeights}
         onRemoveGlobalWeight={handleRemoveGlobalWeight}
         onClearGlobalWeights={handleClearGlobalWeights}
+        onGlobalWeightsEnabledChange={setIsGlobalWeightsEnabled}
         onGlobalWeightChange={handleGlobalWeightChange}
         isReverseParserModalOpen={isReverseParserModalOpen}
         setIsReverseParserModalOpen={setIsReverseParserModalOpen}

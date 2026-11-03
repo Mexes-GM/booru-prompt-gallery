@@ -33,6 +33,8 @@ interface GalleryModalsProps {
   onRemoveGlobalWeight: (tag: string) => void
   onClearGlobalWeights: () => void
   onGlobalWeightChange: (tag: string, weight: number) => void
+  /** Pause or resume the weights from inside their dialog. */
+  onGlobalWeightsEnabledChange?: (enabled: boolean) => void
 
   // Reverse prompt parser modal
   isReverseParserModalOpen: boolean
@@ -65,6 +67,7 @@ export function GalleryModals({
   onRemoveGlobalWeight,
   onClearGlobalWeights,
   onGlobalWeightChange,
+  onGlobalWeightsEnabledChange,
   isReverseParserModalOpen,
   setIsReverseParserModalOpen,
   onImportRawPrompt,
@@ -88,6 +91,7 @@ export function GalleryModals({
         onOpenChange={setIsGlobalWeightsModalOpen}
         weights={globalWeights}
         isEnabled={isGlobalWeightsEnabled}
+        onEnabledChange={onGlobalWeightsEnabledChange}
         onRemoveWeight={onRemoveGlobalWeight}
         onClearWeights={onClearGlobalWeights}
         onSaveWeight={onGlobalWeightChange}

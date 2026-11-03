@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 /**
  * Sticky quick-access bar shown once the main "Advanced Filters & Options"
- * panel scrolls out of view: a 3-action shortcut (edit "Tags to Add", jump
+ * panel scrolls out of view: a 3-action shortcut (edit "Add to every prompt", jump
  * into Merge, jump into AI Convert). Settings stay in tags-management-panel.tsx
  * and prompt-generation-options-panel.tsx; this is not a second settings
  * surface.
@@ -82,22 +82,19 @@ export function StickyMiniControlPanel({
             <div className="flex-1 min-w-[200px] max-w-[450px] flex flex-col gap-1">
               <label htmlFor="sticky-add-tags-input" className="text-xs font-medium leading-none flex items-center gap-2 text-foreground">
                 <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" aria-hidden="true" />
-                Tags to Add
+                Add to every prompt
                 {tagCount > 0 && (
-                  <span className="text-[10px] text-muted-foreground">
-                    ({tagCount} tag{tagCount !== 1 ? "s" : ""})
+                  <span className="text-xs font-normal text-muted-foreground">
+                    · {tagCount} tag{tagCount !== 1 ? "s" : ""}
                   </span>
                 )}
-                <span className="text-[10px] font-normal text-faint-foreground hidden sm:inline">
-                  (Only modify final prompt)
-                </span>
               </label>
               <div className="flex h-8 w-full items-center rounded-md border border-input bg-background/50 pl-2 pr-1 text-sm shadow-sm transition-colors focus-within:outline-none focus-within:ring-1 focus-within:ring-ring">
                 <DebouncedInput
                   id="sticky-add-tags-input"
                   value={addInput}
                   onChange={setAddInput}
-                  placeholder="e.g. 1girl, solo..."
+                  placeholder="masterpiece, best quality..."
                   className="flex-1 h-full bg-transparent border-none p-0 shadow-none focus-visible:ring-0 text-base sm:text-xs w-full min-w-0"
                   debounceTime={400}
                 />

@@ -438,8 +438,10 @@ export const userPreferences = {
   setGlobalWeights: (weights: Record<string, number>) =>
     storage.set(STORAGE_KEYS.GLOBAL_WEIGHTS, weights),
 
+  // "Not paused". Defaults to true: weights apply as soon as they exist. An
+  // explicit false (the old master switch turned off) keeps them paused.
   getGlobalWeightsEnabled: (): boolean =>
-    storage.get(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, false),
+    storage.get(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, true),
 
   setGlobalWeightsEnabled: (enabled: boolean) =>
     storage.set(STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED, enabled),

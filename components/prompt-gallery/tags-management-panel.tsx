@@ -24,7 +24,6 @@ import {
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { SmoothFilterSlider } from "@/components/ui/smooth-filter-slider"
 import { ScoreTierControl } from "@/components/prompt-gallery/score-tier-control"
 import { Check, ChevronDown, ListPlus, Plus, Save, Trash2, X, Replace, RotateCcw } from "lucide-react"
@@ -287,7 +286,7 @@ interface TagRulesEditorProps {
   appendRules: TagAppendRule[]
   setAppendRules: (rules: TagAppendRule[]) => void
   compact?: boolean
-  /** Main-panel label: plain "Find & replace rules" text, no ⓘ tooltip. */
+  /** Main-panel label: plain "Tag rules" text, no ⓘ tooltip. */
   embedded?: boolean
 }
 
@@ -358,7 +357,7 @@ function TagRulesEditor({
       {compact ? (
         <Label className="text-xs font-semibold">Tag rules</Label>
       ) : embedded ? (
-        <span className="text-sm font-medium text-foreground">Find &amp; replace rules</span>
+        <span className="text-sm font-medium text-foreground">Tag rules</span>
       ) : (
         <span className="text-xs font-medium text-muted-foreground flex items-center gap-2">
           <InfoTooltip
@@ -397,7 +396,9 @@ function TagRulesEditor({
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="h-[400px] border-t border-border/50">
+          {/* Grows with its rules up to a cap, then scrolls: no empty block
+              under a single rule. */}
+          <div className="max-h-[min(400px,60dvh)] overflow-y-auto overscroll-contain border-t border-border/50">
             <div className="px-5 py-4 flex flex-col gap-5">
               <TagRulesGroup
                 icon={<Replace className="h-3.5 w-3.5" />}
@@ -493,7 +494,7 @@ function TagRulesEditor({
                 ))}
               </TagRulesGroup>
             </div>
-          </ScrollArea>
+          </div>
 
           <DialogFooter className="p-4 bg-secondary/20 border-t border-border/50 flex-row justify-end">
             <Button size="sm" onClick={() => handleOpenChange(false)} className="px-6">

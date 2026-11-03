@@ -1,17 +1,24 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
+import { ToastAction } from "@/components/ui/toast"
 import type { useToast } from "@/hooks/use-toast"
 
 type ToastFn = ReturnType<typeof useToast>["toast"]
 
 /**
- * Global tag weight settings: the weight map itself (synced across tabs/the
- * extension via localStorage), the enabled toggle, the modal open state, and
- * the handlers to change/clear/remove individual weights. `toast` is injected
- * by the caller so this hook doesn't depend on where `useToast` is mounted.
+ * Global tag weights: the weight map itself (synced across tabs/the extension
+ * via localStorage), whether they're applied, the modal open state, and the
+ * handlers to change/clear/remove individual weights. `toast` is injected by
+ * the caller so this hook doesn't depend on where `useToast` is mounted.
+ *
+ * Weights apply whenever they exist. "Enabled" only means "not paused": the
+ * stored flag defaults to true, and an explicit false (left by the old master
+ * switch, or set from the weights modal) keeps saved weights inert until the
+ * user resumes them. A pause with no weights left is meaningless, so it's
+ * dropped — the next weight the user creates applies right away.
  */
 export function useGlobalWeights(toast: ToastFn) {
   const [globalWeights, setGlobalWeights] = usePersistentState<Record<string, number>>(
@@ -23,12 +30,19 @@ export function useGlobalWeights(toast: ToastFn) {
   )
 
   const [isGlobalWeightsEnabled, setIsGlobalWeightsEnabled] = usePersistentState(
-    false,
+    true,
     userPreferences.getGlobalWeightsEnabled,
     userPreferences.setGlobalWeightsEnabled,
     "globalWeightsEnabled",
     STORAGE_KEYS.GLOBAL_WEIGHTS_ENABLED
   )
+
+  const globalWeightCount = Object.keys(globalWeights).length
+  const isGlobalWeightsPaused = !isGlobalWeightsEnabled && globalWeightCount > 0
+
+  useEffect(() => {
+    if (!isGlobalWeightsEnabled && globalWeightCount === 0) setIsGlobalWeightsEnabled(true)
+  }, [isGlobalWeightsEnabled, globalWeightCount, setIsGlobalWeightsEnabled])
 
   const [isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen] = useState(false)
 
@@ -44,11 +58,25 @@ export function useGlobalWeights(toast: ToastFn) {
     })
   }, [setGlobalWeights])
 
+  // Undoable from the toast: the list can hold many hand-tuned weights.
   const handleClearGlobalWeights = useCallback(() => {
+    const snapshot = { weights: globalWeights, enabled: isGlobalWeightsEnabled }
     setGlobalWeights({})
-    setIsGlobalWeightsModalOpen(false)
-    toast({ title: "Weights cleared", description: "All global tag weights have been reset." })
-  }, [toast, setGlobalWeights])
+    toast({
+      title: "Tag weights cleared",
+      action: (
+        <ToastAction
+          altText="Undo clearing tag weights"
+          onClick={() => {
+            setGlobalWeights(snapshot.weights)
+            setIsGlobalWeightsEnabled(snapshot.enabled)
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
+    })
+  }, [toast, globalWeights, isGlobalWeightsEnabled, setGlobalWeights, setIsGlobalWeightsEnabled])
 
   const handleRemoveGlobalWeight = useCallback((tag: string) => {
     setGlobalWeights(prev => {
@@ -65,8 +93,10 @@ export function useGlobalWeights(toast: ToastFn) {
   return {
     globalWeights,
     setGlobalWeights,
+    globalWeightCount,
     isGlobalWeightsEnabled,
     setIsGlobalWeightsEnabled,
+    isGlobalWeightsPaused,
     isGlobalWeightsModalOpen,
     setIsGlobalWeightsModalOpen,
     handleGlobalWeightChange,
