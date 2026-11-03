@@ -1,0 +1,35 @@
+name: Bug report
+description: Something doesn't work or gives the wrong prompt
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what did you get instead?
+    validations:
+      required: true
+  - type: input
+    id: search
+    attributes:
+      label: Site and search
+      description: Which site you were on and what you searched for. A post link helps a lot if the problem is with one prompt.
+      placeholder: "Danbooru, hatsune_miku 1girl"
+  - type: dropdown
+    id: where
+    attributes:
+      label: Which address?
+      options:
+        - booru-prompt-gallery.vercel.app
+        - booru-prompt-gallery.netlify.app
+        - My own instance
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      placeholder: "Chrome on Windows, Safari on iPhone..."
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, the prompt you got, the options you had on.
