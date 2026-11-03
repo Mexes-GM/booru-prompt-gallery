@@ -4,7 +4,8 @@ import { useEffect, useId, useState } from "react"
 import { useReducedMotion } from "framer-motion"
 import { ChevronDown } from "lucide-react"
 import { trackExternalLink } from "@/lib/analytics"
-import { SOCIAL_URLS } from "@/lib/constants"
+import { HeroText } from "@/components/prompt-gallery/hero-text"
+import { HERO_GRID_CLASS } from "@/components/prompt-gallery/hero-layout"
 import { cn } from "@/lib/utils"
 import { derivePostPrompt, type DerivePostPromptOptions } from "@/lib/prompt/derive-post-prompt"
 import { parseTagString } from "@/lib/weight-utils"
@@ -160,14 +161,6 @@ const EXAMPLES: Example[] = [
 
 const ROTATE_MS = 6000
 
-const BOORUS = ["Danbooru", "Aibooru", "Rule34", "Gelbooru", "e621", "e6AI"]
-
-const SOCIALS = [
-  { id: "social-civitai", label: "CivitAI", href: SOCIAL_URLS.CIVITAI_PROFILE },
-  { id: "social-tensor", label: "Tensor.Art", href: SOCIAL_URLS.TENSOR_ART },
-  { id: "social-seaart", label: "SeaArt", href: SOCIAL_URLS.SEAART },
-]
-
 function Line({ row, gutter }: { row: Row; gutter: string }) {
   return (
     <div className="grid grid-cols-[3.75rem_minmax(0,1fr)] gap-2">
@@ -270,40 +263,8 @@ export function GalleryHero() {
   const specimenId = useId()
 
   return (
-    <div className="grid gap-4 pt-8 sm:gap-8 sm:pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center lg:gap-14 lg:pt-10">
-      <div className="space-y-3 sm:space-y-5">
-        <h1 className="text-3xl sm:text-5xl font-semibold tracking-tighter text-balance leading-[1.05]">
-          Booru Prompt Gallery
-        </h1>
-        <p className="max-w-md text-base sm:text-lg text-muted-foreground text-pretty leading-snug">
-          Pick a post, get a prompt you can paste straight into your generator.
-        </p>
-
-        <p className="font-mono text-xs text-muted-foreground/80 leading-relaxed">
-          {BOORUS.join(" · ")}
-        </p>
-
-        <p className="text-sm text-muted-foreground">
-          By Mexes
-          <span aria-hidden="true" className="mx-2 text-muted-foreground/40">/</span>
-          {SOCIALS.map((s, i) => (
-            <span key={s.id}>
-              {i > 0 && <span aria-hidden="true" className="mx-1.5 text-muted-foreground/40">·</span>}
-              <a
-                id={s.id}
-                href={s.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => trackExternalLink(s.href, "social")}
-                aria-label={`Visit Mexes on ${s.label}`}
-                className="rounded-sm pointer-coarse:py-2 underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-              >
-                {s.label}
-              </a>
-            </span>
-          ))}
-        </p>
-      </div>
+    <div className={HERO_GRID_CLASS}>
+      <HeroText onSocialClick={(href) => trackExternalLink(href, "social")} />
 
       <div>
         <button

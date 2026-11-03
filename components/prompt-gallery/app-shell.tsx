@@ -1,66 +1,140 @@
-import { Loader2 } from "lucide-react"
+import { SCALE_CONFIG } from "@/components/scale-config"
+import { HeroText } from "@/components/prompt-gallery/hero-text"
+import { HERO_GRID_CLASS } from "@/components/prompt-gallery/hero-layout"
 
 /**
- * Static app-shell shown while the heavy client-only PromptGallery bundle loads.
+ * Static loading shell shown while the client-only PromptGallery bundle loads
+ * (the home page loads it with next/dynamic and `ssr: false`).
  *
- * Why this exists: the home page renders PromptGallery via next/dynamic with
- * `ssr: false`, so before this change the only thing painted after TTFB was a
- * lone centered spinner — a poor LCP candidate and ~5.4s LCP on mobile.
+ * It follows the live page's structure so the swap moves little:
+ *   - the real hero text, rendered by the same HeroText component GalleryHero
+ *     uses (the pitch paragraph is the LCP element, so it paints at TTFB);
+ *   - a frame where the specimen goes: a bordered panel on the right from `sm`,
+ *     a 44px "See what it does" bar on phones;
+ *   - a skeleton of the search panel: folder tabs, search row, mode bar, options;
+ *   - card-shaped grid cells (image, prompt well, Copy stub) using the medium
+ *     column width from SCALE_CONFIG, two columns on phones.
  *
- * This shell paints a meaningful, above-the-fold structure immediately:
- *   - the real hero <h1> + subtitle <p>, with the exact same markup/classes as
- *     PromptGallery's hero. The subtitle paragraph is the measured LCP element,
- *     so rendering it server-side here paints it at TTFB instead of waiting for
- *     the heavy client bundle (perf plan P2a). Identical markup means the swap
- *     to the interactive hero produces no layout shift.
- *   - a skeleton search bar and a skeleton card grid to fill the viewport.
+ * The blocks are decorative (aria-hidden) and do not animate. Loading is
+ * announced through a status line; after a few seconds a "still loading" note
+ * appears, and after a while a failure message with a reload link. Both are
+ * driven by CSS, so they work before React has hydrated, and they disappear
+ * with the shell once the gallery mounts.
  *
- * It is a pure presentational component (no hooks / browser APIs) so it can be
- * rendered on the server as the dynamic import's loading fallback.
+ * Pure presentational (no hooks / browser APIs) so it renders on the server.
  */
+
+const GRID_CELLS = 12
+
+// Slow-load note at ~4s, then replaced by the failure message at 15s. Only delays,
+// no durations: the global reduced-motion rule shortens durations but not delays.
+const SHELL_TIMERS_CSS = `
+@keyframes shell-show{to{visibility:visible}}
+@keyframes shell-hide{to{visibility:hidden}}
+.shell-slow{visibility:hidden;animation:shell-show 0s 4s forwards,shell-hide 0s 15s forwards}
+.shell-failed{visibility:hidden;animation:shell-show 0s 15s forwards}
+`
+
+const block = "rounded-md border border-border/70 bg-muted/60"
+
 export function AppShell() {
   return (
-    <div className="relative min-h-screen bg-background" aria-busy="true" aria-label="Loading gallery">
-      {/* Corner controls — mirrors SiteCornerMenu's position */}
-      <div className="absolute right-4 top-3 flex items-center gap-1 sm:right-6 sm:top-4">
-        <div className="h-9 w-9 rounded-md bg-muted animate-pulse" />
-        <div className="h-9 w-9 rounded-md bg-muted animate-pulse" />
+    <div className="relative min-h-screen bg-background">
+      <style>{SHELL_TIMERS_CSS}</style>
+
+      {/* Corner controls — mirrors SiteCornerMenu: "Sign in" pill + icon button */}
+      <div aria-hidden="true" className="absolute right-4 top-3 z-30 flex items-center gap-1 sm:right-6 sm:top-4">
+        <div className={`h-10 w-[93px] rounded-full ${block}`} />
+        <div className="h-10 w-10 rounded-md" />
       </div>
 
-      {/* Main — matches PromptGallery's <main> padding so the hero does not shift */}
-      <main className="container mx-auto px-4 py-4 sm:py-8">
-        {/* Hero — identical markup to PromptGallery's hero so the LCP <p> paints
-            at TTFB and the swap to the interactive hero causes no layout shift. */}
+      <main id="main-content" aria-busy="true" className="container mx-auto px-4 py-4 sm:py-8">
+        <p role="status" className="sr-only">
+          Loading the gallery…
+        </p>
+
         <div className="w-full max-w-6xl mx-auto mb-4 sm:mb-8 space-y-4 sm:space-y-6">
-          <div className="text-center space-y-3 pt-8 sm:pt-4">
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-balance">Booru Prompt Gallery</h1>
-            <p className="text-muted-foreground max-w-2xl mx-auto text-sm sm:text-base px-4 text-pretty leading-relaxed">
-              Generate prompts from Danbooru, Aibooru, Rule34, Gelbooru, e621 and e6AI image collections.
-              Extract and format tags from posts or access AI-generated prompts directly,
-              creating clean, ready-to-use prompts for your AI art generation.
-            </p>
+          <div className={HERO_GRID_CLASS}>
+            <HeroText />
+
+            <div aria-hidden="true">
+              <div
+                className={`flex min-h-11 items-center px-4 text-sm text-muted-foreground sm:hidden ${block}`}
+              >
+                See what it does
+              </div>
+              <div className={`hidden h-[217px] sm:block ${block}`} />
+            </div>
+          </div>
+
+          {/* Search panel: mt-14 leaves room for the folder tabs, as on the live page */}
+          <div aria-hidden="true" className="relative !mt-14 rounded-xl border border-border bg-card/60">
+            <div className="absolute bottom-full inset-x-3 sm:inset-x-6 mb-px flex items-end justify-between gap-2">
+              <div className={`h-9 w-28 rounded-b-none ${block}`} />
+              <div className="flex gap-2">
+                <div className={`h-9 w-20 rounded-b-none ${block}`} />
+                <div className={`hidden h-9 w-20 rounded-b-none sm:block ${block}`} />
+              </div>
+            </div>
+            <div className="space-y-5 p-4 sm:p-6">
+              <div className="space-y-2">
+                <div className={`h-11 ${block}`} />
+                <div className="h-5 w-2/3 rounded-md bg-muted/40" />
+                <div className="h-5 w-1/2 rounded-md bg-muted/40 sm:hidden" />
+              </div>
+              <div className={`h-10 sm:hidden ${block}`} />
+              <div className="flex flex-wrap gap-2">
+                <div className={`h-10 w-24 ${block}`} />
+                <div className={`h-10 w-24 ${block}`} />
+                <div className={`h-10 w-24 ${block}`} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className={`h-24 md:h-[69px] ${block}`} />
+                <div className={`h-24 md:h-[69px] ${block}`} />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Skeleton controls + grid */}
-        <div className="mx-auto mb-6 h-11 w-full max-w-2xl rounded-lg bg-muted animate-pulse" />
+        {/* Card-shaped cells: two columns on phones, medium column width from `sm` */}
         <div
-          className="grid gap-4"
-          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+          aria-hidden="true"
+          className="grid grid-cols-2 gap-4 sm:[grid-template-columns:repeat(auto-fill,minmax(var(--shell-col),1fr))]"
+          style={{ "--shell-col": `${SCALE_CONFIG.medium.minColumnWidth}px` } as React.CSSProperties}
         >
-          {Array.from({ length: 12 }).map((_, i) => (
-            <div
-              key={i}
-              className="rounded-lg bg-muted animate-pulse"
-              style={{ height: 220 + ((i * 37) % 140) }}
-            />
+          {Array.from({ length: GRID_CELLS }).map((_, i) => (
+            <div key={i} className="overflow-hidden rounded-lg border border-border/70">
+              <div className="aspect-[3/4] bg-muted/60" />
+              <div
+                className="flex flex-col justify-between gap-2 p-2"
+                style={{ height: SCALE_CONFIG.medium.footerHeight }}
+              >
+                <div className="flex-1 rounded-md bg-muted/40" />
+                <div className="h-8 w-20 rounded-md bg-muted/60" />
+              </div>
+            </div>
           ))}
         </div>
       </main>
 
-      {/* Subtle spinner so users on very slow connections still get feedback */}
-      <div className="pointer-events-none fixed bottom-6 left-1/2 -translate-x-1/2">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/70" />
+      {/* Slow / failed load feedback. Shown by CSS timers, so no JS is needed. */}
+      <div className="pointer-events-none fixed inset-x-4 bottom-4 flex justify-center">
+        <p
+          className="shell-slow rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground shadow-sm"
+        >
+          Still loading… this is taking longer than usual.
+        </p>
+        <p
+          role="alert"
+          className="shell-failed pointer-events-auto absolute rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground shadow-sm"
+        >
+          Couldn’t load the gallery. Check your connection, then{" "}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a full reload is the point */}
+          <a href="/" className="font-medium underline underline-offset-4">
+            reload the page
+          </a>
+          .
+        </p>
       </div>
     </div>
   )
