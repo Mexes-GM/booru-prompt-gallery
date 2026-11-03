@@ -296,7 +296,7 @@ export function UpdateNotesTab({ version }: UpdateNotesTabProps) {
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => trackExternalLink(SOCIAL_URLS.CIVITAI_ARTICLE, 'changelog')}
-              className="inline-flex items-center gap-1 rounded-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="relative inline-flex items-center gap-1 rounded-sm font-medium pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-3.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Full changelog
               <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
