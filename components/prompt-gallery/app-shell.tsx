@@ -25,12 +25,13 @@ import { HeroText, HERO_GRID_CLASS } from "@/components/prompt-gallery/hero-text
 
 const GRID_CELLS = 12
 
-// Slow-load note at ~4s, then replaced by the failure message at 15s.
+// Slow-load note at ~4s, then replaced by the failure message at 15s. Only delays,
+// no durations: the global reduced-motion rule shortens durations but not delays.
 const SHELL_TIMERS_CSS = `
-@keyframes shell-slow{0%,26%{visibility:hidden}27%,99%{visibility:visible}100%{visibility:hidden}}
-@keyframes shell-failed{to{visibility:visible}}
-.shell-slow{visibility:hidden;animation:shell-slow 15s step-end forwards}
-.shell-failed{visibility:hidden;animation:shell-failed 0s 15s forwards}
+@keyframes shell-show{to{visibility:visible}}
+@keyframes shell-hide{to{visibility:hidden}}
+.shell-slow{visibility:hidden;animation:shell-show 0s 4s forwards,shell-hide 0s 15s forwards}
+.shell-failed{visibility:hidden;animation:shell-show 0s 15s forwards}
 `
 
 const block = "rounded-md border border-border/70 bg-muted/60"
