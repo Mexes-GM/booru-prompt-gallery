@@ -80,7 +80,7 @@ function PackExample() {
       </div>
       {rows.map((row, i) => (
         <div key={i} className="truncate">
-          <span className="text-faint-foreground">{String(i + 1).padStart(2, "0")} … </span>
+          <span className="text-muted-foreground">{String(i + 1).padStart(2, "0")} … </span>
           {row.map((tag, j) => (
             <span key={tag}>
               <span className="font-semibold text-foreground">{tag}</span>

@@ -133,7 +133,7 @@ export function GlobalWeightsModal({
                                 onChange={(e) => setNewTag(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                                 aria-label="Enter tag for global weight"
-                                className="pl-9 h-11 border-none shadow-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-faint-foreground"
+                                className="pl-9 h-11 border-none shadow-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground"
                             />
                         </div>
 

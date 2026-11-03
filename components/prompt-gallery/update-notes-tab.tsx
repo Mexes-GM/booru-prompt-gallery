@@ -268,7 +268,7 @@ export function UpdateNotesTab({ version }: UpdateNotesTabProps) {
             )}
           </AnimatePresence>
           Update Notes
-          <span className="hidden tabular-nums text-faint-foreground sm:inline">v{version}</span>
+          <span className="hidden tabular-nums text-muted-foreground sm:inline">v{version}</span>
           {!seen && <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />}
         </button>
       </PopoverTrigger>

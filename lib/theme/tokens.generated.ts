@@ -106,7 +106,7 @@ export const themeHex = {
     "border": "#3E4954",
     "input": "#3E4954",
     "ring": "#51895E",
-    "primary-text": "#5DA56E",
+    "primary-text": "#6FB880",
     "destructive": "#E96E50",
     "destructive-foreground": "#121B26",
     "destructive-text": "#FF9D84",
@@ -715,12 +715,12 @@ export const neutralContrast = {
     {
       "fg": "primary-text",
       "bg": "background",
-      "ratio": 5.07
+      "ratio": 6.34
     },
     {
       "fg": "primary-text",
       "bg": "card",
-      "ratio": 4.5
+      "ratio": 5.64
     }
   ]
 } as const
