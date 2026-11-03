@@ -88,6 +88,9 @@ export const STORAGE_KEYS = {
   RANDOM_BACKGROUND_PATTERNS: 'random-background-patterns',
   RANDOM_BACKGROUND_INCLUDE_GRADIENTS: 'random-background-include-gradients',
   BACKGROUND_MATCH_STRICTNESS: 'background-match-strictness',
+  OUTFIT_MODE: 'outfit-mode',
+  OUTFIT_STYLES: 'outfit-styles',
+  OUTFIT_DETAIL: 'outfit-detail',
 
   // Search and filter preferences
   SEARCH_TAGS: 'search-tags',
@@ -518,6 +521,27 @@ export const userPreferences = {
 
   setBackgroundMatchStrictness: (strictness: 'strict' | 'balanced' | 'free') =>
     storage.set(STORAGE_KEYS.BACKGROUND_MATCH_STRICTNESS, strictness),
+
+  // "Random outfit" (lib/outfit-swap.ts). Inline unions for the same reason as
+  // getBackgroundMode: keeps this module a leaf.
+  getOutfitMode: (): 'keep' | 'random' =>
+    storage.get(STORAGE_KEYS.OUTFIT_MODE, 'keep'),
+
+  setOutfitMode: (mode: 'keep' | 'random') =>
+    storage.set(STORAGE_KEYS.OUTFIT_MODE, mode),
+
+  /** null = never chosen, so the default styles apply. */
+  getOutfitStyles: (): string[] | null =>
+    storage.get<string[] | null>(STORAGE_KEYS.OUTFIT_STYLES, null),
+
+  setOutfitStyles: (styles: string[]) =>
+    storage.set(STORAGE_KEYS.OUTFIT_STYLES, styles),
+
+  getOutfitDetail: (): 'simple' | 'full' =>
+    storage.get(STORAGE_KEYS.OUTFIT_DETAIL, 'simple'),
+
+  setOutfitDetail: (detail: 'simple' | 'full') =>
+    storage.set(STORAGE_KEYS.OUTFIT_DETAIL, detail),
 
   getSimpleBackgroundReplacementTags: (): string =>
     storage.get(STORAGE_KEYS.SIMPLE_BACKGROUND_REPLACEMENT_TAGS, 'simple background, white background'),

@@ -13,7 +13,29 @@ import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import type { BackgroundMode } from "@/lib/background-detector"
 import type { MatchStrictness } from "@/lib/background-context"
+import { OUTFIT_STYLES, type OutfitDetail, type OutfitMode, type OutfitStyle } from "@/lib/outfit-swap"
 import { PromptFormatSetting } from "./prompt-format-setting"
+
+const OUTFIT_MODES: { value: OutfitMode; label: string }[] = [
+  { value: "keep", label: "Keep original" },
+  { value: "random", label: "Random outfit" },
+]
+
+const OUTFIT_STYLE_LABELS: Record<OutfitStyle, string> = {
+  spring: "Spring",
+  summer: "Summer",
+  autumn: "Autumn",
+  winter: "Winter",
+  party: "Party",
+  swimwear: "Swimwear",
+  lingerie: "Lingerie",
+  sexy: "Sexy",
+}
+
+const OUTFIT_DETAILS: { value: OutfitDetail; label: string; hint: string }[] = [
+  { value: "simple", label: "Main pieces", hint: "Top, bottom and shoes." },
+  { value: "full", label: "Full outfit", hint: "Also legwear, bag, jewelry and other accessories." },
+]
 
 /**
  * Labels + tooltip copy for the "Detailed Random" scene-matching strictness.
@@ -88,6 +110,14 @@ interface PromptGenerationOptionsPanelProps {
   backgroundMatchStrictness: MatchStrictness
   setBackgroundMatchStrictness: (val: MatchStrictness) => void
 
+  /** "Random outfit" (embedded only; the section is hidden without these). */
+  outfitMode?: OutfitMode
+  setOutfitMode?: (mode: OutfitMode) => void
+  outfitStyles?: OutfitStyle[]
+  setOutfitStyles?: (styles: OutfitStyle[]) => void
+  outfitDetail?: OutfitDetail
+  setOutfitDetail?: (detail: OutfitDetail) => void
+
   /**
    * "embedded" is the Output column of Customize prompt on the main page;
    * "compact" is the extension's settings, with tighter markup.
@@ -153,6 +183,12 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   setRandomBackgroundIncludeGradients: _setRandomBackgroundIncludeGradients,
   backgroundMatchStrictness,
   setBackgroundMatchStrictness: _setBackgroundMatchStrictness,
+  outfitMode = "keep",
+  setOutfitMode: _setOutfitMode,
+  outfitStyles = [],
+  setOutfitStyles: _setOutfitStyles,
+  outfitDetail = "simple",
+  setOutfitDetail: _setOutfitDetail,
   variant = "embedded",
 }: PromptGenerationOptionsPanelProps) {
   const shouldReduceMotion = useReducedMotion();
@@ -186,6 +222,13 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   const setRandomBackgroundPatterns = (val: boolean) => { trackBackground('randomBackgroundPatterns', val); _setRandomBackgroundPatterns(val); };
   const setRandomBackgroundIncludeGradients = (val: boolean) => { trackBackground('randomBackgroundIncludeGradients', val); _setRandomBackgroundIncludeGradients(val); };
   const setBackgroundMatchStrictness = (val: MatchStrictness) => { trackBackground('backgroundMatchStrictness', val); _setBackgroundMatchStrictness(val); };
+  const setOutfitMode = (val: OutfitMode) => { trackSetting('outfitMode', val); _setOutfitMode?.(val); };
+  const setOutfitDetail = (val: OutfitDetail) => { trackSetting('outfitDetail', val); _setOutfitDetail?.(val); };
+  const toggleOutfitStyle = (style: OutfitStyle) => {
+    const next = outfitStyles.includes(style) ? outfitStyles.filter((s) => s !== style) : [...outfitStyles, style]
+    trackSetting('outfitStyles', next.join(','))
+    _setOutfitStyles?.(OUTFIT_STYLES.filter((s) => next.includes(s)))
+  };
 
   const isCompact = variant === "compact"
   const isAibooru = booruProvider === 'aibooru'
@@ -543,6 +586,113 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
         </div>
         {renderBackgroundSubOptions("embedded")}
       </div>
+
+      {_setOutfitMode && (
+        <div className="flex flex-col gap-2.5 border-t border-border/50 pt-3">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <label htmlFor="outfit-mode-select-embedded" className="cursor-pointer text-sm font-medium text-foreground">Outfit</label>
+              <span id="outfit-mode-desc-embedded" className="text-xs text-muted-foreground">Dress the character in a new outfit</span>
+            </div>
+            <div className="w-full sm:w-auto sm:min-w-[160px]">
+              <Select value={outfitMode} onValueChange={(value) => setOutfitMode(value as OutfitMode)}>
+                <SelectTrigger
+                  id="outfit-mode-select-embedded"
+                  aria-describedby="outfit-mode-desc-embedded"
+                  className="h-8 bg-background text-xs"
+                >
+                  <SelectValue>{OUTFIT_MODES.find((mode) => mode.value === outfitMode)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {OUTFIT_MODES.map((mode) => (
+                    <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <AnimatePresence initial={false}>
+            {outfitMode === "random" && (
+              <motion.div
+                key="outfit-random"
+                initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: EASE_OUT_STRONG }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-col gap-3 border-l border-border/60 pb-2 pl-3">
+                  <div className="flex flex-col gap-2">
+                    <span id="outfit-styles-label" className="text-sm text-foreground">Styles</span>
+                    <div role="group" aria-labelledby="outfit-styles-label" className="flex flex-wrap gap-1.5">
+                      {OUTFIT_STYLES.map((style) => {
+                        const isOn = outfitStyles.includes(style)
+                        return (
+                          <button
+                            key={style}
+                            type="button"
+                            onClick={() => toggleOutfitStyle(style)}
+                            aria-pressed={isOn}
+                            className={cn(
+                              "h-7 rounded-full border px-2.5 text-xs font-medium transition-colors select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:scale-[0.97]",
+                              isOn
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-background text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            {OUTFIT_STYLE_LABELS[style]}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {outfitStyles.length === 0
+                        ? "Pick at least one style to change outfits."
+                        : "Only posts with one girl change. Beach and snow scenes get clothes that fit."}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <span id="outfit-detail-label" className="text-sm text-foreground">Detail</span>
+                    <div
+                      role="group"
+                      aria-labelledby="outfit-detail-label"
+                      className="relative grid h-9 grid-cols-2 gap-1 rounded-lg border border-border/50 bg-muted/60 p-1"
+                    >
+                      {OUTFIT_DETAILS.map(({ value, label }) => {
+                        const isSelected = outfitDetail === value
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setOutfitDetail(value)}
+                            aria-pressed={isSelected}
+                            className={cn(
+                              "relative z-10 flex items-center justify-center rounded-md text-xs font-medium transition-colors select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring active:scale-[0.98]",
+                              isSelected ? "text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            {isSelected && (
+                              <motion.div
+                                layoutId="outfit-detail-active-pill"
+                                className="absolute inset-0 rounded-md bg-primary shadow-xs"
+                                transition={shouldReduceMotion ? { duration: 0 } : SEGMENT_PILL_SPRING}
+                              />
+                            )}
+                            <span className="relative z-20">{label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {OUTFIT_DETAILS.find((d) => d.value === outfitDetail)?.hint}
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   )
 })

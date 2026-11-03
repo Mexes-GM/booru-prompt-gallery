@@ -9,6 +9,7 @@ import {
 import { cleanPrompt, type TagAppendRule } from "@/lib/cleanPrompt"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
+import { type OutfitSettings } from "@/lib/outfit-swap"
 import { classifyTags, computeRichnessScore, type ClassifiedTags, type RichnessScore } from "@/lib/tag-classifier"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 import { derivePostPrompt, type DerivePostPromptResult } from "@/lib/prompt/derive-post-prompt"
@@ -62,6 +63,8 @@ export interface UseCardPromptArgs {
   detailedBackgroundsList?: string[][]
   /** How strictly Detailed Random gates its pick against the post's scene. */
   backgroundMatchStrictness?: MatchStrictness
+  /** "Random outfit" bundle (see useOutfitSettings); undefined keeps clothing. */
+  outfitSettings?: OutfitSettings
   tagOverrides?: Record<string, string>
   globalWeights?: Record<string, number>
   isGlobalWeightsEnabled?: boolean
@@ -114,6 +117,7 @@ export function useCardPrompt({
   randomBackgroundIncludeGradients = true,
   detailedBackgroundsList,
   backgroundMatchStrictness,
+  outfitSettings,
   tagOverrides,
   globalWeights = {},
   isGlobalWeightsEnabled = false,
@@ -132,7 +136,7 @@ export function useCardPrompt({
     removeLoRaTags, removeQualityTags,
     backgroundMode, simpleBackgroundReplacementTags,
     randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
-    backgroundMatchStrictness,
+    backgroundMatchStrictness, outfitSettings,
     tagOverrides, globalWeights, isGlobalWeightsEnabled,
   ]
   const cacheable = !randomBackgroundPatterns && backgroundMode !== "random" && backgroundMode !== "detailed_random"
@@ -147,7 +151,7 @@ export function useCardPrompt({
       removeLoRaTags, removeQualityTags,
       backgroundMode, simpleBackgroundReplacementTags,
       randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList,
-      backgroundMatchStrictness,
+      backgroundMatchStrictness, outfitSettings,
       tagOverrides, globalWeights, isGlobalWeightsEnabled,
     })
     if (cacheable) derivedByPost.set(post, { deps: derivationDeps, value })

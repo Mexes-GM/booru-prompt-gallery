@@ -217,6 +217,7 @@ import { ArtistGridSection } from "@/components/prompt-gallery/artist-grid-secti
 import { useTagCounts } from "@/hooks/use-tag-counts"
 import { usePromptOptions } from "@/hooks/use-prompt-options"
 import { useBackgroundSettings } from "@/hooks/use-background-settings"
+import { useOutfitSettings } from "@/hooks/use-outfit-settings"
 import { useGalleryViewState } from "@/hooks/use-gallery-view-state"
 import { useGlobalWeights } from "@/hooks/use-global-weights"
 import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
@@ -617,6 +618,13 @@ export function PromptGallery() {
     randomBackgroundIncludeGradients, setRandomBackgroundIncludeGradients,
     backgroundMatchStrictness, setBackgroundMatchStrictness,
   } = useBackgroundSettings()
+
+  const {
+    outfitMode, setOutfitMode,
+    outfitStyles, setOutfitStyles,
+    outfitDetail, setOutfitDetail,
+    outfitSettings,
+  } = useOutfitSettings()
 
   const [excludeInput, setExcludeInput] = usePersistentState(
     "",
@@ -1643,6 +1651,7 @@ export function PromptGallery() {
       randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
       detailedBackgroundsList={detailedBackgroundsList}
       backgroundMatchStrictness={backgroundMatchStrictness}
+      outfitSettings={outfitSettings}
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       isExpanded={expandedPostId === post.id}
@@ -1666,7 +1675,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -1990,6 +1999,12 @@ export function PromptGallery() {
                                 setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
                                 backgroundMatchStrictness={backgroundMatchStrictness}
                                 setBackgroundMatchStrictness={setBackgroundMatchStrictness}
+                                outfitMode={outfitMode}
+                                setOutfitMode={setOutfitMode}
+                                outfitStyles={outfitStyles}
+                                setOutfitStyles={setOutfitStyles}
+                                outfitDetail={outfitDetail}
+                                setOutfitDetail={setOutfitDetail}
                               />
                             </div>
                             </div>
