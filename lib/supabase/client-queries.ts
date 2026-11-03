@@ -44,6 +44,7 @@ export async function searchTags(query: string): Promise<TagResult[]> {
 
   try {
     const supabase = createClient()
+    if (!supabase) return []
 
     const { data, error } = await supabase
       .rpc('search_auto_suggest_tags', { query: normalizedQuery, result_limit: 20 })
@@ -111,6 +112,7 @@ export async function getAllTagOverridesClient(): Promise<Record<string, string>
   const overrides: Record<string, string> = {}
   try {
     const supabase = createClient()
+    if (!supabase) return overrides
     const { data, error } = await supabase
       .from('auto_suggest_tags')
       .select('name, category_name, subcategory')
@@ -154,6 +156,7 @@ export async function fetchTagOverridesForNames(names: string[]): Promise<Record
 
   const CHUNK = 150
   const supabase = createClient()
+  if (!supabase) return overrides
   const chunks: string[][] = []
   for (let i = 0; i < unique.length; i += CHUNK) chunks.push(unique.slice(i, i + CHUNK))
 
@@ -187,6 +190,7 @@ export async function fetchTagOverridesForNames(names: string[]): Promise<Record
 export async function fetchProviderTagSlots(provider: string, names: string[]): Promise<Record<string, string>> {
   if (names.length === 0) return {}
   const supabase = createClient()
+  if (!supabase) return {}
   const results = await Promise.all(chunked(names, PROVIDER_SLOT_CHUNK).map(async (chunk) => {
     const { data, error } = await supabase.rpc('lookup_provider_tag_slots', { p_provider: provider, p_names: chunk })
     if (error || !Array.isArray(data)) {

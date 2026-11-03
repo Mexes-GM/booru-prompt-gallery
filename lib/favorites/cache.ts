@@ -172,6 +172,7 @@ export async function persistToCache(posts: BooruPost[]): Promise<void> {
   if (posts.length === 0) return
   try {
     const supabase = createClient()
+    if (!supabase) return
     // booru_posts_cache RLS only accepts writes from authenticated users;
     // without a session the upsert is rejected with a 401. getSession() reads
     // the locally stored session, so this costs no network round-trip.

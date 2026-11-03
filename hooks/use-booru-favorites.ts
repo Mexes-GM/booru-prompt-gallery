@@ -123,7 +123,7 @@ export function useBooruFavorites(
 
       let newFolder: FavoriteFolder
 
-      if (user) {
+      if (user && supabase) {
         const { data, error } = await supabase
           .from("favorite_folders")
           .upsert({ user_id: user.id, name: trimmed, icon: icon || null }, { onConflict: "user_id,name" })
@@ -164,7 +164,7 @@ export function useBooruFavorites(
       core.setFolders(newFolders)
       core.setFolderMap(newMap)
 
-      if (user) {
+      if (user && supabase) {
         try {
           // A Postgres ON DELETE CASCADE cannot remove an element from a text[]
           // column, so the orphaned folder id must be stripped from each row
@@ -336,7 +336,7 @@ export function useBooruFavorites(
       // hydrate it through /api/favorites.
       // booru_posts_cache RLS only accepts writes from authenticated users, so
       // anonymous toggles skip it (the upsert would just 401).
-      if (isAddingNewFavorite && user) {
+      if (isAddingNewFavorite && user && supabase) {
         const cachePost = (post: BooruPost) => {
           const row = booruPostToCacheRow(post, targetProvider)
           supabase.from("booru_posts_cache").upsert(row, {
@@ -363,7 +363,7 @@ export function useBooruFavorites(
       }
 
       // ── Persist to Supabase ──
-      if (user) {
+      if (user && supabase) {
         try {
           if (isRemovingEntirely) {
             const { error } = await supabase

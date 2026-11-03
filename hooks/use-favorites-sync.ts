@@ -36,7 +36,7 @@ export function useFavoritesSync({
   const supabase = createClient()
 
   useEffect(() => {
-    if (!userId) return
+    if (!userId || !supabase) return
 
     const channel = supabase.channel("favorites-sync")
 

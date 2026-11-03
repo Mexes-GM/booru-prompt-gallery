@@ -31,7 +31,8 @@ export default function AdminLoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    if (!supabase) return
+
     const isRateLimited = rateLimitResetRef.current !== null && Date.now() < rateLimitResetRef.current
     if (isRateLimited) {
       setError('Too many attempts. Please wait before trying again.')
@@ -88,6 +89,7 @@ export default function AdminLoginPage() {
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!supabase) return
     setIsLoading(true)
     setError('')
 
@@ -112,6 +114,21 @@ export default function AdminLoginPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (!supabase) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-sm">
+          <CardHeader>
+            <CardTitle>Admin panel unavailable</CardTitle>
+            <CardDescription>
+              Supabase isn&apos;t set up on this server, so admin sign-in is off.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    )
   }
 
   if (isMagicLinkSent) {

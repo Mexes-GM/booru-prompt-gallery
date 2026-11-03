@@ -51,7 +51,7 @@ export function DeleteAccountDialog({
     }
     // The server already removed the user; drop the now-dead local session
     // and this account's cached settings, then start fresh.
-    await createClient().auth.signOut({ scope: "local" }).catch(() => {})
+    await createClient()?.auth.signOut({ scope: "local" }).catch(() => {})
     clearCloudSyncedPreferences()
     window.location.assign("/")
   }

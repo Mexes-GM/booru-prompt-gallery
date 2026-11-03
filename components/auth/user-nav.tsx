@@ -36,6 +36,8 @@ export function UserNav() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
 
+  if (!supabase) return null
+
   if (loading) {
     return <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
   }

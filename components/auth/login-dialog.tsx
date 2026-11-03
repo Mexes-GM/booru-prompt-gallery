@@ -32,6 +32,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
 
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!supabase) return
     try {
       setIsLoading(true)
       const { error } = await supabase.auth.signInWithOtp({
@@ -68,6 +69,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
   // opened on another device, where the link fails the PKCE check.
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!supabase) return
     setIsVerifying(true)
     const { error } = await supabase.auth.verifyOtp({ email, token: otpCode.trim(), type: "email" })
     setIsVerifying(false)

@@ -33,6 +33,7 @@ export default function AdminMfaPage() {
     let cancelled = false
 
     async function init() {
+      if (!supabase) return
       const { data, error: listError } = await supabase.auth.mfa.listFactors()
       if (cancelled) return
       if (listError) {
@@ -77,6 +78,7 @@ export default function AdminMfaPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!supabase) return
     if (mode.kind !== 'enroll' && mode.kind !== 'verify') return
     setIsSubmitting(true)
     setError('')
@@ -94,6 +96,21 @@ export default function AdminMfaPage() {
 
     router.refresh()
     router.push('/admin')
+  }
+
+  if (!supabase) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-sm">
+          <CardHeader>
+            <CardTitle>Admin panel unavailable</CardTitle>
+            <CardDescription>
+              Supabase isn&apos;t set up on this server, so admin sign-in is off.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    )
   }
 
   return (

@@ -25,7 +25,6 @@ You'll need Node.js 24.12+.
 | `lib/theme/` | Color palette (source of the generated theme tokens) |
 | `hooks/` | React hooks |
 | `workers/booru-image-proxy/` | Cloudflare Worker: data API + image proxy |
-| `supabase/migrations/` | Database schema |
 | `scripts/` | Data and tag classification scripts |
 | `__tests__/` | Verification tests |
 
@@ -67,7 +66,7 @@ Then:
   - Bump `version` in `package.json` and `package-lock.json` (fixes only: patch; anything new: minor). The Update Notes tab only flags notes as new when the version changes.
   - Replace `NOTES` in `components/prompt-gallery/update-notes-tab.tsx` with this version's notes; the previous ones are removed.
   - When several PRs are stacked or merge together, only the last one bumps the version, covering all of them.
-- If it needs a database change, add a migration in `supabase/migrations/`.
+- If it needs a database change, describe it in the PR. The schema isn't in this repo (see [Database](README.md#database) in the README).
 
 ## Questions?
 
