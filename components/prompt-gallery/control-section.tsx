@@ -1,12 +1,14 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
+
+const loadDrawer = () => import("@/components/prompt-gallery/control-section-drawer")
+const ControlSectionDrawer = lazy(() => loadDrawer().then((m) => ({ default: m.ControlSectionDrawer })))
 
 interface ControlSectionProps {
   title: string
@@ -29,6 +31,9 @@ interface ControlSectionProps {
   onReset?: () => void
   resetLabel?: string
   children: React.ReactNode
+  /** Called when the header is hovered, focused or pressed: a chance to fetch
+   *  the section's code before it opens. */
+  onIntent?: () => void
   "data-tour"?: string
 }
 
@@ -62,11 +67,23 @@ export function ControlSection({
   onReset,
   resetLabel,
   children,
+  onIntent,
   "data-tour": dataTour,
 }: ControlSectionProps) {
   const isMobile = useIsMobile()
+  // The drawer mounts on first open and then stays, so it can animate closed.
+  const [drawerMounted, setDrawerMounted] = useState(false)
+  if (isMobile && open && !drawerMounted) setDrawerMounted(true)
   const rootRef = useRef<HTMLDivElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  // The open panel's element, set once it has rendered with its content.
+  // Section content may be code-split: the panel (inside a Suspense
+  // boundary) only renders once that code has loaded, and it is measured then.
+  const [panelEl, setPanelEl] = useState<HTMLDivElement | null>(null)
+  const attachPanel = useCallback((el: HTMLDivElement | null) => {
+    panelRef.current = el
+    setPanelEl(el)
+  }, [])
   const panelId = useId()
   const [placement, setPlacement] = useState<"bottom" | "top">("bottom")
 
@@ -77,9 +94,9 @@ export function ControlSection({
   // window resize only — never while scrolling, so the panel doesn't flip
   // (or jitter) under the user's cursor mid-scroll.
   useLayoutEffect(() => {
-    if (!open || isMobile) return
+    if (!panelEl) return
     const measure = (revealOverflow: boolean) => {
-      const panel = panelRef.current
+      const panel = panelEl
       // The anchor is the panel's containing block: this card, or the whole
       // two-column grid for `wide` sections.
       const anchor = panel?.offsetParent
@@ -104,7 +121,7 @@ export function ControlSection({
     const onResize = () => measure(false)
     window.addEventListener("resize", onResize)
     return () => window.removeEventListener("resize", onResize)
-  }, [open, isMobile])
+  }, [panelEl])
 
   // Desktop dismissal: outside pointerdown and Escape. Skipped while a layer
   // opened from inside (e.g. the Tag rules dialog) is on screen — that layer
@@ -134,10 +151,18 @@ export function ControlSection({
     }
   }, [open, isMobile, onOpenChange])
 
+  const handleIntent = () => {
+    onIntent?.()
+    if (isMobile) void loadDrawer()
+  }
+
   const header = (
     <button
       type="button"
       onClick={() => onOpenChange(!open)}
+      onPointerEnter={handleIntent}
+      onPointerDown={handleIntent}
+      onFocus={handleIntent}
       aria-expanded={isMobile ? undefined : open}
       aria-controls={isMobile ? undefined : panelId}
       aria-haspopup={isMobile ? "dialog" : undefined}
@@ -169,25 +194,22 @@ export function ControlSection({
     return (
       <div className="rounded-xl border border-border/60 bg-muted/20" data-tour={dataTour}>
         {header}
-        <Drawer open={open} onOpenChange={onOpenChange}>
-          <DrawerContent className="max-h-[90dvh]">
-            <div className="border-b px-5 pb-3 pt-2">
-              <DrawerTitle className="text-base">{title}</DrawerTitle>
-              <DrawerDescription className="text-xs">{summary}</DrawerDescription>
-            </div>
-            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5">{children}</div>
-            <div className="flex gap-2.5 border-t px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-              {onReset && (
-                <Button type="button" variant="outline" onClick={onReset} className="h-12 px-4">
-                  {resetLabel ?? "Reset"}
-                </Button>
-              )}
-              <Button type="button" onClick={() => onOpenChange(false)} className="h-12 flex-1 text-[15px] font-semibold">
-                Done
-              </Button>
-            </div>
-          </DrawerContent>
-        </Drawer>
+        {/* Opens once the drawer and the section's content have loaded, so it
+            never slides up empty. */}
+        <Suspense fallback={null}>
+          {drawerMounted && (
+            <ControlSectionDrawer
+              title={title}
+              summary={summary}
+              open={open}
+              onOpenChange={onOpenChange}
+              onReset={onReset}
+              resetLabel={resetLabel}
+            >
+              {children}
+            </ControlSectionDrawer>
+          )}
+        </Suspense>
       </div>
     )
   }
@@ -204,30 +226,33 @@ export function ControlSection({
       data-tour={dataTour}
     >
       {header}
-      {open && (
-        <div
-          ref={panelRef}
-          id={panelId}
-          role="region"
-          aria-label={title}
-          data-side={placement}
-          style={placement === "bottom" ? { top: "calc(100% + 8px)" } : { bottom: "calc(100% + 8px)" }}
-          className={cn(
-            // Grows out of the header it hangs from; closing snaps (unmount).
-            "absolute inset-x-0 z-40 rounded-xl border bg-popover px-4 pb-3 pt-4 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-98 duration-150 ease-out-strong",
-            placement === "bottom" ? "origin-top slide-in-from-top-1" : "origin-bottom slide-in-from-bottom-1"
-          )}
-        >
-          {children}
-          {onReset && (
-            <div className="mt-2 flex justify-end">
-              <Button type="button" variant="ghost" size="sm" onClick={onReset} className="text-xs text-muted-foreground hover:text-foreground">
-                {resetLabel ?? "Reset"}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Shown once the section's content has loaded, so it never opens empty. */}
+      <Suspense fallback={null}>
+        {open && (
+          <div
+            ref={attachPanel}
+            id={panelId}
+            role="region"
+            aria-label={title}
+            data-side={placement}
+            style={placement === "bottom" ? { top: "calc(100% + 8px)" } : { bottom: "calc(100% + 8px)" }}
+            className={cn(
+              // Grows out of the header it hangs from; closing snaps (unmount).
+              "absolute inset-x-0 z-40 rounded-xl border bg-popover px-4 pb-3 pt-4 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-98 duration-150 ease-out-strong",
+              placement === "bottom" ? "origin-top slide-in-from-top-1" : "origin-bottom slide-in-from-bottom-1"
+            )}
+          >
+            {children}
+            {onReset && (
+              <div className="mt-2 flex justify-end">
+                <Button type="button" variant="ghost" size="sm" onClick={onReset} className="text-xs text-muted-foreground hover:text-foreground">
+                  {resetLabel ?? "Reset"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </Suspense>
     </div>
   )
 }

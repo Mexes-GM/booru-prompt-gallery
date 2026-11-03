@@ -38,6 +38,8 @@ interface GalleryToolbarProps {
   disablePackMode: () => void
   onOpenReverseParser: () => void
   onOpenQuickTeach: () => void
+  /** A mode button was hovered, focused or pressed: fetch that mode's code early. */
+  onModeIntent?: (mode: Mode) => void
   scaleValue: number[]
   setScaleValue: (value: number[]) => void
 }
@@ -65,6 +67,7 @@ export function GalleryToolbar({
   disablePackMode,
   onOpenReverseParser,
   onOpenQuickTeach,
+  onModeIntent,
   scaleValue,
   setScaleValue,
 }: GalleryToolbarProps) {
@@ -131,6 +134,9 @@ export function GalleryToolbar({
                 aria-checked={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => selectMode(m.id)}
+                onPointerEnter={() => onModeIntent?.(m.id)}
+                onPointerDown={() => onModeIntent?.(m.id)}
+                onFocus={() => onModeIntent?.(m.id)}
                 className={cn(
                   "relative rounded-md text-sm font-medium pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1 transition-[color,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
