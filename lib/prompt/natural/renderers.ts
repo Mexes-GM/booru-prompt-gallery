@@ -19,7 +19,7 @@
  */
 import type { Scene, SceneSlot } from "./scene"
 import { describeScene, type PhraseDictionary, type SceneProse, type SubjectClause } from "./prose"
-import { capitalize, joinList, properNouns } from "./english"
+import { capitalize, joinList, properNouns, type Pronouns } from "./english"
 
 export interface RenderResult {
   text: string
@@ -42,8 +42,23 @@ const ANIMA_TAG_SLOTS: SceneSlot[] = [
   "weapon", "handheld", "setting", "props", "atmosphere", "animal", "style", "layout",
 ]
 
-export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phrases?: PhraseDictionary } = {}): RenderResult {
+/**
+ * "Random outfit" sentences, tied to the subject: "A blue cardigan ..." reads
+ * "She wears a blue cardigan ...", "The outfit includes" reads "Her outfit includes".
+ */
+export function outfitSentences(description: string | undefined, pronouns: Pronouns): string {
+  const text = description?.trim()
+  if (!text) return ""
+  const Possessive = capitalize(pronouns.possessive)
+  return text
+    .replace(/^The outfit\b/, `${Possessive} outfit`)
+    .replace(/^(An?) (?=\w)/, (_, article: string) => `${capitalize(pronouns.subject)} ${pronouns.plural ? "wear" : "wears"} ${article.toLowerCase()} `)
+}
+
+export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phrases?: PhraseDictionary; outfitDescription?: string } = {}): RenderResult {
   const prose = describeScene(scene, options.phrases, { compact: true })
+  // Tags anchor Anima on the garments; the sentences carry what tags can't (cut, fabric, trims).
+  const outfit = outfitSentences(options.outfitDescription, prose.pronouns)
   // A tag the card joined ("black elbow grey gloves") stays as the card wrote it.
   const joined = new Set<string>()
   const slotTags = ANIMA_TAG_SLOTS.flatMap((s) => scene.slots[s] ?? []).flatMap((tag) => {
@@ -73,6 +88,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
     // Anima's card asks for each character to be described separately.
     ...prose.characters,
     ...prose.people,
+    outfit,
     prose.pose,
     prose.camera,
   ].filter(Boolean)
@@ -109,6 +125,8 @@ export interface ProseOptions {
    * MOSS_DEFAULT_MAX_WORDS); `null` turns the limit off and keeps every detail.
    */
   maxWords?: number | null
+  /** "Random outfit" sentences, said instead of the outfit sentence built from tags. */
+  outfitDescription?: string
 }
 
 export function renderFlux2(scene: Scene, options: ProseOptions = {}): RenderResult {
@@ -126,11 +144,17 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
   const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? defaultMaxWords
   // Full detail when it fits, or when leaving out minor sentences is enough;
   // otherwise cap every list first, then drop sentences.
-  const full = describeScene(scene, options.phrases)
+  // The outfit's own sentences replace the tag-built one; its short form (the
+  // main garments) still stands in when they don't fit the budget.
+  const withOutfit = (p: SceneProse): SceneProse => {
+    const outfit = outfitSentences(options.outfitDescription, p.pronouns)
+    return outfit ? { ...p, clothing: outfit } : p
+  }
+  const full = withOutfit(describeScene(scene, options.phrases))
   const medium = options.medium ?? full.medium
   const fullFit = fitBudget(proseSections(full, medium), maxWords)
   const minorOnly = fullFit.sentences.every((s) => (fullFit.kept.has(s) && !s.cut) || s.priority >= MINOR_PRIORITY)
-  const prose = minorOnly ? full : describeScene(scene, options.phrases, { compact: true })
+  const prose = minorOnly ? full : withOutfit(describeScene(scene, options.phrases, { compact: true }))
   const { sentences, kept } = minorOnly ? fullFit : fitBudget(proseSections(prose, medium), maxWords)
   const text = properNouns(joinSameSubject(sentences.filter((s) => kept.has(s)).map((s) => s.text), prose.clauses).join(" "))
   return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }

@@ -348,6 +348,8 @@ export const MasonryItem = memo(function MasonryItem({
         conflictingTags,
         hasReplacements,
         replacedTags,
+        outfitTags,
+        outfitDescription,
     } = useCardPrompt({
         post,
         tagCounts,
@@ -386,6 +388,13 @@ export const MasonryItem = memo(function MasonryItem({
     const [detailOverride, setDetailOverride] = useState<{ fullDetail: boolean; global: boolean } | null>(null)
     const fullDetail = detailOverride?.global === globalFullDetail ? detailOverride.fullDetail : globalFullDetail
     const keepNames = includeCharacters && !isAiPost
+    // The outfit's sentences only while its tags are still in the prompt (an
+    // exclusion can take them out again).
+    const cardOutfitDescription = useMemo(() => {
+        if (!outfitDescription || !outfitTags) return undefined
+        const present = new Set(baseContent.split(",").map((t) => t.trim().replace(/\\(?=[()])/g, "")))
+        return outfitTags.some((t) => present.has(t)) ? outfitDescription : undefined
+    }, [baseContent, outfitTags, outfitDescription])
     const naturalSource = useMemo(() => ({
         prompt: baseContent,
         characters: keepNames ? post.tag_string_character : undefined,
@@ -393,7 +402,8 @@ export const MasonryItem = memo(function MasonryItem({
         rating: post.rating,
         provider: itemProvider,
         handWritten: isAiPost,
-    }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost])
+        outfitDescription: cardOutfitDescription,
+    }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost, cardOutfitDescription])
     const natural = useNaturalPrompt({
         enabled: !isMergeMode && !isPackMode && !isNaturalLanguageMode,
         format: promptFormat,

@@ -169,6 +169,8 @@ export function useCardPrompt({
     appendedTags,
     hasAppends,
     conflictingTags: conflictResolutionConflictingTags,
+    outfitTags,
+    outfitDescription,
   } = derived
 
   // Check if this is an Aibooru post with prompt (still needed below for the
@@ -297,5 +299,7 @@ export function useCardPrompt({
     hasReplacements,
     appendedTags,
     hasAppends,
+    outfitTags,
+    outfitDescription,
   }
 }

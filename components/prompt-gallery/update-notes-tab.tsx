@@ -30,7 +30,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'Random outfit', body: "Customize prompt has a new Outfit option. Set it to Random outfit and every card with one girl gets different clothes, picked from more than 1,300 outfits. You choose the styles (seasons, party, swimwear and more) and whether to add only the main pieces or the whole outfit with legwear, bag and jewelry. Beach and snow scenes get clothes that fit them." },
+  { kind: 'new', title: 'Random outfit', body: "Customize prompt has a new Outfit option. Set it to Random outfit and every card with one girl gets different clothes, picked from more than 1,300 outfits. You choose the styles (seasons, party, swimwear and more) and whether to add only the main pieces or the whole outfit with legwear, bag and jewelry. Beach and snow scenes get clothes that fit them. In the Anima, FLUX.2 and MOSS-Image formats, the outfit is written out in full sentences, with its cut, fabric and trims." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)

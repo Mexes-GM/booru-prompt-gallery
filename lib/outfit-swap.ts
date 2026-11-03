@@ -25,6 +25,8 @@ export const OUTFIT_SLOTS = [
 export type OutfitSlot = (typeof OUTFIT_SLOTS)[number]
 
 export interface Outfit {
+  /** Position in public/outfits.json, which is also its index in outfit-descriptions.json. */
+  id: number
   style: OutfitStyle
   slots: Partial<Record<OutfitSlot, string[]>>
 }
@@ -34,6 +36,15 @@ export interface OutfitSettings {
   styles: readonly OutfitStyle[]
   detail: OutfitDetail
   library: readonly Outfit[]
+  /** Plain-English description per outfit id, for the natural-language formats. */
+  descriptions?: readonly string[]
+}
+
+export interface PickedOutfit {
+  id: number
+  tags: string[]
+  /** The outfit in sentences, trimmed like the tags; absent until descriptions load. */
+  description?: string
 }
 
 /** Parses public/outfits.json: `{ styles, slots, outfits: [styleIndex, [[slotIndex, tags]]][] }`. */
@@ -41,17 +52,23 @@ export function parseOutfitLibrary(raw: unknown): Outfit[] {
   const data = raw as { styles?: string[]; slots?: string[]; outfits?: [number, [number, string[]][]][] }
   if (!Array.isArray(data?.styles) || !Array.isArray(data?.slots) || !Array.isArray(data?.outfits)) return []
   const outfits: Outfit[] = []
-  for (const [styleIndex, slotList] of data.outfits) {
-    const style = data.styles[styleIndex] as OutfitStyle
-    if (!OUTFIT_STYLES.includes(style) || !Array.isArray(slotList)) continue
+  data.outfits.forEach(([styleIndex, slotList], id) => {
+    const style = data.styles![styleIndex] as OutfitStyle
+    if (!OUTFIT_STYLES.includes(style) || !Array.isArray(slotList)) return
     const slots: Outfit["slots"] = {}
     for (const [slotIndex, tags] of slotList) {
-      const slot = data.slots[slotIndex] as OutfitSlot
+      const slot = data.slots![slotIndex] as OutfitSlot
       if (OUTFIT_SLOTS.includes(slot) && Array.isArray(tags) && tags.length > 0) slots[slot] = tags
     }
-    if (Object.keys(slots).length > 0) outfits.push({ style, slots })
-  }
+    if (Object.keys(slots).length > 0) outfits.push({ id, style, slots })
+  })
   return outfits
+}
+
+/** Parses public/outfit-descriptions.json: `{ descriptions: string[] }`, indexed by outfit id. */
+export function parseOutfitDescriptions(raw: unknown): string[] {
+  const list = (raw as { descriptions?: unknown })?.descriptions
+  return Array.isArray(list) ? list.map((d) => (typeof d === "string" ? d : "")) : []
 }
 
 const norm = (tag: string) => tag.toLowerCase().replace(/_/g, " ").replace(/\\(?=[()])/g, "").trim()
@@ -96,12 +113,18 @@ const SIMPLE_TAGS_PER_SLOT = 2
 const CLOSE_FRAMING = new Set(["portrait", "upper body", "close-up", "face", "headshot", "bust"])
 const MID_FRAMING = new Set(["cowboy shot"])
 
-/** Tags of one outfit at the chosen detail, without what the framing can't show. */
-export function outfitTags(outfit: Outfit, detail: OutfitDetail, postTags: readonly string[] = []): string[] {
+/** Slots the post's framing can't show: shoes and legwear in close shots, shoes in a cowboy shot. */
+function hiddenSlots(postTags: readonly string[]): Set<OutfitSlot> {
   const set = new Set(postTags.map(norm))
   const hidden = new Set<OutfitSlot>()
   if ([...set].some((t) => CLOSE_FRAMING.has(t))) hidden.add("footwear").add("legwear")
   else if ([...set].some((t) => MID_FRAMING.has(t))) hidden.add("footwear")
+  return hidden
+}
+
+/** Tags of one outfit at the chosen detail, without what the framing can't show. */
+export function outfitTags(outfit: Outfit, detail: OutfitDetail, postTags: readonly string[] = []): string[] {
+  const hidden = hiddenSlots(postTags)
 
   // Lingerie sets have no top or bottom: underwear is their main garment.
   const main = outfit.slots.outfit || outfit.slots.top || outfit.slots.bottom ? SIMPLE_SLOTS : [...SIMPLE_SLOTS, "underwear"]
@@ -114,11 +137,48 @@ export function outfitTags(outfit: Outfit, detail: OutfitDetail, postTags: reado
     .flatMap((slot) => (outfit.slots[slot] ?? []).slice(0, perSlot))
 }
 
+// What a description sentence is about: the first garment word it names.
+// Descriptions go garment by garment, so the first one is the sentence's subject
+// ("A dress with a belt" is about the dress, "lace-top stockings" about stockings).
+const SENTENCE_KINDS: { kind: "main" | "footwear" | "legwear" | "accessory"; re: RegExp }[] = [
+  { kind: "main", re: /\b(?:dress|gown|(?<![-\w])top|shirt|blouse|skirt|pants|trousers|shorts|jeans|sweater|cardigan|jacket|coat|blazer|vest|hoodie|bikini|swimsuit|bra|panties|briefs|thong|corset|bodysuit|jumpsuit|romper|camisole|teddy|babydoll|negligee|robe|kimono|leotard|bodice|overalls|outfit)s?\b/i },
+  { kind: "footwear", re: /\b(?:shoes|boots|heels|sandals|sneakers|loafers|pumps|flats|slippers|mules|wedges|stilettos|footwear)\b/i },
+  { kind: "legwear", re: /\b(?:stockings|thigh-highs?|thighhighs|tights|pantyhose|socks|leggings|legwear|garters?|fishnets|leg warmers)\b/i },
+  { kind: "accessory", re: /\b(?:bag|handbag|purse|clutch|tote|backpack|basket|necklace|earrings?|bracelets?|rings?|choker|pendant|jewelry|sunglasses|glasses|hat|cap(?! sleeves?)|beret|beanie|headband|scarf|gloves|belt|watch|earmuffs|tiara|crown|brooch|anklet|accessor(?:y|ies))\b/i },
+]
+
+function sentenceKind(sentence: string): (typeof SENTENCE_KINDS)[number]["kind"] | null {
+  let best: { kind: (typeof SENTENCE_KINDS)[number]["kind"]; at: number } | null = null
+  for (const { kind, re } of SENTENCE_KINDS) {
+    const at = sentence.search(re)
+    if (at !== -1 && (!best || at < best.at)) best = { kind, at }
+  }
+  return best?.kind ?? null
+}
+
 /**
- * The outfit tags for one post, or null when the post keeps its own clothes.
+ * The description trimmed like the tags: "simple" keeps the main garments and
+ * shoes, and sentences about what the framing hides are left out.
+ */
+export function outfitDescription(text: string, detail: OutfitDetail, postTags: readonly string[] = []): string {
+  const hidden = hiddenSlots(postTags)
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => {
+      const kind = sentenceKind(sentence)
+      if (kind === "footwear") return !hidden.has("footwear")
+      if (kind === "legwear") return detail === "full" && !hidden.has("legwear")
+      if (kind === "accessory") return detail === "full"
+      return true
+    })
+    .join(" ")
+}
+
+/**
+ * The outfit for one post, or null when the post keeps its own clothes.
  * Seeded by the post id, so a card shows the same outfit every time.
  */
-export function pickOutfit(postTags: readonly string[], settings: OutfitSettings | undefined, seed: number): string[] | null {
+export function pickOutfit(postTags: readonly string[], settings: OutfitSettings | undefined, seed: number): PickedOutfit | null {
   if (!settings || settings.mode !== "random" || settings.library.length === 0 || settings.styles.length === 0) return null
   if (!isOutfitEligible(postTags)) return null
   const styles = stylesForScene(new Set(postTags.map(norm)), settings.styles)
@@ -127,7 +187,10 @@ export function pickOutfit(postTags: readonly string[], settings: OutfitSettings
   // Offset from the background's seed so the two picks aren't correlated.
   const outfit = pool[Math.floor(seededRandom(seed * 31 + 7)() * pool.length)]
   const tags = outfitTags(outfit, settings.detail, postTags)
-  return tags.length > 0 ? tags : null
+  if (tags.length === 0) return null
+  const text = settings.descriptions?.[outfit.id]
+  const description = text ? outfitDescription(text, settings.detail, postTags) : ""
+  return { id: outfit.id, tags, ...(description ? { description } : {}) }
 }
 
 // ─── Swapping ───────────────────────────────────────────────────────────────

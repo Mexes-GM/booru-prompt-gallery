@@ -4,6 +4,7 @@ import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import {
   DEFAULT_OUTFIT_STYLES,
   OUTFIT_STYLES,
+  parseOutfitDescriptions,
   parseOutfitLibrary,
   type Outfit,
   type OutfitDetail,
@@ -12,49 +13,52 @@ import {
   type OutfitStyle,
 } from "@/lib/outfit-swap"
 
-const EMPTY: readonly Outfit[] = []
+const EMPTY: Outfit[] = []
+const NO_DESCRIPTIONS: string[] = []
 const MAX_LOAD_ATTEMPTS = 3
 const RETRY_BASE_DELAY_MS = 1000
 
 /**
- * Shared, process-wide load of /outfits.json (same pattern as
+ * Shared, process-wide loads of the static outfit files (same pattern as
  * loadDetailedBackgrounds: one request per page, cleared on failure so a
- * retry starts fresh). Until it lands, pickOutfit has an empty library and
- * cards simply keep their own clothes.
+ * retry starts fresh). Until the library lands, cards keep their own clothes.
  */
-let pendingLoad: Promise<Outfit[]> | null = null
+const pendingLoads = new Map<string, Promise<unknown>>()
 
-function loadOutfitLibrary(): Promise<Outfit[]> {
-  if (!pendingLoad) {
-    pendingLoad = fetch("/outfits.json")
+function loadOnce<T>(url: string, parse: (raw: unknown) => T): Promise<T> {
+  let pending = pendingLoads.get(url) as Promise<T> | undefined
+  if (!pending) {
+    pending = fetch(url)
       .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status} fetching outfits.json`)
+        if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`)
         return res.json()
       })
-      .then(parseOutfitLibrary)
+      .then(parse)
       .catch((err) => {
-        pendingLoad = null
+        pendingLoads.delete(url)
         throw err
       })
+    pendingLoads.set(url, pending)
   }
-  return pendingLoad
+  return pending
 }
 
-function useOutfitLibrary(enabled: boolean): readonly Outfit[] {
-  const [library, setLibrary] = useState<readonly Outfit[]>(EMPTY)
+/** Loads a static outfit file once `enabled` is true, retrying a failed load a few times. */
+function useOutfitFile<T>(url: string, parse: (raw: unknown) => T, empty: T, enabled: boolean): T {
+  const [data, setData] = useState<T>(empty)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (!enabled) return
     let active = true
     let retryTimer: ReturnType<typeof setTimeout> | undefined
-    loadOutfitLibrary()
-      .then((data) => {
-        if (active) setLibrary(data)
+    loadOnce(url, parse)
+      .then((loaded) => {
+        if (active) setData(loaded)
       })
       .catch((err) => {
         if (!active) return
-        console.error("Failed to load the outfit library:", err)
+        console.error(`Failed to load ${url}:`, err)
         if (attempt < MAX_LOAD_ATTEMPTS - 1) {
           retryTimer = setTimeout(() => setAttempt((prev) => prev + 1), RETRY_BASE_DELAY_MS * 2 ** attempt)
         }
@@ -63,9 +67,9 @@ function useOutfitLibrary(enabled: boolean): readonly Outfit[] {
       active = false
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [enabled, attempt])
+  }, [url, parse, enabled, attempt])
 
-  return library
+  return data
 }
 
 const isStyle = (s: string): s is OutfitStyle => (OUTFIT_STYLES as readonly string[]).includes(s)
@@ -104,14 +108,18 @@ export function useOutfitSettings() {
   )
   const setOutfitStyles = (styles: OutfitStyle[]) => setStoredStyles(styles)
 
-  const library = useOutfitLibrary(outfitMode === "random")
+  const isRandom = outfitMode === "random"
+  const library = useOutfitFile("/outfits.json", parseOutfitLibrary, EMPTY, isRandom)
+  // The sentences only matter to the natural-language formats, so they load
+  // after the tags and cards fall back to the tag-built outfit until then.
+  const descriptions = useOutfitFile("/outfit-descriptions.json", parseOutfitDescriptions, NO_DESCRIPTIONS, isRandom && library.length > 0)
 
   const outfitSettings = useMemo<OutfitSettings | undefined>(
     () =>
-      outfitMode === "random" && library.length > 0
-        ? { mode: outfitMode, styles: outfitStyles, detail: outfitDetail, library }
+      isRandom && library.length > 0
+        ? { mode: outfitMode, styles: outfitStyles, detail: outfitDetail, library, ...(descriptions.length ? { descriptions } : {}) }
         : undefined,
-    [outfitMode, outfitStyles, outfitDetail, library]
+    [isRandom, outfitMode, outfitStyles, outfitDetail, library, descriptions]
   )
 
   return {

@@ -72,6 +72,10 @@ export interface DerivePostPromptOptions {
 }
 
 export interface DerivePostPromptResult {
+  /** Tags of the outfit that replaced the post's clothing, or null. */
+  outfitTags: string[] | null
+  /** That outfit in sentences, for the natural-language formats; null without one. */
+  outfitDescription: string | null
   /** Final prompt string (post cleanPrompt + Smart Tag Exclusion + global weights). */
   displayContent: string
   /** Same pipeline but without the "added tags" (addInput) — used for classification/copy. */
@@ -226,9 +230,10 @@ export function derivePostPrompt(
 
   // Random outfit, picked ONCE here for the same reason as backgroundContext.
   // Hand-written AI prompts are left as written.
-  const outfit = aiPrompt || !sharedCleaned
+  const picked = aiPrompt || !sharedCleaned
     ? null
     : pickOutfit(sharedCleaned.split(",").map((t) => t.trim()).filter(Boolean), outfitSettings, post.id)
+  const outfit = picked?.tags ?? null
 
   const applyBackground = (content: string): string => {
     if (!content) return content
@@ -320,5 +325,7 @@ export function derivePostPrompt(
     appendedTags: capturedAppends,
     hasAppends: capturedAppends.length > 0,
     conflictingTags: conflictResolution.conflictingTags,
+    outfitTags: outfit,
+    outfitDescription: picked?.description ?? null,
   }
 }
