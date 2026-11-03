@@ -10,7 +10,6 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { usePostHog } from 'posthog-js/react'
 import { Switch } from "@/components/ui/switch"
-import { Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { BackgroundMode } from "@/lib/background-detector"
 import type { MatchStrictness } from "@/lib/background-context"
@@ -496,36 +495,28 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             <Switch id={`${o.id}-embedded`} checked={o.checked} onCheckedChange={o.onChange} className="shrink-0" />
           </div>
         ))}
-        {/* Tag weights apply whenever one exists: no switch, just their state. */}
-        {globalWeightCount > 0 ? (
-          <div className="flex min-h-[56px] items-center justify-between gap-3 py-2">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-sm text-foreground">Tag weights</span>
-              <span className="text-xs text-muted-foreground">
-                {globalWeightCount} {isGlobalWeightsPaused ? "paused" : "active"}
-              </span>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsGlobalWeightsModalOpen(true)}
-              className="h-8 shrink-0 px-2.5 text-xs"
-              aria-label={`Edit tag weights (${globalWeightCount} ${isGlobalWeightsPaused ? "paused" : "active"})`}
-            >
-              Edit
-            </Button>
+        {/* Tag weights apply whenever one exists: no switch, just their state
+            on the button that opens them. */}
+        <div className="flex min-h-[56px] items-center justify-between gap-3 py-2">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-sm text-foreground">Tag weights</span>
+            <span className="text-xs text-muted-foreground">Apply the weights you set on tags to every card</span>
           </div>
-        ) : (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => setIsGlobalWeightsModalOpen(true)}
-            className="-ml-1 flex min-h-11 items-center gap-1.5 self-start rounded-md px-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-8 shrink-0 px-2.5 text-xs"
+            aria-label={globalWeightCount > 0
+              ? `Edit tag weights (${globalWeightCount} ${isGlobalWeightsPaused ? "paused" : "active"})`
+              : "Add tag weights"}
           >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            Add tag weights
-          </button>
-        )}
+            {globalWeightCount > 0
+              ? `${globalWeightCount} ${isGlobalWeightsPaused ? "paused" : "active"} · Edit`
+              : "Add"}
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2.5 border-t border-border/50 pt-3">
