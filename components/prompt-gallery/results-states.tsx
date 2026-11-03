@@ -95,7 +95,10 @@ export function ResultsStates({
     <>
       {/* Load More / States */}
       {filteredPostsLength > 0 && !showFavorites && !showHistory && activeFavoriteFolder !== 'artists' && (
-        <div className="text-center pb-8">
+        // min-h covers the tallest footer state (Load More button on touch
+        // screens), so swapping between the trigger, the "scrolling too fast"
+        // notice and "End of results" doesn't push the page footer around.
+        <div className="text-center pb-8 min-h-[10.5rem] flex flex-col justify-center">
           {sessionCapReached ? (
             <div className="space-y-1 max-w-xs mx-auto">
               <p className="text-sm text-warning-text">
