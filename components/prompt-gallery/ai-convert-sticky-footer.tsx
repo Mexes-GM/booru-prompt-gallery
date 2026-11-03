@@ -17,7 +17,7 @@ import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { cn } from '@/lib/utils'
 import { OpenAIIcon, AnthropicIcon, GoogleIcon, DeepSeekIcon, OpenRouterIcon, CloudflareIcon } from "@/components/icons/brand-icons"
-import { usePostHog } from 'posthog-js/react'
+import { track } from '@/lib/analytics'
 // ── Provider icons ──────────────────────────────────────────────────────────
 const ProviderIcon = ({ provider }: { provider: string }) => {
   const size = 14
@@ -101,7 +101,6 @@ const AiConvertStickyFooterComponent = ({
 }: AiConvertStickyFooterProps) => {
   const { settings, saveSettings, isLoaded } = useLLMSettings()
   const shouldReduceMotion = useLowMotion()
-  const posthog = usePostHog()
 
   const [result, setResult] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -199,7 +198,7 @@ const AiConvertStickyFooterComponent = ({
     resetCopyFeedback()
     
     const startTime = Date.now()
-    posthog.capture('ai_convert_started', {
+    track('ai_convert_started', {
       provider: prov,
       model_id: model || 'default'
     })
@@ -250,14 +249,14 @@ const AiConvertStickyFooterComponent = ({
       setResult(data.result)
       addToHistory(tagsToConvert, data.result)
       
-      posthog.capture('ai_convert_completed', {
+      track('ai_convert_completed', {
         provider: prov,
         model_id: model || 'default',
         generation_duration_ms: Date.now() - startTime
       })
     } catch (err: any) {
       console.error(err)
-      posthog.capture('ai_convert_failed', {
+      track('ai_convert_failed', {
         provider: prov,
         model_id: model || 'default',
         status,

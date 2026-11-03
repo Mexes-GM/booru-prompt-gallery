@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from "react"
-import { usePostHog } from "posthog-js/react"
+import { track } from "@/lib/analytics"
 import { useTheme } from "next-themes"
 import {
   Loader2,
@@ -99,7 +99,6 @@ function PocketNsfwToggle({ ratingFilter, setRatingFilter, booruProvider }: {
   setRatingFilter: (rating: string) => void
   booruProvider: string
 }) {
-  const posthog = usePostHog()
   const [dialogOpen, setDialogOpen] = useState(false)
   const isRule34 = booruProvider === "rule34"
   const nsfwOn = isRule34 || ratingFilter !== SAFE_RATING
@@ -110,13 +109,13 @@ function PocketNsfwToggle({ ratingFilter, setRatingFilter, booruProvider }: {
       return
     }
     const next = nextRatingFilter(ratingFilter)
-    posthog.capture("nsfw_preference_changed", { rating_filter: next, surface: "pocket" })
+    track("nsfw_preference_changed", { rating_filter: next, surface: "pocket" })
     setRatingFilter(next)
   }
 
   const confirm = () => {
     userPreferences.setNsfwAcknowledged(true)
-    posthog.capture("nsfw_preference_changed", { rating_filter: ALL_RATING, surface: "pocket" })
+    track("nsfw_preference_changed", { rating_filter: ALL_RATING, surface: "pocket" })
     setRatingFilter(ALL_RATING)
     setDialogOpen(false)
   }

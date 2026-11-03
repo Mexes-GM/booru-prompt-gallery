@@ -119,6 +119,7 @@ import {
 import { Label } from "@/components/ui/label"
 import {
   safeTrack,
+  track,
   initScrollDepthTracking,
   trackTimeOnPage,
   trackExternalLink,
@@ -221,7 +222,6 @@ import { useGlobalWeights } from "@/hooks/use-global-weights"
 import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useHistoryPosts } from "@/hooks/use-history-posts"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
-import { usePostHog } from 'posthog-js/react'
 import { usePromptFormat } from "@/hooks/use-natural-prompt"
 import { PROMPT_FORMAT_INFO, hasWordBudget, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { NaturalPromptStatus } from "@/components/prompt-gallery/prompt-format-setting"
@@ -531,7 +531,6 @@ export function PromptGallery() {
   const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
   const isMobile = useIsMobile()
-  const posthog = usePostHog()
 
   // History toggle — mirrors Favorites: switches the SAME masonry grid to show
   // previously copied prompts instead of navigating to a separate page/route.
@@ -1075,21 +1074,21 @@ export function PromptGallery() {
   // constants in lib/pack/pack-learning.ts can eventually be calibrated
   // against real usage instead of guessed. Never carries prompt text or raw
   // tag values, only category names/counts/provider — same privacy bar as
-  // every other posthog.capture() call in this file.
+  // every other track() call in this file.
   const packModeRemoveAxisValue = packMode.removeAxisValue
   const handlePackRemoveAxisValue = useCallback((category: TagCategory, value: string) => {
     packModeRemoveAxisValue(category, value)
-    posthog.capture('pack_axis_value_removed', {
+    track('pack_axis_value_removed', {
       category,
       booru_source: search.booruProvider,
       variety_level: packMode.varietyLevel,
     })
-  }, [packModeRemoveAxisValue, posthog, search.booruProvider, packMode.varietyLevel])
+  }, [packModeRemoveAxisValue, search.booruProvider, packMode.varietyLevel])
 
   const packModeRegenerate = packMode.regenerate
   const handlePackRegenerate = useCallback(() => {
     packModeRegenerate()
-    posthog.capture('pack_generated', {
+    track('pack_generated', {
       booru_source: search.booruProvider,
       variety_level: packMode.varietyLevel,
       locked_categories: Array.from(packMode.lockedCategories).join(','),
@@ -1097,7 +1096,7 @@ export function PromptGallery() {
       locked_category_count: packMode.lockedCategories.size,
       active_axis_count: packMode.activeAxisCategories.length,
     })
-  }, [packModeRegenerate, posthog, search.booruProvider, packMode.varietyLevel, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
+  }, [packModeRegenerate, search.booruProvider, packMode.varietyLevel, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
 
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
@@ -1318,7 +1317,7 @@ export function PromptGallery() {
       await navigator.clipboard.writeText(content)
 
       // PostHog Tracking
-      posthog.capture('prompt_copied', {
+      track('prompt_copied', {
         copy_type: isPrompt ? 'ai_text' : 'tags',
         booru_source: search.booruProvider,
         has_translated_tags: isAiConvertMode || content.includes('Masterpiece'),
@@ -1371,11 +1370,11 @@ export function PromptGallery() {
       })
       return false
     }
-  }, [toast, addToHistory, posthog, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts, isAiConvertMode])
+  }, [toast, addToHistory, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts, isAiConvertMode])
 
   const downloadImage = useCallback(async (post: BooruPost) => {
     try {
-      posthog.capture('image_downloaded', {
+      track('image_downloaded', {
         booru_source: search.booruProvider,
         resolution_type: 'full'
       })
@@ -1469,7 +1468,7 @@ export function PromptGallery() {
         if (fallbackUrl) window.open(fallbackUrl, '_blank', 'noopener,noreferrer')
       }
     }
-  }, [search.booruProvider, toast, posthog])
+  }, [search.booruProvider, toast])
 
   // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
   useLayoutEffect(() => {
@@ -2175,7 +2174,7 @@ export function PromptGallery() {
             // consent gate is never bypassed.
             isSafeFilterActive={search.ratingFilter === SAFE_RATING && userPreferences.getNsfwAcknowledged()}
             onToggleRatingFilter={() => {
-              posthog.capture('nsfw_preference_changed', { rating_filter: ALL_RATING, source: 'no_results' })
+              track('nsfw_preference_changed', { rating_filter: ALL_RATING, source: 'no_results' })
               search.setRatingFilter(ALL_RATING)
             }}
             blacklistCount={blacklist.length}

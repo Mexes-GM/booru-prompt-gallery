@@ -18,7 +18,7 @@ import { userPreferences } from "@/lib/storage"
 import { shouldConfirmNsfwEnable, nextRatingFilter, ALL_RATING } from "@/lib/nsfw-consent"
 import { EASE_OUT_STRONG_CSS } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-import { usePostHog } from 'posthog-js/react'
+import { track } from '@/lib/analytics'
 import { useReducedMotion } from "framer-motion"
 
 /** Strong ease-out for the ↻ button sliding in/out next to Shuffle and the
@@ -66,7 +66,6 @@ export function SearchBar({
   isValidating,
   leading,
 }: SearchBarProps) {
-  const posthog = usePostHog()
   const reduceMotion = useReducedMotion()
 
   // Capa 2: first-time confirmation before enabling NSFW. Once acknowledged
@@ -81,13 +80,13 @@ export function SearchBar({
       return
     }
     const newRating = nextRatingFilter(ratingFilter)
-    posthog.capture('nsfw_preference_changed', { rating_filter: newRating })
+    track('nsfw_preference_changed', { rating_filter: newRating })
     setRatingFilter(newRating)
   }
 
   const confirmEnableNsfw = () => {
     userPreferences.setNsfwAcknowledged(true)
-    posthog.capture('nsfw_preference_changed', { rating_filter: ALL_RATING })
+    track('nsfw_preference_changed', { rating_filter: ALL_RATING })
     setRatingFilter(ALL_RATING)
     setNsfwDialogOpen(false)
   }
@@ -112,7 +111,7 @@ export function SearchBar({
             value={searchTags}
             setValue={setSearchTags}
             onSearch={() => {
-              posthog.capture('search_executed', {
+              track('search_executed', {
                 booru_source: booruProvider,
                 query_length: searchTags.length,
                 is_shuffle: isShuffle

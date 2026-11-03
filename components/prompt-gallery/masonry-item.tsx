@@ -91,8 +91,7 @@ import { SaveFavoriteButton } from "./save-favorite-button"
 import { CardActionsMenu } from "./card-actions-menu"
 import { CopyOptionsDropdown } from "./copy-options-dropdown"
 import { FavoriteFolder } from "@/hooks/use-booru-favorites"
-import { trackExternalLink } from "@/lib/analytics"
-import { usePostHog } from 'posthog-js/react'
+import { track, trackExternalLink } from "@/lib/analytics"
 import { toast } from "@/hooks/use-toast"
 import { SCALE_CONFIG } from "@/components/masonry-grid"
 import type { TagAppendRule } from "@/lib/cleanPrompt"
@@ -299,7 +298,6 @@ export const MasonryItem = memo(function MasonryItem({
     onToggleExpand,
 }: MasonryItemProps) {
     const lowMotion = useLowMotion()
-    const posthog = usePostHog()
 
     // State to hold modified prompt from user interaction
     const [modifiedContent, setModifiedContent] = useState<string | null>(null)
@@ -456,7 +454,7 @@ export const MasonryItem = memo(function MasonryItem({
         const subset = classifiedTags[category]
 
         if (subset.length > 0) {
-            posthog.capture('category_tags_copied', {
+            track('category_tags_copied', {
                 category_name: category
             })
             await copyToClipboard(subset.join(', '), post.id, false, post.preview_file_url)
