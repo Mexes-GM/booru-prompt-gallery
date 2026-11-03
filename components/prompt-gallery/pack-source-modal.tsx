@@ -1,17 +1,16 @@
 "use client"
 
 /**
- * Pack Mode's "source of variations" modal — the rating/tags-source/provider
- * questions. Shown as its own step right after a base is picked (card or
- * pasted prompt), and reopened on demand from the chip in the builder's
- * header. Nothing about tag-limit checking, provider recommendation, or the
- * answers shape changed from the old popover.
+ * Pack Mode's "source of variations" modal — content rating, booru and which
+ * posts to sample from. A new base starts on the current search without it;
+ * this only opens from the source chip in the builder's header.
  */
 import { useEffect, useMemo, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, Pencil, Ban, AlertTriangle, SlidersHorizontal } from "lucide-react"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import { hasMultipleTags, getProviderTagLimit, type BooruProvider } from "@/lib/api-client"
@@ -42,13 +41,10 @@ export interface PackSourceModalProps {
   onCancel: () => void
   /** The main gallery's current search tags — used as the "Current search" option. */
   currentSearchTags: string
-  /** How many posts are currently loaded for these answers; hidden when null
-   *  (the first-time step, before anything has been fetched). */
-  postCount: number | null
+  /** How many posts are currently loaded for these answers. */
+  postCount: number
   /** Ratings of those loaded posts; hidden when null or empty. */
   ratingBreakdown?: RatingBreakdown | null
-  /** Label for the confirm button — "Continue" as a setup step, "Apply" when editing. */
-  confirmLabel?: string
   open: boolean
 }
 
@@ -100,7 +96,7 @@ export function summarizePackSourceAnswers(answers: PackSourceAnswers): string {
   return `${rating} · ${PROVIDER_LABELS[answers.booruProvider]}`
 }
 
-export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags, postCount, ratingBreakdown, confirmLabel = "Apply", open }: PackSourceModalProps) {
+export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags, postCount, ratingBreakdown, open }: PackSourceModalProps) {
   const [ratingTier, setRatingTier] = useState<"sfw" | "nsfw">(answers.ratingMode === "sfw" ? "sfw" : "nsfw")
   const [nsfwSub, setNsfwSub] = useState<"questionable" | "explicit" | "both">(
     answers.ratingMode === "sfw" ? "questionable" : answers.ratingMode
@@ -159,7 +155,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
           </DialogTitle>
           <DialogDescription>
             Where Pack Mode samples the tags that vary between prompts.
-            {postCount !== null && <> · {postCount} posts loaded{breakdownText && <> ({breakdownText})</>}</>}
+            {' '}{postCount} posts loaded{breakdownText && <> ({breakdownText})</>}.
           </DialogDescription>
         </DialogHeader>
 
@@ -178,7 +174,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
                   className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium rounded-md border transition-all duration-200 disabled:cursor-not-allowed ${isSelected ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
                 >
                   <span>{opt.label}</span>
-                  <span className="text-[10px] font-normal">{opt.description}</span>
+                  <span className="text-xs font-normal">{opt.description}</span>
                 </button>
               )
             })}
@@ -194,10 +190,10 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
                     key={opt.value}
                     onClick={() => setNsfwSub(opt.value)}
                     disabled={!!searchRating.rating}
-                    className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium rounded-md border transition-all duration-200 disabled:cursor-not-allowed ${isSelected ? 'bg-warning-soft border-warning-border text-warning-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+                    className={`relative overflow-hidden flex flex-col items-center justify-center gap-0.5 py-2 text-xs font-medium rounded-md border transition-all duration-200 disabled:cursor-not-allowed ${isSelected ? 'bg-warning-soft border-warning-border text-warning-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
                   >
                     <span>{opt.label}</span>
-                    <span className="text-[10px] font-normal leading-tight text-center">{opt.description}</span>
+                    <span className="text-xs font-normal leading-tight text-center">{opt.description}</span>
                   </button>
                 )
               })}
@@ -205,7 +201,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
           )}
 
           {searchRating.rating && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Set by the <code className="font-mono">rating:</code> tag in your search tags.
             </p>
           )}
@@ -213,22 +209,17 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
 
         {/* Provider */}
         <div className="space-y-2">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Sample from</Label>
-          <div className="grid grid-cols-5 gap-1.5">
-            {PROVIDERS.map((p) => {
-              const isSelected = booruProvider === p
-              return (
-                <button
-                  type="button"
-                  key={p}
-                  onClick={() => setBooruProvider(p)}
-                  className={`relative overflow-hidden flex items-center justify-center py-2 text-[11px] font-medium rounded-md border transition-all duration-200 ${isSelected ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
-                >
-                  {PROVIDER_LABELS[p]}
-                </button>
-              )
-            })}
-          </div>
+          <Label htmlFor="pack-source-provider" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Sample from</Label>
+          <Select value={booruProvider} onValueChange={(v) => setBooruProvider(v as BooruProvider)}>
+            <SelectTrigger id="pack-source-provider" className="h-10">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PROVIDERS.map((p) => (
+                <SelectItem key={p} value={p}>{PROVIDER_LABELS[p]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Tags source */}
@@ -239,7 +230,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
               type="button"
               onClick={() => setTagsSource("current")}
               disabled={!currentSearchTags.trim()}
-              className={`relative overflow-hidden flex items-center justify-center gap-1 py-2 text-[11px] font-medium rounded-md border transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed ${tagsSource === "current" ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+              className={`relative overflow-hidden flex items-center justify-center gap-1 py-2 text-xs font-medium rounded-md border transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed ${tagsSource === "current" ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
             >
               <Search className="w-3 h-3" />
               Current
@@ -247,7 +238,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
             <button
               type="button"
               onClick={() => setTagsSource("custom")}
-              className={`relative overflow-hidden flex items-center justify-center gap-1 py-2 text-[11px] font-medium rounded-md border transition-all duration-200 ${tagsSource === "custom" ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+              className={`relative overflow-hidden flex items-center justify-center gap-1 py-2 text-xs font-medium rounded-md border transition-all duration-200 ${tagsSource === "custom" ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
             >
               <Pencil className="w-3 h-3" />
               Custom
@@ -255,14 +246,14 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
             <button
               type="button"
               onClick={() => setTagsSource("empty")}
-              className={`relative overflow-hidden flex items-center justify-center gap-1 py-2 text-[11px] font-medium rounded-md border transition-all duration-200 ${tagsSource === "empty" ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+              className={`relative overflow-hidden flex items-center justify-center gap-1 py-2 text-xs font-medium rounded-md border transition-all duration-200 ${tagsSource === "empty" ? 'bg-mode-pack-soft border-mode-pack-border text-mode-pack-text shadow-sm' : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
             >
               <Ban className="w-3 h-3" />
               Empty
             </button>
           </div>
 
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {tagsSource === "current" && "Samples only from posts matching your current search tags."}
             {tagsSource === "custom" && "Samples only from posts matching the tags you type below."}
             {tagsSource === "empty" && "Samples from general, unfiltered results — the widest pool."}
@@ -287,7 +278,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
             <div className="flex items-start gap-2 rounded-lg border border-warning-border bg-warning-soft p-2.5">
               <AlertTriangle className="w-3.5 h-3.5 text-warning-text flex-shrink-0 mt-0.5" />
               <div className="flex-1 space-y-1.5">
-                <p className="text-[11px] text-warning-text">
+                <p className="text-xs text-warning-text">
                   {PROVIDER_LABELS[booruProvider]} only allows {tagLimitWarning.limit} search tag{tagLimitWarning.limit === 1 ? '' : 's'} — you have {tagLimitWarning.tagCount}. The rest will be dropped.
                 </p>
                 {tagLimitWarning.recommended && (
@@ -295,7 +286,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-6 text-[10px] px-2 border-warning-border text-warning-text hover:bg-warning-soft"
+                    className="h-6 text-xs px-2 border-warning-border text-warning-text hover:bg-warning-soft"
                     onClick={() => setBooruProvider(tagLimitWarning.recommended!)}
                   >
                     Switch to {PROVIDER_LABELS[tagLimitWarning.recommended]} ({getProviderTagLimit(tagLimitWarning.recommended) === Infinity ? 'no limit' : `up to ${getProviderTagLimit(tagLimitWarning.recommended)} tags`})
@@ -308,7 +299,7 @@ export function PackSourceModal({ answers, onApply, onCancel, currentSearchTags,
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
-          <Button type="button" onClick={handleApply}>{confirmLabel}</Button>
+          <Button type="button" onClick={handleApply}>Apply</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -35,7 +35,7 @@ export function isGroupCountTag(tag: string): boolean {
 }
 
 /** Normalized, deduped character tags of a post, in on-post order. */
-function postCharacters(post: BooruPost): string[] {
+export function postCharacters(post: BooruPost): string[] {
   return Array.from(new Set(splitTags(post.tag_string_character || '').map(normalizeTagForPack).filter(Boolean)))
 }
 
@@ -104,4 +104,10 @@ export function characterFromSearch(characterTags: string[], searchTags: string)
   )
   const matches = characterTags.filter((c) => searched.has(c))
   return matches.length === 1 ? matches[0] : null
+}
+
+/** For a multi-character post, the character the search is about (null otherwise, or when unclear). */
+export function searchedCharacterOf(post: BooruPost, searchTags: string): string | null {
+  const characters = postCharacters(post)
+  return characters.length > 1 ? characterFromSearch(characters, searchTags) : null
 }
