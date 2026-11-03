@@ -174,7 +174,7 @@ function Line({ row, gutter }: { row: Row; gutter: string }) {
               <span
                 className={cn(
                   kind === "drop" && "text-faint-foreground line-through decoration-muted-foreground/60",
-                  kind === "new" && "rounded-sm bg-primary/15 px-0.5 text-primary",
+                  kind === "new" && "rounded-sm bg-primary/15 px-0.5 text-primary-text",
                   kind === "up" && "rounded-sm bg-info/15 px-0.5 text-info-text",
                   kind === "down" && "rounded-sm bg-destructive/15 px-0.5 text-destructive-text",
                 )}
@@ -218,7 +218,7 @@ function Specimen() {
             className={cn(
               "rounded-md px-2.5 py-1 pointer-coarse:py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
               i === active
-                ? "bg-primary/15 text-primary"
+                ? "bg-primary/15 text-primary-text"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
