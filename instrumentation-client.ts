@@ -5,7 +5,7 @@
 // Unhandled exceptions are autocaptured (`capture_exceptions`); caught errors
 // are reported through lib/error-reporting.ts.
 
-import type { CaptureResult } from "posthog-js";
+import type { CaptureResult, PostHogInterface } from "posthog-js";
 import { getTranslationState, initTranslationTracing } from "@/lib/error-context";
 
 // Exception messages that are non-actionable noise: browser extensions,
@@ -104,6 +104,24 @@ const isLocalHost =
   typeof window !== 'undefined' &&
   /^(localhost|127\.0\.0\.1|\[::1\]|.+\.localhost)$/.test(window.location.hostname)
 
+// Starts session replay once the page has loaded and the main thread is idle.
+// It is switched on through the SDK itself, so it reuses the same anonymous id,
+// session and queue as the events captured before.
+function startDeferredFeatures(ph: PostHogInterface) {
+  const start = () => {
+    ph.startSessionRecording();
+  };
+  const whenIdle = () => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(start, { timeout: 5000 });
+    } else {
+      setTimeout(start, 2000);
+    }
+  };
+  if (document.readyState === "complete") whenIdle();
+  else window.addEventListener("load", whenIdle, { once: true });
+}
+
 if (process.env.NEXT_PUBLIC_POSTHOG_KEY && !isLocalHost) {
   // Reverse-proxy host. Previously "/ingest" (same-origin) was proxied to
   // PostHog by next.config.mjs rewrites — but that ran through Next.js
@@ -138,6 +156,12 @@ if (process.env.NEXT_PUBLIC_POSTHOG_KEY && !isLocalHost) {
       // heatmaps on even if they are later switched off in PostHog's settings.
       capture_heatmaps: { flush_interval_milliseconds: 30000 },
       capture_exceptions: true,
+      // Session replay (the recorder script, ~67 KB) starts after `load` + idle
+      // instead of competing with the app's own JS during the first paint (see
+      // startDeferredFeatures). Surveys stay off: the app has no survey UI, and
+      // the SDK does not load surveys.js when the option is flipped on later.
+      disable_session_recording: true,
+      disable_surveys: true,
       before_send: filterExceptions,
       // Multi-clicking a text field is caret placement / word-line selection,
       // not frustration — it was the #1 "$rageclick" source (search input) and
@@ -148,7 +172,8 @@ if (process.env.NEXT_PUBLIC_POSTHOG_KEY && !isLocalHost) {
       debug: false, // Disabled to prevent console spam
       // Browser-translation tracing registers super properties, so it must
       // start only once PostHog is loaded.
-      loaded: () => {
+      loaded: (ph) => {
+        startDeferredFeatures(ph);
         // Events tracked before init (e.g. app_open) were queued by
         // lib/analytics.ts; send them now with their original timestamps.
         import("@/lib/analytics")
