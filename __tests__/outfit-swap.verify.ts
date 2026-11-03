@@ -73,6 +73,10 @@ assert(swapped.includes("hair ribbon"), "hair accessory kept")
 assert(["1girl", "solo", "long hair", "smile", "classroom"].every((t) => swapped.includes(t)), "other tags kept")
 assert(swapped.indexOf("red dress") === swapped.indexOf("hair ribbon") + 1, "outfit lands where the clothing was")
 assert(swapOutfit(post, null).join() === post.join(), "no outfit leaves tags untouched")
+const glasses = swapOutfit(["1girl", "solo", "round eyewear", "school uniform"], ["red dress", "sunglasses"])
+assert(glasses.includes("round eyewear") && !glasses.includes("sunglasses") && glasses.includes("red dress"), "the character keeps her glasses and the outfit's are left out")
+const costume = swapOutfit(["ichinose uruha (6th costume)", "1girl", "solo", "black dress"], ["red dress"])
+assert(!costume.includes("ichinose uruha (6th costume)") && costume.includes("red dress"), "a named costume goes with the old clothes")
 assert(swapOutfit(["1girl", "red dress"], ["red dress"]).filter((t) => t === "red dress").length === 1, "no duplicate tags")
 
 // ─── 3. Picking ─────────────────────────────────────────────────────────────
@@ -166,6 +170,10 @@ const bagSource = { prompt: "1girl, solo, long hair, cardigan, black pants, hand
 const bagFlux = formatPrompt("flux2", naturalPromptInput({ ...bagSource, outfitDescription: "A white cardigan. Black pants. A brown leather handbag with short handles." }, {}), {}, { fullDetail: true }).text
 // Without the taxonomy every tag also lands in "Additional details"; only the prose counts here.
 assert((bagFlux.split("Additional details")[0].match(/handbag/g) ?? []).length === 1, `the outfit's bag is said once (${bagFlux})`)
+const derivedCostume = derivePostPrompt({ ...booruPost, tag_string_character: "kotobuki_hisako kotobuki_hisako_(summer_costume)" }, {
+  excludeInput: "", addInput: "", includeCharacters: true, optimizeTags: true, outfitSettings: settings(),
+})
+assert(!derivedCostume.displayContent.includes("summer costume") && derivedCostume.displayContent.includes("kotobuki hisako"), `the card keeps the character but not her named costume (${derivedCostume.displayContent})`)
 const plain = formatPrompt("flux2", naturalPromptInput(source, {}), {}, { fullDetail: true }).text
 assert(!plain.includes("ribbed knit"), "without a description the outfit comes from the tags")
 

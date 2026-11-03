@@ -241,6 +241,14 @@ const GARMENT_WORDS = new Set([
 /** Hair accessories are part of how the character looks, so they stay. */
 const isHairAccessory = (tag: string) => /^hair[ a-z]/.test(tag) || tag.startsWith("hairclip") || tag.startsWith("hairband")
 
+/** Glasses are too: a character who wears them keeps them, and the outfit's own are left out. */
+const EYEWEAR_RE = /(?:glasses|eyewear|goggles|monocle|pince-nez)$/
+const isEyewear = (tag: string) => EYEWEAR_RE.test(tag)
+
+/** "uruha (6th costume)", "alternate costume": a named costume the new outfit replaces. */
+export const COSTUME_TAG_RE = /\((?:[\w-]+ )*costume\)$|^(?:official )?alternate costume$/
+const isCostumeTag = (tag: string) => COSTUME_TAG_RE.test(tag)
+
 function isGarmentAction(tag: string): boolean {
   return tag.split(/[\s-]+/).some((w) => GARMENT_WORDS.has(w))
 }
@@ -255,10 +263,14 @@ export function swapOutfit(tags: readonly string[], outfit: readonly string[] | 
   let clothingAt = -1
   // With no clothing to replace, the outfit goes after the appearance tags.
   let afterAppearance = -1
+  let keepsEyewear = false
   for (const tag of tags) {
     const n = norm(tag)
+    if (isCostumeTag(n)) continue
     const category = classifyTag(n, tagOverrides)
-    const isClothing = category === "clothing" && !isHairAccessory(n)
+    const kept = isHairAccessory(n) || isEyewear(n)
+    if (kept && isEyewear(n)) keepsEyewear = true
+    const isClothing = category === "clothing" && !kept
     const isAction = (category === "pose" || category === "other") && isGarmentAction(n)
     if (isClothing || isAction) {
       if (isClothing && clothingAt === -1) clothingAt = result.length
@@ -268,7 +280,7 @@ export function swapOutfit(tags: readonly string[], outfit: readonly string[] | 
     result.push(tag)
   }
   const present = new Set(result.map(norm))
-  const added = outfit.filter((t) => !present.has(norm(t)))
+  const added = outfit.filter((t) => !present.has(norm(t)) && !(keepsEyewear && isEyewear(norm(t))))
   const insertAt = clothingAt !== -1 ? clothingAt : afterAppearance !== -1 ? afterAppearance : result.length
   result.splice(insertAt, 0, ...added)
   return result

@@ -10,7 +10,7 @@ import { classifyTags } from "./tag-classifier"
 import { TAG_CATEGORY_IDS } from "./tag-taxonomy"
 import { processBackgroundTags, BackgroundMode } from "./background-detector"
 import { type BackgroundContext, type MatchStrictness } from "./background-context"
-import { swapOutfit } from "./outfit-swap"
+import { COSTUME_TAG_RE, swapOutfit } from "./outfit-swap"
 import { splitTags, splitCommaSeparatedTags } from "./utils/tag-utils"
 
 // --------------- Types ---------------
@@ -1382,6 +1382,8 @@ export function cleanPrompt(
   ]
     .map((t) => normalize(t))
     .filter(Boolean)
+    // A named costume ("uruha (6th costume)") would fight the new outfit.
+    .filter((t) => !options?.outfitTags || !COSTUME_TAG_RE.test(t))
 
   const allFinal = new Set<string>()
 

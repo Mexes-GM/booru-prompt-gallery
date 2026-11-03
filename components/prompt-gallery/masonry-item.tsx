@@ -29,7 +29,7 @@ import { getPostUrl } from "@/lib/constants"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
-import { liveOutfitDescription, type OutfitSettings } from "@/lib/outfit-swap"
+import { type OutfitSettings } from "@/lib/outfit-swap"
 import { type TagCategory, type ClassifiedTags, type RichnessDepth } from "@/lib/tag-classifier"
 import { PACK_AXES, RICHNESS_AXES, TAG_CATEGORIES } from "@/lib/tag-taxonomy"
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
@@ -348,7 +348,6 @@ export const MasonryItem = memo(function MasonryItem({
         conflictingTags,
         hasReplacements,
         replacedTags,
-        outfitTags,
         outfitDescription,
     } = useCardPrompt({
         post,
@@ -388,10 +387,7 @@ export const MasonryItem = memo(function MasonryItem({
     const [detailOverride, setDetailOverride] = useState<{ fullDetail: boolean; global: boolean } | null>(null)
     const fullDetail = detailOverride?.global === globalFullDetail ? detailOverride.fullDetail : globalFullDetail
     const keepNames = includeCharacters && !isAiPost
-    const cardOutfitDescription = useMemo(
-        () => liveOutfitDescription(baseContent, outfitTags, outfitDescription),
-        [baseContent, outfitTags, outfitDescription],
-    )
+    const cardOutfitDescription = outfitDescription ?? undefined
     const naturalSource = useMemo(() => ({
         prompt: baseContent,
         characters: keepNames ? post.tag_string_character : undefined,

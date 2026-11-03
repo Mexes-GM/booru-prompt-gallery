@@ -140,9 +140,13 @@ export function renderMoss(scene: Scene, options: ProseOptions = {}): RenderResu
 // Light, camera, style, extras and raw details: worth less than any list item of the sentences above them.
 const MINOR_PRIORITY = 6
 
-// proseSections' index of the clothing section.
-const CLOTHING_SECTION = 5
-const BAG_RE = /\b(?:bag|handbag|purse|tote|clutch|backpack|basket)s?\b/i
+// Kinds of bag a held sentence and the outfit's sentences can both name.
+const BAG_KINDS: [kind: string, re: RegExp][] = [
+  ["bag", /\b(?:bag|handbag|purse|tote|clutch|satchel)s?\b/i],
+  ["backpack", /\bbackpacks?\b/i],
+  ["basket", /\bbaskets?\b/i],
+]
+const bagKinds = (text: string) => BAG_KINDS.filter(([, re]) => re.test(text)).map(([kind]) => kind)
 
 function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: number): RenderResult {
   const withDescription = renderProseWith(scene, options, defaultMaxWords, options.outfitDescription)
@@ -161,18 +165,25 @@ function renderProseWith(scene: Scene, options: ProseOptions, defaultMaxWords: n
   const withOutfit = (p: SceneProse): SceneProse => {
     const outfit = outfitSentences(outfitDescription, p.pronouns)
     if (!outfit) return p
-    // The outfit's bag is already in its sentences; "She has a brown handbag." would say it twice.
-    const held = BAG_RE.test(outfit) ? sentencesOf(p.held).filter((s) => !BAG_RE.test(s)).join(" ") : p.held
+    // The outfit's bag is already in its sentences: "She has a brown handbag." would say
+    // it twice. Only the same kind of bag goes; a held basket stays next to a handbag.
+    const outfitBags = new Set(bagKinds(outfit))
+    const held = outfitBags.size
+      ? sentencesOf(p.held).filter((s) => !bagKinds(s).some((k) => outfitBags.has(k))).join(" ")
+      : p.held
     return { ...p, clothing: outfit, held }
   }
   const full = withOutfit(describeScene(scene, options.phrases))
   const medium = options.medium ?? full.medium
-  const fullFit = fitBudget(proseSections(full, medium), maxWords)
+  const fullSections = proseSections(full, medium)
+  const fullFit = fitBudget(fullSections, maxWords)
   const minorOnly = fullFit.sentences.every((s) => (fullFit.kept.has(s) && !s.cut) || s.priority >= MINOR_PRIORITY)
   const prose = minorOnly ? full : withOutfit(describeScene(scene, options.phrases, { compact: true }))
-  const { sentences, kept } = minorOnly ? fullFit : fitBudget(proseSections(prose, medium), maxWords)
+  const sections = minorOnly ? fullSections : proseSections(prose, medium)
+  const { sentences, kept } = minorOnly ? fullFit : fitBudget(sections, maxWords)
   const text = properNouns(joinSameSubject(sentences.filter((s) => kept.has(s)).map((s) => s.text), prose.clauses).join(" "))
-  const outfitCut = !!outfitDescription && sentences.some((s) => s.order === CLOTHING_SECTION && (!kept.has(s) || s.cut))
+  const clothingOrder = sections.findIndex((s) => s.id === "clothing")
+  const outfitCut = !!outfitDescription && sentences.some((s) => s.order === clothingOrder && (!kept.has(s) || s.cut))
   return { result: { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }, outfitCut }
 }
 
@@ -222,7 +233,7 @@ function joinedSentence(group: SubjectClause[]): string {
   return `${group[0].subject} ${group.slice(0, -1).map((c) => c.predicate).join(", ")}${and}${last.predicate}${last.tail ? `, with ${last.tail}` : ""}.`
 }
 
-function proseSections(prose: SceneProse, medium: string): { text: string; priority: number; short?: string }[] {
+function proseSections(prose: SceneProse, medium: string): { id?: string; text: string; priority: number; short?: string }[] {
   const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
   // Output order reads naturally; `priority` decides what survives the budget.
   // `short` stands in for a section's first sentence when that one does not fit.
@@ -235,7 +246,7 @@ function proseSections(prose: SceneProse, medium: string): { text: string; prior
     // A long pose sentence is cut to its first actions rather than lost.
     { text: prose.pose, priority: 1, short: prose.poseShort },
     { text: prose.body, priority: 4 },
-    { text: prose.clothing, priority: 2, short: prose.clothingShort },
+    { id: "clothing", text: prose.clothing, priority: 2, short: prose.clothingShort },
     { text: prose.held, priority: 5 },
     { text: prose.setting, priority: 3 },
     { text: prose.lighting, priority: 6 },

@@ -624,7 +624,7 @@ export function PromptGallery() {
     outfitStyles, setOutfitStyles,
     outfitDetail, setOutfitDetail,
     outfitSettings, outfitCount,
-  } = useOutfitSettings(search.ratingFilter === 'rating:general')
+  } = useOutfitSettings(search.ratingFilter === SAFE_RATING)
 
   const [excludeInput, setExcludeInput] = usePersistentState(
     "",
@@ -2012,7 +2012,7 @@ export function PromptGallery() {
                                 outfitDetail={outfitDetail}
                                 setOutfitDetail={setOutfitDetail}
                                 outfitCount={outfitCount}
-                                outfitSafeOnly={search.ratingFilter === 'rating:general'}
+                                outfitSafeOnly={search.ratingFilter === SAFE_RATING}
                               />
                             </div>
                             </div>

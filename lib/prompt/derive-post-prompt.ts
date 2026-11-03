@@ -25,7 +25,7 @@ import {
 } from "@/lib/cleanPrompt"
 import { type BackgroundMode, processBackgroundTags } from "@/lib/background-detector"
 import { deriveBackgroundContext, type MatchStrictness } from "@/lib/background-context"
-import { pickOutfit, swapOutfit, type OutfitSettings } from "@/lib/outfit-swap"
+import { liveOutfitDescription, pickOutfit, swapOutfit, type OutfitSettings } from "@/lib/outfit-swap"
 import { classifyTag } from "@/lib/tag-classifier"
 import { applyWeights } from "@/lib/weight-utils"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
@@ -74,7 +74,7 @@ export interface DerivePostPromptOptions {
 export interface DerivePostPromptResult {
   /** Tags of the outfit that replaced the post's clothing, or null. */
   outfitTags: string[] | null
-  /** That outfit in sentences, for the natural-language formats; null without one. */
+  /** That outfit in sentences, for the natural-language formats; null without one or once its tags are excluded. */
   outfitDescription: string | null
   /** Final prompt string (post cleanPrompt + Smart Tag Exclusion + global weights). */
   displayContent: string
@@ -326,6 +326,7 @@ export function derivePostPrompt(
     hasAppends: capturedAppends.length > 0,
     conflictingTags: conflictResolution.conflictingTags,
     outfitTags: outfit,
-    outfitDescription: picked?.description ?? null,
+    // Only while the outfit's tags are still in the prompt (an exclusion can take them out).
+    outfitDescription: liveOutfitDescription(baseContent, outfit, picked?.description ?? null) ?? null,
   }
 }
