@@ -171,7 +171,7 @@ const SOCIALS = [
 function Line({ row, gutter }: { row: Row; gutter: string }) {
   return (
     <div className="grid grid-cols-[3.75rem_minmax(0,1fr)] gap-2">
-      <span className="select-none text-muted-foreground/60">{gutter}</span>
+      <span className="select-none text-faint-foreground">{gutter}</span>
       <span className="break-words">
         {row.tokens.map((tok, i) => {
           const [text, kind] = typeof tok === "string" ? [tok, undefined] : tok
@@ -180,7 +180,7 @@ function Line({ row, gutter }: { row: Row; gutter: string }) {
               {i > 0 && <span className="text-muted-foreground/50">{row.sep}</span>}
               <span
                 className={cn(
-                  kind === "drop" && "text-muted-foreground/50 line-through decoration-muted-foreground/60",
+                  kind === "drop" && "text-faint-foreground line-through decoration-muted-foreground/60",
                   kind === "new" && "rounded-sm bg-primary/15 px-0.5 text-primary",
                   kind === "up" && "rounded-sm bg-info/15 px-0.5 text-info-text",
                   kind === "down" && "rounded-sm bg-destructive/15 px-0.5 text-destructive-text",
