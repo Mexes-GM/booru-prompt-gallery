@@ -54,8 +54,11 @@ import {
   getTagSlotFromOverrides,
 } from '@/lib/tag-taxonomy'
 import { fetchTagOverridesForNames } from '@/lib/supabase/client-queries'
-import { useOutfitLibrary } from '@/hooks/use-outfit-settings'
-import { ADULT_OUTFIT_STYLES, outfitPackPool, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
+import { useOutfitDescriptions, useOutfitLibrary } from '@/hooks/use-outfit-settings'
+import { usePromptFormat } from '@/hooks/use-natural-prompt'
+import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
+import { packNaturalSource } from '@/lib/pack/pack-natural'
+import type { NaturalPromptSource } from '@/lib/prompt/natural-format'
 
 const DEFAULT_PROMPT_COUNT = 10
 /** Upper bound for the "Min tags per prompt" control. */
@@ -267,6 +270,12 @@ export interface UsePackModeResult {
   setContentRating: (rating: PackRatingMode | null) => void
 
   generatedPrompts: PackPrompt[]
+  /**
+   * What the natural-language formats convert for one generated prompt: the
+   * base character's names, the pack's rating and, for library clothing, the
+   * outfit's own sentences (see lib/pack/pack-natural.ts).
+   */
+  naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
   regenerate: () => void
   /** Replaces one generated prompt (by index) with a fresh variation (§6). Returns false if none was found. */
   rerollPrompt: (index: number) => boolean
@@ -734,11 +743,16 @@ export function usePackMode(
     },
     [clothingFromLibrary, outfitLibrary, libraryStyles]
   )
-  const libraryPool = useMemo(
+  const libraryDraw = useMemo(
     () => (clothingFromLibrary && outfitLibrary.length > 0
-      ? Array.from(new Set(outfitPackPool(outfitLibrary, libraryStyles, outfitOptions.detail, librarySeed, LIBRARY_POOL_SIZE).map(canonicalizeBundleTags)))
+      ? outfitPackDraw(outfitLibrary, libraryStyles, outfitOptions.detail, librarySeed, LIBRARY_POOL_SIZE)
+          .map(({ outfit, tags }) => ({ outfit, value: canonicalizeBundleTags(tags) }))
       : null),
     [clothingFromLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, librarySeed]
+  )
+  const libraryPool = useMemo(
+    () => (libraryDraw ? Array.from(new Set(libraryDraw.map((o) => o.value))) : null),
+    [libraryDraw]
   )
   // Where each axis's candidates come from: the collected posts, or the library for clothing.
   const sourceValues = useCallback(
@@ -893,6 +907,42 @@ export function usePackMode(
     const resolution = resolutionForAspect(aspect, prefs)
     return resolution ? { ...prompt, ...resolution } : prompt
   }, [axisValueCategory, axisAspects, axisCounts, baseCard, poolAspect])
+
+  // Library outfit behind each clothing value as the pool shows it (slot
+  // trimming applied, like mergedAxisValues), so a prompt can carry the id
+  // of the outfit it wears and the natural formats can use its description.
+  const libraryOutfitByValue = useMemo(() => {
+    const map = new Map<string, number>()
+    libraryDraw?.forEach(({ outfit, value }) => {
+      const shown = filterValuesBySlotState('clothing', [value], slotState, effectiveOverrides)[0]
+      if (shown && !map.has(shown)) map.set(shown, outfit.id)
+    })
+    return map
+  }, [libraryDraw, slotState, effectiveOverrides])
+
+  /** A generated prompt with its suggested size and, for library clothing, its outfit. */
+  const annotatePrompt = useCallback((prompt: PackPrompt): PackPrompt => {
+    const sized = withResolution(prompt)
+    const outfitId = prompt.values.map((v) => libraryOutfitByValue.get(v)).find((id) => id !== undefined)
+    return outfitId === undefined ? sized : { ...sized, outfitId }
+  }, [withResolution, libraryOutfitByValue])
+
+  // Outfit sentences only matter to the natural-language formats.
+  const { format: promptFormat } = usePromptFormat()
+  const outfitDescriptions = useOutfitDescriptions(clothingFromLibrary && promptFormat !== 'tags' && outfitLibrary.length > 0)
+  const outfitsById = useMemo(() => new Map<number, Outfit>(outfitLibrary.map((o) => [o.id, o])), [outfitLibrary])
+  const naturalSourceOf = useCallback(
+    (prompt: PackPrompt) => packNaturalSource(prompt, {
+      provider: baseCard?._provider || booruProvider,
+      character: focusCharacter,
+      copyrights: baseCard?.tag_string_copyright || undefined,
+      contentRating,
+      baseRating: baseCard?.rating,
+      outfits: outfitsById,
+      descriptions: outfitDescriptions,
+    }),
+    [baseCard, booruProvider, focusCharacter, contentRating, outfitsById, outfitDescriptions]
+  )
 
   const addAxisValue = useCallback((category: TagCategory, value: string) => {
     let normalized: string
@@ -1323,7 +1373,7 @@ export function usePackMode(
       }
       return cleaned
     }
-    const cleaned = interleave(ratingPasses(contentRating, promptCount).map(runPass)).map(withResolution)
+    const cleaned = interleave(ratingPasses(contentRating, promptCount).map(runPass)).map(annotatePrompt)
     setGeneratedPrompts(cleaned)
 
     // Record the "shown" half of the pick/show signal (§7.2) ONCE per
@@ -1367,7 +1417,7 @@ export function usePackMode(
     axisValueCategory,
     alwaysAddTags,
     contentRating,
-    withResolution,
+    annotatePrompt,
   ])
 
   /**
@@ -1409,7 +1459,7 @@ export function usePackMode(
       }
       const replacement = pickReplacement(rawCandidates, others, clean, lockedTags)
       if (!replacement) return false
-      setGeneratedPrompts((prev) => prev.map((p, i) => (i === index ? withResolution(replacement) : p)))
+      setGeneratedPrompts((prev) => prev.map((p, i) => (i === index ? annotatePrompt(replacement) : p)))
       return true
     },
     [
@@ -1423,7 +1473,7 @@ export function usePackMode(
       cleanOptions,
       alwaysAddTags,
       contentRating,
-      withResolution,
+      annotatePrompt,
     ]
   )
 
@@ -1590,6 +1640,7 @@ export function usePackMode(
     setContentRating,
 
     generatedPrompts,
+    naturalSourceOf,
     regenerate,
     rerollPrompt,
 

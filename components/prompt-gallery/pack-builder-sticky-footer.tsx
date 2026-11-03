@@ -22,6 +22,10 @@ import { splitCommaSeparatedTags } from '@/lib/utils/tag-utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
+import { useNaturalPrompt, usePromptFormat } from '@/hooks/use-natural-prompt'
+import { convertPromptOnce } from '@/lib/prompt/natural-prompt-loader'
+import type { NaturalPromptSource } from '@/lib/prompt/natural-format'
+import type { PromptFormat } from '@/lib/prompt/prompt-format'
 import { toast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 import Image from 'next/image'
@@ -111,9 +115,14 @@ export interface PackBuilderStickyFooterProps {
     onClearBase: () => void
     onExit: () => void
     prompts: PackPrompt[]
-    /** `text` is what goes on the clipboard (with the size prefix when that's on). Resolves to whether the copy worked. */
-    onCopyPrompt: (prompt: PackPrompt, text: string) => Promise<boolean>
-    onCopyAll: (text: string) => Promise<boolean>
+    /** What the natural-language formats convert for one prompt (see usePackMode). */
+    naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
+    /**
+     * `text` is what goes on the clipboard: in the chosen prompt format, with the
+     * size prefix when that's on. Resolves to whether the copy worked.
+     */
+    onCopyPrompt: (prompt: PackPrompt, text: string, format: PromptFormat) => Promise<boolean>
+    onCopyAll: (text: string, format: PromptFormat) => Promise<boolean>
     onResetLearning?: () => void
     children?: React.ReactNode
 }
@@ -133,7 +142,12 @@ function bareTag(token: string): string {
 /** Row actions show on hover/focus with a mouse, always (and at full size) on touch. */
 const ROW_ACTION_CLASS = "h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 flex-shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 focus-visible:opacity-100"
 
-/** A single generated prompt row: text + re-roll + a per-item copy button with its own "Copied" feedback. */
+/**
+ * A single generated prompt row: text + re-roll + a per-item copy button with
+ * its own "Copied" feedback. In a natural-language format the row shows the
+ * prompt converted the way a gallery card would (tags until it's ready, or if
+ * the converter can't load).
+ */
 const PromptRow = memo(({
     prompt,
     index,
@@ -142,21 +156,33 @@ const PromptRow = memo(({
     lockedSet,
     variedSet,
     showResolution,
+    naturalSourceOf,
+    format,
+    fullDetail,
+    tagOverrides,
 }: {
     prompt: PackPrompt
     index: number
-    onCopy: (prompt: PackPrompt) => Promise<boolean>
+    /** `shown`: the converted text on screen, so the copy matches it. */
+    onCopy: (prompt: PackPrompt, shown?: string) => Promise<boolean>
     onReroll: (index: number) => void
     lockedSet: ReadonlySet<string>
     variedSet: ReadonlySet<string>
     showResolution: boolean
+    naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
+    format: PromptFormat
+    fullDetail: boolean
+    tagOverrides: Record<string, string>
 }) => {
     const tokens = useMemo(() => prompt.prompt.split(',').map((t) => t.trim()).filter(Boolean), [prompt.prompt])
     const [isCopied, triggerCopyFeedback] = useCopyFeedback()
     const lowMotion = useLowMotion()
+    const source = useMemo(() => naturalSourceOf(prompt), [naturalSourceOf, prompt])
+    const natural = useNaturalPrompt({ enabled: true, format, fullDetail, source, overrides: tagOverrides })
+    const naturalText = natural.prompt?.text
 
     const handleCopy = async () => {
-        if (await onCopy(prompt)) triggerCopyFeedback()
+        if (await onCopy(prompt, naturalText)) triggerCopyFeedback()
     }
 
     return (
@@ -172,7 +198,11 @@ const PromptRow = memo(({
                 <span className="text-xs font-mono font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded w-full text-center">
                     {String(index + 1).padStart(2, '0')}
                 </span>
-                <span className="text-xs text-faint-foreground tabular-nums" title="Tags in this prompt">{tokens.length}</span>
+                {natural.prompt ? (
+                    <span className="text-xs text-faint-foreground tabular-nums" title="Words in this prompt">{natural.prompt.words}</span>
+                ) : (
+                    <span className="text-xs text-faint-foreground tabular-nums" title="Tags in this prompt">{tokens.length}</span>
+                )}
                 {showResolution && prompt.width && prompt.height && (
                     <span
                         className="text-xs text-mode-pack-text tabular-nums whitespace-nowrap"
@@ -182,7 +212,12 @@ const PromptRow = memo(({
                     </span>
                 )}
             </div>
-            <p className="flex-1 min-w-0 text-xs lg:text-[13px] leading-relaxed font-mono break-words select-all">
+            {naturalText ? (
+                <p className="flex-1 min-w-0 text-xs lg:text-[13px] leading-relaxed text-foreground break-words select-all">
+                    {naturalText}
+                </p>
+            ) : (
+            <p className={`flex-1 min-w-0 text-xs lg:text-[13px] leading-relaxed font-mono break-words select-all ${natural.status === 'loading' ? 'opacity-60' : ''}`}>
                 {tokens.map((token, i) => {
                     const bare = bareTag(token)
                     const tone = lockedSet.has(bare)
@@ -198,6 +233,7 @@ const PromptRow = memo(({
                     )
                 })}
             </p>
+            )}
             <div className="flex flex-col sm:flex-row pointer-coarse:flex-col gap-0.5">
                 <Button
                     type="button"
@@ -226,9 +262,17 @@ const PromptRow = memo(({
 })
 PromptRow.displayName = "PromptRow"
 
+const warnTagsCopied = () => toast({
+    description: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
+    variant: "destructive",
+    duration: 3000,
+})
+
 /** Results list: generated prompts with per-item copy/reroll + a "Copy all" split button. */
 const PackResultsList = memo(({
     prompts,
+    naturalSourceOf,
+    tagOverrides,
     onCopyPrompt,
     onCopyAll,
     onReroll,
@@ -238,14 +282,17 @@ const PackResultsList = memo(({
     minTotalTags,
 }: {
     prompts: PackPrompt[]
-    onCopyPrompt: (prompt: PackPrompt, text: string) => Promise<boolean>
-    onCopyAll: (text: string) => Promise<boolean>
+    naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
+    tagOverrides: Record<string, string>
+    onCopyPrompt: (prompt: PackPrompt, text: string, format: PromptFormat) => Promise<boolean>
+    onCopyAll: (text: string, format: PromptFormat) => Promise<boolean>
     onReroll: (index: number) => void
     lockedSet: ReadonlySet<string>
     variedSet: ReadonlySet<string>
     isCollecting: boolean
     minTotalTags: number
 }) => {
+    const { format, fullDetail } = usePromptFormat()
     const shortCount = minTotalTags > 0
         ? prompts.filter((p) => p.prompt.split(',').filter((t) => t.trim()).length < minTotalTags).length
         : 0
@@ -267,15 +314,35 @@ const PackResultsList = memo(({
             // Best-effort, like every other preference write.
         }
     }
+    // A prompt in the chosen format: the text a row already shows, or one
+    // conversion (like Bulk Send's). Tags when the converter can't load, as the
+    // rows themselves fall back to.
+    const bodyOf = useCallback(async (p: PackPrompt, shown?: string): Promise<{ text: string; failed: boolean }> => {
+        if (format === 'tags') return { text: p.prompt, failed: false }
+        if (shown) return { text: shown, failed: false }
+        try {
+            return { text: (await convertPromptOnce(format, naturalSourceOf(p), tagOverrides, fullDetail)).text, failed: false }
+        } catch {
+            return { text: p.prompt, failed: true }
+        }
+    }, [format, fullDetail, naturalSourceOf, tagOverrides])
     const textOf = useCallback(
-        (p: PackPrompt) => (addResolution ? withResolutionPrefix(p.prompt, p) : p.prompt),
+        (p: PackPrompt, body: string) => (addResolution ? withResolutionPrefix(body, p) : body),
         [addResolution]
     )
-    const handleCopyPrompt = useCallback((p: PackPrompt) => onCopyPrompt(p, textOf(p)), [onCopyPrompt, textOf])
+    const handleCopyPrompt = useCallback(async (p: PackPrompt, shown?: string) => {
+        const body = await bodyOf(p, shown)
+        if (body.failed) warnTagsCopied()
+        return onCopyPrompt(p, textOf(p, body.text), body.failed ? 'tags' : format)
+    }, [bodyOf, onCopyPrompt, textOf, format])
 
     const handleCopyAll = async () => {
         if (prompts.length === 0) return
-        if (await onCopyAll(prompts.map(textOf).join('\n'))) triggerCopyAllFeedback()
+        const bodies = await Promise.all(prompts.map((p) => bodyOf(p)))
+        const failed = bodies.some((b) => b.failed)
+        if (failed) warnTagsCopied()
+        const text = prompts.map((p, i) => textOf(p, bodies[i].text)).join('\n')
+        if (await onCopyAll(text, failed ? 'tags' : format)) triggerCopyAllFeedback()
     }
 
     return (
@@ -288,9 +355,11 @@ const PackResultsList = memo(({
                             <span className="text-xs font-semibold bg-muted text-foreground px-2 py-0.5 rounded-full tabular-nums">
                                 {prompts.length}
                             </span>
-                            <span className="text-xs text-muted-foreground">
-                                <span className="font-semibold text-foreground">bold</span> = varied
-                            </span>
+                            {format === 'tags' && (
+                                <span className="text-xs text-muted-foreground">
+                                    <span className="font-semibold text-foreground">bold</span> = varied
+                                </span>
+                            )}
                         </>
                     )}
                 </div>
@@ -377,6 +446,10 @@ const PackResultsList = memo(({
                                 lockedSet={lockedSet}
                                 variedSet={variedSet}
                                 showResolution={addResolution}
+                                naturalSourceOf={naturalSourceOf}
+                                format={format}
+                                fullDetail={fullDetail}
+                                tagOverrides={tagOverrides}
                             />
                         ))}
                     </AnimatePresence>
@@ -540,6 +613,7 @@ const PackBuilderStickyFooterComponent = ({
     onClearBase,
     onExit,
     prompts,
+    naturalSourceOf,
     onCopyPrompt,
     onCopyAll,
     onResetLearning,
@@ -1055,6 +1129,8 @@ const PackBuilderStickyFooterComponent = ({
                                 >
                                     <PackResultsList
                                         prompts={prompts}
+                                        naturalSourceOf={naturalSourceOf}
+                                        tagOverrides={tagOverrides}
                                         onCopyPrompt={onCopyPrompt}
                                         onCopyAll={onCopyAll}
                                         onReroll={handleReroll}

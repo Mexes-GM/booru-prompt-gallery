@@ -90,7 +90,7 @@ export interface NaturalPromptView {
 }
 
 interface UseNaturalPromptOptions {
-  /** False keeps the card on tags (Merge, Pack and AI modes work on tags). */
+  /** False keeps the card on tags (Merge and AI modes work on tags). */
   enabled: boolean
   format: PromptFormat
   fullDetail: boolean

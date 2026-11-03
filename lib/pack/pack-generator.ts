@@ -658,6 +658,8 @@ export interface PackPrompt {
   /** Suggested generation size, from the source posts' proportions (lib/pack/prompt-resolution.ts). */
   width?: number
   height?: number
+  /** Id of the library outfit the clothing came from (Pack Mode's "From the outfit library"). */
+  outfitId?: number
 }
 
 /**
