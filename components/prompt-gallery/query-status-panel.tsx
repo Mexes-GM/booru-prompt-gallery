@@ -65,14 +65,15 @@ export function QueryStatusPanel({
               {queryMeta.tags.map((tag, index) => (
                 <Tooltip key={`${tag.value}-${index}`}>
                   <TooltipTrigger asChild>
-                    <span
+                    <button
+                      type="button"
                       className={cn(
-                        "cursor-help rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80",
+                        "cursor-help rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80 focus-ring",
                         tag.dropped && "line-through text-destructive-text/80 bg-destructive/10"
                       )}
                     >
                       {tag.value}
-                    </span>
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
                     {tag.dropped
@@ -87,7 +88,7 @@ export function QueryStatusPanel({
             <div className="flex shrink-0 items-center gap-3.5">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className={cn("flex cursor-help items-center gap-1.5", isAtLimit && "text-warning-text")}>
+                  <button type="button" className={cn("flex cursor-help items-center gap-1.5 rounded-sm focus-ring", isAtLimit && "text-warning-text")}>
                     {isUnlimited ? (
                       <>
                         <InfinityIcon className="h-3.5 w-3.5" />
@@ -109,7 +110,7 @@ export function QueryStatusPanel({
                         {queryMeta.slotsUsed} of {queryMeta.slotLimit} tag slots used
                       </>
                     )}
-                  </span>
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-[260px] text-xs">
                   {isUnlimited

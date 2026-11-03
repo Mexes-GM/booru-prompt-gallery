@@ -43,9 +43,14 @@ export function UserNav() {
   if (!user) {
     return (
       <LoginDialog>
-        <Button variant="ghost" size="sm" className="gap-2 relative overflow-hidden group">
-          <span className="absolute inset-0 bg-primary/10 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-300" />
-          <UserIcon className="h-4 w-4 text-muted-foreground group-hover:text-primary-text transition-colors" />
+        {/* The hover fill is clipped by its own wrapper rather than by the
+            button, so the button's ::after can reach 44px on touch screens. */}
+        {/* aria-label: on phones the button is icon-only, and hidden text names nothing. */}
+        <Button variant="ghost" size="sm" aria-label="Sign In" className="gap-2 relative group pointer-coarse:after:absolute pointer-coarse:after:-inset-x-0.5 pointer-coarse:after:-inset-y-1">
+          <span className="absolute inset-0 overflow-hidden rounded-[inherit]" aria-hidden="true">
+            <span className="absolute inset-0 bg-primary/10 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-300" />
+          </span>
+          <UserIcon className="h-4 w-4 text-muted-foreground group-hover:text-primary-text transition-colors" aria-hidden="true" />
           <span className="hidden sm:inline font-medium text-muted-foreground group-hover:text-foreground transition-colors">Sign In</span>
         </Button>
       </LoginDialog>

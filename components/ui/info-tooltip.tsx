@@ -60,6 +60,7 @@ export function InfoTooltip({
 }: InfoTooltipProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const coarse = useCoarsePointer();
+  const panelId = React.useId();
 
   const panelClassName = cn(
     // Override shadcn's default background/padding for our custom layout
@@ -140,17 +141,27 @@ export function InfoTooltip({
     );
   }
 
-  // Pointer devices: keep the original hover behavior over the whole label+icon.
+  // Pointer devices: hovering the whole label+icon opens it, and the icon is a
+  // real button so keyboard focus opens it too (Radix opens on the focus that
+  // bubbles up to the trigger span). The button points at the open panel
+  // itself, since Radix only describes the span.
   return (
     <TooltipProvider delayDuration={delayDuration}>
       <Tooltip open={isOpen} onOpenChange={setIsOpen}>
         <TooltipTrigger asChild>
           <span className={cn("cursor-help inline-flex items-center gap-1.5", triggerClassName)}>
             {children}
-            <Info className="w-4 h-4 text-faint-foreground hover:text-primary-text transition-colors" />
+            <button
+              type="button"
+              aria-label={title}
+              aria-describedby={isOpen ? panelId : undefined}
+              className="cursor-help rounded-sm text-faint-foreground transition-colors hover:text-primary-text focus-ring"
+            >
+              <Info className="w-4 h-4" />
+            </button>
           </span>
         </TooltipTrigger>
-        <TooltipContent side={side} sideOffset={8} className={panelClassName}>
+        <TooltipContent id={panelId} side={side} sideOffset={8} className={panelClassName}>
           {isOpen && panel}
         </TooltipContent>
       </Tooltip>
