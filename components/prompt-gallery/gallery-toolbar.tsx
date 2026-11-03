@@ -1,7 +1,7 @@
 "use client"
 
 import { startTransition, useId, useOptimistic } from "react"
-import { usePostHog } from "posthog-js/react"
+import { track } from "@/lib/analytics"
 import { motion, useReducedMotion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import {
@@ -72,7 +72,6 @@ export function GalleryToolbar({
   scaleValue,
   setScaleValue,
 }: GalleryToolbarProps) {
-  const posthog = usePostHog()
   const pillId = useId()
   const reduceMotion = useReducedMotion()
 
@@ -98,10 +97,10 @@ export function GalleryToolbar({
       }
     })
     if (prev === "merge" || next === "merge") {
-      posthog.capture('merge_mode_toggled', { action: next === "merge" ? 'enable' : 'disable' })
+      track('merge_mode_toggled', { action: next === "merge" ? 'enable' : 'disable' })
     }
     if (prev === "pack" || next === "pack") {
-      posthog.capture('pack_mode_toggled', { action: next === "pack" ? 'enable' : 'disable' })
+      track('pack_mode_toggled', { action: next === "pack" ? 'enable' : 'disable' })
     }
   }
 
@@ -166,7 +165,7 @@ export function GalleryToolbar({
           aria-pressed={showFavorites}
           onClick={() => {
             toggleFavorites()
-            posthog.capture('favorites_panel_toggled', { action: showFavorites ? 'close' : 'open' })
+            track('favorites_panel_toggled', { action: showFavorites ? 'close' : 'open' })
           }}
           className={cn("h-11 gap-2 px-2 sm:h-10 sm:px-3", showFavorites && "bg-primary/10 text-primary-text hover:bg-primary/15 hover:text-primary-text")}
         >
@@ -180,7 +179,7 @@ export function GalleryToolbar({
           aria-pressed={showHistory}
           onClick={() => {
             toggleHistory()
-            posthog.capture('history_panel_toggled', { action: showHistory ? 'close' : 'open' })
+            track('history_panel_toggled', { action: showHistory ? 'close' : 'open' })
           }}
           className={cn("h-11 gap-2 px-2 sm:h-10 sm:px-3", showHistory && "bg-primary/10 text-primary-text hover:bg-primary/15 hover:text-primary-text")}
         >
@@ -210,7 +209,7 @@ export function GalleryToolbar({
             <DropdownMenuItem
               onSelect={() => {
                 onOpenQuickTeach()
-                posthog.capture('quick_teach_opened')
+                track('quick_teach_opened')
               }}
               className="cursor-pointer items-start gap-3 py-2"
             >

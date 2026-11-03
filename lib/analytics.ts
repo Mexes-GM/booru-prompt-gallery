@@ -6,45 +6,22 @@
  * identically.
  */
 
-import posthog from "posthog-js"
+import { capture as queuedCapture } from "@/lib/posthog-queue"
 import { setErrorContext } from "@/lib/error-reporting"
-
-// posthog.init() runs asynchronously (instrumentation-client.ts) and posthog-js
-// silently drops captures made before it, so mount-time events such as
-// app_open could race it and vanish. They wait here until the `loaded` callback
-// calls flushPendingEvents(). Bounded: on localhost or without a key PostHog
-// never loads and the queue just stops growing.
-const MAX_PENDING_EVENTS = 50
-const pendingEvents: Array<{ event: string; props?: Record<string, unknown>; timestamp: Date }> = []
 
 // Crash-proof PostHog capture. Guards SSR (no window) and never throws so
 // telemetry can never take down the app. This is the single choke point that
-// routes the track* helpers below into PostHog product analytics.
+// routes the track* helpers below into PostHog product analytics. posthog-js
+// loads after the first paint; events tracked before that (e.g. app_open) wait
+// in lib/posthog-queue.ts and are sent with their original timestamps.
 function capture(event: string, props?: Record<string, unknown>) {
   if (typeof window === 'undefined') return
-  try {
-    if (!posthog.__loaded) {
-      if (pendingEvents.length < MAX_PENDING_EVENTS) {
-        pendingEvents.push({ event, props, timestamp: new Date() })
-      }
-      return
-    }
-    posthog.capture(event, props)
-  } catch {
-    /* non-fatal: telemetry is best-effort */
-  }
+  queuedCapture(event, props)
 }
 
-/** Sends the events queued before PostHog finished loading. */
-export function flushPendingEvents() {
-  const queued = pendingEvents.splice(0)
-  for (const { event, props, timestamp } of queued) {
-    try {
-      posthog.capture(event, props, { timestamp })
-    } catch {
-      /* non-fatal */
-    }
-  }
+/** Tracks a product event. Use this instead of importing posthog-js. */
+export function track(event: string, props?: Record<string, unknown>) {
+  capture(event, props)
 }
 
 // Generic event capture (kept for callers that use the raw API).

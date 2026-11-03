@@ -6,12 +6,22 @@
  * and receives source maps at build time (next.config.mjs), so these helpers
  * only cover errors the app catches and wants to report on purpose.
  *
+ * posthog-js loads after the first paint (instrumentation-client.ts). Errors
+ * reported before that wait in lib/posthog-queue.ts and are sent once it loads,
+ * with the time they happened and the reference id already returned here.
+ *
  * Browser-only: posthog-js does not run on the server. Server-side callers
  * (route handlers, server actions) fall back to console.error, which lands in
  * the Vercel/Netlify function logs.
  */
 
-import posthog from "posthog-js"
+import {
+  QUEUED_TIMESTAMP_PROP,
+  QUEUED_UUID_PROP,
+  getPostHog,
+  uuidv7,
+  withPostHog,
+} from "@/lib/posthog-queue"
 
 export interface ErrorContext {
   /** Low-cardinality labels to filter/group by in PostHog (e.g. `context`). */
@@ -41,13 +51,22 @@ export function reportError(error: unknown, ctx: ErrorContext = {}): string | un
     console.error("[error]", err, ctx)
     return undefined
   }
+  const props = {
+    ...ctx.tags,
+    ...(ctx.extra ? { extra: ctx.extra } : {}),
+    ...(ctx.level ? { $exception_level: ctx.level } : {}),
+  }
   try {
-    const result = posthog.captureException(err, {
-      ...ctx.tags,
-      ...(ctx.extra ? { extra: ctx.extra } : {}),
-      ...(ctx.level ? { $exception_level: ctx.level } : {}),
+    const posthog = getPostHog()
+    if (posthog) return posthog.captureException(err, props)?.uuid
+    // Not loaded yet: hand out the event id now and let before_send apply it,
+    // together with the original time, when the queued exception is sent.
+    const now = Date.now()
+    const uuid = uuidv7(now)
+    withPostHog((ph) => {
+      ph.captureException(err, { ...props, [QUEUED_TIMESTAMP_PROP]: now, [QUEUED_UUID_PROP]: uuid })
     })
-    return result?.uuid
+    return uuid
   } catch {
     /* non-fatal: telemetry is best-effort */
     return undefined
@@ -66,9 +85,5 @@ export function reportMessage(message: string, ctx: ErrorContext = {}): string |
  */
 export function setErrorContext(props: Record<string, string | number | boolean | null>): void {
   if (typeof window === "undefined") return
-  try {
-    posthog.register(props)
-  } catch {
-    /* non-fatal */
-  }
+  withPostHog((ph) => ph.register(props))
 }

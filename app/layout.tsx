@@ -5,7 +5,6 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import ErrorBoundary from '@/components/error-boundary'
-import { PostHogProvider } from '@/components/analytics/posthog-provider'
 import { themeHex } from '@/lib/theme/tokens.generated'
 import { themeBootstrapScript } from '@/lib/theme/theme-bootstrap'
 
@@ -192,14 +191,12 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <PostHogProvider>
-          <ErrorBoundary>
-            <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-              {children}
-              <Toaster />
-            </ThemeProvider>
-          </ErrorBoundary>
-        </PostHogProvider>
+        <ErrorBoundary>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            {children}
+            <Toaster />
+          </ThemeProvider>
+        </ErrorBoundary>
       </body>
     </html>
   )

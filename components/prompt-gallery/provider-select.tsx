@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { usePostHog } from "posthog-js/react"
+import { track } from "@/lib/analytics"
 import { Check, ChevronDown } from "lucide-react"
 import {
   DropdownMenu,
@@ -55,12 +55,11 @@ export function ProviderSelect({ booruProvider, setBooruProvider, onProviderChan
   // provider (which cannot be rating-filtered). Once acknowledged, switching is
   // instant. Applies the same side effects as a normal provider switch.
   const [rule34DialogOpen, setRule34DialogOpen] = useState(false)
-  const posthog = usePostHog()
 
   const applyProvider = (p: BooruProvider) => {
     setBooruProvider(p)
     onProviderChange(p)
-    posthog.capture('provider_changed', { provider: p })
+    track('provider_changed', { provider: p })
   }
 
   const handleSelectProvider = (p: BooruProvider) => {
@@ -76,7 +75,7 @@ export function ProviderSelect({ booruProvider, setBooruProvider, onProviderChan
     userPreferences.setRule34Acknowledged(true)
     applyProvider(ADULT_ONLY_PROVIDER as BooruProvider)
     setRule34DialogOpen(false)
-    posthog.capture('rule34_consent_confirmed')
+    track('rule34_consent_confirmed')
   }
 
   return (

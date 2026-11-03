@@ -7,7 +7,7 @@
 // without sending extra events. The single exception is the one-shot
 // `browser_translation_detected` event, fired at most once per page load.
 
-import posthog from "posthog-js"
+import { capture } from "@/lib/posthog-queue"
 import { setErrorContext } from "@/lib/error-reporting"
 
 export interface TranslationState {
@@ -94,17 +94,13 @@ export function initTranslationTracing(): void {
     setErrorContext({ page_translated: true })
     if (!reported) {
       reported = true
-      try {
-        posthog.capture("browser_translation_detected", {
-          reason,
-          font_node_count: state.fontNodeCount,
-          html_classes: state.htmlClasses,
-          nav_languages: state.navigatorLanguages,
-          translate_attr: state.translateAttr,
-        })
-      } catch {
-        /* non-fatal */
-      }
+      capture("browser_translation_detected", {
+        reason,
+        font_node_count: state.fontNodeCount,
+        html_classes: state.htmlClasses,
+        nav_languages: state.navigatorLanguages,
+        translate_attr: state.translateAttr,
+      })
       // One-shot: translation is a sticky state toggle, so stop observing.
       observer?.disconnect()
     }
