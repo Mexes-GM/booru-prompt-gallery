@@ -33,6 +33,8 @@ export interface NaturalPromptSource {
   provider?: string
   /** A prompt someone typed (AI-generated posts): names may lack their series qualifier. */
   handWritten?: boolean
+  /** "Random outfit" in sentences: said instead of the outfit sentence built from tags. */
+  outfitDescription?: string
 }
 
 export interface FormattedPrompt {
@@ -79,13 +81,14 @@ export function naturalPromptInput(source: NaturalPromptSource, overrides: Recor
   const copyrights = uniqueTags([...fieldTags(source.copyrights), ...(trusted ? [] : split.copyrights ?? [])])
   // The card's prompt also lists the names the post fields carry.
   const names = new Set([...characters, ...copyrights].map(normalizeTag))
-  return resolveNames({
+  const input = resolveNames({
     general: [...split.general, ...(trusted ? split.copyrights ?? [] : [])].filter((tag) => !names.has(normalizeTag(tag))),
     characters,
     copyrights,
     artists: split.artists,
     rating: ratingLetter(source.rating, source.provider),
   }, overrides, { inferNames: !trusted })
+  return source.outfitDescription ? { ...input, outfitDescription: source.outfitDescription } : input
 }
 
 /**
@@ -151,10 +154,11 @@ export function formatPrompt(
   const { phrases } = options
   const scene = buildScene(input, overrides, { traits: options.traits, characterAliases: options.characterAliases, phrases })
   const maxWords = options.fullDetail ? null : undefined
+  const outfitDescription = input.outfitDescription
   const result = format === "anima"
-    ? renderAnima(scene, { phrases })
+    ? renderAnima(scene, { phrases, outfitDescription })
     : format === "flux2"
-      ? renderFlux2(scene, { phrases, maxWords })
-      : renderMoss(scene, { phrases, maxWords })
+      ? renderFlux2(scene, { phrases, maxWords, outfitDescription })
+      : renderMoss(scene, { phrases, maxWords, outfitDescription })
   return { text: result.text, words: countWords(result.text), omitted: format === "anima" ? 0 : result.omitted }
 }

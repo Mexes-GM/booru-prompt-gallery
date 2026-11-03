@@ -13,7 +13,37 @@ import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import type { BackgroundMode } from "@/lib/background-detector"
 import type { MatchStrictness } from "@/lib/background-context"
+import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, type OutfitDetail, type OutfitMode, type OutfitStyle } from "@/lib/outfit-swap"
+import { Flame, Flower2, Heart, Leaf, PartyPopper, Snowflake, Sun, TriangleAlert, Waves, type LucideIcon } from "lucide-react"
 import { PromptFormatSetting } from "./prompt-format-setting"
+
+const OUTFIT_MODES: { value: OutfitMode; label: string }[] = [
+  { value: "keep", label: "Keep original" },
+  { value: "random", label: "Random outfit" },
+]
+
+// Seasons on the first row, occasions on the second (OUTFIT_STYLES order).
+const OUTFIT_STYLE_META: Record<OutfitStyle, { label: string; Icon: LucideIcon }> = {
+  spring: { label: "Spring", Icon: Flower2 },
+  summer: { label: "Summer", Icon: Sun },
+  autumn: { label: "Autumn", Icon: Leaf },
+  winter: { label: "Winter", Icon: Snowflake },
+  party: { label: "Party", Icon: PartyPopper },
+  swimwear: { label: "Swimwear", Icon: Waves },
+  lingerie: { label: "Lingerie", Icon: Heart },
+  sexy: { label: "Sexy", Icon: Flame },
+}
+
+const OUTFIT_DETAILS: { value: OutfitDetail; label: string; hint: string }[] = [
+  { value: "simple", label: "Main pieces", hint: "Top, bottom and shoes" },
+  { value: "full", label: "Full outfit", hint: "Plus legwear, bag and jewelry" },
+]
+
+/** Shared look of the style and detail tiles: picked ones lift onto the panel surface. */
+const OUTFIT_TILE_CLASS =
+  "rounded-md border text-xs transition-[background-color,border-color,color] duration-150 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]"
+const OUTFIT_TILE_ON = "border-primary/60 bg-background text-foreground shadow-xs"
+const OUTFIT_TILE_OFF = "border-border/50 text-muted-foreground hover:border-border hover:bg-background/50 hover:text-foreground"
 
 /**
  * Labels + tooltip copy for the "Detailed Random" scene-matching strictness.
@@ -88,6 +118,18 @@ interface PromptGenerationOptionsPanelProps {
   backgroundMatchStrictness: MatchStrictness
   setBackgroundMatchStrictness: (val: MatchStrictness) => void
 
+  /** "Random outfit" (embedded only; the section is hidden without these). */
+  outfitMode?: OutfitMode
+  setOutfitMode?: (mode: OutfitMode) => void
+  outfitStyles?: OutfitStyle[]
+  setOutfitStyles?: (styles: OutfitStyle[]) => void
+  outfitDetail?: OutfitDetail
+  /** Outfits the chosen styles can draw from; null until the library loads. */
+  outfitCount?: number | null
+  /** Search limited to safe ratings: the adult styles stay visible but switched off. */
+  outfitSafeOnly?: boolean
+  setOutfitDetail?: (detail: OutfitDetail) => void
+
   /**
    * "embedded" is the Output column of Customize prompt on the main page;
    * "compact" is the extension's settings, with tighter markup.
@@ -153,6 +195,14 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   setRandomBackgroundIncludeGradients: _setRandomBackgroundIncludeGradients,
   backgroundMatchStrictness,
   setBackgroundMatchStrictness: _setBackgroundMatchStrictness,
+  outfitMode = "keep",
+  setOutfitMode: _setOutfitMode,
+  outfitStyles = [],
+  setOutfitStyles: _setOutfitStyles,
+  outfitDetail = "simple",
+  outfitCount = null,
+  outfitSafeOnly = false,
+  setOutfitDetail: _setOutfitDetail,
   variant = "embedded",
 }: PromptGenerationOptionsPanelProps) {
   const shouldReduceMotion = useReducedMotion();
@@ -186,6 +236,13 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   const setRandomBackgroundPatterns = (val: boolean) => { trackBackground('randomBackgroundPatterns', val); _setRandomBackgroundPatterns(val); };
   const setRandomBackgroundIncludeGradients = (val: boolean) => { trackBackground('randomBackgroundIncludeGradients', val); _setRandomBackgroundIncludeGradients(val); };
   const setBackgroundMatchStrictness = (val: MatchStrictness) => { trackBackground('backgroundMatchStrictness', val); _setBackgroundMatchStrictness(val); };
+  const setOutfitMode = (val: OutfitMode) => { trackSetting('outfitMode', val); _setOutfitMode?.(val); };
+  const setOutfitDetail = (val: OutfitDetail) => { trackSetting('outfitDetail', val); _setOutfitDetail?.(val); };
+  const toggleOutfitStyle = (style: OutfitStyle) => {
+    const next = outfitStyles.includes(style) ? outfitStyles.filter((s) => s !== style) : [...outfitStyles, style]
+    trackSetting('outfitStyles', next.join(','))
+    _setOutfitStyles?.(OUTFIT_STYLES.filter((s) => next.includes(s)))
+  };
 
   const isCompact = variant === "compact"
   const isAibooru = booruProvider === 'aibooru'
@@ -312,6 +369,88 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             <span className={isCompact ? "text-[10px] text-muted-foreground leading-tight" : "text-xs text-muted-foreground"}>
               {MATCH_STRICTNESS_DESCRIPTIONS[backgroundMatchStrictness]}
             </span>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+
+  // Styles and Detail for "Random outfit", shared by both variants.
+  const renderOutfitTray = (idPrefix: string) => (
+    <AnimatePresence initial={false}>
+      {outfitMode === "random" && (
+        <motion.div
+          key={`${idPrefix}-outfit-random`}
+          // Fades and settles in place: no height animation, so nothing below re-lays out every frame.
+          initial={shouldReduceMotion ? false : { opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+          transition={{ duration: 0.18, ease: EASE_OUT_STRONG }}
+        >
+          {/* The mode's own tray: picks sit on the panel surface when on. */}
+          <div className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span id={`${idPrefix}-outfit-styles-label`} className="text-xs font-medium text-muted-foreground">Styles</span>
+                {outfitCount !== null && outfitCount > 0 && (
+                  <span className="text-[11px] tabular-nums text-muted-foreground">{outfitCount.toLocaleString("en")} outfits</span>
+                )}
+              </div>
+              <div role="group" aria-labelledby={`${idPrefix}-outfit-styles-label`} className="grid grid-cols-4 gap-1">
+                {OUTFIT_STYLES.map((style) => {
+                  // Kept as chosen, just not used, so turning NSFW on brings them back.
+                  const blocked = outfitSafeOnly && ADULT_OUTFIT_STYLES.includes(style)
+                  const isOn = outfitStyles.includes(style) && !blocked
+                  const { label, Icon } = OUTFIT_STYLE_META[style]
+                  return (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={() => toggleOutfitStyle(style)}
+                      disabled={blocked}
+                      aria-pressed={isOn}
+                      aria-describedby={blocked ? `${idPrefix}-outfit-nsfw-note` : undefined}
+                      className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-center gap-1.5 px-1 py-2 disabled:cursor-not-allowed disabled:opacity-40", isOn ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
+                    >
+                      <Icon className={cn("h-4 w-4 transition-colors", isOn ? "text-primary-text" : "opacity-70")} aria-hidden="true" />
+                      <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {outfitSafeOnly && (
+                <p id={`${idPrefix}-outfit-nsfw-note`} className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+                  <TriangleAlert className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+                  Lingerie and Sexy are off while NSFW is off.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <span id={`${idPrefix}-outfit-detail-label`} className="text-xs font-medium text-muted-foreground">Detail</span>
+              <div role="radiogroup" aria-labelledby={`${idPrefix}-outfit-detail-label`} className="grid grid-cols-2 gap-1">
+                {OUTFIT_DETAILS.map(({ value, label, hint }) => {
+                  const isSelected = outfitDetail === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => setOutfitDetail(value)}
+                      className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-start gap-0.5 px-2.5 py-2 text-left", isSelected ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
+                    >
+                      <span className="font-medium">{label}</span>
+                      <span className="text-[11px] leading-snug text-muted-foreground">{hint}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <p className="border-t border-border/40 pt-2.5 text-[11px] leading-snug text-muted-foreground">
+              {outfitCount === 0 || outfitStyles.length === 0
+                ? "Pick at least one style to change outfits."
+                : "Only posts with one girl change. Beach and snow scenes get clothes that fit."}
+            </p>
           </div>
         </motion.div>
       )}
@@ -451,6 +590,27 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
           </div>
           {renderBackgroundSubOptions("compact")}
         </div>
+        {_setOutfitMode && (
+          <div className="sm:col-span-2 flex flex-col gap-2.5 pt-2 border-t border-border/40">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="outfit-mode-select-compact" className="text-xs font-semibold cursor-pointer">Outfit</Label>
+                <span id="outfit-mode-desc-compact" className="text-[10px] text-muted-foreground leading-tight">Dress the character in a new outfit</span>
+              </div>
+              <Select value={outfitMode} onValueChange={(value) => setOutfitMode(value as OutfitMode)}>
+                <SelectTrigger id="outfit-mode-select-compact" aria-describedby="outfit-mode-desc-compact" className="h-7 text-[11px] bg-background w-[124px]">
+                  <SelectValue>{OUTFIT_MODES.find((mode) => mode.value === outfitMode)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent className="text-xs">
+                  {OUTFIT_MODES.map((mode) => (
+                    <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {renderOutfitTray("compact")}
+          </div>
+        )}
       </>
     )
   }
@@ -543,6 +703,34 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
         </div>
         {renderBackgroundSubOptions("embedded")}
       </div>
+
+      {_setOutfitMode && (
+        <div className="flex flex-col gap-2.5 border-t border-border/50 pt-3">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <label htmlFor="outfit-mode-select-embedded" className="cursor-pointer text-sm font-medium text-foreground">Outfit</label>
+              <span id="outfit-mode-desc-embedded" className="text-xs text-muted-foreground">Dress the character in a new outfit</span>
+            </div>
+            <div className="w-full sm:w-auto sm:min-w-[160px]">
+              <Select value={outfitMode} onValueChange={(value) => setOutfitMode(value as OutfitMode)}>
+                <SelectTrigger
+                  id="outfit-mode-select-embedded"
+                  aria-describedby="outfit-mode-desc-embedded"
+                  className="h-8 bg-background text-xs"
+                >
+                  <SelectValue>{OUTFIT_MODES.find((mode) => mode.value === outfitMode)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {OUTFIT_MODES.map((mode) => (
+                    <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {renderOutfitTray("embedded")}
+        </div>
+      )}
     </div>
   )
 })

@@ -25,6 +25,8 @@ import {
 } from "@/lib/cleanPrompt"
 import { type BackgroundMode, processBackgroundTags } from "@/lib/background-detector"
 import { deriveBackgroundContext, type MatchStrictness } from "@/lib/background-context"
+import { liveOutfitDescription, pickOutfit, swapOutfit, type OutfitSettings } from "@/lib/outfit-swap"
+import { classifyTag } from "@/lib/tag-classifier"
 import { applyWeights } from "@/lib/weight-utils"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
@@ -62,12 +64,18 @@ export interface DerivePostPromptOptions {
   detailedBackgroundsList?: string[][]
   /** How strictly Detailed Random gates its pick against the post's scene. */
   backgroundMatchStrictness?: MatchStrictness
+  /** "Random outfit" settings; omitted or mode "keep" leaves clothing alone. */
+  outfitSettings?: OutfitSettings
   tagOverrides?: Record<string, string>
   globalWeights?: Record<string, number>
   isGlobalWeightsEnabled?: boolean
 }
 
 export interface DerivePostPromptResult {
+  /** Tags of the outfit that replaced the post's clothing, or null. */
+  outfitTags: string[] | null
+  /** That outfit in sentences, for the natural-language formats; null without one or once its tags are excluded. */
+  outfitDescription: string | null
   /** Final prompt string (post cleanPrompt + Smart Tag Exclusion + global weights). */
   displayContent: string
   /** Same pipeline but without the "added tags" (addInput) — used for classification/copy. */
@@ -160,6 +168,7 @@ export function derivePostPrompt(
     randomBackgroundIncludeGradients = true,
     detailedBackgroundsList,
     backgroundMatchStrictness,
+    outfitSettings,
     tagOverrides,
     globalWeights = {},
     isGlobalWeightsEnabled = false,
@@ -219,8 +228,16 @@ export function derivePostPrompt(
       })
     : undefined
 
+  // Random outfit, picked ONCE here for the same reason as backgroundContext.
+  // Hand-written AI prompts are left as written.
+  const picked = aiPrompt || !sharedCleaned
+    ? null
+    : pickOutfit(sharedCleaned.split(",").map((t) => t.trim()).filter(Boolean), outfitSettings, post.id)
+  const outfit = picked?.tags ?? null
+
   const applyBackground = (content: string): string => {
     if (!content) return content
+    if (outfit) content = swapOutfit(content.split(",").map((t) => t.trim()), outfit, tagOverrides).join(", ")
     if (backgroundMode === "keep" || backgroundMode === undefined) return content
     const tags = content.split(",").map((t) => t.trim())
     const processed = processBackgroundTags(
@@ -249,6 +266,9 @@ export function derivePostPrompt(
     if (excludeListSet.has(norm)) continue
     if (addListSet.has(norm)) continue
     if (pureContentSet.has(norm)) continue
+    // The outfit replaced the clothes the search asked for; adding them back
+    // would dress the character twice.
+    if (outfit && classifyTag(norm, tagOverrides) === "clothing") continue
     missingSearchTags.push(searchedTag)
   }
 
@@ -274,6 +294,7 @@ export function derivePostPrompt(
     backgroundSeed: post.id,
     backgroundContext,
     backgroundMatchStrictness,
+    outfitTags: outfit,
     metaTags: post.tag_string_meta,
     dropMultiPanelTags: effectiveExperimental,
     wordReplacements,
@@ -304,5 +325,8 @@ export function derivePostPrompt(
     appendedTags: capturedAppends,
     hasAppends: capturedAppends.length > 0,
     conflictingTags: conflictResolution.conflictingTags,
+    outfitTags: outfit,
+    // Only while the outfit's tags are still in the prompt (an exclusion can take them out).
+    outfitDescription: liveOutfitDescription(baseContent, outfit, picked?.description ?? null) ?? null,
   }
 }

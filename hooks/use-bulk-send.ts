@@ -153,7 +153,7 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
         const built: BulkSendQueueItem[] = []
         for (const post of candidatePosts) {
           if (built.length >= count) break
-          const { displayContent, baseContent } = derivePostPrompt(post, realCleanOptions)
+          const { displayContent, baseContent, outfitDescription } = derivePostPrompt(post, realCleanOptions)
           const prompt = displayContent.trim()
           if (!prompt) continue
           if (dupFilter && !dupFilter.tryAccept(prompt)) continue
@@ -175,6 +175,7 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
               rating: post.rating,
               provider: post._provider,
               handWritten: isAiPost,
+              outfitDescription: outfitDescription ?? undefined,
             },
           })
         }

@@ -149,6 +149,7 @@ export const PocketCard = memo(function PocketCard({
     hasAppends,
     appendedTags,
     conflictingTags,
+    outfitDescription,
   } = useCardPrompt({
     post,
     tagCounts,
@@ -167,6 +168,7 @@ export const PocketCard = memo(function PocketCard({
   // formats rewrite the cleaned prompt, and Copy and Send use that text.
   const { format: promptFormat, fullDetail } = usePromptFormat()
   const keepNames = promptOptions.includeCharacters && !isAiPost
+  const cardOutfitDescription = outfitDescription ?? undefined
   const naturalSource = useMemo(() => ({
     prompt: baseContent,
     characters: keepNames ? post.tag_string_character : undefined,
@@ -174,7 +176,8 @@ export const PocketCard = memo(function PocketCard({
     rating: post.rating,
     provider: itemProvider,
     handWritten: isAiPost,
-  }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost])
+    outfitDescription: cardOutfitDescription,
+  }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost, cardOutfitDescription])
   const tagOverrides = promptOptions.tagOverrides ?? NO_OVERRIDES
   const natural = useNaturalPrompt({
     enabled: true,

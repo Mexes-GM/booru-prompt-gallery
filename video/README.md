@@ -12,13 +12,15 @@ npm install
 npm run render
 ```
 
-`npm run render` writes three files to `public/whats-new/`:
+`npm run render` renders the prompt formats video; `npm run render -- outfits` renders the Random outfit video, and
+`npm run render -- all` both. Each writes three files to `public/whats-new/`:
 
 | File | What it is |
 |---|---|
 | `10.4.0-prompt-formats.webm` | VP9, 1200×900, 30 fps, no audio |
 | `10.4.0-prompt-formats.mp4` | H.264 fallback for browsers without WebM |
 | `10.4.0-prompt-formats-poster.jpg` | Poster frame (`POSTER_FRAME` in `src/chapters.ts`) |
+| `10.7.0-random-outfit.webm` / `.mp4` / `-poster.jpg` | Same, for the Random outfit video (`POSTER_FRAME` in `src/outfit-chapters.ts`) |
 
 `npm run studio` opens Remotion Studio to preview and scrub the composition. `npm run typecheck` checks the source.
 
@@ -64,3 +66,35 @@ copy(JSON.stringify(out, null, 2))
 ```
 
 The "Copy only" counts in `POST.categoryCounts` come from the card's ▾ menu.
+
+## Random outfit video (10.7.0)
+
+- `src/RandomOutfit.tsx` — the composition (`RandomOutfit`, poster still `RandomOutfitPoster`): four chapters, timed in
+  `src/outfit-chapters.ts`. It reuses the card and controls from `src/ui.tsx` and draws the Outfit tray from
+  `components/prompt-gallery/prompt-generation-options-panel.tsx` and Pack Builder's Clothing row from
+  `components/prompt-gallery/pack-category-list.tsx`.
+- `src/outfit-data.ts` — the card text, the outfit counts and the Pack Mode pool chips.
+- `public/danbooru-12450891.jpg` — the post shown on the card ([Danbooru #12450891](https://danbooru.donmai.us/posts/12450891),
+  rating general, art by miyahara_takuya).
+
+As with the first video, keep `CHAPTERS` in `components/prompt-gallery/feature-intro-dialog.tsx` in step with
+`src/outfit-chapters.ts` (seconds = frames / 30).
+
+### Card text
+
+Every string in `src/outfit-data.ts` is the site's own output for this post, copied from its card: Danbooru source,
+default Customize prompt options (NSFW off, so Lingerie and Sexy stay off), changing only the Outfit settings named in
+the comment above each string:
+
+- `OUTFIT_TAGS.original` — Outfit: Keep original.
+- `OUTFIT_TAGS.first` — Random outfit with the default styles and Main pieces.
+- `OUTFIT_TAGS.second` / `secondFull` — Party switched off, then Main pieces / Full outfit.
+- `OUTFIT_FLUX2` — the same outfit as `secondFull` in FLUX.2 · Krea 2 with Keep every detail on; `OUTFIT_SENTENCES`
+  is the outfit's part of that text.
+- `OUTFIT_COUNTS` — the outfit count above the style tiles, with the default styles and with Party off.
+- `PACK_POOL` — Pack Mode with Clothing set to Outfit library (safe pack, Party off, Full outfit): the note's counts
+  and the first chips of the pool.
+
+The random outfit depends on the post and the outfit library, so after a change to either, search `id:12450891`, set
+the Outfit options above one by one and copy the card text again (the tags format has no paragraph: copy the card text
+between the overlays and the Copy button, as in the script above).

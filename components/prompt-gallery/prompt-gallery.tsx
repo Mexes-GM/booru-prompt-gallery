@@ -217,6 +217,7 @@ import { ArtistGridSection } from "@/components/prompt-gallery/artist-grid-secti
 import { useTagCounts } from "@/hooks/use-tag-counts"
 import { usePromptOptions } from "@/hooks/use-prompt-options"
 import { useBackgroundSettings } from "@/hooks/use-background-settings"
+import { useOutfitSettings } from "@/hooks/use-outfit-settings"
 import { useGalleryViewState } from "@/hooks/use-gallery-view-state"
 import { useGlobalWeights } from "@/hooks/use-global-weights"
 import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
@@ -618,6 +619,13 @@ export function PromptGallery() {
     backgroundMatchStrictness, setBackgroundMatchStrictness,
   } = useBackgroundSettings()
 
+  const {
+    outfitMode, setOutfitMode,
+    outfitStyles, setOutfitStyles,
+    outfitDetail, setOutfitDetail,
+    outfitSettings, outfitCount,
+  } = useOutfitSettings(search.ratingFilter === SAFE_RATING)
+
   const [excludeInput, setExcludeInput] = usePersistentState(
     "",
     userPreferences.getExcludeTagsInput,
@@ -676,9 +684,9 @@ export function PromptGallery() {
   const [showStickyPanel, setShowStickyPanel] = useState(false)
   const controlPanelRef = useRef<HTMLDivElement>(null)
 
-  // "Choose a format" in the release dialog: open Customize prompt and put
-  // focus on its Prompt format setting.
-  const openPromptFormatSetting = useCallback(() => {
+  // "Try Random outfit" in the release dialog: open Customize prompt and put
+  // focus on its Outfit setting.
+  const openOutfitSetting = useCallback(() => {
     // Bring the control panel to the top so the section drops down below it.
     // A jump, not the page's smooth scroll: the section measures where to
     // open as it renders, so the panel must already be in place.
@@ -690,7 +698,11 @@ export function PromptGallery() {
     // section (or the mobile sheet) has opened.
     void Promise.all([loadTagsManagementPanel(), loadPromptGenerationOptionsPanel()]).finally(() => {
       setPromptOptionsOpen(true)
-      window.setTimeout(() => document.getElementById("prompt-format-embedded")?.focus({ preventScroll: true }), 350)
+      window.setTimeout(() => {
+        const select = document.getElementById("outfit-mode-select-embedded")
+        select?.focus({ preventScroll: true })
+        select?.scrollIntoView({ block: "nearest" })
+      }, 350)
     })
   }, [])
 
@@ -774,7 +786,8 @@ export function PromptGallery() {
     smartTagExclusion,
     experimentalPromptRules,
   }), [debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules])
-  const packMode = usePackMode(tagOverrides, globalWeights, isGlobalWeightsEnabled, packCleanOptions, search.booruProvider)
+  const packOutfitOptions = useMemo(() => ({ styles: outfitStyles, detail: outfitDetail }), [outfitStyles, outfitDetail])
+  const packMode = usePackMode(tagOverrides, globalWeights, isGlobalWeightsEnabled, packCleanOptions, search.booruProvider, packOutfitOptions)
   const packSeed = usePackSeed()
 
   // Extract stable packMode pieces to avoid dependency churn
@@ -1643,6 +1656,7 @@ export function PromptGallery() {
       randomBackgroundIncludeGradients={randomBackgroundIncludeGradients}
       detailedBackgroundsList={detailedBackgroundsList}
       backgroundMatchStrictness={backgroundMatchStrictness}
+      outfitSettings={outfitSettings}
       tagOverrides={tagOverrides}
       copiedId={copiedId}
       isExpanded={expandedPostId === post.id}
@@ -1666,7 +1680,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -1692,7 +1706,7 @@ export function PromptGallery() {
         {/* Tour steps point at the section headers, which are always visible. */}
         <MainTour runSignal={tourRunSignal} />
 
-        <FeatureIntro version={pkg.version} onTry={openPromptFormatSetting} />
+        <FeatureIntro version={pkg.version} onTry={openOutfitSetting} />
 
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
@@ -1840,6 +1854,7 @@ export function PromptGallery() {
                       !autoAppendSearchTags ? "no search tags" : null,
                       !isAibooruProvider && experimentalPromptRules ? "experimental rules" : null,
                       backgroundSummary[backgroundMode] ?? null,
+                      !isAibooruProvider && outfitMode === "random" ? "random outfit" : null,
                       tagRuleCount > 0 ? plural(tagRuleCount, "tag rule") : null,
                     ].filter(Boolean).join(" · ") || "Defaults"
 
@@ -1990,6 +2005,14 @@ export function PromptGallery() {
                                 setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
                                 backgroundMatchStrictness={backgroundMatchStrictness}
                                 setBackgroundMatchStrictness={setBackgroundMatchStrictness}
+                                outfitMode={outfitMode}
+                                setOutfitMode={setOutfitMode}
+                                outfitStyles={outfitStyles}
+                                setOutfitStyles={setOutfitStyles}
+                                outfitDetail={outfitDetail}
+                                setOutfitDetail={setOutfitDetail}
+                                outfitCount={outfitCount}
+                                outfitSafeOnly={search.ratingFilter === SAFE_RATING}
                               />
                             </div>
                             </div>
@@ -2321,6 +2344,9 @@ export function PromptGallery() {
         onReseedAxis={handleReseedAxis}
         axisTagModes={packMode.axisTagModes}
         onSetAxisTagMode={packMode.setAxisTagMode}
+        clothingFromLibrary={packMode.clothingFromLibrary}
+        onSetClothingFromLibrary={packMode.setClothingFromLibrary}
+        libraryOutfitCount={packMode.libraryOutfitCount}
         onSetAllAxisTagModes={packMode.setAllAxisTagModes}
         axisMinCounts={packMode.axisMinCounts}
         onSetAxisMinCount={packMode.setAxisMinCount}

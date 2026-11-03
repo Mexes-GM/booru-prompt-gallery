@@ -29,6 +29,7 @@ import { getPostUrl } from "@/lib/constants"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
+import { type OutfitSettings } from "@/lib/outfit-swap"
 import { type TagCategory, type ClassifiedTags, type RichnessDepth } from "@/lib/tag-classifier"
 import { PACK_AXES, RICHNESS_AXES, TAG_CATEGORIES } from "@/lib/tag-taxonomy"
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
@@ -216,6 +217,8 @@ interface MasonryItemProps {
     detailedBackgroundsList?: string[][]
     /** How strictly Detailed Random gates its pick against the post's scene. */
     backgroundMatchStrictness?: MatchStrictness
+    /** "Random outfit" bundle; undefined keeps the post's clothing. */
+    outfitSettings?: OutfitSettings
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
@@ -282,6 +285,7 @@ export const MasonryItem = memo(function MasonryItem({
     randomBackgroundIncludeGradients = true,
     detailedBackgroundsList,
     backgroundMatchStrictness,
+    outfitSettings,
     tagOverrides,
     copiedId,
     isPreviouslyCopied,
@@ -344,6 +348,7 @@ export const MasonryItem = memo(function MasonryItem({
         conflictingTags,
         hasReplacements,
         replacedTags,
+        outfitDescription,
     } = useCardPrompt({
         post,
         tagCounts,
@@ -367,6 +372,7 @@ export const MasonryItem = memo(function MasonryItem({
         randomBackgroundIncludeGradients,
         detailedBackgroundsList,
         backgroundMatchStrictness,
+        outfitSettings,
         tagOverrides,
         globalWeights,
         isGlobalWeightsEnabled,
@@ -381,6 +387,7 @@ export const MasonryItem = memo(function MasonryItem({
     const [detailOverride, setDetailOverride] = useState<{ fullDetail: boolean; global: boolean } | null>(null)
     const fullDetail = detailOverride?.global === globalFullDetail ? detailOverride.fullDetail : globalFullDetail
     const keepNames = includeCharacters && !isAiPost
+    const cardOutfitDescription = outfitDescription ?? undefined
     const naturalSource = useMemo(() => ({
         prompt: baseContent,
         characters: keepNames ? post.tag_string_character : undefined,
@@ -388,7 +395,8 @@ export const MasonryItem = memo(function MasonryItem({
         rating: post.rating,
         provider: itemProvider,
         handWritten: isAiPost,
-    }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost])
+        outfitDescription: cardOutfitDescription,
+    }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost, cardOutfitDescription])
     const natural = useNaturalPrompt({
         enabled: !isMergeMode && !isPackMode && !isNaturalLanguageMode,
         format: promptFormat,
@@ -1009,6 +1017,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.randomBackgroundIncludeGradients !== next.randomBackgroundIncludeGradients) return false
     if (prev.detailedBackgroundsList !== next.detailedBackgroundsList) return false
     if (prev.backgroundMatchStrictness !== next.backgroundMatchStrictness) return false
+    if (prev.outfitSettings !== next.outfitSettings) return false
     if (prev.isGlobalWeightsEnabled !== next.isGlobalWeightsEnabled) return false
     if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false
     if (prev.showCategoryTagBadges !== next.showCategoryTagBadges) return false

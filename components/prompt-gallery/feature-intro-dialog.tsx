@@ -9,19 +9,18 @@ import { safeTrack } from "@/lib/analytics"
 import { cn } from "@/lib/utils"
 import { FEATURE_INTRO_POSTER, FEATURE_INTRO_RELEASE } from "@/components/prompt-gallery/feature-intro"
 
-const VIDEO = "/whats-new/10.4.0-prompt-formats"
+const VIDEO = "/whats-new/10.7.0-random-outfit"
 
 /**
  * What the video shows, chapter by chapter. `at` is where each chapter starts
- * (seconds); keep it in step with video/src/chapters.ts (frames / 30). The
- * list doubles as the text version of the video, which has no audio.
+ * (seconds); keep it in step with video/src/outfit-chapters.ts (frames / 30).
+ * The list doubles as the text version of the video, which has no audio.
  */
 const CHAPTERS = [
-  { at: 0, title: "Pick a prompt format", body: "In Customize prompt. Every card switches to it at once." },
-  { at: 7.5, title: "Copy as another format", body: "The ▾ next to Copy copies one prompt in any format, once." },
-  { at: 14, title: "Each character described apart", body: "With two or more known characters, each gets their own hair, eyes and outfit." },
-  { at: 20, title: "Short or full descriptions", body: "FLUX.2 and MOSS-Image stay short. Keep every detail gives the full text." },
-  { at: 26, title: "Rewrite with AI", body: "The AI conversion is still in the card's ⋯ menu, under its new name." },
+  { at: 0, title: "Dress her in a new outfit", body: "In Customize prompt, set Outfit to Random outfit. Posts with one girl change clothes." },
+  { at: 7.5, title: "Pick the styles and detail", body: "Turn styles on or off. Full outfit also adds legwear, bag and jewelry." },
+  { at: 15, title: "Written out in full", body: "Anima, FLUX.2 and MOSS-Image describe the outfit in whole sentences." },
+  { at: 23, title: "Outfits in Pack Mode", body: "Set a pack's Clothing pool to Outfit library to vary whole outfits." },
 ] as const
 
 type CloseMethod = "close_button" | "x_button" | "escape" | "outside" | "try"
@@ -140,7 +139,7 @@ export function FeatureIntroDialog({
           contentRef.current?.focus({ preventScroll: true })
         }}
         onCloseAutoFocus={(e) => {
-          // "Choose a format" moves focus to the setting instead.
+          // "Try Random outfit" moves focus to the setting instead.
           if (closeMethod.current === "try") {
             e.preventDefault()
             onTry()
@@ -167,7 +166,7 @@ export function FeatureIntroDialog({
             muted
             playsInline
             disablePictureInPicture
-            aria-label="Demo of the prompt formats, described in the chapter list"
+            aria-label="Demo of Random outfit, described in the chapter list"
             onPlay={() => setState("playing")}
             onTimeUpdate={syncChapter}
             onPause={(e) => setState(e.currentTarget.ended ? "ended" : "paused")}
@@ -212,11 +211,11 @@ export function FeatureIntroDialog({
             New in v{FEATURE_INTRO_RELEASE}
           </p>
           <DialogTitle className={cn(RISE, "mt-1.5 pr-10 text-lg text-balance")} style={delay(1)}>
-            Tags to Natural Language
+            Random outfit
           </DialogTitle>
           <DialogDescription id="feature-intro-description" className={cn(RISE, "mt-2 text-pretty")} style={delay(2)}>
-            Each card can show its prompt as a description written for Anima, FLUX.2 · Krea 2 or MOSS-Image. It appears
-            right away and needs no AI.
+            Give the character on each card a new outfit, picked from more than 1,300 in the styles you choose. It works in
+            every prompt format and in Pack Mode.
           </DialogDescription>
 
           <ol aria-label="Video chapters" className={cn(RISE, "-mx-2 mt-4 flex flex-col gap-0.5")} style={delay(3)}>
@@ -267,7 +266,7 @@ export function FeatureIntroDialog({
               Close
             </Button>
             <Button type="button" onClick={tryIt}>
-              Choose a format
+              Try Random outfit
             </Button>
           </div>
         </div>

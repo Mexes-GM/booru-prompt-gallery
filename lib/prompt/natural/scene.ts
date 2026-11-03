@@ -28,6 +28,8 @@ export interface NaturalPromptInput {
   rating?: string
   /** General tags `resolveNames` read as character names: still worth looking up, in case the taxonomy files them otherwise. */
   inferredNames?: string[]
+  /** The single subject's outfit in sentences ("Random outfit"); see renderers.ts. */
+  outfitDescription?: string
 }
 
 export type SceneSlot = (typeof TAG_SUBCATEGORIES)[keyof typeof TAG_SUBCATEGORIES][number]

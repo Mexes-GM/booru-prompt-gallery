@@ -16,7 +16,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { Ban, Check, ChevronDown, ChevronRight, Lock, Minus, Package, Plus, RefreshCw, RotateCcw, Shuffle, X } from "lucide-react"
+import { Ban, Check, ChevronDown, ChevronRight, Lock, Minus, Package, Plus, RefreshCw, RotateCcw, Shirt, Shuffle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -176,6 +176,10 @@ interface CategoryRowProps {
   mode: AxisTagMode
   onMinCountChange: (category: TagCategory, count: number) => void
   onModeChange?: (category: TagCategory, mode: AxisTagMode) => void
+  /** Clothing only: the pool comes from the outfit library. */
+  fromLibrary?: boolean
+  onLibraryChange?: (on: boolean) => void
+  libraryCount?: number | null
   onAdd: (category: TagCategory, value: string) => void
   onRemove: (category: TagCategory, value: string) => void
   onReseed: (category: TagCategory) => void
@@ -209,6 +213,9 @@ const CategoryRow = memo(function CategoryRow({
   mode,
   onMinCountChange,
   onModeChange,
+  fromLibrary = false,
+  onLibraryChange,
+  libraryCount = null,
   onAdd,
   onRemove,
   onReseed,
@@ -499,24 +506,37 @@ const CategoryRow = memo(function CategoryRow({
                       <button
                         type="button"
                         role="radio"
-                        aria-checked={mode === "individual"}
+                        aria-checked={mode === "individual" && !fromLibrary}
                         onClick={() => onModeChange(category, "individual")}
                         title="Mix loose tags from different posts"
-                        className={`h-7 pointer-coarse:h-11 px-2 rounded text-xs ${mode === "individual" ? "bg-muted text-foreground font-semibold" : "hover:text-foreground"}`}
+                        className={`h-7 pointer-coarse:h-11 px-2 rounded text-xs ${mode === "individual" && !fromLibrary ? "bg-muted text-foreground font-semibold" : "hover:text-foreground"}`}
                       >
                         Loose tags
                       </button>
                       <button
                         type="button"
                         role="radio"
-                        aria-checked={mode === "bundle"}
+                        aria-checked={mode === "bundle" && !fromLibrary}
                         onClick={() => onModeChange(category, "bundle")}
                         title="Keep each post's full set together (e.g. a whole outfit)"
-                        className={`h-7 pointer-coarse:h-11 px-2 rounded text-xs inline-flex items-center gap-1 ${mode === "bundle" ? "bg-muted text-foreground font-semibold" : "hover:text-foreground"}`}
+                        className={`h-7 pointer-coarse:h-11 px-2 rounded text-xs inline-flex items-center gap-1 ${mode === "bundle" && !fromLibrary ? "bg-muted text-foreground font-semibold" : "hover:text-foreground"}`}
                       >
                         <Package className="w-3 h-3" />
                         Full sets
                       </button>
+                      {onLibraryChange && (
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={fromLibrary}
+                          onClick={() => onLibraryChange(true)}
+                          title="Whole outfits from the outfit library, in the styles chosen under Customize prompt › Outfit"
+                          className={`h-7 pointer-coarse:h-11 px-2 rounded text-xs inline-flex items-center gap-1 ${fromLibrary ? "bg-muted text-foreground font-semibold" : "hover:text-foreground"}`}
+                        >
+                          <Shirt className="w-3 h-3" />
+                          Outfit library
+                        </button>
+                      )}
                     </div>
                   )}
                   <Tooltip>
@@ -530,7 +550,7 @@ const CategoryRow = memo(function CategoryRow({
                         Re-sample
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>Rebuild this pool from the collected posts (restores removed tags)</TooltipContent>
+                    <TooltipContent>{fromLibrary ? "Draw other outfits from the library" : "Rebuild this pool from the collected posts (restores removed tags)"}</TooltipContent>
                   </Tooltip>
                   {mode === "bundle" && (
                     <div className="flex items-center gap-1.5">
@@ -556,6 +576,15 @@ const CategoryRow = memo(function CategoryRow({
                   )}
                 </div>
 
+                {fromLibrary && (
+                  <p className="text-xs text-muted-foreground">
+                    {libraryCount === null
+                      ? "Loading the outfit library…"
+                      : libraryCount === 0
+                        ? "No outfits in the chosen styles. Pick some under Customize prompt › Outfit."
+                        : `${values.length} of ${libraryCount.toLocaleString("en")} outfits, in the styles and detail chosen under Customize prompt › Outfit.`}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1.5 content-start">
                   <AnimatePresence initial={false} mode="popLayout">
                     {(showGrouping ? groups : [{ slot: null, values }]).flatMap((group) => [
@@ -583,7 +612,7 @@ const CategoryRow = memo(function CategoryRow({
                     [56, 72, 48, 88, 64, 52].map((w, i) => (
                       <span key={i} className="h-6 rounded-md bg-muted animate-pulse" style={{ width: w }} />
                     ))}
-                  {values.length === 0 && !isCollecting && (
+                  {values.length === 0 && !isCollecting && !fromLibrary && (
                     <span className="text-xs text-muted-foreground italic py-1">
                       Nothing found in the collected posts. Add some below or collect more posts.
                     </span>
@@ -644,6 +673,9 @@ export interface PackCategoryListProps {
   axisTagModes: Partial<Record<TagCategory, AxisTagMode>>
   onSetAxisMinCount: (category: TagCategory, count: number) => void
   onSetAxisTagMode?: (category: TagCategory, mode: AxisTagMode) => void
+  clothingFromLibrary?: boolean
+  onSetClothingFromLibrary?: (on: boolean) => void
+  libraryOutfitCount?: number | null
   onAddAxisValue: (category: TagCategory, value: string) => void
   onRemoveAxisValue: (category: TagCategory, value: string) => void
   onReseedAxis: (category: TagCategory) => void
@@ -674,6 +706,9 @@ export function PackCategoryList({
   axisTagModes,
   onSetAxisMinCount,
   onSetAxisTagMode,
+  clothingFromLibrary = false,
+  onSetClothingFromLibrary,
+  libraryOutfitCount = null,
   onAddAxisValue,
   onRemoveAxisValue,
   onReseedAxis,
@@ -711,6 +746,9 @@ export function PackCategoryList({
           mode={axisTagModes[cat] ?? "individual"}
           onMinCountChange={onSetAxisMinCount}
           onModeChange={onSetAxisTagMode}
+          fromLibrary={cat === "clothing" && clothingFromLibrary}
+          onLibraryChange={cat === "clothing" ? onSetClothingFromLibrary : undefined}
+          libraryCount={cat === "clothing" ? libraryOutfitCount : null}
           onAdd={onAddAxisValue}
           onRemove={onRemoveAxisValue}
           onReseed={onReseedAxis}

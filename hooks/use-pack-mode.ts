@@ -54,6 +54,8 @@ import {
   getTagSlotFromOverrides,
 } from '@/lib/tag-taxonomy'
 import { fetchTagOverridesForNames } from '@/lib/supabase/client-queries'
+import { useOutfitLibrary } from '@/hooks/use-outfit-settings'
+import { ADULT_OUTFIT_STYLES, outfitPackPool, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
 
 const DEFAULT_PROMPT_COUNT = 10
 /** Upper bound for the "Min tags per prompt" control. */
@@ -122,6 +124,10 @@ function sampleAxes(
   }
   return out
 }
+
+const DEFAULT_OUTFIT_OPTIONS = { styles: [] as readonly OutfitStyle[], detail: 'simple' as OutfitDetail }
+/** Outfits shown in the library clothing pool at once; Re-sample draws others. */
+const LIBRARY_POOL_SIZE = 60
 
 export interface UsePackModeResult {
   isPackMode: boolean
@@ -194,6 +200,15 @@ export interface UsePackModeResult {
   axisTagModes: Partial<Record<TagCategory, AxisTagMode>>
   setAxisTagMode: (category: TagCategory, mode: AxisTagMode) => void
   setAllAxisTagModes: (mode: AxisTagMode) => void
+
+  /**
+   * Clothing pool drawn from the outfit library (whole outfits, in the styles
+   * and detail of the Outfit option) instead of the collected posts.
+   */
+  clothingFromLibrary: boolean
+  setClothingFromLibrary: (on: boolean) => void
+  /** Library outfits the clothing pool can be drawn from; null until it loads. */
+  libraryOutfitCount: number | null
 
   /**
    * Candidate value pool per axis category: booru-sampled values (seeded from
@@ -298,7 +313,9 @@ export function usePackMode(
     BulkSendCleanOptions,
     'excludeInput' | 'addInput' | 'findInput' | 'replaceInput' | 'includeCharacters' | 'optimizeTags' | 'smartTagExclusion' | 'experimentalPromptRules'
   > = { excludeInput: '', addInput: '', includeCharacters: true, optimizeTags: true },
-  booruProvider: BooruProvider = 'danbooru'
+  booruProvider: BooruProvider = 'danbooru',
+  /** Styles and detail of the Outfit option, used by the library clothing pool. */
+  outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail } = DEFAULT_OUTFIT_OPTIONS
 ): UsePackModeResult {
   const [isPackMode, setIsPackMode] = useState(false)
   const [baseCard, setBaseCardRaw] = useState<BooruPost | null>(null)
@@ -449,9 +466,17 @@ export function usePackMode(
   const [minTotalTags, setMinTotalTagsRaw] = useState(initialConfig.minTotalTags ?? 0)
   const [minSetTags, setMinSetTagsRaw] = useState<Partial<Record<TagCategory, number>>>(initialConfig.minSetTags ?? {})
   const [promptCount, setPromptCount] = useState(initialConfig.promptCount)
-  const [axisTagModes, setAxisTagModes] = useState<Partial<Record<TagCategory, AxisTagMode>>>(
+  const [axisTagModesRaw, setAxisTagModes] = useState<Partial<Record<TagCategory, AxisTagMode>>>(
     initialConfig.axisTagModes ?? {}
   )
+  // Library clothing comes as whole outfits, so the axis always reads as full sets.
+  const [clothingFromLibrary, setClothingFromLibraryRaw] = useState(initialConfig.clothingFromLibrary ?? false)
+  const axisTagModes = useMemo<Partial<Record<TagCategory, AxisTagMode>>>(
+    () => (clothingFromLibrary ? { ...axisTagModesRaw, clothing: 'bundle' } : axisTagModesRaw),
+    [clothingFromLibrary, axisTagModesRaw]
+  )
+  const [librarySeed, setLibrarySeed] = useState(() => Math.floor(Math.random() * 1e9))
+  const outfitLibrary = useOutfitLibrary(clothingFromLibrary)
   const cachedPostsRef = useRef<BooruPost[]>([])
   const cachedFallbacksRef = useRef<Partial<Record<TagCategory, string[]>>>({})
   // Generated prompts are NOT derived reactively (no useMemo over
@@ -696,11 +721,35 @@ export function usePackMode(
     () => new Set(bundleCategoriesKey ? bundleCategoriesKey.split(',') : []),
     [bundleCategoriesKey]
   )
+  // Adult styles stay out of a safe-for-work pack, whatever the Outfit option allows.
+  const libraryStyles = useMemo(
+    () => (contentRating === 'sfw' ? outfitOptions.styles.filter((s) => !ADULT_OUTFIT_STYLES.includes(s)) : outfitOptions.styles),
+    [contentRating, outfitOptions.styles]
+  )
+  const libraryOutfitCount = useMemo(
+    () => {
+      if (!clothingFromLibrary || outfitLibrary.length === 0) return null
+      const styles = new Set(libraryStyles)
+      return outfitLibrary.filter((o) => styles.has(o.style)).length
+    },
+    [clothingFromLibrary, outfitLibrary, libraryStyles]
+  )
+  const libraryPool = useMemo(
+    () => (clothingFromLibrary && outfitLibrary.length > 0
+      ? Array.from(new Set(outfitPackPool(outfitLibrary, libraryStyles, outfitOptions.detail, librarySeed, LIBRARY_POOL_SIZE).map(canonicalizeBundleTags)))
+      : null),
+    [clothingFromLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, librarySeed]
+  )
+  // Where each axis's candidates come from: the collected posts, or the library for clothing.
+  const sourceValues = useCallback(
+    (cat: TagCategory) => (cat === 'clothing' && clothingFromLibrary ? libraryPool ?? [] : axisValues[cat] || []),
+    [clothingFromLibrary, libraryPool, axisValues]
+  )
   const buildPools = useCallback(
     (state: { lockedSlots: ReadonlySet<string>; mutedSlots: ReadonlySet<string> }) => {
       const merged: Partial<Record<TagCategory, string[]>> = {}
       PACK_AXES.forEach((cat) => {
-        let sampled = filterValuesBySlotState(cat, axisValues[cat] || [], state, effectiveOverrides)
+        let sampled = filterValuesBySlotState(cat, sourceValues(cat), state, effectiveOverrides)
         // Full sets under the category's minimum are dropped (after slot
         // trimming, which can thin a set out too). Typed-in sets are exempt.
         if (bundleCategories.has(cat)) {
@@ -718,7 +767,7 @@ export function usePackMode(
       })
       return merged
     },
-    [axisValues, manualAxisValues, effectiveOverrides, bundleCategories, minSetTags]
+    [sourceValues, manualAxisValues, effectiveOverrides, bundleCategories, minSetTags]
   )
   const mergedAxisValues = useMemo(() => buildPools(slotState), [buildPools, slotState])
 
@@ -727,12 +776,12 @@ export function usePackMode(
     PACK_AXES.forEach((cat) => {
       if (!bundleCategories.has(cat)) return
       const min = minSetTags[cat] ?? DEFAULT_MIN_SET_TAGS
-      const trimmed = filterValuesBySlotState(cat, axisValues[cat] || [], slotState, effectiveOverrides)
+      const trimmed = filterValuesBySlotState(cat, sourceValues(cat), slotState, effectiveOverrides)
       const hidden = trimmed.filter((v) => splitCommaSeparatedTags(v).length < min).length
       if (hidden > 0) out[cat] = hidden
     })
     return out
-  }, [bundleCategories, minSetTags, axisValues, slotState, effectiveOverrides])
+  }, [bundleCategories, minSetTags, sourceValues, slotState, effectiveOverrides])
 
   const setMinSetTags = useCallback((category: TagCategory, count: number) => {
     const n = Math.max(1, Math.min(MAX_MIN_SET_TAGS, Math.floor(count) || 1))
@@ -945,6 +994,7 @@ export function usePackMode(
 
   const setAxisTagMode = useCallback(
     (category: TagCategory, mode: AxisTagMode) => {
+      if (category === 'clothing') setClothingFromLibraryRaw(false)
       setAxisTagModes((prev) => ({ ...prev, [category]: mode }))
       if (mode === 'bundle') {
         setAxisMinCounts((prev) => {
@@ -994,9 +1044,14 @@ export function usePackMode(
   const reseedAxis = useCallback(
     (category: TagCategory, posts: BooruPost[], fallbackValues: string[] = []) => {
       cachedPostsRef.current = posts
+      // Re-sample on library clothing draws other outfits.
+      if (category === 'clothing' && clothingFromLibrary) {
+        setLibrarySeed((seed) => seed + 1)
+        return
+      }
       resample(posts, [category], axisTagModes, { [category]: fallbackValues }, false)
     },
-    [resample, axisTagModes]
+    [resample, axisTagModes, clothingFromLibrary]
   )
 
   const reseedAllAxes = useCallback(
@@ -1023,6 +1078,11 @@ export function usePackMode(
     },
     [resample, axisTagModes, baseCard, basePromptTags, currentOverrides, characterTags]
   )
+
+  const setClothingFromLibrary = useCallback((on: boolean) => {
+    setClothingFromLibraryRaw(on)
+    if (on) setLibrarySeed((seed) => seed + 1)
+  }, [])
 
   const setPromptCountClamped = useCallback((count: number) => {
     setPromptCount(Math.max(1, Math.min(MAX_PACK_PROMPTS, Math.floor(count) || 1)))
@@ -1428,12 +1488,13 @@ export function usePackMode(
       lockedSlots: Array.from(lockedSlots),
       mutedSlots: Array.from(mutedSlots),
       varietyLevel,
-      axisTagModes,
+      axisTagModes: axisTagModesRaw,
       axisMinCounts,
       promptCount,
       manualAxisValues,
       minTotalTags,
       minSetTags,
+      clothingFromLibrary,
     }
     persistTimerRef.current = setTimeout(() => {
       try {
@@ -1447,7 +1508,7 @@ export function usePackMode(
     return () => {
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
     }
-  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModes, minTotalTags, minSetTags])
+  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModesRaw, minTotalTags, minSetTags, clothingFromLibrary])
 
   return {
     isPackMode,
@@ -1489,6 +1550,9 @@ export function usePackMode(
     axisTagModes,
     setAxisTagMode,
     setAllAxisTagModes,
+    clothingFromLibrary,
+    setClothingFromLibrary,
+    libraryOutfitCount,
 
     axisValues: mergedAxisValues,
     addAxisValue,

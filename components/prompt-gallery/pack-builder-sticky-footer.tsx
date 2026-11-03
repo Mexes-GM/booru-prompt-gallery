@@ -73,6 +73,10 @@ export interface PackBuilderStickyFooterProps {
     needsCharacterChoice: boolean
     axisTagModes?: Partial<Record<TagCategory, AxisTagMode>>
     onSetAxisTagMode?: (category: TagCategory, mode: AxisTagMode) => void
+    /** Clothing pool from the outfit library (see usePackMode). */
+    clothingFromLibrary?: boolean
+    onSetClothingFromLibrary?: (on: boolean) => void
+    libraryOutfitCount?: number | null
     onSetAllAxisTagModes?: (mode: AxisTagMode) => void
     axisValues: Partial<Record<TagCategory, string[]>>
     onAddAxisValue: (category: TagCategory, value: string) => void
@@ -502,6 +506,9 @@ const PackBuilderStickyFooterComponent = ({
     needsCharacterChoice,
     axisTagModes = {},
     onSetAxisTagMode,
+    clothingFromLibrary,
+    onSetClothingFromLibrary,
+    libraryOutfitCount,
     onSetAllAxisTagModes,
     axisValues,
     onAddAxisValue,
@@ -1022,6 +1029,9 @@ const PackBuilderStickyFooterComponent = ({
                                         axisTagModes={axisTagModes}
                                         onSetAxisMinCount={onSetAxisMinCount}
                                         onSetAxisTagMode={onSetAxisTagMode}
+                                        clothingFromLibrary={clothingFromLibrary}
+                                        onSetClothingFromLibrary={onSetClothingFromLibrary}
+                                        libraryOutfitCount={libraryOutfitCount}
                                         onAddAxisValue={onAddAxisValue}
                                         onRemoveAxisValue={onRemoveAxisValue}
                                         onReseedAxis={onReseedAxis}

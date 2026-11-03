@@ -161,15 +161,15 @@ function useCardTraits(engine: Engine | null, input: NaturalPromptInput | null):
 export function useNaturalPrompt({ enabled, format, fullDetail, source, overrides, withAlternate = false }: UseNaturalPromptOptions): NaturalPromptView {
   const active = enabled && format !== "tags"
   const resources = useNaturalPromptResources(active)
-  const { prompt, characters, copyrights, rating, provider, handWritten } = source
+  const { prompt, characters, copyrights, rating, provider, handWritten, outfitDescription } = source
   const { slotProvider, allOverrides } = useCardOverrides(active, provider, overrides)
   const { engine, phrases } = resources
 
   const input = useMemo(
     () => (active && engine && prompt
-      ? engine.naturalPromptInput({ prompt, characters, copyrights, rating, provider, handWritten }, allOverrides)
+      ? engine.naturalPromptInput({ prompt, characters, copyrights, rating, provider, handWritten, outfitDescription }, allOverrides)
       : null),
-    [active, engine, prompt, characters, copyrights, rating, provider, handWritten, allOverrides],
+    [active, engine, prompt, characters, copyrights, rating, provider, handWritten, outfitDescription, allOverrides],
   )
   useTagRequests(engine, input, allOverrides, slotProvider)
   const sceneOptions = useCardTraits(engine, input)

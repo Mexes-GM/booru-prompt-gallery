@@ -13,6 +13,8 @@ export function PromptCard({
   copied = 0,
   showMore = 0,
   overlay,
+  image = "danbooru-5513008.jpg",
+  objectPosition = "50% 6%",
 }: {
   well: ReactNode
   /** 0 → 1: the Copy button turns into "Copied!". */
@@ -21,6 +23,10 @@ export function PromptCard({
   showMore?: number
   /** Extra layers on top of the image (name chips). */
   overlay?: ReactNode
+  /** File in public/ shown on the card. */
+  image?: string
+  /** Crop of the image: the card shows a landscape slice of a portrait post. */
+  objectPosition?: string
 }) {
   return (
     <div
@@ -37,8 +43,8 @@ export function PromptCard({
     >
       <div style={{ position: "relative", height: CARD.imageHeight, overflow: "hidden" }}>
         <Img
-          src={staticFile("danbooru-5513008.jpg")}
-          style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 6%" }}
+          src={staticFile(image)}
+          style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition }}
         />
         {overlay}
         <div

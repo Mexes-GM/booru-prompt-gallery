@@ -10,6 +10,7 @@ import { classifyTags } from "./tag-classifier"
 import { TAG_CATEGORY_IDS } from "./tag-taxonomy"
 import { processBackgroundTags, BackgroundMode } from "./background-detector"
 import { type BackgroundContext, type MatchStrictness } from "./background-context"
+import { COSTUME_TAG_RE, swapOutfit } from "./outfit-swap"
 import { splitTags, splitCommaSeparatedTags } from "./utils/tag-utils"
 
 // --------------- Types ---------------
@@ -78,6 +79,11 @@ export interface CleanPromptOptions {
   backgroundContext?: BackgroundContext
   /** How strictly backgroundContext gates the 'detailed_random' pick. */
   backgroundMatchStrictness?: MatchStrictness
+  /**
+   * Outfit that replaces the post's clothing (see lib/outfit-swap.ts). Picked
+   * once per post by the caller, like backgroundContext.
+   */
+  outfitTags?: string[] | null
 
   /**
    * "Find & Replace" rules for outdated booru tag renames (e.g. Danbooru
@@ -1348,6 +1354,10 @@ export function cleanPrompt(
   const classified = classifyTags(contentTags, options?.tagOverrides)
   let sortedContentTags = TAG_CATEGORY_IDS.flatMap((category) => classified[category])
 
+  if (options?.outfitTags) {
+    sortedContentTags = swapOutfit(sortedContentTags, options.outfitTags, options.tagOverrides)
+  }
+
   // Optional: Process Backgrounds based on rules
   if (options?.backgroundMode && Array.isArray(sortedContentTags)) {
     sortedContentTags = processBackgroundTags(
@@ -1372,6 +1382,8 @@ export function cleanPrompt(
   ]
     .map((t) => normalize(t))
     .filter(Boolean)
+    // A named costume ("uruha (6th costume)") would fight the new outfit.
+    .filter((t) => !options?.outfitTags || !COSTUME_TAG_RE.test(t))
 
   const allFinal = new Set<string>()
 

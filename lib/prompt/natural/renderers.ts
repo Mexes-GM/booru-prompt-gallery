@@ -19,7 +19,7 @@
  */
 import type { Scene, SceneSlot } from "./scene"
 import { describeScene, type PhraseDictionary, type SceneProse, type SubjectClause } from "./prose"
-import { capitalize, joinList, properNouns } from "./english"
+import { capitalize, joinList, properNouns, type Pronouns } from "./english"
 
 export interface RenderResult {
   text: string
@@ -42,8 +42,23 @@ const ANIMA_TAG_SLOTS: SceneSlot[] = [
   "weapon", "handheld", "setting", "props", "atmosphere", "animal", "style", "layout",
 ]
 
-export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phrases?: PhraseDictionary } = {}): RenderResult {
+/**
+ * "Random outfit" sentences, tied to the subject: "A blue cardigan ..." reads
+ * "She wears a blue cardigan ...", "The outfit includes" reads "Her outfit includes".
+ */
+export function outfitSentences(description: string | undefined, pronouns: Pronouns): string {
+  const text = description?.trim()
+  if (!text) return ""
+  const Possessive = capitalize(pronouns.possessive)
+  return text
+    .replace(/^The outfit\b/, `${Possessive} outfit`)
+    .replace(/^(An?) (?=\w)/, (_, article: string) => `${capitalize(pronouns.subject)} ${pronouns.plural ? "wear" : "wears"} ${article.toLowerCase()} `)
+}
+
+export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phrases?: PhraseDictionary; outfitDescription?: string } = {}): RenderResult {
   const prose = describeScene(scene, options.phrases, { compact: true })
+  // Tags anchor Anima on the garments; the sentences carry what tags can't (cut, fabric, trims).
+  const outfit = outfitSentences(options.outfitDescription, prose.pronouns)
   // A tag the card joined ("black elbow grey gloves") stays as the card wrote it.
   const joined = new Set<string>()
   const slotTags = ANIMA_TAG_SLOTS.flatMap((s) => scene.slots[s] ?? []).flatMap((tag) => {
@@ -73,6 +88,7 @@ export function renderAnima(scene: Scene, options: { qualityTags?: string[]; phr
     // Anima's card asks for each character to be described separately.
     ...prose.characters,
     ...prose.people,
+    outfit,
     prose.pose,
     prose.camera,
   ].filter(Boolean)
@@ -109,6 +125,8 @@ export interface ProseOptions {
    * MOSS_DEFAULT_MAX_WORDS); `null` turns the limit off and keeps every detail.
    */
   maxWords?: number | null
+  /** "Random outfit" sentences, said instead of the outfit sentence built from tags. */
+  outfitDescription?: string
 }
 
 export function renderFlux2(scene: Scene, options: ProseOptions = {}): RenderResult {
@@ -122,18 +140,51 @@ export function renderMoss(scene: Scene, options: ProseOptions = {}): RenderResu
 // Light, camera, style, extras and raw details: worth less than any list item of the sentences above them.
 const MINOR_PRIORITY = 6
 
+// Kinds of bag a held sentence and the outfit's sentences can both name.
+const BAG_KINDS: [kind: string, re: RegExp][] = [
+  ["bag", /\b(?:bag|handbag|purse|tote|clutch|satchel)s?\b/i],
+  ["backpack", /\bbackpacks?\b/i],
+  ["basket", /\bbaskets?\b/i],
+]
+const bagKinds = (text: string) => BAG_KINDS.filter(([, re]) => re.test(text)).map(([kind]) => kind)
+
 function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: number): RenderResult {
+  const withDescription = renderProseWith(scene, options, defaultMaxWords, options.outfitDescription)
+  // An outfit cut to its first sentences reads as if the rest weren't worn:
+  // when the description doesn't fit whole, the tag-built outfit (every
+  // garment, less detail) is said instead.
+  if (!withDescription.outfitCut) return withDescription.result
+  return renderProseWith(scene, options, defaultMaxWords, undefined).result
+}
+
+function renderProseWith(scene: Scene, options: ProseOptions, defaultMaxWords: number, outfitDescription: string | undefined) {
   const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? defaultMaxWords
   // Full detail when it fits, or when leaving out minor sentences is enough;
   // otherwise cap every list first, then drop sentences.
-  const full = describeScene(scene, options.phrases)
+  // The outfit's own sentences replace the tag-built one.
+  const withOutfit = (p: SceneProse): SceneProse => {
+    const outfit = outfitSentences(outfitDescription, p.pronouns)
+    if (!outfit) return p
+    // The outfit's bag is already in its sentences: "She has a brown handbag." would say
+    // it twice. Only the same kind of bag goes; a held basket stays next to a handbag.
+    const outfitBags = new Set(bagKinds(outfit))
+    const held = outfitBags.size
+      ? sentencesOf(p.held).filter((s) => !bagKinds(s).some((k) => outfitBags.has(k))).join(" ")
+      : p.held
+    return { ...p, clothing: outfit, held }
+  }
+  const full = withOutfit(describeScene(scene, options.phrases))
   const medium = options.medium ?? full.medium
-  const fullFit = fitBudget(proseSections(full, medium), maxWords)
+  const fullSections = proseSections(full, medium)
+  const fullFit = fitBudget(fullSections, maxWords)
   const minorOnly = fullFit.sentences.every((s) => (fullFit.kept.has(s) && !s.cut) || s.priority >= MINOR_PRIORITY)
-  const prose = minorOnly ? full : describeScene(scene, options.phrases, { compact: true })
-  const { sentences, kept } = minorOnly ? fullFit : fitBudget(proseSections(prose, medium), maxWords)
+  const prose = minorOnly ? full : withOutfit(describeScene(scene, options.phrases, { compact: true }))
+  const sections = minorOnly ? fullSections : proseSections(prose, medium)
+  const { sentences, kept } = minorOnly ? fullFit : fitBudget(sections, maxWords)
   const text = properNouns(joinSameSubject(sentences.filter((s) => kept.has(s)).map((s) => s.text), prose.clauses).join(" "))
-  return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }
+  const clothingOrder = sections.findIndex((s) => s.id === "clothing")
+  const outfitCut = !!outfitDescription && sentences.some((s) => s.order === clothingOrder && (!kept.has(s) || s.cut))
+  return { result: { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }, outfitCut }
 }
 
 // Most clauses, and words, in one joined sentence: past that it reads as a list of lists.
@@ -182,7 +233,7 @@ function joinedSentence(group: SubjectClause[]): string {
   return `${group[0].subject} ${group.slice(0, -1).map((c) => c.predicate).join(", ")}${and}${last.predicate}${last.tail ? `, with ${last.tail}` : ""}.`
 }
 
-function proseSections(prose: SceneProse, medium: string): { text: string; priority: number; short?: string }[] {
+function proseSections(prose: SceneProse, medium: string): { id?: string; text: string; priority: number; short?: string }[] {
   const opening = prose.identity ? `${medium} of ${prose.identity}.` : `${medium}.`
   // Output order reads naturally; `priority` decides what survives the budget.
   // `short` stands in for a section's first sentence when that one does not fit.
@@ -195,7 +246,7 @@ function proseSections(prose: SceneProse, medium: string): { text: string; prior
     // A long pose sentence is cut to its first actions rather than lost.
     { text: prose.pose, priority: 1, short: prose.poseShort },
     { text: prose.body, priority: 4 },
-    { text: prose.clothing, priority: 2, short: prose.clothingShort },
+    { id: "clothing", text: prose.clothing, priority: 2, short: prose.clothingShort },
     { text: prose.held, priority: 5 },
     { text: prose.setting, priority: 3 },
     { text: prose.lighting, priority: 6 },
