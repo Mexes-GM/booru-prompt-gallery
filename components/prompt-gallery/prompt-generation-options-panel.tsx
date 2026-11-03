@@ -552,6 +552,7 @@ function EmbeddedOptions({
   const { format } = usePromptFormat()
   const advancedId = useId()
   const [advancedOpen, setAdvancedOpen] = useState(() => {
+    if (typeof window === "undefined") return false
     try {
       return localStorage.getItem(ADVANCED_OPEN_KEY) === "true"
     } catch {
