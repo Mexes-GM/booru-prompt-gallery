@@ -8,8 +8,13 @@ import { MAIN_TOUR_STORAGE_KEY, isFeatureIntroPreview, isOverlayOpen } from "@/l
 const loadDialog = () => import("@/components/prompt-gallery/feature-intro-dialog")
 const FeatureIntroDialog = dynamic(() => loadDialog().then((m) => m.FeatureIntroDialog), { ssr: false, loading: () => null })
 
-/** Release whose feature this dialog presents. It only shows while the site is on this minor version. */
+/**
+ * Release whose feature this dialog presents. It shows while the site is on
+ * this minor version or the next one (FEATURE_INTRO_EXTRA_MINORS), so a release
+ * that follows soon after doesn't hide it before people see it.
+ */
 export const FEATURE_INTRO_RELEASE = "10.7"
+const FEATURE_INTRO_EXTRA_MINORS = 1
 export const FEATURE_INTRO_POSTER = "/whats-new/10.7.0-random-outfit-poster.jpg"
 
 const SEEN_KEY = "feature_intro_seen"
@@ -29,10 +34,17 @@ function isBusy(): boolean {
   return el instanceof HTMLElement && (el.isContentEditable || el.matches("input, textarea, select"))
 }
 
+/** "10.8.2" is within reach of release "10.7" when the major matches and the minor is 7 or 8. */
+function isIntroVersion(version: string): boolean {
+  const [major, minor] = version.split(".").map(Number)
+  const [relMajor, relMinor] = FEATURE_INTRO_RELEASE.split(".").map(Number)
+  return major === relMajor && minor >= relMinor && minor <= relMinor + FEATURE_INTRO_EXTRA_MINORS
+}
+
 function shouldOffer(version: string): boolean {
   // The browser extension embeds the site in a frame; it has its own onboarding.
   if (window.self !== window.top) return false
-  if (!version.startsWith(`${FEATURE_INTRO_RELEASE}.`)) return false
+  if (!isIntroVersion(version)) return false
   try {
     if (localStorage.getItem(SEEN_KEY) === FEATURE_INTRO_RELEASE) return false
     // First visit: the welcome tour runs instead, and this waits for the next visit.
