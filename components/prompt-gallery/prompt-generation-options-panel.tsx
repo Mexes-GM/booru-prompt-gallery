@@ -372,6 +372,78 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
     </AnimatePresence>
   )
 
+  // Styles and Detail for "Random outfit", shared by both variants.
+  const renderOutfitTray = (idPrefix: string) => (
+    <AnimatePresence initial={false}>
+      {outfitMode === "random" && (
+        <motion.div
+          key={`${idPrefix}-outfit-random`}
+          initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+          transition={{ duration: 0.2, ease: EASE_OUT_STRONG }}
+          className="overflow-hidden"
+        >
+          {/* The mode's own tray: picks sit on the panel surface when on. */}
+          <div className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span id={`${idPrefix}-outfit-styles-label`} className="text-xs font-medium text-muted-foreground">Styles</span>
+                {outfitCount !== null && outfitStyles.length > 0 && (
+                  <span className="text-[11px] tabular-nums text-muted-foreground">{outfitCount.toLocaleString("en")} outfits</span>
+                )}
+              </div>
+              <div role="group" aria-labelledby={`${idPrefix}-outfit-styles-label`} className="grid grid-cols-4 gap-1">
+                {OUTFIT_STYLES.map((style) => {
+                  const isOn = outfitStyles.includes(style)
+                  const { label, Icon } = OUTFIT_STYLE_META[style]
+                  return (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={() => toggleOutfitStyle(style)}
+                      aria-pressed={isOn}
+                      className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-center gap-1.5 px-1 py-2", isOn ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
+                    >
+                      <Icon className={cn("h-4 w-4 transition-colors", isOn ? "text-primary-text" : "opacity-70")} aria-hidden="true" />
+                      <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span id={`${idPrefix}-outfit-detail-label`} className="text-xs font-medium text-muted-foreground">Detail</span>
+              <div role="radiogroup" aria-labelledby={`${idPrefix}-outfit-detail-label`} className="grid grid-cols-2 gap-1">
+                {OUTFIT_DETAILS.map(({ value, label, hint }) => {
+                  const isSelected = outfitDetail === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => setOutfitDetail(value)}
+                      className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-start gap-0.5 px-2.5 py-2 text-left", isSelected ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
+                    >
+                      <span className="font-medium">{label}</span>
+                      <span className="text-[11px] leading-snug text-muted-foreground">{hint}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <p className="border-t border-border/40 pt-2.5 text-[11px] leading-snug text-muted-foreground">
+              {outfitStyles.length === 0
+                ? "Pick at least one style to change outfits."
+                : "Only posts with one girl change. Beach and snow scenes get clothes that fit."}
+            </p>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+
   if (isCompact) {
     const rowClass = "flex items-center justify-between gap-3 rounded-lg transition-colors border border-transparent p-1 hover:bg-muted/30"
     const labelClass = "text-xs select-none cursor-pointer flex-1"
@@ -505,6 +577,27 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
           </div>
           {renderBackgroundSubOptions("compact")}
         </div>
+        {_setOutfitMode && (
+          <div className="sm:col-span-2 flex flex-col gap-2.5 pt-2 border-t border-border/40">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="outfit-mode-select-compact" className="text-xs font-semibold cursor-pointer">Outfit</Label>
+                <span id="outfit-mode-desc-compact" className="text-[10px] text-muted-foreground leading-tight">Dress the character in a new outfit</span>
+              </div>
+              <Select value={outfitMode} onValueChange={(value) => setOutfitMode(value as OutfitMode)}>
+                <SelectTrigger id="outfit-mode-select-compact" aria-describedby="outfit-mode-desc-compact" className="h-7 text-[11px] bg-background w-[124px]">
+                  <SelectValue>{OUTFIT_MODES.find((mode) => mode.value === outfitMode)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent className="text-xs">
+                  {OUTFIT_MODES.map((mode) => (
+                    <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {renderOutfitTray("compact")}
+          </div>
+        )}
       </>
     )
   }
@@ -622,74 +715,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               </Select>
             </div>
           </div>
-          <AnimatePresence initial={false}>
-            {outfitMode === "random" && (
-              <motion.div
-                key="outfit-random"
-                initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: EASE_OUT_STRONG }}
-                className="overflow-hidden"
-              >
-                {/* The mode's own tray: picks sit on the panel surface when on. */}
-                <div className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span id="outfit-styles-label" className="text-xs font-medium text-muted-foreground">Styles</span>
-                      {outfitCount !== null && outfitStyles.length > 0 && (
-                        <span className="text-[11px] tabular-nums text-muted-foreground">{outfitCount.toLocaleString("en")} outfits</span>
-                      )}
-                    </div>
-                    <div role="group" aria-labelledby="outfit-styles-label" className="grid grid-cols-4 gap-1">
-                      {OUTFIT_STYLES.map((style) => {
-                        const isOn = outfitStyles.includes(style)
-                        const { label, Icon } = OUTFIT_STYLE_META[style]
-                        return (
-                          <button
-                            key={style}
-                            type="button"
-                            onClick={() => toggleOutfitStyle(style)}
-                            aria-pressed={isOn}
-                            className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-center gap-1.5 px-1 py-2", isOn ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
-                          >
-                            <Icon className={cn("h-4 w-4 transition-colors", isOn ? "text-primary-text" : "opacity-70")} aria-hidden="true" />
-                            <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <span id="outfit-detail-label" className="text-xs font-medium text-muted-foreground">Detail</span>
-                    <div role="radiogroup" aria-labelledby="outfit-detail-label" className="grid grid-cols-2 gap-1">
-                      {OUTFIT_DETAILS.map(({ value, label, hint }) => {
-                        const isSelected = outfitDetail === value
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            role="radio"
-                            aria-checked={isSelected}
-                            onClick={() => setOutfitDetail(value)}
-                            className={cn(OUTFIT_TILE_CLASS, "flex min-w-0 flex-col items-start gap-0.5 px-2.5 py-2 text-left", isSelected ? OUTFIT_TILE_ON : OUTFIT_TILE_OFF)}
-                          >
-                            <span className="font-medium">{label}</span>
-                            <span className="text-[11px] leading-snug text-muted-foreground">{hint}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  <p className="border-t border-border/40 pt-2.5 text-[11px] leading-snug text-muted-foreground">
-                    {outfitStyles.length === 0
-                      ? "Pick at least one style to change outfits."
-                      : "Only posts with one girl change. Beach and snow scenes get clothes that fit."}
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {renderOutfitTray("embedded")}
         </div>
       )}
     </div>

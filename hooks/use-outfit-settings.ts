@@ -72,7 +72,12 @@ function useOutfitFile<T>(url: string, parse: (raw: unknown) => T, empty: T, ena
   return data
 }
 
-const isStyle = (s: string): s is OutfitStyle => (OUTFIT_STYLES as readonly string[]).includes(s)
+/** The outfit library, loaded once `enabled` turns true (Random outfit, or Pack Mode's clothing). */
+export function useOutfitLibrary(enabled: boolean): readonly Outfit[] {
+  return useOutfitFile("/outfits.json", parseOutfitLibrary, EMPTY, enabled)
+}
+
+const isStyle =(s: string): s is OutfitStyle => (OUTFIT_STYLES as readonly string[]).includes(s)
 
 /**
  * "Random outfit" settings, persisted and synced like the background ones.
@@ -109,7 +114,7 @@ export function useOutfitSettings() {
   const setOutfitStyles = (styles: OutfitStyle[]) => setStoredStyles(styles)
 
   const isRandom = outfitMode === "random"
-  const library = useOutfitFile("/outfits.json", parseOutfitLibrary, EMPTY, isRandom)
+  const library = useOutfitLibrary(isRandom)
   // The sentences only matter to the natural-language formats, so they load
   // after the tags and cards fall back to the tag-built outfit until then.
   const descriptions = useOutfitFile("/outfit-descriptions.json", parseOutfitDescriptions, NO_DESCRIPTIONS, isRandom && library.length > 0)

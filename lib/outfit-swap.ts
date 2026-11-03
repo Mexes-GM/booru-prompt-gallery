@@ -193,6 +193,40 @@ export function pickOutfit(postTags: readonly string[], settings: OutfitSettings
   return { id: outfit.id, tags, ...(description ? { description } : {}) }
 }
 
+/** Styles with adult content, left out of safe-for-work packs. */
+export const ADULT_OUTFIT_STYLES: readonly OutfitStyle[] = ["lingerie", "sexy"]
+
+/**
+ * A random draw of whole outfits for Pack Mode's clothing pool: `size` outfits
+ * of the chosen styles at the chosen detail, each as its tag list. The same
+ * seed gives the same draw, so a new seed is "pick other outfits".
+ */
+export function outfitPackPool(
+  library: readonly Outfit[],
+  styles: readonly OutfitStyle[],
+  detail: OutfitDetail,
+  seed: number,
+  size: number,
+): string[][] {
+  const pool = library.filter((o) => styles.includes(o.style))
+  const rng = seededRandom(seed)
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  return pool.slice(0, size).map((o) => outfitTags(o, detail)).filter((tags) => tags.length > 0)
+}
+
+/**
+ * The outfit's sentences for a card's natural-language prompt, only while its
+ * tags are still in that prompt (an exclusion or edit can take them out).
+ */
+export function liveOutfitDescription(prompt: string, outfitTags: readonly string[] | null, description: string | null): string | undefined {
+  if (!description || !outfitTags?.length) return undefined
+  const present = new Set(prompt.split(",").map(norm))
+  return outfitTags.some((t) => present.has(norm(t))) ? description : undefined
+}
+
 // ─── Swapping ───────────────────────────────────────────────────────────────
 
 /** Words that tie a pose to a garment ("skirt lift", "hand in pocket"). */

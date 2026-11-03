@@ -792,6 +792,8 @@ export interface PackModeConfigV2 {
   minTotalTags?: number
   /** Per-category minimum tags for a sampled "full set" to count (default 3). */
   minSetTags?: Partial<Record<TagCategory, number>>
+  /** Clothing pool drawn from the outfit library instead of the collected posts. */
+  clothingFromLibrary?: boolean
 }
 
 function isPackModeConfigV2(value: unknown): value is PackModeConfigV2 {

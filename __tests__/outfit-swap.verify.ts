@@ -13,7 +13,9 @@
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/outfit-swap.verify.ts
  */
 import {
+  ADULT_OUTFIT_STYLES,
   DEFAULT_OUTFIT_STYLES,
+  outfitPackPool,
   isOutfitEligible,
   outfitDescription,
   outfitTags,
@@ -137,6 +139,17 @@ const searched = derivePostPrompt(booruPost, {
 })
 assert(!searched.displayContent.includes("school uniform"), "searched clothing isn't added back over the outfit")
 assert(searched.displayContent.includes("blue eyes"), "other searched tags are still added")
+
+// ─── Pack Mode's library pool ───────────────────────────────────────────────
+const drawA = outfitPackPool(library, ["winter", "autumn"], "simple", 7, 60)
+assert(drawA.length === 60, `pool has the requested size (${drawA.length})`)
+assert(JSON.stringify(outfitPackPool(library, ["winter", "autumn"], "simple", 7, 60)) === JSON.stringify(drawA), "same seed, same draw")
+const drawB = outfitPackPool(library, ["winter", "autumn"], "simple", 8, 60)
+assert(JSON.stringify(drawB) !== JSON.stringify(drawA), "another seed draws other outfits")
+const winterTags = new Set(library.filter((o) => o.style === "winter" || o.style === "autumn").map((o) => outfitTags(o, "simple").join()))
+assert(drawA.every((tags) => winterTags.has(tags.join())), "the pool only holds the chosen styles")
+assert(outfitPackPool(library, [], "simple", 7, 60).length === 0, "no styles, empty pool")
+assert(ADULT_OUTFIT_STYLES.join() === "lingerie,sexy", "adult styles are the two off by default")
 
 // ─── 5. Natural-language formats ────────────────────────────────────────────
 const desc = "A blue ribbed knit cardigan with a deep V-neck. A pink pleated skirt. White sandals with a bow."

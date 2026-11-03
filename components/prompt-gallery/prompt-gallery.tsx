@@ -782,7 +782,8 @@ export function PromptGallery() {
     smartTagExclusion,
     experimentalPromptRules,
   }), [debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules])
-  const packMode = usePackMode(tagOverrides, globalWeights, isGlobalWeightsEnabled, packCleanOptions, search.booruProvider)
+  const packOutfitOptions = useMemo(() => ({ styles: outfitStyles, detail: outfitDetail }), [outfitStyles, outfitDetail])
+  const packMode = usePackMode(tagOverrides, globalWeights, isGlobalWeightsEnabled, packCleanOptions, search.booruProvider, packOutfitOptions)
   const packSeed = usePackSeed()
 
   // Extract stable packMode pieces to avoid dependency churn
@@ -2338,6 +2339,9 @@ export function PromptGallery() {
         onReseedAxis={handleReseedAxis}
         axisTagModes={packMode.axisTagModes}
         onSetAxisTagMode={packMode.setAxisTagMode}
+        clothingFromLibrary={packMode.clothingFromLibrary}
+        onSetClothingFromLibrary={packMode.setClothingFromLibrary}
+        libraryOutfitCount={packMode.libraryOutfitCount}
         onSetAllAxisTagModes={packMode.setAllAxisTagModes}
         axisMinCounts={packMode.axisMinCounts}
         onSetAxisMinCount={packMode.setAxisMinCount}

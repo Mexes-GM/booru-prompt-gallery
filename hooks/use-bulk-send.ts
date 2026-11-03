@@ -28,6 +28,7 @@ import { computeGenerationResolution } from "@/lib/extension/generation-resoluti
 import { derivePostPrompt, type DerivePostPromptOptions } from "@/lib/prompt/derive-post-prompt"
 import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
 import { isAibooruPost } from "@/lib/api-client"
+import { liveOutfitDescription } from "@/lib/outfit-swap"
 import { extractLockedTagsFromSearch, buildAxesFromSeedPosts, detectCharacterTags, generateAndFilterPrompts, type BulkSendCleanOptions } from "@/lib/pack/bulk-send"
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from "@/lib/pack/prompt-similarity"
 
@@ -153,7 +154,7 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
         const built: BulkSendQueueItem[] = []
         for (const post of candidatePosts) {
           if (built.length >= count) break
-          const { displayContent, baseContent } = derivePostPrompt(post, realCleanOptions)
+          const { displayContent, baseContent, outfitTags, outfitDescription } = derivePostPrompt(post, realCleanOptions)
           const prompt = displayContent.trim()
           if (!prompt) continue
           if (dupFilter && !dupFilter.tryAccept(prompt)) continue
@@ -175,6 +176,7 @@ export function useBulkSend(search: BulkSendSearchSlice, options: UseBulkSendOpt
               rating: post.rating,
               provider: post._provider,
               handWritten: isAiPost,
+              outfitDescription: liveOutfitDescription(baseContent, outfitTags, outfitDescription),
             },
           })
         }

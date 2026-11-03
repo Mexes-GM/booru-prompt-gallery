@@ -29,7 +29,7 @@ import { getPostUrl } from "@/lib/constants"
 import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
-import { type OutfitSettings } from "@/lib/outfit-swap"
+import { liveOutfitDescription, type OutfitSettings } from "@/lib/outfit-swap"
 import { type TagCategory, type ClassifiedTags, type RichnessDepth } from "@/lib/tag-classifier"
 import { PACK_AXES, RICHNESS_AXES, TAG_CATEGORIES } from "@/lib/tag-taxonomy"
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
@@ -388,13 +388,10 @@ export const MasonryItem = memo(function MasonryItem({
     const [detailOverride, setDetailOverride] = useState<{ fullDetail: boolean; global: boolean } | null>(null)
     const fullDetail = detailOverride?.global === globalFullDetail ? detailOverride.fullDetail : globalFullDetail
     const keepNames = includeCharacters && !isAiPost
-    // The outfit's sentences only while its tags are still in the prompt (an
-    // exclusion can take them out again).
-    const cardOutfitDescription = useMemo(() => {
-        if (!outfitDescription || !outfitTags) return undefined
-        const present = new Set(baseContent.split(",").map((t) => t.trim().replace(/\\(?=[()])/g, "")))
-        return outfitTags.some((t) => present.has(t)) ? outfitDescription : undefined
-    }, [baseContent, outfitTags, outfitDescription])
+    const cardOutfitDescription = useMemo(
+        () => liveOutfitDescription(baseContent, outfitTags, outfitDescription),
+        [baseContent, outfitTags, outfitDescription],
+    )
     const naturalSource = useMemo(() => ({
         prompt: baseContent,
         characters: keepNames ? post.tag_string_character : undefined,

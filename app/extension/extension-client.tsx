@@ -22,6 +22,7 @@ import { userPreferences, STORAGE_KEYS } from "@/lib/storage"
 import type { TagAppendRule } from "@/lib/cleanPrompt"
 import { usePromptOptions } from "@/hooks/use-prompt-options"
 import { useBackgroundSettings } from "@/hooks/use-background-settings"
+import { useOutfitSettings } from "@/hooks/use-outfit-settings"
 import { useGlobalWeights } from "@/hooks/use-global-weights"
 import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
@@ -404,6 +405,13 @@ export default function ExtensionClient() {
   } = useBackgroundSettings()
 
   const {
+    outfitMode, setOutfitMode,
+    outfitStyles, setOutfitStyles,
+    outfitDetail, setOutfitDetail,
+    outfitSettings, outfitCount,
+  } = useOutfitSettings()
+
+  const {
     globalWeights,
     isGlobalWeightsEnabled,
     isGlobalWeightsModalOpen, setIsGlobalWeightsModalOpen,
@@ -487,6 +495,7 @@ export default function ExtensionClient() {
     randomBackgroundIncludeGradients,
     detailedBackgroundsList,
     backgroundMatchStrictness,
+    outfitSettings,
     tagOverrides,
   }), [
     debouncedExcludeInput, debouncedAddInput, search.debouncedSearchTags, cardAutoAppendSearchTags,
@@ -495,6 +504,7 @@ export default function ExtensionClient() {
     cardRemoveLoRaTags, cardRemoveQualityTags,
     cardBackgroundMode, debouncedSimpleBackgroundReplacementTags,
     randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness,
+    outfitSettings,
     tagOverrides,
   ])
 
@@ -936,6 +946,13 @@ export default function ExtensionClient() {
                   setRandomBackgroundIncludeGradients={setRandomBackgroundIncludeGradients}
                   backgroundMatchStrictness={backgroundMatchStrictness}
                   setBackgroundMatchStrictness={setBackgroundMatchStrictness}
+                  outfitMode={outfitMode}
+                  setOutfitMode={setOutfitMode}
+                  outfitStyles={outfitStyles}
+                  setOutfitStyles={setOutfitStyles}
+                  outfitDetail={outfitDetail}
+                  setOutfitDetail={setOutfitDetail}
+                  outfitCount={outfitCount}
                 />
 
                 {/* Generator (host) settings — Pocket-only */}

@@ -26,6 +26,7 @@ import { NaturalPromptBody } from "@/components/prompt-gallery/natural-prompt-bo
 import { useCardPrompt, type UseCardPromptOptions } from "@/hooks/use-card-prompt"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import { convertPromptOnce } from "@/lib/prompt/natural-prompt-loader"
+import { liveOutfitDescription } from "@/lib/outfit-swap"
 import { PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { toast } from "@/hooks/use-toast"
@@ -149,6 +150,8 @@ export const PocketCard = memo(function PocketCard({
     hasAppends,
     appendedTags,
     conflictingTags,
+    outfitTags,
+    outfitDescription,
   } = useCardPrompt({
     post,
     tagCounts,
@@ -167,6 +170,10 @@ export const PocketCard = memo(function PocketCard({
   // formats rewrite the cleaned prompt, and Copy and Send use that text.
   const { format: promptFormat, fullDetail } = usePromptFormat()
   const keepNames = promptOptions.includeCharacters && !isAiPost
+  const cardOutfitDescription = useMemo(
+    () => liveOutfitDescription(baseContent, outfitTags, outfitDescription),
+    [baseContent, outfitTags, outfitDescription],
+  )
   const naturalSource = useMemo(() => ({
     prompt: baseContent,
     characters: keepNames ? post.tag_string_character : undefined,
@@ -174,7 +181,8 @@ export const PocketCard = memo(function PocketCard({
     rating: post.rating,
     provider: itemProvider,
     handWritten: isAiPost,
-  }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost])
+    outfitDescription: cardOutfitDescription,
+  }), [baseContent, keepNames, post.tag_string_character, post.tag_string_copyright, post.rating, itemProvider, isAiPost, cardOutfitDescription])
   const tagOverrides = promptOptions.tagOverrides ?? NO_OVERRIDES
   const natural = useNaturalPrompt({
     enabled: true,
