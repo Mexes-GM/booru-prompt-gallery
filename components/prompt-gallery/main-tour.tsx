@@ -2,18 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react"
 import dynamic from "next/dynamic"
+import { loadMainTourJoyride, preloadMainTour } from "@/components/prompt-gallery/main-tour-loader"
 import { MAIN_TOUR_STORAGE_KEY as TOUR_STORAGE_KEY, isFeatureIntroPreview, isOverlayOpen } from "@/lib/onboarding"
 
 /** Let the page settle (hero, results skeleton) before spotlighting anything. */
 const AUTO_START_DELAY_MS = 700
 
-const loadJoyride = () => import("@/components/prompt-gallery/main-tour-joyride")
-const MainTourJoyride = dynamic(() => loadJoyride().then((m) => m.MainTourJoyride), { ssr: false, loading: () => null })
-
-/** Starts downloading the tour's code ahead of a replay (e.g. when its menu opens). */
-export function preloadMainTour() {
-  void loadJoyride()
-}
+const MainTourJoyride = dynamic(() => loadMainTourJoyride().then((m) => m.MainTourJoyride), { ssr: false, loading: () => null })
 
 interface MainTourProps {
   /** Bump this number to force-(re)start the tour, e.g. from a Help button. */

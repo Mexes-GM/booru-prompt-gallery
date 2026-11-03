@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Activity, HelpCircle, Info, MessageSquarePlus, MoreHorizontal, Shield } from "lucide-react"
 import { CARD_SCALE_STEPS } from "@/components/prompt-gallery/card-scale-control"
-import { preloadMainTour } from "@/components/prompt-gallery/main-tour"
+import { preloadMainTour } from "@/components/prompt-gallery/main-tour-loader"
 
 const FeedbackDialog = dynamic(() => import("@/components/feedback-dialog").then(m => m.FeedbackDialog), { ssr: false, loading: () => null })
 
