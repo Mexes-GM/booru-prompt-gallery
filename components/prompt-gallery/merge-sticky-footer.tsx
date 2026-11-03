@@ -6,7 +6,7 @@ import { BooruPost } from '@/lib/booru/types'
 import { SelectedPostParts, MergeModeType, RandomSettings, MergedPromptSegment } from '@/hooks/use-merge-mode'
 import { TagCategory } from '@/lib/tag-classifier'
 import { usePostHog } from 'posthog-js/react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import Image from 'next/image'
@@ -48,7 +48,7 @@ const SymbolTag = memo(({
     category: TagCategory
 }) => {
     return (
-        <motion.div
+        <m.div
             layout
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -57,7 +57,7 @@ const SymbolTag = memo(({
             className={`flex items-center justify-center px-1.5 py-1.5 sm:py-0.5 rounded border border-dashed ${CATEGORY_BORDER_CLASS[category]} bg-background/30 font-mono text-xs font-medium opacity-80 ${CATEGORY_TEXT_CLASS[category]} select-none`}
         >
             <span className="relative">{symbol}</span>
-        </motion.div>
+        </m.div>
     )
 })
 SymbolTag.displayName = "SymbolTag"
@@ -74,7 +74,7 @@ const Particles = memo(({ color = "green" }: { color?: "green" | "red" }) => {
     return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
             {PARTICLES.map((_, i) => (
-                <motion.div
+                <m.div
                     key={i}
                     initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
                     animate={{
@@ -169,7 +169,7 @@ const MergeStickyFooterComponent = ({
     return (
         <AnimatePresence>
             {isOpen && (
-                <motion.div
+                <m.div
                     key="merge-footer"
                     initial={lowMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
                     animate={lowMotion ? { opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
@@ -258,14 +258,14 @@ const MergeStickyFooterComponent = ({
                                                 <div className="space-y-4">
                                                     <div className="flex items-center justify-between">
                                                         <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Posts to combine</Label>
-                                                        <motion.span 
+                                                        <m.span 
                                                             key={randomSettings.postCount}
                                                             initial={{ scale: 0.8, opacity: 0 }}
                                                             animate={{ scale: 1, opacity: 1 }}
                                                             className="text-xs font-bold text-primary-text bg-primary/10 px-2 py-0.5 rounded-full"
                                                         >
                                                             {randomSettings.postCount}
-                                                        </motion.span>
+                                                        </m.span>
                                                     </div>
                                                     <div className="px-1 relative">
                                                         <Slider
@@ -331,7 +331,7 @@ const MergeStickyFooterComponent = ({
                                         {isCleared && <Particles color="red" />}
                                     </AnimatePresence>
                                     <div className="grid place-items-center">
-                                        <motion.div
+                                        <m.div
                                             className="flex items-center font-bold col-start-1 row-start-1"
                                             initial={{ opacity: 0, scale: 0.5 }}
                                             animate={{
@@ -343,8 +343,8 @@ const MergeStickyFooterComponent = ({
                                         >
                                             <Check className="w-4 h-4 mr-2 stroke-[3px]" />
                                             Cleared!
-                                        </motion.div>
-                                        <motion.div
+                                        </m.div>
+                                        <m.div
                                             className="flex items-center col-start-1 row-start-1"
                                             initial={{ opacity: 1, scale: 1 }}
                                             animate={{
@@ -356,7 +356,7 @@ const MergeStickyFooterComponent = ({
                                         >
                                             <Trash2 className="w-4 h-4 mr-2" />
                                             <span className="hidden sm:inline">Clear</span>
-                                        </motion.div>
+                                        </m.div>
                                     </div>
                                 </Button>
                                 <Button variant="ghost" size="icon" onClick={onExit} className="h-8 w-8 rounded-full hover:bg-muted" aria-label="Exit merge mode">
@@ -371,7 +371,7 @@ const MergeStickyFooterComponent = ({
                                 <div className="flex gap-2 p-1">
                                     <AnimatePresence mode='popLayout'>
                                         {Array.from(selectedPosts.values()).map(({ post, parts }) => (
-                                            <motion.div
+                                            <m.div
                                                 layout
                                                 key={post.id}
                                                 initial={{ scale: 0.8, opacity: 0 }}
@@ -394,24 +394,24 @@ const MergeStickyFooterComponent = ({
                                                     className="object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-300"
                                                     unoptimized
                                                 />
-                                                <motion.button
+                                                <m.button
                                                     whileHover={lowMotion ? undefined : { scale: 1.1 }}
                                                     whileTap={{ scale: 0.9 }}
                                                     onClick={() => onRemovePost(post.id)}
                                                     className="absolute top-1 right-1 bg-overlay/60 hover:bg-destructive text-overlay-foreground hover:text-destructive-foreground rounded-full p-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10 backdrop-blur-sm"
                                                 >
                                                     <X className="w-3 h-3" />
-                                                </motion.button>
+                                                </m.button>
                                                 <div className="absolute bottom-0 left-0 right-0 flex gap-0.5 dark justify-center p-1 bg-gradient-to-t from-overlay/80 to-transparent">
                                                     {/* Tiny indicators for what parts are selected */}
-                                                    {parts.has('appearance') && <motion.span layoutId={`dot-app-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-appearance" title="Appearance" />}
-                                                    {parts.has('clothing') && <motion.span layoutId={`dot-clo-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-clothing" title="Attire" />}
-                                                    {parts.has('equipment') && <motion.span layoutId={`dot-eqp-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-equipment" title="Equipment" />}
-                                                    {parts.has('pose') && <motion.span layoutId={`dot-pos-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-pose" title="Pose" />}
-                                                    {parts.has('scenery') && <motion.span layoutId={`dot-sce-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-scenery" title="Scene" />}
-                                                    {parts.has('creature') && <motion.span layoutId={`dot-cre-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-creature" title="Creature" />}
+                                                    {parts.has('appearance') && <m.span layoutId={`dot-app-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-appearance" title="Appearance" />}
+                                                    {parts.has('clothing') && <m.span layoutId={`dot-clo-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-clothing" title="Attire" />}
+                                                    {parts.has('equipment') && <m.span layoutId={`dot-eqp-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-equipment" title="Equipment" />}
+                                                    {parts.has('pose') && <m.span layoutId={`dot-pos-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-pose" title="Pose" />}
+                                                    {parts.has('scenery') && <m.span layoutId={`dot-sce-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-scenery" title="Scene" />}
+                                                    {parts.has('creature') && <m.span layoutId={`dot-cre-${post.id}`} className="w-1.5 h-1.5 rounded-full bg-cat-creature" title="Creature" />}
                                                 </div>
-                                            </motion.div>
+                                            </m.div>
                                         ))}
                                     </AnimatePresence>
                                 </div>
@@ -486,14 +486,14 @@ const MergeStickyFooterComponent = ({
                                         </AnimatePresence>
                                         
                                         {mergedPromptSegments.length === 0 && (
-                                            <motion.span
+                                            <m.span
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
                                                 exit={{ opacity: 0 }}
                                                 className="text-muted-foreground italic block mt-1"
                                             >
                                                 Select posts to generate dynamic variations...
-                                            </motion.span>
+                                            </m.span>
                                         )}
                                     </div>
                                 ) : (
@@ -512,14 +512,14 @@ const MergeStickyFooterComponent = ({
                                             </AnimatePresence>
                                         </div>
                                     ) : (
-                                        <motion.span
+                                        <m.span
                                             initial={{ opacity: 0 }}
                                             animate={{ opacity: 1 }}
                                             exit={{ opacity: 0 }}
                                             className="text-muted-foreground italic block mt-1"
                                         >
                                             Select posts to merge prompt parts...
-                                        </motion.span>
+                                        </m.span>
                                     )
                                 )}
                             </div>
@@ -532,7 +532,7 @@ const MergeStickyFooterComponent = ({
                                     className={`relative overflow-visible shadow-sm transition-all duration-300 ${isCopied ? 'bg-success hover:bg-success/90 text-success-foreground ring-2 ring-success/50' : 'opacity-90 hover:opacity-100'}`}
                                 >
                                     <div className="grid place-items-center">
-                                        <motion.div
+                                        <m.div
                                             className="flex items-center font-bold col-start-1 row-start-1"
                                             initial={{ opacity: 0, scale: 0.5 }}
                                             animate={{
@@ -544,8 +544,8 @@ const MergeStickyFooterComponent = ({
                                         >
                                             <Check className="w-4 h-4 mr-2 stroke-[3px]" />
                                             Copied!
-                                        </motion.div>
-                                        <motion.div
+                                        </m.div>
+                                        <m.div
                                             className="flex items-center col-start-1 row-start-1"
                                             initial={{ opacity: 1, scale: 1 }}
                                             animate={{
@@ -557,7 +557,7 @@ const MergeStickyFooterComponent = ({
                                         >
                                             <Copy className="w-4 h-4 mr-2" />
                                             Copy
-                                        </motion.div>
+                                        </m.div>
                                     </div>
                                     <AnimatePresence>
                                         {isCopied && <Particles color="green" />}
@@ -567,7 +567,7 @@ const MergeStickyFooterComponent = ({
                         </div>
 
                     </div>
-                </motion.div>
+                </m.div>
             )}
         </AnimatePresence>
     )

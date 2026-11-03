@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { AnimatePresence, motion } from "framer-motion"
+import { AnimatePresence, m } from "framer-motion"
 import { Check, Crosshair, Download, Loader2, MousePointerClick, Pause, Play, RotateCcw, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -180,7 +180,7 @@ export function PocketQueueBar({ targetState, onTarget, onOpenWizard }: PocketQu
       <div className="flex items-center gap-1.5 pointer-events-auto">
         <AnimatePresence initial={false}>
           {status.platform !== "Unknown" && (
-            <motion.div
+            <m.div
               initial={lowMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={lowMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
@@ -188,7 +188,7 @@ export function PocketQueueBar({ targetState, onTarget, onOpenWizard }: PocketQu
               className="bg-secondary/90 border border-border backdrop-blur-md px-2.5 py-0.5 rounded-full text-[11px] font-medium text-secondary-foreground shadow-sm"
             >
               Target: <span className="font-semibold">{status.platform}</span>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
         <SiteTargetStatusBadge onOpenWizard={onOpenWizard} />

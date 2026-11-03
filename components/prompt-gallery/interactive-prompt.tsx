@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { createPortal } from "react-dom"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle, Copy, Check } from "lucide-react"
 import { usePostHog } from 'posthog-js/react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -257,7 +257,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
   return (
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <motion.span
+        <m.span
           ref={triggerRef}
           role="button"
           tabIndex={0}
@@ -295,14 +295,14 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
           {isGlobal && (
             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-primary rounded-full shadow-sm" />
           )}
-        </motion.span>
+        </m.span>
       </PopoverTrigger>
 
       {typeof document !== "undefined" &&
         createPortal(
           <AnimatePresence>
             {justCopied && badgePos && (
-              <motion.span
+              <m.span
                 key="copied-badge"
                 initial={{ opacity: 0, y: 6, scale: 0.85 }}
                 animate={{ opacity: 1, y: -10, scale: 1 }}
@@ -319,7 +319,7 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
               >
                 <Check className="h-2.5 w-2.5" />
                 Copied
-              </motion.span>
+              </m.span>
             )}
           </AnimatePresence>,
           document.body

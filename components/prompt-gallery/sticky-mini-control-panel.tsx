@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { DebouncedInput } from "@/components/ui/debounced-input"
 import { Button } from "@/components/ui/button"
@@ -61,7 +61,7 @@ export function StickyMiniControlPanel({
   return (
     <AnimatePresence>
       {isVisible && (
-        <motion.div
+        <m.div
           key="sticky-mini-panel"
           initial={hiddenAnim}
           animate={shownAnim}
@@ -158,7 +158,7 @@ export function StickyMiniControlPanel({
               </Tooltip>
             </div>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   )

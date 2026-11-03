@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { Check, ChevronDown, Folder, Plus, Heart, Loader2, Star, Bookmark, Flame, Zap, Sparkles, Image as ImageIcon, Moon, Sun, Ghost, Cat, Dog, Gamepad2, Music, Camera, Palette, type LucideIcon } from "lucide-react"
 
@@ -105,7 +105,7 @@ export function SaveFavoriteButton({
                     onToggleFavorite(undefined)
                 }}
             >
-                <motion.div
+                <m.div
                     whileHover={lowMotion ? undefined : { scale: 1.15 }}
                     whileTap={{ scale: 0.85 }}
                     animate={isFavorited ? {
@@ -115,7 +115,7 @@ export function SaveFavoriteButton({
                     transition={{ duration: 0.5, ease: "easeOut" }}
                 >
                     <Heart className={`h-4 w-4 ${isFavorited ? "fill-current" : ""}`} />
-                </motion.div>
+                </m.div>
             </Button>
 
             {/* Board Selector */}
@@ -132,13 +132,13 @@ export function SaveFavoriteButton({
                             e.stopPropagation()
                         }}
                     >
-                        <motion.div
+                        <m.div
                             whileHover={lowMotion ? undefined : { y: 2 }}
                             whileTap={{ scale: 0.9 }}
                             transition={{ type: "spring", stiffness: 400, damping: 10 }}
                         >
                             <ChevronDown className="h-3 w-3" />
-                        </motion.div>
+                        </m.div>
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent
@@ -181,7 +181,7 @@ export function SaveFavoriteButton({
                             <div className="grid grid-cols-8 gap-2 mt-1">
                                 {Object.keys(iconMap).map(iconName => {
                                     return (
-                                        <motion.div
+                                        <m.div
                                             key={iconName}
                                             whileHover={lowMotion ? undefined : { scale: 1.1 }}
                                             whileTap={{ scale: 0.9 }}
@@ -194,7 +194,7 @@ export function SaveFavoriteButton({
                                             >
                                                 {renderIcon(iconName, { className: "h-4 w-4" })}
                                             </Button>
-                                        </motion.div>
+                                        </m.div>
                                     )
                                 })}
                             </div>
@@ -267,14 +267,14 @@ function FolderPopoverContent({
                         <span className="flex-1 font-medium text-xs">Uncategorized</span>
                         <AnimatePresence>
                             {selectedFolderIds.length === 0 && isFavorited && (
-                                <motion.div
+                                <m.div
                                     initial={{ scale: 0.95, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
                                     exit={{ scale: 0.95, opacity: 0 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                 >
                                     <Check className="h-3 w-3 text-primary-text" />
-                                </motion.div>
+                                </m.div>
                             )}
                         </AnimatePresence>
                     </CommandItem>
@@ -295,14 +295,14 @@ function FolderPopoverContent({
                                 <span className="flex-1 font-medium text-xs truncate">{folder.name}</span>
                                 <AnimatePresence>
                                     {isSelected && (
-                                        <motion.div
+                                        <m.div
                                             initial={{ scale: 0.95, opacity: 0 }}
                                             animate={{ scale: 1, opacity: 1 }}
                                             exit={{ scale: 0.95, opacity: 0 }}
                                             transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                         >
                                             <Check className="h-3 w-3 text-primary-text" />
-                                        </motion.div>
+                                        </m.div>
                                     )}
                                 </AnimatePresence>
                             </CommandItem>

@@ -15,7 +15,7 @@
  * Pack Mode colour on active controls.
  */
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
-import { AnimatePresence, motion } from "framer-motion"
+import { AnimatePresence, m } from "framer-motion"
 import { Ban, Check, ChevronDown, ChevronRight, Lock, Minus, Package, Plus, RefreshCw, RotateCcw, Shuffle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -81,7 +81,7 @@ function TagChip({
         ? "border-dashed border-border/60 text-faint-foreground"
         : "bg-muted/40 border-border/50 text-foreground/85"
   return (
-    <motion.span
+    <m.span
       layout={!lowMotion}
       initial={lowMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
       animate={lowMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
@@ -100,7 +100,7 @@ function TagChip({
           <X className="w-3 h-3" />
         </button>
       )}
-    </motion.span>
+    </m.span>
   )
 }
 
@@ -560,14 +560,14 @@ const CategoryRow = memo(function CategoryRow({
                   <AnimatePresence initial={false} mode="popLayout">
                     {(showGrouping ? groups : [{ slot: null, values }]).flatMap((group) => [
                       showGrouping ? (
-                        <motion.span
+                        <m.span
                           key={`h:${group.slot ?? "none"}`}
                           layout={!lowMotion}
                           className="basis-full flex items-center gap-2 pt-1 first:pt-0 text-xs font-medium text-muted-foreground capitalize"
                         >
                           {slotLabel(group.slot)}
                           <span className="h-px flex-1 bg-border/50" />
-                        </motion.span>
+                        </m.span>
                       ) : null,
                       ...group.values.map((value) => (
                         <TagChip

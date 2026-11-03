@@ -10,7 +10,7 @@ import {
   QuickFlowStatBlock,
   type QuickFlowPhase,
 } from "@/components/quick-flow-modal"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import {
   GraduationCap,
   Sparkles,
@@ -505,7 +505,7 @@ function PlayingScreen({
 
         <AnimatePresence mode="wait">
           {card ? (
-            <motion.div
+            <m.div
               key={card.tag}
               initial={lowMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94, y: 6 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -579,9 +579,9 @@ function PlayingScreen({
                   Look up on Booru Wiki
                 </a>
               </Button>
-            </motion.div>
+            </m.div>
           ) : (
-            <motion.div
+            <m.div
               key="loading"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -597,7 +597,7 @@ function PlayingScreen({
               ) : (
                 <span className="text-sm">All caught up for now!</span>
               )}
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
 
@@ -612,7 +612,7 @@ function PlayingScreen({
       <div className="p-4 pt-2 shrink-0 min-h-[240px] flex flex-col justify-end">
         <AnimatePresence mode="wait" initial={false}>
           {!expandedCategory ? (
-            <motion.div
+            <m.div
               key="categories-grid"
               initial={lowMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -640,9 +640,9 @@ function PlayingScreen({
                   <kbd className="text-[10px] font-mono opacity-60">{cat.key}</kbd>
                 </Button>
               ))}
-            </motion.div>
+            </m.div>
           ) : (
-            <motion.div
+            <m.div
               key={`subcategories-${expandedCategory}`}
               initial={lowMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
@@ -706,7 +706,7 @@ function PlayingScreen({
                   )
                 })}
               </div>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       </div>

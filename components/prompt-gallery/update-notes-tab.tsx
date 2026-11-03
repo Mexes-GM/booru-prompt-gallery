@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState, useSyncExternalStore } from "react"
-import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion"
+import { AnimatePresence, m, useReducedMotion, type Variants } from "framer-motion"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { PixelMascot, PixelPuff } from "@/components/prompt-gallery/pixel-mascot"
 import { cn } from "@/lib/utils"
@@ -244,7 +244,7 @@ export function UpdateNotesTab({ version }: UpdateNotesTabProps) {
         >
           <AnimatePresence onExitComplete={() => setExiting(false)}>
             {showMascot && (
-              <motion.span
+              <m.span
                 key="mascot"
                 className="pointer-events-none absolute left-2 bottom-0"
                 variants={MASCOT_VARIANTS}
@@ -252,18 +252,18 @@ export function UpdateNotesTab({ version }: UpdateNotesTabProps) {
                 animate="shown"
                 exit="gone"
               >
-                <motion.span className="block" variants={reduceMotion ? REDUCED_BODY_VARIANTS : BODY_VARIANTS}>
+                <m.span className="block" variants={reduceMotion ? REDUCED_BODY_VARIANTS : BODY_VARIANTS}>
                   <PixelMascot
                     alert={!seen}
                     className="transition-transform duration-150 ease-out group-hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0"
                   />
-                </motion.span>
+                </m.span>
                 {!reduceMotion && (
-                  <motion.span className="absolute left-1/2 top-1 -ml-[11px]" variants={PUFF_VARIANTS}>
+                  <m.span className="absolute left-1/2 top-1 -ml-[11px]" variants={PUFF_VARIANTS}>
                     <PixelPuff className="pixel-sticker" />
-                  </motion.span>
+                  </m.span>
                 )}
-              </motion.span>
+              </m.span>
             )}
           </AnimatePresence>
           Update Notes

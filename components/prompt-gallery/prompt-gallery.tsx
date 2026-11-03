@@ -67,7 +67,7 @@ import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { SmoothFilterSlider } from "@/components/ui/smooth-filter-slider"
 import { UserNav } from "@/components/auth/user-nav"
 import Image from "next/image"
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion"
+import { m, AnimatePresence, LayoutGroup } from "framer-motion"
 import { renderIcon } from "@/components/prompt-gallery/save-favorite-button"
 import {
   hasMultipleTags, getFinalQueryTagsWithMeta, getProviderTagLimit, isTagCountSupportedProvider, detectMisusedMetatags, BooruPost, BooruProvider, isAibooruPost, apiUrl,

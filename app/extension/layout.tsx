@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import type React from "react"
+import { MotionProvider } from "@/components/motion-provider"
 
 export const metadata: Metadata = {
   title: "Booru Prompt Gallery - Pocket Extension",
@@ -26,7 +27,7 @@ export default function ExtensionLayout({
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: extensionModeBootstrap }} />
-      {children}
+      <MotionProvider>{children}</MotionProvider>
     </>
   )
 }

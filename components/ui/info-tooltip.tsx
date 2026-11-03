@@ -12,7 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -68,7 +68,7 @@ export function InfoTooltip({
   );
 
   const panel = (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 300, damping: 25, delay: 0.05 }}
@@ -91,7 +91,7 @@ export function InfoTooltip({
           {description}
         </div>
       </div>
-    </motion.div>
+    </m.div>
   );
 
   // hideIcon: `children` IS the trigger and is usually an interactive control

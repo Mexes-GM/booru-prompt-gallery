@@ -2,7 +2,7 @@
 
 import { useState, useMemo, type MouseEvent as ReactMouseEvent } from "react"
 import Image from "next/image"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import { Palette, Search, ExternalLink, Trash2, ImageOff } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -54,7 +54,7 @@ export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {
     }
 
     return (
-        <motion.div
+        <m.div
             layout
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -177,7 +177,7 @@ export function ArtistCard({ artist, onSearch, onRemove }: ArtistCardProps) {
                     </Tooltip>
                 </div>
             </Card>
-        </motion.div>
+        </m.div>
     )
 }
 

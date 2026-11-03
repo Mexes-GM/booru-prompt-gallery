@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useState, useEffect, useCallback } from "react"
 import * as SliderPrimitive from "@radix-ui/react-slider"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 
 import { cn } from "@/lib/utils"
 import { DebouncedInput } from "@/components/ui/debounced-input"
@@ -220,7 +220,7 @@ export function RangeSlider({
 
           {/* Min thumb */}
           <SliderPrimitive.Thumb asChild>
-            <motion.span
+            <m.span
               className={cn(
                 "relative grid h-5 w-5 place-items-center rounded-full border border-primary/50",
                 "bg-[radial-gradient(circle_at_50%_30%,var(--background),var(--secondary))]",
@@ -239,7 +239,7 @@ export function RangeSlider({
               />
               <AnimatePresence>
                 {showBadges && (
-                  <motion.div
+                  <m.div
                     initial={{ opacity: 0, y: 4, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.95 }}
@@ -253,15 +253,15 @@ export function RangeSlider({
                   >
                     {localMin}
                     <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 rotate-45 bg-primary" />
-                  </motion.div>
+                  </m.div>
                 )}
               </AnimatePresence>
-            </motion.span>
+            </m.span>
           </SliderPrimitive.Thumb>
 
           {/* Max thumb */}
           <SliderPrimitive.Thumb asChild>
-            <motion.span
+            <m.span
               className={cn(
                 "relative grid h-5 w-5 place-items-center rounded-full border border-primary/50",
                 "bg-[radial-gradient(circle_at_50%_30%,var(--background),var(--secondary))]",
@@ -280,7 +280,7 @@ export function RangeSlider({
               />
               <AnimatePresence>
                 {showBadges && (
-                  <motion.div
+                  <m.div
                     initial={{ opacity: 0, y: 4, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.95 }}
@@ -294,10 +294,10 @@ export function RangeSlider({
                   >
                     {localMax}
                     <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 rotate-45 bg-primary" />
-                  </motion.div>
+                  </m.div>
                 )}
               </AnimatePresence>
-            </motion.span>
+            </m.span>
           </SliderPrimitive.Thumb>
         </SliderPrimitive.Root>
         <DebouncedInput

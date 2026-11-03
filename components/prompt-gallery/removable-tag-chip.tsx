@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { X } from 'lucide-react'
 import type { TagCategory } from '@/lib/tag-classifier'
 import { CATEGORY_CHIP_CLASS } from './category-chip-styles'
@@ -33,7 +33,7 @@ export interface RemovableTagChipProps {
 export const RemovableTagChip = memo(({ text, category, onRemove, count, exitVariant = 'explode', reducedMotion = false }: RemovableTagChipProps) => {
   if (exitVariant === 'fade') {
     return (
-      <motion.button
+      <m.button
         type="button"
         layout={!reducedMotion}
         initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8 }}
@@ -45,12 +45,12 @@ export const RemovableTagChip = memo(({ text, category, onRemove, count, exitVar
       >
         <span className="truncate max-w-[140px]">{text}</span>
         <X className="w-3 h-3 opacity-50 group-hover:opacity-100 flex-shrink-0" />
-      </motion.button>
+      </m.button>
     )
   }
 
   return (
-    <motion.div
+    <m.div
       layout
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: 1, scale: 1 }}
@@ -63,7 +63,7 @@ export const RemovableTagChip = memo(({ text, category, onRemove, count, exitVar
       transition={{ type: "spring", stiffness: 500, damping: 30 }}
       className="relative z-0 hover:z-10"
     >
-      <motion.button
+      <m.button
         onClick={onRemove}
         className={`transform-gpu hover:scale-110 active:scale-95 transition-all duration-200 px-2.5 py-1.5 sm:py-0.5 rounded border text-xs font-medium font-mono cursor-pointer select-none relative overflow-hidden group ${CATEGORY_CHIP_CLASS[category]}`}
       >
@@ -79,8 +79,8 @@ export const RemovableTagChip = memo(({ text, category, onRemove, count, exitVar
         <span className="absolute right-1 top-1/2 -translate-y-1/2 sm:opacity-0 opacity-100 group-hover:opacity-100 transition-opacity duration-200 z-10">
           <X className="w-3 h-3" />
         </span>
-      </motion.button>
-    </motion.div>
+      </m.button>
+    </m.div>
   )
 })
 RemovableTagChip.displayName = "RemovableTagChip"

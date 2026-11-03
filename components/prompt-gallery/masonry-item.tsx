@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { isDanbooruCircuitOpen, openDanbooruCircuit } from "@/lib/booru/danbooru-circuit"
 import { Button } from "@/components/ui/button"
@@ -102,7 +102,7 @@ const PARTICLES = Array.from({ length: 12 })
 const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
     const lowMotion = useLowMotion()
     return (
-        <motion.div
+        <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -125,7 +125,7 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
         >
             <div className="relative flex flex-col items-center justify-center pointer-events-none">
                 {!lowMotion && PARTICLES.map((_, i) => (
-                    <motion.div
+                    <m.div
                         key={i}
                         initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
                         animate={{
@@ -139,25 +139,25 @@ const SuccessOverlay = memo(({ onSkip }: { onSkip?: () => void }) => {
                     />
                 ))}
 
-                <motion.div
+                <m.div
                     initial={lowMotion ? { scale: 1, rotate: 0 } : { scale: 0.95, rotate: -45, opacity: 0 }}
                     animate={{ scale: 1, rotate: 0, opacity: 1 }}
                     transition={lowMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 20 }}
                     className="bg-success rounded-full p-4 shadow-[0_0_20px_color-mix(in_oklab,var(--success)_40%,transparent)] relative z-10"
                 >
                     <Check className="h-8 w-8 text-success-foreground stroke-[3px]" />
-                </motion.div>
+                </m.div>
 
-                <motion.span
+                <m.span
                     initial={lowMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={lowMotion ? { duration: 0 } : { delay: 0.1 }}
                     className="mt-3 text-overlay-foreground font-bold tracking-widest text-sm uppercase drop-shadow-lg"
                 >
                     Copied
-                </motion.span>
+                </m.span>
             </div>
-        </motion.div>
+        </m.div>
     )
 })
 SuccessOverlay.displayName = "SuccessOverlay"
@@ -590,20 +590,20 @@ export const MasonryItem = memo(function MasonryItem({
                 >
                     {isPreviouslyCopied && (
                         <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
-                            <motion.div
+                            <m.div
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                 className="flex items-center justify-center h-6 w-6 rounded-full bg-background/80 border border-success-border shadow-sm"
                             >
                                 <Check className="w-3.5 h-3.5 text-success-text" strokeWidth={3} />
-                            </motion.div>
+                            </m.div>
                         </div>
                     )}
 
                     <AnimatePresence>
                         {isMergeMode && (
-                            <motion.div
+                            <m.div
                                 initial={{ opacity: 0, y: 15, scale: 0.95 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -616,7 +616,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 {/* Inline Selection Bar */}
-                                <motion.div
+                                <m.div
                                     className="flex items-center justify-between w-full max-w-[280px] mx-auto bg-background/85 border border-border/40 shadow-2xl rounded-2xl p-1 sm:p-1.5 gap-0.5 sm:gap-1 ring-1 ring-foreground/5"
                                     initial={{ scale: 0.9, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
@@ -632,7 +632,7 @@ export const MasonryItem = memo(function MasonryItem({
                                             <Tooltip key={part}>
                                                 <TooltipTrigger asChild>
                                                     <span tabIndex={!hasTags ? -1 : 0} className="flex-1 flex min-w-0 max-w-[44px]">
-                                                        <motion.button
+                                                        <m.button
                                                             disabled={!hasTags}
                                                             whileHover={hasTags && !lowMotion ? { scale: 1.1, y: -2 } : {}}
                                                             whileTap={hasTags ? { scale: 0.9 } : {}}
@@ -652,7 +652,7 @@ export const MasonryItem = memo(function MasonryItem({
                                                             `}
                                                         >
                                                             {isChecked && (
-                                                                <motion.div
+                                                                <m.div
                                                                     layoutId={`active-bg-${part}-${post.id}`}
                                                                     className="absolute inset-0 rounded-xl bg-gradient-to-b from-overlay-foreground/20 to-transparent"
                                                                     initial={{ opacity: 0 }}
@@ -662,14 +662,14 @@ export const MasonryItem = memo(function MasonryItem({
                                                             )}
                                                             <Icon className={`w-4 h-4 relative z-10 ${isChecked ? 'stroke-[2.5px]' : 'stroke-2'}`} />
                                                             {isChecked && (
-                                                                <motion.div
+                                                                <m.div
                                                                     layoutId={`glow-${part}-${post.id}`}
                                                                     className="absolute inset-0 -z-10 bg-inherit blur-md opacity-40"
                                                                     initial={{ opacity: 0 }}
                                                                     animate={{ opacity: 1 }}
                                                                 />
                                                             )}
-                                                        </motion.button>
+                                                        </m.button>
                                                     </span>
                                                 </TooltipTrigger>
                                                 <TooltipContent side="top" className="text-[10px] capitalize font-medium">
@@ -678,8 +678,8 @@ export const MasonryItem = memo(function MasonryItem({
                                             </Tooltip>
                                         )
                                     })}
-                                </motion.div>
-                            </motion.div>
+                                </m.div>
+                            </m.div>
                         )}
                     </AnimatePresence>
                     {/* ponytail: plain <img> — images.unoptimized is true globally, no Next.js optimization to lose.
@@ -859,7 +859,7 @@ export const MasonryItem = memo(function MasonryItem({
                     )}
                 </div>
 
-                <motion.div
+                <m.div
                     className={`${getCardContentClass()} flex flex-col overflow-hidden`}
                     initial={false}
                     animate={{ height: isExpanded ? "auto" : footerHeight }}
@@ -965,7 +965,7 @@ export const MasonryItem = memo(function MasonryItem({
                             }
                         />
                     </div>
-                </motion.div>
+                </m.div>
                 <AnimatePresence>
                     {copiedId === post.id && <SuccessOverlay onSkip={onSkipAnimation} />}
                 </AnimatePresence>

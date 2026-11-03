@@ -2,7 +2,7 @@
 "use client"
 
 import { useState, useEffect, memo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import { apiUrl } from "@/lib/api-client"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -62,32 +62,32 @@ import { InfoTooltip } from "@/components/ui/info-tooltip"
 
 const SuccessAnimation = memo(function SuccessAnimation() {
     return (
-        <motion.div
+        <m.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             className="relative h-full min-h-[400px] flex flex-col items-center justify-center bg-background/95 backdrop-blur-sm p-6 text-center"
         >
             <div className="relative mb-6">
-                <motion.div
+                <m.div
                     initial={{ scale: 0.95, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.1 }}
                     className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center"
                 >
-                    <motion.div
+                    <m.div
                         initial={{ scale: 0.95, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.2 }}
                         className="w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg shadow-primary/30"
                     >
                         <Check className="w-8 h-8 text-primary-foreground stroke-[3]" />
-                    </motion.div>
-                </motion.div>
+                    </m.div>
+                </m.div>
 
                 {/* Decorative particles */}
                 {[...Array(6)].map((_, i) => (
-                    <motion.div
+                    <m.div
                         key={i}
                         initial={{ opacity: 1, scale: 0, x: 0, y: 0 }}
                         animate={{
@@ -102,23 +102,23 @@ const SuccessAnimation = memo(function SuccessAnimation() {
                 ))}
             </div>
 
-            <motion.h3
+            <m.h3
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
                 className="text-2xl font-bold tracking-tight mb-2"
             >
                 Thank You!
-            </motion.h3>
-            <motion.p
+            </m.h3>
+            <m.p
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
                 className="text-muted-foreground max-w-[260px]"
             >
                 Your feedback helps us improve. We appreciate your input.
-            </motion.p>
-        </motion.div>
+            </m.p>
+        </m.div>
     )
 })
 
@@ -294,7 +294,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                 </DialogDescription>
                             </DialogHeader>
 
-                            <motion.form
+                            <m.form
                                 variants={containerVariants}
                                 initial="hidden"
                                 animate="visible"
@@ -303,7 +303,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                 className="p-6 pt-2 space-y-6 z-10"
                             >
                                 {/* Type Selection */}
-                                <motion.div variants={itemVariants} className="space-y-3">
+                                <m.div variants={itemVariants} className="space-y-3">
                                     <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                         I want to...
                                     </Label>
@@ -333,7 +333,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                                     </span>
                                                 </div>
                                                 {type === item.id && (
-                                                    <motion.div
+                                                    <m.div
                                                         layoutId="active-ring"
                                                         className="absolute inset-0 z-20 rounded-xl border-2 pointer-events-none"
                                                         style={{ borderColor: item.borderColor }}
@@ -343,10 +343,10 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                             </label>
                                         ))}
                                     </div>
-                                </motion.div>
+                                </m.div>
 
                                 {/* Content Input */}
-                                <motion.div variants={itemVariants} className="space-y-2">
+                                <m.div variants={itemVariants} className="space-y-2">
                                     <Label htmlFor="content" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                         Details
                                     </Label>
@@ -362,10 +362,10 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                         className="min-h-[120px] resize-none bg-secondary/20 focus:bg-background transition-colors border-transparent focus:border-input focus:ring-1 focus:ring-primary/20"
                                         required
                                     />
-                                </motion.div>
+                                </m.div>
 
                                 {/* Contact Input */}
-                                <motion.div variants={itemVariants} className="space-y-2">
+                                <m.div variants={itemVariants} className="space-y-2">
                                     <div className="flex justify-between items-center">
                                         <Label htmlFor="contact" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                             Contact
@@ -379,17 +379,17 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                         onChange={(e) => setContact(e.target.value)}
                                         className="h-10 bg-secondary/20 focus:bg-background transition-colors border-transparent focus:border-input focus:ring-1 focus:ring-primary/20"
                                     />
-                                </motion.div>
+                                </m.div>
 
                                 {/* Cloudflare Turnstile — only renders when configured */}
                                 {turnstileRequired && (
-                                    <motion.div variants={itemVariants} className="flex justify-center">
+                                    <m.div variants={itemVariants} className="flex justify-center">
                                         <Turnstile onVerify={setTurnstileToken} />
-                                    </motion.div>
+                                    </m.div>
                                 )}
 
                                 {/* Footer */}
-                                <motion.div variants={itemVariants} className="pt-2">
+                                <m.div variants={itemVariants} className="pt-2">
                                     <Button
                                         type="submit"
                                         disabled={loading || (turnstileRequired && !turnstileToken)}
@@ -402,8 +402,8 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                         )}
                                         Submit Feedback
                                     </Button>
-                                </motion.div>
-                            </motion.form>
+                                </m.div>
+                            </m.form>
                         </div>
                     )}
                 </AnimatePresence>

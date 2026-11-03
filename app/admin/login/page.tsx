@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card"
 import { useRouter } from 'next/navigation'
 import { Lock, AlertCircle, ArrowRight, Loader2, Mail } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { cn } from "@/lib/utils"
 import { createClient } from '@/lib/supabase/client'
 import { Label } from '@/components/ui/label'
@@ -182,7 +182,7 @@ export default function AdminLoginPage() {
         <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
       </div>
 
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, type: "spring", stiffness: 100 }}
@@ -242,7 +242,7 @@ export default function AdminLoginPage() {
                 </div>
               </div>
 
-              <motion.div
+              <m.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: error ? 'auto' : 0, opacity: error ? 1 : 0 }}
                 className="overflow-hidden"
@@ -251,7 +251,7 @@ export default function AdminLoginPage() {
                   <AlertCircle className="h-4 w-4" />
                   <p>{error}</p>
                 </div>
-              </motion.div>
+              </m.div>
             </CardContent>
             <CardFooter className="pt-4">
               <Button
@@ -271,7 +271,7 @@ export default function AdminLoginPage() {
             </CardFooter>
           </form>
         </Card>
-      </motion.div>
+      </m.div>
     </div>
   )
 }

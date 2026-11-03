@@ -1,6 +1,6 @@
 "use client"
 
-import { AnimatePresence, motion, LayoutGroup } from "framer-motion"
+import { AnimatePresence, m, LayoutGroup } from "framer-motion"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -43,7 +43,7 @@ export function FavoritesFolderTabs({
   return (
     <AnimatePresence>
       {showFavorites && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, height: 0, marginBottom: 0 }}
           animate={{ opacity: 1, height: "auto", marginBottom: 24 }}
           exit={{ opacity: 0, height: 0, marginBottom: 0 }}
@@ -81,7 +81,7 @@ export function FavoritesFolderTabs({
                     const isActive = activeFavoriteFolder === tab.id;
                     const isArtistsTab = tab.isArtists;
                     return (
-                      <motion.button
+                      <m.button
                         key={String(tab.id)}
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -99,7 +99,7 @@ export function FavoritesFolderTabs({
                         )}
                       >
                         {isActive && (
-                          <motion.div
+                          <m.div
                             layoutId="activeFavoriteFolderBubble"
                             className={cn(
                               "absolute inset-0 rounded-full shadow-sm",
@@ -140,7 +140,7 @@ export function FavoritesFolderTabs({
                             </span>
                           )}
                         </span>
-                      </motion.button>
+                      </m.button>
                     )
                   });
                 })()}
@@ -148,7 +148,7 @@ export function FavoritesFolderTabs({
             </div>
             <ScrollBar orientation="horizontal" className="h-2.5" />
           </ScrollArea>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   )

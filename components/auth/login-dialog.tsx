@@ -17,7 +17,7 @@ import { Loader2, Mail, ArrowRight, CheckCircle2 } from "lucide-react"
 import { reportError } from "@/lib/error-reporting"
 import { toast } from "@/hooks/use-toast"
 import { toastError } from "@/lib/toast-error"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 
 export function LoginDialog({ children }: { children?: React.ReactNode }) {
@@ -106,7 +106,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
         <div className="p-6">
           <AnimatePresence mode="wait">
             {!isSuccess ? (
-              <motion.div
+              <m.div
                 key="login-form"
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -152,9 +152,9 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
                     </Button>
                   </form>
                 </div>
-              </motion.div>
+              </m.div>
             ) : (
-              <motion.div
+              <m.div
                 key="success-message"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -195,7 +195,7 @@ export function LoginDialog({ children }: { children?: React.ReactNode }) {
                 <Button variant="ghost" onClick={() => resetState(false)} className="mt-2">
                   Close
                 </Button>
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
         </div>

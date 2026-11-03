@@ -1,7 +1,7 @@
 "use client"
 
 import React, { Fragment, memo, useEffect, useMemo, useRef, useState } from "react"
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import {
   Check,
   ChevronDown,
@@ -326,14 +326,14 @@ export const PocketCard = memo(function PocketCard({
       <div className="relative bg-muted overflow-hidden" style={{ height: imageHeight }}>
         {isPreviouslyCopied && (
           <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
-            <motion.div
+            <m.div
               initial={lowMotion ? false : { opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ type: "spring", stiffness: 300, damping: 20 }}
               className="flex items-center justify-center h-5 w-5 rounded-full bg-background/80 border border-success-border shadow-sm"
             >
               <Check className="w-3 h-3 text-success-text" strokeWidth={3} />
-            </motion.div>
+            </m.div>
           </div>
         )}
 

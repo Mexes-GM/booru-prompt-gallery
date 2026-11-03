@@ -1,7 +1,7 @@
 "use client"
 
 import { memo } from "react"
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
+import { AnimatePresence, m, useReducedMotion } from "framer-motion"
 import { EASE_OUT_STRONG, SEGMENT_PILL_SPRING } from "@/lib/motion"
 import { Button } from "@/components/ui/button"
 import { DebouncedInput } from "@/components/ui/debounced-input"
@@ -199,7 +199,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   const renderBackgroundSubOptions = (idPrefix: string) => (
     <AnimatePresence initial={false}>
       {backgroundMode === 'force_simple' && (
-        <motion.div
+        <m.div
           key="force_simple"
           initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
           animate={{ height: "auto", opacity: 1 }}
@@ -217,11 +217,11 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               aria-label="Tags to replace background with"
             />
           </div>
-        </motion.div>
+        </m.div>
       )}
 
       {backgroundMode === 'random' && (
-        <motion.div
+        <m.div
           key="random"
           initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
           animate={{ height: "auto", opacity: 1 }}
@@ -262,11 +262,11 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               <SwitchRow id={`${idPrefix}-bg-gradients`} label="Include gradients" hint="Two-tone and gradient colors" checked={randomBackgroundIncludeGradients} onChange={setRandomBackgroundIncludeGradients} />
             </div>
           )}
-        </motion.div>
+        </m.div>
       )}
 
       {backgroundMode === 'detailed_random' && (
-        <motion.div
+        <m.div
           key="detailed_random"
           initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
           animate={{ height: "auto", opacity: 1 }}
@@ -299,7 +299,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
                     aria-pressed={isSelected}
                   >
                     {isSelected && (
-                      <motion.div
+                      <m.div
                         layoutId={`${idPrefix}-strictness-active-pill`}
                         className="absolute inset-0 bg-primary rounded-md shadow-xs"
                         transition={shouldReduceMotion ? { duration: 0 } : SEGMENT_PILL_SPRING}
@@ -314,7 +314,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               {MATCH_STRICTNESS_DESCRIPTIONS[backgroundMatchStrictness]}
             </span>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   )
@@ -403,7 +403,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
               <Switch id="global-weights-toggle" checked={isGlobalWeightsEnabled} onCheckedChange={toggleGlobalWeights} className={switchClass} aria-label="Toggle global tag weights" />
               <AnimatePresence initial={false}>
                 {isGlobalWeightsEnabled && (
-                  <motion.div
+                  <m.div
                     key="manage-banderilla-attached"
                     initial={shouldReduceMotion ? false : { opacity: 0, x: -8, scale: 0.9 }}
                     animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -421,7 +421,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
                       <span className="w-1.5 h-1.5 rounded-full bg-primary group-hover:bg-primary-foreground transition-colors shrink-0" />
                       <span className="leading-none tracking-tight">Manage</span>
                     </button>
-                  </motion.div>
+                  </m.div>
                 )}
               </AnimatePresence>
             </div>

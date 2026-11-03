@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, memo } from "react"
-import { motion, AnimatePresence, Variants } from "framer-motion"
+import { m, AnimatePresence, Variants } from "framer-motion"
 import { Tag, Plus, X, RotateCcw, AlertOctagon, Ghost, AlertCircle, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -159,14 +159,14 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
             )}
           </DialogHeader>
 
-          <motion.div
+          <m.div
             variants={containerVariants}
             initial="hidden"
             animate="visible"
             className="p-6 pt-4 space-y-6 z-10"
           >
             {/* Input Section */}
-            <motion.div variants={itemVariants} className="space-y-3">
+            <m.div variants={itemVariants} className="space-y-3">
               <Label htmlFor="blacklist-input" className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground ml-1">
                 Add New Filter
               </Label>
@@ -193,10 +193,10 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                   <Plus className="w-5 h-5" />
                 </Button>
               </div>
-            </motion.div>
+            </m.div>
 
             {/* Tags Display Section */}
-            <motion.div variants={itemVariants} className="space-y-3">
+            <m.div variants={itemVariants} className="space-y-3">
               <div className="flex items-center justify-between px-1">
                 <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                   Active Filters ({blacklist.length})
@@ -219,7 +219,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                   <div className="p-4">
                     <AnimatePresence mode="popLayout" initial={false}>
                       {blacklist.length === 0 ? (
-                        <motion.div
+                        <m.div
                           key="empty"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 0.5 }}
@@ -228,11 +228,11 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                         >
                           <Ghost className="w-10 h-10 opacity-20" />
                           <p className="text-xs font-medium tracking-wide">Your blacklist is empty</p>
-                        </motion.div>
+                        </m.div>
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {blacklist.map((tag) => (
-                            <motion.div
+                            <m.div
                               key={tag}
                               variants={badgeVariants}
                               initial="initial"
@@ -258,7 +258,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                                   <X className="w-3 h-3" />
                                 </button>
                               </Badge>
-                            </motion.div>
+                            </m.div>
                           ))}
                         </div>
                       )}
@@ -266,10 +266,10 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                   </div>
                 </ScrollArea>
               </div>
-            </motion.div>
+            </m.div>
 
             {/* Footer Done Button */}
-            <motion.div variants={itemVariants} className="pt-2">
+            <m.div variants={itemVariants} className="pt-2">
               <Button
                 type="button"
                 onClick={() => setIsOpen(false)}
@@ -277,8 +277,8 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
               >
                 Close Manager
               </Button>
-            </motion.div>
-          </motion.div>
+            </m.div>
+          </m.div>
         </div>
       </DialogContent>
     </Dialog>

@@ -10,7 +10,7 @@ import {
   QuickFlowStatBlock,
   type QuickFlowPhase,
 } from "@/components/quick-flow-modal"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import {
   ClipboardCheck,
   Sparkles,
@@ -434,7 +434,7 @@ function PlayingScreen({
         </span>
         <AnimatePresence mode="wait">
           {suggestion ? (
-            <motion.div
+            <m.div
               key={suggestion.id}
               initial={lowMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92, y: 8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -509,9 +509,9 @@ function PlayingScreen({
                   </Button>
                 </div>
               )}
-            </motion.div>
+            </m.div>
           ) : (
-            <motion.div
+            <m.div
               key="loading"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -527,7 +527,7 @@ function PlayingScreen({
               ) : (
                 <span className="text-sm">All caught up — no pending suggestions left!</span>
               )}
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
 

@@ -19,7 +19,7 @@ import { BooruPost } from '@/lib/booru/types'
 import { TagCategory } from '@/lib/tag-classifier'
 import { MAX_PACK_PROMPTS, PACK_AXES, type PackPrompt, type AxisTagMode, type SlotGroup } from '@/lib/pack/pack-generator'
 import { splitCommaSeparatedTags } from '@/lib/utils/tag-utils'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { toast } from '@/hooks/use-toast'
@@ -156,7 +156,7 @@ const PromptRow = memo(({
     }
 
     return (
-        <motion.div
+        <m.div
             layout={!lowMotion}
             initial={lowMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
             animate={lowMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
@@ -217,7 +217,7 @@ const PromptRow = memo(({
                     {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 </Button>
             </div>
-        </motion.div>
+        </m.div>
     )
 })
 PromptRow.displayName = "PromptRow"
@@ -703,7 +703,7 @@ const PackBuilderStickyFooterComponent = ({
                 builder dialog below opens once a base (card or pasted prompt) exists. */}
             <AnimatePresence>
                 {isOpen && !hasSetupAnswers && (
-                    <motion.div
+                    <m.div
                         key="pack-hint"
                         initial={lowMotion ? { opacity: 0 } : { y: 80, opacity: 0 }}
                         animate={lowMotion ? { opacity: 1 } : { y: 0, opacity: 1 }}
@@ -720,7 +720,7 @@ const PackBuilderStickyFooterComponent = ({
                         <Button variant="ghost" size="icon" onClick={onExit} className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 rounded-full hover:bg-muted flex-shrink-0" aria-label="Exit Pack Mode">
                             <X className="w-4 h-4" />
                         </Button>
-                    </motion.div>
+                    </m.div>
                 )}
             </AnimatePresence>
 
@@ -832,7 +832,7 @@ const PackBuilderStickyFooterComponent = ({
                         <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden" aria-hidden>
                             <AnimatePresence>
                                 {isCollecting && (
-                                    <motion.div
+                                    <m.div
                                         key="bar"
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
@@ -840,20 +840,20 @@ const PackBuilderStickyFooterComponent = ({
                                         className="absolute inset-0 bg-mode-pack/15"
                                     >
                                         {progress !== null ? (
-                                            <motion.div
+                                            <m.div
                                                 className="h-full w-full origin-left bg-mode-pack"
                                                 initial={false}
                                                 animate={{ scaleX: Math.max(0.04, progress) }}
                                                 transition={{ type: 'tween', duration: 0.3 }}
                                             />
                                         ) : (
-                                            <motion.div
+                                            <m.div
                                                 className="h-full w-1/3 bg-mode-pack"
                                                 animate={lowMotion ? { opacity: [0.4, 1, 0.4] } : { x: ['-100%', '300%'] }}
                                                 transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
                                             />
                                         )}
-                                    </motion.div>
+                                    </m.div>
                                 )}
                             </AnimatePresence>
                         </div>

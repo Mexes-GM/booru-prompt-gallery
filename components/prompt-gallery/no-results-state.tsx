@@ -1,6 +1,6 @@
 "use client"
 
-import { motion } from "framer-motion"
+import { m } from "framer-motion"
 import { Search, Shield, Ban, Zap, Ghost, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -115,7 +115,7 @@ export function NoResultsState({
   }
 
   return (
-    <motion.div
+    <m.div
       className={cn(
         'text-center py-8 px-4 sm:py-12 sm:px-6 w-full max-w-4xl mx-auto',
         className
@@ -125,7 +125,7 @@ export function NoResultsState({
       animate="visible"
     >
       {/* Header */}
-      <motion.div variants={itemVariants} className="mb-10">
+      <m.div variants={itemVariants} className="mb-10">
         <div className="flex justify-center mb-4">
           <div className="p-4 rounded-full bg-gradient-to-br from-primary/10 to-primary/5 text-primary-text">
             <Search className="w-8 h-8 sm:w-10 sm:h-10" />
@@ -137,10 +137,10 @@ export function NoResultsState({
         <p className="text-base sm:text-lg text-muted-foreground max-w-xl mx-auto">
           We couldn&apos;t find any images matching your search. Here are some common reasons why:
         </p>
-      </motion.div>
+      </m.div>
 
       {/* Grid of Reasons */}
-      <motion.div 
+      <m.div 
         variants={itemVariants}
         className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left"
       >
@@ -191,7 +191,7 @@ export function NoResultsState({
             </div>
           )
         })}
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   )
 }

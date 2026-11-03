@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Upload, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePostHog } from "posthog-js/react";
@@ -98,7 +98,7 @@ export function PromptImportZone({
         {/* Error Toast */}
         <AnimatePresence>
           {error && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, y: -10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -115,7 +115,7 @@ export function PromptImportZone({
               >
                 ✕
               </button>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
 
@@ -139,7 +139,7 @@ export function PromptImportZone({
           {/* Loading State */}
           <AnimatePresence>
             {isLoading && (
-              <motion.div
+              <m.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -158,14 +158,14 @@ export function PromptImportZone({
                     )}
                   </div>
                 </div>
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
 
           {/* Empty State */}
           <AnimatePresence mode="popLayout">
             {!imagePreview && !isLoading && (
-              <motion.div
+              <m.div
                 key="empty"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -181,12 +181,12 @@ export function PromptImportZone({
                     PNG, JPEG, or WebP
                   </p>
                 </div>
-              </motion.div>
+              </m.div>
             )}
 
             {/* Success Image Preview State */}
             {imagePreview && !isLoading && (
-              <motion.div
+              <m.div
                 key="preview"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -207,7 +207,7 @@ export function PromptImportZone({
                     Replace Image
                   </span>
                 </div>
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
         </label>

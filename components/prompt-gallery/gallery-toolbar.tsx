@@ -2,7 +2,7 @@
 
 import { startTransition, useId, useOptimistic } from "react"
 import { usePostHog } from "posthog-js/react"
-import { motion, useReducedMotion } from "framer-motion"
+import { m, useReducedMotion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -125,33 +125,33 @@ export function GalleryToolbar({
           onKeyDown={handleModeKeyDown}
           className="grid h-11 grid-cols-3 gap-0.5 rounded-lg border border-input bg-muted/50 p-[3px] sm:h-10 sm:w-[264px]"
         >
-          {MODES.map((m) => {
-            const active = m.id === mode
+          {MODES.map((option) => {
+            const active = option.id === mode
             return (
               <button
-                key={m.id}
+                key={option.id}
                 type="button"
                 role="radio"
                 aria-checked={active}
                 tabIndex={active ? 0 : -1}
-                onClick={() => selectMode(m.id)}
-                onPointerEnter={() => onModeIntent?.(m.id)}
-                onPointerDown={() => onModeIntent?.(m.id)}
-                onFocus={() => onModeIntent?.(m.id)}
+                onClick={() => selectMode(option.id)}
+                onPointerEnter={() => onModeIntent?.(option.id)}
+                onPointerDown={() => onModeIntent?.(option.id)}
+                onFocus={() => onModeIntent?.(option.id)}
                 className={cn(
                   "relative rounded-md text-sm font-medium pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1 transition-[color,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 {active && (
-                  <motion.span
+                  <m.span
                     layoutId={`${pillId}-mode-pill`}
                     aria-hidden="true"
                     className="absolute inset-0 rounded-md bg-background shadow-sm"
                     transition={reduceMotion ? { duration: 0 } : SEGMENT_PILL_SPRING}
                   />
                 )}
-                <span className="relative">{m.label}</span>
+                <span className="relative">{option.label}</span>
               </button>
             )
           })}

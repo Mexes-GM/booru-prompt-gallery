@@ -12,7 +12,7 @@ import { useLLMSettings, LLMProvider } from '@/hooks/use-llm-settings'
 import { apiUrl } from '@/lib/api-client'
 import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
 import { toast } from '@/hooks/use-toast'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { cn } from '@/lib/utils'
@@ -308,7 +308,7 @@ const AiConvertStickyFooterComponent = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
+        <m.div
           key="ai-convert-footer"
           initial={shouldReduceMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
           animate={shouldReduceMotion ? { opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
@@ -631,7 +631,7 @@ const AiConvertStickyFooterComponent = ({
             </div>
 
             {/* Prompt Output Display */}
-            <motion.div
+            <m.div
               animate={isPulseActive && !shouldReduceMotion ? {
                 scale: [1, 1.015, 1]
               } : {}}
@@ -711,9 +711,9 @@ const AiConvertStickyFooterComponent = ({
                   )}
                 </div>
               )}
-            </motion.div>
+            </m.div>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   )

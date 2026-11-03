@@ -22,7 +22,7 @@ import {
 } from "@/lib/reverse-prompt-parser"
 import { useImageExif } from "@/hooks/use-image-exif"
 import { PromptImportZone } from "./prompt-import-zone"
-import { motion, AnimatePresence } from "framer-motion"
+import { m, AnimatePresence } from "framer-motion"
 import { Copy, Check, Sparkles, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TAG_CATEGORIES } from "@/lib/tag-taxonomy"
@@ -299,7 +299,7 @@ export function ReversePromptParserModal({
                 Preview by Category
               </div>
               <ScrollArea className="h-48 border rounded-lg p-3 bg-muted/30">
-                <motion.div
+                <m.div
                   variants={containerVariants}
                   initial="hidden"
                   animate="visible"
@@ -311,14 +311,14 @@ export function ReversePromptParserModal({
                       if (tags.length === 0) return null
 
                       return (
-                        <motion.div key={key} variants={itemVariants} className="space-y-2">
+                        <m.div key={key} variants={itemVariants} className="space-y-2">
                           <div className="text-xs font-semibold text-muted-foreground">
                             {config.label} ({tags.length})
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <AnimatePresence mode="popLayout">
                               {tags.map((tag, idx) => (
-                                <motion.div
+                                <m.div
                                   key={`${key}-${idx}`}
                                   variants={itemVariants}
                                   layout
@@ -326,15 +326,15 @@ export function ReversePromptParserModal({
                                   <Badge className={cn(config.color, "cursor-default")}>
                                     {tag}
                                   </Badge>
-                                </motion.div>
+                                </m.div>
                               ))}
                             </AnimatePresence>
                           </div>
-                        </motion.div>
+                        </m.div>
                       )
                     }
                   )}
-                </motion.div>
+                </m.div>
               </ScrollArea>
             </div>
           )}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useId, useState } from "react"
-import { motion, useReducedMotion } from "framer-motion"
+import { m, useReducedMotion } from "framer-motion"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { useDeferredCallback } from "@/hooks/use-deferred-callback"
 import { FILTER_COMMIT_DELAY_MS, SEGMENT_PILL_SPRING } from "@/lib/motion"
@@ -148,7 +148,7 @@ export function ScoreTierControl({ value, onChange, onCommit, variant = "default
               {/* One pill slides between segments (and re-tints on the way)
                   instead of the highlight teleporting. */}
               {active && (
-                <motion.span
+                <m.span
                   layoutId={`${pillId}-score-tier-pill`}
                   aria-hidden="true"
                   className={cn("absolute inset-0 rounded-[5px] transition-colors duration-150", TIER_PILL_STYLES[tier])}
