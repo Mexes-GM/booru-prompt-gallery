@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
-import { LazyMotion, domAnimation } from "framer-motion"
+import { useEffect, useLayoutEffect, useState, type ReactNode } from "react"
+import { LazyMotion, domAnimation, visualElementStore } from "framer-motion"
 
 type MotionFeatures = typeof domAnimation
 
@@ -36,6 +36,20 @@ export function MotionProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [])
+
+  // Elements already on screen get their projection node on the re-render
+  // above, but framer-motion only mounts a projection node when the element
+  // itself mounts, so without this they would skip their first layout
+  // animation (e.g. the mode pill's first slide). Runs after the children's
+  // layout effects, the same order a normal mount uses; document order mounts
+  // parents before children.
+  useLayoutEffect(() => {
+    if (features === domAnimation) return
+    for (const element of document.querySelectorAll("*")) {
+      const projection = visualElementStore.get(element)?.projection
+      if (projection && !projection.instance) projection.mount(element)
+    }
+  }, [features])
 
   return (
     <LazyMotion features={features} strict>
