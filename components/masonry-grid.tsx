@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { BooruPost } from "@/lib/api-client"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { SCALE_CONFIG } from "@/components/scale-config"
 
 interface MasonryGridProps {
   items: BooruPost[]
@@ -19,11 +20,7 @@ interface MasonryGridProps {
   expandedItemId?: number | string | null
 }
 
-export const SCALE_CONFIG = {
-  small: { minColumnWidth: 160, footerHeight: 116 },
-  medium: { minColumnWidth: 220, footerHeight: 144 },
-  large: { minColumnWidth: 280, footerHeight: 180 },
-}
+export { SCALE_CONFIG }
 
 const SCROLL_BUCKET_SIZE = 250
 const OVERSCAN_MOBILE = 800
