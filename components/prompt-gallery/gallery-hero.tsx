@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState } from "react"
 import { useReducedMotion } from "framer-motion"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, Pause, Play } from "lucide-react"
 import { trackExternalLink } from "@/lib/analytics"
 import { HeroText } from "@/components/prompt-gallery/hero-text"
 import { HERO_GRID_CLASS } from "@/components/prompt-gallery/hero-layout"
@@ -170,7 +170,7 @@ function Line({ row, gutter }: { row: Row; gutter: string }) {
           const [text, kind] = typeof tok === "string" ? [tok, undefined] : tok
           return (
             <span key={i}>
-              {i > 0 && <span className="text-muted-foreground/50">{row.sep}</span>}
+              {i > 0 && <span className="text-faint-foreground">{row.sep}</span>}
               <span
                 className={cn(
                   kind === "drop" && "text-faint-foreground line-through decoration-muted-foreground/60",
@@ -193,12 +193,13 @@ function Specimen() {
   const reduceMotion = useReducedMotion()
   const [active, setActive] = useState(0)
   const [paused, setPaused] = useState(false)
+  const [userPaused, setUserPaused] = useState(false)
 
   useEffect(() => {
-    if (reduceMotion || paused) return
+    if (reduceMotion || paused || userPaused) return
     const id = window.setInterval(() => setActive((i) => (i + 1) % EXAMPLES.length), ROTATE_MS)
     return () => window.clearInterval(id)
-  }, [reduceMotion, paused, active])
+  }, [reduceMotion, paused, userPaused, active])
 
   return (
     <div
@@ -208,7 +209,8 @@ function Specimen() {
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
     >
-      <div role="group" aria-label="Examples" className="flex flex-wrap gap-1 border-b border-border/70 px-2 py-1.5">
+      <div className="flex items-start justify-between gap-1 border-b border-border/70 px-2 py-1.5">
+      <div role="group" aria-label="Examples" className="flex flex-wrap gap-1">
         {EXAMPLES.map((ex, i) => (
           <button
             key={ex.id}
@@ -225,6 +227,18 @@ function Specimen() {
             {ex.tab}
           </button>
         ))}
+      </div>
+      {!reduceMotion && (
+        <button
+          type="button"
+          aria-pressed={userPaused}
+          aria-label={userPaused ? "Resume example rotation" : "Pause example rotation"}
+          onClick={() => setUserPaused((v) => !v)}
+          className="relative flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors pointer-coarse:after:absolute pointer-coarse:after:-inset-2 hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {userPaused ? <Play className="size-3.5" aria-hidden="true" /> : <Pause className="size-3.5" aria-hidden="true" />}
+        </button>
+      )}
       </div>
 
       <div className="grid">
