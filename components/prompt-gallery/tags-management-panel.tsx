@@ -925,7 +925,7 @@ export function TagsManagementPanel({
                 <div className="flex items-center">
                   <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-r-none" title="Save Tag Preset" aria-label="Save current 'Tags to Add' list as a tag preset">
+                      <Button variant="ghost" size="icon" className="relative h-7 w-7 pointer-coarse:w-10 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:-left-1 pointer-coarse:after:right-0 text-muted-foreground hover:text-foreground rounded-r-none" title="Save Tag Preset" aria-label="Save current 'Tags to Add' list as a tag preset">
                         <Save className="h-3.5 w-3.5" />
                       </Button>
                     </DialogTrigger>
@@ -957,7 +957,7 @@ export function TagsManagementPanel({
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-6 min-w-[1.5rem] text-muted-foreground hover:text-foreground rounded-l-none" title="Load Tag Preset" aria-label="Load a saved tag preset">
+                      <Button variant="ghost" size="icon" className="relative h-7 w-6 min-w-[1.5rem] pointer-coarse:w-10 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:left-0 pointer-coarse:after:-right-1 text-muted-foreground hover:text-foreground rounded-l-none" title="Load Tag Preset" aria-label="Load a saved tag preset">
                         <ChevronDown className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>

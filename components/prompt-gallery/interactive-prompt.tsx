@@ -90,10 +90,46 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
     onPromoteToGlobal?.(tagText, weight)
   }, [onPromoteToGlobal])
 
+  // Roving tabindex: the prompt is one Tab stop (the last tag that had focus)
+  // and the arrow keys move between its tags, so a card's prompt costs one
+  // Tab instead of one per tag on the way to its Copy button.
+  const [activeIndex, setActiveIndex] = useState(0)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const tabStopIndex = activeIndex < tags.length ? activeIndex : 0
+
+  const handleTagFocus = useCallback((index: number) => {
+    setActiveIndex(index)
+  }, [])
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Keys pressed inside a tag's popover bubble here through the React tree
+    // (it's portaled); only the tags themselves move the focus.
+    const target = e.target as HTMLElement
+    if (!target.hasAttribute("data-prompt-tag")) return
+    const items = Array.from(containerRef.current?.querySelectorAll<HTMLElement>("[data-prompt-tag]") ?? [])
+    const current = items.indexOf(target)
+    let next: number
+    switch (e.key) {
+      case "ArrowRight": next = Math.min(current + 1, items.length - 1); break
+      case "ArrowLeft": next = Math.max(current - 1, 0); break
+      case "Home": next = 0; break
+      case "End": next = items.length - 1; break
+      default: return
+    }
+    e.preventDefault()
+    items[next]?.focus()
+  }
+
   if (!tags.length && !conflictingTags.length) return <p className="text-foreground leading-relaxed italic">No prompt content</p>
 
   return (
-    <div className="text-sm text-foreground leading-relaxed wrap-anywhere text-left">
+    <div
+      ref={containerRef}
+      role={tags.length ? "toolbar" : undefined}
+      aria-label={tags.length ? "Prompt tags" : undefined}
+      onKeyDown={tags.length ? handleKeyDown : undefined}
+      className="text-sm text-foreground leading-relaxed wrap-anywhere text-left"
+    >
       <TooltipProvider>
         {tags.map((tag, i) => {
           // Check if this tag is globally weighted
@@ -106,6 +142,9 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
             <React.Fragment key={tag.id}>
               <PromptTag
                 tag={tag}
+                index={i}
+                isTabStop={i === tabStopIndex}
+                onFocusTag={handleTagFocus}
                 onCommit={handleCommit}
                 isEditable={isEditable}
                 isGlobal={isGlobal}
@@ -143,6 +182,10 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
 
 interface PromptTagProps {
   tag: TagData
+  index: number
+  /** The one tag of the prompt that Tab lands on. */
+  isTabStop: boolean
+  onFocusTag: (index: number) => void
   onCommit: (id: string, weight: number) => void
   isEditable: boolean
   isGlobal: boolean
@@ -151,7 +194,7 @@ interface PromptTagProps {
   onSearchTag?: (text: string) => void
 }
 
-const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isGlobal, onPromoteTag, canPromote, onSearchTag }: PromptTagProps) {
+const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocusTag, onCommit, isEditable, isGlobal, onPromoteTag, canPromote, onSearchTag }: PromptTagProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [draftWeight, setDraftWeight] = useState(tag.weight)
   const [justCopied, setJustCopied] = useState(false)
@@ -259,7 +302,9 @@ const PromptTag = React.memo(function PromptTag({ tag, onCommit, isEditable, isG
         <motion.span
           ref={triggerRef}
           role="button"
-          tabIndex={0}
+          tabIndex={isTabStop ? 0 : -1}
+          data-prompt-tag=""
+          onFocus={() => onFocusTag(index)}
           className={cn(
             "cursor-pointer px-0.5 -mx-0.5 pointer-coarse:py-1 rounded transition-colors duration-200 decoration-clone select-text outline-none focus-visible:ring-2 focus-visible:ring-ring inline relative border-none bg-transparent font-inherit whitespace-normal text-left break-words",
             textClass,

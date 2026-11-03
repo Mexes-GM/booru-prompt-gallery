@@ -556,7 +556,7 @@ const CategoryRow = memo(function CategoryRow({
                     <div className="flex items-center gap-1.5">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="cursor-default">Min tags per set</span>
+                          <button type="button" className="cursor-default rounded-sm focus-ring">Min tags per set</button>
                         </TooltipTrigger>
                         <TooltipContent className="max-w-xs">
                           Sets with fewer tags than this are left out of the pool — a lone “sword” or “hat” isn&apos;t much of a set. Sets you add yourself always stay.

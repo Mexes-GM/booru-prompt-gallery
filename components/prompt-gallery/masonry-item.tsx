@@ -726,8 +726,8 @@ export const MasonryItem = memo(function MasonryItem({
                             {(hasActiveOptions || hasReplacements) && (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
-                                        <span
-                                            tabIndex={0}
+                                        <button
+                                            type="button"
                                             className="flex h-5 w-5 items-center justify-center rounded-full bg-overlay/60 shadow-sm cursor-help focus-ring"
                                             aria-label={[
                                                 "Prompt adjusted",
@@ -736,7 +736,7 @@ export const MasonryItem = memo(function MasonryItem({
                                             ].filter(Boolean).join(". ")}
                                         >
                                             <span className="h-2 w-2 rounded-full bg-info" aria-hidden="true" />
-                                        </span>
+                                        </button>
                                     </TooltipTrigger>
                                     <TooltipContent side="top" className="text-xs">
                                         <div className="flex flex-col gap-0.5">
@@ -792,14 +792,14 @@ export const MasonryItem = memo(function MasonryItem({
                         <div className={`absolute bottom-2 right-2 z-10 ${isExpanded ? "max-sm:hidden" : ""}`}>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <span
-                                        tabIndex={0}
+                                    <button
+                                        type="button"
                                         className="px-1.5 py-0.5 rounded-md bg-overlay/60 text-overlay-foreground/90 text-xs font-medium tabular-nums flex items-center gap-1 shadow-sm cursor-help focus-ring"
                                         aria-label={`${totalTagsCount} tags`}
                                     >
                                         <Tag className="w-3.5 h-3.5 opacity-70" aria-hidden="true" />
                                         {totalTagsCount}
-                                    </span>
+                                    </button>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="text-xs">
                                     <div className="flex flex-col gap-1 min-w-[8.5rem]">

@@ -149,11 +149,15 @@ export function SmoothFilterSlider({
   return (
     <div className={classes.wrapper}>
       {hint !== undefined ? (
-        <div className="flex items-baseline justify-between gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
           <span id={`${inputId}-label`} className="text-sm font-medium text-foreground">{labelPrefix}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {disabled && disabledReason ? `Off — ${disabledReason}` : hint}
-          </span>
+          {/* The reason is what explains why the control doesn't respond, so it
+              wraps under the label instead of being cut off. */}
+          {disabled && disabledReason ? (
+            <span className="text-xs text-muted-foreground text-pretty">{`Off — ${disabledReason}`}</span>
+          ) : (
+            <span className="truncate text-xs text-muted-foreground">{hint}</span>
+          )}
         </div>
       ) : (
       <label htmlFor={inputId} className={classes.label}>
@@ -183,7 +187,8 @@ export function SmoothFilterSlider({
             style={{ gridTemplateColumns: `repeat(${presets.length}, minmax(0, 1fr))` }}
           >
             {presets.map((preset) => {
-              const active = numericValue === preset.value
+              // A disabled filter isn't applied, so no pick is shown as chosen.
+              const active = !disabled && numericValue === preset.value
               return (
                 <button
                   key={preset.value}

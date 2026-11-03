@@ -60,7 +60,7 @@ export function SiteCornerMenu({ scaleValue, setScaleValue, onOpenTour }: SiteCo
             asChild on one <button> triggers a Radix ref loop (React #185, see
             SENTRY-FULVOUS-ANCHOR-7). The aria-label names the button. */}
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="focus-ring" aria-label="Settings and information" data-tour="help">
+          <Button variant="ghost" size="icon" className="relative focus-ring pointer-coarse:after:absolute pointer-coarse:after:-inset-0.5" aria-label="Settings and information" data-tour="help">
             <MoreHorizontal className="h-5 w-5" />
           </Button>
         </DropdownMenuTrigger>

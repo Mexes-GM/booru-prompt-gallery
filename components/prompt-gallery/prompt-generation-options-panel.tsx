@@ -666,7 +666,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             variant="outline"
             size="sm"
             onClick={() => setIsGlobalWeightsModalOpen(true)}
-            className="h-8 shrink-0 px-2.5 text-xs"
+            className="relative h-8 shrink-0 px-2.5 text-xs pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5"
             aria-label={globalWeightCount > 0
               ? `Edit tag weights (${globalWeightCount} ${isGlobalWeightsPaused ? "paused" : "active"})`
               : "Add tag weights"}
