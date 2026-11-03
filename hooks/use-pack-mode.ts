@@ -9,7 +9,6 @@ import {
   MAX_MIN_TAGS_SLIDER,
   MAX_MIN_PACKS_SLIDER,
   classifyPostForPack,
-  filterAppearanceForPrimaryCharacter,
   extractAllAxisValuesWithCounts,
   extractAllAxisBundlesWithCounts,
   canonicalizeBundleTags,
@@ -29,6 +28,7 @@ import { cleanSyntheticPrompt, detectCharacterTags, type BulkSendCleanOptions } 
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from '@/lib/pack/prompt-similarity'
 import { classifyBasePrompt } from '@/lib/pack/base-prompt'
 import { pickReplacement } from '@/lib/pack/reroll'
+import { buildSoloCharacterProfiles, focusAppearanceOnCharacter, type CharacterProfile } from '@/lib/pack/character-focus'
 import { finalizePackPrompt, parseAlwaysAddTags } from '@/lib/pack/always-add'
 import {
   promptHasExplicitTag,
@@ -172,15 +172,16 @@ export interface UsePackModeResult {
 
   /** Classified tags of the base card (5 buckets), normalized for display. */
   baseClassified: Record<TagCategory, string[]>
-  /**
-   * True when the base card's tag_string_character lists more than one
-   * character. Lets the UI warn before/while a multi-character post is used
-   * as a 'character' pack's base — lockedTags already mitigates the worst
-   * case (only the first character tag is locked, see its own docstring in
-   * the hook body), but the user should still know their base card has
-   * other characters on it that got excluded.
-   */
+  /** True when the base lists more than one character; the user then picks the one to keep. */
   hasMultipleCharacters: boolean
+  /** The base's character tags, in on-post order. */
+  baseCharacters: string[]
+  /** The character the pack keeps (null while a multi-character base has none picked). */
+  focusCharacter: string | null
+  /** Picks which of a multi-character base's characters the pack keeps. */
+  setFocusCharacter: (character: string | null) => void
+  /** Multi-character base with no character picked yet — Generate does nothing until one is. */
+  needsCharacterChoice: boolean
   /** Flattened tags belonging to the locked categories — the constant part of every prompt. */
   lockedTags: string[]
   /** Categories that vary (PACK_AXES minus lockedCategories). */
@@ -307,6 +308,11 @@ export function usePackMode(
   // reseedAllAxes and kept as their own bit of state (see promptCharacterTags).
   const [basePrompt, setBasePromptRaw] = useState('')
   const [promptCharacterTags, setPromptCharacterTags] = useState<string[]>([])
+  // Multi-character base: the one character the pack keeps (see
+  // lib/pack/character-focus.ts), and solo-post profiles of each base
+  // character from the collected pool, which decide which traits are theirs.
+  const [chosenCharacter, setChosenCharacter] = useState<string | null>(null)
+  const [characterProfiles, setCharacterProfiles] = useState<Record<string, CharacterProfile>>({})
   const learning = usePackLearning()
 
   // Lazy-load the persisted builder config ONCE on mount (see
@@ -475,6 +481,8 @@ export function usePackMode(
     setAxisCounts({})
     setAxisAspects({})
     setExcludedBaseTags(new Set())
+    setChosenCharacter(null)
+    setCharacterProfiles({})
     // Previously generated prompts belong to the old base — clear them so the
     // results list doesn't show stale prompts until the user hits Generate again.
     setGeneratedPrompts([])
@@ -485,6 +493,8 @@ export function usePackMode(
     setBasePromptRaw(text)
     setBaseCardRaw(null)
     setPromptCharacterTags([])
+    setChosenCharacter(null)
+    setCharacterProfiles({})
     setAxisValuesRaw({})
     setAxisCounts({})
     setAxisAspects({})
@@ -553,21 +563,33 @@ export function usePackMode(
   }, [baseCard, promptCharacterTags])
 
   /**
-   * True when the base card's own tag_string_character lists more than one
-   * character (crossovers, group art, multi-character posts). Exposed so
-   * the UI can warn the user BEFORE they lock in a base — without this,
-   * classifyPostForPack folds EVERY character tag on the post into
-   * `appearance` (by design: it's classifying one post in isolation, not
-   * building a pack), and a 'character' pack's default locked category is
-   * exactly ['appearance']. Picking a multi-character post as the base
-   * silently locked ALL of those character names as constant tags into
-   * every generated prompt — e.g. an 8-character crossover post produced
-   * packs where 8 unrelated character names were forced into every prompt,
-   * which Smart Tag Exclusion then (correctly) rejected almost entirely,
-   * leaving a handful of nonsensical 40-tag survivors. See lockedTags below
-   * for the actual mitigation (only the first character tag is locked).
+   * True when the base lists more than one character (crossovers, group art).
+   * classifyPostForPack folds every character on the post, their group count
+   * and all their traits into `appearance`, so such a base has to be narrowed
+   * to ONE character before it can be kept — see lib/pack/character-focus.ts.
    */
   const hasMultipleCharacters = characterTags.length > 1
+  /** The character the pack keeps: the only one, or the user's pick on a multi-character base. */
+  const focusCharacter = hasMultipleCharacters
+    ? (chosenCharacter && characterTags.includes(chosenCharacter) ? chosenCharacter : null)
+    : characterTags[0] ?? null
+  /** Multi-character base with no character picked yet — generation waits for the pick. */
+  const needsCharacterChoice = hasMultipleCharacters && focusCharacter === null
+  /** Character tags the cleaner and the learning model see: just the kept one. */
+  const focusedCharacterTags = useMemo(
+    () => (focusCharacter ? [focusCharacter] : hasMultipleCharacters ? [] : characterTags),
+    [focusCharacter, hasMultipleCharacters, characterTags]
+  )
+  /** A multi-character base's appearance tags narrowed to the kept character. */
+  const focusAppearance = useCallback(
+    (tags: string[]) => focusAppearanceOnCharacter(
+      tags,
+      characterTags,
+      focusCharacter,
+      focusCharacter ? characterProfiles[focusCharacter] : undefined
+    ),
+    [characterTags, focusCharacter, characterProfiles]
+  )
 
   // Base tags minus the ones the user removed — what locks actually draw from.
   const keptBaseClassified = useMemo<Record<TagCategory, string[]>>(() => {
@@ -605,20 +627,7 @@ export function usePackMode(
     // always keep them. A card's "other" bucket is unclassified noise instead.
     if (!baseCard) tags.push(...(baseClassified.other || []))
     lockedCategories.forEach((cat) => {
-      if (cat !== 'appearance' || !hasMultipleCharacters) {
-        tags.push(...(baseClassified[cat] || []))
-        return
-      }
-      // Multi-character base card + 'appearance' locked: delegate to the
-      // pure, tested filterAppearanceForPrimaryCharacter (pack-generator.ts)
-      // rather than re-inlining the same "keep only characterTags[0]" logic
-      // here. Nothing is hidden from the user by this filtering — it only
-      // shrinks lockedTags (what actually gets fixed into every generated
-      // prompt); baseClassified (the raw classification shown in the Pack
-      // Setup preview and the builder's base-card chips) stays untouched, so
-      // the UI still shows every character tag that was excluded here, and
-      // hasMultipleCharacters lets it flag why.
-      tags.push(...filterAppearanceForPrimaryCharacter(baseClassified[cat] || [], characterTags))
+      tags.push(...(cat === 'appearance' ? focusAppearance(baseClassified[cat] || []) : baseClassified[cat] || []))
     })
     // Partially locked categories: base tags in locked slots stay constant.
     // Tags with no known slot are kept too — they can't vary there (see
@@ -627,9 +636,7 @@ export function usePackMode(
       if (lockedCategories.has(cat)) return
       const own = slotsOf(cat)
       if (!own.some((s) => lockedSlots.has(s))) return
-      const catTags = cat === 'appearance' && hasMultipleCharacters
-        ? filterAppearanceForPrimaryCharacter(baseClassified[cat] || [], characterTags)
-        : baseClassified[cat] || []
+      const catTags = cat === 'appearance' ? focusAppearance(baseClassified[cat] || []) : baseClassified[cat] || []
       catTags.forEach((tag) => {
         const slot = getTagSlotFromOverrides(tag, effectiveOverrides)?.slot
         if (!slot || lockedSlots.has(slot)) tags.push(tag)
@@ -641,7 +648,7 @@ export function usePackMode(
       tags.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
     }
     return Array.from(new Set(tags.filter(Boolean)))
-  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, hasMultipleCharacters, characterTags])
+  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance])
 
   /** "Always add" tags as typed — finalizePackPrompt puts them first, underscores intact. */
   const alwaysAddTags = useMemo(() => parseAlwaysAddTags(customBaseText), [customBaseText])
@@ -668,8 +675,8 @@ export function usePackMode(
   // `${provider}`, then the global bucket. Recomputed only when the provider
   // or the base card's characters change — NOT on every axis edit.
   const learningContextKeys = useMemo(
-    () => contextKeysFor(booruProvider, characterTags),
-    [booruProvider, characterTags]
+    () => contextKeysFor(booruProvider, focusedCharacterTags),
+    [booruProvider, focusedCharacterTags]
   )
 
   // Exposed `axisValues` = sampled pool (axisValues state) + manual values
@@ -1007,12 +1014,14 @@ export function usePackMode(
         posts.forEach((post) => {
           splitTags(post.tag_string_character || '').forEach((t) => booruCharacters.add(normalizeTagForPack(t)))
         })
-        setPromptCharacterTags(
-          detectCharacterTags(basePromptTags, posts, currentOverrides()).filter((t) => booruCharacters.has(t))
-        )
+        const detected = detectCharacterTags(basePromptTags, posts, currentOverrides()).filter((t) => booruCharacters.has(t))
+        setPromptCharacterTags(detected)
+        setCharacterProfiles(detected.length > 1 ? buildSoloCharacterProfiles(posts, detected) : {})
+      } else if (characterTags.length > 1) {
+        setCharacterProfiles(buildSoloCharacterProfiles(posts, characterTags))
       }
     },
-    [resample, axisTagModes, baseCard, basePromptTags, currentOverrides]
+    [resample, axisTagModes, baseCard, basePromptTags, currentOverrides, characterTags]
   )
 
   const setPromptCountClamped = useCallback((count: number) => {
@@ -1151,6 +1160,8 @@ export function usePackMode(
       setGeneratedPrompts([])
       return
     }
+    // A multi-character base keeps one character: wait until it's picked.
+    if (needsCharacterChoice) return
     const { axes, axisWeights, effectiveAxisMinCounts } = buildGenerationArgs()
 
     // Over-generate raw candidates (same reasoning as useBulkSend.runSynthetic)
@@ -1220,7 +1231,7 @@ export function usePackMode(
         const tags = raw.prompt.split(',').map((t) => t.trim()).filter(Boolean)
         const cleanedPrompt = cleanSyntheticPrompt(
           tags,
-          characterTags,
+          focusedCharacterTags,
           {
             ...cleanOptions,
             tagOverrides: effectiveOverrides,
@@ -1280,6 +1291,7 @@ export function usePackMode(
     }
   }, [
     hasBase,
+    needsCharacterChoice,
     lockedTags,
     activeAxisCategories,
     buildGenerationArgs,
@@ -1289,7 +1301,7 @@ export function usePackMode(
     isGlobalWeightsEnabled,
     effectiveOverrides,
     cleanOptions,
-    characterTags,
+    focusedCharacterTags,
     learning,
     learningContextKeys,
     axisValueCategory,
@@ -1329,7 +1341,7 @@ export function usePackMode(
       const clean = (tags: string[]) => {
         const cleaned = cleanSyntheticPrompt(
           tags,
-          characterTags,
+          focusedCharacterTags,
           { ...cleanOptions, tagOverrides: effectiveOverrides, globalWeights, isGlobalWeightsEnabled, lockedTags },
           lockedTags
         )
@@ -1347,7 +1359,7 @@ export function usePackMode(
       globalWeights,
       isGlobalWeightsEnabled,
       effectiveOverrides,
-      characterTags,
+      focusedCharacterTags,
       cleanOptions,
       alwaysAddTags,
       contentRating,
@@ -1467,6 +1479,10 @@ export function usePackMode(
 
     baseClassified,
     hasMultipleCharacters,
+    baseCharacters: characterTags,
+    focusCharacter,
+    setFocusCharacter: setChosenCharacter,
+    needsCharacterChoice,
     lockedTags,
     activeAxisCategories,
 
