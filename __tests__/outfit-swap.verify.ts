@@ -159,6 +159,13 @@ const flux = formatPrompt("flux2", withDesc, {}, { fullDetail: true }).text
 assert(flux.includes("She wears a blue ribbed knit cardigan with a deep V-neck."), `flux2 says the outfit in its own sentences (${flux})`)
 const anima = formatPrompt("anima", withDesc, {}).text
 assert(anima.includes("pink skirt") && anima.includes("She wears a blue ribbed knit cardigan"), `anima keeps the outfit tags and adds the sentences (${anima})`)
+const longDesc = Array.from({ length: 6 }, (_, i) => `A long ribbed knit cardigan number ${i} with a deep V-neck, wide sleeves, pearl buttons and a lace trim along every edge.`).join(" ")
+const shortFlux = formatPrompt("flux2", naturalPromptInput({ ...source, outfitDescription: longDesc }, {}), {}).text
+assert(!shortFlux.includes("cardigan number 0") && /cardigan/.test(shortFlux) && /skirt/.test(shortFlux), `a description too long for the word budget gives way to the whole tag-built outfit (${shortFlux})`)
+const bagSource = { prompt: "1girl, solo, long hair, cardigan, black pants, handbag, brown bag, smile, standing", rating: "g" }
+const bagFlux = formatPrompt("flux2", naturalPromptInput({ ...bagSource, outfitDescription: "A white cardigan. Black pants. A brown leather handbag with short handles." }, {}), {}, { fullDetail: true }).text
+// Without the taxonomy every tag also lands in "Additional details"; only the prose counts here.
+assert((bagFlux.split("Additional details")[0].match(/handbag/g) ?? []).length === 1, `the outfit's bag is said once (${bagFlux})`)
 const plain = formatPrompt("flux2", naturalPromptInput(source, {}), {}, { fullDetail: true }).text
 assert(!plain.includes("ribbed knit"), "without a description the outfit comes from the tags")
 

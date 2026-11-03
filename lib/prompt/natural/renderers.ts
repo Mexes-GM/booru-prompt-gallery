@@ -140,15 +140,30 @@ export function renderMoss(scene: Scene, options: ProseOptions = {}): RenderResu
 // Light, camera, style, extras and raw details: worth less than any list item of the sentences above them.
 const MINOR_PRIORITY = 6
 
+// proseSections' index of the clothing section.
+const CLOTHING_SECTION = 5
+const BAG_RE = /\b(?:bag|handbag|purse|tote|clutch|backpack|basket)s?\b/i
+
 function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: number): RenderResult {
+  const withDescription = renderProseWith(scene, options, defaultMaxWords, options.outfitDescription)
+  // An outfit cut to its first sentences reads as if the rest weren't worn:
+  // when the description doesn't fit whole, the tag-built outfit (every
+  // garment, less detail) is said instead.
+  if (!withDescription.outfitCut) return withDescription.result
+  return renderProseWith(scene, options, defaultMaxWords, undefined).result
+}
+
+function renderProseWith(scene: Scene, options: ProseOptions, defaultMaxWords: number, outfitDescription: string | undefined) {
   const maxWords = options.maxWords === null ? Infinity : options.maxWords ?? defaultMaxWords
   // Full detail when it fits, or when leaving out minor sentences is enough;
   // otherwise cap every list first, then drop sentences.
-  // The outfit's own sentences replace the tag-built one; its short form (the
-  // main garments) still stands in when they don't fit the budget.
+  // The outfit's own sentences replace the tag-built one.
   const withOutfit = (p: SceneProse): SceneProse => {
-    const outfit = outfitSentences(options.outfitDescription, p.pronouns)
-    return outfit ? { ...p, clothing: outfit } : p
+    const outfit = outfitSentences(outfitDescription, p.pronouns)
+    if (!outfit) return p
+    // The outfit's bag is already in its sentences; "She has a brown handbag." would say it twice.
+    const held = BAG_RE.test(outfit) ? sentencesOf(p.held).filter((s) => !BAG_RE.test(s)).join(" ") : p.held
+    return { ...p, clothing: outfit, held }
   }
   const full = withOutfit(describeScene(scene, options.phrases))
   const medium = options.medium ?? full.medium
@@ -157,7 +172,8 @@ function renderProse(scene: Scene, options: ProseOptions, defaultMaxWords: numbe
   const prose = minorOnly ? full : withOutfit(describeScene(scene, options.phrases, { compact: true }))
   const { sentences, kept } = minorOnly ? fullFit : fitBudget(proseSections(prose, medium), maxWords)
   const text = properNouns(joinSameSubject(sentences.filter((s) => kept.has(s)).map((s) => s.text), prose.clauses).join(" "))
-  return { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }
+  const outfitCut = !!outfitDescription && sentences.some((s) => s.order === CLOTHING_SECTION && (!kept.has(s) || s.cut))
+  return { result: { text, rawTags: prose.raw, omitted: prose.omitted + sentences.length - kept.size }, outfitCut }
 }
 
 // Most clauses, and words, in one joined sentence: past that it reads as a list of lists.
