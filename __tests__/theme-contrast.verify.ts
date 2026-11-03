@@ -8,7 +8,7 @@
  */
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { ramps, tintedPairs } from "../lib/theme/palette.mjs"
+import { ramps, tintedPairs, uiBoundaries, uiBoundaryMinContrast } from "../lib/theme/palette.mjs"
 
 type Oklch = [number, number, number]
 type Rgb = [number, number, number]
@@ -78,6 +78,15 @@ for (const [theme, tokens] of Object.entries(themes) as [keyof typeof themes, Re
         const ratio = contrast(toSrgb(tokens[fg]), composite(toSrgb(tokens[tint]), pct / 100, toSrgb(tokens[surface])))
         assert(ratio >= min, `${theme} ${fg} on ${tint}/${pct} over ${surface}: ${ratio.toFixed(2)}:1 (needs ${min}:1)`)
       }
+    }
+  }
+}
+
+for (const [theme, tokens] of Object.entries(themes) as [keyof typeof themes, Record<string, Oklch>][]) {
+  for (const { color, over } of uiBoundaries) {
+    for (const surface of over) {
+      const ratio = contrast(toSrgb(tokens[color]), toSrgb(tokens[surface]))
+      assert(ratio >= uiBoundaryMinContrast, `${theme} ${color} border over ${surface}: ${ratio.toFixed(2)}:1 (needs ${uiBoundaryMinContrast}:1)`)
     }
   }
 }
