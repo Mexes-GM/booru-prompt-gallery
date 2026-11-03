@@ -25,9 +25,13 @@ export function MotionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-    loadLayoutFeatures().then((full) => {
-      if (!cancelled) setFeatures(full)
-    })
+    loadLayoutFeatures()
+      .then((full) => {
+        if (!cancelled) setFeatures(full)
+      })
+      // Chunk failed to load (offline, new deploy): animations keep working,
+      // layout changes just jump instead of animating.
+      .catch(() => {})
     return () => {
       cancelled = true
     }
