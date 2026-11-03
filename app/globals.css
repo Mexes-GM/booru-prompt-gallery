@@ -804,7 +804,8 @@ nav,
  * Desktop keeps the compact height; only touch devices get the larger hit area. */
 @media (pointer: coarse) {
   .card-content-small .button-group button,
-  .card-content-medium .button-group button {
+  .card-content-medium .button-group button,
+  .card-content-large .button-group button {
     min-height: 44px;
   }
   button,
