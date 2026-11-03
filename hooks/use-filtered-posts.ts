@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useDeferredValue, useMemo } from "react"
 import { type BooruPost, type BooruProvider } from "@/lib/api-client"
 import { favKey } from "@/lib/favorites-logic"
 import { isTagCountSupportedProvider } from "@/lib/booru/tag-limits"
@@ -61,6 +61,13 @@ export interface UseFilteredPostsArgs {
  * missing the image-extension check and had an extra pass-through branch the
  * web app never had for posts missing `tag_string_character`).
  */
+// True when `next` is `prev` with more posts appended (same objects, same order).
+function isAppendOf(prev: BooruPost[], next: BooruPost[]) {
+  if (prev.length > next.length) return false
+  for (let i = 0; i < prev.length; i++) if (prev[i] !== next[i]) return false
+  return true
+}
+
 export function useFilteredPosts({
   allPosts,
   booruProvider,
@@ -73,7 +80,7 @@ export function useFilteredPosts({
   activeFavoriteFolder = "all",
   history,
 }: UseFilteredPostsArgs): BooruPost[] {
-  return useMemo(() => {
+  const filtered = useMemo(() => {
     const showFavorites = favorites?.showFavorites ?? false
     const showHistory = history?.showHistory ?? false
     let source = allPosts
@@ -186,4 +193,12 @@ export function useFilteredPosts({
     history?.showHistory,
     history?.historyPosts,
   ])
+
+  // Mounting a freshly loaded page of cards (prompt derivation per card) took
+  // one long frame. When posts were only appended, keep rendering the previous
+  // list first and let React build the new cards in the background in
+  // time-sliced work, so scrolling stays responsive. Any other change (new
+  // search, filter, provider) is applied immediately.
+  const deferred = useDeferredValue(filtered)
+  return deferred !== filtered && deferred.length > 0 && isAppendOf(deferred, filtered) ? deferred : filtered
 }
