@@ -88,7 +88,7 @@ export function StickyMiniControlPanel({
                     ({tagCount} tag{tagCount !== 1 ? "s" : ""})
                   </span>
                 )}
-                <span className="text-[10px] font-normal text-muted-foreground/70 hidden sm:inline">
+                <span className="text-[10px] font-normal text-faint-foreground hidden sm:inline">
                   (Only modify final prompt)
                 </span>
               </label>

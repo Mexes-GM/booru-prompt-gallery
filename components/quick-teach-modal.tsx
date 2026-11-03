@@ -539,7 +539,7 @@ function PlayingScreen({
                       {card.proposedCategory} › {formatSubcategoryLabel(card.proposedSubcategory)}
                     </Badge>
                     {card.confidence !== null && (
-                      <span className="text-[11px] text-muted-foreground/80 font-mono">
+                      <span className="text-[11px] text-muted-foreground font-mono">
                         · {Math.round(card.confidence * 100)}% confidence
                       </span>
                     )}

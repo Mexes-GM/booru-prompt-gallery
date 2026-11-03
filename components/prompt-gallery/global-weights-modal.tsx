@@ -103,7 +103,7 @@ export function GlobalWeightsModal({
                             </div>
                             <DialogTitle className="text-xl font-bold tracking-tight">Global Weights</DialogTitle>
                         </div>
-                        <DialogDescription className="text-muted-foreground/90 max-w-[360px]">
+                        <DialogDescription className="text-muted-foreground max-w-[360px]">
                             Define tags that should be automatically emphasized or de-emphasized across all generated images.
                         </DialogDescription>
                     </DialogHeader>
@@ -133,7 +133,7 @@ export function GlobalWeightsModal({
                                 onChange={(e) => setNewTag(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                                 aria-label="Enter tag for global weight"
-                                className="pl-9 h-11 border-none shadow-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60"
+                                className="pl-9 h-11 border-none shadow-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-faint-foreground"
                             />
                         </div>
 
@@ -165,7 +165,7 @@ export function GlobalWeightsModal({
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                                    className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground/50 space-y-4"
+                                    className="flex flex-col items-center justify-center py-16 text-center text-faint-foreground space-y-4"
                                 >
                                     <div className="w-20 h-20 rounded-full bg-secondary/50 flex items-center justify-center mb-2">
                                         <Scale className="h-10 w-10 opacity-20" />
@@ -210,7 +210,7 @@ export function GlobalWeightsModal({
                                         <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-8 w-8 text-muted-foreground/50 hover:text-destructive-text hover:bg-destructive/10 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                                            className="h-8 w-8 text-faint-foreground hover:text-destructive-text hover:bg-destructive/10 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                                             onClick={() => onRemoveWeight(tag)}
                                             aria-label={`Remove weight for ${tag}`}
                                         >

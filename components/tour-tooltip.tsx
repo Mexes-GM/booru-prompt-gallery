@@ -92,7 +92,7 @@ function TourTooltipBase({
         ) : (
           <span className="text-xs tabular-nums text-muted-foreground" aria-label={`Step ${index + 1} of ${size}`}>
             {index + 1}
-            <span className="text-muted-foreground/50"> / {size}</span>
+            <span className="text-faint-foreground"> / {size}</span>
           </span>
         )}
 

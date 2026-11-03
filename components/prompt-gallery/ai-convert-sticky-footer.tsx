@@ -428,7 +428,7 @@ const AiConvertStickyFooterComponent = ({
                     </SheetHeader>
                     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
                       {history.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-muted-foreground/60 gap-3">
+                        <div className="flex flex-col items-center justify-center h-full text-faint-foreground gap-3">
                           <History className="w-10 h-10 opacity-20" />
                           <p className="text-sm">No history yet.</p>
                         </div>
@@ -439,7 +439,7 @@ const AiConvertStickyFooterComponent = ({
                               <span>Original Tags</span>
                               <span><ClientFormattedDate timestamp={item.timestamp} /></span>
                             </div>
-                            <p className="text-xs text-muted-foreground/80 line-clamp-2" title={item.tags}>
+                            <p className="text-xs text-muted-foreground line-clamp-2" title={item.tags}>
                               {item.tags}
                             </p>
                             <div className="h-px bg-border/40 w-full" />
@@ -560,7 +560,7 @@ const AiConvertStickyFooterComponent = ({
                                           {m.label}
                                           {m.tag && (
                                             <span className={cn(
-                                              'text-[9px] px-1.5 py-0 rounded-full font-bold uppercase tracking-wide',
+                                              'text-[10px] px-1.5 py-0 rounded-full font-bold uppercase tracking-wide',
                                               m.tag === 'recommended' && 'bg-primary/15 text-primary-text',
                                               m.tag === 'best'        && 'bg-mode-convert-soft text-mode-convert-text',
                                               m.tag === 'fastest'     && 'bg-success-soft text-success-text',
@@ -665,7 +665,7 @@ const AiConvertStickyFooterComponent = ({
                     {result}
                   </p>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground/60 select-none">
+                  <div className="flex flex-col items-center justify-center py-6 text-center text-faint-foreground select-none">
                     <Sparkles
                       className={cn("h-6 w-6 text-primary-text/30 mb-1.5", !shouldReduceMotion && "animate-pulse")}
                       aria-hidden="true"

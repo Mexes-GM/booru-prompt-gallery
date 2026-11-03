@@ -2075,7 +2075,7 @@ export function PromptGallery() {
                   {" / "}{total}
                   <span className="text-xs ml-1">({pct}%)</span>
                 </p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground/70 text-center">
+                <p className="mt-0.5 text-[11px] text-faint-foreground text-center">
                   Fetching from the booru — this can take a moment due to rate limits.
                 </p>
               </div>

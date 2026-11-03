@@ -151,10 +151,10 @@ const PromptRow = memo(({
                 <span className="text-[10px] font-mono font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded w-full text-center">
                     {String(index + 1).padStart(2, '0')}
                 </span>
-                <span className="text-[9px] text-muted-foreground/70 tabular-nums" title="Tags in this prompt">{tokens.length}</span>
+                <span className="text-[10px] text-faint-foreground tabular-nums" title="Tags in this prompt">{tokens.length}</span>
                 {showResolution && prompt.width && prompt.height && (
                     <span
-                        className="text-[9px] text-mode-pack-text tabular-nums whitespace-nowrap"
+                        className="text-[10px] text-mode-pack-text tabular-nums whitespace-nowrap"
                         title="Suggested size, from the posts this prompt's pose came from"
                     >
                         {prompt.width}×{prompt.height}
@@ -168,11 +168,11 @@ const PromptRow = memo(({
                         ? 'text-muted-foreground'
                         : variedSet.has(bare)
                             ? 'text-foreground font-semibold'
-                            : 'text-muted-foreground/70'
+                            : 'text-faint-foreground'
                     return (
                         <span key={`${i}-${token}`}>
                             <span className={tone}>{token}</span>
-                            {i < tokens.length - 1 && <span className="text-muted-foreground/50">, </span>}
+                            {i < tokens.length - 1 && <span className="text-faint-foreground">, </span>}
                         </span>
                     )
                 })}
@@ -318,7 +318,7 @@ const PackResultsList = memo(({
                 <div className="flex flex-col items-center justify-center gap-2 py-10 lg:flex-1 text-center rounded-lg border border-dashed border-border/60">
                     {isCollecting ? (
                         <>
-                            <Loader2 className="w-6 h-6 text-muted-foreground/60 animate-spin" />
+                            <Loader2 className="w-6 h-6 text-faint-foreground animate-spin" />
                             <p className="text-xs text-muted-foreground max-w-xs">
                                 Collecting posts to sample from. You can set up the categories meanwhile, or generate now with what&apos;s already in.
                             </p>
@@ -766,7 +766,7 @@ const PackBuilderStickyFooterComponent = ({
                                                                 className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[11px] ${removed ? 'border-dashed border-border/60 text-muted-foreground line-through' : 'bg-foreground/[0.07] border-border text-foreground'}`}
                                                             >
                                                                 {tag}
-                                                                {!removed && <X className="w-3 h-3 text-muted-foreground/60" />}
+                                                                {!removed && <X className="w-3 h-3 text-faint-foreground" />}
                                                             </button>
                                                         )
                                                     })}

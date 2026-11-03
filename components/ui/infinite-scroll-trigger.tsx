@@ -99,7 +99,7 @@ export function InfiniteScrollTrigger({
  </div>
  <p className="text-sm text-muted-foreground">
  Loading page {currentPage}...
- <span className="text-xs ml-1 text-muted-foreground/60">
+ <span className="text-xs ml-1 text-faint-foreground">
  ({loadedCount} posts loaded)
  </span>
  </p>
@@ -110,7 +110,7 @@ export function InfiniteScrollTrigger({
  <ChevronDown className="w-4 h-4" />
  Load More
  </Button>
- <p className="text-xs text-muted-foreground/40">or scroll down</p>
+ <p className="text-xs text-faint-foreground">or scroll down</p>
  </div>
  )}
  </div>

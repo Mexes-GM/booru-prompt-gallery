@@ -14,6 +14,7 @@ export const themeHex = {
     "secondary-foreground": "#192029",
     "muted": "#D1DAE4",
     "muted-foreground": "#4F5964",
+    "faint-foreground": "#616A74",
     "accent": "#D1DAE4",
     "accent-foreground": "#192029",
     "border": "#BEC9D4",
@@ -99,6 +100,7 @@ export const themeHex = {
     "secondary-foreground": "#E4ECF4",
     "muted": "#37414B",
     "muted-foreground": "#AEB9C4",
+    "faint-foreground": "#8F9AA4",
     "accent": "#37414B",
     "accent-foreground": "#E4ECF4",
     "border": "#3E4954",
@@ -624,6 +626,16 @@ export const neutralContrast = {
       "ratio": 5.04
     },
     {
+      "fg": "faint-foreground",
+      "bg": "background",
+      "ratio": 4.76
+    },
+    {
+      "fg": "faint-foreground",
+      "bg": "card",
+      "ratio": 5.05
+    },
+    {
       "fg": "secondary-foreground",
       "bg": "secondary",
       "ratio": 12.21
@@ -674,6 +686,16 @@ export const neutralContrast = {
       "fg": "muted-foreground",
       "bg": "muted",
       "ratio": 5.21
+    },
+    {
+      "fg": "faint-foreground",
+      "bg": "background",
+      "ratio": 5.23
+    },
+    {
+      "fg": "faint-foreground",
+      "bg": "card",
+      "ratio": 4.65
     },
     {
       "fg": "secondary-foreground",

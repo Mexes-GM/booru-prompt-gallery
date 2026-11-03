@@ -175,7 +175,7 @@ function HostToggleRow({ id, label, hint, checked, disabled, onCheckedChange, ne
     <div className={cn("flex items-center justify-between gap-2 p-1 rounded-md hover:bg-muted/30 transition-colors", nested && "pl-3")}>
       <div className="flex flex-col gap-0.5 flex-1 min-w-0">
         <Label htmlFor={id} className={cn("select-none cursor-pointer", nested ? "text-[11px] text-muted-foreground" : "text-xs")}>{label}</Label>
-        <span className="text-[10px] text-muted-foreground/80 leading-snug">{hint}</span>
+        <span className="text-[10px] text-muted-foreground leading-snug">{hint}</span>
       </div>
       <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} className="scale-75 origin-right shrink-0" />
     </div>
@@ -805,7 +805,7 @@ export default function ExtensionClient() {
                     onChange={(e) => setImportListText(e.target.value)}
                     placeholder={"thick thighs, wide hips, ..., explicit\n[1024x1536] 1girl, solo, ..., full body"}
                     aria-label="Prompts to import, one per line"
-                    className="mt-4 w-full flex-1 min-h-[220px] rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
+                    className="mt-4 w-full flex-1 min-h-[220px] rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs placeholder:text-faint-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                   />
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <span className="text-[11px] text-muted-foreground tabular-nums">
@@ -855,7 +855,7 @@ export default function ExtensionClient() {
           <Collapsible open={showSettings} onOpenChange={setShowSettings}>
             <CollapsibleContent id="pocket-settings" className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
               <div className="p-2.5 bg-muted/20 border border-border/50 rounded-lg flex flex-col gap-3 max-h-[48vh] overflow-y-auto overscroll-contain">
-                <h2 className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground/80 flex items-center gap-1 select-none">
+                <h2 className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground flex items-center gap-1 select-none">
                   <Sliders size={10} /> Prompt Settings
                 </h2>
 
@@ -941,7 +941,7 @@ export default function ExtensionClient() {
 
                 {/* Generator (host) settings — Pocket-only */}
                 <div className="flex flex-col gap-1 border-t pt-2">
-                  <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground/80 select-none px-1">Generator</span>
+                  <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground select-none px-1">Generator</span>
                   <HostToggleRow
                     id="auto-download"
                     label="Auto-Downloading"
@@ -1031,7 +1031,7 @@ export default function ExtensionClient() {
           {/* Bulk Send — sends N prompts for the current query in one click. */}
           <div id="extension-bulk-send" className="flex flex-col gap-1.5 border-t pt-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground/80 flex items-center gap-1 select-none">
+              <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground flex items-center gap-1 select-none">
                 <Zap size={10} /> Bulk Send
               </span>
               <div className="bg-muted/50 p-0.5 rounded-md flex gap-0.5" role="radiogroup" aria-label="Bulk send mode">
@@ -1084,7 +1084,7 @@ export default function ExtensionClient() {
                 ))}
               </div>
             )}
-            <p className="text-[10px] text-muted-foreground/70 truncate px-0.5" title={search.searchTags}>
+            <p className="text-[10px] text-faint-foreground truncate px-0.5" title={search.searchTags}>
               {hasQuery ? <>from &ldquo;{search.searchTags}&rdquo;</> : "Search something to enable Bulk Send"}
             </p>
           </div>
