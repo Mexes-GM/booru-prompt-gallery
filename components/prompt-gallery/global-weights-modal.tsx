@@ -7,13 +7,12 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Trash2, Plus, Minus, Tag, Scale, Sparkles, X, Check, AlertTriangle } from "lucide-react"
-import { motion, AnimatePresence, Variants } from "framer-motion"
-import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
+import { Trash2, Plus, Minus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface GlobalWeightsModalProps {
@@ -23,38 +22,19 @@ interface GlobalWeightsModalProps {
     onRemoveWeight: (tag: string) => void
     onClearWeights: () => void
     onSaveWeight: (tag: string, weight: number) => void
-    /** Whether the "Global Tag Weights" switch (outside this modal) is on.
-     *  When it's off, every weight defined here is inert — nothing gets
-     *  applied to any prompt, so the modal says so. */
+    /** Whether the weights are applied (false = paused). */
     isEnabled: boolean
+    /** Pause or resume the weights. Without it the modal only reports a pause. */
+    onEnabledChange?: (enabled: boolean) => void
 }
 
-// Animation Variants
-const containerVariants: Variants = {
-    hidden: { opacity: 0 },
-    visible: {
-        opacity: 1,
-        transition: {
-            staggerChildren: 0.05,
-            delayChildren: 0.1,
-        },
-    },
-}
+// Same range as the weight popover on a card's tags (interactive-prompt.tsx).
+const MIN_WEIGHT = 0.1
+const MAX_WEIGHT = 3
+const STEP = 0.1
 
-const itemVariants: Variants = {
-    hidden: { opacity: 0, y: 10, scale: 0.95 },
-    visible: {
-        opacity: 1,
-        y: 0,
-        scale: 1,
-        transition: { type: "spring", stiffness: 350, damping: 25 }
-    },
-    exit: {
-        opacity: 0,
-        scale: 0.9,
-        transition: { duration: 0.2 }
-    }
-}
+const clampWeight = (value: number) =>
+    Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, parseFloat(value.toFixed(1))))
 
 export function GlobalWeightsModal({
     open,
@@ -64,20 +44,18 @@ export function GlobalWeightsModal({
     onClearWeights,
     onSaveWeight,
     isEnabled,
+    onEnabledChange,
 }: GlobalWeightsModalProps) {
     const hasWeights = Object.keys(weights).length > 0
     const [newTag, setNewTag] = useState("")
-    const [newWeight, setNewWeight] = useState("1.1")
+    const [newWeight, setNewWeight] = useState(1.1)
     const inputRef = useRef<HTMLInputElement>(null)
 
     const handleAdd = () => {
         if (!newTag.trim()) return
-        const weight = parseFloat(newWeight)
-        if (isNaN(weight)) return
-
-        onSaveWeight(newTag.trim(), weight)
+        onSaveWeight(newTag.trim(), newWeight)
         setNewTag("")
-        setNewWeight("1.1")
+        setNewWeight(1.1)
         // Keep focus for rapid entry
         inputRef.current?.focus()
     }
@@ -89,230 +67,202 @@ export function GlobalWeightsModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[520px] p-0 gap-0 overflow-hidden border-0 shadow-2xl bg-background">
+            <DialogContent className="sm:max-w-[30rem] gap-5">
+                <DialogHeader>
+                    <DialogTitle>Tag weights</DialogTitle>
+                    <DialogDescription>
+                        Raise or lower a tag in every prompt that has it.
+                    </DialogDescription>
+                </DialogHeader>
 
-                {/* Unified Background Gradient */}
-                <div className="absolute top-0 left-0 right-0 h-64 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent pointer-events-none z-0" />
+                {hasWeights && (onEnabledChange ? (
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2.5">
+                        <label htmlFor="global-weights-apply" className="flex min-w-0 cursor-pointer flex-col gap-0.5">
+                            <span className="text-sm text-foreground">Apply weights</span>
+                            <span className="text-xs text-muted-foreground">
+                                {isEnabled ? "On for every card with these tags" : "Paused. Saved, but no prompt uses them"}
+                            </span>
+                        </label>
+                        <Switch id="global-weights-apply" checked={isEnabled} onCheckedChange={onEnabledChange} />
+                    </div>
+                ) : !isEnabled && (
+                    <p role="status" className="rounded-lg border border-border/60 px-3 py-2.5 text-xs text-muted-foreground">
+                        Paused. These weights are saved, but no prompt uses them.
+                    </p>
+                ))}
 
-                {/* Header */}
-                <div className="relative p-6 pb-6 overflow-hidden z-10">
-                    <DialogHeader className="relative z-10">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2.5 bg-background/80 backdrop-blur-sm shadow-sm rounded-xl border border-primary/10 text-primary-text">
-                                <Scale className="h-5 w-5" />
-                            </div>
-                            <DialogTitle className="text-xl font-bold tracking-tight">Global Weights</DialogTitle>
-                        </div>
-                        <DialogDescription className="text-muted-foreground max-w-[360px]">
-                            Define tags that should be automatically emphasized or de-emphasized across all generated images.
-                        </DialogDescription>
-                    </DialogHeader>
+                {/* Add a weight by hand */}
+                <form
+                    className="flex items-end gap-2"
+                    onSubmit={(e) => {
+                        e.preventDefault()
+                        handleAdd()
+                    }}
+                >
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                        <label htmlFor="global-weight-new-tag" className="text-xs font-medium text-muted-foreground">Tag</label>
+                        <Input
+                            id="global-weight-new-tag"
+                            ref={inputRef}
+                            placeholder="e.g. smile"
+                            value={newTag}
+                            onChange={(e) => setNewTag(e.target.value)}
+                            className="h-10"
+                        />
+                    </div>
+                    <WeightStepper value={newWeight} onChange={setNewWeight} label="New tag weight" />
+                    <Button type="submit" disabled={!newTag.trim()} className="h-10 shrink-0 px-3">
+                        <Plus className="mr-1.5 h-4 w-4" />
+                        Add
+                    </Button>
+                </form>
 
-                    {!isEnabled && (
-                        <div className="relative z-10 mt-4 flex items-start gap-2.5 rounded-lg border border-warning-border bg-warning-soft p-3 text-warning-text">
-                            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                            <p className="text-xs leading-relaxed">
-                                <span className="font-semibold">Global Tag Weights is off.</span>{" "}
-                                Anything you add or edit here is saved but has no effect on any prompt until you turn the switch back on.
-                            </p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Input Section */}
-                <div className="px-6 pb-2 relative z-20">
-                    <div className="bg-secondary/40 p-1.5 rounded-xl border border-border/50 flex gap-2 shadow-sm focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/50 transition-all duration-200">
-                        <div className="relative flex-1">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
-                                <Tag className="h-4 w-4" />
-                            </div>
-                            <Input
-                                ref={inputRef}
-                                placeholder="Enter tag (e.g. masterpiece)"
-                                value={newTag}
-                                onChange={(e) => setNewTag(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                                aria-label="Enter tag for global weight"
-                                className="pl-9 h-11 border-none shadow-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground"
-                            />
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            <WeightStepper
-                                value={parseFloat(newWeight)}
-                                onChange={(v) => setNewWeight(v.toString())}
-                            />
-                            <Button
-                                onClick={handleAdd}
-                                size="icon"
-                                className="h-11 w-11 shrink-0 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
-                                disabled={!newTag.trim()}
-                                aria-label="Add global weight"
+                {/* Saved weights */}
+                {hasWeights ? (
+                    <ul className="-mx-2 flex max-h-[min(22rem,45dvh)] flex-col overflow-y-auto px-2" aria-label="Saved tag weights">
+                        {sortedWeights.map(([tag, weight]) => (
+                            <li
+                                key={tag}
+                                className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-b-0"
                             >
-                                <Plus className="h-5 w-5" />
-                            </Button>
-                        </div>
+                                <span className={cn("min-w-0 flex-1 truncate text-sm", !isEnabled && "text-muted-foreground")} title={tag}>
+                                    {tag}
+                                </span>
+                                <div className="flex shrink-0 items-center gap-1">
+                                    <WeightStepper
+                                        value={weight}
+                                        onChange={(val) => onSaveWeight(tag, val)}
+                                        label={`Weight for ${tag}`}
+                                        size="sm"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-9 w-9 text-muted-foreground hover:text-destructive-text hover:bg-destructive/10"
+                                        onClick={() => onRemoveWeight(tag)}
+                                        aria-label={`Remove weight for ${tag}`}
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <div className="flex flex-col gap-1 rounded-lg border border-dashed border-border/70 px-4 py-6 text-center">
+                        <p className="text-sm font-medium text-foreground">No tag weights yet</p>
+                        <p className="text-xs text-muted-foreground">
+                            Add one above, or click a tag on any card, set its weight and choose the globe.
+                        </p>
                     </div>
-                </div>
+                )}
 
-                {/* List Section */}
-                <ScrollArea className="h-[360px] relative">
-                    <div className="p-6 pt-2 flex flex-col gap-2.5">
-                        <AnimatePresence mode="popLayout" initial={false}>
-                            {!hasWeights && (
-                                <motion.div
-                                    key="empty"
-                                    initial={{ opacity: 0, scale: 0.95 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                                    className="flex flex-col items-center justify-center py-16 text-center text-faint-foreground space-y-4"
-                                >
-                                    <div className="w-20 h-20 rounded-full bg-secondary/50 flex items-center justify-center mb-2">
-                                        <Scale className="h-10 w-10 opacity-20" />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <p className="text-sm font-medium text-foreground/80">No active weights</p>
-                                        <p className="text-xs max-w-[220px] mx-auto">
-                                            Tags added here will override prompt defaults.
-                                        </p>
-                                    </div>
-                                </motion.div>
-                            )}
-
-                            {sortedWeights.map(([tag, weight]) => (
-                                <motion.div
-                                    key={tag}
-                                    layout
-                                    initial="hidden"
-                                    animate="visible"
-                                    exit="exit"
-                                    variants={itemVariants}
-                                    className="group relative flex items-center justify-between p-2 pl-3 rounded-xl border border-transparent bg-secondary/20 hover:bg-secondary/40 hover:border-border/50 transition-all duration-200"
-                                >
-                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                        <div className={cn(
-                                            "w-1 h-8 rounded-full transition-colors",
-                                            weight > 1 ? "bg-info/50" : weight < 1 ? "bg-destructive/50" : "bg-muted"
-                                        )} />
-                                        <span className="font-medium text-sm truncate" title={tag}>
-                                            {tag}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                        <WeightStepper
-                                            value={weight}
-                                            onChange={(val) => onSaveWeight(tag, val)}
-                                            size="sm"
-                                            tagName={tag}
-                                        />
-
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-faint-foreground hover:text-destructive-text hover:bg-destructive/10 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
-                                            onClick={() => onRemoveWeight(tag)}
-                                            aria-label={`Remove weight for ${tag}`}
-                                        >
-                                            <X className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </AnimatePresence>
-                    </div>
-                </ScrollArea>
-
-                {/* Footer */}
-                <div className="p-4 bg-secondary/20 border-t border-border/50 flex justify-between items-center z-10">
+                <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between sm:space-x-0">
                     <Button
+                        type="button"
                         variant="ghost"
                         size="sm"
                         onClick={onClearWeights}
                         disabled={!hasWeights}
-                        className="text-muted-foreground hover:text-destructive-text hover:bg-destructive/10 h-8 px-3 text-xs font-medium"
+                        className="h-9 px-3 text-xs text-muted-foreground hover:text-destructive-text hover:bg-destructive/10"
                     >
-                        <Trash2 className="w-3.5 h-3.5 mr-2" />
-                        Clear All
+                        <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                        Clear all
                     </Button>
-                    <Button
-                        size="sm"
-                        onClick={() => onOpenChange(false)}
-                        className="px-6 h-9 font-medium shadow-sm"
-                    >
+                    <Button type="button" onClick={() => onOpenChange(false)} className="h-9 px-6">
                         Done
                     </Button>
-                </div>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     )
 }
 
-// Compact Stepper Component
+/**
+ * − [value] + : every part is keyboard reachable. The value is a number
+ * input (type a weight, or ArrowUp/ArrowDown), committed on blur or Enter.
+ */
 function WeightStepper({
     value,
     onChange,
+    label,
     size = "default",
-    tagName
 }: {
     value: number
     onChange: (v: number) => void
+    label: string
     size?: "default" | "sm"
-    tagName?: string
 }) {
-    const update = (delta: number) => {
-        const next = parseFloat((value + delta).toFixed(1))
-        if (next > 0) onChange(next)
-    }
-
+    const [draft, setDraft] = useState<string | null>(null)
     const isSmall = size === "sm"
-    const decreaseLabel = tagName ? `Decrease weight for ${tagName}` : "Decrease weight"
-    const increaseLabel = tagName ? `Increase weight for ${tagName}` : "Increase weight"
+
+    const commit = (raw: string) => {
+        const parsed = parseFloat(raw.replace(",", "."))
+        if (!isNaN(parsed)) onChange(clampWeight(parsed))
+        setDraft(null)
+    }
+    const step = (delta: number) => onChange(clampWeight(value + delta))
+
+    const buttonClass = cn(
+        "flex shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-40",
+        isSmall ? "w-8" : "w-9"
+    )
 
     return (
-        <div className={cn(
-            "flex items-center bg-background rounded-lg border border-border/50 shadow-sm transition-all",
-            isSmall ? "h-8" : "h-11"
-        )}>
+        <div
+            role="group"
+            aria-label={label}
+            className={cn(
+                "flex shrink-0 items-stretch overflow-hidden rounded-md border border-input bg-background",
+                isSmall ? "h-9" : "h-10"
+            )}
+        >
             <button
                 type="button"
-                onClick={() => update(-0.1)}
-                className={cn(
-                    "h-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-l-lg transition-colors focus:outline-none focus:bg-secondary/50",
-                    isSmall ? "w-6" : "w-8"
-                )}
-                tabIndex={-1}
-                aria-label={decreaseLabel}
+                onClick={() => step(-STEP)}
+                disabled={value <= MIN_WEIGHT}
+                className={buttonClass}
+                aria-label="Decrease weight"
             >
-                <Minus className={cn("shrink-0", isSmall ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                <Minus className="h-3.5 w-3.5" />
             </button>
-
-            <div className={cn(
-                "h-full flex items-center justify-center border-x border-border/30 bg-secondary/10",
-                isSmall ? "w-10" : "w-12"
-            )}>
-                <span className={cn(
-                    "font-mono font-semibold",
-                    isSmall ? "text-xs" : "text-sm",
-                    value > 1 ? "text-info-text" :
-                        value < 1 ? "text-destructive-text" :
-                            "text-foreground"
-                )} aria-hidden="true">
-                    {value.toFixed(1)}
-                </span>
-            </div>
-
+            {/* Text, not type="number": the value reads "1.1" in every locale,
+                like the weights written into prompts. */}
+            <input
+                type="text"
+                inputMode="decimal"
+                role="spinbutton"
+                aria-valuemin={MIN_WEIGHT}
+                aria-valuemax={MAX_WEIGHT}
+                aria-valuenow={value}
+                value={draft ?? value.toFixed(1)}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={(e) => commit(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                        e.preventDefault()
+                        commit(e.currentTarget.value)
+                    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                        e.preventDefault()
+                        setDraft(null)
+                        step(e.key === "ArrowUp" ? STEP : -STEP)
+                    }
+                }}
+                aria-label="Weight"
+                className={cn(
+                    "border-x border-input bg-transparent text-center font-mono text-sm tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    isSmall ? "w-12" : "w-14"
+                )}
+            />
             <button
                 type="button"
-                onClick={() => update(0.1)}
-                className={cn(
-                    "h-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-r-lg transition-colors focus:outline-none focus:bg-secondary/50",
-                    isSmall ? "w-6" : "w-8"
-                )}
-                tabIndex={-1}
-                aria-label={increaseLabel}
+                onClick={() => step(STEP)}
+                disabled={value >= MAX_WEIGHT}
+                className={buttonClass}
+                aria-label="Increase weight"
             >
-                <Plus className={cn("shrink-0", isSmall ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                <Plus className="h-3.5 w-3.5" />
             </button>
         </div>
     )
