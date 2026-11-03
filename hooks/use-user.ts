@@ -39,7 +39,11 @@ export function useUser() {
   }, [mounted])
 
   useEffect(() => {
-    if (!mounted || !supabase) return
+    if (!mounted) return
+    if (!supabase) {
+      setLoading(false)
+      return
+    }
 
     let isSubscribed = true
 

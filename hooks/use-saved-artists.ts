@@ -51,7 +51,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
   const userId = user?.id
 
   const loadFromSupabase = useCallback(async () => {
-    if (!userId) return [] as SavedArtist[]
+    if (!userId || !supabase) return [] as SavedArtist[]
     const { data, error } = await fetchAllPages<DbSavedArtistRow>((from, to) =>
       supabase
         .from("saved_artists")
@@ -74,7 +74,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
 
   // One-time migration of local → cloud when a user signs in and has local artists
   const migrateLocalToCloud = useCallback(async () => {
-    if (!userId || _migrationCompleted) return
+    if (!userId || !supabase || _migrationCompleted) return
     const local = userPreferences.getSavedArtists()
     if (local.length === 0) {
       _migrationCompleted = true
@@ -142,7 +142,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       const newArtist: SavedArtist = { ...artist, timestamp: Date.now() }
       setSavedArtists((prev) => [newArtist, ...prev])
 
-      if (userId) {
+      if (userId && supabase) {
         const { error } = await supabase.from("saved_artists").upsert(
           {
             user_id: userId,
@@ -177,7 +177,7 @@ function useSavedArtistsInternal(): UseSavedArtistsReturn {
       const before = savedArtists
       setSavedArtists((prev) => prev.filter((a) => buildKey(a.provider, a.artistTag) !== key))
 
-      if (userId) {
+      if (userId && supabase) {
         const { error } = await supabase
           .from("saved_artists")
           .delete()

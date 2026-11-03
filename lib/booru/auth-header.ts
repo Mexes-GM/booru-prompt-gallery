@@ -24,11 +24,9 @@ import { createClient } from "@/lib/supabase/client"
  * — safe to spread into any fetch() headers unconditionally.
  */
 export async function getAuthHeader(): Promise<Record<string, string>> {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return {}
-  }
   try {
     const supabase = createClient()
+    if (!supabase) return {}
     const { data } = await supabase.auth.getSession()
     const token = data.session?.access_token
     return token ? { Authorization: `Bearer ${token}` } : {}

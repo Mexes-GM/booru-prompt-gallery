@@ -318,9 +318,9 @@ export function useBooruPostsByIds(favorites: FavoriteItem[]) {
       try {
         // ── Supabase cache layer: query booru_posts_cache for posts not in localStorage ──
         // This avoids booru API calls entirely when posts are already cached in Supabase.
-        if (toFetch.length > 0) {
+        const supabase = createClient()
+        if (supabase && toFetch.length > 0) {
           try {
-            const supabase = createClient()
             const groups = new Map<string, number[]>()
             toFetch.forEach(f => {
               if (!groups.has(f.provider)) groups.set(f.provider, [])

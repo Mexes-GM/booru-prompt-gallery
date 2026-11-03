@@ -74,12 +74,12 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
       loadingRef.current = true
       mutationDuringLoadRef.current = false
 
-      if (user) {
+      if (user && supabase) {
         // ── One-shot migration: localStorage → Supabase ──
         const isMigrated = user.user_metadata?.favorites_migrated === 'v2'
 
         // Helper: read + normalize all localStorage formats (same logic as anonymous path)
-        async function migrateFromLocalStorage() {
+        const migrateFromLocalStorage = async () => {
           if (typeof window === "undefined") return
 
           try {
@@ -405,7 +405,7 @@ export function useFavoritesCore(): UseFavoritesCoreReturn {
 
   // Manual sync from Supabase (authenticated users only)
   const syncFavorites = useCallback(async () => {
-    if (!user || userLoading) return
+    if (!user || !supabase || userLoading) return
 
     syncVersionRef.current++
     const version = syncVersionRef.current

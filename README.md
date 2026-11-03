@@ -144,7 +144,19 @@ Only the worker URL is required. Everything else switches itself off when missin
 | `DISCORD_FEEDBACK_WEBHOOK_URL` | Feedback form | Feedback form disabled. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` | CAPTCHA on the feedback form | The form works without a challenge. |
 
-Full list with comments in [`.env.example`](.env.example). The worker's own (optional) secrets are listed in `workers/booru-image-proxy/wrangler.toml`, and the database schema is in `supabase/migrations/`.
+Full list with comments in [`.env.example`](.env.example). The worker's own (optional) secrets are listed in `workers/booru-image-proxy/wrangler.toml`.
+
+### Database
+
+Supabase is optional. Without it you can still browse and search every site, copy prompts and keep favorites in your browser. Danbooru-style sites and e621 send tag categories with each post, so their tags are still grouped by artist, character and series. What you lose:
+
+- Accounts: sign-in, favorites and folders synced across devices, saved preferences and artists.
+- Tag categories on Rule34 and similar sites, which don't send them reliably.
+- The tag taxonomy used by tag search, the natural-language converter and Pack Mode. They still work, but many tags stay unclassified.
+- Teach, tag suggestions, the feedback form and the admin panel.
+- The post and tag count caches, so more requests go straight to the sites.
+
+The database schema isn't published. Most of what the database adds is its data (the tag categories and taxonomy built for this site), and a new database would start empty. If you need the schema for your own deployment, open an issue and I'll look into publishing it.
 
 ### Useful commands
 

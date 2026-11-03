@@ -152,7 +152,7 @@ export function usePreferencesSync() {
 
   // 1. PULL from Supabase on login
   useEffect(() => {
-    if (!user) {
+    if (!user || !supabase) {
       hasSyncedRef.current = false
       return
     }
@@ -164,6 +164,7 @@ export function usePreferencesSync() {
     let cloudSyncFlagTimer: ReturnType<typeof setTimeout> | undefined
 
     async function loadCloudPreferences() {
+      if (!supabase) return
       const { data, error } = await supabase
         .from("profiles")
         .select("preferences")
@@ -244,7 +245,7 @@ export function usePreferencesSync() {
 
   // 2. PUSH to Supabase on local change
   useEffect(() => {
-    if (!user) return
+    if (!user || !supabase) return
 
     let saveTimer: NodeJS.Timeout
     let isSubscribed = true
