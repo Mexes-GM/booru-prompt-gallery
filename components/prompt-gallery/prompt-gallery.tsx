@@ -1849,6 +1849,7 @@ export function PromptGallery() {
                       !autoAppendSearchTags ? "no search tags" : null,
                       !isAibooruProvider && experimentalPromptRules ? "experimental rules" : null,
                       backgroundSummary[backgroundMode] ?? null,
+                      !isAibooruProvider && outfitMode === "random" ? "random outfit" : null,
                       tagRuleCount > 0 ? plural(tagRuleCount, "tag rule") : null,
                     ].filter(Boolean).join(" · ") || "Defaults"
 
