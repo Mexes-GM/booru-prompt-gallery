@@ -30,10 +30,9 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'improved', title: 'Easier-to-read small text', body: "Hints, counters and placeholders that used to be faint grey now have enough contrast to read in both light and dark themes. The smallest labels are also a little bigger." },
-  { kind: 'improved', title: 'A loading screen that matches the page', body: "While the site loads you now see the real title and the outline of the search panel and cards, so the page moves much less when it finishes. If loading takes long, a note says so, and if it fails you get a link to reload." },
-  { kind: 'improved', title: 'Easier to use on phones and with a keyboard', body: "On phones, the Browse, Merge and Pack tabs and the tabs above the search panel are easier to tap. With a keyboard, the prompt word you are on now shows an outline." },
-  { kind: 'fixed', title: 'Less motion', body: "The glow in the Merge and AI Convert panels and the dot on Manage no longer pulse nonstop. With reduced motion turned on, loading spinners fade instead of freezing, so you can still tell something is loading." },
+  { kind: 'improved', title: 'Pause the examples', body: "The examples at the top of the page change every few seconds. A pause button next to them now stops that, which also works on phones, where there was no way to hold an example still." },
+  { kind: 'improved', title: 'Easier to read in the dark theme', body: "Green text is a little brighter in the dark theme, so selected tabs and highlighted tags are easier to read. The version on the Update Notes tab is easier to read in both themes." },
+  { kind: 'improved', title: 'Bigger tap areas on phones', body: "The buttons under each card, Load More, the tabs above the search panel and the links at the top of the page are easier to tap." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
