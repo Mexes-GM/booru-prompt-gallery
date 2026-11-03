@@ -727,7 +727,11 @@ export function usePackMode(
     [contentRating, outfitOptions.styles]
   )
   const libraryOutfitCount = useMemo(
-    () => (clothingFromLibrary && outfitLibrary.length > 0 ? outfitLibrary.filter((o) => libraryStyles.includes(o.style)).length : null),
+    () => {
+      if (!clothingFromLibrary || outfitLibrary.length === 0) return null
+      const styles = new Set(libraryStyles)
+      return outfitLibrary.filter((o) => styles.has(o.style)).length
+    },
     [clothingFromLibrary, outfitLibrary, libraryStyles]
   )
   const libraryPool = useMemo(

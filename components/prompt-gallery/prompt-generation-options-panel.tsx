@@ -381,11 +381,11 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
       {outfitMode === "random" && (
         <motion.div
           key={`${idPrefix}-outfit-random`}
-          initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
-          transition={{ duration: 0.2, ease: EASE_OUT_STRONG }}
-          className="overflow-hidden"
+          // Fades and settles in place: no height animation, so nothing below re-lays out every frame.
+          initial={shouldReduceMotion ? false : { opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+          transition={{ duration: 0.18, ease: EASE_OUT_STRONG }}
         >
           {/* The mode's own tray: picks sit on the panel surface when on. */}
           <div className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3">

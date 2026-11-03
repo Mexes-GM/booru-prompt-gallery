@@ -133,7 +133,10 @@ export function useOutfitSettings(safeOnly = false) {
     [isRandom, outfitMode, activeStyles, outfitDetail, library, descriptions]
   )
   const outfitCount = useMemo(
-    () => (library.length > 0 ? library.filter((o) => activeStyles.includes(o.style)).length : null),
+    () => {
+      const activeSet = new Set(activeStyles)
+      return library.length > 0 ? library.filter((o) => activeSet.has(o.style)).length : null
+    },
     [library, activeStyles]
   )
 

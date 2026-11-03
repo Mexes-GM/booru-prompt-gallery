@@ -99,7 +99,8 @@ const SNOW_SCENE = new Set(["snow", "snowing", "snowman", "winter", "christmas",
 /** Styles that fit the post's scene: swimwear only by the water, winter clothes in the snow. */
 function stylesForScene(tags: Set<string>, styles: readonly OutfitStyle[]): OutfitStyle[] {
   const prefer = (wanted: OutfitStyle[]) => {
-    const kept = styles.filter((s) => wanted.includes(s))
+    const want = new Set(wanted)
+    const kept = styles.filter((s) => want.has(s))
     return kept.length > 0 ? kept : [...styles]
   }
   if ([...tags].some((t) => WATER_SCENE.has(t))) return prefer(["swimwear", "summer"])
@@ -127,13 +128,13 @@ export function outfitTags(outfit: Outfit, detail: OutfitDetail, postTags: reado
   const hidden = hiddenSlots(postTags)
 
   // Lingerie sets have no top or bottom: underwear is their main garment.
-  const main = outfit.slots.outfit || outfit.slots.top || outfit.slots.bottom ? SIMPLE_SLOTS : [...SIMPLE_SLOTS, "underwear"]
-  const slots = detail === "simple" ? main : OUTFIT_SLOTS
+  const main: readonly OutfitSlot[] = outfit.slots.outfit || outfit.slots.top || outfit.slots.bottom ? SIMPLE_SLOTS : [...SIMPLE_SLOTS, "underwear"]
+  const slots = new Set<OutfitSlot>(detail === "simple" ? main : OUTFIT_SLOTS)
   // Tags inside a slot are ordered most-certain first, and the later ones
   // often restate the garment ("turtleneck", "turtleneck sweater").
   const perSlot = detail === "simple" ? SIMPLE_TAGS_PER_SLOT : Infinity
   return OUTFIT_SLOTS
-    .filter((slot) => slots.includes(slot) && !hidden.has(slot))
+    .filter((slot) => slots.has(slot) && !hidden.has(slot))
     .flatMap((slot) => (outfit.slots[slot] ?? []).slice(0, perSlot))
 }
 
@@ -182,7 +183,8 @@ export function pickOutfit(postTags: readonly string[], settings: OutfitSettings
   if (!settings || settings.mode !== "random" || settings.library.length === 0 || settings.styles.length === 0) return null
   if (!isOutfitEligible(postTags)) return null
   const styles = stylesForScene(new Set(postTags.map(norm)), settings.styles)
-  const pool = settings.library.filter((o) => styles.includes(o.style))
+  const styleSet = new Set(styles)
+  const pool = settings.library.filter((o) => styleSet.has(o.style))
   if (pool.length === 0) return null
   // Offset from the background's seed so the two picks aren't correlated.
   const outfit = pool[Math.floor(seededRandom(seed * 31 + 7)() * pool.length)]
@@ -208,7 +210,8 @@ export function outfitPackPool(
   seed: number,
   size: number,
 ): string[][] {
-  const pool = library.filter((o) => styles.includes(o.style))
+  const styleSet = new Set(styles)
+  const pool = library.filter((o) => styleSet.has(o.style))
   const rng = seededRandom(seed)
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1))

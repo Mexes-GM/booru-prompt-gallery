@@ -102,7 +102,8 @@ const FORMAT_OPTIONS = [
 // The tags around the clothing, identical in every version of the card.
 const [HEAD, TAIL] = cardTags("\u0000").split("\u0000")
 const tagsOf = (clothing: string) => clothing.split(", ")
-const ADDED_FULL = tagsOf(OUTFIT_TAGS.secondFull).filter((t) => !tagsOf(OUTFIT_TAGS.second).includes(t))
+const SECOND_TAGS = new Set(tagsOf(OUTFIT_TAGS.second))
+const ADDED_FULL = tagsOf(OUTFIT_TAGS.secondFull).filter((t) => !SECOND_TAGS.has(t))
 
 // ---------------------------------------------------------------------------
 // Timeline (frames)
@@ -234,12 +235,13 @@ function Mark({ children, color, progress }: { children: ReactNode; color: strin
  */
 function CardTags({ frame, clothing, marked, markFrom }: { frame: number; clothing: string; marked: readonly string[]; markFrom: number }) {
   let order = 0
+  const markedSet = new Set(marked)
   return (
     <>
       {HEAD}
       {tagsOf(clothing).map((tag, i) => {
         const sep = i === 0 ? "" : ", "
-        if (!marked.includes(tag)) return sep + tag
+        if (!markedSet.has(tag)) return sep + tag
         const start = markFrom + order++ * 4
         return (
           <span key={tag}>
