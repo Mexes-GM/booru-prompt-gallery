@@ -8,7 +8,7 @@ import { DebouncedInput } from "@/components/ui/debounced-input"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { usePostHog } from 'posthog-js/react'
+import { track } from '@/lib/analytics'
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import type { BackgroundMode } from "@/lib/background-detector"
@@ -155,18 +155,17 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   setBackgroundMatchStrictness: _setBackgroundMatchStrictness,
   variant = "embedded",
 }: PromptGenerationOptionsPanelProps) {
-  const posthog = usePostHog();
   const shouldReduceMotion = useReducedMotion();
 
   const trackSetting = (settingName: string, value: string | boolean) => {
-    posthog.capture('generation_settings_changed', {
+    track('generation_settings_changed', {
       setting_changed: settingName,
       new_value: value,
     });
   };
 
   const trackBackground = (settingName: string, value: string | boolean) => {
-    posthog.capture('background_option_changed', {
+    track('background_option_changed', {
       setting_changed: settingName,
       new_value: value,
     });

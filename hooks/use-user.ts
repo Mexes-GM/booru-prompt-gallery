@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { reportError } from "@/lib/error-reporting"
-import posthog from 'posthog-js'
+import { capture, withPostHog } from '@/lib/posthog-queue'
 
 // Module-level guard for the `user_authenticated` analytics event.
 //
@@ -20,11 +20,7 @@ function captureAuthOnce(userId: string) {
   if (typeof window === 'undefined') return
   if (lastAuthedUserId === userId) return
   lastAuthedUserId = userId
-  try {
-    posthog.capture('user_authenticated')
-  } catch {
-    /* non-fatal: telemetry is best-effort */
-  }
+  capture('user_authenticated')
 }
 
 export function useUser() {
@@ -56,7 +52,8 @@ export function useUser() {
       // Re-identify with PostHog on page refresh so events from returning sessions
       // are correlated to the correct person profile.
       if (session?.user) {
-        posthog.identify(session.user.id)
+        const userId = session.user.id
+        withPostHog((posthog) => posthog.identify(userId))
       }
       setUser(session?.user ?? null)
       setSession(session ?? null)
@@ -68,16 +65,19 @@ export function useUser() {
 
       if (typeof window !== 'undefined') {
         if (session?.user) {
-          posthog.identify(session.user.id)
+          const userId = session.user.id
+          withPostHog((posthog) => posthog.identify(userId))
         } else {
           // Supabase reports "no session" on every page load for anonymous
           // visitors (once per listener). Only reset when PostHog is still
           // identified as a user who signed out or whose session expired;
           // resetting anonymous visitors gave each visit a new distinct_id,
           // inflating unique users and hiding retention.
-          if (posthog.get_property('$user_state') === 'identified') {
-            posthog.reset()
-          }
+          withPostHog((posthog) => {
+            if (posthog.get_property('$user_state') === 'identified') {
+              posthog.reset()
+            }
+          })
           lastAuthedUserId = null
         }
 

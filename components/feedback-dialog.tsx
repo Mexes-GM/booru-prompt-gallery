@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { usePathname } from "next/navigation"
-import { usePostHog } from "posthog-js/react"
+import { track } from "@/lib/analytics"
 import { Turnstile, isTurnstileEnabled } from "@/components/turnstile"
 import { useFeedbackPrefill, clearPrefilledFeedback } from "@/components/feedback-prefill-context"
 
@@ -146,7 +146,6 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
     const [prefillMetadata, setPrefillMetadata] = useState<Record<string, unknown> | null>(null)
     const { toast } = useToast()
     const pathname = usePathname()
-    const posthog = usePostHog()
     const { request: prefillRequest, requestId: prefillRequestId } = useFeedbackPrefill()
 
     const turnstileRequired = isTurnstileEnabled()
@@ -209,7 +208,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                 throw new Error(data.message || data.error || "Failed to submit")
             }
 
-            posthog.capture('feedback_submitted', {
+            track('feedback_submitted', {
                 feedback_type: type
             })
 

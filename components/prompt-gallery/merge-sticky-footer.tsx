@@ -5,7 +5,7 @@ import { X, Copy, Trash2, Check, Shuffle, Type, Dices, Settings2 } from "lucide-
 import { BooruPost } from '@/lib/booru/types'
 import { SelectedPostParts, MergeModeType, RandomSettings, MergedPromptSegment } from '@/hooks/use-merge-mode'
 import { TagCategory } from '@/lib/tag-classifier'
-import { usePostHog } from 'posthog-js/react'
+import { track } from '@/lib/analytics'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
@@ -115,18 +115,17 @@ const MergeStickyFooterComponent = ({
     const lowMotion = useLowMotion()
     const [isCopied, triggerCopyFeedback] = useCopyFeedback()
     const [isCleared, setIsCleared] = useState(false)
-    const posthog = usePostHog()
     
     const handleCopy = (text: string) => {
         onCopy(text)
         triggerCopyFeedback()
         
         if (mergeModeType === 'variations') {
-            posthog.capture('variant_mode_used', {
+            track('variant_mode_used', {
                 merged_posts_count: selectedPosts.size
             })
         } else {
-            posthog.capture('merge_mode_used', {
+            track('merge_mode_used', {
                 merged_posts_count: selectedPosts.size
             })
         }
