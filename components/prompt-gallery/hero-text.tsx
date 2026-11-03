@@ -8,17 +8,13 @@ import { SOCIAL_URLS } from "@/lib/constants"
  * component stays usable without any client code.
  */
 
-export const BOORUS = ["Danbooru", "Aibooru", "Rule34", "Gelbooru", "e621", "e6AI"]
+const BOORUS = ["Danbooru", "Aibooru", "Rule34", "Gelbooru", "e621", "e6AI"]
 
-export const SOCIALS = [
+const SOCIALS = [
   { id: "social-civitai", label: "CivitAI", href: SOCIAL_URLS.CIVITAI_PROFILE },
   { id: "social-tensor", label: "Tensor.Art", href: SOCIAL_URLS.TENSOR_ART },
   { id: "social-seaart", label: "SeaArt", href: SOCIAL_URLS.SEAART },
 ]
-
-/** Hero grid: text on the left, the specimen (or its placeholder) on the right. */
-export const HERO_GRID_CLASS =
-  "grid gap-4 pt-8 sm:gap-8 sm:pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center lg:gap-14 lg:pt-10"
 
 export function HeroText({ onSocialClick }: { onSocialClick?: (href: string) => void }) {
   return (

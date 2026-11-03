@@ -1,5 +1,6 @@
 import { SCALE_CONFIG } from "@/components/scale-config"
-import { HeroText, HERO_GRID_CLASS } from "@/components/prompt-gallery/hero-text"
+import { HeroText } from "@/components/prompt-gallery/hero-text"
+import { HERO_GRID_CLASS } from "@/components/prompt-gallery/hero-layout"
 
 /**
  * Static loading shell shown while the client-only PromptGallery bundle loads
