@@ -9,6 +9,7 @@ import {
   trackRefresh,
   trackProviderChange,
   trackUrlSyncLoop,
+  track,
 } from '@/lib/analytics'
 import { useToast } from "@/hooks/use-toast"
 import { useScrollRateLimiter, MAX_SESSION_PAGE_LOADS } from "@/hooks/use-scroll-rate-limiter"
@@ -74,6 +75,17 @@ function shallowEqual(objA: any, objB: any): boolean {
     }
   }
   return true;
+}
+
+/**
+ * True when a search failed because the provider itself is unreachable: a
+ * CORS/network failure or an HTML challenge page (no status), a 5xx, or a 403
+ * from a Cloudflare challenge. Deliberate API errors (bad query, 429) are not.
+ */
+export function isProviderDownError(error: unknown): boolean {
+  if (!error) return false
+  const status = (error as { status?: unknown }).status
+  return typeof status !== 'number' || status >= 500 || status === 403
 }
 
 export function useBooruSearch() {
@@ -330,6 +342,26 @@ export function useBooruSearch() {
     setSize,
     mutate,
   } = useInfinitePosts(debouncedSearchTags, ratingFilter, order, randomSeed, booruProvider, hasPromptFilter, appliedTagCountFilter, appliedScoreTier)
+
+  // Danbooru is fetched straight from the browser, so when it goes down or sits
+  // behind a Cloudflare challenge every search fails with a CORS/network error
+  // or a 5xx/403. If that happens before any post has loaded, move the user to
+  // Gelbooru instead of leaving them on an empty page. Errors Danbooru returns
+  // on purpose (too many tags, rate limits) keep their usual handling.
+  const switchedFromDanbooruRef = useRef(false)
+  useEffect(() => {
+    if (!error || booruProvider !== 'danbooru' || switchedFromDanbooruRef.current) return
+    if (pages?.some(page => page.length > 0)) return
+    if (!isProviderDownError(error)) return
+    const status = (error as { status?: unknown }).status
+    switchedFromDanbooruRef.current = true
+    setBooruProvider('gelbooru')
+    track('provider_auto_switched', { from: 'danbooru', to: 'gelbooru', status: typeof status === 'number' ? status : null })
+    toast({
+      title: "Switched to Gelbooru",
+      description: "Danbooru isn't responding right now. You can switch back from the source menu next to the search bar.",
+    })
+  }, [error, booruProvider, pages, setBooruProvider, toast])
 
   // Debounce search tags
   useEffect(() => {

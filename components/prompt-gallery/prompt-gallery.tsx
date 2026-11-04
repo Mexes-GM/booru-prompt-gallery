@@ -128,7 +128,7 @@ import {
 import { SOCIAL_URLS } from '@/lib/constants'
 
 import { MasonryGrid } from "@/components/masonry-grid"
-import { useBooruSearch } from "@/hooks/use-booru-search"
+import { useBooruSearch, isProviderDownError } from "@/hooks/use-booru-search"
 import { useBooruFavorites } from "@/hooks/use-booru-favorites"
 import { useSavedArtists } from "@/hooks/use-saved-artists"
 import { useDetailedBackgrounds } from "@/hooks/use-detailed-backgrounds"
@@ -1279,6 +1279,11 @@ export function PromptGallery() {
   const hasMounted = useRef(false)
   useEffect(() => {
     if (hasMounted.current && search.error) {
+      // useBooruSearch moves the user to Gelbooru and shows its own toast.
+      if (search.booruProvider === 'danbooru' && search.allPosts.length === 0 && isProviderDownError(search.error)) {
+        hasMounted.current = true
+        return
+      }
       // Error handling toast
       const is403 = search.error.status === 403 || search.error.statusCode === 403
       const isAibooruError = search.booruProvider === 'aibooru' && is403
