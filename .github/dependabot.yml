@@ -27,6 +27,13 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
+    ignore:
+      # TypeScript 7 ships without the JavaScript compiler API that
+      # typescript-eslint (via eslint-config-next) and ts-node (the test runner)
+      # load, so lint and `npm test` can't start on it. Remove this once both
+      # support TypeScript 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
 
