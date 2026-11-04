@@ -35,6 +35,11 @@ jobs:
           fetch-depth: 0
 
       - uses: millionco/react-doctor@v2
+        # No sticky summary comment: it was posted on every PR even when nothing
+        # was found. Inline review comments (only on real findings) and the
+        # commit status with the health score stay on.
+        with:
+          comment: false
         # Advisory by default: React Doctor reports findings on every PR — a
         # sticky summary comment, inline review comments, and a commit status
         # with the health score — but never fails the check, so it won't red-X

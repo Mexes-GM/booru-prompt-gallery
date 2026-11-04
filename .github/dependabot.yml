@@ -1,41 +1,50 @@
 # Dependabot configuration
 # Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Kept quiet on purpose: one monthly run per ecosystem, with every update folded
+# into a few grouped PRs (minor/patch together, majors together) instead of one
+# PR per package. Security fixes are grouped the same way and still open as soon
+# as an advisory is published.
 version: 2
 updates:
   # Main Next.js app (repo root)
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
+      interval: "monthly"
+    open-pull-requests-limit: 3
     groups:
-      # Batch low-risk dev/patch bumps into a single PR to cut noise
-      dev-dependencies:
-        dependency-type: "development"
+      app-minor-and-patch:
+        applies-to: version-updates
         update-types:
           - "minor"
           - "patch"
-      production-patches:
-        dependency-type: "production"
+      app-major:
+        applies-to: version-updates
         update-types:
-          - "patch"
+          - "major"
+      app-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     labels:
       - "dependencies"
 
-  # Cloudflare Worker (image proxy) — where the current 8 alerts live
+  # Cloudflare Worker (image proxy)
   - package-ecosystem: "npm"
     directory: "/workers/booru-image-proxy"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
+      interval: "monthly"
+    open-pull-requests-limit: 2
     groups:
-      worker-dev-dependencies:
-        dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"
+      worker-all:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      worker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     labels:
       - "dependencies"
       - "worker"
@@ -44,8 +53,12 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    groups:
+      actions-all:
+        patterns:
+          - "*"
     labels:
       - "dependencies"
       - "github-actions"
