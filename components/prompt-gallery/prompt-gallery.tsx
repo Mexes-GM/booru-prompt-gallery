@@ -1280,7 +1280,7 @@ export function PromptGallery() {
   useEffect(() => {
     if (hasMounted.current && search.error) {
       // useBooruSearch moves the user to Gelbooru and shows its own toast.
-      if (search.booruProvider === 'danbooru' && search.allPosts.length === 0 && isProviderDownError(search.error)) {
+      if (search.booruProvider === 'danbooru' && isProviderDownError(search.error)) {
         hasMounted.current = true
         return
       }
