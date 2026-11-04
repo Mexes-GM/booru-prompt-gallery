@@ -63,6 +63,18 @@ assert(!isOutfitEligible(["female", "male", "duo"]), "e621 duo is not eligible")
 assert(!isOutfitEligible(["1girl", "nude"]), "nudity is left alone")
 assert(!isOutfitEligible(["1girl", "sex"]), "a depicted act is left alone")
 assert(!isOutfitEligible(["long hair", "smile"]), "no subject count is not eligible")
+assert(isOutfitEligible(["1girls", "solo", "female"]), "Rule34's 1girls is eligible")
+assert(isOutfitEligible(["1girl", "1girls", "solo"]), "Rule34 tagging both 1girl and 1girls is eligible")
+assert(isOutfitEligible(["1female", "solo"]), "Rule34's 1female is eligible")
+assert(!isOutfitEligible(["1girls", "1boy"]), "a Rule34 couple is not eligible")
+assert(!isOutfitEligible(["1boy1girl"]), "a Rule34 pair count is not eligible")
+assert(!isOutfitEligible(["1futa", "solo"]), "1futa is not eligible")
+assert(!isOutfitEligible(["1girls", "female", "male"]), "a girl with a male subject is not eligible")
+assert(!isOutfitEligible(["1girls", "solo", "wet pussy"]), "a bare body part in another wording is left alone")
+assert(!isOutfitEligible(["1girl", "erect nipples"]), "erect nipples is left alone")
+assert(!isOutfitEligible(["1girls", "breasts out"]), "breasts out is left alone")
+assert(isOutfitEligible(["1girl", "covered nipples"]), "covered nipples is still dressed")
+assert(isOutfitEligible(["1girl", "ofuda on nipples"]), "something worn on the nipples is still dressed")
 
 // ─── 2. Swapping ────────────────────────────────────────────────────────────
 const post = ["1girl", "solo", "long hair", "hair ribbon", "school uniform", "pleated skirt", "white shirt", "skirt lift", "smile", "classroom"]

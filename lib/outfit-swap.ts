@@ -75,20 +75,31 @@ const norm = (tag: string) => tag.toLowerCase().replace(/_/g, " ").replace(/\\(?
 
 // ─── Who is in the picture ──────────────────────────────────────────────────
 
-const COUNT_TAG = /^(\d+\+?)(girl|boy|other)s?$|^multiple (girls|boys|others)$/
+// "1girl", "2boys", and Rule34's "1girls", "1female", "1futa", "1boy1girl", "3girls1boy".
+const COUNT_TAG = /^(\d+\+?)(girl|boy|other|female|male|futa)s?$|^multiple (girls|boys|others)$|^\d+(boy|girl)s?\d+(boy|girl)s?$/
+// One girl as each booru writes it: Danbooru's "1girl", Rule34's "1girls" and "1female".
+const ONE_GIRL = new Set(["1girl", "1girls", "1female"])
 const E621_COUNT = new Set(["duo", "trio", "group", "male", "intersex", "ambiguous gender", "andromorph", "gynomorph", "herm"])
 
+// Bare body parts as the boorus vary them ("wet pussy", "puffy nipples", "breasts out"),
+// which the exact nudity tags miss. Covered ones ("covered nipples", "ofuda on nipples") are worn.
+const EXPOSED_RE = /(?:^|\s)(?:pussy|vagina|vulva|nipples?|areolae?|areolas|penis|anus)$|^(?:breasts? out(?:side)?|exposed breasts?|bare breasts?)$/
+const COVERED_RE = /^(?:covered|covering|partially visible)\b|\s(?:on|through|under)\s/
+const isExposed = (tag: string) => EXPOSED_RE.test(tag) && !COVERED_RE.test(tag)
+
 /**
- * One clothed female subject: "1girl" with no other subject count, or e621's
- * "solo" + "female" without another gender. Nudity and depicted acts are left
- * alone, since dressing them changes what the post is.
+ * One clothed female subject: a one-girl count with no other subject count
+ * (Rule34 may tag both "1girl" and "1girls"), or e621's "solo" + "female",
+ * and in either case no other gender. Nudity and depicted acts are left alone,
+ * since dressing them changes what the post is.
  */
 export function isOutfitEligible(tags: readonly string[]): boolean {
   const set = new Set(tags.map(norm))
-  if ([...set].some((t) => SEXUAL_ACT_TAGS.has(t) || NUDITY_TAGS.has(t))) return false
+  if ([...set].some((t) => SEXUAL_ACT_TAGS.has(t) || NUDITY_TAGS.has(t) || isExposed(t))) return false
+  if ([...set].some((t) => E621_COUNT.has(t))) return false
   const counts = [...set].filter((t) => COUNT_TAG.test(t))
-  if (counts.length > 0) return counts.length === 1 && counts[0] === "1girl"
-  return set.has("solo") && set.has("female") && ![...set].some((t) => E621_COUNT.has(t))
+  if (counts.length > 0) return counts.every((t) => ONE_GIRL.has(t))
+  return set.has("solo") && set.has("female")
 }
 
 // ─── Picking ────────────────────────────────────────────────────────────────
