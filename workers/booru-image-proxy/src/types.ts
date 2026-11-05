@@ -16,6 +16,10 @@ export interface Env {
   DANBOORU_API_KEY?: string
   GELBOORU_API_KEY?: string
   GELBOORU_USER_ID?: string
+  /** Optional relay (the app's /api/gelbooru-relay route) that Gelbooru API
+   * calls go through when Gelbooru rate-limits this worker's network. */
+  GELBOORU_RELAY_URL?: string
+  GELBOORU_RELAY_SECRET?: string
   RULE34_API_KEY?: string
   RULE34_USER_ID?: string
   DISCORD_FEEDBACK_WEBHOOK_URL?: string
