@@ -5,6 +5,30 @@ import type { ProviderEnv } from '../factory'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '../../../logger'
 import { decodeTagEntities } from '../tag-lookup'
+import { UpstreamError } from '../../upstream'
+
+// ── Direct / relay switch ───────────────────────────────────────────────
+// Gelbooru sometimes throttles or blocks the Worker's network (every request
+// answered with 429/403) while the same call from elsewhere works. When the
+// relay (the app's /api/gelbooru-relay route) is configured, a blocked direct
+// call is retried through it and the isolate stays on the relay for
+// DIRECT_RETRY_MS; after that the next search tries direct again, so traffic
+// moves back on its own once Gelbooru lets the Worker through.
+// State is per isolate on purpose: a stale isolate costs one failed direct
+// call every DIRECT_RETRY_MS, and no Redis command is spent on it.
+export const DIRECT_RETRY_MS = 10 * 60_000
+let directBlockedUntil = 0
+
+/** True when a failed direct call means "use the relay", not a bad query. */
+export function isDirectBlock(error: unknown): boolean {
+  if (!(error instanceof UpstreamError)) return true
+  return error.status === 403 || error.status === 429 || error.status >= 500
+}
+
+/** Test hook: forget a previous block. */
+export function resetGelbooruRoute(): void {
+  directBlockedUntil = 0
+}
 
 interface GelbooruPostResponse {
   id: string | number
@@ -71,17 +95,7 @@ export class GelbooruProvider extends BaseBooruProvider {
 
     let rawResponse: GelbooruResponse
     try {
-      const urlParams = new URLSearchParams(params)
-      // Gelbooru answers this worker's network with 429, so when a relay is
-      // configured the call goes through the app's /api/gelbooru-relay route.
-      const useRelay = Boolean(this.relayUrl && this.relaySecret)
-      rawResponse = await this.fetchJson<GelbooruResponse>(
-        useRelay ? this.relayUrl : `${this.baseUrl}/index.php`,
-        urlParams,
-        useRelay
-          ? { 'x-relay-secret': this.relaySecret }
-          : { Referer: PROVIDER_REFERERS.GELBOORU }
-      )
+      rawResponse = await this.fetchPosts(new URLSearchParams(params))
     } catch (e) {
       // Rethrow: returning [] here used to be cached for 10 min by the posts
       // route and read by the client as "no more results", which stopped
@@ -117,6 +131,37 @@ export class GelbooruProvider extends BaseBooruProvider {
     }))
 
     return options.enrich === false ? finalPosts : this.enrich(finalPosts)
+  }
+
+  private async fetchPosts(params: URLSearchParams): Promise<GelbooruResponse> {
+    const hasRelay = Boolean(this.relayUrl && this.relaySecret)
+    const viaRelay = () =>
+      this.fetchJson<GelbooruResponse>(this.relayUrl, params, { 'x-relay-secret': this.relaySecret })
+
+    if (hasRelay && Date.now() < directBlockedUntil) return viaRelay()
+
+    try {
+      const data = await this.fetchJson<GelbooruResponse>(
+        `${this.baseUrl}/index.php`,
+        params,
+        { Referer: PROVIDER_REFERERS.GELBOORU },
+        // With a relay to fall back on, don't spend a retry on a blocked call.
+        hasRelay ? 0 : undefined
+      )
+      if (directBlockedUntil !== 0) {
+        directBlockedUntil = 0
+        logger.info('gelbooru_direct_recovered', {})
+      }
+      return data
+    } catch (error) {
+      if (!hasRelay || !isDirectBlock(error)) throw error
+      directBlockedUntil = Date.now() + DIRECT_RETRY_MS
+      logger.warn('gelbooru_direct_blocked', {
+        status: error instanceof UpstreamError ? error.status : undefined,
+        retryInMs: DIRECT_RETRY_MS,
+      })
+      return viaRelay()
+    }
   }
 
   override async enrich(posts: BooruPost[]): Promise<BooruPost[]> {
