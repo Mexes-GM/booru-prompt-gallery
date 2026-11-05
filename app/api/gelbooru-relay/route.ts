@@ -56,13 +56,23 @@ export async function GET(request: Request) {
       cache: 'no-store',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
-    const headers: Record<string, string> = {
-      'Content-Type': response.headers.get('content-type') ?? 'application/json',
-      'Cache-Control': 'no-store',
+    if (!response.ok) {
+      // Keep the status (the worker maps 429/5xx itself) but not the body,
+      // which can be an HTML challenge page.
+      const retryAfter = response.headers.get('retry-after')
+      return json(
+        { error: `Gelbooru responded ${response.status}` },
+        response.status,
+        retryAfter ? { 'Retry-After': retryAfter } : {}
+      )
     }
-    const retryAfter = response.headers.get('retry-after')
-    if (retryAfter) headers['Retry-After'] = retryAfter
-    return new Response(await response.text(), { status: response.status, headers })
+    return new Response(await response.text(), {
+      status: 200,
+      headers: {
+        'Content-Type': response.headers.get('content-type') ?? 'application/json',
+        'Cache-Control': 'no-store',
+      },
+    })
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'TimeoutError'
     return json({ error: timedOut ? 'Gelbooru timed out' : 'Gelbooru unreachable' }, timedOut ? 504 : 502)
