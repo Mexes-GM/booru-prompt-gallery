@@ -208,13 +208,15 @@ export abstract class BaseBooruProvider {
   protected async fetchJson<T>(
     url: string,
     params: URLSearchParams,
-    headers: Record<string, string> = {}
+    headers: Record<string, string> = {},
+    retries?: number
   ): Promise<T> {
     const finalUrl = new URL(url)
     finalUrl.search = params.toString()
 
     const response = await fetchUpstream(finalUrl.toString(), {
       headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, ...headers },
+      retries,
     })
 
     const text = await response.text()
