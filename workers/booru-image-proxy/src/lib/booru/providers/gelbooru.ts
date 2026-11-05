@@ -30,12 +30,16 @@ export class GelbooruProvider extends BaseBooruProvider {
 
   private apiKey: string
   private userId: string
+  private relayUrl: string
+  private relaySecret: string
   private supabase: SupabaseClient | null
 
   constructor(env?: ProviderEnv, supabase?: SupabaseClient | null) {
     super()
     this.apiKey = env?.GELBOORU_API_KEY || ''
     this.userId = env?.GELBOORU_USER_ID || ''
+    this.relayUrl = env?.GELBOORU_RELAY_URL || ''
+    this.relaySecret = env?.GELBOORU_RELAY_SECRET || ''
     this.supabase = supabase || null
   }
 
@@ -68,10 +72,15 @@ export class GelbooruProvider extends BaseBooruProvider {
     let rawResponse: GelbooruResponse
     try {
       const urlParams = new URLSearchParams(params)
+      // Gelbooru answers this worker's network with 429, so when a relay is
+      // configured the call goes through the app's /api/gelbooru-relay route.
+      const useRelay = Boolean(this.relayUrl && this.relaySecret)
       rawResponse = await this.fetchJson<GelbooruResponse>(
-        `${this.baseUrl}/index.php`,
+        useRelay ? this.relayUrl : `${this.baseUrl}/index.php`,
         urlParams,
-        { Referer: PROVIDER_REFERERS.GELBOORU }
+        useRelay
+          ? { 'x-relay-secret': this.relaySecret }
+          : { Referer: PROVIDER_REFERERS.GELBOORU }
       )
     } catch (e) {
       // Rethrow: returning [] here used to be cached for 10 min by the posts

@@ -20,6 +20,8 @@ type ProviderCredentials = {
   DANBOORU_API_KEY: string
   GELBOORU_API_KEY: string
   GELBOORU_USER_ID: string
+  GELBOORU_RELAY_URL: string
+  GELBOORU_RELAY_SECRET: string
   RULE34_API_KEY: string
   RULE34_USER_ID: string
 }
@@ -31,6 +33,8 @@ export function providerEnv(env: Partial<Record<keyof ProviderCredentials, strin
     DANBOORU_API_KEY: env.DANBOORU_API_KEY,
     GELBOORU_API_KEY: env.GELBOORU_API_KEY,
     GELBOORU_USER_ID: env.GELBOORU_USER_ID,
+    GELBOORU_RELAY_URL: env.GELBOORU_RELAY_URL,
+    GELBOORU_RELAY_SECRET: env.GELBOORU_RELAY_SECRET,
     RULE34_API_KEY: env.RULE34_API_KEY,
     RULE34_USER_ID: env.RULE34_USER_ID,
   }

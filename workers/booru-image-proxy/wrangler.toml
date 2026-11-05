@@ -10,6 +10,8 @@ APP_VERSION = "10.0.0"
 # UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
 # DANBOORU_USERNAME, DANBOORU_API_KEY,
 # DISCORD_FEEDBACK_WEBHOOK_URL,
+# GELBOORU_RELAY_URL, GELBOORU_RELAY_SECRET (optional: send Gelbooru API calls
+#   through the app's /api/gelbooru-relay route; the secret must match the app's),
 # TURNSTILE_SECRET_KEY, TURNSTILE_AI_GATE,
 # SUPABASE_JWT_SECRET (F4: HS256 secret to verify Supabase access tokens
 #   locally — Dashboard → Settings → API → JWT Secret),
