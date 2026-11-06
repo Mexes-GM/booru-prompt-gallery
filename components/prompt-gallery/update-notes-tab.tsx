@@ -31,6 +31,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
   { kind: 'fixed', title: 'Gelbooru thumbnails in Merge and Pack', body: "Gelbooru posts added from History or Favorites showed a broken image in the Merge panel and as the Pack Mode base. They load now, the same as in the gallery." },
+  { kind: 'fixed', title: 'Gelbooru searches', body: "Gelbooru searches sometimes failed when Gelbooru blocked the site's server. They load now." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
