@@ -153,11 +153,17 @@ class UpstashRedis implements Redis {
   }
 
   async set(key: string, value: string, opts?: { ex?: number; nx?: boolean }): Promise<boolean> {
-    let url = `/set/${key}/${encodeURIComponent(value)}`
-    if (opts?.ex) url += `/EX/${opts.ex}`
-    if (opts?.nx) url += `/NX`
+    // The value goes in the request body: a cached page of posts is too long
+    // for a URL, and Upstash answers those with 431.
+    const command = ['SET', key, value]
+    if (opts?.ex) command.push('EX', String(opts.ex))
+    if (opts?.nx) command.push('NX')
 
-    const resp = await redisRequest(this.env, url)
+    const resp = await redisRequest(this.env, '', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(command),
+    })
     if (!resp.ok) return false
     const data = await resp.json() as any
     return data.result === 'OK'

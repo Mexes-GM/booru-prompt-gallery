@@ -89,8 +89,10 @@ async function main() {
   {
     resetRedisHealth()
     const store = new Map<string, string>()
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const parts = new URL(String(input)).pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const parts = init?.body
+        ? (JSON.parse(String(init.body)) as string[]).map((part, i) => (i === 0 ? part.toLowerCase() : part))
+        : new URL(String(input)).pathname.split('/').filter(Boolean).map(decodeURIComponent)
       const [cmd, key, value] = parts
       if (cmd === 'get') return new Response(JSON.stringify({ result: store.get(key) ?? null }), { status: 200 })
       if (cmd === 'set') {
@@ -109,6 +111,24 @@ async function main() {
     const second = await coalesce(getRedis(env), 'posts:ok', async () => { fetches++; return 'again' }, 600)
     assert(first === 'fresh' && second === 'fresh' && fetches === 1, 'healthy Redis serves the second call from cache')
     assert(!isRedisDown(), 'healthy calls never mark Redis down')
+  }
+
+  // ── set: the value goes in the body, so a long one fits ──
+  {
+    resetRedisHealth()
+    const calls: { url: string; body: unknown }[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: JSON.parse(String(init?.body)) })
+      return new Response(JSON.stringify({ result: 'OK' }), { status: 200 })
+    }) as typeof fetch
+    const value = 'x'.repeat(200_000)
+    const stored = await getRedis(env)!.set('k', value, { ex: 60, nx: true })
+    assert(stored, 'set reports success')
+    assert(calls[0]?.url === env.UPSTASH_REDIS_REST_URL, `the value stays out of the URL (got ${calls[0]?.url.length} chars)`)
+    assert(
+      JSON.stringify(calls[0]?.body) === JSON.stringify(['SET', 'k', value, 'EX', '60', 'NX']),
+      'set sends value and options as one command'
+    )
   }
 
   // ── eval: the command goes out as a JSON array POSTed to the REST root ──
