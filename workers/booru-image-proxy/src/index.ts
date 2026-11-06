@@ -70,15 +70,14 @@ export default {
     const response = await router.fetch(request, env, ctx)
     const durationMs = Date.now() - startMs
 
-    // Structured request log (RED: Rate/Errors/Duration)
+    // Workers Logs already keeps one record per invocation with path, status
+    // and timing, so only failed requests get a structured line of their own.
     const statusClass = Math.floor(response.status / 100) + 'xx'
     const logFields = { path: url.pathname, method: request.method, status: response.status, statusClass, durationMs }
     if (response.status >= 500) {
       log.error('request', logFields)
     } else if (response.status >= 400) {
       log.warn('request', logFields)
-    } else {
-      log.info('request', logFields)
     }
 
     const headers = new Headers(response.headers)

@@ -187,8 +187,9 @@ class UpstashRedis implements Redis {
   }
 
   async eval(script: string, keys: string[], args: string[]): Promise<unknown> {
-    const body = JSON.stringify({ script, keys, arguments: args })
-    const resp = await redisRequest(this.env, '/eval', {
+    // Upstash's REST API takes a command as a JSON array POSTed to the root.
+    const body = JSON.stringify(['EVAL', script, String(keys.length), ...keys, ...args])
+    const resp = await redisRequest(this.env, '', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,

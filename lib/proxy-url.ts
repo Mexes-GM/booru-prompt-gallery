@@ -12,11 +12,17 @@ import type { HTMLAttributeReferrerPolicy } from "react"
 //                                     requests AND cross-Cloudflare Worker fetches.
 //                                     Netlify's AWS IP reaches it fine.
 //
-// Via CF Worker (anti-hotlink Referer injection):
-//   Gelbooru (img1-5.gelbooru.com) — requires Referer: https://gelbooru.com/
-//                                     Worker injects it. Gelbooru CDN is NOT
-//                                     behind Cloudflare so no cross-blocking.
-//   Rule34                          — untested, keep proxied via Worker
+// Via CloudFront when NEXT_PUBLIC_GELBOORU_CDN_URL is set, else CF Worker
+// (anti-hotlink Referer injection):
+//   Gelbooru (img4.gelbooru.com)   — requires Referer: https://gelbooru.com/
+//                                     Anything else gets a 302 to hotlink.php.
+//                                     Every Worker image hit spends the daily
+//                                     Workers request quota, cache hits included,
+//                                     so CloudFront is the primary path and the
+//                                     Worker is the fallback.
+//
+// Via CF Worker:
+//   Rule34                         — only the pocket view proxies it
 
 const CLOUDFLARE_WORKER_URL = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || ''
 
@@ -29,6 +35,11 @@ const PROXY_AVAILABLE = Boolean(CLOUDFLARE_WORKER_URL)
 // useful "direct" path. Falls back to the same-origin /api/download route when
 // unset. See docs/image-proxy-migration-plan.md.
 const CDN_PROXY_URL = (process.env.NEXT_PUBLIC_CDN_PROXY_URL || '').replace(/\/$/, '')
+
+// CloudFront distribution fronting img4.gelbooru.com with the Referer injected as
+// an origin custom header. Separate from CDN_PROXY_URL so it can be switched off
+// on its own; the Worker serves Gelbooru while it is unset.
+const GELBOORU_CDN_URL = (process.env.NEXT_PUBLIC_GELBOORU_CDN_URL || '').replace(/\/$/, '')
 
 // Domains that can be loaded directly (no Referer requirement, permissive CORS)
 const DIRECT_DOMAINS = [
@@ -135,6 +146,38 @@ export function getDanbooruCdnUrl(imageUrl: string): string | null {
   return null
 }
 
+/**
+ * Rewrite an img4.gelbooru.com URL to the CloudFront host, preserving the
+ * path/query. Returns null when the distribution is not configured or the URL
+ * is on another host. img4 is the only host the Gelbooru API returns today, for
+ * old posts and videos too; anything else stays on the Worker.
+ */
+export function getGelbooruCdnUrl(imageUrl: string): string | null {
+  if (!GELBOORU_CDN_URL || !imageUrl) return null
+  try {
+    const u = new URL(imageUrl)
+    if (u.hostname === 'img4.gelbooru.com') {
+      return `${GELBOORU_CDN_URL}${u.pathname}${u.search}`
+    }
+  } catch {
+    // not an absolute URL — ignore
+  }
+  return null
+}
+
+function workerUrl(imageUrl: string): string {
+  return `${CLOUDFLARE_WORKER_URL}?url=${encodeURIComponent(imageUrl)}`
+}
+
+/**
+ * Where to retry a Gelbooru image that failed on CloudFront: the Worker, which
+ * also falls back from /samples/ to /images/. Undefined when CloudFront was not
+ * used (the first attempt already was the Worker) or no Worker is configured.
+ */
+export function getGelbooruFallbackUrl(imageUrl: string): string | undefined {
+  return PROXY_AVAILABLE && getGelbooruCdnUrl(imageUrl) ? workerUrl(imageUrl) : undefined
+}
+
 function proxyUrl(imageUrl: string): string {
   // Danbooru/donmai: CloudFront (if configured) else same-origin /api/download.
   // Independent of the CF Worker — that is only for Gelbooru/Rule34.
@@ -143,8 +186,10 @@ function proxyUrl(imageUrl: string): string {
   }
   // Direct — no Referer/WAF concerns, so safe to optimize via weserv.
   if (isDomain(imageUrl, DIRECT_DOMAINS)) return optimizeImageUrl(imageUrl)
+  const gelbooruCdnUrl = getGelbooruCdnUrl(imageUrl)
+  if (gelbooruCdnUrl) return gelbooruCdnUrl
   // CF Worker — for Gelbooru/Rule34 (Referer injection, non-Cloudflare CDNs)
-  if (PROXY_AVAILABLE) return `${CLOUDFLARE_WORKER_URL}?url=${encodeURIComponent(imageUrl)}`
+  if (PROXY_AVAILABLE) return workerUrl(imageUrl)
   // No worker configured — return direct/optimized as a last resort.
   return optimizeImageUrl(imageUrl)
 }

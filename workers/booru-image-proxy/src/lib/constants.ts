@@ -114,18 +114,6 @@ export const MERGED_RATELIMIT_SCRIPT = `
   return {user, global}
 `
 
-// Same as MERGED_RATELIMIT_SCRIPT but with independent TTLs per key — used
-// when the global and per-IP windows differ (e.g. image-proxy: global=60s,
-// per-IP=10s). ARGV[1] = TTL for KEYS[1] (global), ARGV[2] = TTL for KEYS[2] (per-IP).
-// See docs/redis-optimization-plan.md — Fase 2.
-export const MERGED_RATELIMIT_SCRIPT_2TTL = `
-  local global = redis.call('INCR', KEYS[1])
-  if global == 1 or redis.call('TTL', KEYS[1]) == -1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
-  local user = redis.call('INCR', KEYS[2])
-  if user == 1 or redis.call('TTL', KEYS[2]) == -1 then redis.call('EXPIRE', KEYS[2], ARGV[2]) end
-  return {global, user}
-`
-
 // Cost-weighted variant: INCRBY instead of INCR, for surfaces where one
 // request fans out to several upstream calls (favorites hydration). Charging
 // the real upstream cost is what makes the per-IP/global caps actually bound

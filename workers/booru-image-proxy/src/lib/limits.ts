@@ -32,7 +32,7 @@
 //
 //   Surface          | global max | window | commands/req | worst-case cmd/day
 //   -----------------|-----------:|-------:|--------------:|-------------------:
-//   image             |        150 |    60s | 1 (merged EVAL)| 150 * (86400/60)  = 216,000 ceiling*
+//   image             |        600 |    60s | 0 (in memory)  | 0, counted per isolate
 //   postsDanbooru     |        120 |    60s | 1 (merged EVAL)| 120 * (86400/60)  = 172,800 ceiling*
 //   downloadDanbooru  |         40 |    60s | 1 (merged EVAL)|  40 * (86400/60)  =  57,600 ceiling*
 //
@@ -84,7 +84,8 @@ export interface SurfaceLimits {
 /** All worker rate-limit thresholds, grouped by surface + origin sensitivity. */
 export const WORKER_LIMITS = {
   /**
-   * Image proxy (Gelbooru/Rule34 bytes) — cache-miss only.
+   * Image proxy (Gelbooru/Rule34 bytes) — cache-miss only. Counted in memory
+   * per isolate, so both caps are approximate and spend no Redis commands.
    *
    * RETUNED (2026-09-28): the previous 10 per 10s per IP was below a single
    * masonry page (~60 cards, 8 eager + every lazy card in view), so the first
