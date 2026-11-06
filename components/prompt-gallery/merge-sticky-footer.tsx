@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import Image from 'next/image'
-import { getDanbooruProxyUrl } from "@/lib/proxy-url"
+import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Label } from "@/components/ui/label"
@@ -380,14 +380,7 @@ const MergeStickyFooterComponent = ({
                                                 className="relative group w-16 h-24 flex-shrink-0 rounded-md overflow-hidden bg-muted border ring-offset-background transition-all hover:ring-2 hover:ring-primary/50"
                                             >
                                                 <Image
-                                                    src={(() => {
-                                                        const rawUrl = post.preview_file_url || post.file_url
-                                                        const provider = post._provider || 'danbooru'
-                                                        if (provider === 'danbooru' && rawUrl) {
-                                                            return getDanbooruProxyUrl(rawUrl)
-                                                        }
-                                                        return rawUrl
-                                                    })()}
+                                                    src={getPostThumbnailUrl(post.preview_file_url || post.file_url)}
                                                     alt={`Selected post ${post.id}`}
                                                     fill
                                                     className="object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-300"
