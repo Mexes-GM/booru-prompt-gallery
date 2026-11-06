@@ -29,7 +29,7 @@ import type { PromptFormat } from '@/lib/prompt/prompt-format'
 import { toast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 import Image from 'next/image'
-import { getDanbooruProxyUrl } from "@/lib/proxy-url"
+import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { withResolutionPrefix } from '@/lib/pack/prompt-resolution'
 import { userPreferences } from '@/lib/storage'
 import { MAX_MIN_TOTAL_TAGS, type PackCategoryState, type PackSlotState } from '@/hooks/use-pack-mode'
@@ -680,12 +680,7 @@ const PackBuilderStickyFooterComponent = ({
     const [alwaysAddOpen, setAlwaysAddOpen] = useState(false)
     const showAlwaysAdd = alwaysAddOpen || customBaseText.trim() !== ''
 
-    const baseThumb = baseCard ? (() => {
-        const rawUrl = baseCard.preview_file_url || baseCard.file_url
-        const provider = baseCard._provider || 'danbooru'
-        if (provider === 'danbooru' && rawUrl) return getDanbooruProxyUrl(rawUrl)
-        return rawUrl
-    })() : null
+    const baseThumb = baseCard ? getPostThumbnailUrl(baseCard.preview_file_url || baseCard.file_url) : null
 
     // Result highlighting: base tags muted, varied tags bold.
     const lockedSet = useMemo(() => new Set(lockedTags.map(bareTag)), [lockedTags])

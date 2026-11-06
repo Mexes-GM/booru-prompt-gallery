@@ -30,12 +30,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'new', title: 'Random outfit', body: "Customize prompt has a new Outfit option. Set it to Random outfit and every card with one girl gets different clothes, picked from more than 1,300 outfits. You choose the styles (seasons, party, swimwear and more) and whether to add only the main pieces or the whole outfit with legwear, bag and jewelry. Beach and snow scenes get clothes that fit them, and with NSFW off the styles meant for adult content are switched off. In the Anima, FLUX.2 and MOSS-Image formats, the outfit is written out in full sentences, with its cut, fabric and trims." },
-  { kind: 'new', title: 'Outfits in Pack Mode', body: "The Clothing category of a pack can now take whole outfits from the same library instead of the collected posts, with the styles and detail you chose for Outfit. Re-sample draws other outfits. Safe packs leave out the styles meant for adult content." },
-  { kind: 'new', title: 'Pack Mode in every prompt format', body: "Pack Mode now follows the prompt format you chose under Customize prompt. With Anima, FLUX.2 · Krea 2 or MOSS-Image, each generated prompt is shown, copied and exported in that format, with the character named the way the gallery cards name them. Outfits from the outfit library are written out in full sentences. The cards you pick a base from also show the chosen format. With Tags, nothing changes." },
-  { kind: 'fixed', title: 'When Danbooru is down', body: "If Danbooru isn't responding, the gallery now switches to Gelbooru on its own instead of showing an empty page. You can switch back from the source menu next to the search bar." },
-  { kind: 'fixed', title: 'Random outfit descriptions', body: "Some outfits ended their description with a broken sentence such as \"Or hats included in the outfit.\", which could lead the image model to add clothes the outfit doesn't have. Those sentences are gone." },
-  { kind: 'fixed', title: 'Random outfit on Rule34', body: "Random outfit skipped most Rule34 posts with one girl, because Rule34 tags them differently. They now get new clothes too. Posts with nudity are still left as they are, however the booru tags it." },
+  { kind: 'fixed', title: 'Gelbooru thumbnails in Merge and Pack', body: "Gelbooru posts added from History or Favorites showed a broken image in the Merge panel and as the Pack Mode base. They load now, the same as in the gallery." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)

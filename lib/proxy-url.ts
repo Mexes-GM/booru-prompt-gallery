@@ -167,3 +167,15 @@ export function getDanbooruProxyUrl(imageUrl: string): string {
 export function getGelbooruProxyUrl(imageUrl: string): string {
   return proxyUrl(imageUrl)
 }
+
+/**
+ * Thumbnail URL for a post shown outside its gallery card (Merge and Pack
+ * footers). Routes on the image host, not on `_provider`: posts fresh from a
+ * Gelbooru search have no `_provider`, while saved ones (History, Favorites) do,
+ * and both need the proxy. Other hosts load directly, as the gallery cards do.
+ */
+export function getPostThumbnailUrl(imageUrl: string): string {
+  if (isDomain(imageUrl, ['gelbooru.com'])) return getGelbooruProxyUrl(imageUrl)
+  if (isDomain(imageUrl, NETLIFY_PROXY_DOMAINS)) return getDanbooruProxyUrl(imageUrl)
+  return imageUrl
+}
