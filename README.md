@@ -140,6 +140,7 @@ Only the worker URL is required. Everything else switches itself off when missin
 | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Rate limiting | In-memory fallback. |
 | `DANBOORU_USERNAME` + `DANBOORU_API_KEY` | Higher Danbooru rate limits | Public API limits. |
 | `NEXT_PUBLIC_CDN_PROXY_URL` | CDN for Danbooru images | Images go through the app's own download route. |
+| `NEXT_PUBLIC_GELBOORU_CDN_URL` | CDN for Gelbooru images | Images go through the worker. |
 | `NEXT_PUBLIC_POSTHOG_KEY` | Analytics | Disabled. |
 | `DISCORD_FEEDBACK_WEBHOOK_URL` | Feedback form | Feedback form disabled. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` | CAPTCHA on the feedback form | The form works without a challenge. |
