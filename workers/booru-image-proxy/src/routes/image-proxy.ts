@@ -1,9 +1,7 @@
 // Image proxy — adapted from original workers/image-proxy/index.js
 // Handles Danbooru/Gelbooru image proxying with CF edge caching
-import { getRedis } from '../lib/redis'
-import { isBlocked, markBlocked, clearBlocked } from '../lib/rate-limit-cache'
+import { memoryRateLimit } from '../lib/rate-limit-cache'
 import {
-  MERGED_RATELIMIT_SCRIPT_2TTL,
   USER_AGENT,
   getDanbooruUserAgent,
   isAllowedImageHost,
@@ -96,91 +94,40 @@ export async function imageProxyHandler(
   const cached = await cache.match(cacheKey)
   if (cached) return cached
 
-  // Rate limit (cache misses only)
+  // Rate limit (cache misses only). Counted in memory, per isolate: this is the
+  // Worker's busiest path and it spends no shared provider budget, so one Upstash
+  // command per miss would outrun the monthly allowance for little extra safety.
   const clientId = getClientId(request)
-  const redis = getRedis(env as any)
-  let remaining: number = RATE_LIMIT_MAX
-  let reset = Date.now() + PER_IP_RATE_WINDOW * 1000
 
-  if (redis) {
-    const globalKey = 'ratelimit:imageproxy:global'
-    const key = `ratelimit:imageproxy:${clientId}`
+  if (!memoryRateLimit(`imageproxy:${clientId}`, RATE_LIMIT_MAX, PER_IP_RATE_WINDOW * 1000)) {
+    logRateLimitBlock(request, { surface: 'image', keyType: 'anon', scope: 'per-ip', origin: parsedUrl.hostname })
+    return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: PER_IP_RATE_WINDOW }), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': allowedOrigin,
+        'Retry-After': String(PER_IP_RATE_WINDOW),
+        'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
+        'X-RateLimit-Remaining': '0',
+      },
+    })
+  }
 
-    // Fase 1: already-known-blocked → reject without touching Redis at all.
-    if (isBlocked(globalKey)) {
-      return new Response(JSON.stringify({
-        error: 'Image proxy is temporarily under heavy load. Please try again in a moment.',
-        retryAfter: GLOBAL_RATE_WINDOW,
-      }), {
-        status: 429,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Retry-After': String(GLOBAL_RATE_WINDOW),
-          'X-RateLimit-Limit': String(GLOBAL_RATE_LIMIT_MAX),
-          'X-RateLimit-Remaining': '0',
-        },
-      })
-    }
-    if (isBlocked(key)) {
-      return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: PER_IP_RATE_WINDOW }), {
-        status: 429,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Retry-After': String(PER_IP_RATE_WINDOW),
-          'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
-          'X-RateLimit-Remaining': '0',
-        },
-      })
-    }
-
-    // Fase 2: 1 eval instead of 2 incrWithExpire round-trips — independent
-    // TTLs per key (WORKER_LIMITS.image.global / .perIp).
-    const result = await redis.eval(
-      MERGED_RATELIMIT_SCRIPT_2TTL,
-      [globalKey, key],
-      [String(GLOBAL_RATE_WINDOW), String(PER_IP_RATE_WINDOW)]
-    ) as number[]
-    const globalCount = result?.[0] ?? 0
-    const count = result?.[1] ?? 0
-
-    if (globalCount > GLOBAL_RATE_LIMIT_MAX) {
-      markBlocked(globalKey, GLOBAL_RATE_WINDOW)
-      logRateLimitBlock(request, { surface: 'image', keyType: 'anon', scope: 'global', origin: parsedUrl.hostname })
-      return new Response(JSON.stringify({
-        error: 'Image proxy is temporarily under heavy load. Please try again in a moment.',
-        retryAfter: GLOBAL_RATE_WINDOW,
-      }), {
-        status: 429,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Retry-After': String(GLOBAL_RATE_WINDOW),
-          'X-RateLimit-Limit': String(GLOBAL_RATE_LIMIT_MAX),
-          'X-RateLimit-Remaining': '0',
-        },
-      })
-    }
-    clearBlocked(globalKey)
-
-    remaining = Math.max(0, RATE_LIMIT_MAX - count)
-
-    if (count > RATE_LIMIT_MAX) {
-      markBlocked(key, PER_IP_RATE_WINDOW)
-      logRateLimitBlock(request, { surface: 'image', keyType: 'anon', scope: 'per-ip', origin: parsedUrl.hostname })
-      return new Response(JSON.stringify({ error: 'Too many image requests. Please wait a moment.', retryAfter: PER_IP_RATE_WINDOW }), {
-        status: 429,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Retry-After': String(PER_IP_RATE_WINDOW),
-          'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
-          'X-RateLimit-Remaining': '0',
-        },
-      })
-    }
-    clearBlocked(key)
+  if (!memoryRateLimit('imageproxy:global', GLOBAL_RATE_LIMIT_MAX, GLOBAL_RATE_WINDOW * 1000)) {
+    logRateLimitBlock(request, { surface: 'image', keyType: 'anon', scope: 'global', origin: parsedUrl.hostname })
+    return new Response(JSON.stringify({
+      error: 'Image proxy is temporarily under heavy load. Please try again in a moment.',
+      retryAfter: GLOBAL_RATE_WINDOW,
+    }), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': allowedOrigin,
+        'Retry-After': String(GLOBAL_RATE_WINDOW),
+        'X-RateLimit-Limit': String(GLOBAL_RATE_LIMIT_MAX),
+        'X-RateLimit-Remaining': '0',
+      },
+    })
   }
 
   try {
@@ -263,7 +210,6 @@ export async function imageProxyHandler(
         'Cache-Control': 'public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=86400, immutable',
         'Access-Control-Allow-Origin': allowedOrigin,
         'X-RateLimit-Limit': String(RATE_LIMIT_MAX),
-        'X-RateLimit-Remaining': String(remaining),
         'X-Content-Type-Options': 'nosniff',
       },
     })
