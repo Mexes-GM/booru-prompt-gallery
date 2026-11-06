@@ -111,6 +111,24 @@ async function main() {
     assert(!isRedisDown(), 'healthy calls never mark Redis down')
   }
 
+  // ── eval: the command goes out as a JSON array POSTed to the REST root ──
+  {
+    resetRedisHealth()
+    const calls: { url: string; body: unknown }[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: JSON.parse(String(init?.body)) })
+      return new Response(JSON.stringify({ result: [3, 7] }), { status: 200 })
+    }) as typeof fetch
+    const result = await getRedis(env)!.eval('return {1,2}', ['a', 'b'], ['60'])
+    assert(calls[0]?.url === env.UPSTASH_REDIS_REST_URL, `eval posts to the REST root (got ${calls[0]?.url})`)
+    assert(
+      JSON.stringify(calls[0]?.body) === JSON.stringify(['EVAL', 'return {1,2}', '2', 'a', 'b', '60']),
+      'eval sends script, key count, keys and args as one command'
+    )
+    assert(JSON.stringify(result) === '[3,7]', 'eval returns the script result')
+    assert(!isRedisDown(), 'a healthy eval never marks Redis down')
+  }
+
   console.log(`${passed} passed, ${failed} failed`)
   if (failed > 0) process.exit(1)
 }
