@@ -29,7 +29,7 @@ import { convertPromptOnce } from "@/lib/prompt/natural-prompt-loader"
 import { PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { toast } from "@/hooks/use-toast"
-import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
+import { getGelbooruProxyUrl, getGelbooruFallbackUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
 import { getPostUrl } from "@/lib/constants"
 import { computeGenerationResolution } from "@/lib/extension/generation-resolution"
 import type { BooruPost, BooruProvider } from "@/lib/api-client"
@@ -291,7 +291,8 @@ export const PocketCard = memo(function PocketCard({
     : (post.preview_file_url || post.file_url || post.large_file_url)
   const isDanbooruImg = !!rawFileUrl && (rawFileUrl.includes("donmai.us") || rawFileUrl.includes("cdn.donmai.us"))
 
-  // Gelbooru/Rule34 route through the referrer-injecting worker proxy.
+  // Gelbooru/Rule34 route through a referrer-injecting proxy (CloudFront for
+  // Gelbooru when configured, else the Worker).
   // Danbooru: CloudFront primary, with a one-shot cache-busting retry (?_r=N)
   // so a transient origin-pull failure retries CloudFront before falling back
   // to the same-origin /api/download proxy (keeps failures off Vercel Fluid).
@@ -302,9 +303,10 @@ export const PocketCard = memo(function PocketCard({
   const fileUrl = (isGelbooru || itemProvider === "rule34") && rawFileUrl
     ? getGelbooruProxyUrl(rawFileUrl)
     : (danbooruCdnUrlWithRetry ?? rawFileUrl)
+  const gelbooruFallbackUrl = isGelbooru && rawFileUrl ? getGelbooruFallbackUrl(rawFileUrl) : undefined
   const proxyFileUrl = isDanbooruImg
     ? `/api/download?url=${encodeURIComponent(rawFileUrl)}&inline=1`
-    : undefined
+    : gelbooruFallbackUrl
   const displayImageUrl = (useFallbackUrl && proxyFileUrl) ? proxyFileUrl : (fileUrl || "")
 
   const handleImageError = () => {
@@ -312,7 +314,7 @@ export const PocketCard = memo(function PocketCard({
       setCdnRetry(c => c + 1)
       return
     }
-    if (isDanbooruImg && !useFallbackUrl) {
+    if ((isDanbooruImg || gelbooruFallbackUrl) && !useFallbackUrl) {
       setUseFallbackUrl(true)
       return
     }

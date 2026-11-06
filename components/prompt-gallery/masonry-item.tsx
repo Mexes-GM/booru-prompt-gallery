@@ -26,7 +26,7 @@ import {
     BooruProvider
 } from "@/lib/api-client"
 import { getPostUrl } from "@/lib/constants"
-import { getGelbooruProxyUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
+import { getGelbooruProxyUrl, getGelbooruFallbackUrl, getDanbooruCdnUrl, imageReferrerPolicy } from "@/lib/proxy-url"
 import { type BackgroundMode } from "@/lib/background-detector"
 import { type MatchStrictness } from "@/lib/background-context"
 import { type OutfitSettings } from "@/lib/outfit-swap"
@@ -478,7 +478,7 @@ export const MasonryItem = memo(function MasonryItem({
 
     // Optimization: Use preview image for small cards to save bandwidth/CPU
     // For Gelbooru: use thumbnail when possible (smaller transfer), but ALL URLs
-    // must go through the Cloudflare Worker proxy due to hotlink protection.
+    // must go through a Referer-injecting proxy due to hotlink protection.
     // For Danbooru: try direct CDN URL first, fall back to image proxy only on 403/error.
     // This avoids unnecessary Fast Origin Transfer when direct access works.
     const isGelbooru = itemProvider === 'gelbooru'
@@ -488,9 +488,10 @@ export const MasonryItem = memo(function MasonryItem({
         : (effectiveScale === 'small' && post.preview_file_url)
     const rawFileUrl = (usePreview ? post.preview_file_url : (post.large_file_url || post.file_url))
 
-    // Gelbooru: ALL images (including thumbnails) must go through the Cloudflare Worker proxy.
-    // Gelbooru applies hotlink protection to all URLs — cross-origin requests get
-    // 302-redirected to hotlink.php. The Worker sets Referer: gelbooru.com/ which bypasses this.
+    // Gelbooru: ALL images (including thumbnails) must go through a proxy that sets
+    // Referer: gelbooru.com/. Gelbooru applies hotlink protection to all URLs —
+    // cross-origin requests get 302-redirected to hotlink.php. getGelbooruProxyUrl
+    // picks CloudFront when configured, else the Cloudflare Worker.
     const gelbooruNeedsProxy = isGelbooru && !!rawFileUrl
 
     // Danbooru image routing:
@@ -509,9 +510,10 @@ export const MasonryItem = memo(function MasonryItem({
 
     // Circuit breaker only applies to the legacy direct-first path (no CloudFront).
     const danbooruCircuitOpen = isDanbooruImg && !danbooruCdnUrl && isDanbooruCircuitOpen()
+    const gelbooruFallbackUrl = gelbooruNeedsProxy ? getGelbooruFallbackUrl(rawFileUrl!) : undefined
     const proxyFileUrl = isDanbooruImg
       ? `/api/download?url=${encodeURIComponent(rawFileUrl!)}&inline=1`
-      : undefined
+      : gelbooruFallbackUrl
     const displayFileUrl = danbooruCircuitOpen ? proxyFileUrl! : (useFallbackUrl && proxyFileUrl ? proxyFileUrl : fileUrl)
 
     const handleImageError = useCallback(() => {
@@ -520,6 +522,12 @@ export const MasonryItem = memo(function MasonryItem({
         // of the session skips the doomed direct attempt.
         if (isDanbooruImg && !danbooruCircuitOpen && !useFallbackUrl) {
             if (!danbooruCdnUrl) openDanbooruCircuit()
+            setUseFallbackUrl(true)
+            setImageError(false)
+            return
+        }
+        // Gelbooru on CloudFront: retry once through the Worker.
+        if (gelbooruFallbackUrl && !useFallbackUrl) {
             setUseFallbackUrl(true)
             setImageError(false)
             return
@@ -537,7 +545,7 @@ export const MasonryItem = memo(function MasonryItem({
             setImageError(false)
             setRetryKey(k => k + 1)
         }, delay)
-    }, [onImageError, isDanbooruImg, danbooruCdnUrl, danbooruCircuitOpen, useFallbackUrl])
+    }, [onImageError, isDanbooruImg, danbooruCdnUrl, danbooruCircuitOpen, gelbooruFallbackUrl, useFallbackUrl])
 
     // Provider is the source of truth for the link — content heuristics like
     // `isAiPost` (ai_metadata presence) must NOT override it. Aibooru posts
