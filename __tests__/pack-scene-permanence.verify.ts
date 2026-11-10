@@ -8,11 +8,13 @@
  *   3. Tags without a slot are state; underscores are accepted.
  *   4. Blocked themes match whole words, with spaces and with underscores.
  *   5. A post with any blocked tag is blocked as a whole.
+ *   6. Photographs are told apart from drawings by the booru's own medium tags.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-permanence.verify.ts
  */
 import { createPermanence, isCompositionPattern, isKinshipTag } from "../lib/pack/scene/permanence"
 import { isBlockedTheme, postIsBlocked } from "../lib/pack/scene/blocked"
+import { isPhotoPost } from "../lib/pack/scene/medium"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -55,12 +57,19 @@ assert(isKinshipTag("mother and son") && isKinshipTag("sisters") && !isKinshipTa
 
 // ── Blocked themes ──
 for (const tag of ["loli", "young girl", "young_girl", "age regression", "age_regression", "age regressed", "aged down",
-  "aged_down", "child", "children", "schoolgirl", "school_girl", "teenage girl", "little_girl", "baby", "shota", "underage"]) {
+  "aged_down", "younger female", "younger_female", "younger male", "younger_woman", "younger man", "older male and younger female",
+  "older_male_and_younger_female", "older woman and younger man", "child", "children", "schoolgirl", "school_girl", "teenage girl", "little_girl", "baby", "shota", "underage"]) {
   assert(isBlockedTheme(tag), `${tag} is blocked`)
 }
-for (const tag of ["lolita fashion", "childhood friends", "school uniform", "long hair", "standing", "yellow room"]) {
+for (const tag of ["lolita fashion", "childhood friends", "school uniform", "long hair", "standing", "yellow room", "older male", "older sister", "older brother", "elder male"]) {
   assert(!isBlockedTheme(tag), `${tag} is not blocked`)
 }
+
+// ── Photographs ──
+assert(isPhotoPost(makePost(90, "1girl solo photo_(medium) standing")), "photo (medium) marks a photograph")
+assert(isPhotoPost(makePost(91, "1girl standing", { tag_string_meta: "photo_(medium)" })), "the meta field is read")
+assert(isPhotoPost(makePost(92, "1girl standing", { tag_string_copyright: "real_life" })), "real life series marks a photograph")
+assert(!isPhotoPost(makePost(93, "1girl photoshop_(medium) marker_(medium) 3d cosplay standing")), "other medium tags are drawings")
 
 // ── Whole-post blocking ──
 assert(postIsBlocked(makePost(1, "1girl solo age_regression standing")), "tag with underscore blocks the post")
