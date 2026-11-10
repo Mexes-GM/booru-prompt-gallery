@@ -110,12 +110,14 @@ function buildHeader(identity: string[], scene: Scene, subject: 'girl' | 'boy', 
   const header = [...counts, ...open]
   const isSolo = (tag: string) => tag === 'solo' || tag === 'solo focus'
   const pairing = fromIdentity.filter((tag) => !COUNT_TAG_RE.test(tag) && !isOpenCount(tag))
+  const listed = new Set(pairing)
   for (const tag of scene.pairing) {
-    if (isOpenCount(tag) || pairing.includes(tag)) continue
+    if (isOpenCount(tag) || listed.has(tag)) continue
     if (isSolo(tag) && crowd) continue
     const base = [...header, ...pairing]
     if (base.length > 0 && resolveTagConflicts(base, [tag]).conflictingTags.length > 0) continue
     pairing.push(tag)
+    listed.add(tag)
   }
   header.push(...pairing.filter((tag) => !(isSolo(tag) && crowd)))
   return { tags: Array.from(new Set(header)), identity: rest }
