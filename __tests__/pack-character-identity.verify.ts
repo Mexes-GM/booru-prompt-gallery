@@ -17,6 +17,7 @@
 import type { BooruPost } from "../lib/booru/types"
 import {
   characterSearchTags,
+  identityTags,
   isLookTag,
   isNoiseLookTag,
   pinnedTagsFor,
@@ -107,6 +108,30 @@ const posts = [
   assert(eq(typicalSubject(posts, "super sonico", overrides), ["1girl"]), `the subject most solo posts carry (got ${typicalSubject(posts, "super sonico", overrides)})`)
   assert(typicalSubject(posts.slice(0, 3), "super sonico", overrides) === null, "too few solo posts: no typical subject")
   assert(eq(subjectTags(["super sonico", "1girl", "pink hair", "rariatto (style)"], new Set(["super sonico"]), overrides), ["1girl"]), "a card's subject: no name, look or style")
+}
+
+// ── 3b) Unnamed company in the picture keeps a post from being "alone" ──
+{
+  const overrides: Record<string, string> = {
+    "pink hair": "appearance:hair", "red eyes": "appearance:eyes", "blonde hair": "appearance:hair", "1girl": "appearance:demographics",
+  }
+  const solo = [1, 2, 3, 4, 5].map((i) => post(i, "1girl pink_hair red_eyes"))
+  const crowd = [10, 11, 12, 13].map((i) => post(i, "2girls pink_hair blonde_hair red_eyes"))
+  const mixed = [20, 21].map((i) => post(i, "1girl 1boy blonde_hair"))
+  assert(eq(typicalLook([...solo, ...crowd, ...mixed], "super sonico", overrides), ["pink hair", "red eyes"]), "posts with 2girls or 1girl + 1boy do not shape the look")
+  assert(eq(typicalSubject([...solo, ...crowd, ...mixed], "super sonico", overrides), ["1girl"]), "nor the subject")
+  assert(typicalLook([...solo.slice(0, 3), ...crowd, ...mixed], "super sonico", overrides) === null, "too few posts once the crowd is out: no typical look")
+  assert(typicalSubject([...solo.slice(0, 3), ...crowd], "super sonico", overrides) === null, "no typical subject either")
+  assert(typicalLook([...solo, post(30, "multiple_girls blonde_hair")], "super sonico", overrides) !== null, "five alone posts are enough")
+}
+
+// ── 3c) One tag and its qualified variant: only the specific one stays ──
+{
+  const overrides: Record<string, string> = { hairband: "clothing:accents", "black hairband": "clothing:accents", "pink hair": "appearance:hair", headphones: "clothing:headwear" }
+  const tags = identityTags([["pink hair", 0.9], ["hairband", 0.8], ["black hairband", 0.7], ["headphones", 0.6]], overrides)
+  assert(eq(tags, ["pink hair", "black hairband", "headphones"]), `generic tag dropped for its variant (got ${JSON.stringify(tags)})`)
+  assert(eq(splitSignature(tags, overrides).signature, ["black hairband", "headphones"]), "the signature accessories carry only the variant")
+  assert(eq(identityTags([["hairband", 0.8], ["pink hair", 0.9]], overrides), ["pink hair", "hairband"]), "the generic tag stays when no variant is there")
 }
 
 // ── 4) Signature accessories live in Clothing and stay while it varies ──

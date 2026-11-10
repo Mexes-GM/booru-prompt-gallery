@@ -13,7 +13,7 @@ import type { BooruPost, BooruProvider } from '../booru/types'
 import { getProviderTagLimit } from '../booru/tag-limits'
 import { getTagSlotFromOverrides, type TagCategory } from '../tag-taxonomy'
 import { classifyPostForPack, normalizeTagForPack } from './pack-generator'
-import { TRAIT_SHARE, postCharacters } from './character-focus'
+import { TRAIT_SHARE, isGroupCountTag, postCharacters } from './character-focus'
 
 /** Most identity tags a character contributes, strongest first. */
 export const MAX_IDENTITY_TAGS = 8
@@ -62,7 +62,7 @@ export function identityTags(shares: Iterable<readonly [string, number]>, overri
     const [top] = entries.filter(([, share]) => share >= LEAD_COLOR_SHARE)
     return top ? [top] : []
   }
-  return IDENTITY_ORDER.flatMap((group) => {
+  const picked = IDENTITY_ORDER.flatMap((group) => {
     const entries = [...(groups.get(group) ?? [])].sort((a, b) => b[1] - a[1])
     const common = entries.filter(([, share]) => share >= TRAIT_SHARE)
     if (group === 'eyes') return common.length ? common : lead(entries)
@@ -71,7 +71,11 @@ export function identityTags(shares: Iterable<readonly [string, number]>, overri
     }
     if (group === 'anatomy' && common.some(([tag]) => SIZED_BREASTS_RE.test(tag))) return common.filter(([tag]) => tag !== 'breasts')
     return common
-  }).slice(0, MAX_IDENTITY_TAGS).map(([tag]) => tag)
+  })
+  // "black hairband" already says "hairband": keep the more specific of the two.
+  const names = picked.map(([tag]) => tag)
+  const specific = picked.filter(([tag]) => !names.some((other) => other.endsWith(` ${tag}`)))
+  return specific.slice(0, MAX_IDENTITY_TAGS).map(([tag]) => tag)
 }
 
 /** Trait profiles by character name (lowercase, spaces): tag → share of their posts. */
@@ -118,11 +122,19 @@ export function splitSignature(tags: readonly string[], overrides: Record<string
   }
 }
 
-/** The posts that show `name` (pack-normalized) and no other named character. */
+const PERSON_COUNT_RE = /^1(girl|boy|other)$/
+
+/** Whether the post's tags put more than one person in the picture ("2girls", "multiple boys", "1girl" with "1boy"). */
+function showsSeveralPeople(post: BooruPost): boolean {
+  const tags = (post.tag_string || '').split(/\s+/).filter(Boolean).map(normalizeTagForPack)
+  return tags.some(isGroupCountTag) || new Set(tags.filter((t) => PERSON_COUNT_RE.test(t))).size > 1
+}
+
+/** The posts that show `name` (pack-normalized) and nobody else: no other named character, no unnamed company. */
 function postsAlone(posts: readonly BooruPost[], name: string): BooruPost[] {
   return posts.filter((p) => {
     const people = postCharacters(p)
-    return people.length === 1 && people[0] === name
+    return people.length === 1 && people[0] === name && !showsSeveralPeople(p)
   })
 }
 
