@@ -107,15 +107,25 @@ assert(JSON.stringify(buildScenePool(posts, ctx)) === JSON.stringify(pool), "bui
   const overrides30: Record<string, string> = {}
   const thirty = groupSituations(synthetic(30, overrides30), overrides30)
   assert(thirty.length === 1 && thirty[0].id === "other", "tags that cover under 4% of the pool make no situation")
-  const gestures = synthetic(3, {}).map((scene) => ({ ...scene, units: { ...scene.units, skeleton: ["arms up"] } }))
-  assert(groupSituations(gestures, OVERRIDES)[0].id === "other", "gestures are not situation tags")
+  // a tag that almost every scene has defines nothing: the informative ones come first
+  const ov: Record<string, string> = { common: "pose:posture", a: "pose:posture", b: "pose:gesture" }
+  const mixed = synthetic(10, {}).map((scene, i) => ({ ...scene, units: { ...scene.units, skeleton: ["common", i < 5 ? "a" : "b"] } }))
+  const split = groupSituations(mixed, ov)
+  assert(split.length === 2 && split[0].label[0] === "a" && split[1].label[0] === "b", "informativeness decides, not coverage alone")
+  assert(split[0].label[1] === "common", "the label adds the most frequent co-tag")
+  const gestures = synthetic(3, {}).map((scene) => ({ ...scene, units: { ...scene.units, skeleton: ["smile"] } }))
+  assert(groupSituations(gestures, OVERRIDES)[0].id === "other", "tags of other slots are not situation tags")
 }
 
 // ── Selection ──
 const ids = (n: number, seed: number, disabled?: string[]) =>
   selectScenes(pool, n, { rng: createSeededRng(seed), disabledSituations: disabled }).map((s) => s.postId)
 assert(ids(5, 7).join() === ids(5, 7).join(), "same seed, same selection")
-assert(new Set(Array.from({ length: 20 }, (_, i) => ids(3, i + 1).join())).size > 1, "different seeds give different selections")
+{
+  const many = buildScenePool(Array.from({ length: 12 }, (_, i) => makePost(200 + i, `1girl standing smile bedroom bed skirt shirt u${i}a u${i}b`)), ctx)
+  const picks = Array.from({ length: 20 }, (_, i) => selectScenes(many, 3, { rng: createSeededRng(i + 1) }).map((s) => s.postId).join())
+  assert(new Set(picks).size > 1, "different seeds give different selections")
+}
 {
   const three = ids(3, 3)
   const situationOf = (id: number) => pool.situations.findIndex((s) => s.sceneIds.includes(id))
@@ -141,6 +151,23 @@ assert(ids(0, 1).length === 0, "count zero")
   for (let seed = 1; seed <= 12; seed++) {
     const picked = selectScenes(trio, 3, { rng: createSeededRng(seed) }).map((s) => s.postId)
     assert(picked.includes(33) && picked.includes(34), `seed ${seed}: the framing that differs is chosen before a near copy`)
+  }
+}
+
+// ── Typicality ──
+assert(pool.scenes.every((scene) => scene.typicality !== undefined && scene.typicality >= 0 && scene.typicality <= 1), "every scene has a typicality")
+{
+  const makeScene = (id: number, tag: string, typicality: number): Scene => {
+    const units = emptyUnits()
+    units.skeleton = [tag]
+    return { postId: id, rating: "g", people: { girls: 1, boys: 0 }, pairing: [], units, anchors: [], typicality }
+  }
+  const scenes = [makeScene(1, "a", 1), makeScene(2, "b", 1), makeScene(3, "c", 0.9), makeScene(4, "d", 0.1), makeScene(5, "e", 0.1), makeScene(6, "f", 0.2)]
+  const one = { scenes, situations: [{ id: "all", label: ["all"], sceneIds: scenes.map((s) => s.postId), previews: [] }], stats: pool.stats }
+  for (let seed = 1; seed <= 10; seed++) {
+    const first = selectScenes(one, 3, { rng: createSeededRng(seed) }).map((s) => s.postId).sort()
+    assert(first.join() === "1,2,3", `seed ${seed}: typical scenes go first even if the oddities are farther`)
+    assert(selectScenes(one, 6, { rng: createSeededRng(seed) }).length === 6, "the others follow once the typical ones are out")
   }
 }
 

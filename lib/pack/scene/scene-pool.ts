@@ -10,7 +10,7 @@ import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import { postIsBlocked } from './blocked'
 import { isPhotoPost } from './medium'
 import { COUNT_TAG_RE } from './permanence'
-import { extractScene, stateTagCount, type Scene, type SceneContext } from './scene'
+import { extractScene, sceneTags, stateTagCount, MIN_TYPICAL_SUPPORT, type Scene, type SceneContext } from './scene'
 
 /** Scenes with fewer state tags than this are too poor to be worth a prompt. */
 export const DEFAULT_MIN_STATE_TAGS = 6
@@ -20,7 +20,9 @@ export const MAX_SITUATIONS = 12
 export const MIN_SITUATION_SHARE = 0.04
 /** Id and label of the situation that gathers the scenes no tag covers well enough. */
 export const OTHER_SITUATION = 'other'
-const LABEL_SLOTS = new Set(['pose:posture', 'pose:physiological', 'pose:interaction'])
+const SKELETON_SLOTS = new Set([
+  'pose:posture', 'pose:gesture', 'pose:kinetic', 'pose:combat', 'pose:interaction', 'pose:physiological',
+])
 const PREVIEWS_PER_SITUATION = 3
 /** Pools of fewer different characters / series than this cannot tell a name from a general tag by spread. */
 const MIN_SIGNATURES_FOR_SPREAD = 3
@@ -162,6 +164,8 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
     } else if (scene.units.skeleton.length === 0 || stateTagCount(scene) < minState) {
       stats.belowQuality++
     } else {
+      const tags = sceneTags(scene)
+      scene.typicality = tags.length ? tags.filter((tag) => (support.get(tag) ?? 0) >= MIN_TYPICAL_SUPPORT).length / tags.length : 1
       good.push(scene)
     }
   }
@@ -183,21 +187,22 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
 }
 
 /**
- * Situations by coverage. Candidate tags are the `skeleton` tags of the posture,
- * physiological and interaction slots. The tag that covers most unassigned scenes
- * makes a situation with those scenes; this repeats until the best tag covers less than
- * MIN_SITUATION_SHARE of the pool or MAX_SITUATIONS exist. The rest is "other".
- * Deterministic: ties go to the tag seen first in the pool.
+ * Situations by coverage and informativeness. Candidate tags are the `skeleton` tags of the
+ * posture, gesture, kinetic, combat, interaction and physiological slots. Each one scores
+ * (unassigned scenes that have it) x ln(N / scenes of the pool that have it), so a tag that
+ * almost every scene carries defines nothing. The best tag makes a situation with its
+ * unassigned scenes; this repeats until no tag covers MIN_SITUATION_SHARE of the pool or
+ * MAX_SITUATIONS exist. The rest is "other". Deterministic: ties go to the tag seen first.
  */
 export function groupSituations(scenes: Scene[], overrides: Record<string, string> = {}): Situation[] {
-  const isLabelTag = (tag: string) => {
+  const isCandidate = (tag: string) => {
     const slot = getTagSlotFromOverrides(tag, overrides)?.slot
-    return !!slot && LABEL_SLOTS.has(slot)
+    return !!slot && SKELETON_SLOTS.has(slot)
   }
   const candidates = new Map<string, Scene[]>()
   for (const scene of scenes) {
     for (const tag of scene.units.skeleton) {
-      if (!isLabelTag(tag)) continue
+      if (!isCandidate(tag)) continue
       const list = candidates.get(tag)
       if (list) list.push(scene)
       else candidates.set(tag, [scene])
@@ -209,15 +214,18 @@ export function groupSituations(scenes: Scene[], overrides: Record<string, strin
   const groups: Array<{ tag: string; scenes: Scene[] }> = []
   while (groups.length < MAX_SITUATIONS) {
     let bestTag: string | null = null
-    let bestCount = 0
+    let bestScore = 0
     for (const tag of order) {
-      const count = candidates.get(tag)!.filter((scene) => !assigned.has(scene)).length
-      if (count > bestCount) {
+      const all = candidates.get(tag)!
+      const covered = all.filter((scene) => !assigned.has(scene)).length
+      if (covered === 0 || covered < MIN_SITUATION_SHARE * scenes.length) continue
+      const score = covered * Math.log(scenes.length / all.length)
+      if (score > bestScore) {
         bestTag = tag
-        bestCount = count
+        bestScore = score
       }
     }
-    if (!bestTag || bestCount < MIN_SITUATION_SHARE * scenes.length) break
+    if (!bestTag) break
     const members = candidates.get(bestTag)!.filter((scene) => !assigned.has(scene))
     members.forEach((scene) => assigned.add(scene))
     groups.push({ tag: bestTag, scenes: members })
