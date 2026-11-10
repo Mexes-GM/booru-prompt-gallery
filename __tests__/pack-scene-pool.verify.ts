@@ -2,20 +2,23 @@
  * Tests for lib/pack/scene/scene-pool.ts and lib/pack/scene/scene-select.ts.
  *
  * Covers:
- *   1. The pool drops blocked posts whole, near-duplicates and scenes without a
- *      skeleton or with too few state tags, and counts each step.
- *   2. Situations group scenes by skeleton, are stable, labelled, largest first,
- *      with at most three previews.
- *   3. Selection is deterministic for a seed, covers situations before repeating one,
+ *   1. The pool drops blocked posts whole, photographs, near-duplicates, scenes without a
+ *      skeleton or with too few state tags, and scenes whose people do not match the pack;
+ *      each step is counted.
+ *   2. The composition of the pack comes from the identity, then from an option, then from
+ *      the most frequent one of the pool.
+ *   3. Situations are a partition by coverage: stable, labelled, at most twelve plus "other".
+ *   4. Selection is deterministic for a seed, covers situations before repeating one,
  *      picks the farthest scene inside a situation, respects switched-off situations
  *      and returns what exists when there are fewer scenes than asked.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-pool.verify.ts
  */
-import { buildScenePool, groupSituations } from "../lib/pack/scene/scene-pool"
+import { buildScenePool, compositionOfIdentity, groupSituations, MAX_SITUATIONS } from "../lib/pack/scene/scene-pool"
 import { selectScenes } from "../lib/pack/scene/scene-select"
 import { createSeededRng } from "../lib/pack/pack-generator"
 import { createPermanence } from "../lib/pack/scene/permanence"
+import { emptyUnits, type Scene } from "../lib/pack/scene/scene"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -32,37 +35,80 @@ const posts = [
   makePost(7, "1girl standing smile"), // too few state tags
   makePost(8, "1girl standing smile from_above bedroom bed skirt shirt young_girl"), // blocked
   makePost(9, `${A1} blush`), // near-duplicate of post 1
+  makePost(10, "1girl lying smile from_above park sunset dress boots photo_(medium)"), // photograph
+  makePost(11, "1girl 1boy sitting hug blush looking_at_viewer park sunset dress boots"), // a partner
+  makePost(12, "multiple_girls running smile from_side park sunset dress boots"), // open count
 ]
 
 // ── Pool steps ──
 const pool = buildScenePool(posts, ctx)
 const { stats } = pool
-assert(stats.posts === 9, "counts the input posts")
+assert(stats.posts === 12, "counts the input posts")
 assert(stats.blocked === 1, "blocked post removed whole")
+assert(stats.notIllustration === 1, "photograph removed")
 assert(stats.nearDuplicates === 1, "near-duplicate removed")
 assert(stats.belowQuality === 2, "scenes without skeleton or with too few tags removed")
 assert(stats.unextractable === 0, "nothing unextractable here")
+assert(stats.incompatible === 2, "scenes with a partner or an open count removed")
 assert(stats.scenes === 5 && pool.scenes.length === 5, "five scenes remain")
-assert(stats.blocked + stats.nearDuplicates + stats.unextractable + stats.belowQuality + stats.scenes === stats.posts, "every post is accounted for")
-assert(!pool.scenes.some((scene) => scene.postId === 8), "the blocked post gives no scene")
+assert(
+  stats.blocked + stats.notIllustration + stats.nearDuplicates + stats.unextractable + stats.belowQuality + stats.incompatible + stats.scenes === stats.posts,
+  "every post is accounted for"
+)
+assert(stats.compositionSource === "pool" && stats.composition?.girls === 1 && stats.composition?.boys === 0, "most frequent composition of the pool")
+assert(!pool.scenes.some((scene) => scene.postId === 8 || scene.postId === 10), "blocked and photo posts give no scene")
 assert(buildScenePool(posts, { ...ctx, minStateTags: 2 }).stats.belowQuality === 1, "the quality threshold is a parameter")
 assert(buildScenePool([makePost(20, "no_humans standing bedroom bed")], ctx).stats.unextractable === 1, "posts without people are counted apart")
+
+// ── Composition of the pack ──
+assert(compositionOfIdentity(["1girl", "solo", "long hair"])?.girls === 1 && compositionOfIdentity(["1girl", "solo"])?.boys === 0, "1girl, solo: one girl, no boys")
+assert(compositionOfIdentity(["1girl", "1boy", "hetero"])?.boys === 1, "1girl, 1boy: one of each")
+assert(compositionOfIdentity(["2girls"])?.girls === 2, "2girls")
+assert(compositionOfIdentity(["long hair"]) === null && compositionOfIdentity(["multiple girls"]) === null && compositionOfIdentity(["6+girls"]) === null, "no count or an open one: undeclared")
+{
+  const pair = buildScenePool(posts, { ...ctx, identity: ["1girl", "1boy", "hetero"] })
+  assert(pair.stats.compositionSource === "identity" && pair.scenes.length === 1 && pair.scenes[0].postId === 11, "the identity decides the composition")
+  const explicit = buildScenePool(posts, { ...ctx, identity: ["long hair"], people: { girls: 1, boys: 1 } })
+  assert(explicit.stats.compositionSource === "option" && explicit.scenes.map((s) => s.postId).join() === "11", "an explicit option is used when the identity declares nothing")
+  const overridden = buildScenePool(posts, { ...ctx, identity: ["1girl", "solo"], people: { girls: 1, boys: 1 } })
+  assert(overridden.stats.compositionSource === "identity" && overridden.scenes.length === 5, "the identity wins over the option")
+  assert(buildScenePool([], ctx).stats.compositionSource === "none", "empty pool: no composition")
+}
 
 // ── Situations ──
 assert(stats.situations === 3 && pool.situations.length === 3, "three situations")
 assert(pool.situations[0].sceneIds.join() === "1,2", "largest situation first, scenes in pool order")
-assert(pool.situations[0].label.join() === "standing", "label from the common skeleton tags")
-assert(pool.situations[1].label.join() === "lying,on back", "label with two tags")
-assert(pool.situations[2].sceneIds.join() === "5", "single-scene situation")
+assert(pool.situations[0].label.join() === "standing", "label: the tag that covers the group")
+assert(pool.situations[1].label.join() === "lying,on back", "label: the tag and its most frequent co-tag")
+assert(pool.situations[2].sceneIds.join() === "5" && pool.situations[2].label.join() === "sitting,hug", "single-scene situation")
 assert(pool.situations.every((s) => s.previews.length > 0 && s.previews.length <= 3), "previews are kept, at most three")
 assert(JSON.stringify(buildScenePool(posts, ctx)) === JSON.stringify(pool), "building twice gives the same pool")
 {
   const many = Array.from({ length: 6 }, (_, i) => makePost(100 + i, `1girl standing smile bedroom bed skirt shirt u${i}a u${i}b`))
   const big = buildScenePool(many, ctx)
-  assert(big.situations.length === 1 && big.situations[0].sceneIds.length === 6, "scenes with the same skeleton share a situation")
+  assert(big.situations.length === 1 && big.situations[0].sceneIds.length === 6, "scenes with the same tag share a situation")
   assert(big.situations[0].previews.length === 3, "at most three previews")
-  const twice = groupSituations([...big.scenes, ...big.scenes.map((s) => ({ ...s, postId: s.postId + 1000 }))])
-  assert(new Set(twice.map((s) => s.id)).size === twice.length, "situation ids are unique")
+}
+{
+  const synthetic = (n: number, overrides: Record<string, string>): Scene[] =>
+    Array.from({ length: n }, (_, i) => {
+      const units = emptyUnits()
+      units.skeleton = [`p${i}`]
+      return { postId: i + 1, rating: "g", people: { girls: 1, boys: 0 }, pairing: [], units, anchors: [] } as Scene
+    }).map((scene) => {
+      overrides[`p${scene.postId - 1}`] = "pose:posture"
+      return scene
+    })
+  const overrides15: Record<string, string> = {}
+  const fifteen = groupSituations(synthetic(15, overrides15), overrides15)
+  assert(fifteen.length === MAX_SITUATIONS + 1, "twelve situations and the rest in other")
+  assert(fifteen[MAX_SITUATIONS].id === "other" && fifteen[MAX_SITUATIONS].sceneIds.length === 3, "other gathers what is left")
+  assert(new Set(fifteen.map((s) => s.id)).size === fifteen.length, "situation ids are unique")
+  const overrides30: Record<string, string> = {}
+  const thirty = groupSituations(synthetic(30, overrides30), overrides30)
+  assert(thirty.length === 1 && thirty[0].id === "other", "tags that cover under 4% of the pool make no situation")
+  const gestures = synthetic(3, {}).map((scene) => ({ ...scene, units: { ...scene.units, skeleton: ["arms up"] } }))
+  assert(groupSituations(gestures, OVERRIDES)[0].id === "other", "gestures are not situation tags")
 }
 
 // ── Selection ──

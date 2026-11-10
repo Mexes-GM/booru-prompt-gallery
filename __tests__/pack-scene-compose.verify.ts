@@ -36,8 +36,10 @@ const P2 = makePost(2, "1girl solo standing blush looking_at_viewer park outdoor
 const P3 = makePost(3, "1girl solo lying on_bed smile from_side bedroom bed indoors shirt skirt navel")
 const P4 = makePost(4, "1girl solo lying on_back blush looking_at_viewer beach outdoors sunset dress boots")
 const P5 = makePost(5, "1girl 1boy hetero sitting hug smile from_side bedroom bed indoors skirt shirt")
-const main = pool([P1, P2, P3, P4, P5])
-assert(main.scenes.length === 5 && main.situations.length === 4, "fixture pool: five scenes, four situations")
+const main = buildScenePool([P1, P2, P3, P4, P5], { ...ctx, identity: IDENTITY })
+assert(main.scenes.length === 4 && main.stats.incompatible === 1, "fixture pool: the pair scene does not fit a solo identity")
+assert(main.situations.length === 2, "fixture pool: standing and lying")
+const pairPool = buildScenePool([P5], { ...ctx, identity: ["1girl", "1boy"] })
 const SITUATION_OF = (id: number) => main.situations.find((s) => s.sceneIds.includes(id))!.id
 const tagsOf = (id: number) => Object.values(main.scenes.find((s) => s.postId === id)!.units).flat()
 const idx = (p: ScenePrompt, tag: string) => p.tags.indexOf(tag)
@@ -45,7 +47,7 @@ const idx = (p: ScenePrompt, tag: string) => p.tags.indexOf(tag)
 // ── Order and header ──
 {
   const { prompts, shortBy } = composePack(main, options({ count: 5 }))
-  assert(prompts.length === 5 && shortBy === 0, "one prompt per scene, nothing short")
+  assert(prompts.length === 4 && shortBy === 1, "one prompt per scene, one short")
   const p1 = prompts.find((p) => p.sources.skeleton === 1)!
   const order = ["1girl", "solo", "long hair", "blue hair", "standing", "smile", "skirt", "shirt", "from above", "bedroom", "bed", "indoors"]
   assert(
@@ -57,28 +59,30 @@ const idx = (p: ScenePrompt, tag: string) => p.tags.indexOf(tag)
   assert(p1.locked.join() === IDENTITY.join(), "locked = header + identity")
   assert(p1.rating === "g" && p1.aspect !== undefined, "rating and aspect come from the scene")
 
-  // the identity brings the count and the scene adds a partner and the pairing
-  const p5 = prompts.find((p) => p.sources.skeleton === 5)!
-  assert(p5.tags.slice(0, 5).join() === "1girl,1boy,hetero,long hair,blue hair", "identity count kept; the scene adds 1boy and hetero before the rest of the identity")
-  assert(!p5.tags.includes("solo"), "solo never stays with two people")
+  // the identity brings the counts and the scene adds the pairing
+  const pair = composePack(pairPool, options({ identity: ["1girl", "1boy", "long hair", "blue hair"], count: 1 })).prompts[0]
+  assert(pair.tags.slice(0, 5).join() === "1girl,1boy,hetero,long hair,blue hair", "identity counts first, then the pairing of the scene, then the rest of the identity")
+  assert(!pair.tags.includes("solo"), "solo never stays with two people")
+  assert(pair.locked.join() === "1girl,1boy,hetero,long hair,blue hair", "locked = header + identity")
 
   // the identity has no count: it is written from the scene
-  const bare = composePack(main, options({ identity: ["long hair", "blue hair"], count: 5 })).prompts
+  const bare = composePack(main, options({ identity: ["long hair", "blue hair"], count: 4 })).prompts
   const b1 = bare.find((p) => p.sources.skeleton === 1)!
   assert(b1.tags.slice(0, 4).join() === "1girl,solo,long hair,blue hair", "counts and pairing are written from the scene when the identity has none")
-  const b5 = bare.find((p) => p.sources.skeleton === 5)!
+  const withPartner = buildScenePool([P5], { ...ctx, identity: ["long hair"], people: { girls: 1, boys: 1 } })
+  const b5 = composePack(withPartner, options({ identity: ["long hair", "blue hair"], count: 1 })).prompts[0]
   assert(b5.tags.slice(0, 5).join() === "1girl,1boy,hetero,long hair,blue hair", "pair scene header")
 
-  const crowd = pool([makePost(40, "2girls solo_focus standing smile from_above bedroom bed indoors skirt shirt")])
-  const c = composePack(crowd, options({ identity: ["1girl", "long hair"], count: 1 })).prompts[0]
+  const crowd = buildScenePool([makePost(40, "2girls solo_focus standing smile from_above bedroom bed indoors skirt shirt")], { ...ctx, identity: ["2girls"] })
+  const c = composePack(crowd, options({ identity: ["2girls", "long hair"], count: 1 })).prompts[0]
   assert(!c.tags.includes("solo focus") && !c.tags.includes("solo"), "solo focus never stays with more than one person")
-  const single = pool([makePost(41, "1girl solo_focus standing smile from_above bedroom bed indoors skirt shirt")])
+  const single = buildScenePool([makePost(41, "1girl solo_focus standing smile from_above bedroom bed indoors skirt shirt")], { ...ctx, identity: ["1girl"] })
   assert(composePack(single, options({ identity: ["1girl"], count: 1 })).prompts[0].tags.includes("solo focus"), "solo focus is kept for one person")
 }
 
 // ── Faithful ──
 {
-  const { prompts } = composePack(main, options({ count: 5 }))
+  const { prompts } = composePack(main, options({ count: 4 }))
   for (const p of prompts) {
     const scene = new Set(tagsOf(p.sources.skeleton))
     const body = p.tags.filter((t) => !p.locked.includes(t))
@@ -101,32 +105,33 @@ const idx = (p: ScenePrompt, tag: string) => p.tags.indexOf(tag)
       if (p.sources.face !== undefined) swaps++
       if (p.sources.place !== undefined) {
         swaps++
-        if (base === 3) assert([1, 5].includes(p.sources.place), `seed ${seed}: a bed anchor needs a place with a bed`)
-        if ([1, 3, 5].includes(base)) assert(![2, 4].includes(p.sources.place), `seed ${seed}: indoors never gets an outdoors place`)
-        if ([2, 4].includes(base)) assert(![1, 3, 5].includes(p.sources.place), `seed ${seed}: outdoors never gets an indoors place`)
+        if (base === 3) assert(p.sources.place === 1, `seed ${seed}: a bed anchor needs a place with a bed`)
+        if ([1, 3].includes(base)) assert(![2, 4].includes(p.sources.place), `seed ${seed}: indoors never gets an outdoors place`)
+        if ([2, 4].includes(base)) assert(![1, 3].includes(p.sources.place), `seed ${seed}: outdoors never gets an indoors place`)
       }
       if (p.sources.outfit !== undefined) {
         swaps++
-        assert((p.sources.outfit === 5) === (base === 5), `seed ${seed}: outfit only between scenes with the same people`)
+        // exposure goes with the outfit: only scene 3 shows a navel
+        assert(p.tags.includes("navel") === (p.sources.outfit === 3), `seed ${seed}: the exposure of the outfit's scene comes with it`)
       }
     }
   }
   assert(swaps > 20, "remix does swap units")
-  const a = composePack(main, options({ mix: "remix", count: 5, seed: 9 }))
-  assert(JSON.stringify(a) === JSON.stringify(composePack(main, options({ mix: "remix", count: 5, seed: 9 }))), "same seed, same remix")
-  assert(JSON.stringify(a) !== JSON.stringify(composePack(main, options({ mix: "remix", count: 5, seed: 10 }))), "another seed, another remix")
+  const a = composePack(main, options({ mix: "remix", count: 4, seed: 9 }))
+  assert(JSON.stringify(a) === JSON.stringify(composePack(main, options({ mix: "remix", count: 4, seed: 9 }))), "same seed, same remix")
+  assert(JSON.stringify(a) !== JSON.stringify(composePack(main, options({ mix: "remix", count: 4, seed: 10 }))), "another seed, another remix")
 }
 
 // ── shortBy and reuse ──
 {
   const faithful = composePack(main, options({ count: 8 }))
-  assert(faithful.prompts.length === 5 && faithful.shortBy === 3, "faithful returns the scenes there are and reports the gap")
+  assert(faithful.prompts.length === 4 && faithful.shortBy === 4, "faithful returns the scenes there are and reports the gap")
   const remix = composePack(main, options({ mix: "remix", count: 8, seed: 3 }))
-  assert(remix.prompts.length > 5 && remix.shortBy === 8 - remix.prompts.length, "remix reuses skeletons with other swaps")
+  assert(remix.prompts.length > 4 && remix.shortBy === 8 - remix.prompts.length, "remix reuses skeletons with other swaps")
   assert(new Set(remix.prompts.map((p) => p.tags.join())).size === remix.prompts.length, "no exact duplicates")
   const empty = composePack(pool([]), options({ count: 4 }))
   assert(empty.prompts.length === 0 && empty.shortBy === 4, "empty pool")
-  const off = composePack(main, options({ disabledSituations: [SITUATION_OF(1)], count: 5 }))
+  const off = composePack(main, options({ disabledSituations: [SITUATION_OF(1)], count: 4 }))
   assert(!off.prompts.some((p) => [1, 2].includes(p.sources.skeleton)), "switched-off situation is skipped")
 }
 

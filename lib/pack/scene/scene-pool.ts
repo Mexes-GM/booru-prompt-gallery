@@ -1,57 +1,99 @@
 /**
  * Scene pool: the posts of a search turned into scenes that are good enough to
- * transplant, grouped by what the person in them is doing.
+ * transplant onto the pack's character, grouped by what the person in them is doing.
  */
 import type { BooruPost } from '../../booru/types'
 import { classifyPostForPack, normalizeTagForPack } from '../pack-generator'
 import { collapseNearDuplicates } from '../near-duplicates'
 import { splitTags } from '../../utils/tag-utils'
+import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import { postIsBlocked } from './blocked'
-import { extractScene, jaccard, stateTagCount, type Scene, type SceneContext } from './scene'
+import { isPhotoPost } from './medium'
+import { COUNT_TAG_RE } from './permanence'
+import { extractScene, stateTagCount, type Scene, type SceneContext } from './scene'
 
 /** Scenes with fewer state tags than this are too poor to be worth a prompt. */
 export const DEFAULT_MIN_STATE_TAGS = 6
-/** Share of `skeleton` tags two scenes need in common to be the same situation. */
-export const SITUATION_SIMILARITY = 0.5
-const LABEL_TAGS = 3
+/** Most situations made from tags; whatever is left goes to "other". */
+export const MAX_SITUATIONS = 12
+/** A situation must cover at least this share of the scenes of the pool. */
+export const MIN_SITUATION_SHARE = 0.04
+/** Id and label of the situation that gathers the scenes no tag covers well enough. */
+export const OTHER_SITUATION = 'other'
+const LABEL_SLOTS = new Set(['pose:posture', 'pose:physiological', 'pose:interaction'])
 const PREVIEWS_PER_SITUATION = 3
+/** Pools of fewer different characters / series than this cannot tell a name from a general tag by spread. */
+const MIN_SIGNATURES_FOR_SPREAD = 3
 
 /** A group of scenes that do the same thing, so a pack can cover different ones. */
 export interface Situation {
   /** Stable name taken from the label; used to switch the situation off. */
   id: string
-  /** The two or three tags most scenes of the group share. */
+  /** The tag that defines the situation and its most frequent co-tag. */
   label: string[]
   sceneIds: number[]
   previews: string[]
+}
+
+/** How many people (by gender) the scenes of a pack must have. */
+export interface PackPeople {
+  girls: number
+  boys: number
 }
 
 /** Posts that each step of the pool build removed. */
 export interface ScenePoolStats {
   posts: number
   blocked: number
+  /** Photographs of real people (the booru's own medium tags). */
+  notIllustration: number
   nearDuplicates: number
   /** No person in the post, or nothing left after taking out names and identity. */
   unextractable: number
   /** No `skeleton`, or fewer state tags than the quality threshold. */
   belowQuality: number
+  /** Scenes whose people do not match the composition of the pack (open counts included). */
+  incompatible: number
   scenes: number
   situations: number
+  /** Composition the scenes were filtered to and where it came from. */
+  composition: PackPeople | null
+  compositionSource: 'identity' | 'option' | 'pool' | 'none'
 }
 
 export interface ScenePool {
   scenes: Scene[]
-  /** Largest first. */
+  /** Largest first, "other" last. */
   situations: Situation[]
   stats: ScenePoolStats
 }
 
 export type ScenePoolContext = Omit<SceneContext, 'poolSupport' | 'poolPlace' | 'poolSources'> & {
   minStateTags?: number
+  /** Tags of the character; its people-count tags (`1girl`, `solo`) decide which scenes fit. */
+  identity?: readonly string[]
+  /** Composition to use when the identity declares no count. Without it, the most frequent one of the pool. */
+  people?: PackPeople
 }
 
-/** Pools of fewer different characters / series than this cannot tell a name from a general tag by spread. */
-const MIN_SIGNATURES_FOR_SPREAD = 3
+/**
+ * People of a pack from the count tags of its identity: `1girl, solo` is one girl and no
+ * boys, `1girl, 1boy` one of each. Null when the identity declares no count, or an open one.
+ */
+export function compositionOfIdentity(identity: readonly string[]): PackPeople | null {
+  let girls = 0
+  let boys = 0
+  let declared = false
+  for (const raw of identity) {
+    const match = COUNT_TAG_RE.exec(raw.toLowerCase().replace(/_/g, ' ').trim())
+    if (!match) continue
+    if (match[2] || match[3].startsWith('other')) return null
+    declared = true
+    if (match[3].startsWith('girl')) girls += Number(match[1])
+    else boys += Number(match[1])
+  }
+  return declared ? { girls, boys } : null
+}
 
 /** Every word suffix of a tag: "bunk bed frame" -> itself, "bed frame", "frame". */
 function wordSuffixes(tag: string): string[] {
@@ -59,16 +101,35 @@ function wordSuffixes(tag: string): string[] {
   return words.map((_, i) => words.slice(i).join(' '))
 }
 
+function mostFrequentComposition(scenes: Scene[]): PackPeople | null {
+  const counts = new Map<string, { people: PackPeople; n: number }>()
+  for (const scene of scenes) {
+    if (!scene.people) continue
+    const key = `${scene.people.girls}/${scene.people.boys}`
+    const entry = counts.get(key)
+    if (entry) entry.n++
+    else counts.set(key, { people: scene.people, n: 1 })
+  }
+  let best: { people: PackPeople; n: number } | null = null
+  for (const entry of counts.values()) {
+    if (!best || entry.n > best.n) best = entry
+  }
+  return best ? best.people : null
+}
+
 export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): ScenePool {
   const minState = ctx.minStateTags ?? DEFAULT_MIN_STATE_TAGS
   const stats: ScenePoolStats = {
-    posts: posts.length, blocked: 0, nearDuplicates: 0, unextractable: 0, belowQuality: 0, scenes: 0, situations: 0,
+    posts: posts.length, blocked: 0, notIllustration: 0, nearDuplicates: 0, unextractable: 0, belowQuality: 0,
+    incompatible: 0, scenes: 0, situations: 0, composition: null, compositionSource: 'none',
   }
 
   const allowed = posts.filter((post) => !postIsBlocked(post))
   stats.blocked = posts.length - allowed.length
-  const distinct = collapseNearDuplicates(allowed)
-  stats.nearDuplicates = allowed.length - distinct.length
+  const drawn = allowed.filter((post) => !isPhotoPost(post))
+  stats.notIllustration = allowed.length - drawn.length
+  const distinct = collapseNearDuplicates(drawn)
+  stats.nearDuplicates = drawn.length - distinct.length
 
   // How many posts carry each tag, among how many characters / series, and which tags place the character somewhere.
   const support = new Map<string, number>()
@@ -93,7 +154,7 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
     poolSources: spread ? (tag) => signatures.get(tag)?.size ?? 0 : undefined,
   }
 
-  const scenes: Scene[] = []
+  const good: Scene[] = []
   for (const post of distinct) {
     const scene = extractScene(post, sceneCtx)
     if (!scene) {
@@ -101,64 +162,104 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
     } else if (scene.units.skeleton.length === 0 || stateTagCount(scene) < minState) {
       stats.belowQuality++
     } else {
-      scenes.push(scene)
+      good.push(scene)
     }
   }
 
-  const situations = groupSituations(scenes)
+  // Only scenes with the people of the pack: no partner for a solo character, no open counts.
+  const fromIdentity = ctx.identity ? compositionOfIdentity(ctx.identity) : null
+  const composition = fromIdentity ?? ctx.people ?? mostFrequentComposition(good)
+  stats.composition = composition
+  stats.compositionSource = fromIdentity ? 'identity' : ctx.people ? 'option' : composition ? 'pool' : 'none'
+  const scenes = good.filter(
+    (scene) => !!composition && !!scene.people && scene.people.girls === composition.girls && scene.people.boys === composition.boys
+  )
+  stats.incompatible = good.length - scenes.length
+
+  const situations = groupSituations(scenes, ctx.overrides)
   stats.scenes = scenes.length
   stats.situations = situations.length
   return { scenes, situations, stats }
 }
 
 /**
- * Leader clustering on the `skeleton` tags: a scene joins the most similar group whose
- * first scene it resembles (Jaccard >= SITUATION_SIMILARITY), or starts its own.
- * Deterministic: the pool order decides, and ties go to the older group.
+ * Situations by coverage. Candidate tags are the `skeleton` tags of the posture,
+ * physiological and interaction slots. The tag that covers most unassigned scenes
+ * makes a situation with those scenes; this repeats until the best tag covers less than
+ * MIN_SITUATION_SHARE of the pool or MAX_SITUATIONS exist. The rest is "other".
+ * Deterministic: ties go to the tag seen first in the pool.
  */
-export function groupSituations(scenes: Scene[]): Situation[] {
-  const groups: Scene[][] = []
+export function groupSituations(scenes: Scene[], overrides: Record<string, string> = {}): Situation[] {
+  const isLabelTag = (tag: string) => {
+    const slot = getTagSlotFromOverrides(tag, overrides)?.slot
+    return !!slot && LABEL_SLOTS.has(slot)
+  }
+  const candidates = new Map<string, Scene[]>()
   for (const scene of scenes) {
-    let best = -1
-    let bestSimilarity = SITUATION_SIMILARITY
-    groups.forEach((group, i) => {
-      const similarity = jaccard(scene.units.skeleton, group[0].units.skeleton)
-      if (similarity >= bestSimilarity && (best === -1 || similarity > bestSimilarity)) {
-        best = i
-        bestSimilarity = similarity
+    for (const tag of scene.units.skeleton) {
+      if (!isLabelTag(tag)) continue
+      const list = candidates.get(tag)
+      if (list) list.push(scene)
+      else candidates.set(tag, [scene])
+    }
+  }
+
+  const order = Array.from(candidates.keys())
+  const assigned = new Set<Scene>()
+  const groups: Array<{ tag: string; scenes: Scene[] }> = []
+  while (groups.length < MAX_SITUATIONS) {
+    let bestTag: string | null = null
+    let bestCount = 0
+    for (const tag of order) {
+      const count = candidates.get(tag)!.filter((scene) => !assigned.has(scene)).length
+      if (count > bestCount) {
+        bestTag = tag
+        bestCount = count
       }
-    })
-    if (best === -1) groups.push([scene])
-    else groups[best].push(scene)
+    }
+    if (!bestTag || bestCount < MIN_SITUATION_SHARE * scenes.length) break
+    const members = candidates.get(bestTag)!.filter((scene) => !assigned.has(scene))
+    members.forEach((scene) => assigned.add(scene))
+    groups.push({ tag: bestTag, scenes: members })
   }
 
   const usedIds = new Map<string, number>()
-  return groups
-    .map((group, order) => ({ group, order }))
-    .sort((a, b) => b.group.length - a.group.length || a.order - b.order)
-    .map(({ group }) => {
-      const label = commonSkeletonTags(group)
-      const base = label.join(' + ')
-      const n = (usedIds.get(base) ?? 0) + 1
-      usedIds.set(base, n)
-      return {
-        id: n === 1 ? base : `${base} #${n}`,
-        label,
-        sceneIds: group.map((scene) => scene.postId),
-        previews: group.flatMap((scene) => (scene.preview ? [scene.preview] : [])).slice(0, PREVIEWS_PER_SITUATION),
-      }
-    })
+  const situations: Situation[] = groups.map(({ tag, scenes: members }) => {
+    const label = [tag, ...commonCoTag(members, tag)]
+    const base = label.join(' + ')
+    const n = (usedIds.get(base) ?? 0) + 1
+    usedIds.set(base, n)
+    return toSituation(n === 1 ? base : `${base} #${n}`, label, members)
+  })
+  const rest = scenes.filter((scene) => !assigned.has(scene))
+  if (rest.length > 0) situations.push(toSituation(OTHER_SITUATION, [OTHER_SITUATION], rest))
+  return situations
 }
 
-/** The up-to-three skeleton tags most scenes of the group carry (ties: first seen). */
-function commonSkeletonTags(group: Scene[]): string[] {
-  const counts = new Map<string, number>()
-  for (const scene of group) {
-    for (const tag of scene.units.skeleton) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+function toSituation(id: string, label: string[], members: Scene[]): Situation {
+  return {
+    id,
+    label,
+    sceneIds: members.map((scene) => scene.postId),
+    previews: members.flatMap((scene) => (scene.preview ? [scene.preview] : [])).slice(0, PREVIEWS_PER_SITUATION),
   }
-  return Array.from(counts.keys())
-    .map((tag, order) => ({ tag, order, count: counts.get(tag)! }))
-    .sort((a, b) => b.count - a.count || a.order - b.order)
-    .slice(0, LABEL_TAGS)
-    .map((entry) => entry.tag)
+}
+
+/** The skeleton tag, other than `tag`, most scenes of the group share (empty when none). */
+function commonCoTag(members: Scene[], tag: string): string[] {
+  const counts = new Map<string, number>()
+  for (const scene of members) {
+    for (const other of scene.units.skeleton) {
+      if (other !== tag) counts.set(other, (counts.get(other) ?? 0) + 1)
+    }
+  }
+  let best: string | null = null
+  let bestCount = 0
+  for (const [other, count] of counts) {
+    if (count > bestCount) {
+      best = other
+      bestCount = count
+    }
+  }
+  return best ? [best] : []
 }
