@@ -1068,12 +1068,32 @@ function buildPrompt(
   // Pass 1: Smart Tag Exclusion: drop values that contradict the locked base.
   const { validTags: validAgainstBase } = resolveTagConflicts(lockedTags, flatPickedTags)
 
+  // Bundles each picked tag came from. Tags of one bundle appeared together on
+  // a real post, so they are never checked against each other below — only
+  // against the base and against tags from other values.
+  const bundlesOf = new Map<string, Set<string>>()
+  for (const [item, tags] of itemToTags) {
+    if (tags.length < 2) continue
+    for (const t of tags) {
+      const bundles = bundlesOf.get(t) ?? new Set<string>()
+      bundles.add(item)
+      bundlesOf.set(t, bundles)
+    }
+  }
+  const shareBundle = (a: string, b: string) => {
+    const bundlesA = bundlesOf.get(a)
+    const bundlesB = bundlesOf.get(b)
+    if (!bundlesA || !bundlesB) return false
+    for (const item of bundlesA) if (bundlesB.has(item)) return true
+    return false
+  }
+
   // Pass 2: Smart Tag Exclusion, pass 2: incremental contradiction check
   // across remaining tags so mutually contradictory picks don't co-exist,
   // augmented with physical slot constraint checking.
   const validTags: string[] = []
-  let contextTags = lockedTags
   for (const candidate of validAgainstBase) {
+    const contextTags = [...lockedTags, ...validTags.filter((t) => !shareBundle(t, candidate))]
     const { validTags: stillValid } = resolveTagConflicts(contextTags, [candidate])
     if (
       stillValid.length > 0 &&
@@ -1081,7 +1101,6 @@ function buildPrompt(
       !conflictsWithBackground(candidate, contextTags, tagOverrides)
     ) {
       validTags.push(candidate)
-      contextTags = [...contextTags, candidate]
     }
   }
 
