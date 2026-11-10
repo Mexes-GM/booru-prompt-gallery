@@ -63,6 +63,13 @@ const MAX_DONOR_TRIES = 6
 const ATTEMPTS_PER_PROMPT = 6
 
 type SwapUnit = 'face' | 'camera' | 'place' | 'outfit'
+/** Units that move together: exposure goes with the outfit it was shown with. */
+const SWAP_PARTS: Record<SwapUnit, UnitName[]> = {
+  face: ['face'],
+  camera: ['camera'],
+  place: ['place'],
+  outfit: ['outfit', 'exposure'],
+}
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
@@ -250,6 +257,7 @@ export function composePack(pool: ScenePool, options: ComposeOptions): { prompts
       face: scene.units.face.slice(),
       camera: scene.units.camera.slice(),
       outfit: scene.units.outfit.slice(),
+      exposure: scene.units.exposure.slice(),
       body: scene.units.body.slice(),
       place: scene.units.place.slice(),
       extras: options.extras ? scene.units.extras.slice() : [],
@@ -272,16 +280,20 @@ export function composePack(pool: ScenePool, options: ComposeOptions): { prompts
       const roll = rng()
       const wanted = force || (options.mix === 'remix' && roll < SWAP_CHANCE)
       if (!wanted) return
+      const parts = SWAP_PARTS[unit]
+      const current = parts.flatMap((part) => units[part])
       const donors = shuffled(donorsFor(scene, unit), rng).slice(0, MAX_DONOR_TRIES)
       for (const donor of donors) {
-        const candidate = donor.units[unit]
-        if (candidate.join('|') === units[unit].join('|')) continue
-        const rest = [...fixed, ...unitTags({ ...units, [unit]: [] })]
+        const candidate = parts.flatMap((part) => donor.units[part])
+        if (candidate.join('|') === current.join('|')) continue
+        const emptied = { ...units }
+        for (const part of parts) emptied[part] = []
+        const rest = [...fixed, ...unitTags(emptied)]
         const clash =
           resolveTagConflicts(rest, candidate).conflictingTags.length > 0 ||
           candidate.some((tag) => conflictsWithBackground(tag, rest, overrides))
         if (clash) continue
-        units[unit] = candidate.slice()
+        for (const part of parts) units[part] = donor.units[part].slice()
         sources[unit] = donor.postId
         ratingLevel = Math.max(ratingLevel, RATING_LEVEL[donor.rating])
         return

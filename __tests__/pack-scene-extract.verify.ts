@@ -40,7 +40,8 @@ const BASE_TAGS =
   assert(units.camera.join() === "looking at viewer", "camera tag goes to camera")
   assert(units.place.join() === "bedroom,bed", "scenery goes to place")
   assert(units.outfit.join() === "skirt,shirt", "clothing goes to outfit (signature glasses left out)")
-  assert(units.body.join() === "navel", "state anatomy goes to body")
+  assert(units.exposure.join() === "navel", "state anatomy goes to exposure")
+  assert(units.body.length === 0, "nothing else goes to body")
   const all = Object.values(units).flat()
   for (const gone of ["blue hair", "long hair", "red eyes", "large breasts", "glasses", "test hero", "test series",
     "test artist", "highres", "comic", "speech bubble", "1girl", "solo"]) {
@@ -100,11 +101,12 @@ const BASE_TAGS =
 
 // ── Unclassified tags and support ──
 {
-  const post = makePost(13, "1girl standing bedroom smile unknown_thing rare_thing")
+  const post = makePost(13, "1girl standing bedroom smile unknown_thing rare_thing mystery_name")
   const supported = extractScene(post, makeContext({ poolSupport: (tag) => (tag === "unknown thing" ? 3 : 1) }))!
   assert(supported.units.loose.join() === "unknown thing", "unclassified tag with support travels with its scene")
   const open = extractScene(post, makeContext())!
   assert(open.units.loose.length === 2, "without a support function nothing is filtered by support")
+  assert(!open.units.loose.includes("mystery name") && !Object.values(open.units).flat().includes("mystery name"), "a tag the taxonomy has no entry for is never carried")
   // a name the database does not know appears with a single character / series
   const spread = extractScene(post, makeContext({ poolSupport: () => 5, poolSources: (tag) => (tag === "unknown thing" ? 3 : 1) }))!
   assert(spread.units.loose.join() === "unknown thing", "an unclassified tag seen with only one character / series is not carried")

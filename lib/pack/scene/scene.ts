@@ -12,7 +12,7 @@ import type { BooruPost } from '../../booru/types'
 import { classifyPostForPack, normalizeTagForPack, postAspectLog } from '../pack-generator'
 import { postCharacters } from '../character-focus'
 import { splitTags } from '../../utils/tag-utils'
-import { getTagSlotFromOverrides } from '../../tag-taxonomy'
+import { getTagSlotFromOverrides, resolveOverrideValue } from '../../tag-taxonomy'
 import type { TagCategory } from '../../tag-taxonomy'
 import { GENDER_AFFINITY } from '../../prompt/natural/gender-affinity'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isKinshipTag, type Permanence } from './permanence'
@@ -28,7 +28,9 @@ export interface SceneUnits {
   camera: string[]
   /** Clothing and its state, and roles that come with a uniform. */
   outfit: string[]
-  /** Exposed or changed body parts (not permanent traits). */
+  /** Exposure: body parts the picture shows or leaves bare. It travels with the outfit. */
+  exposure: string[]
+  /** State of the hair and the traits of a partner of the other gender. */
   body: string[]
   place: string[]
   /** Equipment and creatures. */
@@ -40,7 +42,7 @@ export interface SceneUnits {
 export type UnitName = keyof SceneUnits
 
 /** Order of the units inside a prompt (the identity goes before `skeleton`). */
-export const UNIT_ORDER: readonly UnitName[] = ['skeleton', 'face', 'outfit', 'body', 'camera', 'place', 'extras', 'loose']
+export const UNIT_ORDER: readonly UnitName[] = ['skeleton', 'face', 'outfit', 'exposure', 'body', 'camera', 'place', 'extras', 'loose']
 
 export interface Scene {
   postId: number
@@ -100,7 +102,7 @@ export function normalizeRating(rating: string | undefined): SceneRating {
 export const RATING_LEVEL: Record<SceneRating, number> = { g: 0, s: 1, q: 2, e: 3 }
 
 export function emptyUnits(): SceneUnits {
-  return { skeleton: [], face: [], camera: [], outfit: [], body: [], place: [], extras: [], loose: [] }
+  return { skeleton: [], face: [], camera: [], outfit: [], exposure: [], body: [], place: [], extras: [], loose: [] }
 }
 
 /** Every tag of a set of units, in prompt order. */
@@ -166,7 +168,8 @@ function unitOfSlot(slot: string): UnitName | null {
   if (SKELETON_SLOTS.has(slot)) return 'skeleton'
   if (slot === 'pose:expression' || slot === 'appearance:eyes') return 'face'
   if (slot === 'pose:camera') return 'camera'
-  if (slot === 'appearance:hair' || slot === 'appearance:anatomy') return 'body'
+  if (slot === 'appearance:anatomy') return 'exposure'
+  if (slot === 'appearance:hair') return 'body'
   if (slot === 'appearance:demographics' || slot.startsWith('clothing:')) return 'outfit'
   if (slot.startsWith('scenery:')) return 'place'
   if (slot.startsWith('equipment:') || slot.startsWith('creature:')) return 'extras'
@@ -296,7 +299,9 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
       put(unit, tag)
       continue
     }
-    // No axis slot: the pool has to vouch for it.
+    // No axis slot. A tag the taxonomy has no entry for is usually a work, artist or person name: out.
+    if (!resolveOverrideValue(tag, ctx.overrides)) continue
+    // Known but not an axis: the pool has to vouch for it.
     const fallback = unitOfCategory(info?.category ?? bucket.get(tag) ?? 'other')
     if (fallback && supported(tag)) put(fallback, tag)
   }

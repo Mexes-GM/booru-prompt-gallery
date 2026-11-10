@@ -67,6 +67,10 @@ export const OVERRIDES: Record<string, string> = {
   "test hero": "other:character",
   "test series": "other:copyright",
   "test artist": "other:artist",
+  "unknown thing": "other:unclassified",
+  "rare thing": "other:unclassified",
+  "photo (medium)": "other:meta",
+  "real life": "other:copyright",
 }
 
 export const PERMANENCE_DATA: PermanenceData = {
