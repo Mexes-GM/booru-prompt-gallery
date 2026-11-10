@@ -574,10 +574,15 @@ export function usePackMode(
     setGeneratedPrompts([])
   }, [])
 
-  /** Sets the free-text "From my prompt" base, clearing any base card. */
+  /**
+   * Sets the free-text "From my prompt" base, clearing any base card. An empty
+   * text clears the base but keeps the remembered prompt, so closing the
+   * builder doesn't empty the next "From my prompt".
+   */
   const setBasePrompt = useCallback((text: string) => {
     resetToPromptBase(text, [])
     setBaseFromCharacterFlag(false)
+    if (!text.trim()) return
     try {
       userPreferences.setLastPackBasePrompt(text)
     } catch {
