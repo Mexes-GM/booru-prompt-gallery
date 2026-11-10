@@ -152,7 +152,8 @@ import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
 import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
-import { searchedCharacterOf } from "@/lib/pack/character-focus"
+import { searchedCharacterIn, searchedCharacterOf } from "@/lib/pack/character-focus"
+import { characterSearchTags } from "@/lib/pack/character-identity"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
 import type { PackSourceAnswers } from "./pack-source-modal"
@@ -919,9 +920,10 @@ export function PromptGallery() {
   // Source for a new base: "Current search" follows the gallery's search and
   // provider as they are now; a custom or empty source the user chose stays.
   // The content rating is always the last one picked (safe until changed).
+  // A source that came with a typed character was never the user's choice: it follows the search too.
   const defaultPackSource = useCallback((): PackSourceAnswers => (
-    packSourceAnswers.tagsSource === 'current'
-      ? { ...packSourceAnswers, searchTags: search.searchTags, booruProvider: search.booruProvider }
+    packSourceAnswers.tagsSource === 'current' || packSourceAnswers.fromCharacter
+      ? { ...packSourceAnswers, tagsSource: 'current', fromCharacter: undefined, searchTags: search.searchTags, booruProvider: search.booruProvider }
       : packSourceAnswers
   ), [packSourceAnswers, search.searchTags, search.booruProvider])
 
@@ -948,6 +950,36 @@ export function PromptGallery() {
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
   }, [packModeSetBasePrompt, rebasePackSeeding, applyPackSource, defaultPackSource, packEntryStartInPrompt])
+
+  // "From my search": the one character the gallery's search is about, from
+  // its results. That character becomes the base with no card, and the
+  // search itself is the source their look and pools come from.
+  const packSearchCharacter = useMemo(
+    () => (packEntryOpen ? searchedCharacterIn(search.allPosts ?? [], search.debouncedSearchTags) : null),
+    [packEntryOpen, search.allPosts, search.debouncedSearchTags]
+  )
+  const packModeSetBaseFromCharacter = packMode.setBaseFromCharacter
+  const handleStartFromSearch = useCallback(() => {
+    if (!packSearchCharacter) return
+    packModeSetBaseFromCharacter(packSearchCharacter)
+    applyPackSource(defaultPackSource())
+    setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
+  }, [packSearchCharacter, packModeSetBaseFromCharacter, applyPackSource, defaultPackSource])
+
+  // "From a character": no search needed, the character's own posts are the source.
+  const handleStartFromCharacter = useCallback((character: string) => {
+    packModeSetBaseFromCharacter(character)
+    applyPackSource({
+      ...packSourceAnswers,
+      tagsSource: 'custom',
+      fromCharacter: true,
+      searchTags: characterSearchTags(character, search.booruProvider),
+      booruProvider: search.booruProvider,
+    })
+    setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
+  }, [packModeSetBaseFromCharacter, applyPackSource, packSourceAnswers, search.booruProvider])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
@@ -2309,6 +2341,9 @@ export function PromptGallery() {
         onChooseCard={() => setPackEntryOpen(false)}
         onSubmitPrompt={handleSubmitPackPrompt}
         onCancel={handlePackEntryCancel}
+        searchCharacter={packSearchCharacter}
+        onChooseSearch={handleStartFromSearch}
+        onSubmitCharacter={handleStartFromCharacter}
       />}
       {packSourceMounted && <PackSourceModal
         open={packSourceShown}
@@ -2378,11 +2413,21 @@ export function PromptGallery() {
         onRegenerate={handlePackRegenerate}
         onRerollPrompt={packMode.rerollPrompt}
         onClearBase={() => {
+          // A character base came from the entry dialog, not from a card: offer it again.
+          const fromCharacter = packMode.baseFromCharacter
           packMode.setBaseCard(null)
           packMode.setBasePrompt('')
           // Keep the fetched posts: the next base on this source reuses them.
           hasSeededRef.current = false
+          if (fromCharacter) {
+            setPackEntryStartInPrompt(false)
+            setPackEntryOpen(true)
+          }
         }}
+        baseFromCharacter={packMode.baseFromCharacter}
+        baseLook={packMode.baseLook}
+        onSetBaseLook={packMode.setBaseLook}
+        typicalLookAvailable={packMode.typicalLookAvailable}
         onExit={() => {
           packMode.disablePackMode()
           packMode.setBaseCard(null)

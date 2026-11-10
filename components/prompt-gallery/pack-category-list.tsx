@@ -287,7 +287,7 @@ const CategoryRow = memo(function CategoryRow({
           ? isCollecting
             ? "Collecting tags…"
             : "No tags found yet"
-          : `${values.length} ${values.length === 1 ? unit : units} · ${picks} per prompt`
+          : `${kept.length > 0 ? `Always ${previewTags(kept)} · ` : ""}${values.length} ${values.length === 1 ? unit : units} · ${picks} per prompt`
   const summaryExtra = customizedSlots > 0 ? ` · ${customizedSlots} ${customizedSlots === 1 ? "part" : "parts"} changed` : ""
 
   const handleAdd = () => {

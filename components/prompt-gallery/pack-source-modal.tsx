@@ -21,6 +21,8 @@ export type PackTagsSource = "current" | "custom" | "empty"
 export interface PackSourceAnswers {
   ratingMode: PackRatingMode
   tagsSource: PackTagsSource
+  /** Set by "From a character": these tags came with the typed character, not from the user's source settings. */
+  fromCharacter?: boolean
   /** The actual tags to search — resolved from tagsSource at Apply time
    *  (currentSearchTags when "current", the edited draft when "custom", ""
    *  when "empty"). Kept separate from tagsSource so callers don't need to

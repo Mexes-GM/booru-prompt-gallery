@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -39,6 +40,7 @@ import { PackCategoryList, PackStepper } from './pack-category-list'
 import { TagAutocompleteTextarea } from './tag-autocomplete-textarea'
 import { PackBuilderTour, findPackTourTargets, PACK_SOURCE_HINT_STORAGE_KEY, PACK_TOUR_OPEN_PARTS_EVENT, PACK_TOUR_STORAGE_KEY } from './pack-builder-tour'
 import type { VarietyLevel, VarietySetting } from '@/lib/pack/variety-presets'
+import type { CharacterLook } from '@/lib/pack/character-identity'
 
 export interface PackBuilderStickyFooterProps {
     isOpen: boolean
@@ -113,6 +115,12 @@ export interface PackBuilderStickyFooterProps {
     /** Re-rolls one generated prompt in place (§6). Returns false if no candidate was found. */
     onRerollPrompt: (index: number) => boolean
     onClearBase: () => void
+    /** The base is a character chosen by name, with no card. */
+    baseFromCharacter?: boolean
+    /** Where a card base's look comes from (Typical or This card), offered when the typical look is known. */
+    baseLook?: CharacterLook
+    onSetBaseLook?: (look: CharacterLook) => void
+    typicalLookAvailable?: boolean
     onExit: () => void
     prompts: PackPrompt[]
     /** What the natural-language formats convert for one prompt (see usePackMode). */
@@ -611,6 +619,10 @@ const PackBuilderStickyFooterComponent = ({
     onRegenerate,
     onRerollPrompt,
     onClearBase,
+    baseFromCharacter = false,
+    baseLook = 'typical',
+    onSetBaseLook,
+    typicalLookAvailable = false,
     onExit,
     prompts,
     naturalSourceOf,
@@ -990,15 +1002,30 @@ const PackBuilderStickyFooterComponent = ({
                                         )}
                                         <div className="flex-1 min-w-0 flex flex-col gap-2">
                                             <div className="flex items-center justify-between gap-2">
-                                                <h3 className="text-sm font-semibold truncate">{baseCard ? `Base card #${baseCard.id}` : 'Your prompt'}</h3>
-                                                <Button type="button" variant="outline" size="sm" onClick={baseCard ? onClearBase : onEditBasePrompt} className="h-8 pointer-coarse:h-11 px-2.5 text-xs flex-shrink-0">
-                                                    <Pencil className="w-3 h-3 mr-1.5" />
-                                                    {baseCard ? "Change base" : "Edit prompt"}
-                                                </Button>
+                                                <h3 className="text-sm font-semibold truncate min-w-0">{baseCard ? `Base card #${baseCard.id}` : baseFromCharacter ? 'Character' : 'Your prompt'}</h3>
+                                                <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-0">
+                                                    {/* A card base's look: what most of the character's posts show, or the card's own. */}
+                                                    {baseCard && typicalLookAvailable && onSetBaseLook && (
+                                                        <Select value={baseLook} onValueChange={(v) => onSetBaseLook(v as CharacterLook)}>
+                                                            <SelectTrigger aria-label="Character look" className="h-8 pointer-coarse:h-11 w-auto gap-1.5 bg-background px-2.5 text-xs">
+                                                                <span className="text-muted-foreground">Look:</span>
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="typical" className="text-xs">Typical</SelectItem>
+                                                                <SelectItem value="card" className="text-xs">This card</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    )}
+                                                    <Button type="button" variant="outline" size="sm" onClick={baseCard || baseFromCharacter ? onClearBase : onEditBasePrompt} className="h-8 pointer-coarse:h-11 px-2.5 text-xs flex-shrink-0">
+                                                        <Pencil className="w-3 h-3 mr-1.5" />
+                                                        {baseCard || baseFromCharacter ? "Change base" : "Edit prompt"}
+                                                    </Button>
+                                                </div>
                                             </div>
                                             {!baseCard && (
                                                 <p className="text-xs font-mono text-foreground/80 line-clamp-2 break-words" title={basePrompt}>
-                                                    {basePrompt}
+                                                    {baseFromCharacter ? basePrompt.replace(/_/g, ' ') : basePrompt}
                                                 </p>
                                             )}
                                             {!baseCard && (baseClassified.other?.length ?? 0) > 0 && (
