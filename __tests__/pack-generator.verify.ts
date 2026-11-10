@@ -737,5 +737,51 @@ const POSTS: BooruPost[] = [
   assert(!checkSlotConstraints("red dress", ["skirt"], overrides), "derived outfit rejected against a bottom")
 }
 
+// ── 31) Full sets keep all their tags: slot limits don't apply within one set ──
+{
+  const overrides: Record<string, string> = {
+    anal: "pose:physiological",
+    "double penetration": "pose:physiological",
+    "group sex": "pose:physiological",
+    blush: "pose:expression",
+    ahegao: "pose:expression",
+    beach: "scenery:setting",
+    forest: "scenery:setting",
+  }
+  const [bundled] = generatePackPrompts({
+    lockedTags: ["1girl"],
+    axes: { pose: ["ahegao, anal, blush, double penetration, group sex"] },
+    count: 1,
+    rng: createSeededRng(31),
+    tagOverrides: overrides,
+  })
+  for (const tag of ["anal", "double penetration", "group sex", "ahegao", "blush"]) {
+    assert(!!bundled?.prompt.includes(tag), `full set keeps '${tag}' (got '${bundled?.prompt}')`)
+  }
+
+  // Separate values still respect the per-slot limit.
+  const loose = generatePackPrompts({
+    lockedTags: ["1girl"],
+    axes: { scenery: ["beach", "forest"] },
+    axisMinCounts: { scenery: 2 },
+    count: 1,
+    rng: createSeededRng(31),
+    tagOverrides: overrides,
+  })
+  assert(loose.length === 1 && !(loose[0].prompt.includes("beach") && loose[0].prompt.includes("forest")),
+    `two loose settings still collapse to one (got '${loose[0]?.prompt}')`)
+
+  // A set is still checked against the base: a locked setting blocks the set's setting.
+  const [againstBase] = generatePackPrompts({
+    lockedTags: ["1girl", "beach"],
+    axes: { scenery: ["forest, sky"] },
+    count: 1,
+    rng: createSeededRng(31),
+    tagOverrides: overrides,
+  })
+  assert(!!againstBase && !againstBase.prompt.includes("forest") && againstBase.prompt.includes("sky"),
+    `set tags are still checked against the base (got '${againstBase?.prompt}')`)
+}
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
