@@ -105,8 +105,18 @@ const BASE_TAGS =
   const supported = extractScene(post, makeContext({ poolSupport: (tag) => (tag === "unknown thing" ? 3 : 1) }))!
   assert(supported.units.loose.join() === "unknown thing", "unclassified tag with support travels with its scene")
   const open = extractScene(post, makeContext())!
-  assert(open.units.loose.length === 2, "without a support function nothing is filtered by support")
-  assert(!open.units.loose.includes("mystery name") && !Object.values(open.units).flat().includes("mystery name"), "a tag the taxonomy has no entry for is never carried")
+  assert(open.units.loose.length === 3, "without a support function nothing is filtered by support")
+  assert(open.units.loose.includes("mystery name"), "a tag the taxonomy has no entry for is carried when the pool vouches for it")
+  // the booru's own type for a tag settles it
+  const kinds: Record<string, "artist" | "copyright" | "character" | "meta" | "general"> = {
+    "mystery name": "artist", "unknown thing": "general", "rare thing": "copyright",
+  }
+  const typed = extractScene(post, makeContext({ tagKind: (tag) => kinds[tag] }))!
+  assert(typed.units.loose.join() === "unknown thing", "tags the booru types as artist / copyright / character / meta are dropped, general ones stay")
+  const unknownKind = extractScene(post, makeContext({ tagKind: () => undefined }))!
+  assert(unknownKind.units.loose.length === 3, "no data on the type: the support filter decides")
+  const metaPost = extractScene(makePost(16, "1girl standing bedroom bed smile skirt shirt"), makeContext({ tagKind: (tag) => (tag === "skirt" ? "meta" : undefined) }))!
+  assert(!metaPost.units.outfit.includes("skirt") && metaPost.units.outfit.includes("shirt"), "the type applies to tags of any unit")
   // a name the database does not know appears with a single character / series
   const spread = extractScene(post, makeContext({ poolSupport: () => 5, poolSources: (tag) => (tag === "unknown thing" ? 3 : 1) }))!
   assert(spread.units.loose.join() === "unknown thing", "an unclassified tag seen with only one character / series is not carried")

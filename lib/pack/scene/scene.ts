@@ -12,10 +12,13 @@ import type { BooruPost } from '../../booru/types'
 import { classifyPostForPack, normalizeTagForPack, postAspectLog } from '../pack-generator'
 import { postCharacters } from '../character-focus'
 import { splitTags } from '../../utils/tag-utils'
-import { getTagSlotFromOverrides, resolveOverrideValue } from '../../tag-taxonomy'
+import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import type { TagCategory } from '../../tag-taxonomy'
 import { GENDER_AFFINITY } from '../../prompt/natural/gender-affinity'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isKinshipTag, type Permanence } from './permanence'
+
+/** Types a booru gives its tags. */
+export type TagKind = 'general' | 'artist' | 'copyright' | 'character' | 'meta'
 
 export type SceneRating = 'g' | 's' | 'q' | 'e'
 
@@ -55,6 +58,8 @@ export interface Scene {
   /** Composition tags the scene brings that are not plain counts (hetero, yuri, solo...). */
   pairing: string[]
   units: SceneUnits
+  /** Share of the state tags that at least MIN_TYPICAL_SUPPORT posts of the pool carry (set when the pool is built). */
+  typicality?: number
   /** Physical supports that tie pose and place together ("bed", "wall"), plus indoors / outdoors. */
   anchors: string[]
 }
@@ -73,12 +78,19 @@ export interface SceneContext {
    * with one of them. Leave it out for pools of a single character.
    */
   poolSources?: (tag: string) => number
+  /**
+   * What the booru itself says a tag is. A tag typed as artist, copyright, character or meta
+   * is never part of a scene; `undefined` means no data and the support filter applies.
+   */
+  tagKind?: (tag: string) => TagKind | undefined
   /** Place tags of the pool together with their word suffixes ("bunk bed" adds "bed"). */
   poolPlace?: ReadonlySet<string>
 }
 
 /** Posts, and different characters / series, a tag needs in the pool before an unclassified tag travels with its scene. */
 export const MIN_LOOSE_SUPPORT = 2
+/** Posts that carry a tag for it to count as typical of the pool. */
+export const MIN_TYPICAL_SUPPORT = 3
 
 /** Maps the rating vocabularies of the providers to g / s / q / e. */
 export function normalizeRating(rating: string | undefined): SceneRating {
@@ -279,6 +291,8 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
   }
 
   for (const tag of rest) {
+    const kind = ctx.tagKind?.(tag)
+    if (kind && kind !== 'general') continue
     const info = getTagSlotFromOverrides(tag, ctx.overrides)
     const slot = info?.slot
     if (info?.category === 'other' && slot && NON_SCENE_OTHER.has(slot.slice('other:'.length))) continue
@@ -299,9 +313,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
       put(unit, tag)
       continue
     }
-    // No axis slot. A tag the taxonomy has no entry for is usually a work, artist or person name: out.
-    if (!resolveOverrideValue(tag, ctx.overrides)) continue
-    // Known but not an axis: the pool has to vouch for it.
+    // No axis slot: the pool has to vouch for it.
     const fallback = unitOfCategory(info?.category ?? bucket.get(tag) ?? 'other')
     if (fallback && supported(tag)) put(fallback, tag)
   }
