@@ -106,6 +106,28 @@ export function characterFromSearch(characterTags: string[], searchTags: string)
   return matches.length === 1 ? matches[0] : null
 }
 
+/**
+ * The one character a search is about, from its results: a searched tag that
+ * most loaded posts list as a character ("super_sonico" → "super sonico").
+ * Null with no results, no such tag, or more than one.
+ */
+export function searchedCharacterIn(posts: readonly BooruPost[], searchTags: string, minShare = 0.5): string | null {
+  if (posts.length === 0) return null
+  // The search box takes "super sonico, smile" as well as "super_sonico smile":
+  // try each comma-separated piece whole, then each word.
+  const pieces = searchTags.split(',').map((t) => t.trim()).filter(Boolean)
+  const tags = [...pieces, ...pieces.flatMap((t) => t.split(/\s+/))]
+    .filter((t) => t && !t.startsWith('-') && !t.includes(':'))
+    .map((t) => normalizeTagForPack(t.replace(/^~/, '')))
+    .filter(Boolean)
+  const listedBy = new Map<string, number>()
+  for (const post of posts) {
+    for (const character of postCharacters(post)) listedBy.set(character, (listedBy.get(character) ?? 0) + 1)
+  }
+  const found = Array.from(new Set(tags)).filter((tag) => (listedBy.get(tag) ?? 0) / posts.length >= minShare)
+  return found.length === 1 ? found[0] : null
+}
+
 /** For a multi-character post, the character the search is about (null otherwise, or when unclear). */
 export function searchedCharacterOf(post: BooruPost, searchTags: string): string | null {
   const characters = postCharacters(post)
