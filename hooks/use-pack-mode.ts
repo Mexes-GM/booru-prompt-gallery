@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef, useSyncExternalStore } from 'react'
 import { BooruPost, BooruProvider } from '@/lib/booru/types'
 import { TagCategory } from '@/lib/tag-classifier'
 import { splitCommaSeparatedTags, splitTags } from '@/lib/utils/tag-utils'
@@ -59,6 +59,21 @@ import { usePromptFormat } from '@/hooks/use-natural-prompt'
 import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
 import { packNaturalSource } from '@/lib/pack/pack-natural'
 import type { NaturalPromptSource } from '@/lib/prompt/natural-format'
+import {
+  getCharacterTraits,
+  getNoCharacterTraits,
+  loadCharacterTraits,
+  subscribeCharacterTraits,
+} from '@/lib/prompt/natural-prompt-loader'
+import {
+  pinnedTagsFor,
+  profileIdentity,
+  splitSignature,
+  subjectTags,
+  typicalLook,
+  typicalSubject,
+  type CharacterLook,
+} from '@/lib/pack/character-identity'
 
 const DEFAULT_PROMPT_COUNT = 10
 /** Upper bound for the "Min tags per prompt" control. */
@@ -144,6 +159,18 @@ export interface UsePackModeResult {
   /** Free-text "From my prompt" base (§3) — mutually exclusive with baseCard. */
   basePrompt: string
   setBasePrompt: (text: string) => void
+  /**
+   * "From my search" / "From a character": the character becomes the base,
+   * with no card. Their look is what most of their posts show.
+   */
+  setBaseFromCharacter: (character: string) => void
+  /** The base is a character chosen by name (no card, no pasted prompt). */
+  baseFromCharacter: boolean
+  /** Where a card base's look comes from: what most of the character's posts show, or the card. */
+  baseLook: CharacterLook
+  setBaseLook: (look: CharacterLook) => void
+  /** A one-character card base whose character's typical look is known, so the card can offer it. */
+  typicalLookAvailable: boolean
   /** True when there's a usable base, either baseCard or a non-empty basePrompt. */
   hasBase: boolean
 
@@ -339,6 +366,15 @@ export function usePackMode(
   // character from the collected pool, which decide which traits are theirs.
   const [chosenCharacter, setChosenCharacter] = useState<string | null>(null)
   const [characterProfiles, setCharacterProfiles] = useState<Record<string, CharacterProfile>>({})
+  // A character chosen by name ("From my search", "From a character") is the
+  // base, written as a one-tag prompt; their look comes from their posts.
+  const [baseFromCharacter, setBaseFromCharacterFlag] = useState(false)
+  // A card base keeps the character's typical look unless the user picks the card's.
+  const [baseLook, setBaseLook] = useState<CharacterLook>('typical')
+  // Each character's typical look and subject tags ("1girl"), from the source's posts as they arrive.
+  const [typicalLooks, setTypicalLooks] = useState<Record<string, { look: string[]; subject: string[] }>>({})
+  // Static trait profiles: a named character's look until enough of their posts arrive.
+  const traitData = useSyncExternalStore(subscribeCharacterTraits, getCharacterTraits, getNoCharacterTraits)
   const learning = usePackLearning()
 
   // Lazy-load the persisted builder config ONCE on mount (see
@@ -504,6 +540,8 @@ export function usePackMode(
 
   const setBaseCard = useCallback((post: BooruPost | null) => {
     setBaseCardRaw(post)
+    setBaseFromCharacterFlag(false)
+    setBaseLook('typical')
     // A real base card always wins over a pasted prompt base.
     if (post) setBasePromptRaw('')
     // New base → sampled axis pools no longer make sense as-is; caller should
@@ -522,11 +560,11 @@ export function usePackMode(
     setGeneratedPrompts([])
   }, [])
 
-  /** Sets the free-text "From my prompt" base, clearing any base card. */
-  const setBasePrompt = useCallback((text: string) => {
+  /** Makes `text` the base as a prompt, clearing any base card and what came from the old base. */
+  const resetToPromptBase = useCallback((text: string, characters: string[]) => {
     setBasePromptRaw(text)
     setBaseCardRaw(null)
-    setPromptCharacterTags([])
+    setPromptCharacterTags(characters)
     setChosenCharacter(null)
     setCharacterProfiles({})
     setAxisValuesRaw({})
@@ -534,12 +572,30 @@ export function usePackMode(
     setAxisAspects({})
     setExcludedBaseTags(new Set())
     setGeneratedPrompts([])
+  }, [])
+
+  /** Sets the free-text "From my prompt" base, clearing any base card. */
+  const setBasePrompt = useCallback((text: string) => {
+    resetToPromptBase(text, [])
+    setBaseFromCharacterFlag(false)
     try {
       userPreferences.setLastPackBasePrompt(text)
     } catch {
       // Non-fatal: best-effort, same as every other localStorage write here.
     }
-  }, [])
+  }, [resetToPromptBase])
+
+  /**
+   * A character chosen by name becomes the base, with no card. The name is
+   * known to be a character already, so it doesn't wait for posts to say so;
+   * the remembered "From my prompt" text is left alone.
+   */
+  const setBaseFromCharacter = useCallback((character: string) => {
+    const name = normalizeTagForPack(character)
+    if (!name) return
+    resetToPromptBase(name.replace(/ /g, '_'), [name])
+    setBaseFromCharacterFlag(true)
+  }, [resetToPromptBase])
 
   // Whole-category toggle: locked -> varying; varying or partial -> locked.
   // Either way the category's partial slot locks are cleared.
@@ -567,7 +623,8 @@ export function usePackMode(
     [basePrompt]
   )
 
-  const baseClassified = useMemo<Record<TagCategory, string[]>>(() => {
+  // The base's own tags per category: its card's, or the pasted prompt's.
+  const ownBaseClassified = useMemo<Record<TagCategory, string[]>>(() => {
     if (baseCard) return classifyPostForPack(baseCard, effectiveOverrides)
     if (basePromptTags.length > 0) {
       return classifyBasePrompt(basePrompt, effectiveOverrides, promptCharacterTags).classified
@@ -625,6 +682,54 @@ export function usePackMode(
     [characterTags, focusCharacter, characterProfiles]
   )
 
+  // A named character's static trait profile, their look until enough of their posts arrive.
+  useEffect(() => {
+    if (baseFromCharacter && focusCharacter) void loadCharacterTraits([focusCharacter])
+  }, [baseFromCharacter, focusCharacter])
+  const profileTags = useMemo(() => {
+    if (!baseFromCharacter || !focusCharacter) return []
+    const profile = traitData.profiles[focusCharacter] ?? traitData.profiles[traitData.aliases[focusCharacter] ?? '']
+    return profile ? Object.keys(profile).map(normalizeTagForPack).filter(Boolean) : []
+  }, [baseFromCharacter, focusCharacter, traitData])
+  useEffect(() => {
+    if (profileTags.length > 0) void enrichOverrides(profileTags)
+  }, [profileTags, enrichOverrides])
+
+  /**
+   * The identity a one-character pack keeps: what most of the character's
+   * solo posts show (typicalLook). A named character falls back to their
+   * trait profile, then to the name alone; a card base to the card itself,
+   * which the user can also choose (baseLook). A pasted prompt keeps the look
+   * it was given, and a multi-character card keeps its own path (focusAppearance).
+   */
+  const typical = focusCharacter && !hasMultipleCharacters ? typicalLooks[focusCharacter] : undefined
+  const typicalLookAvailable = !!baseCard && !!typical?.look.length
+  // The look leaves out who is in the picture ("1girl"): a card says it, a named character's posts do.
+  const identity = useMemo<{ look: string[]; subject: string[] } | null>(() => {
+    if (!focusCharacter) return null
+    if (baseFromCharacter) {
+      if (typical?.look.length) return typical
+      const look = profileTags.length > 0 ? profileIdentity(focusCharacter, traitData.profiles, effectiveOverrides, traitData.aliases) : []
+      return { look, subject: typical?.subject ?? [] }
+    }
+    if (!baseCard || baseLook !== 'typical' || !typical?.look.length) return null
+    const subject = subjectTags(ownBaseClassified.appearance ?? [], new Set(characterTags), effectiveOverrides)
+    return { look: typical.look, subject }
+  }, [focusCharacter, baseFromCharacter, baseCard, baseLook, typical, profileTags, traitData, effectiveOverrides, ownBaseClassified, characterTags])
+  // Signature accessories (headphones, glasses…) belong in Clothing, where they stay while it varies.
+  const identityParts = useMemo(
+    () => splitSignature(identity?.look ?? [], effectiveOverrides),
+    [identity, effectiveOverrides]
+  )
+  const baseClassified = useMemo<Record<TagCategory, string[]>>(() => {
+    if (!identity || !focusCharacter) return ownBaseClassified
+    return {
+      ...ownBaseClassified,
+      appearance: Array.from(new Set([focusCharacter, ...identity.subject, ...identityParts.look])),
+      clothing: Array.from(new Set([...(ownBaseClassified.clothing ?? []), ...identityParts.signature])),
+    }
+  }, [identity, focusCharacter, identityParts, ownBaseClassified])
+
   // Base tags minus the ones the user removed — what locks actually draw from.
   const keptBaseClassified = useMemo<Record<TagCategory, string[]>>(() => {
     if (excludedBaseTags.size === 0) return baseClassified
@@ -676,13 +781,15 @@ export function usePackMode(
         if (!slot || lockedSlots.has(slot)) tags.push(tag)
       })
     })
+    // The character's signature accessories stay while Clothing varies.
+    tags.push(...pinnedTagsFor(identityParts.signature, 'clothing', { lockedCategories, excludedBaseTags, mutedSlots, axisMinCounts }, effectiveOverrides))
     // Free-text base prompt ("always included"): merged in as additional constant tags,
     // on top of whatever categories are locked.
     if (customBaseText.trim()) {
       tags.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
     }
     return Array.from(new Set(tags.filter(Boolean)))
-  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance])
+  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance, identityParts, excludedBaseTags, mutedSlots, axisMinCounts])
 
   /** "Always add" tags as typed — finalizePackPrompt puts them first, underscores intact. */
   const alwaysAddTags = useMemo(() => parseAlwaysAddTags(customBaseText), [customBaseText])
@@ -1120,13 +1227,22 @@ export function usePackMode(
           splitTags(post.tag_string_character || '').forEach((t) => booruCharacters.add(normalizeTagForPack(t)))
         })
         const detected = detectCharacterTags(basePromptTags, posts, currentOverrides()).filter((t) => booruCharacters.has(t))
-        setPromptCharacterTags(detected)
+        // A character chosen by name is known already, even before any post of them turns up.
+        if (!baseFromCharacter || detected.length > 0) setPromptCharacterTags(detected)
         setCharacterProfiles(detected.length > 1 ? buildSoloCharacterProfiles(posts, detected) : {})
       } else if (characterTags.length > 1) {
         setCharacterProfiles(buildSoloCharacterProfiles(posts, characterTags))
       }
+      // The base character's typical look, from the source's posts: what a
+      // one-character pack keeps for Character.
+      const looks: Record<string, { look: string[]; subject: string[] }> = {}
+      ;(baseCard ? characterTags : basePromptTags).forEach((c) => {
+        const look = typicalLook(posts, c, currentOverrides())
+        if (look?.length) looks[c] = { look, subject: typicalSubject(posts, c, currentOverrides()) ?? [] }
+      })
+      if (Object.keys(looks).length > 0) setTypicalLooks((prev) => ({ ...prev, ...looks }))
     },
-    [resample, axisTagModes, baseCard, basePromptTags, currentOverrides, characterTags]
+    [resample, axisTagModes, baseCard, basePromptTags, baseFromCharacter, currentOverrides, characterTags]
   )
 
   const setClothingFromLibrary = useCallback((on: boolean) => {
@@ -1517,6 +1633,9 @@ export function usePackMode(
     setVarietyLevelRaw(DEFAULT_VARIETY_LEVEL)
     setPromptCount(DEFAULT_PROMPT_COUNT)
     setGeneratedPrompts([])
+    setBaseFromCharacterFlag(false)
+    setBaseLook('typical')
+    setTypicalLooks({})
   }, [])
 
   // Persist the current builder config, debounced (300ms, same idle window as
@@ -1571,6 +1690,11 @@ export function usePackMode(
 
     basePrompt,
     setBasePrompt,
+    setBaseFromCharacter,
+    baseFromCharacter,
+    baseLook,
+    setBaseLook,
+    typicalLookAvailable,
     hasBase,
 
     varietyLevel,

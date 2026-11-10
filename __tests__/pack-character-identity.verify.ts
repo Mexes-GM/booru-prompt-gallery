@@ -7,7 +7,7 @@
  *   1. Identity from a trait profile: hair and eyes first, the leading colour,
  *      signature accessories, no garments, head counts or bare-body tags.
  *   2. A card's look without other boorus' synonyms or minor details.
- *   3. The typical look from what most of the character's solo posts show.
+ *   3. The typical look and subject tags from what most of the character's solo posts show.
  *   4. Signature accessories leave the look for Clothing and stay while it varies.
  *   5. The one character a search is about, from its results.
  *   6. The search for a character's own posts.
@@ -22,8 +22,10 @@ import {
   pinnedTagsFor,
   profileIdentity,
   splitSignature,
+  subjectTags,
   tidyCardLook,
   typicalLook,
+  typicalSubject,
 } from "../lib/pack/character-identity"
 import { searchedCharacterIn } from "../lib/pack/character-focus"
 
@@ -100,6 +102,11 @@ const posts = [
   assert(!look.includes("aqua hair"), "a post with someone else in it does not count")
   assert(eq(typicalLook(posts, "super_sonico", overrides), look), "the booru spelling of the name works too")
   assert(typicalLook(posts.slice(0, 3), "super sonico", overrides) === null, "too few solo posts: no typical look")
+
+  // Who is in the picture: the look leaves it out, the prompt keeps it.
+  assert(eq(typicalSubject(posts, "super sonico", overrides), ["1girl"]), `the subject most solo posts carry (got ${typicalSubject(posts, "super sonico", overrides)})`)
+  assert(typicalSubject(posts.slice(0, 3), "super sonico", overrides) === null, "too few solo posts: no typical subject")
+  assert(eq(subjectTags(["super sonico", "1girl", "pink hair", "rariatto (style)"], new Set(["super sonico"]), overrides), ["1girl"]), "a card's subject: no name, look or style")
 }
 
 // ── 4) Signature accessories live in Clothing and stay while it varies ──

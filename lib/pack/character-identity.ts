@@ -118,6 +118,14 @@ export function splitSignature(tags: readonly string[], overrides: Record<string
   }
 }
 
+/** The posts that show `name` (pack-normalized) and no other named character. */
+function postsAlone(posts: readonly BooruPost[], name: string): BooruPost[] {
+  return posts.filter((p) => {
+    const people = postCharacters(p)
+    return people.length === 1 && people[0] === name
+  })
+}
+
 /**
  * A character's typical look: the hair, eyes, signature accessories and body
  * traits their solo posts agree on (identityTags). Null when there are too
@@ -125,10 +133,7 @@ export function splitSignature(tags: readonly string[], overrides: Record<string
  */
 export function typicalLook(posts: readonly BooruPost[], character: string, overrides: Record<string, string>): string[] | null {
   const name = normalizeTagForPack(character)
-  const alone = posts.filter((p) => {
-    const people = postCharacters(p)
-    return people.length === 1 && people[0] === name
-  })
+  const alone = postsAlone(posts, name)
   if (alone.length < MIN_TYPICAL_POSTS) return null
   const seen = new Map<string, number>()
   for (const post of alone) {
@@ -138,6 +143,35 @@ export function typicalLook(posts: readonly BooruPost[], character: string, over
     look.forEach((t) => seen.set(t, (seen.get(t) ?? 0) + 1))
   }
   return identityTags([...seen].map(([tag, n]) => [tag, n / alone.length] as const), overrides)
+}
+
+/**
+ * The tags of an appearance list that say who is in the picture rather than
+ * how they look ("1girl", "female"): not a name in `names`, not a look tag,
+ * not an artist's style. The look leaves these out; the prompt still needs them.
+ */
+export function subjectTags(tags: readonly string[], names: ReadonlySet<string>, overrides: Record<string, string>): string[] {
+  return tags.filter((t) => !names.has(t) && !STYLE_TAG_RE.test(t) && !isLookTag(t, names, overrides))
+}
+
+/**
+ * The subject tags most of a character's solo posts carry ("1girl"), most
+ * common first. Null when there are too few posts of them alone to tell.
+ */
+export function typicalSubject(posts: readonly BooruPost[], character: string, overrides: Record<string, string>): string[] | null {
+  const name = normalizeTagForPack(character)
+  const alone = postsAlone(posts, name)
+  if (alone.length < MIN_TYPICAL_POSTS) return null
+  const seen = new Map<string, number>()
+  for (const post of alone) {
+    const names = new Set([name, ...postCharacters(post)])
+    const own = subjectTags(classifyPostForPack(post, overrides).appearance, names, overrides)
+    new Set(own).forEach((t) => seen.set(t, (seen.get(t) ?? 0) + 1))
+  }
+  return [...seen]
+    .filter(([, n]) => n / alone.length >= TRAIT_SHARE)
+    .sort((a, b) => b[1] - a[1])
+    .map(([tag]) => tag)
 }
 
 // Other boorus' spellings of one Danbooru tag (Rule34 tags "breasts", "boobs"
