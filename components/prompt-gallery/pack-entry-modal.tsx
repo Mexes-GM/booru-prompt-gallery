@@ -37,6 +37,7 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
   const [view, setView] = useState<"choose" | "prompt" | "character">("choose")
   const [promptText, setPromptText] = useState(initialPrompt)
   const [character, setCharacter] = useState<string | null>(null)
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
 
   // Reset to the right screen (and the remembered prompt) every time the
   // modal is (re)opened, so a previous "Back" doesn't leak into the next use.
@@ -60,7 +61,11 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onCancel() }}>
-      <DialogContent className="max-w-md" onEscapeKeyDown={onCancel}>
+      <DialogContent className="max-w-md" onEscapeKeyDown={(e) => {
+        // The first Escape closes the character suggestions; the dialog stays.
+        if (view === "character" && suggestionsOpen) { e.preventDefault(); return }
+        onCancel()
+      }}>
         {view === "choose" ? (
           <>
             <DialogHeader>
@@ -150,7 +155,7 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
                   </button>
                 </div>
               ) : (
-                <PackCharacterSearch onPick={setCharacter} />
+                <PackCharacterSearch onPick={setCharacter} onSuggestionsOpenChange={setSuggestionsOpen} />
               )}
             </div>
             <DialogFooter className="flex items-center justify-between sm:justify-between">

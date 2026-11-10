@@ -36,13 +36,26 @@ export type TagResult = {
  * "alias -> tag" UI hint) requires a per-row subquery, not a filter.
  */
 export async function searchTags(query: string): Promise<TagResult[]> {
+  try {
+    return await searchTagsOrThrow(query)
+  } catch (error) {
+    console.error('Error searching tags client-side:', error)
+    return []
+  }
+}
+
+/**
+ * searchTags, but a failed lookup (timeout, network) throws instead of looking
+ * like "no tag matches", for callers that need to tell the two apart.
+ */
+export async function searchTagsOrThrow(query: string): Promise<TagResult[]> {
   if (!query || query.trim().length < 2) {
     return []
   }
 
   const normalizedQuery = query.trim().toLowerCase().replace(/ /g, '_')
 
-  try {
+  {
     const supabase = createClient()
     if (!supabase) return []
 
@@ -80,10 +93,6 @@ export async function searchTags(query: string): Promise<TagResult[]> {
     }).slice(0, 5)
 
     return finalResults
-
-  } catch (error) {
-    console.error('Error searching tags client-side:', error)
-    return []
   }
 }
 
