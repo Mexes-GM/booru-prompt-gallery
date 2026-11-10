@@ -105,6 +105,9 @@ const BASE_TAGS =
   assert(supported.units.loose.join() === "unknown thing", "unclassified tag with support travels with its scene")
   const open = extractScene(post, makeContext())!
   assert(open.units.loose.length === 2, "without a support function nothing is filtered by support")
+  // a name the database does not know appears with a single character / series
+  const spread = extractScene(post, makeContext({ poolSupport: () => 5, poolSources: (tag) => (tag === "unknown thing" ? 3 : 1) }))!
+  assert(spread.units.loose.join() === "unknown thing", "an unclassified tag seen with only one character / series is not carried")
 }
 
 // ── Anchors ──

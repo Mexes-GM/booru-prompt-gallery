@@ -65,11 +65,17 @@ export interface SceneContext {
   subject: 'girl' | 'boy'
   /** Number of pool posts that carry the tag. Without it, no unclassified tag is filtered by support. */
   poolSupport?: (tag: string) => number
+  /**
+   * Number of different characters / series (as listed on the posts) among the posts that
+   * carry the tag. A name, or a work title the database does not know, shows up only
+   * with one of them. Leave it out for pools of a single character.
+   */
+  poolSources?: (tag: string) => number
   /** Place tags of the pool together with their word suffixes ("bunk bed" adds "bed"). */
   poolPlace?: ReadonlySet<string>
 }
 
-/** Posts a tag needs in the pool before an unclassified tag travels with its scene. */
+/** Posts, and different characters / series, a tag needs in the pool before an unclassified tag travels with its scene. */
 export const MIN_LOOSE_SUPPORT = 2
 
 /** Maps the rating vocabularies of the providers to g / s / q / e. */
@@ -260,7 +266,9 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
 
   const units = emptyUnits()
   const seen = new Set<string>()
-  const supported = (tag: string) => !ctx.poolSupport || ctx.poolSupport(tag) >= MIN_LOOSE_SUPPORT
+  const supported = (tag: string) =>
+    (!ctx.poolSupport || ctx.poolSupport(tag) >= MIN_LOOSE_SUPPORT) &&
+    (!ctx.poolSources || ctx.poolSources(tag) >= MIN_LOOSE_SUPPORT)
   const put = (unit: UnitName, tag: string) => {
     if (seen.has(tag)) return
     seen.add(tag)

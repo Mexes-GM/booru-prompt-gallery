@@ -16,7 +16,7 @@
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-compose.verify.ts
  */
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
-import { composePack, type ComposeOptions, type ScenePrompt } from "../lib/pack/scene/scene-compose"
+import { composePack, dropDanglingReferences, type ComposeOptions, type ScenePrompt } from "../lib/pack/scene/scene-compose"
 import { createPermanence } from "../lib/pack/scene/permanence"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 import type { BooruPost } from "../lib/booru/types"
@@ -166,6 +166,16 @@ const idx = (p: ScenePrompt, tag: string) => p.tags.indexOf(tag)
   const opened = pool([makePost(63, "1girl standing smile from_above bedroom bed indoors open_shirt")])
   assert(!composePack(opened, options({ count: 1 })).prompts[0].tags.includes("open shirt"), "an open shirt alone does not name the shirt")
 }
+
+// the rule can be applied again to tags changed afterwards
+assert(
+  dropDanglingReferences(["1girl", "standing", "skirt lift", "shirt"], ["1girl"], OVERRIDES).join() === "1girl,standing,shirt",
+  "dropDanglingReferences removes a lifted skirt when no skirt is left"
+)
+assert(
+  dropDanglingReferences(["skirt lift", "red skirt"], [], OVERRIDES).join() === "skirt lift,red skirt",
+  "dropDanglingReferences keeps it when a tag names the skirt"
+)
 
 // ── Identity wins ──
 {

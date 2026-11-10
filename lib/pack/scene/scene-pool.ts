@@ -46,9 +46,12 @@ export interface ScenePool {
   stats: ScenePoolStats
 }
 
-export type ScenePoolContext = Omit<SceneContext, 'poolSupport' | 'poolPlace'> & {
+export type ScenePoolContext = Omit<SceneContext, 'poolSupport' | 'poolPlace' | 'poolSources'> & {
   minStateTags?: number
 }
+
+/** Pools of fewer different characters / series than this cannot tell a name from a general tag by spread. */
+const MIN_SIGNATURES_FOR_SPREAD = 3
 
 /** Every word suffix of a tag: "bunk bed frame" -> itself, "bed frame", "frame". */
 function wordSuffixes(tag: string): string[] {
@@ -67,16 +70,28 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
   const distinct = collapseNearDuplicates(allowed)
   stats.nearDuplicates = allowed.length - distinct.length
 
-  // How many posts carry each tag, and which tags place the character somewhere.
+  // How many posts carry each tag, among how many characters / series, and which tags place the character somewhere.
   const support = new Map<string, number>()
   const place = new Set<string>()
+  const signatures = new Map<string, Set<string>>()
+  const signatureOf = (post: BooruPost) => `${post.tag_string_character || ''}|${post.tag_string_copyright || ''}`
   for (const post of distinct) {
+    const signature = signatureOf(post)
     new Set(splitTags(post.tag_string || '').map(normalizeTagForPack)).forEach((tag) => {
       support.set(tag, (support.get(tag) ?? 0) + 1)
+      const seen = signatures.get(tag)
+      if (seen) seen.add(signature)
+      else signatures.set(tag, new Set([signature]))
     })
     classifyPostForPack(post, ctx.overrides).scenery.forEach((tag) => wordSuffixes(tag).forEach((s) => place.add(s)))
   }
-  const sceneCtx: SceneContext = { ...ctx, poolSupport: (tag) => support.get(tag) ?? 0, poolPlace: place }
+  const spread = new Set(distinct.map(signatureOf)).size >= MIN_SIGNATURES_FOR_SPREAD
+  const sceneCtx: SceneContext = {
+    ...ctx,
+    poolSupport: (tag) => support.get(tag) ?? 0,
+    poolPlace: place,
+    poolSources: spread ? (tag) => signatures.get(tag)?.size ?? 0 : undefined,
+  }
 
   const scenes: Scene[] = []
   for (const post of distinct) {

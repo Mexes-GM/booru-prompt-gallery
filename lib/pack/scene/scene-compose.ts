@@ -155,7 +155,7 @@ function garmentReferenced(tag: string, overrides: Record<string, string>): stri
  * Tags among `tags` that refer to a garment no other tag names: a lifted skirt needs a
  * skirt in the prompt. Referring tags do not count as naming the garment.
  */
-function danglingReferences(tags: string[], overrides: Record<string, string>): Set<string> {
+export function danglingReferences(tags: string[], overrides: Record<string, string>): Set<string> {
   const references = new Map<string, string>()
   for (const tag of tags) {
     const garment = garmentReferenced(tag, overrides)
@@ -170,6 +170,18 @@ function danglingReferences(tags: string[], overrides: Record<string, string>): 
     if (garment === '*' ? !anyClothing : !named.has(garment)) dangling.add(tag)
   })
   return dangling
+}
+
+/**
+ * `tags` without the references to garments nothing else names. Tags in `keep` (the
+ * header and the identity) stay whatever they say. The rule composePack applies, for
+ * callers that change the tags afterwards (a cleanup step may drop the garment).
+ */
+export function dropDanglingReferences(tags: string[], keep: readonly string[], overrides: Record<string, string>): string[] {
+  const dangling = danglingReferences(tags, overrides)
+  if (dangling.size === 0) return tags
+  const kept = new Set(keep)
+  return tags.filter((tag) => kept.has(tag) || !dangling.has(tag))
 }
 
 // ── Swaps ─────────────────────────────────────────────────────────────────────
