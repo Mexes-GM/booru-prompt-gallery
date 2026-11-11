@@ -74,8 +74,16 @@ export function identityTags(shares: Iterable<readonly [string, number]>, overri
   })
   // "black hairband" already says "hairband": keep the more specific of the two.
   const names = picked.map(([tag]) => tag)
-  const specific = picked.filter(([tag]) => !names.some((other) => other.endsWith(` ${tag}`)))
+  const specific = picked.filter(([tag]) => !names.some((other) => other !== tag && isQualifiedVariant(other, tag)))
   return specific.slice(0, MAX_IDENTITY_TAGS).map(([tag]) => tag)
+}
+
+/**
+ * True when `tag` is `base` or a qualified form of the same thing: "black
+ * hairband" and "hairband", "gold jewelry" and "jewelry". Tags in spaced form.
+ */
+export function isQualifiedVariant(tag: string, base: string): boolean {
+  return tag === base || tag.endsWith(` ${base}`)
 }
 
 /** Trait profiles by character name (lowercase, spaces): tag → share of their posts. */

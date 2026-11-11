@@ -12,6 +12,12 @@
  *   4. Faithful makes at most one prompt per scene; Remix fills the pack.
  *   5. Library clothing carries the outfit id.
  *   6. Reroll: another scene of the same situation, never one already in the pack.
+ *   7. Default composition: the pick, the base's counts, a character alone, then the pool.
+ *   8. What the character owns: variants of its tags and garments for the same body
+ *      slot leave the scene; removed and "Never include" tags never appear.
+ *   9. "Always add": first, as typed, once; a count tag the composition contradicts is left out.
+ *  10. The base's clothing replaces the scene's; redundant booru pairs collapse; async
+ *      generation matches the sync one and stops when cancelled.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-pack.verify.ts
  */
@@ -22,7 +28,11 @@ import { createPermanence, type PermanenceData } from "../lib/pack/scene/permane
 import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import {
   DEFAULT_SCENE_SETTINGS,
+  alwaysAddFor,
+  applySceneOwnership,
   defaultComposition,
+  dropRedundantSceneTags,
+  generateScenePackAsync,
   enabledSceneCount,
   generateScenePack,
   postsForRating,
@@ -83,6 +93,13 @@ const permanence = createPermanence(PERMANENCE, overrides)
   assert(defaultComposition(compositions, "girl", { girls: 0, boys: 1 })?.girls === 0, "the user's pick while the pool has it")
   assert(defaultComposition(compositions, "girl", { girls: 3, boys: 0 })?.boys === 0, "a pick the pool lost falls back to the default")
   assert(defaultComposition([], "girl") === null, "no compositions")
+  // A card "1girl, solo" in a pool where pair scenes are a bit more common: the card decides.
+  const card = [{ people: { girls: 1, boys: 1 } }, { people: { girls: 1, boys: 0 } }]
+  assert(defaultComposition(card, "girl", null, { declared: { girls: 1, boys: 0 }, character: false })?.boys === 0, "the base's count tags decide first")
+  assert(defaultComposition(card, "girl", null, { declared: { girls: 2, boys: 0 }, character: false })?.boys === 1, "a declared composition the pool lacks falls through")
+  assert(defaultComposition(card, "girl", null, { declared: null, character: true })?.boys === 0, "a character base without counts: the character alone")
+  assert(defaultComposition(card, "girl", null, { declared: null, character: false })?.boys === 1, "a card without counts: the most common with her")
+  assert(defaultComposition(card, "girl", { girls: 1, boys: 1 }, { declared: { girls: 1, boys: 0 }, character: false })?.boys === 1, "the user's pick wins")
 }
 
 // ── End to end with the real taxonomy and permanence data ──
@@ -192,6 +209,90 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
   assert(prompts.length > 0 && prompts.every((p) => p.outfitId === 41 || p.outfitId === 42), "each prompt carries the library outfit it wears")
 }
 
+// ── What the character owns ──
+{
+  const sceneTags = ["1girl", "solo", "hairband", "smile", "white hairband", "gold jewelry", "jewelry", "standing", "white shirt", "skirt", "boots", "earrings"]
+  const fixed = ["1girl", "solo", "hairband"]
+  const owned = applySceneOwnership(sceneTags, fixed, [], overrides)
+  assert(owned.includes("hairband") && !owned.includes("white hairband"), "another variant of the character's accessory leaves the scene")
+  assert(owned.includes("gold jewelry") && owned.includes("earrings"), "other accessories stay")
+  const never = applySceneOwnership(sceneTags, fixed, ["jewelry"], overrides)
+  assert(!never.includes("jewelry") && !never.includes("gold jewelry"), "a removed tag and its variants never appear")
+  assert(never.includes("earrings"), "a different accessory is not a variant")
+  const dressed = applySceneOwnership(["1girl", "red dress", "white shirt", "pleated skirt", "boots", "smile"], ["1girl", "red dress"], [], overrides)
+  assert(!dressed.includes("white shirt") && !dressed.includes("pleated skirt"), "a fixed dress takes the top and bottom slots: " + dressed.join())
+  assert(dressed.includes("boots") && dressed.includes("smile"), "other slots and non-garments stay")
+  const kept = applySceneOwnership(["hairband", "white hairband"], ["white hairband"], ["hairband"], overrides)
+  assert(kept.includes("white hairband"), "a fixed tag stays whatever the other rules say")
+
+  // End to end: the pack never shows a removed tag nor another hairband.
+  const withBand = [
+    scene(301, "1girl solo standing smile looking_at_viewer bedroom indoors bed white_shirt skirt white_hairband jewelry"),
+    scene(302, "1girl solo standing blush looking_at_viewer park outdoors tree dress gold_hairband gold_jewelry"),
+    scene(303, "1girl solo sitting smile looking_at_viewer classroom indoors chair desk shirt skirt yellow_hairband"),
+  ]
+  const bandPool = buildScenePool(withBand, { overrides, permanence, subject: "girl" })
+  const pack = generateScenePack(bandPool, args({ identity: [...IDENTITY, "hairband"], never: ["jewelry"], count: 3 })).prompts
+  assert(pack.length === 3, "three prompts")
+  for (const p of pack) {
+    assert(!/(white|gold|yellow) hairband|jewelry/.test(p.prompt), "no other hairband and no jewelry: " + p.prompt)
+    assert(p.prompt.includes("hairband"), "the character's hairband stays")
+  }
+}
+
+// ── Always add ──
+{
+  assert(alwaysAddFor(["masterpiece", "solo", "1girl"], ["1girl", "solo"]).join() === "masterpiece,solo,1girl", "count tags the header has are kept")
+  assert(alwaysAddFor(["masterpiece", "solo", "1boy"], ["1girl", "1boy", "hetero"]).join() === "masterpiece,1boy", "a count the composition contradicts is left out")
+  const typed = ["(masterpiece:1.2)", "score_9", "smile", "solo"]
+  const { prompts } = generateScenePack(pool, args({ alwaysAdd: typed, count: 5 }))
+  for (const p of prompts) {
+    const tags = p.prompt.split(",").map((t) => t.trim())
+    assert(tags.slice(0, 4).join() === typed.join(), "\"Always add\" goes first, as typed: " + p.prompt)
+    assert(tags.filter((t) => t === "solo").length === 1 && tags.filter((t) => t === "smile").length <= 1, "no exact duplicates")
+    assert(tags.slice(4, 9).join() === ["1girl", ...IDENTITY].join(), "the header's count and the identity follow untouched: " + p.prompt)
+  }
+  // literal text: it doesn't push the scene's own variants out
+  const lit = generateScenePack(pool, args({ alwaysAdd: ["shirt"], count: 9 })).prompts
+  assert(lit.some((p) => /white shirt/.test(p.prompt)), "an 'Always add' tag owns nothing: the scene keeps its variants")
+  const pairPool = buildScenePool(POSTS, { overrides, permanence, subject: "girl", people: { girls: 1, boys: 1 } })
+  const pair = generateScenePack(pairPool, args({ alwaysAdd: ["solo"], count: 1 })).prompts[0]
+  assert(!!pair && !pair.prompt.split(", ").includes("solo"), "with a partner in the scene, a typed 'solo' is not added")
+}
+
+// ── The base's clothing ──
+{
+  const base = ["red dress", "black boots"]
+  const { prompts } = generateScenePack(pool, args({ baseClothing: base, settings: { ...DEFAULT_SCENE_SETTINGS, clothing: "base" }, count: 5 }))
+  assert(prompts.length === 5, "five prompts")
+  for (const p of prompts) {
+    assert(p.prompt.includes("red dress") && p.prompt.includes("black boots"), "every prompt wears the base's clothes")
+    assert(!/(shirt|skirt|jacket|jeans|sweater|pajamas|shorts)/.test(p.prompt), "the scene's clothes are gone: " + p.prompt)
+  }
+  const none = generateScenePack(pool, args({ baseClothing: [], settings: { ...DEFAULT_SCENE_SETTINGS, clothing: "base" }, count: 3 })).prompts
+  assert(none.some((p) => /(shirt|skirt|dress|jacket|sweater|pajamas)/.test(p.prompt)), "no base clothing: the scene's clothes stay")
+}
+
+// ── Redundant booru pairs ──
+assert(dropRedundantSceneTags(["lace bra", "bra", "off-shoulder sweater", "off shoulder", "smile"], []).join() === "lace bra,off-shoulder sweater,smile", "the shorter tag of a pair goes")
+assert(dropRedundantSceneTags(["simple background", "white background"], []).length === 2, "different backgrounds are not redundant")
+assert(dropRedundantSceneTags(["hairband", "white hairband"], ["hairband"]).length === 2, "fixed tags are never dropped")
+assert(dropRedundantSceneTags(["skirt", "miniskirt"], []).length === 2, "only whole words count")
+
+// ── Async generation ──
+void (async () => {
+  const sync = generateScenePack(pool, args({ count: 6 }))
+  let pauses = 0
+  const result = await generateScenePackAsync(pool, args({ count: 6 }), { pause: async () => { pauses++ }, cancelled: () => false, slice: 0 })
+  assert(JSON.stringify(result) === JSON.stringify(sync), "async gives the same pack as sync")
+  assert(pauses >= 6, "it pauses between prompts")
+  let calls = 0
+  const stopped = await generateScenePackAsync(pool, args({ count: 6 }), { pause: async () => { calls++ }, cancelled: () => calls > 2, slice: 0 })
+  assert(stopped === null, "a cancelled request stops and gives nothing")
+  rest()
+})()
+
+function rest() {
 // ── Reroll ──
 {
   const pack = generateScenePack(pool, args({ count: 3 })).prompts
@@ -212,3 +313,4 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
 }
 
 done()
+}
