@@ -56,7 +56,7 @@ import { ConflictChecker } from '@/lib/tag-conflicts'
 import { ALL_EXCLUSIONS, excludes, loadedTagRelations } from '@/lib/tag-relations'
 import { fetchPostsPage } from '@/lib/api-client'
 import { packRatingToFilters } from '@/hooks/use-pack-seed-search'
-import { varietyPreset, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
+import { varietyPreset, presetCounts, presetModes, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
 import { estimateTagsPerPrompt, raiseCountsForMinTotal, type AxisBudget } from '@/lib/pack/min-tags'
 import {
   emptyClassifiedTags,
@@ -446,18 +446,6 @@ const omit = <T,>(record: Record<string, T>, key: string): Record<string, T> => 
   if (!(key in record)) return record
   const next = { ...record }
   delete next[key]
-  return next
-}
-
-/** A Variety preset's counts, except that a category the user switched Off (0) stays Off. */
-function keepOffCategories(
-  current: Partial<Record<TagCategory, number>>,
-  preset: Partial<Record<TagCategory, number>>
-): Partial<Record<TagCategory, number>> {
-  const next = { ...preset }
-  ;(Object.keys(current) as TagCategory[]).forEach((cat) => {
-    if (current[cat] === 0) next[cat] = 0
-  })
   return next
 }
 
@@ -1315,7 +1303,7 @@ export function usePackMode(
     return out
   }, [buildPools, lockedSlots, effectiveOverrides])
 
-  const axisMaxPerPrompt = useMemo(() => {
+  const axisMaxRaw = useMemo(() => {
     // Tags every prompt keeps take part of their category's room: a category that varies
     // picks fewer values next to pinned ones (at least one, so it stays on).
     const kept: Partial<Record<TagCategory, number>> = {}
@@ -1330,13 +1318,20 @@ export function usePackMode(
     })
     return out
   }, [axisSlotGroups, lockedTags, effectiveOverrides, lockedCategories])
+  // The Variety preset effect depends on the ceilings, and they depend (through the kept
+  // tags) on the counts that effect sets: only a change of value may count as a change.
+  const axisMaxKey = PACK_AXES.map((cat) => axisMaxRaw[cat] ?? 0).join(',')
+  const axisMaxPerPrompt = useMemo(() => {
+    const values = axisMaxKey.split(',').map(Number)
+    return Object.fromEntries(PACK_AXES.map((cat, i) => [cat, values[i]])) as Partial<Record<TagCategory, number>>
+  }, [axisMaxKey])
 
   /** Applies a Variety preset (§5) to the active axes and discards any 'custom' edits. */
   const setVarietyLevel = useCallback(
     (level: VarietyLevel) => {
       const preset = varietyPreset(level, activeAxisCategories, axisMaxPerPrompt)
-      setAxisTagModes(preset.axisTagModes)
-      setAxisMinCounts((prev) => keepOffCategories(prev, preset.axisMinCounts))
+      setAxisTagModes((prev) => presetModes(prev, preset.axisTagModes))
+      setAxisMinCounts((prev) => presetCounts(prev, preset.axisMinCounts))
       learning.setExplorationTemperature(preset.temperature)
       setVarietyLevelRaw(level)
     },
@@ -1355,8 +1350,8 @@ export function usePackMode(
   useEffect(() => {
     if (varietyLevel === 'custom') return
     const preset = varietyPreset(varietyLevel, activeAxisCategories, axisMaxPerPrompt)
-    setAxisTagModes(preset.axisTagModes)
-    setAxisMinCounts((prev) => keepOffCategories(prev, preset.axisMinCounts))
+    setAxisTagModes((prev) => presetModes(prev, preset.axisTagModes))
+    setAxisMinCounts((prev) => presetCounts(prev, preset.axisMinCounts))
     learning.setExplorationTemperature(preset.temperature)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [varietyLevel, activeAxisCategories, axisMaxPerPrompt])
