@@ -30,8 +30,17 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'fixed', title: 'Gelbooru thumbnails in Merge and Pack', body: "Gelbooru posts added from History or Favorites showed a broken image in the Merge panel and as the Pack Mode base. They load now, the same as in the gallery." },
-  { kind: 'fixed', title: 'Gelbooru searches', body: "Gelbooru searches sometimes failed when Gelbooru blocked the site's server. They load now." },
+  { kind: 'new', title: 'Scenes in Pack Mode', body: "Pack Mode has a new method, Scenes, and it's now the default. Each prompt takes the scene of a real post, with its pose, camera, outfit and place, and puts your character in it. You choose who's in the picture and which situations to use, each shown with a few example images. Every prompt shows the post its scene came from, and the dice swaps in another scene. Mix, Clothing and Scenery decide what comes from each scene. Classic is still there." },
+  { kind: 'new', title: 'Start a pack from a character', body: "Choose \"From a character\" and type a name, or \"From my search\" when your search is about one character, and the pack starts from that character's usual look without a card. When the base is a card, the Look menu lets you keep the character's usual look or the card's." },
+  { kind: 'new', title: 'Up to three characters', body: "A Scenes pack can have up to three characters, each with their own traits. The source the pack sets up then looks for pictures with that mix of people." },
+  { kind: 'new', title: 'Traits you control', body: "Each of the character's traits can go in every prompt, appear only when the scene has it, or be removed. You can add traits of your own, and \"Never include\" keeps tags out of every prompt." },
+  { kind: 'improved', title: 'Classic packs', body: "Classic now picks tags that fit together and brings along what a tag needs, such as the skirt for a skirt lift. In new packs, Equipment and Creature start switched off. The tags-per-prompt figure shows what the last pack actually had, and generating no longer holds up the page." },
+  { kind: 'improved', title: 'Smart Tag Exclusion', body: "Smart Tag Exclusion removes far fewer tags that belong in the prompt. On pictures of a couple it no longer drops the tag for one of the two people." },
+  { kind: 'improved', title: 'Names on Gelbooru posts', body: "Character, series and artist names on Gelbooru posts are told apart from other tags more reliably." },
+  { kind: 'improved', title: 'Pack Builder polish', body: "A guided tour for Scenes, larger tap areas on touch screens, and clearer messages when a search fails." },
+  { kind: 'fixed', title: 'Packs stuck loading', body: "When the source couldn't load its posts, the Pack Builder kept showing Collecting. It now says the posts didn't load and offers Try again." },
+  { kind: 'fixed', title: 'Freezes at the highest variety', body: "Generating a Classic pack with Variety set to Chaotic could freeze the page. It now finishes without freezing the page." },
+  { kind: 'fixed', title: 'Your pasted prompt', body: "Closing the Pack Builder no longer clears the prompt you pasted under \"From my prompt\"." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)
