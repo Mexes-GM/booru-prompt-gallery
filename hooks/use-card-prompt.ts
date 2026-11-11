@@ -131,9 +131,10 @@ export function useCardPrompt({
   // hook-free derivePostPrompt (lib/prompt/derive-post-prompt.ts) so the exact
   // same pipeline can be called imperatively in a batch loop (Bulk Send's
   // "Real posts" mode) without risking the two paths drifting apart.
-  // Smart Tag Exclusion checks added tags against measured relations once they load (in an
-  // idle moment); until then it uses the built-in rules. The result recomputes when they arrive.
-  const relations = useTagRelations(smartTagExclusion && (addInput.trim() !== "" || autoAppendSearchTags), "idle")
+  // Smart Tag Exclusion checks "Tags to add" against measured relations once they load (in an
+  // idle moment, and only when there are tags to add: searched tags appended on their own use the
+  // built-in rules until something else loads them). The result recomputes when they arrive.
+  const relations = useTagRelations(smartTagExclusion && addInput.trim() !== "", "idle")
   const derivationDeps = [
     relations,
     excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,

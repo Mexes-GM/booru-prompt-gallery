@@ -392,7 +392,7 @@ const CategoryRow = memo(function CategoryRow({
                     className="inline-flex items-center gap-1 px-1.5 text-xs text-muted-foreground hover:text-foreground"
                   >
                     <RotateCcw className="w-3 h-3" />
-                    {removedCount} removed · restore
+                    {removedCount} removed · Restore
                   </button>
                 )}
                 {visibleBase.length > 0 && state === "vary" && !visibleBase.some((t) => keptTags.has(t)) && (

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { PlaceholdersAndVanishInput } from "@/components/ui/placeholders-and-vanish-input"
-import { searchTags, TagResult } from "@/lib/supabase/client-queries"
+import { searchTagsOrThrow, TagResult } from "@/lib/supabase/client-queries"
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
 
@@ -29,6 +29,8 @@ export function SearchWithAutocomplete({
   const [suggestions, setSuggestions] = useState<TagResult[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  // The tag search timed out or failed: say so instead of showing nothing.
+  const [searchFailed, setSearchFailed] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const cursorPositionRef = useRef(0)
   
@@ -71,6 +73,7 @@ export function SearchWithAutocomplete({
 
     const { tag } = getCurrentTag(newValue, e.target.selectionStart || 0)
 
+    setSearchFailed(false)
     if (tag.length < 2) {
       setSuggestions([])
       setIsOpen(false)
@@ -82,13 +85,16 @@ export function SearchWithAutocomplete({
     setIsLoading(true)
     debounceTimeout.current = setTimeout(async () => {
       try {
-        const results = await searchTags(tag)
+        const results = await searchTagsOrThrow(tag)
         if (requestId !== requestIdRef.current) return
         setSuggestions(results)
         setIsOpen(results.length > 0)
         setActiveIndex(-1)
-      } catch (error) {
-        console.error("Autosuggest error:", error)
+      } catch {
+        if (requestId !== requestIdRef.current) return
+        setSuggestions([])
+        setIsOpen(false)
+        setSearchFailed(true)
       } finally {
         if (requestId === requestIdRef.current) setIsLoading(false)
       }
@@ -200,6 +206,11 @@ export function SearchWithAutocomplete({
         className={className}
       />
       
+      {searchFailed && (
+        <p role="status" className="absolute top-full left-0 right-0 mt-2 z-50 rounded-md border bg-popover px-2 py-1.5 text-xs text-muted-foreground shadow-lg">
+          Couldn&apos;t search tags. Keep typing to try again.
+        </p>
+      )}
       {isOpen && suggestions.length > 0 && (
         <div
           data-state={isOpen ? "open" : "closed"}

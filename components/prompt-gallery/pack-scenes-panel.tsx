@@ -137,7 +137,7 @@ function TraitChip({ chip, onToggle, onRemove }: { chip: SceneChip; onToggle: (t
         type="button"
         onClick={() => onRemove(chip.tag)}
         aria-label={`Remove ${chip.tag} from every prompt`}
-        className="relative mr-0.5 rounded p-0.5 text-faint-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:after:absolute pointer-coarse:after:-inset-3.5 pointer-coarse:after:content-[''] hover:text-destructive-text hover:bg-destructive-soft transition-[color,background-color,opacity]"
+        className="relative mr-0.5 rounded p-0.5 text-faint-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:px-2.5 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-3.5 pointer-coarse:after:left-0 pointer-coarse:after:-right-3 pointer-coarse:after:content-[''] hover:text-destructive-text hover:bg-destructive-soft transition-[color,background-color,opacity]"
       >
         <X className="w-3 h-3" />
       </button>
