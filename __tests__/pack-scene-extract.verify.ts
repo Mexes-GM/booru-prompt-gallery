@@ -18,6 +18,8 @@
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-extract.verify.ts
  */
 import { extractScene, normalizeRating, tagGender } from "../lib/pack/scene/scene"
+import fs from "fs"
+import path from "path"
 import { createPermanence } from "../lib/pack/scene/permanence"
 import { makeAssert, makeContext, makePost } from "./fixtures/pack-scene-data"
 
@@ -97,7 +99,7 @@ const BASE_TAGS =
   )!
   assert(themed.units.body.join() === "muscular male", "a partner trait most of the pool shares is the source's theme and travels")
   // How the partner is drawn is theirs too (real permanence data).
-  const realData = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "../public/tag-permanence.json"), "utf8"))
+  const realData = JSON.parse(fs.readFileSync(path.join(__dirname, "../public/tag-permanence.json"), "utf8"))
   const faceless = extractScene(
     makePost(10, "1girl 1boy hetero faceless_male standing smile bedroom bed"),
     makeContext({ permanence: createPermanence(realData, makeContext().overrides) })
