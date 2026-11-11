@@ -17,6 +17,7 @@
  */
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { composePack, dropDanglingReferences, type ComposeOptions, type ScenePrompt } from "../lib/pack/scene/scene-compose"
+import { isEnvironmentTag } from "../lib/pack/background-coherence"
 import { createPermanence } from "../lib/pack/scene/permanence"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 import type { BooruPost } from "../lib/booru/types"
@@ -205,6 +206,12 @@ assert(
   assert(dropDanglingReferences(["holding", "sword"], [], ov).includes("holding"), "kept with a held object")
   assert(!dropDanglingReferences(["riding", "smile"], [], ov).includes("riding") && dropDanglingReferences(["riding", "horse"], [], ov).includes("riding"), "same for riding")
   assert(dropDanglingReferences(["holding"], ["holding"], ov).includes("holding"), "a kept (identity) tag is never dropped")
+  const ov2 = { ...ov, "holding hands": "pose:interaction", "dual wielding": "pose:combat", "fighting stance": "pose:combat" }
+  assert(!dropDanglingReferences(["holding", "holding hands"], [], ov2).includes("holding"), "holding hands is an interaction, not something held")
+  assert(dropDanglingReferences(["holding", "holding hands"], [], ov2).includes("holding hands"), "the interaction itself stays")
+  assert(!dropDanglingReferences(["dual wielding", "reverse grip", "smile"], [], ov2).some((t) => t === "dual wielding" || t === "reverse grip"), "how a weapon is held needs the weapon")
+  assert(dropDanglingReferences(["dual wielding", "sword"], [], ov2).includes("dual wielding"), "kept with the weapon")
+  assert(dropDanglingReferences(["fighting stance"], [], ov2).includes("fighting stance"), "a stance needs no weapon")
   const armed = buildScenePool([makePost(80, "1girl standing holding sword smile from_above bedroom bed indoors skirt shirt")], { ...ctx, overrides: ov })
   const off = composePack(armed, options({ count: 1, overrides: ov })).prompts[0]
   assert(!off.tags.includes("holding") && !off.tags.includes("sword"), "extras off: the object and the bare verb go together")
@@ -217,6 +224,40 @@ assert(
   assert(composePack(shown, options({ count: 1 })).prompts[0].tags.includes("navel"), "the scene's own outfit keeps its exposure")
   assert(!composePack(shown, options({ count: 1, clothing: { library: [["dress"]] } })).prompts[0].tags.includes("navel"), "a library outfit drops it")
   assert(!composePack(shown, options({ count: 1, clothing: "own" })).prompts[0].tags.includes("navel"), "the character's own clothing drops it")
+}
+
+// ── The surroundings of a prompt are those of one scene ──
+{
+  const ov = {
+    ...OVERRIDES, "gradient background": "scenery:background", "pink background": "scenery:background", "striped background": "scenery:background",
+    "white background": "scenery:background", "cloud": "scenery:atmosphere", "cloudy sky": "scenery:atmosphere", "night": "scenery:atmosphere",
+  }
+  const envPool = buildScenePool(
+    [
+      makePost(90, "1girl solo standing smile from_above gradient_background pink_background skirt shirt"),
+      makePost(91, "1girl solo standing blush from_side striped_background white_background dress boots"),
+      makePost(92, "1girl solo standing open_mouth looking_at_viewer park outdoors cloud cloudy_sky skirt boots"),
+      makePost(93, "1girl solo standing smile from_side bedroom indoors bed night shirt dress"),
+      makePost(94, "1girl solo standing blush from_above beach outdoors sunset pink_sky skirt shirt"),
+    ],
+    { ...ctx, overrides: ov }
+  )
+  const byId = new Map(envPool.scenes.map((scene) => [scene.postId, scene]))
+  let checked = 0
+  for (const mix of ["faithful", "remix"] as const) {
+    for (const scenery of ["scene", "vary", "plain"] as const) {
+      for (let seed = 1; seed <= 15; seed++) {
+        for (const p of composePack(envPool, options({ mix, scenery, count: 5, seed, overrides: ov })).prompts) {
+          checked++
+          const source = byId.get(p.sources.place ?? p.sources.skeleton)!
+          const expected = scenery === "plain" ? ["simple background"] : source.units.place
+          const env = p.tags.filter((t) => isEnvironmentTag(t, ov) || expected.includes(t))
+          assert(env.slice().sort().join() === expected.slice().sort().join(), `${mix}/${scenery} seed ${seed}: the surroundings are one scene's (${env.join()})`)
+        }
+      }
+    }
+  }
+  assert(checked > 100, "the invariant was checked on many prompts")
 }
 
 // ── Identity wins ──

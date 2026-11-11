@@ -143,6 +143,12 @@ const GENERIC_CLOTHES = new Set(['clothes', 'clothing'])
  * pointing at nothing.
  */
 const OBJECT_VERBS = new Set(['holding', 'carrying', 'riding', 'wielding'])
+/**
+ * How an object is held or handled: nothing without the object either. The
+ * taxonomy files them under pose:combat with stances that need no weapon, so
+ * the slot can't tell them apart; kept short on purpose.
+ */
+const HANDLING_TAGS = new Set(['dual wielding', 'reverse grip'])
 /** Categories whose tags can be the object of those verbs (a sword, a horse). */
 const OBJECT_CATEGORIES = new Set(['equipment', 'creature'])
 
@@ -174,10 +180,15 @@ function garmentReferenced(tag: string, overrides: Record<string, string>): stri
  */
 export function danglingReferences(tags: string[], overrides: Record<string, string>): Set<string> {
   const dangling = new Set<string>()
+  const categoryOf = (tag: string) => getTagSlotFromOverrides(tag, overrides)?.category ?? ''
   for (const verb of tags) {
-    if (!OBJECT_VERBS.has(verb)) continue
+    const isVerb = OBJECT_VERBS.has(verb)
+    if (!isVerb && !HANDLING_TAGS.has(verb)) continue
     const hasObject = tags.some(
-      (tag) => tag.startsWith(`${verb} `) || OBJECT_CATEGORIES.has(getTagSlotFromOverrides(tag, overrides)?.category ?? '')
+      (tag) =>
+        OBJECT_CATEGORIES.has(categoryOf(tag)) ||
+        // "holding sword" names what is held; "holding hands" is an interaction, not an object.
+        (isVerb && tag.startsWith(`${verb} `) && categoryOf(tag) !== 'pose')
     )
     if (!hasObject) dangling.add(verb)
   }
