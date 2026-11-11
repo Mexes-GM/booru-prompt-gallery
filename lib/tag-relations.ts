@@ -46,6 +46,9 @@ export interface TagRelations {
   requiresSlot: ReadonlyMap<number, readonly string[]>
   /** Tags that need more than one person ("looking at another", "hug"): they (almost) never meet `solo`. */
   company: ReadonlySet<number>
+  /** Objects, props and creatures people hold (they meet `holding` well above chance), and ones they don't. */
+  held: ReadonlySet<number>
+  notHeld: ReadonlySet<number>
 }
 
 export interface TagRelationsFile {
@@ -57,6 +60,8 @@ export interface TagRelationsFile {
   req?: number[]
   reqSlot?: Record<string, number[]>
   company?: number[]
+  held?: number[]
+  notHeld?: number[]
 }
 
 /** The app's spelling of a tag: lower case, spaces for underscores, single spaces. */
@@ -93,7 +98,7 @@ export function parseTagRelations(file: TagRelationsFile): TagRelations {
   }
   const bits: Record<string, number> = {}
   file.contexts.forEach((context, i) => { bits[context] = 1 << i })
-  return { tags: file.tags, index, excluded, bits, requires, requiresSlot, company: new Set(file.company ?? []) }
+  return { tags: file.tags, index, excluded, bits, requires, requiresSlot, company: new Set(file.company ?? []), held: new Set(file.held ?? []), notHeld: new Set(file.notHeld ?? []) }
 }
 
 /** A post's rating letter or word ("g", "s", "q", "e", "general"...) as a relation rating; null when unknown. */

@@ -23,7 +23,7 @@ const assert = (ok: unknown, label: string) => {
 const CONTEXTS = ["solo:all", "solo:sfw", "solo:q", "solo:e", "solo:both", "multi:all", "multi:sfw", "multi:q", "multi:e", "multi:both"]
 const SOLO = CONTEXTS.filter((c) => c.startsWith("solo")).reduce((m, c) => m | (1 << CONTEXTS.indexOf(c)), 0)
 const ALL = (1 << CONTEXTS.length) - 1
-const TAGS = ["crouching", "leaning back", "sunrise", "midnight", "skirt lift", "skirt", "drinking", "cup", "scarf", "bandana", "looking at another", "gold earrings", "earrings"]
+const TAGS = ["crouching", "leaning back", "sunrise", "midnight", "skirt lift", "skirt", "drinking", "cup", "scarf", "bandana", "looking at another", "gold earrings", "earrings", "poster (object)", "bouquet"]
 const id = (t: string) => TAGS.indexOf(t)
 const file: TagRelationsFile = {
   v: 2,
@@ -35,6 +35,8 @@ const file: TagRelationsFile = {
   req: [id("skirt lift"), id("skirt"), id("gold earrings"), id("earrings")],
   reqSlot: { "equipment:handheld": [id("drinking")] },
   company: [id("looking at another")],
+  held: [id("bouquet")],
+  notHeld: [id("poster (object)")],
 }
 const relations = parseTagRelations(file)
 const overrides: Record<string, string> = { skirt: "clothing:bottom", cup: "equipment:handheld", crouching: "pose:posture", "leaning back": "pose:posture" }
@@ -109,6 +111,22 @@ const overrides: Record<string, string> = { skirt: "clothing:bottom", cup: "equi
   const scene = coherentPromptTags(["1girl", "earrings", "gold earrings"], { keep: ["1girl", "earrings"], fixed: ["earrings"], overrides })
   assert(scene.includes("earrings"), "a fixed tag is never replaced")
   assert(coherentPromptTags(["1girl", "drinking", "cup"], { keep: ["1girl"], overrides }).includes("drinking"), "drinking with a cup stays")
+}
+
+// ── A grip verb only with something carried ──
+{
+  setTagRelations(relations)
+  const ov: Record<string, string> = { ...overrides, bed: "scenery:props", dog: "creature:animal", horse: "creature:animal", "poster (object)": "equipment:handheld", bouquet: "scenery:props", sword: "equipment:weapon" }
+  const dangles = (tags: string[]) => danglingReferences(tags, ov).has(tags[1])
+  assert(dangles(["1girl", "holding", "bed"]), "holding next to a bed holds nothing")
+  assert(dangles(["1girl", "holding", "dog"]), "nor next to a dog")
+  assert(dangles(["1girl", "holding", "poster (object)"]), "nor a poster, though filed with hand objects: people don't hold one")
+  assert(!dangles(["1girl", "holding", "cup"]) && !dangles(["1girl", "holding", "sword"]), "a cup or a sword is held")
+  assert(!dangles(["1girl", "holding", "bouquet"]), "a prop people do hold counts")
+  assert(!dangles(["1girl", "riding", "horse"]) && !dangles(["1girl", "carrying", "dog"]), "riding a horse, carrying a dog")
+  assert(!dangles(["1girl", "holding", "holding dog"]), "holding dog names what is held")
+  setTagRelations(null)
+  assert(!danglingReferences(["1girl", "holding", "dog"], ov).has("holding"), "before the relations load, any creature still counts")
 }
 
 // ── Tags that need company ──

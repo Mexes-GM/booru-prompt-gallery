@@ -10,7 +10,7 @@
 import { createSeededRng } from '../pack-generator'
 import { resolveTagConflicts } from '../../tag-conflicts'
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
-import { loadedTagRelations, requiredBy, requiredSlots, type TagRelations } from '../../tag-relations'
+import { loadedTagRelations, relationKey, requiredBy, requiredSlots, type TagRelations } from '../../tag-relations'
 import { conflictsWithBackground, isEnvironmentTag, isPlainBackgroundTag } from '../background-coherence'
 import { selectScenes } from './scene-select'
 import type { ScenePool } from './scene-pool'
@@ -152,6 +152,26 @@ const HANDLING_TAGS = new Set(['dual wielding'])
 const HANDLING_BEFORE_LOAD = new Set(['reverse grip'])
 /** Categories whose tags can be the object of those verbs (a sword, a horse). */
 const OBJECT_CATEGORIES = new Set(['equipment', 'creature'])
+/** Slots of things carried in the hand: what a generic grip verb ("holding") can refer to. */
+const HAND_SLOTS = new Set(['equipment:handheld', 'equipment:weapon'])
+/** Verbs a creature can be the object of ("riding" a horse, "carrying" a cat). */
+const CREATURE_VERBS = new Set(['riding', 'carrying'])
+
+/**
+ * Whether `tag` can be what `verb` refers to. A hand object or a weapon can, unless the
+ * measured relations say people (almost) never hold it; a prop only when they say people
+ * do ("bouquet"), never furniture or decoration ("bed", "poster"); a creature only for
+ * "riding" or "carrying". Before the relations load, any object or creature counts.
+ */
+function canBeHeld(tag: string, verb: string, overrides: Record<string, string>, relations: TagRelations | null): boolean {
+  const info = getTagSlotFromOverrides(tag, overrides)
+  if (!relations) return OBJECT_CATEGORIES.has(info?.category ?? '')
+  if (info?.category === 'creature') return CREATURE_VERBS.has(verb) || relations.held.has(relations.index.get(relationKey(tag)) ?? -1)
+  const i = relations.index.get(relationKey(tag)) ?? -1
+  if (relations.held.has(i)) return true
+  if (relations.notHeld.has(i)) return false
+  return !!info?.slot && HAND_SLOTS.has(info.slot)
+}
 
 /** Comparable form of a garment word: "panties" and "panty" match, "shorts" and "short" too. */
 function stem(word: string): string {
@@ -214,7 +234,7 @@ export function danglingReferences(
     if (!isVerb && !handled) continue
     const hasObject = tags.some(
       (tag) =>
-        OBJECT_CATEGORIES.has(categoryOf(tag)) ||
+        canBeHeld(tag, verb, overrides, relations) ||
         // "holding sword" names what is held; "holding hands" is an interaction, not an object.
         (isVerb && tag.startsWith(`${verb} `) && categoryOf(tag) !== 'pose')
     )
