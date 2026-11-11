@@ -45,7 +45,7 @@ import { clampMaxLongSide } from '@/lib/extension/generation-resolution'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
-import { migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
+import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import { castAddition, castMemberLook, castMemberRole, roleFromProfile, roleFromSubject, type CastRole } from '@/lib/pack/scene/cast'
 import { fetchPostsPage } from '@/lib/api-client'
@@ -396,6 +396,18 @@ export interface UsePackModeResult {
  * settings as every other prompt in the app, instead of a parallel, simpler
  * path that skipped optimizeTags/exclude/find&replace/tagAppendRules.
  */
+/** A Variety preset's counts, except that a category the user switched Off (0) stays Off. */
+function keepOffCategories(
+  current: Partial<Record<TagCategory, number>>,
+  preset: Partial<Record<TagCategory, number>>
+): Partial<Record<TagCategory, number>> {
+  const next = { ...preset }
+  ;(Object.keys(current) as TagCategory[]).forEach((cat) => {
+    if (current[cat] === 0) next[cat] = 0
+  })
+  return next
+}
+
 /** Lets the browser paint and handle input before the next slice of work. */
 const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
@@ -1139,7 +1151,7 @@ export function usePackMode(
     (level: VarietyLevel) => {
       const preset = varietyPreset(level, activeAxisCategories, axisMaxPerPrompt)
       setAxisTagModes(preset.axisTagModes)
-      setAxisMinCounts(preset.axisMinCounts)
+      setAxisMinCounts((prev) => keepOffCategories(prev, preset.axisMinCounts))
       learning.setExplorationTemperature(preset.temperature)
       setVarietyLevelRaw(level)
     },
@@ -1159,7 +1171,7 @@ export function usePackMode(
     if (varietyLevel === 'custom') return
     const preset = varietyPreset(varietyLevel, activeAxisCategories, axisMaxPerPrompt)
     setAxisTagModes(preset.axisTagModes)
-    setAxisMinCounts(preset.axisMinCounts)
+    setAxisMinCounts((prev) => keepOffCategories(prev, preset.axisMinCounts))
     learning.setExplorationTemperature(preset.temperature)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [varietyLevel, activeAxisCategories, axisMaxPerPrompt])
@@ -1847,7 +1859,7 @@ export function usePackMode(
     setAxisCounts({})
     setAxisAspects({})
     setManualAxisValues({})
-    setAxisMinCounts({})
+    setAxisMinCounts({ ...DEFAULT_AXIS_MIN_COUNTS })
     setAxisTagModes({})
     cachedPostsRef.current = []
     setCustomBaseText('')

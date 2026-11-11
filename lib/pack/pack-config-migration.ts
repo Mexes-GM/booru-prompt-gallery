@@ -12,6 +12,13 @@ import { DEFAULT_SCENE_SETTINGS, type ScenePackSettings } from './scene-pack'
 const DEFAULT_PROMPT_COUNT = 10
 
 /**
+ * Per-category counts of a new Classic pack: Equipment and Creature start Off (0),
+ * since objects and animals drawn at random rarely belong to the scene. A saved
+ * config keeps whatever it says.
+ */
+export const DEFAULT_AXIS_MIN_COUNTS: Readonly<Record<string, number>> = { equipment: 0, creature: 0 }
+
+/**
  * Upgrades a V1 config saved with the retired `activeSlots` whitelist (it
  * can't be translated into locks faithfully) to the archetype's current
  * locks. Ported from the old `migrateSavedConfigs` in `hooks/use-pack-mode.ts`.
@@ -64,7 +71,7 @@ export function migratePackConfig(
       mutedSlots: [],
       varietyLevel: DEFAULT_VARIETY_LEVEL,
       axisTagModes: {},
-      axisMinCounts: {},
+      axisMinCounts: { ...DEFAULT_AXIS_MIN_COUNTS },
       promptCount: DEFAULT_PROMPT_COUNT,
       manualAxisValues: {},
     }
