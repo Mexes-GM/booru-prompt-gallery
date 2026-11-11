@@ -158,19 +158,17 @@ const HAND_SLOTS = new Set(['equipment:handheld', 'equipment:weapon'])
 const CREATURE_VERBS = new Set(['riding', 'carrying'])
 
 /**
- * Whether `tag` can be what `verb` refers to. A hand object or a weapon can, unless the
- * measured relations say people (almost) never hold it; a prop only when they say people
- * do ("bouquet"), never furniture or decoration ("bed", "poster"); a creature only for
- * "riding" or "carrying". Before the relations load, any object or creature counts.
+ * Whether `tag` can be what `verb` refers to. A hand object or a weapon can; a prop or a
+ * creature only when the measured relations say people hold it (a flower, a rabbit; not a
+ * bed or a dog), or a creature for "riding" and "carrying". Before the relations load,
+ * any object or creature counts.
  */
 function canBeHeld(tag: string, verb: string, overrides: Record<string, string>, relations: TagRelations | null): boolean {
   const info = getTagSlotFromOverrides(tag, overrides)
   if (!relations) return OBJECT_CATEGORIES.has(info?.category ?? '')
-  if (info?.category === 'creature') return CREATURE_VERBS.has(verb) || relations.held.has(relations.index.get(relationKey(tag)) ?? -1)
-  const i = relations.index.get(relationKey(tag)) ?? -1
-  if (relations.held.has(i)) return true
-  if (relations.notHeld.has(i)) return false
-  return !!info?.slot && HAND_SLOTS.has(info.slot)
+  if (info?.slot && HAND_SLOTS.has(info.slot)) return true
+  if (info?.category === 'creature' && CREATURE_VERBS.has(verb)) return true
+  return relations.held.has(relations.index.get(relationKey(tag)) ?? -1)
 }
 
 /** Comparable form of a garment word: "panties" and "panty" match, "shorts" and "short" too. */
