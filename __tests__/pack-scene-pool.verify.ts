@@ -56,6 +56,14 @@ assert(
   "every post is accounted for"
 )
 assert(stats.compositionSource === "pool" && stats.composition?.girls === 1 && stats.composition?.boys === 0, "most frequent composition of the pool")
+assert(
+  stats.compositions.map((c) => `${c.people.girls}/${c.people.boys}:${c.scenes}`).join() === "1/0:5,1/1:1",
+  "every exact composition with its scene count, most scenes first; open counts are left out"
+)
+assert(
+  buildScenePool(posts, { ...ctx, people: { girls: 1, boys: 1 } }).stats.compositions.length === 2,
+  "the compositions are listed whatever composition the pool is filtered to"
+)
 assert(!pool.scenes.some((scene) => scene.postId === 8 || scene.postId === 10), "blocked and photo posts give no scene")
 assert(buildScenePool(posts, { ...ctx, minStateTags: 2 }).stats.belowQuality === 1, "the quality threshold is a parameter")
 assert(buildScenePool([makePost(20, "no_humans standing bedroom bed")], ctx).stats.unextractable === 1, "posts without people are counted apart")

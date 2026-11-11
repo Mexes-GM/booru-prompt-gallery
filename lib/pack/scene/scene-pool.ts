@@ -61,6 +61,8 @@ export interface ScenePoolStats {
   /** Composition the scenes were filtered to and where it came from. */
   composition: PackPeople | null
   compositionSource: 'identity' | 'option' | 'pool' | 'none'
+  /** Every exact composition among the scenes that passed the quality threshold, most scenes first. */
+  compositions: Array<{ people: PackPeople; scenes: number }>
 }
 
 export interface ScenePool {
@@ -103,27 +105,24 @@ function wordSuffixes(tag: string): string[] {
   return words.map((_, i) => words.slice(i).join(' '))
 }
 
-function mostFrequentComposition(scenes: Scene[]): PackPeople | null {
-  const counts = new Map<string, { people: PackPeople; n: number }>()
+/** Exact compositions of `scenes` with their scene counts, most scenes first (ties keep first-seen order). */
+function compositionsOf(scenes: Scene[]): Array<{ people: PackPeople; scenes: number }> {
+  const counts = new Map<string, { people: PackPeople; scenes: number }>()
   for (const scene of scenes) {
     if (!scene.people) continue
     const key = `${scene.people.girls}/${scene.people.boys}`
     const entry = counts.get(key)
-    if (entry) entry.n++
-    else counts.set(key, { people: scene.people, n: 1 })
+    if (entry) entry.scenes++
+    else counts.set(key, { people: { girls: scene.people.girls, boys: scene.people.boys }, scenes: 1 })
   }
-  let best: { people: PackPeople; n: number } | null = null
-  for (const entry of counts.values()) {
-    if (!best || entry.n > best.n) best = entry
-  }
-  return best ? best.people : null
+  return Array.from(counts.values()).sort((a, b) => b.scenes - a.scenes)
 }
 
 export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): ScenePool {
   const minState = ctx.minStateTags ?? DEFAULT_MIN_STATE_TAGS
   const stats: ScenePoolStats = {
     posts: posts.length, blocked: 0, notIllustration: 0, nearDuplicates: 0, unextractable: 0, belowQuality: 0,
-    incompatible: 0, scenes: 0, situations: 0, composition: null, compositionSource: 'none',
+    incompatible: 0, scenes: 0, situations: 0, composition: null, compositionSource: 'none', compositions: [],
   }
 
   const allowed = posts.filter((post) => !postIsBlocked(post))
@@ -172,7 +171,8 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
 
   // Only scenes with the people of the pack: no partner for a solo character, no open counts.
   const fromIdentity = ctx.identity ? compositionOfIdentity(ctx.identity) : null
-  const composition = fromIdentity ?? ctx.people ?? mostFrequentComposition(good)
+  stats.compositions = compositionsOf(good)
+  const composition = fromIdentity ?? ctx.people ?? stats.compositions[0]?.people ?? null
   stats.composition = composition
   stats.compositionSource = fromIdentity ? 'identity' : ctx.people ? 'option' : composition ? 'pool' : 'none'
   const scenes = good.filter(
