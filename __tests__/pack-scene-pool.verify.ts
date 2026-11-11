@@ -155,22 +155,38 @@ assert(JSON.stringify(buildScenePool(posts, ctx)) === JSON.stringify(pool), "bui
   const mixed = synthetic(10, {}).map((scene, i) => ({ ...scene, units: { ...scene.units, skeleton: ["common", i < 5 ? "a" : "b"] } }))
   const split = groupSituations(mixed, ov)
   assert(split.length === 2 && split[0].label[0] === "a" && split[1].label[0] === "b", "informativeness decides, not coverage alone")
-  assert(split[0].label[1] === "common", "the label adds the most frequent co-tag")
-  // an effect groups scenes but never names them: the group is named by what happens in it
+  assert(!split.some((s) => s.label.includes("common")), "a tag nearly every scene has is the theme: it names no group")
+  // an effect can group scenes but never names them: the group is named by what happens in it
+  const redundant = synthetic(10, {}).map((scene, i) => ({
+    ...scene,
+    units: { ...scene.units, skeleton: i < 5 ? ["standing", "standing on one leg"] : ["sitting", "holding", "holding hands"] },
+  }))
+  const ov3: Record<string, string> = { standing: "pose:posture", "standing on one leg": "pose:posture", sitting: "pose:posture", holding: "pose:gesture", "holding hands": "pose:interaction" }
+  const named3 = groupSituations(redundant, ov3)
+  assert(named3.every((s) => !(s.label.length === 2 && (s.label[0].includes(s.label[1]) || s.label[1].includes(s.label[0])))), "no name pairs a tag with one that says it again: " + named3.map((s) => s.label.join(" · ")).join(" / "))
+  assert(!named3.some((s) => s.label.includes("holding")), "a bare holding never makes or names a group")
   const ov2: Record<string, string> = { sweat: "pose:physiological", lying: "pose:posture", "from above": "pose:camera", squeans: "pose:physiological", bedroom: "scenery:setting" }
+  ov2.standing = "pose:posture"
+  ov2["from side"] = "pose:camera"
   const effects = synthetic(10, {}).map((scene, i) => ({
     ...scene,
-    units: { ...scene.units, skeleton: i < 5 ? ["sweat", "squeans", "lying"] : ["other" + i], camera: ["from above"], place: ["bedroom"] },
+    units: {
+      ...scene.units,
+      skeleton: i < 5 ? ["sweat", "squeans", "lying"] : ["standing"],
+      camera: [i < 5 ? "from above" : "from side"],
+      place: ["bedroom"],
+    },
   }))
   const named = groupSituations(effects, ov2)
   assert(named[0].label.join() === "lying,from above", "an effect or a symbol never names a group; posture, then framing")
   assert(!named.some((s) => s.label.includes("sweat") || s.label.includes("squeans")), "no effect in any label")
   const twin = synthetic(10, {}).map((scene, i) => ({
     ...scene,
-    units: { ...scene.units, skeleton: i < 5 ? ["sweat", "lying"] : ["squeans", "lying"], camera: ["from above"], place: ["bedroom"] },
+    units: { ...scene.units, skeleton: [i < 5 ? "sweat" : "squeans", i < 7 ? "lying" : "standing"], camera: [i % 2 ? "from above" : "from side"], place: ["bedroom"] },
   }))
   const twins = groupSituations(twin, ov2)
-  assert(twins.length === 2 && twins[0].label.join(" + ") !== twins[1].label.join(" + "), "two groups never share a name")
+  const keys = twins.map((s) => [...s.label].sort().join())
+  assert(new Set(keys).size === keys.length, "two groups never share a name, in any order: " + twins.map((s) => s.label.join(" · ")).join(" / "))
   const gestures = synthetic(3, {}).map((scene) => ({ ...scene, units: { ...scene.units, skeleton: ["smile"] } }))
   assert(groupSituations(gestures, OVERRIDES)[0].id === "other", "tags of other slots are not situation tags")
 }
