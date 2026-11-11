@@ -9,6 +9,7 @@ import type { BooruProvider } from '../../booru/types'
 import { getProviderTagLimit } from '../../booru/tag-limits'
 import { splitTags } from '../../utils/tag-utils'
 import type { PackPeople } from './scene-pool'
+import { isCompositionPattern } from './permanence'
 
 export type CastRole = 'girl' | 'boy'
 
@@ -156,6 +157,21 @@ export function compositionQuery(
   const own = new Set(lead)
   const room = Number.isFinite(limit) ? Math.max(0, limit - lead.length) : extras.length
   return [...lead, ...extras.filter((tag) => !own.has(tag)).slice(0, room)].join(', ')
+}
+
+/**
+ * The theme of a source the user wrote, for the cast's group search: its tags less
+ * character names (the cast's, and any `isCharacter` knows), people counts and
+ * pairing ("solo", "1girl", "hetero") and ratings. "yor_briar, solo, beach" -> "beach".
+ */
+export function castTheme(sourceTags: string, castNames: readonly string[], isCharacter: (tag: string) => boolean = () => false): string {
+  const names = new Set(castNames.map((name) => name.toLowerCase().replace(/_/g, ' ').trim()))
+  return splitTags(sourceTags.replace(/,/g, ' '))
+    .filter((raw) => {
+      const tag = raw.toLowerCase().replace(/_/g, ' ').trim()
+      return !!tag && !tag.startsWith('rating:') && !names.has(tag) && !isCompositionPattern(tag) && !isCharacter(tag)
+    })
+    .join(', ')
 }
 
 export type CastAddition = 'added' | 'duplicate' | 'full'

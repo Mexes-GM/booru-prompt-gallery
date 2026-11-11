@@ -17,7 +17,7 @@
  */
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence } from "../lib/pack/scene/permanence"
-import { castAddition, castDefaultSearch, castMemberLook, castMemberRole, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
+import { castAddition, castDefaultSearch, castMemberLook, castMemberRole, castTheme, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
 import { DEFAULT_SCENE_SETTINGS, applySceneOwnership, castChips, castComposition, generateScenePack, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { packNaturalSource } from "../lib/pack/pack-natural"
 import { profileIdentity, typicalLook } from "../lib/pack/character-identity"
@@ -104,6 +104,16 @@ assert(compositionQuery({ girls: 2, boys: 1 }, "danbooru", "beach", "sfw") === "
   assert(!two.pairing.includes("multiple girls"), "the open count isn't carried when a number says how many")
   const open = extractScene(makePost(31, "multiple_girls standing smile bedroom"), ctx)!
   assert(open.people === null, "multiple girls alone stays open")
+}
+
+// ── A source the user wrote: only its theme joins the group search ──
+{
+  const cast = ["yor briar", "twilight (spy x family)"]
+  assert(castTheme("yor_briar, solo", cast) === "", "a character's own source has no theme: " + castTheme("yor_briar, solo", cast))
+  assert(compositionQuery({ girls: 1, boys: 1 }, "gelbooru", castTheme("yor_briar, solo", cast)) === "1girl, 1boy", "so the search is just the group, never 1boy next to solo")
+  const theme = castTheme("yor_briar, solo, 1girl, beach, rating:general, anya_(spy_x_family), night", cast, (t) => t === "anya (spy x family)")
+  assert(theme === "beach, night", "names, counts, solo and ratings go; the theme stays: " + theme)
+  assert(compositionQuery({ girls: 1, boys: 1 }, "danbooru", theme) === "hetero, beach", "within Danbooru's two tags")
 }
 
 // ── Adding characters and the source the app sets up ──

@@ -154,7 +154,8 @@ import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } fro
 import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
 import { searchedCharacterIn, searchedCharacterOf } from "@/lib/pack/character-focus"
 import { characterSearchTags } from "@/lib/pack/character-identity"
-import { castDefaultSearch, castPeople, compositionQuery } from "@/lib/pack/scene/cast"
+import { castDefaultSearch, castPeople, castTheme, compositionQuery } from "@/lib/pack/scene/cast"
+import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackScenes } from "@/hooks/use-pack-scenes"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
@@ -975,8 +976,12 @@ export function PromptGallery() {
   const packCastSearch = useMemo(() => {
     if (!packHasCast || !packCastRolesKnown) return null
     const people = castPeople(packSceneCast.map((m) => m.role))
-    return compositionQuery(people, packSourceAnswers.booruProvider, packSourceAnswers.fromCharacter ? '' : packSourceAnswers.searchTags, packSourceAnswers.ratingMode)
-  }, [packHasCast, packCastRolesKnown, packSceneCast, packSourceAnswers])
+    // Only the theme of a source the user wrote comes along: not its names, counts or "solo".
+    const theme = packSourceAnswers.fromCharacter
+      ? ''
+      : castTheme(packSourceAnswers.searchTags, packSceneCast.map((m) => m.character), (tag) => getTagSlotFromOverrides(tag, packMode.effectiveTagOverrides)?.slot === 'other:character')
+    return compositionQuery(people, packSourceAnswers.booruProvider, theme, packSourceAnswers.ratingMode)
+  }, [packHasCast, packCastRolesKnown, packSceneCast, packSourceAnswers, packMode.effectiveTagOverrides])
   const packPrimaryCharacter = packSceneCast[0]?.character ?? ''
   useEffect(() => {
     if (!packModeIsPackMode || !packMode.baseFromCharacter || !packSourceAnswers.fromCharacter || !packPrimaryCharacter) return
