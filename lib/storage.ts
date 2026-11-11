@@ -7,6 +7,7 @@ import type { BooruProvider, BooruPost } from '@/lib/booru/types'
 import type { TagCategory } from '@/lib/tag-classifier'
 import type { PackLearningModel } from '@/lib/pack/pack-learning'
 import type { AxisTagMode } from '@/lib/pack/pack-generator'
+import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
 
 // Safe localStorage wrapper that handles SSR and errors
@@ -794,6 +795,14 @@ export interface PackModeConfigV2 {
   minSetTags?: Partial<Record<TagCategory, number>>
   /** Clothing pool drawn from the outfit library instead of the collected posts. */
   clothingFromLibrary?: boolean
+  /**
+   * How prompts are built: whole scenes of real posts, or the classic
+   * per-category mixer. Absent in configs saved before the scenes engine:
+   * read through `packEngineConfig` (lib/pack/pack-config-migration.ts).
+   */
+  engine?: 'scenes' | 'classic'
+  /** Options of the scenes engine (mix, clothing, scenery, extras). */
+  sceneSettings?: ScenePackSettings
 }
 
 function isPackModeConfigV2(value: unknown): value is PackModeConfigV2 {

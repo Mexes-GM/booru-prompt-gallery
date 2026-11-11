@@ -7,6 +7,7 @@
 import type { PackModeConfig, PackModeConfigByKind, PackModeConfigV2, PackModeKind } from '../storage'
 import { PACK_ARCHETYPES, type PackArchetypeId } from '../tag-taxonomy'
 import { DEFAULT_VARIETY_LEVEL } from './variety-presets'
+import { DEFAULT_SCENE_SETTINGS, type ScenePackSettings } from './scene-pack'
 
 const DEFAULT_PROMPT_COUNT = 10
 
@@ -78,5 +79,31 @@ export function migratePackConfig(
     axisMinCounts: { ...v1.axisMinCounts },
     promptCount: v1.promptCount ?? DEFAULT_PROMPT_COUNT,
     manualAxisValues: { ...v1.manualAxisValues },
+  }
+}
+
+const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
+  allowed.includes(value as T) ? (value as T) : fallback
+
+/**
+ * The engine fields of a saved config, with defaults for configs saved before
+ * they existed (or with values this version doesn't know): the scenes engine,
+ * with each scene option at its default. The classic fields are not touched,
+ * so an old config keeps reading exactly as before.
+ */
+export function packEngineConfig(config: Pick<PackModeConfigV2, 'engine' | 'sceneSettings'>): {
+  engine: 'scenes' | 'classic'
+  sceneSettings: ScenePackSettings
+} {
+  const saved: Partial<ScenePackSettings> =
+    config.sceneSettings && typeof config.sceneSettings === 'object' ? config.sceneSettings : {}
+  return {
+    engine: pick(config.engine, ['scenes', 'classic'], 'scenes'),
+    sceneSettings: {
+      mix: pick(saved.mix, ['faithful', 'remix'], DEFAULT_SCENE_SETTINGS.mix),
+      clothing: pick(saved.clothing, ['scene', 'library'], DEFAULT_SCENE_SETTINGS.clothing),
+      scenery: pick(saved.scenery, ['scene', 'vary', 'plain'], DEFAULT_SCENE_SETTINGS.scenery),
+      extras: typeof saved.extras === 'boolean' ? saved.extras : DEFAULT_SCENE_SETTINGS.extras,
+    },
   }
 }

@@ -7,11 +7,13 @@
  *   3. V1 legacy 'clothing' key -> used as the 'wardrobe' config.
  *   4. An existing V2 config is returned unchanged.
  *   5. Nothing saved at all -> 'character' archetype defaults.
+ *   6. Engine fields: a config saved without them reads as the scenes engine with
+ *      default options, its classic fields untouched; unknown values fall back.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-config-migration.verify.ts
  */
 import type { PackModeConfig, PackModeConfigByKind, PackModeConfigV2 } from "../lib/storage"
-import { migratePackConfig } from "../lib/pack/pack-config-migration"
+import { migratePackConfig, packEngineConfig } from "../lib/pack/pack-config-migration"
 
 let passed = 0
 let failed = 0
