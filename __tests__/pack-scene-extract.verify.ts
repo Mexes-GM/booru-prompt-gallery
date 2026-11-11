@@ -18,6 +18,7 @@
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-extract.verify.ts
  */
 import { extractScene, normalizeRating, tagGender } from "../lib/pack/scene/scene"
+import { createPermanence } from "../lib/pack/scene/permanence"
 import { makeAssert, makeContext, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -95,6 +96,13 @@ const BASE_TAGS =
     makeContext({ poolShare: (tag) => (tag === "muscular male" ? 0.8 : 0.1) })
   )!
   assert(themed.units.body.join() === "muscular male", "a partner trait most of the pool shares is the source's theme and travels")
+  // How the partner is drawn is theirs too (real permanence data).
+  const realData = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "../public/tag-permanence.json"), "utf8"))
+  const faceless = extractScene(
+    makePost(10, "1girl 1boy hetero faceless_male standing smile bedroom bed"),
+    makeContext({ permanence: createPermanence(realData, makeContext().overrides) })
+  )!
+  assert(!Object.values(faceless.units).flat().includes("faceless male") && !faceless.pairing.includes("faceless male"), "faceless male stays behind")
   assert(!pair.units.body.includes("large breasts") && !pair.units.body.includes("horns"), "the subject's own traits are dropped")
   const asBoy = extractScene(makePost(10, "1girl 1boy hetero beard standing"), makeContext({ subject: "boy" }))!
   assert(!asBoy.units.body.includes("beard"), "a trait of the subject's own gender is dropped")

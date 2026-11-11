@@ -126,7 +126,7 @@ function TraitChip({ chip, onToggle, onRemove }: { chip: SceneChip; onToggle: (t
         aria-label={`Pin ${chip.tag} in every prompt`}
         title={pinned ? "In every prompt. Select to let each scene decide." : "Only when the scene has it. Select to pin it in every prompt."}
         onClick={() => onToggle(chip.tag)}
-        className="relative inline-flex items-center gap-1 min-w-0 rounded-l-md pl-1.5 pr-1 py-0.5 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:after:absolute pointer-coarse:after:-inset-y-3 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
+        className="relative inline-flex items-center gap-1 min-w-0 rounded-l-md pl-1.5 pr-1 py-0.5 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2.5 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
       >
         {pinned && <Pin className="w-3 h-3 flex-shrink-0" aria-hidden />}
         <span className="truncate max-w-[14rem]">{chip.tag}</span>
@@ -249,7 +249,7 @@ function PackScenesPanelComponent({
         {hasMultipleCharacters && (
           <p className="text-xs text-muted-foreground">Only the traits that match the character you picked are listed.</p>
         )}
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-y-5">
           {mainChips.map((chip) => (
             <TraitChip key={chip.tag} chip={chip} onToggle={scenes.toggleChip} onRemove={removeChip} />
           ))}
@@ -298,6 +298,8 @@ function PackScenesPanelComponent({
                 }}
                 placeholder="e.g. red scarf, glasses"
                 rows={1}
+                autoFocus
+                onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" })}
                 className="text-xs font-mono min-h-[2.25rem] h-9 resize-none py-2"
               />
               <Button type="button" variant="outline" size="sm" onClick={submitDraft} disabled={!draft.trim()} className="h-9 pointer-coarse:h-11 text-xs">
@@ -324,7 +326,7 @@ function PackScenesPanelComponent({
               <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? "rotate-180" : ""}`} />
             </button>
             {showMore && (
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <div className="mt-1.5 flex flex-wrap gap-1.5 pointer-coarse:mt-4 pointer-coarse:gap-y-5">
                 {foldedChips.map((chip) => (
                   <TraitChip key={chip.tag} chip={chip} onToggle={scenes.toggleChip} onRemove={removeChip} />
                 ))}
@@ -334,7 +336,7 @@ function PackScenesPanelComponent({
         )}
         <p className="flex items-start gap-1 text-xs text-muted-foreground">
           <Pin className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden />
-          <span>Pinned tags go in every prompt and replace the scene&apos;s own. Dashed ones appear only when the scene has them. Select a tag to switch it, or remove it to keep it out of every prompt.</span>
+          <span>Pinned tags go in every prompt, dashed ones only when a scene has them; select a tag to switch it, or remove it to leave it out.</span>
         </p>
       </section>
 

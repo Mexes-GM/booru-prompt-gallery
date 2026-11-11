@@ -30,7 +30,9 @@ import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import {
   DEFAULT_SCENE_SETTINGS,
   alwaysAddFor,
+  alwaysAddOmitted,
   applySceneOwnership,
+  fitsComposition,
   defaultComposition,
   dropRedundantSceneTags,
   generateScenePackAsync,
@@ -274,6 +276,15 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
 {
   assert(alwaysAddFor(["masterpiece", "solo", "1girl"], ["1girl", "solo"]).join() === "masterpiece,solo,1girl", "count tags the header has are kept")
   assert(alwaysAddFor(["masterpiece", "solo", "1boy"], ["1girl", "1boy", "hetero"]).join() === "masterpiece,1boy", "a count the composition contradicts is left out")
+  const one = { girls: 1, boys: 0 }
+  const pairPeople = { girls: 1, boys: 1 }
+  assert(alwaysAddFor(["masterpiece", "solo"], ["1girl"], one).join() === "masterpiece,solo", "with one person, a typed solo stays even if the scene's header lacks it")
+  assert(fitsComposition("solo", one) && !fitsComposition("solo", pairPeople), "solo fits one person only")
+  assert(fitsComposition("1boy", pairPeople) && !fitsComposition("1boy", one) && !fitsComposition("2girls", pairPeople), "exact counts must match")
+  assert(fitsComposition("hetero", pairPeople) && !fitsComposition("hetero", one) && !fitsComposition("yuri", pairPeople), "pairings need their people")
+  assert(fitsComposition("male focus", one), "a tag it can't judge fits")
+  assert(alwaysAddOmitted(["masterpiece", "solo", "1boy", "1girl"], pairPeople).join() === "solo", "the user is told which typed tags are left out")
+  assert(alwaysAddOmitted(["solo"], null).length === 0, "nothing is left out before the composition is known")
   const typed = ["(masterpiece:1.2)", "score_9", "smile", "solo"]
   const { prompts } = generateScenePack(pool, args({ alwaysAdd: typed, count: 5 }))
   for (const p of prompts) {

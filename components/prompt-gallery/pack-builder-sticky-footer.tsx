@@ -1170,6 +1170,15 @@ const PackBuilderStickyFooterComponent = ({
                                                             Goes at the start of every prompt exactly as typed. It doesn&apos;t replace anything in the scene.
                                                         </p>
                                                     )}
+                                                    {sceneMode && scenes && scenes.alwaysAddOmitted.length > 0 && (
+                                                        <p className="flex items-start gap-1.5 text-xs text-warning-text" role="status">
+                                                            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                                                            <span>
+                                                                Not added: <span className="font-mono">{scenes.alwaysAddOmitted.join(', ')}</span>.{' '}
+                                                                {scenes.alwaysAddOmitted.length === 1 ? "It doesn't" : "They don't"} match who&apos;s in the picture.
+                                                            </span>
+                                                        </p>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <button

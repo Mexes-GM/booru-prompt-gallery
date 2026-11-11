@@ -6,6 +6,7 @@ import { cleanSyntheticPrompt, type BulkSendCleanOptions } from '@/lib/pack/bulk
 import { createPermanence, isCompositionPattern, type PermanenceData } from '@/lib/pack/scene/permanence'
 import { buildScenePool, compositionOfIdentity, type PackPeople, type ScenePool } from '@/lib/pack/scene/scene-pool'
 import {
+  alwaysAddOmitted,
   defaultComposition,
   enabledSceneCount,
   generateScenePackAsync,
@@ -109,6 +110,8 @@ export interface UsePackScenesResult {
   addTraits: (text: string) => string[]
   /** The base has clothing, so "From the base" can be offered. */
   hasBaseClothing: boolean
+  /** "Always add" tags left out because they contradict who's in the picture ("solo" with two people). */
+  alwaysAddOmitted: string[]
   compositions: PackSceneComposition[]
   /** Composition in use (the pick, or the default). */
   people: PackPeople | null
@@ -360,6 +363,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     return {
       identity: pinnedTags,
       alwaysAdd,
+      people,
       never: neverTags,
       baseClothing,
       subject,
@@ -381,7 +385,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       resolution: (aspect) => resolutionForAspect(aspect, prefs),
     }
   }, [
-    useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, pinnedTags, alwaysAdd, neverTags, baseClothing, subject,
+    useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, pinnedTags, alwaysAdd, people, neverTags, baseClothing, subject,
     settings, promptCount, disabledSituations, overrides, characterTags, cleanOptions, globalWeights, isGlobalWeightsEnabled,
   ])
 
@@ -448,6 +452,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   )
 
   const otherRatingPosts = enabled ? posts.length - rated.length : 0
+  const omitted = useMemo(() => alwaysAddOmitted(alwaysAdd, people), [alwaysAdd, people])
   const hasBaseClothing = baseClothing.length > 0
   return useMemo(() => ({
     ready: !!permanence,
@@ -461,6 +466,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     resetChip,
     addTraits,
     hasBaseClothing,
+    alwaysAddOmitted: omitted,
     compositions,
     people,
     setPeople,
@@ -477,7 +483,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     reroll,
     naturalSourceOf,
   }), [
-    permanence, loadFailed, retryLoad, pool, chips, never, pinnedTags, toggleChip, resetChip, addTraits, hasBaseClothing,
+    permanence, loadFailed, retryLoad, pool, chips, never, pinnedTags, toggleChip, resetChip, addTraits, hasBaseClothing, omitted,
     compositions, people, setPeople, disabledSituations, toggleSituation, enableAllSituations, enabledScenes,
     otherRatingPosts, libraryOutfitCount, prompts, shortBy, isGenerating, generate, reroll, naturalSourceOf,
   ])

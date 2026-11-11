@@ -287,12 +287,48 @@ export function dropRedundantSceneTags(tags: readonly string[], fixed: readonly 
   return tags.filter((tag, i) => kept.has(tag) || !spaced.some((other, j) => j !== i && implies(other, spaced[i])))
 }
 
+const OPEN_GIRLS = /^(multiple girls|\d+\+girls)$/
+const OPEN_BOYS = /^(multiple boys|\d+\+boys)$/
+
+/**
+ * False when a people-count or pairing tag says something the composition
+ * contradicts: "solo" with two people, "1boy" with no boy, "hetero" without a
+ * girl and a boy. Tags it can't judge ("male focus", "couple") fit.
+ */
+export function fitsComposition(raw: string, people: PackPeople): boolean {
+  const tag = normalizeTagForPack(raw)
+  const total = people.girls + people.boys
+  const count = COUNT_TAG_RE.exec(tag)
+  if (count && !count[2]) {
+    if (count[3].startsWith('girl')) return Number(count[1]) === people.girls
+    if (count[3].startsWith('boy')) return Number(count[1]) === people.boys
+    return true
+  }
+  if (OPEN_GIRLS.test(tag)) return people.girls >= 2
+  if (OPEN_BOYS.test(tag)) return people.boys >= 2
+  switch (tag) {
+    case 'solo': return total === 1
+    case 'solo focus': return total >= 2
+    case 'hetero': return people.girls >= 1 && people.boys >= 1
+    case 'yuri': return people.girls >= 2
+    case 'yaoi': return people.boys >= 2
+    default: return true
+  }
+}
+
+/** The "Always add" tags the composition contradicts: they're left out of the pack. */
+export function alwaysAddOmitted(alwaysAdd: readonly string[], people: PackPeople | null): string[] {
+  return people ? alwaysAdd.filter((tag) => isCompositionPattern(tag) && !fitsComposition(tag, people)) : []
+}
+
 /**
  * The "Always add" tags a prompt gets: all of them, as typed, except a people count
- * or pairing tag the prompt's own header doesn't have. The composition picked for
- * the pack decides who is in the picture.
+ * or pairing tag that contradicts who is in the picture (`people`, the pack's
+ * composition). Without a composition, a count tag stays only when the prompt's own
+ * header has it.
  */
-export function alwaysAddFor(alwaysAdd: readonly string[], header: readonly string[]): string[] {
+export function alwaysAddFor(alwaysAdd: readonly string[], header: readonly string[], people?: PackPeople | null): string[] {
+  if (people) return alwaysAdd.filter((tag) => !isCompositionPattern(tag) || fitsComposition(tag, people))
   const present = new Set(header.map(normalizeTagForPack))
   return alwaysAdd.filter((tag) => !isCompositionPattern(tag) || present.has(normalizeTagForPack(tag)))
 }
@@ -313,6 +349,8 @@ export interface ScenePackArgs {
   identity: string[]
   /** "Always add" tags, as typed: first in every prompt, never interpreted. */
   alwaysAdd: readonly string[]
+  /** Who is in the picture: decides which people-count tags of "Always add" fit. */
+  people?: PackPeople | null
   /** Tags that must not appear, nor their variants (removed chips, "Never include"). */
   never?: readonly string[]
   /** The base's clothing, for `settings.clothing === 'base'`. */
@@ -407,7 +445,7 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   // tag next to a qualified form of the same thing gives way to it.
   const tags = dropRedundantSceneTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), [])
   const kept = dropDanglingReferences(tags, composed.locked, args.overrides)
-  const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(args.alwaysAdd, composed.locked))
+  const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(args.alwaysAdd, composed.locked, args.people))
   if (!prompt || f.seen.has(prompt) || !f.filter.tryAccept(prompt)) return null
   f.seen.add(prompt)
   const postId = composed.sources.skeleton
