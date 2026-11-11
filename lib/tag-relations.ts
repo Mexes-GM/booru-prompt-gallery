@@ -44,6 +44,8 @@ export interface TagRelations {
   requires: ReadonlyMap<number, readonly number[]>
   /** Tag index to the taxonomy slots it requires something of. */
   requiresSlot: ReadonlyMap<number, readonly string[]>
+  /** Tags that need more than one person ("looking at another", "hug"): they (almost) never meet `solo`. */
+  company: ReadonlySet<number>
 }
 
 export interface TagRelationsFile {
@@ -54,6 +56,7 @@ export interface TagRelationsFile {
   ex: number[]
   req?: number[]
   reqSlot?: Record<string, number[]>
+  company?: number[]
 }
 
 /** The app's spelling of a tag: lower case, spaces for underscores, single spaces. */
@@ -90,7 +93,7 @@ export function parseTagRelations(file: TagRelationsFile): TagRelations {
   }
   const bits: Record<string, number> = {}
   file.contexts.forEach((context, i) => { bits[context] = 1 << i })
-  return { tags: file.tags, index, excluded, bits, requires, requiresSlot }
+  return { tags: file.tags, index, excluded, bits, requires, requiresSlot, company: new Set(file.company ?? []) }
 }
 
 /** A post's rating letter or word ("g", "s", "q", "e", "general"...) as a relation rating; null when unknown. */
@@ -176,6 +179,12 @@ export class ExclusionSet {
     const i = this.relations.index.get(relationKey(tag))
     return i !== undefined && this.blocked.has(i)
   }
+}
+
+/** True for a tag that needs more than one person in the picture ("looking at another"). */
+export function needsCompany(relations: TagRelations, tag: string): boolean {
+  const i = relations.index.get(relationKey(tag))
+  return i !== undefined && relations.company.has(i)
 }
 
 /** Tags that `tag` requires ("skirt lift" requires "skirt"). */

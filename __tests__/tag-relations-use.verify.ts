@@ -11,6 +11,7 @@ import { resolveTagConflicts } from "../lib/tag-conflicts"
 import { generatePackPrompts } from "../lib/pack/pack-generator"
 import { danglingReferences } from "../lib/pack/scene/scene-compose"
 import { createSeededRng } from "../lib/pack/pack-generator"
+import { coherentPromptTags } from "../lib/pack/prompt-coherence"
 
 let failed = 0
 let passed = 0
@@ -22,7 +23,7 @@ const assert = (ok: unknown, label: string) => {
 const CONTEXTS = ["solo:all", "solo:sfw", "solo:q", "solo:e", "solo:both", "multi:all", "multi:sfw", "multi:q", "multi:e", "multi:both"]
 const SOLO = CONTEXTS.filter((c) => c.startsWith("solo")).reduce((m, c) => m | (1 << CONTEXTS.indexOf(c)), 0)
 const ALL = (1 << CONTEXTS.length) - 1
-const TAGS = ["crouching", "leaning back", "sunrise", "midnight", "skirt lift", "skirt", "drinking", "cup", "scarf", "bandana"]
+const TAGS = ["crouching", "leaning back", "sunrise", "midnight", "skirt lift", "skirt", "drinking", "cup", "scarf", "bandana", "looking at another", "gold earrings", "earrings"]
 const id = (t: string) => TAGS.indexOf(t)
 const file: TagRelationsFile = {
   v: 2,
@@ -31,8 +32,9 @@ const file: TagRelationsFile = {
   // crouching / leaning back: one person only, rare (0.005); sunrise / midnight: never, anyone;
   // scarf / bandana: one person, 0.06 (only choosing among candidates uses it).
   ex: [id("crouching"), id("leaning back"), SOLO, 5, 255, id("sunrise"), id("midnight"), ALL, 0, 0, id("scarf"), id("bandana"), SOLO, 60, 255],
-  req: [id("skirt lift"), id("skirt")],
+  req: [id("skirt lift"), id("skirt"), id("gold earrings"), id("earrings")],
   reqSlot: { "equipment:handheld": [id("drinking")] },
+  company: [id("looking at another")],
 }
 const relations = parseTagRelations(file)
 const overrides: Record<string, string> = { skirt: "clothing:bottom", cup: "equipment:handheld", crouching: "pose:posture", "leaning back": "pose:posture" }
@@ -97,6 +99,27 @@ const overrides: Record<string, string> = { skirt: "clothing:bottom", cup: "equi
   assert(danglingReferences(["1girl", "dual wielding"], overrides).has("dual wielding"), "dual wielding stays on the hand list")
   setTagRelations(null)
   assert(danglingReferences(["1girl", "reverse grip"], overrides).has("reverse grip"), "before the file loads, reverse grip is still caught")
+}
+
+// ── The last pass Classic and Scenes share ──
+{
+  setTagRelations(relations)
+  const out = coherentPromptTags(["1girl", "earrings", "gold earrings", "holding", "smile"], { keep: ["1girl", "earrings"], overrides })
+  assert(out.join() === "1girl,gold earrings,smile", "the generic gives way to its qualified form, even from the base; holding with nothing held goes: " + out.join())
+  const scene = coherentPromptTags(["1girl", "earrings", "gold earrings"], { keep: ["1girl", "earrings"], fixed: ["earrings"], overrides })
+  assert(scene.includes("earrings"), "a fixed tag is never replaced")
+  assert(coherentPromptTags(["1girl", "drinking", "cup"], { keep: ["1girl"], overrides }).includes("drinking"), "drinking with a cup stays")
+}
+
+// ── Tags that need company ──
+{
+  setTagRelations(relations)
+  assert(resolveTagConflicts(["1girl", "solo"], ["looking at another"]).conflictingTags[0]?.reason === "Needs more than one person", "not with one person")
+  assert(resolveTagConflicts(["1girl", "1boy"], ["looking at another"]).validTags.length === 1, "fine with two")
+  assert(resolveTagConflicts(["smile"], ["looking at another"]).validTags.length === 1, "and when the prompt doesn't say how many")
+  const classic = generatePackPrompts({ lockedTags: ["1girl", "solo"], axes: { pose: ["looking at another", "crouching"] }, count: 10, rng: createSeededRng(5) })
+  assert(classic.length > 0 && classic.every((p) => !p.prompt.includes("looking at another")), "Classic doesn't draw it for one person")
+  setTagRelations(null)
 }
 
 console.log(`${passed} passed, ${failed} failed`)

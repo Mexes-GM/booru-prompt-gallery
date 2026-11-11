@@ -12,7 +12,8 @@ import { splitTags } from '../utils/tag-utils'
 import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
-import { composePack, composePackPrompts, dropDanglingReferences, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { composePack, composePackPrompts, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { coherentPromptTags, dropRedundantTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
 import { normalizeRating, type Scene, type SceneRating, type TagKind } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
@@ -383,28 +384,8 @@ export function applySceneOwnership(
   })
 }
 
-/**
- * True when `longer` says everything `shorter` does: a qualified form of it
- * ("lace bra" and "bra"), or a garment it describes with a hyphenated adjective
- * ("off-shoulder sweater" and "off shoulder"). "blush stickers" is not "blush".
- */
-function implies(longer: string, shorter: string): boolean {
-  if (longer === shorter) return false
-  if (isQualifiedVariant(longer, shorter)) return true
-  const words = shorter.split(' ')
-  return words.length > 1 && longer.split(' ').includes(words.join('-'))
-}
-
-/**
- * A booru tags both "lace bra" and "bra", "off-shoulder sweater" and "off shoulder":
- * the shorter one says nothing the longer doesn't, so it goes. Tags in `fixed` are
- * never dropped.
- */
-export function dropRedundantSceneTags(tags: readonly string[], fixed: readonly string[]): string[] {
-  const kept = new Set(fixed)
-  const spaced = tags.map(normalizeTagForPack)
-  return tags.filter((tag, i) => kept.has(tag) || !spaced.some((other, j) => j !== i && implies(other, spaced[i])))
-}
+/** The redundancy rule of the shared last pass (lib/pack/prompt-coherence.ts), kept under its old name. */
+export const dropRedundantSceneTags = (tags: readonly string[], fixed: readonly string[]): string[] => dropRedundantTags(tags, fixed)
 
 const OPEN_GIRLS = /^(multiple girls|\d+\+girls)$/
 const OPEN_BOYS = /^(multiple boys|\d+\+boys)$/
@@ -570,8 +551,12 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   // One rule wherever the tags come from (character, base clothing, library, scene): a generic
   // tag next to a qualified form of the same thing gives way to it.
   // With a cast the blocks are different people: one's "long hair" is not redundant with another's "very long hair".
-  const tags = dropRedundantSceneTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), isCast(args) ? composed.locked : [])
-  const kept = dropDanglingReferences(tags, composed.locked, args.overrides)
+  // The last pass shared with Classic: redundant generics, then references to nothing.
+  const kept = coherentPromptTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), {
+    keep: composed.locked,
+    fixed: isCast(args) ? composed.locked : [],
+    overrides: args.overrides,
+  })
   const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(args.alwaysAdd, composed.locked, args.people))
   if (!prompt || f.seen.has(prompt) || !f.filter.tryAccept(prompt)) return null
   f.seen.add(prompt)

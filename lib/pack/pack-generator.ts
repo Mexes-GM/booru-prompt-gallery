@@ -19,7 +19,7 @@
  */
 import { BooruPost } from "../booru/types"
 import { TagCategory, classifyTag, classifyTags } from "../tag-classifier"
-import { ExclusionSet, excludes, loadedTagRelations, requiredBy, type RelationRating, type TagRelations } from "../tag-relations"
+import { ExclusionSet, excludes, loadedTagRelations, needsCompany, requiredBy, type RelationRating, type TagRelations } from "../tag-relations"
 import { ConflictChecker, resolveTagConflicts } from "../tag-conflicts"
 import { conflictsWithBackground } from "./background-coherence"
 import { applyWeights } from "../weight-utils"
@@ -674,6 +674,8 @@ const MAX_CANDIDATES_PER_PICK = 60
 interface Compatibility {
   relations: TagRelations
   context: { people: number; rating?: RelationRating | null }
+  /** The base says one person ("1girl", "solo"): tags that need company aren't drawn. */
+  onePerson: boolean
   off: ReadonlySet<TagCategory>
   userExcluded: (tag: string) => boolean
   overrides?: Record<string, string>
@@ -1061,6 +1063,7 @@ function* packPromptSteps(args: GeneratePackPromptsArgs, stop: () => boolean): G
     ? {
         relations,
         context: { people: peopleIn(normalizedLocked) >= 2 ? 2 : 1, rating },
+        onePerson: peopleIn(normalizedLocked) === 1 || normalizedLocked.includes("solo"),
         off: new Set(offCategories),
         userExcluded,
         overrides: tagOverrides,
@@ -1129,7 +1132,7 @@ function* packPromptSteps(args: GeneratePackPromptsArgs, stop: () => boolean): G
       const coherent = selections.filter((picked) => {
         const chosen = exclusionsOf(compat, normalizedLocked)
         for (const tags of picked.flat().map(tagsOfValue)) {
-          if (tags.some((tag) => chosen.blocks(tag))) return false
+          if (tags.some((tag) => chosen.blocks(tag) || (compat.onePerson && needsCompany(compat.relations, tag)))) return false
           tags.forEach((tag) => chosen.add(tag))
         }
         return true
@@ -1206,7 +1209,7 @@ function* packPromptSteps(args: GeneratePackPromptsArgs, stop: () => boolean): G
         if (take.length >= axis.k || looked >= MAX_CANDIDATES_PER_PICK * axis.k) break
         looked++
         const tags = tagsOfValue(value)
-        if (tags.some((tag) => blocked.blocks(tag)) || !requirements(c, tags, chosen)) continue
+        if (tags.some((tag) => blocked.blocks(tag) || (c.onePerson && needsCompany(c.relations, tag))) || !requirements(c, tags, chosen)) continue
         take.push(value)
         chosen.push(...tags)
         tags.forEach((tag) => blocked.add(tag))

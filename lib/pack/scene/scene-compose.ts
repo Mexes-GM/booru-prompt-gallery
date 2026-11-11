@@ -243,8 +243,13 @@ export function danglingReferences(
  * header and the identity) stay whatever they say. The rule composePack applies, for
  * callers that change the tags afterwards (a cleanup step may drop the garment).
  */
-export function dropDanglingReferences(tags: string[], keep: readonly string[], overrides: Record<string, string>): string[] {
-  const dangling = danglingReferences(tags, overrides)
+export function dropDanglingReferences(
+  tags: string[],
+  keep: readonly string[],
+  overrides: Record<string, string>,
+  relations: TagRelations | null = loadedTagRelations()
+): string[] {
+  const dangling = danglingReferences(tags, overrides, relations)
   if (dangling.size === 0) return tags
   const kept = new Set(keep)
   return tags.filter((tag) => kept.has(tag) || !dangling.has(tag))

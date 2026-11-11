@@ -46,6 +46,7 @@ import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
+import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import { castAddition, castMemberLook, castMemberRole, cleanProfileLook, roleFromProfile, roleFromSubject, type CastLookSource, type CastRole } from '@/lib/pack/scene/cast'
 import { ConflictChecker } from '@/lib/tag-conflicts'
@@ -1650,6 +1651,13 @@ export function usePackMode(
     return { axes, axisWeights, effectiveAxisMinCounts }
   }, [activeAxisCategories, mergedAxisValues, axisCounts, learning, learningContextKeys, axisMinCounts, raisedAxisCounts])
 
+  // The last pass Scenes uses too: a generic tag yields to its qualified form, and tags
+  // that refer to something the prompt lacks ("holding" with nothing held) go. The base stays.
+  const coherentClassicPrompt = useCallback(
+    (prompt: string) => coherentPromptTags(prompt.split(',').map((t) => t.trim()).filter(Boolean), { keep: lockedTags, overrides: effectiveOverrides }).join(', '),
+    [lockedTags, effectiveOverrides]
+  )
+
   const regenerate = useCallback(() => {
     // A pack needs SOME constant tags to build prompts around — either a
     // base (card or pasted prompt), or (no base at all) the free-text
@@ -1743,7 +1751,7 @@ export function usePackMode(
           },
           lockedTags
         )
-        const prompt = cleanedPrompt && finalizePackPrompt(cleanedPrompt, alwaysAddTags)
+        const prompt = cleanedPrompt && finalizePackPrompt(coherentClassicPrompt(cleanedPrompt), alwaysAddTags)
         if (!prompt || seen.has(prompt)) continue
         if (enforceRequired && !promptHasExplicitTag(prompt)) continue
         if (minTotalTags > 0 && countPromptTags(prompt) < minTotalTags) {
@@ -1807,7 +1815,7 @@ export function usePackMode(
       }
     }
   }, [
-    hasBase, relationArgs,
+    hasBase, relationArgs, coherentClassicPrompt,
     needsCharacterChoice,
     lockedTags,
     activeAxisCategories,
@@ -1863,7 +1871,7 @@ export function usePackMode(
           { ...cleanOptions, tagOverrides: effectiveOverrides, globalWeights, isGlobalWeightsEnabled, lockedTags },
           lockedTags
         )
-        return cleaned && finalizePackPrompt(cleaned, alwaysAddTags)
+        return cleaned && finalizePackPrompt(coherentClassicPrompt(cleaned), alwaysAddTags)
       }
       const replacement = pickReplacement(rawCandidates, others, clean, lockedTags)
       if (!replacement) return false
@@ -1871,7 +1879,7 @@ export function usePackMode(
       return true
     },
     [
-      generatedPrompts, relationArgs,
+      generatedPrompts, relationArgs, coherentClassicPrompt,
       buildGenerationArgs,
       lockedTags,
       globalWeights,
