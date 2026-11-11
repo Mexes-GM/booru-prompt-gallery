@@ -981,6 +981,7 @@ export function PromptGallery() {
       characterSearchTags(packPrimaryCharacter, packSourceAnswers.booruProvider),
       packSourceAnswers.booruProvider
     )
+    // An effect on purpose: a role can arrive later, when a character's trait profile loads, with no handler to hook into.
     if (wanted && wanted !== packSourceAnswers.searchTags) applyPackSource({ ...packSourceAnswers, searchTags: wanted })
   }, [packModeIsPackMode, packMode.baseFromCharacter, packSceneCast, packPrimaryCharacter, packSourceAnswers, applyPackSource])
   const handleUseCompositionSearch = useCallback(() => {
