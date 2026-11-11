@@ -158,25 +158,34 @@ export async function getAllTagOverridesClient(): Promise<Record<string, string>
  * general tags (species, groups, weapons) were classified other:character, and
  * would otherwise be named as characters. Those are left unclassified.
  */
-export async function fetchTagOverridesForNames(names: string[]): Promise<Record<string, string>> {
+export async function fetchTagOverridesForNames(
+  names: string[],
+  /** Called with the names whose lookup failed (after one retry), so a caller can ask again later. */
+  onFailed?: (names: string[]) => void
+): Promise<Record<string, string>> {
   const unique = Array.from(new Set(names.map((n) => n.trim().toLowerCase().replace(/ /g, '_')).filter(Boolean)))
   const overrides: Record<string, string> = {}
   if (unique.length === 0) return overrides
 
   const CHUNK = 150
+  // A large pool sends many chunks at once; a few at a time keeps them from failing together.
+  const PARALLEL = 4
   const supabase = createClient()
   if (!supabase) return overrides
   const chunks: string[][] = []
   for (let i = 0; i < unique.length; i += CHUNK) chunks.push(unique.slice(i, i + CHUNK))
 
-  await Promise.all(chunks.map(async (chunk) => {
+  const failed: string[] = []
+  const fetchChunk = async (chunk: string[], retried = false): Promise<void> => {
     const { data, error } = await supabase
       .from('auto_suggest_tags')
       .select('name, category, category_name, subcategory')
       .eq('status', 'approved')
       .in('name', chunk)
     if (error || !data) {
+      if (!retried) return fetchChunk(chunk, true)
       if (error) console.warn('fetchTagOverridesForNames chunk failed:', error.message)
+      failed.push(...chunk)
       return
     }
     data.forEach((tag: { name: string; category: number | null; category_name: string | null; subcategory?: string | null }) => {
@@ -186,8 +195,12 @@ export async function fetchTagOverridesForNames(names: string[]): Promise<Record
       overrides[tag.name] = val
       if (tag.name.includes('_')) overrides[tag.name.replace(/_/g, ' ')] = val
     })
-  }))
+  }
 
+  for (let i = 0; i < chunks.length; i += PARALLEL) {
+    await Promise.all(chunks.slice(i, i + PARALLEL).map((chunk) => fetchChunk(chunk)))
+  }
+  if (failed.length > 0) onFailed?.(failed)
   return overrides
 }
 

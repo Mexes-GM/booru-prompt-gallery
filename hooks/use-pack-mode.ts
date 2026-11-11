@@ -494,7 +494,14 @@ export function usePackMode(
     if (missing.length === 0) return false
     missing.forEach((t) => requestedSlotTagsRef.current.add(t))
     try {
-      const fetched = await fetchTagOverridesForNames(missing)
+      // Tags whose lookup failed are asked for again on the next pass instead of
+      // staying without a slot for the rest of the session.
+      const fetched = await fetchTagOverridesForNames(missing, (failed) => {
+        failed.forEach((name) => {
+          requestedSlotTagsRef.current.delete(name)
+          requestedSlotTagsRef.current.delete(name.replace(/_/g, ' '))
+        })
+      })
       if (Object.keys(fetched).length === 0) return false
       poolOverridesRef.current = { ...poolOverridesRef.current, ...fetched }
       setPoolOverrides(poolOverridesRef.current)

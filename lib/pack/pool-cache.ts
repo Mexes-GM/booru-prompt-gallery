@@ -4,8 +4,8 @@
  * reopening Pack Mode on a known source is instant and every session adds a
  * few new posts on top instead of starting from zero.
  *
- * Only the tag fields sampling needs are stored (no URLs/images), so a post
- * is ~1-2 KB. Everything here is best-effort: private windows, blocked
+ * Only the tag fields sampling needs are stored, plus the small preview's URL
+ * (the scenes engine shows each prompt's source post), so a post is ~1-2 KB. Everything here is best-effort: private windows, blocked
  * storage or quota errors just behave like an empty cache.
  */
 import type { BooruPost, BooruProvider } from "../booru/types"
@@ -32,6 +32,8 @@ interface SlimPost {
   /** Image size, for per-prompt resolution. Absent on older entries, same as p/a. */
   w?: number
   h?: number
+  /** Preview image URL ("" when the post has none). Entries saved without it are not loaded (see loadPoolCache). */
+  v?: string
 }
 
 interface CacheRecord {
@@ -61,6 +63,7 @@ function toSlim(post: BooruPost): SlimPost {
     a: post.tag_string_artist || undefined,
     w: post.width || undefined,
     h: post.height || undefined,
+    v: post.preview_file_url || "",
   }
 }
 
@@ -69,7 +72,7 @@ function fromSlim(p: SlimPost): BooruPost {
     id: p.id,
     file_url: "",
     large_file_url: "",
-    preview_file_url: "",
+    preview_file_url: p.v || "",
     tag_string: p.t,
     tag_string_artist: p.a || "",
     tag_string_character: p.c,
@@ -121,7 +124,9 @@ export async function loadPoolCache(key: string): Promise<BooruPost[]> {
     const record = await requestToPromise<CacheRecord | undefined>(
       db.transaction(STORE, "readonly").objectStore(STORE).get(key)
     )
-    return record ? record.posts.map(fromSlim) : []
+    // Posts saved before previews were stored would show no picture: they're left
+    // out, and seeding fetches fresh copies of them as the pool fills up again.
+    return record ? record.posts.filter((p) => p.v !== undefined).map(fromSlim) : []
   } catch {
     return []
   }
