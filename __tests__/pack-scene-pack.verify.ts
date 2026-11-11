@@ -299,6 +299,19 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
     assert(p.prompt.includes("red dress") && p.prompt.includes("black boots"), "every prompt wears the base's clothes")
     assert(!/(shirt|skirt|jacket|jeans|sweater|pajamas|shorts)/.test(p.prompt), "the scene's clothes are gone: " + p.prompt)
   }
+  // A card that says both "earrings" and "gold earrings", pinned next to the character's "hairband": the qualified forms win.
+  const card = generateScenePack(pool, args({
+    identity: [...IDENTITY, "hairband", "earrings"],
+    baseClothing: ["white hairband", "gold earrings", "off-shoulder sweater", "off shoulder"],
+    settings: { ...DEFAULT_SCENE_SETTINGS, clothing: "base" },
+    count: 3,
+  })).prompts
+  for (const p of card) {
+    const tags = p.prompt.split(", ")
+    assert(tags.includes("white hairband") && !tags.includes("hairband"), "the qualified hairband wins: " + p.prompt)
+    assert(tags.includes("gold earrings") && !tags.includes("earrings"), "the qualified earrings win")
+    assert(tags.includes("off-shoulder sweater") && !tags.includes("off shoulder"), "the garment wins over its adjective")
+  }
   const none = generateScenePack(pool, args({ baseClothing: [], settings: { ...DEFAULT_SCENE_SETTINGS, clothing: "base" }, count: 3 })).prompts
   assert(none.some((p) => /(shirt|skirt|dress|jacket|sweater|pajamas)/.test(p.prompt)), "no base clothing: the scene's clothes stay")
 }

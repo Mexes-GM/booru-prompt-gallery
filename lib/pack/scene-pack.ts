@@ -393,7 +393,7 @@ function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filte
  * One composed scene as a finished pack prompt, or null when it's dropped:
  *  1. what the character owns and what is never wanted comes out of the scene;
  *  2. the user's prompt settings (the cleaner), with the header and identity locked;
- *  3. tags a longer tag of the prompt already says;
+ *  3. tags a longer tag of the prompt already says, fixed ones included ("hairband" next to "white hairband");
  *  4. references left pointing at nothing (a garment the cleaner removed);
  *  5. "Always add" first, as typed;
  *  6. exact and near-duplicate filter.
@@ -403,7 +403,9 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const owned = applySceneOwnership(composed.tags, composed.locked, args.never ?? [], args.overrides)
   const cleaned = args.clean(owned, composed.locked)
   if (!cleaned) return null
-  const tags = dropRedundantSceneTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), composed.locked)
+  // One rule wherever the tags come from (character, base clothing, library, scene): a generic
+  // tag next to a qualified form of the same thing gives way to it.
+  const tags = dropRedundantSceneTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), [])
   const kept = dropDanglingReferences(tags, composed.locked, args.overrides)
   const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(args.alwaysAdd, composed.locked))
   if (!prompt || f.seen.has(prompt) || !f.filter.tryAccept(prompt)) return null
