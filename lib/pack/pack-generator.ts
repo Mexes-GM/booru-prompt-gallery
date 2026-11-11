@@ -660,8 +660,8 @@ export interface PackPrompt {
   height?: number
   /** Id of the library outfit the clothing came from (Pack Mode's "From the outfit library"). */
   outfitId?: number
-  /** Scenes engine: the post whose scene the prompt was built on, and the situation it belongs to. */
-  scene?: { postId: number; preview?: string; situation?: string }
+  /** Scenes engine: the post whose scene the prompt was built on, its situation, and every post a part came from. */
+  scene?: { postId: number; preview?: string; situation?: string; donors?: number[] }
 }
 
 /**

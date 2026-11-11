@@ -10,6 +10,7 @@ import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import { postIsBlocked } from './blocked'
 import { isPhotoPost } from './medium'
 import { COUNT_TAG_RE } from './permanence'
+import { nameDetector } from './names'
 import { extractScene, sceneTags, stateTagCount, MIN_TYPICAL_SUPPORT, type Scene, type SceneContext } from './scene'
 
 /** Scenes with fewer state tags than this are too poor to be worth a prompt. */
@@ -72,7 +73,7 @@ export interface ScenePool {
   stats: ScenePoolStats
 }
 
-export type ScenePoolContext = Omit<SceneContext, 'poolSupport' | 'poolPlace' | 'poolSources' | 'poolShare'> & {
+export type ScenePoolContext = Omit<SceneContext, 'poolSupport' | 'poolPlace' | 'poolSources' | 'poolShare' | 'looksLikeName'> & {
   minStateTags?: number
   /** Tags of the character; its people-count tags (`1girl`, `solo`) decide which scenes fit. */
   identity?: readonly string[]
@@ -154,6 +155,7 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
     poolShare: (tag) => (distinct.length > 0 ? (support.get(tag) ?? 0) / distinct.length : 0),
     poolPlace: place,
     poolSources: spread ? (tag) => signatures.get(tag)?.size ?? 0 : undefined,
+    looksLikeName: nameDetector({ posts: distinct, overrides: ctx.overrides }),
   }
 
   const good: Scene[] = []

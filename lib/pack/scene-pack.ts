@@ -416,7 +416,12 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
     values: [],
     ...(size ?? {}),
     ...(outfitId !== undefined ? { outfitId } : {}),
-    scene: { postId, preview: f.sceneById.get(postId)?.preview, situation: f.situationOf.get(postId) },
+    scene: {
+      postId,
+      preview: f.sceneById.get(postId)?.preview,
+      situation: f.situationOf.get(postId),
+      donors: Array.from(new Set(Object.values(composed.sources).filter((id): id is number => id !== undefined))),
+    },
   }
 }
 

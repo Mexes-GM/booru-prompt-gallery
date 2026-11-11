@@ -68,6 +68,30 @@ assert(!pool.scenes.some((scene) => scene.postId === 8 || scene.postId === 10), 
 assert(buildScenePool(posts, { ...ctx, minStateTags: 2 }).stats.belowQuality === 1, "the quality threshold is a parameter")
 assert(buildScenePool([makePost(20, "no_humans standing bedroom bed")], ctx).stats.unextractable === 1, "posts without people are counted apart")
 
+// ── Names the booru didn't type ──
+{
+  // A pair pool from a booru that spells series its own way: the names repeat, untyped and without a slot.
+  const ov = { ...OVERRIDES, "holding hands": "pose:interaction", "star (symbol)": "other:unclassified" }
+  const named = (id: number, extra: string, copyright = "") =>
+    makePost(id, `1girl 1boy hetero standing holding_hands smile from_above park outdoors skirt shirt ${extra}`, { tag_string_copyright: copyright })
+  const posts = [
+    named(1, "pokemon_scarlet_and_violet star_(symbol)", "pokemon"),
+    named(2, "pokemon_scarlet_and_violet", "pokemon"),
+    named(3, "faust_(exhibition)_(project_moon) star_(symbol)", "project_moon"),
+    named(4, "faust_(exhibition)_(project_moon)", "project_moon"),
+    named(5, "kurumi_(5th_costume)", ""),
+    named(6, "kurumi_(5th_costume)", ""),
+    named(7, "", "series_a"),
+  ]
+  const pair = buildScenePool(posts, { ...ctx, overrides: ov, people: { girls: 1, boys: 1 } })
+  const all = pair.scenes.flatMap((scene) => Object.values(scene.units).flat())
+  for (const gone of ["pokemon scarlet and violet", "faust (exhibition) (project moon)", "kurumi (5th costume)"]) {
+    assert(!all.includes(gone), `${gone} is a name, although nothing typed it`)
+  }
+  assert(all.includes("star (symbol)"), "a general tag with a general qualifier stays")
+  assert(all.includes("holding hands"), "the scene keeps its own tags")
+}
+
 // ── Composition of the pack ──
 assert(compositionOfIdentity(["1girl", "solo", "long hair"])?.girls === 1 && compositionOfIdentity(["1girl", "solo"])?.boys === 0, "1girl, solo: one girl, no boys")
 assert(compositionOfIdentity(["1girl", "1boy", "hetero"])?.boys === 1, "1girl, 1boy: one of each")

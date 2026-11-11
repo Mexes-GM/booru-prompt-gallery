@@ -94,6 +94,8 @@ export interface SceneContext {
    * about it (THEME_SHARE): "dark-skinned male" in a pool searched for it.
    */
   poolShare?: (tag: string) => number
+  /** A tag with no type and no slot that is most likely a name the booru didn't type (see names.ts). */
+  looksLikeName?: (tag: string) => boolean
 }
 
 /** Posts, and different characters / series, a tag needs in the pool before an unclassified tag travels with its scene. */
@@ -309,6 +311,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     const info = getTagSlotFromOverrides(tag, ctx.overrides)
     const slot = info?.slot
     if (info?.category === 'other' && slot && NON_SCENE_OTHER.has(slot.slice('other:'.length))) continue
+    if (!kind && !slot && ctx.looksLikeName?.(tag)) continue
 
     const permanence = ctx.permanence(tag)
     if (permanence === 'identity') {
