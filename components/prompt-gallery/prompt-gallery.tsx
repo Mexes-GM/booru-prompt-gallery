@@ -854,7 +854,7 @@ export function PromptGallery() {
   // PromptGallery doesn't re-render from the full result on every page.
   const packSeedSearchRef = useRef<UsePackSeedSearchResult | null>(null)
   const packCachedRef = useRef<{ key: string; posts: BooruPost[] } | null>(null)
-  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ posts: BooruPost[]; postCount: number; savedCount: number; canLoadMore: boolean; ratings: RatingBreakdown } | null>(null)
+  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ posts: BooruPost[]; postCount: number; savedCount: number; canLoadMore: boolean; ratings: RatingBreakdown; failed: boolean } | null>(null)
 
   // Scenes engine (the default): its own pool, picks and prompts, fed by the same posts and settings.
   const packBaseCard = packMode.baseCard
@@ -931,6 +931,7 @@ export function PromptGallery() {
       savedCount: saved,
       canLoadMore: search ? !search.noMoreResults && !search.sessionCapReached : true,
       ratings: countPostRatings(posts),
+      failed: !!search?.failed,
     })
   }, [packPoolPosts])
 
@@ -971,7 +972,7 @@ export function PromptGallery() {
   const packCastSearch = useMemo(() => {
     if (!packHasCast || !packCastRolesKnown) return null
     const people = castPeople(packSceneCast.map((m) => m.role))
-    return compositionQuery(people, packSourceAnswers.booruProvider, packSourceAnswers.fromCharacter ? '' : packSourceAnswers.searchTags)
+    return compositionQuery(people, packSourceAnswers.booruProvider, packSourceAnswers.fromCharacter ? '' : packSourceAnswers.searchTags, packSourceAnswers.ratingMode)
   }, [packHasCast, packCastRolesKnown, packSceneCast, packSourceAnswers])
   const packPrimaryCharacter = packSceneCast[0]?.character ?? ''
   useEffect(() => {
@@ -979,11 +980,19 @@ export function PromptGallery() {
     const wanted = castDefaultSearch(
       packSceneCast.map((m) => m.role),
       characterSearchTags(packPrimaryCharacter, packSourceAnswers.booruProvider),
-      packSourceAnswers.booruProvider
+      packSourceAnswers.booruProvider,
+      packSourceAnswers.ratingMode
     )
     // An effect on purpose: a role can arrive later, when a character's trait profile loads, with no handler to hook into.
     if (wanted && wanted !== packSourceAnswers.searchTags) applyPackSource({ ...packSourceAnswers, searchTags: wanted })
   }, [packModeIsPackMode, packMode.baseFromCharacter, packSceneCast, packPrimaryCharacter, packSourceAnswers, applyPackSource])
+  // The source already is the cast's group search: set up by the app, or the same tags (with the user's theme).
+  const packSourceIsCastSearch = useMemo(() => {
+    if (!packCastSearch) return false
+    if (packMode.baseFromCharacter && packSourceAnswers.fromCharacter) return true
+    const words = (text: string) => text.split(/[\s,]+/).filter(Boolean).join(' ')
+    return words(packSourceAnswers.searchTags) === words(packCastSearch)
+  }, [packCastSearch, packMode.baseFromCharacter, packSourceAnswers])
   const handleUseCompositionSearch = useCallback(() => {
     if (!packCastSearch) return
     applyPackSource({ ...packSourceAnswers, tagsSource: 'custom', searchTags: packCastSearch })
@@ -1065,8 +1074,11 @@ export function PromptGallery() {
 
   const handleApplyPackSourceAnswers = useCallback((answers: PackSourceAnswers) => {
     setPackSourceOpen(false)
-    applyPackSource(answers)
-  }, [applyPackSource])
+    // Tags left as the app set them for a typed character stay the app's: they follow
+    // the character (and the cast) on the new booru or rating instead of becoming the user's.
+    const untouched = !!packSourceAnswers.fromCharacter && answers.tagsSource === packSourceAnswers.tagsSource && answers.searchTags === packSourceAnswers.searchTags
+    applyPackSource(untouched ? { ...answers, fromCharacter: true } : answers)
+  }, [applyPackSource, packSourceAnswers])
 
   // Seed-search view whose `allPosts` is the whole pool (fresh + saved,
   // deduped), so seeding targets count UNIQUE posts. Danbooru pages by
@@ -1165,6 +1177,16 @@ export function PromptGallery() {
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     await persistPackPool(key)
   }, [packSeed, packModeReseedAllAxes, packAxisFallbacks, makeLiveReseed, packPoolPosts, poolSearch, persistPackPool])
+
+  // The booru refused or couldn't be reached: ask again, then seed as if the source were new.
+  const handleRetryPackPosts = useCallback(() => {
+    const search = packSeedSearchRef.current
+    if (!search) return
+    search.retry()
+    enrichedSourcesRef.current.delete(packSourceKeyRef.current)
+    hasSeededRef.current = false
+    setSeedRequest((n) => n + 1)
+  }, [])
 
   /** Forgets the posts saved for the current source (fresh ones stay). */
   const handleClearSavedPackPosts = useCallback(async () => {
@@ -2470,6 +2492,8 @@ export function PromptGallery() {
         isSeeding={packSeed.isSeeding}
         seedProgress={packSeed.seedProgress}
         loadedPostCount={packSeedSnapshot?.postCount ?? 0}
+        postsFailed={!!packSeedSnapshot?.failed}
+        onRetryPosts={handleRetryPackPosts}
         // No snapshot yet = the first page is still on its way, so more can load.
         canLoadMorePosts={packSeedSnapshot?.canLoadMore ?? true}
         onLoadMorePosts={handleLoadMorePacks}
@@ -2532,7 +2556,9 @@ export function PromptGallery() {
         onAddCastMember={packMode.addCastMember}
         onRemoveCastMember={packMode.removeCastMember}
         onSetCastRole={packMode.setCastRole}
-        compositionSearch={packSourceAnswers.fromCharacter ? null : packCastSearch}
+        compositionSearch={packSourceIsCastSearch ? null : packCastSearch}
+        castSourceQuery={packSourceIsCastSearch ? packSourceAnswers.searchTags : null}
+        castSourceAuto={packSourceIsCastSearch && !!packSourceAnswers.fromCharacter}
         onUseCompositionSearch={handleUseCompositionSearch}
       />}
 

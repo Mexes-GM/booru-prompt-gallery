@@ -34,7 +34,7 @@ import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { withResolutionPrefix } from '@/lib/pack/prompt-resolution'
 import { userPreferences } from '@/lib/storage'
 import { MAX_MIN_TOTAL_TAGS, type PackCategoryState, type PackSlotState } from '@/hooks/use-pack-mode'
-import { summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-modal'
+import { PROVIDER_LABELS, summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-modal'
 import { PackVarietySelect } from './pack-variety-select'
 import { PackCategoryList, PackStepper } from './pack-category-list'
 import { TagAutocompleteTextarea } from './tag-autocomplete-textarea'
@@ -110,6 +110,9 @@ export interface PackBuilderStickyFooterProps {
     isSeeding?: boolean
     seedProgress?: { current: number; target: number } | null
     loadedPostCount: number
+    /** The source's booru refused the last request or couldn't be reached. */
+    postsFailed?: boolean
+    onRetryPosts?: () => void
     /** Posts reused from earlier sessions for this source (lib/pack/pool-cache.ts). */
     savedPostCount?: number
     onClearSavedPosts?: () => void
@@ -156,6 +159,10 @@ export interface PackBuilderStickyFooterProps {
     /** The search for scenes with the cast's people, when the source doesn't ask for them. */
     compositionSearch?: string | null
     onUseCompositionSearch?: () => void
+    /** The search the app set up for the cast's group, when that is the source. */
+    castSourceQuery?: string | null
+    /** The app switched the source to the cast's group search on its own. */
+    castSourceAuto?: boolean
     children?: React.ReactNode
 }
 
@@ -352,6 +359,15 @@ const PackResultsList = memo(({
     castSize?: number
 }) => {
     const { format, fullDetail } = usePromptFormat()
+    // A new pack replaces the list whole: remount the animated list so the old rows
+    // don't linger in their exit animation (a tab in the background pauses it).
+    const [listKey, setListKey] = useState(0)
+    const [prevPrompts, setPrevPrompts] = useState(prompts)
+    if (prompts !== prevPrompts) {
+        const before = new Set(prevPrompts.map((p) => p.prompt))
+        if (!prompts.some((p) => before.has(p.prompt))) setListKey((k) => k + 1)
+        setPrevPrompts(prompts)
+    }
     const shortCount = minTotalTags > 0
         ? prompts.filter((p) => p.prompt.split(',').filter((t) => t.trim()).length < minTotalTags).length
         : 0
@@ -504,7 +520,7 @@ const PackResultsList = memo(({
                 // One scroll area per screen: the column scrolls on its own on lg+,
                 // and below lg the whole Prompts tab scrolls instead (no nesting).
                 <div className="flex flex-col gap-2 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-                    <AnimatePresence mode="popLayout">
+                    <AnimatePresence key={listKey} mode="popLayout">
                         {prompts.map((p, i) => (
                             <PromptRow
                                 key={`${i}-${p.prompt}`}
@@ -537,6 +553,8 @@ function CollectionStatus({
     isCollecting,
     seedProgress,
     loadedPostCount,
+    postsFailed = false,
+    onRetryPosts,
     savedPostCount,
     poolSize,
     poolUnit = 'tags',
@@ -551,6 +569,8 @@ function CollectionStatus({
     isCollecting: boolean
     seedProgress: { current: number; target: number } | null
     loadedPostCount: number
+    postsFailed?: boolean
+    onRetryPosts?: () => void
     savedPostCount: number
     poolSize: number
     /** What poolSize counts: varied tags (classic) or usable scenes. */
@@ -599,7 +619,24 @@ function CollectionStatus({
             </div>
 
             <div className="inline-flex items-center gap-1.5 min-w-0 text-xs tabular-nums whitespace-nowrap" aria-live="polite">
-                {isCollecting ? (
+                {postsFailed && !isCollecting ? (
+                    <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning-text flex-shrink-0" />
+                        <span className="text-warning-text truncate">
+                            Couldn&apos;t load posts from {PROVIDER_LABELS[sourceAnswers.booruProvider]}
+                        </span>
+                        {onRetryPosts && (
+                            <button
+                                type="button"
+                                onClick={onRetryPosts}
+                                className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 px-1.5 rounded-md font-medium text-foreground hover:bg-muted"
+                            >
+                                <RefreshCw className="w-3 h-3" aria-hidden />
+                                Try again
+                            </button>
+                        )}
+                    </>
+                ) : isCollecting ? (
                     <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin text-mode-pack-text flex-shrink-0" />
                         <span className="font-medium text-foreground truncate">
@@ -675,6 +712,8 @@ const PackBuilderStickyFooterComponent = ({
     isSeeding = false,
     seedProgress = null,
     loadedPostCount,
+    postsFailed = false,
+    onRetryPosts,
     savedPostCount = 0,
     onClearSavedPosts,
     canLoadMorePosts,
@@ -707,6 +746,8 @@ const PackBuilderStickyFooterComponent = ({
     onSetCastRole,
     compositionSearch = null,
     onUseCompositionSearch,
+    castSourceQuery = null,
+    castSourceAuto = false,
     children,
 }: PackBuilderStickyFooterProps) => {
     // The scenes panel replaces the category list once its state is wired in.
@@ -822,7 +863,8 @@ const PackBuilderStickyFooterComponent = ({
 
     // Still connecting (nothing reported yet) counts as collecting too — the
     // first page can take a moment and the builder shouldn't look idle meanwhile.
-    const isCollecting = isSeeding || (loadedPostCount === 0 && canLoadMorePosts)
+    // A failed request isn't collecting: the header says so and offers to try again.
+    const isCollecting = !postsFailed && (isSeeding || (loadedPostCount === 0 && canLoadMorePosts))
     const progress = seedProgress ? Math.min(1, seedProgress.current / Math.max(1, seedProgress.target)) : null
     const nothingVaries = PACK_AXES.every((cat) => categoryStates[cat] !== 'vary')
     const noScenes = sceneMode && !!scenes?.pool && scenes.pool.scenes.length === 0
@@ -963,6 +1005,8 @@ const PackBuilderStickyFooterComponent = ({
                                 isCollecting={isCollecting}
                                 seedProgress={seedProgress}
                                 loadedPostCount={loadedPostCount}
+                                postsFailed={postsFailed}
+                                onRetryPosts={onRetryPosts}
                                 savedPostCount={savedPostCount}
                                 poolSize={sceneMode ? scenes?.pool?.scenes.length ?? 0 : poolSize}
                                 poolUnit={sceneMode ? 'scenes' : 'tags'}
@@ -1258,8 +1302,7 @@ const PackBuilderStickyFooterComponent = ({
                                                         </p>
                                                     )}
                                                     {sceneMode && scenes && scenes.alwaysAddOmitted.length > 0 && (
-                                                        <p className="flex items-start gap-1.5 text-xs text-warning-text" role="status">
-                                                            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                                                        <p className="text-xs text-muted-foreground" role="status">
                                                             <span>
                                                                 Not added: <span className="font-mono">{scenes.alwaysAddOmitted.join(', ')}</span>.{' '}
                                                                 {scenes.alwaysAddOmitted.length === 1 ? "It doesn't" : "They don't"} match who&apos;s in the picture.
@@ -1355,6 +1398,8 @@ const PackBuilderStickyFooterComponent = ({
                                             onSetRole={handleSetCastRole}
                                             compositionSearch={compositionSearch}
                                             onUseCompositionSearch={onUseCompositionSearch}
+                                            castSourceQuery={castSourceQuery}
+                                            castSourceAuto={castSourceAuto}
                                             baseIsCard={!!baseCard}
                                             hasMultipleCharacters={hasMultipleCharacters}
                                             isCollecting={isCollecting}

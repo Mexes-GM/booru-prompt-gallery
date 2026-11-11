@@ -153,6 +153,7 @@ const ROLE_OPTIONS: readonly { value: CastRole; label: string }[] = [
 /** One character's chips: their own pins, additions and removals, and a role picker when nothing says their role. */
 function CharacterBlock({
   block,
+  isBase,
   showName,
   foldLabel,
   isCollecting,
@@ -161,6 +162,8 @@ function CharacterBlock({
   onSetRole,
 }: {
   block: SceneCharacterBlock
+  /** The first character: their removals are the base's. */
+  isBase: boolean
   showName: boolean
   /** Names the fold of the base's other tags (first character only). */
   foldLabel: string | null
@@ -181,10 +184,20 @@ function CharacterBlock({
   const foldedChips = block.chips.filter((chip) => chip.origin === "base" && chip.state !== "pinned")
   const toggle = (tag: string) => scenes.toggleChip(name, tag)
   const remove = (tag: string) => {
-    scenes.resetChip(name, tag)
-    onToggleRemovedTag(tag)
+    // A trait typed in by hand just goes; "removed" is for what came with the character or the base.
+    if (block.chips.find((chip) => chip.tag === tag)?.origin === "added") {
+      scenes.removeTrait(name, tag)
+      return
+    }
+    toggleRemoved(tag)
   }
-  const restore = () => block.removed.forEach(remove)
+  // The first character's removals are the base's; each other character keeps their own.
+  const toggleRemoved = (tag: string) => {
+    scenes.resetChip(name, tag)
+    if (isBase) onToggleRemovedTag(tag)
+    else scenes.toggleRemovedChip(name, tag)
+  }
+  const restore = () => block.removed.forEach(toggleRemoved)
   const submitDraft = () => {
     if (!draft.trim()) return
     setRefused(scenes.addTraits(name, draft).length > 0)
@@ -226,7 +239,7 @@ function CharacterBlock({
       {showName && !block.role && (
         <p className="text-xs text-muted-foreground">Pick whether {name} is a girl or a boy, so the scenes have room for them.</p>
       )}
-      <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-y-5">
+      <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-x-3.5 pointer-coarse:gap-y-5">
         {mainChips.map((chip) => (
           <TraitChip key={chip.tag} chip={chip} onToggle={toggle} onRemove={remove} />
         ))}
@@ -306,7 +319,7 @@ function CharacterBlock({
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? "rotate-180" : ""}`} />
           </button>
           {showMore && (
-            <div className="mt-1.5 flex flex-wrap gap-1.5 pointer-coarse:mt-4 pointer-coarse:gap-y-5">
+            <div className="mt-1.5 flex flex-wrap gap-1.5 pointer-coarse:mt-4 pointer-coarse:gap-x-3.5 pointer-coarse:gap-y-5">
               {foldedChips.map((chip) => (
                 <TraitChip key={chip.tag} chip={chip} onToggle={toggle} onRemove={remove} />
               ))}
@@ -330,6 +343,10 @@ export interface PackScenesPanelProps {
   compositionSearch?: string | null
   /** Makes `compositionSearch` the source. */
   onUseCompositionSearch?: () => void
+  /** The source is the search for the cast's group (the query it runs), set up by the app or by the user. */
+  castSourceQuery?: string | null
+  /** The app switched the source to `castSourceQuery` on its own: the panel says so. */
+  castSourceAuto?: boolean
   /** The base is a card (else a pasted prompt or a character); names the fold of the base's other tags. */
   baseIsCard: boolean
   hasMultipleCharacters: boolean
@@ -370,6 +387,8 @@ function PackScenesPanelComponent({
   onSetRole,
   compositionSearch = null,
   onUseCompositionSearch,
+  castSourceQuery = null,
+  castSourceAuto = false,
   baseIsCard,
   hasMultipleCharacters,
   isCollecting,
@@ -417,6 +436,7 @@ function PackScenesPanelComponent({
           <CharacterBlock
             key={block.character || index}
             block={block}
+            isBase={index === 0}
             showName={isCast}
             foldLabel={index === 0 ? (baseIsCard ? "More from this card" : "More from your prompt") : null}
             isCollecting={isCollecting}
@@ -451,20 +471,43 @@ function PackScenesPanelComponent({
           <p className="text-xs text-muted-foreground">Finding scenes in the collected posts…</p>
         </section>
       )}
+      {isCast && castSourceQuery && castSourceAuto && !scenes.castHasNoScenes && (
+        <section className={`${sectionClass} flex flex-wrap items-center justify-between gap-2`} aria-live="polite">
+          <p className="text-xs text-muted-foreground min-w-0">
+            The source now looks for pictures of this group (<span className="font-mono">{castSourceQuery}</span>). Add your theme to it to steer the scenes.
+          </p>
+          <Button type="button" size="sm" variant="outline" onClick={onOpenSource} className="h-8 pointer-coarse:h-11 text-xs">
+            Add a theme
+          </Button>
+        </section>
+      )}
       {scenes.castHasNoScenes && !isCollecting && (
         <section className={`${sectionClass} border-warning-border bg-warning-soft`} aria-live="polite">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-warning-text">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             No scenes with room for {scenes.castSize === 2 ? "both characters" : `all ${scenes.castSize} characters`}
           </p>
-          <p className="text-xs text-foreground/85">
-            The collected posts show other groups of people. Search for pictures of this group instead, then add your theme to the source.
-          </p>
+          {castSourceQuery ? (
+            <p className="text-xs text-foreground/85">
+              The source already looks for pictures of this group, but few of them have this content rating.{' '}
+              {canLoadMorePosts ? "Collect more posts, remove a character, or change the source." : "Remove a character or change the source."}
+            </p>
+          ) : (
+            <p className="text-xs text-foreground/85">
+              The collected posts show other groups of people. Search for pictures of this group instead, then add your theme to the source.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
-            {compositionSearch && onUseCompositionSearch && (
+            {!castSourceQuery && compositionSearch && onUseCompositionSearch && (
               <Button type="button" size="sm" variant="outline" onClick={onUseCompositionSearch} className="h-8 pointer-coarse:h-11 text-xs gap-1.5">
                 <Database className="w-3.5 h-3.5" />
                 Search for &ldquo;{compositionSearch}&rdquo;
+              </Button>
+            )}
+            {castSourceQuery && canLoadMorePosts && (
+              <Button type="button" size="sm" variant="outline" onClick={onLoadMorePosts} className="h-8 pointer-coarse:h-11 text-xs gap-1.5">
+                <RefreshCw className="w-3.5 h-3.5" />
+                Collect more posts
               </Button>
             )}
             <Button type="button" size="sm" variant="outline" onClick={onOpenSource} className="h-8 pointer-coarse:h-11 text-xs gap-1.5">

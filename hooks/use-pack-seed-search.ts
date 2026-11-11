@@ -58,6 +58,10 @@ export interface UsePackSeedSearchResult {
   sessionCapReached: boolean
   scrollLimited: boolean
   loadMore: () => void
+  /** The last page request failed (the booru refused or couldn't be reached). */
+  failed: boolean
+  /** Asks again for the pages that failed. */
+  retry: () => void
 }
 
 function buildTags(searchTags: string): string {
@@ -80,7 +84,7 @@ function useSingleRatingFeed(tags: string, ratingFilter: string, provider: Booru
 
   // size/setSize must be SWR's own: a separate useState counter never told
   // SWR to fetch past page 1, so every source stopped at its first page.
-  const { data: pages, isValidating, size, setSize } = useInfinitePosts(
+  const { data: pages, isValidating, size, setSize, error, mutate } = useInfinitePosts(
     tags,
     ratingFilter,
     order,
@@ -121,7 +125,10 @@ function useSingleRatingFeed(tags: string, ratingFilter: string, provider: Booru
     (lastPage !== null && lastPage.length === 0) || (!!pageOrder && pages.length >= pageOrder.length)
   )
 
-  return { allPosts, isLoadingMore, noMoreResults, size, setSize }
+  const failed = !!error && !isValidating
+  const retry = useCallback(() => { void mutate() }, [mutate])
+
+  return { allPosts, isLoadingMore, noMoreResults, size, setSize, failed, retry }
 }
 
 /**
@@ -234,6 +241,13 @@ export function usePackSeedSearch(args: UsePackSeedSearchArgs): UsePackSeedSearc
   }, [feedA.allPosts, feedB.allPosts, isBoth])
 
   const noMoreResults = isBoth ? (feedA.noMoreResults && feedB.noMoreResults) : feedA.noMoreResults
+  const failed = feedA.failed || (isBoth && feedB.failed)
+  const retryA = feedA.retry
+  const retryB = feedB.retry
+  const retry = useCallback(() => {
+    retryA()
+    if (isBoth) retryB()
+  }, [retryA, retryB, isBoth])
 
   // Memoized so the returned object's IDENTITY only changes when one of its
   // actual fields does. Without this, callers that plug the result straight
@@ -251,5 +265,7 @@ export function usePackSeedSearch(args: UsePackSeedSearchArgs): UsePackSeedSearc
     sessionCapReached: rateLimiter.sessionCapReached,
     scrollLimited: rateLimiter.scrollLimited,
     loadMore,
-  }), [allPosts, isLoadingMore, noMoreResults, rateLimiter.sessionCapReached, rateLimiter.scrollLimited, loadMore])
+    failed,
+    retry,
+  }), [allPosts, isLoadingMore, noMoreResults, rateLimiter.sessionCapReached, rateLimiter.scrollLimited, loadMore, failed, retry])
 }

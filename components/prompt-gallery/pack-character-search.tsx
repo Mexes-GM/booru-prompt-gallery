@@ -3,15 +3,15 @@
 /**
  * Character-tag search with autocomplete: how a pack starts from a character's
  * name in the entry dialog. Only character tags are offered, and Enter takes
- * the highlighted result, or else the first one.
+ * the highlighted result, or else the first one; pressed before the results
+ * arrive, it takes the exact match once they do.
  */
 import { useEffect, useId, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { searchTagsOrThrow, type TagResult } from "@/lib/supabase/client-queries"
-
-const CHARACTER_CATEGORY = 4
+import type { TagResult } from "@/lib/supabase/client-queries"
+import { looseName, searchCharacters } from "@/lib/pack/character-search"
 
 export function PackCharacterSearch({
   onPick,
@@ -32,6 +32,8 @@ export function PackCharacterSearch({
   const [dismissed, setDismissed] = useState(false)
   const [active, setActive] = useState(-1)
   const requestRef = useRef(0)
+  // Enter pressed before the results came in: take the exact match once they do.
+  const pendingEnterRef = useRef(false)
   const listId = useId()
 
   useEffect(() => {
@@ -41,12 +43,18 @@ export function PackCharacterSearch({
     const timer = setTimeout(async () => {
       setLoading(true)
       try {
-        const found = await searchTagsOrThrow(q)
+        const found = await searchCharacters(q)
         if (id !== requestRef.current) return
-        setResults(found.filter((t) => t.category === CHARACTER_CATEGORY).slice(0, 8))
+        setResults(found)
         setAnswered(q)
         setFailed("")
         setActive(-1)
+        // Enter pressed before these came in: the exact match, or the only result; else the list stays to pick from.
+        if (pendingEnterRef.current) {
+          pendingEnterRef.current = false
+          const exact = found.find((t) => looseName(t.name) === looseName(q)) ?? (found.length === 1 ? found[0] : undefined)
+          if (exact) onPick(exact.name.replace(/_/g, " "))
+        }
       } catch {
         if (id === requestRef.current) { setResults([]); setFailed(q) }
       } finally {
@@ -54,7 +62,7 @@ export function PackCharacterSearch({
       }
     }, 250)
     return () => clearTimeout(timer)
-  }, [query])
+  }, [query, onPick])
 
   const trimmed = query.trim()
   const shown = trimmed.length < 2 || dismissed || failed === trimmed ? [] : results
@@ -73,12 +81,13 @@ export function PackCharacterSearch({
       <Input
         autoFocus
         value={query}
-        onChange={(e) => { setQuery(e.target.value); setDismissed(false) }}
+        onChange={(e) => { setQuery(e.target.value); setDismissed(false); pendingEnterRef.current = false }}
         onKeyDown={(e) => {
           if (e.key === "Escape" && listOpen) setDismissed(true)
           else if (e.key === "ArrowDown" && shown.length) { e.preventDefault(); setActive((i) => (i + 1) % shown.length) }
           else if (e.key === "ArrowUp" && shown.length) { e.preventDefault(); setActive((i) => (i - 1 + shown.length) % shown.length) }
-          else if (e.key === "Enter" && shown.length) { e.preventDefault(); pick(shown[Math.max(active, 0)].name) }
+          else if (e.key === "Enter" && shown.length && answered === trimmed) { e.preventDefault(); pick(shown[Math.max(active, 0)].name) }
+          else if (e.key === "Enter" && trimmed.length >= 2) { e.preventDefault(); pendingEnterRef.current = true }
         }}
         placeholder="Character tag"
         aria-label="Search a character by tag"
@@ -110,6 +119,9 @@ export function PackCharacterSearch({
             </li>
           ))}
         </ul>
+      )}
+      {loading && trimmed.length >= 2 && shown.length === 0 && (
+        <p role="status" className="mt-1.5 text-xs text-muted-foreground">Searching…</p>
       )}
       {noMatch && (
         <p role="status" className="mt-1.5 text-xs text-muted-foreground">
