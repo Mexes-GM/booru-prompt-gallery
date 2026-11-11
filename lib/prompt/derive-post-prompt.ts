@@ -29,6 +29,7 @@ import { liveOutfitDescription, pickOutfit, swapOutfit, type OutfitSettings } fr
 import { classifyTag } from "@/lib/tag-classifier"
 import { applyWeights } from "@/lib/weight-utils"
 import { resolveTagConflicts } from "@/lib/tag-conflicts"
+import { relationRatingOf } from "@/lib/tag-relations"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 
 export interface DerivePostPromptOptions {
@@ -276,7 +277,7 @@ export function derivePostPrompt(
 
   const conflictResolution = (!pureContent || effectiveAddedTags.length === 0 || !effectiveSmartTagExclusion)
     ? { validTags: effectiveAddedTags, conflictingTags: [] }
-    : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()), effectiveAddedTags, { experimental: effectiveExperimental })
+    : resolveTagConflicts(pureContent.split(",").map((t) => t.trim()), effectiveAddedTags, { experimental: effectiveExperimental, rating: relationRatingOf(post.rating) })
 
   const firstArtistTag = (() => {
     if (!effectivePrependAnimaArtist) return undefined

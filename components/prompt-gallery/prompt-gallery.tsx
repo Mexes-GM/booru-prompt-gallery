@@ -158,6 +158,7 @@ import { castDefaultSearch, castPeople, compositionQuery } from "@/lib/pack/scen
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackScenes } from "@/hooks/use-pack-scenes"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
+import { useTagRelations } from "@/hooks/use-tag-relations"
 import type { PackSourceAnswers } from "./pack-source-modal"
 // Pack Mode's dialogs and builder load when Pack is first picked (or hovered).
 const loadPackEntryModal = () => import("./pack-entry-modal")
@@ -797,6 +798,8 @@ export function PromptGallery() {
 
   // Extract stable packMode pieces to avoid dependency churn
   const packModeIsPackMode = packMode.isPackMode
+  // Pack Mode picks and cleans tags with the measured tag relations: load them while it's open.
+  useTagRelations(packModeIsPackMode)
   const packModeSetBaseCard = packMode.setBaseCard
   const packModeReseedAllAxes = packMode.reseedAllAxes
 

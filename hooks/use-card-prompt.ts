@@ -13,6 +13,7 @@ import { type OutfitSettings } from "@/lib/outfit-swap"
 import { classifyTags, computeRichnessScore, type ClassifiedTags, type RichnessScore } from "@/lib/tag-classifier"
 import { splitCommaSeparatedTags } from "@/lib/utils/tag-utils"
 import { derivePostPrompt, type DerivePostPromptResult } from "@/lib/prompt/derive-post-prompt"
+import { useTagRelations } from "@/hooks/use-tag-relations"
 
 // Cards in the virtualized grid unmount when scrolled away and mount again on
 // the way back, which used to rerun the whole derivation for posts that were
@@ -130,7 +131,11 @@ export function useCardPrompt({
   // hook-free derivePostPrompt (lib/prompt/derive-post-prompt.ts) so the exact
   // same pipeline can be called imperatively in a batch loop (Bulk Send's
   // "Real posts" mode) without risking the two paths drifting apart.
+  // Smart Tag Exclusion checks added tags against measured relations once they load (in an
+  // idle moment); until then it uses the built-in rules. The result recomputes when they arrive.
+  const relations = useTagRelations(smartTagExclusion && (addInput.trim() !== "" || autoAppendSearchTags), "idle")
   const derivationDeps = [
+    relations,
     excludeInput, addInput, searchTags, autoAppendSearchTags, findInput, replaceInput, tagAppendRules,
     includeCharacters, optimizeTags, smartTagExclusion, experimentalPromptRules, prependAnimaArtist,
     removeLoRaTags, removeQualityTags,
