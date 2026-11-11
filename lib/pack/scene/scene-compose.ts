@@ -171,10 +171,13 @@ export function danglingReferences(tags: string[], overrides: Record<string, str
   if (references.size === 0) return new Set()
   const naming = tags.filter((tag) => !references.has(tag) && !tag.startsWith('no '))
   const named = new Set(naming.map((tag) => stem(lastWord(tag))))
-  const anyClothing = naming.some((tag) => getTagSlotFromOverrides(tag, overrides)?.category === 'clothing')
+  const clothing = naming.filter((tag) => getTagSlotFromOverrides(tag, overrides)?.category === 'clothing')
+  // A compound garment word names its base garment too: a miniskirt is a skirt, a sundress a dress.
+  const clothingWords = clothing.map((tag) => stem(lastWord(tag)))
+  const isNamed = (garment: string) => named.has(garment) || clothingWords.some((word) => word.endsWith(garment))
   const dangling = new Set<string>()
   references.forEach((garment, tag) => {
-    if (garment === '*' ? !anyClothing : !named.has(garment)) dangling.add(tag)
+    if (garment === '*' ? clothing.length === 0 : !isNamed(garment)) dangling.add(tag)
   })
   return dangling
 }

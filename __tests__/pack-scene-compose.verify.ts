@@ -181,6 +181,21 @@ assert(
   dropDanglingReferences(["skirt lift", "red skirt"], [], OVERRIDES).join() === "skirt lift,red skirt",
   "dropDanglingReferences keeps it when a tag names the skirt"
 )
+{
+  const compound = { ...OVERRIDES, miniskirt: "clothing:bottom", "black miniskirt": "clothing:bottom", sundress: "clothing:top" }
+  assert(
+    dropDanglingReferences(["skirt lift", "black miniskirt"], [], compound).join() === "skirt lift,black miniskirt",
+    "a compound garment word (miniskirt) names its base garment"
+  )
+  assert(
+    dropDanglingReferences(["dress lift", "sundress"], [], compound).join() === "dress lift,sundress",
+    "a sundress is a dress"
+  )
+  assert(
+    dropDanglingReferences(["skirt lift", "miniskirt"], [], OVERRIDES).join() === "miniskirt",
+    "only clothing tags count: a word the taxonomy does not know as clothing names nothing"
+  )
+}
 
 // ── Identity wins ──
 {
