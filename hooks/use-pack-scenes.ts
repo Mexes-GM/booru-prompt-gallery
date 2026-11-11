@@ -137,7 +137,10 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     loadedRef.current = true
     const controller = new AbortController()
     fetch('/tag-permanence.json', { signal: controller.signal })
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`tag-permanence.json: HTTP ${res.status}`)
+        return res.json()
+      })
       .then((data) => {
         if (!data || typeof data !== 'object' || !Array.isArray(data.state)) {
           throw new Error('Invalid tag-permanence.json format')

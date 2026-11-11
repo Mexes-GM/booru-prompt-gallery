@@ -25,7 +25,7 @@ import { PackTagChip } from "./pack-category-list"
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /** "1 girl", "2 girls", "1 girl, 1 boy". */
-export function compositionLabel(people: PackPeople): string {
+function compositionLabel(people: PackPeople): string {
   const parts: string[] = []
   if (people.girls > 0) parts.push(plural(people.girls, "girl"))
   if (people.boys > 0) parts.push(plural(people.boys, "boy"))
@@ -33,7 +33,7 @@ export function compositionLabel(people: PackPeople): string {
 }
 
 /** A situation's name from its tags: "lying · on back"; the catch-all reads "Everything else". */
-export function situationLabel(situation: Situation): string {
+function situationLabel(situation: Situation): string {
   return situation.id === OTHER_SITUATION ? "Everything else" : situation.label.join(" · ")
 }
 
@@ -144,6 +144,7 @@ function PackScenesPanelComponent({
   const peopleId = useId()
   const situationsId = useId()
   const { pool, identity, compositions, people, disabledSituations, enabledScenes } = scenes
+  const off = new Set(disabledSituations)
   const set = <K extends keyof ScenePackSettings>(key: K, value: ScenePackSettings[K]) => onSettingsChange({ ...settings, [key]: value })
 
   const kept = new Set(identity.kept)
@@ -296,7 +297,7 @@ function PackScenesPanelComponent({
           <p className="text-xs text-muted-foreground">Turn off the ones you don&apos;t want in the pack.</p>
           <ul className="grid grid-cols-1 @xl:grid-cols-2 gap-1.5">
             {pool.situations.map((situation) => {
-              const on = !disabledSituations.includes(situation.id)
+              const on = !off.has(situation.id)
               const label = situationLabel(situation)
               const switchId = `pack-situation-${situation.id.replace(/[^a-z0-9]+/gi, "-")}`
               return (
