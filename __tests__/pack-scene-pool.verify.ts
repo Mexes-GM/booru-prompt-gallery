@@ -72,8 +72,19 @@ assert(buildScenePool([makePost(20, "no_humans standing bedroom bed")], ctx).sta
 {
   // A pair pool from a booru that spells series its own way: the names repeat, untyped and without a slot.
   const ov = { ...OVERRIDES, "holding hands": "pose:interaction", "star (symbol)": "other:unclassified" }
+  // Each post a different scene, so none is collapsed as a near-duplicate of another.
+  const SCENES = [
+    "standing smile from_above park outdoors skirt shirt",
+    "sitting blush from_side bedroom indoors bed dress boots",
+    "lying smile looking_at_viewer beach outdoors sunset dress",
+    "standing open_mouth from_side bedroom indoors bed shirt skirt boots",
+    "sitting smile from_above park outdoors sunset shirt boots",
+    "lying blush from_side bedroom bed indoors skirt dress",
+    "standing blush looking_at_viewer beach outdoors boots dress",
+  ]
   const named = (id: number, extra: string, copyright = "") =>
-    makePost(id, `1girl 1boy hetero standing holding_hands smile from_above park outdoors skirt shirt ${extra}`, { tag_string_copyright: copyright })
+    // Different characters on every post: the pool-support filter alone lets the names through.
+    makePost(id, `1girl 1boy hetero holding_hands ${SCENES[id - 1]} ${extra} chara_${id}`, { tag_string_copyright: copyright, tag_string_character: `chara_${id}` })
   const posts = [
     named(1, "pokemon_scarlet_and_violet star_(symbol)", "pokemon"),
     named(2, "pokemon_scarlet_and_violet", "pokemon"),
