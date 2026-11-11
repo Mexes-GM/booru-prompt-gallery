@@ -138,7 +138,7 @@ const BASE_TAGS =
 {
   const ov: Record<string, string> = {
     "school uniform": "clothing:outfit", "summer uniform": "clothing:outfit", "summer dress": "clothing:top",
-    "kuoh academy school uniform": "clothing:outfit", "pom pom (clothes)": "clothing:accents", "pom pom": "clothing:accents",
+    "kuoh academy school uniform": "clothing:outfit", "pom pom (clothes)": "clothing:accents",
     "kita high school uniform (subarashiki hibi)": "clothing:outfit", "academy": "other:unclassified", "high school": "other:unclassified",
   }
   const overrides = { ...makeContext().overrides, ...ov }

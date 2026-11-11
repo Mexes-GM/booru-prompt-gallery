@@ -9,8 +9,8 @@
  * Told from the tag's own shape and the vocabulary the app already has, not
  * from a list:
  *  - a parenthesised suffix that is not a generic qualifier names a work;
- *  - a generic qualifier ("(armor)", "(clothes)") on a base that is not itself
- *    clothing marks a named item;
+ *  - a generic qualifier ("(armor)", "(clothes)") on a tag the taxonomy doesn't
+ *    know as clothing, whose base isn't clothing either, marks a named item;
  *  - "<name> (school) uniform" where a word of the name appears in no other tag
  *    of the vocabulary: a proper name, not a kind of uniform ("summer", "gym").
  */
@@ -45,7 +45,9 @@ export function isFranchiseGarment(tag: string, overrides: Record<string, string
   if (parenthesised) {
     const [, base, qualifier] = parenthesised
     if (!GENERIC_QUALIFIERS.has(qualifier)) return true
-    return getTagSlotFromOverrides(base, overrides)?.category !== 'clothing'
+    // "pom pom (clothes)" is a garment the taxonomy knows; "mizutsune (armor)" names a monster.
+    const known = (t: string) => getTagSlotFromOverrides(t, overrides)?.category === 'clothing'
+    return !known(tag) && !known(base)
   }
   const uniform = NAMED_UNIFORM.exec(tag)
   if (!uniform) return false
