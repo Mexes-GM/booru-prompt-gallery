@@ -61,7 +61,7 @@ const SLOT_STATE_META: Record<PackSlotState, { label: string; icon: typeof Lock 
  * Small neutral tag chip; `onRemove` adds an X. The X shows on hover or
  * keyboard focus with a mouse, and always on touch screens.
  */
-export function PackTagChip({
+function TagChip({
   text,
   tone = "default",
   onRemove,
@@ -95,7 +95,7 @@ export function PackTagChip({
           type="button"
           onClick={onRemove}
           aria-label={removeLabel ?? `Remove ${text}`}
-          className="relative -mr-0.5 rounded p-0.5 text-faint-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:after:absolute pointer-coarse:after:-inset-2 pointer-coarse:after:content-[''] hover:text-destructive-text hover:bg-destructive-soft transition-[color,background-color,opacity]"
+          className="relative -mr-0.5 rounded p-0.5 text-faint-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:after:absolute pointer-coarse:after:-inset-3.5 pointer-coarse:after:content-[''] hover:text-destructive-text hover:bg-destructive-soft transition-[color,background-color,opacity]"
         >
           <X className="w-3 h-3" />
         </button>
@@ -375,7 +375,7 @@ const CategoryRow = memo(function CategoryRow({
               <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
                 <AnimatePresence initial={false} mode="popLayout">
                   {visibleBase.map((tag) => (
-                    <PackTagChip
+                    <TagChip
                       key={tag}
                       text={tag}
                       tone={keptTags.has(tag) ? "kept" : "faded"}
@@ -599,7 +599,7 @@ const CategoryRow = memo(function CategoryRow({
                         </motion.span>
                       ) : null,
                       ...group.values.map((value) => (
-                        <PackTagChip
+                        <TagChip
                           key={value}
                           text={value}
                           onRemove={() => onRemove(category, value)}

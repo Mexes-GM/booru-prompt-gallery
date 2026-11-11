@@ -44,6 +44,7 @@ import type { CharacterLook } from '@/lib/pack/character-identity'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import type { UsePackScenesResult } from '@/hooks/use-pack-scenes'
 import { PackScenesPanel } from './pack-scenes-panel'
+import { radioGroupKeyDown } from './radio-keys'
 
 export interface PackBuilderStickyFooterProps {
     isOpen: boolean
@@ -142,8 +143,9 @@ export interface PackBuilderStickyFooterProps {
     scenes?: UsePackScenesResult
     sceneSettings?: ScenePackSettings
     onSceneSettingsChange?: (settings: ScenePackSettings) => void
-    /** Identity chips of the scenes engine (usePackMode's sceneIdentityCandidates). */
-    sceneIdentityCandidates?: string[]
+    /** "Never include" (scenes engine): tags left out of every prompt, as typed. */
+    neverIncludeText?: string
+    onNeverIncludeTextChange?: (text: string) => void
     children?: React.ReactNode
 }
 
@@ -151,7 +153,6 @@ const ENGINE_OPTIONS = [
     { value: 'scenes', label: 'Scenes', hint: "Each prompt reuses a real post's scene with your character in it." },
     { value: 'classic', label: 'Classic', hint: 'Mixes tags category by category, with a control for each one.' },
 ] as const
-const NO_TAGS: string[] = []
 
 /** Bare lowercase tag text of one prompt token (weights/brackets stripped). */
 function bareTag(token: string): string {
@@ -679,7 +680,8 @@ const PackBuilderStickyFooterComponent = ({
     scenes,
     sceneSettings,
     onSceneSettingsChange,
-    sceneIdentityCandidates = NO_TAGS,
+    neverIncludeText = '',
+    onNeverIncludeTextChange,
     children,
 }: PackBuilderStickyFooterProps) => {
     // The scenes panel replaces the category list once its state is wired in.
@@ -707,11 +709,15 @@ const PackBuilderStickyFooterComponent = ({
     const [justGenerated, setJustGenerated] = useState(false)
     const handleGenerateClick = useCallback(() => {
         onRegenerate()
-        setJustGenerated(true)
-        setTimeout(() => setJustGenerated(false), 1200)
+        // Scenes generate in the background and show their own busy state instead.
+        if (!sceneMode) {
+            setJustGenerated(true)
+            setTimeout(() => setJustGenerated(false), 1200)
+        }
         showTab('prompts')
         document.getElementById('pack-results-section')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }, [onRegenerate, showTab])
+    }, [onRegenerate, showTab, sceneMode])
+    const isGenerating = sceneMode && !!scenes?.isGenerating
 
     const handleReroll = useCallback((index: number) => {
         const ok = onRerollPrompt(index)
@@ -743,9 +749,11 @@ const PackBuilderStickyFooterComponent = ({
         setLivePromptCount(promptCount)
     }
 
-    // "Always add" stays tucked behind a link until it's used.
+    // "Always add" and "Never include" stay tucked behind a link until they're used.
     const [alwaysAddOpen, setAlwaysAddOpen] = useState(false)
     const showAlwaysAdd = alwaysAddOpen || customBaseText.trim() !== ''
+    const [neverOpen, setNeverOpen] = useState(false)
+    const showNever = neverOpen || neverIncludeText.trim() !== ''
 
     const baseThumb = baseCard ? getPostThumbnailUrl(baseCard.preview_file_url || baseCard.file_url) : null
 
@@ -877,6 +885,12 @@ const PackBuilderStickyFooterComponent = ({
                     showCloseButton={false}
                     // Focus the builder itself, not its first control: the source
                     // chip's tooltip would otherwise pop open on every visit.
+                    // Escape inside an open list or menu (the Look select, a menu) closes
+                    // only that; the builder stays open.
+                    onEscapeKeyDown={(e) => {
+                        const target = e.target instanceof Element ? e.target : null
+                        if (target?.closest('[role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]')) e.preventDefault()
+                    }}
                     onOpenAutoFocus={(e) => {
                         e.preventDefault()
                         contentRef.current?.focus()
@@ -1062,7 +1076,7 @@ const PackBuilderStickyFooterComponent = ({
                                         )}
                                         <div className="flex-1 min-w-0 flex flex-col gap-2">
                                             <div className="flex items-center justify-between gap-2">
-                                                <h3 className="text-sm font-semibold truncate min-w-0">{baseCard ? `Base card #${baseCard.id}` : baseFromCharacter ? 'Character' : 'Your prompt'}</h3>
+                                                <h3 className="text-sm font-semibold truncate min-w-0">{baseCard ? `Base card #${baseCard.id}` : baseFromCharacter ? (sceneMode ? 'Base' : 'Character') : 'Your prompt'}</h3>
                                                 <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-0">
                                                     {/* A card base's look: what most of the character's posts show, or the card's own. */}
                                                     {baseCard && typicalLookAvailable && onSetBaseLook && (
@@ -1151,6 +1165,11 @@ const PackBuilderStickyFooterComponent = ({
                                                         placeholder="e.g. masterpiece, best quality, solo"
                                                         className="text-xs font-mono min-h-[2.25rem] h-9 max-h-24 resize-y py-2"
                                                     />
+                                                    {sceneMode && (
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Goes at the start of every prompt exactly as typed. It doesn&apos;t replace anything in the scene.
+                                                        </p>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <button
@@ -1162,6 +1181,32 @@ const PackBuilderStickyFooterComponent = ({
                                                     Always add tags (LoRA triggers, quality tags…)
                                                 </button>
                                             )}
+                                            {sceneMode && onNeverIncludeTextChange && (showNever ? (
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="pack-never-include" className="text-xs font-medium text-muted-foreground">
+                                                        Never include
+                                                    </Label>
+                                                    <TagAutocompleteTextarea
+                                                        id="pack-never-include"
+                                                        value={neverIncludeText}
+                                                        onValueChange={onNeverIncludeTextChange}
+                                                        placeholder="e.g. hat, jewelry"
+                                                        className="text-xs font-mono min-h-[2.25rem] h-9 max-h-24 resize-y py-2"
+                                                    />
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Left out of every prompt, along with its variants (jewelry also removes gold jewelry). The scenes are still used.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNeverOpen(true)}
+                                                    className="self-start inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 text-xs text-muted-foreground hover:text-foreground"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                    Never include tags
+                                                </button>
+                                            ))}
                                         </div>
                                     </section>
 
@@ -1169,7 +1214,12 @@ const PackBuilderStickyFooterComponent = ({
                                         <section className="rounded-xl border border-border/70 bg-card/70 px-3 py-2.5 sm:px-4 space-y-1" aria-label="Method">
                                             <div className="flex items-center justify-between gap-3 flex-wrap">
                                                 <span id="pack-engine-label" className="text-sm font-semibold">Method</span>
-                                                <div className="inline-flex rounded-lg border border-border/60 bg-muted/40 p-0.5" role="radiogroup" aria-labelledby="pack-engine-label">
+                                                <div
+                                                    className="inline-flex rounded-lg border border-border/60 bg-muted/40 p-0.5"
+                                                    role="radiogroup"
+                                                    aria-labelledby="pack-engine-label"
+                                                    onKeyDown={(e) => radioGroupKeyDown(e, ENGINE_OPTIONS.map((opt) => opt.value), engine, onSetEngine)}
+                                                >
                                                     {ENGINE_OPTIONS.map((opt) => {
                                                         const active = engine === opt.value
                                                         return (
@@ -1178,6 +1228,7 @@ const PackBuilderStickyFooterComponent = ({
                                                                 type="button"
                                                                 role="radio"
                                                                 aria-checked={active}
+                                                                tabIndex={active ? 0 : -1}
                                                                 onClick={() => onSetEngine(opt.value)}
                                                                 className={`h-8 pointer-coarse:h-11 px-3 text-xs font-medium rounded-md transition-colors ${active ? 'bg-mode-pack text-mode-pack-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                                                             >
@@ -1198,10 +1249,8 @@ const PackBuilderStickyFooterComponent = ({
                                             scenes={scenes}
                                             settings={sceneSettings}
                                             onSettingsChange={onSceneSettingsChange}
-                                            identityCandidates={sceneIdentityCandidates}
-                                            excludedBaseTags={excludedBaseTags}
-                                            onToggleExcludedBaseTag={onToggleExcludedBaseTag}
-                                            onRestoreExcludedBaseTags={onRestoreExcludedBaseTags}
+                                            onToggleRemovedTag={onToggleExcludedBaseTag}
+                                            baseIsCard={!!baseCard}
                                             hasMultipleCharacters={hasMultipleCharacters}
                                             isCollecting={isCollecting}
                                             loadedPostCount={loadedPostCount}
@@ -1335,10 +1384,13 @@ const PackBuilderStickyFooterComponent = ({
                                         size="lg"
                                         onClick={handleGenerateClick}
                                         disabled={generateBlocked}
+                                        aria-busy={isGenerating}
                                         className={`max-lg:flex-1 lg:w-full h-11 font-semibold shadow-sm transition-all duration-200 ${justGenerated ? 'bg-success hover:bg-success/90 text-success-foreground' : 'bg-mode-pack hover:bg-mode-pack/90 text-mode-pack-foreground'}`}
                                     >
-                                        {justGenerated ? <Check className="w-4 h-4 mr-2" /> : <Shuffle className="w-4 h-4 mr-2" />}
-                                        {justGenerated
+                                        {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : justGenerated ? <Check className="w-4 h-4 mr-2" /> : <Shuffle className="w-4 h-4 mr-2" />}
+                                        {isGenerating
+                                            ? 'Generating…'
+                                            : justGenerated
                                             ? 'Generated'
                                             : needsCharacterChoice
                                                 ? 'Pick a character first'

@@ -123,6 +123,61 @@ export function splitSceneIdentity(
   return { identity, fromScene }
 }
 
+// ── The Character chips ───────────────────────────────────────────────────────
+
+/** Pinned: in every prompt, and it replaces the scene's own version. Scene: only when the scene has it. */
+export type ChipState = 'pinned' | 'scene'
+
+export interface SceneChip {
+  tag: string
+  state: ChipState
+  /** The character's look, a tag the user typed in, or the rest of the base (card or pasted prompt). */
+  origin: 'character' | 'added' | 'base'
+}
+
+export interface SceneChipsInput {
+  /** The character's name, look and signature accessories. */
+  candidates: readonly string[]
+  /** Tags the user added by hand. */
+  added: readonly string[]
+  /** The rest of the base's look and clothing. */
+  extras: readonly string[]
+  /** Tags the user removed. */
+  removed: ReadonlySet<string>
+  /** The user's choices, tag by tag. */
+  choices: ReadonlyMap<string, ChipState>
+  permanence: (tag: string) => Permanence
+  overrides: Record<string, string>
+}
+
+/**
+ * The chips of the Character section and what they mean for the engine.
+ * Each tag shows once; people counts never show (who is in the picture is picked
+ * apart). By default the character's permanent look is pinned and its picture
+ * state (exposure, a closed eye) comes from each scene; added tags are pinned;
+ * the rest of the base comes from the scene. The user's choice wins; removed
+ * tags leave the chips and become `never`.
+ */
+export function sceneChips(input: SceneChipsInput): { chips: SceneChip[]; pinned: string[]; never: string[] } {
+  const fromScene = new Set(splitSceneIdentity(input.candidates, input.permanence, input.overrides).fromScene)
+  const seen = new Set<string>()
+  const chips: SceneChip[] = []
+  const never: string[] = []
+  const add = (tag: string, origin: SceneChip['origin'], fallback: ChipState) => {
+    if (!tag || seen.has(tag) || isCompositionPattern(tag)) return
+    seen.add(tag)
+    if (input.removed.has(tag)) {
+      never.push(tag)
+      return
+    }
+    chips.push({ tag, origin, state: input.choices.get(tag) ?? fallback })
+  }
+  input.candidates.forEach((tag) => add(tag, 'character', fromScene.has(tag) ? 'scene' : 'pinned'))
+  input.added.forEach((tag) => add(tag, 'added', 'pinned'))
+  input.extras.forEach((tag) => add(tag, 'base', 'scene'))
+  return { chips, pinned: chips.filter((chip) => chip.state === 'pinned').map((chip) => chip.tag), never }
+}
+
 /** Same composition. */
 export const samePeople = (a: PackPeople | null | undefined, b: PackPeople | null | undefined): boolean =>
   !!a && !!b && a.girls === b.girls && a.boys === b.boys

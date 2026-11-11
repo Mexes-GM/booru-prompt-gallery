@@ -16,6 +16,7 @@
  *   8. What the character owns: variants of its tags and garments for the same body
  *      slot leave the scene; removed and "Never include" tags never appear.
  *   9. "Always add": first, as typed, once; a count tag the composition contradicts is left out.
+ *  11. Character chips: pinned / from the scene / removed, added traits, counts hidden.
  *  10. The base's clothing replaces the scene's; redundant booru pairs collapse; async
  *      generation matches the sync one and stops when cancelled.
  *
@@ -33,6 +34,7 @@ import {
   defaultComposition,
   dropRedundantSceneTags,
   generateScenePackAsync,
+  sceneChips,
   enabledSceneCount,
   generateScenePack,
   postsForRating,
@@ -238,6 +240,34 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
     assert(!/(white|gold|yellow) hairband|jewelry/.test(p.prompt), "no other hairband and no jewelry: " + p.prompt)
     assert(p.prompt.includes("hairband"), "the character's hairband stays")
   }
+}
+
+// ── Character chips ──
+{
+  const input = {
+    candidates: ["my character", "1girl", "solo", "long hair", "blue eyes", "navel", "hairband"],
+    added: ["red scarf"],
+    extras: ["white shirt", "pleated skirt", "blush"],
+    removed: new Set<string>(),
+    choices: new Map<string, "pinned" | "scene">(),
+    permanence,
+    overrides,
+  }
+  const base = sceneChips(input)
+  const stateOf = (r: typeof base, tag: string) => r.chips.find((c) => c.tag === tag)?.state
+  assert(!base.chips.some((c) => c.tag === "1girl" || c.tag === "solo"), "people counts never show as chips")
+  assert(stateOf(base, "long hair") === "pinned" && stateOf(base, "hairband") === "pinned", "the character's look is pinned by default")
+  assert(stateOf(base, "navel") === "scene", "picture state comes from the scene by default")
+  assert(stateOf(base, "red scarf") === "pinned", "an added trait starts pinned")
+  assert(stateOf(base, "white shirt") === "scene" && base.chips.find((c) => c.tag === "white shirt")?.origin === "base", "the rest of the base comes from the scene")
+  assert(base.pinned.join() === "my character,long hair,blue eyes,hairband,red scarf", "pinned tags, in order")
+  const chosen = sceneChips({ ...input, choices: new Map<string, "pinned" | "scene">([["navel", "pinned"], ["blue eyes", "scene"], ["white shirt", "pinned"]]) })
+  assert(chosen.pinned.includes("navel") && chosen.pinned.includes("white shirt") && !chosen.pinned.includes("blue eyes"), "the user's choice wins both ways")
+  const removed = sceneChips({ ...input, removed: new Set(["hairband", "white shirt", "solo"]) })
+  assert(!removed.chips.some((c) => c.tag === "hairband" || c.tag === "white shirt"), "removed tags leave the chips")
+  assert(removed.never.join() === "hairband,white shirt", "and become never; a hidden count tag removed elsewhere doesn't count")
+  const dup = sceneChips({ ...input, added: ["long hair"], extras: ["long hair"] })
+  assert(dup.chips.filter((c) => c.tag === "long hair").length === 1, "each tag shows once")
 }
 
 // ── Always add ──

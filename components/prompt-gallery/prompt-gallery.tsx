@@ -229,6 +229,8 @@ import { usePromptFormat } from "@/hooks/use-natural-prompt"
 import { PROMPT_FORMAT_INFO, hasWordBudget, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { NaturalPromptStatus } from "@/components/prompt-gallery/prompt-format-setting"
 
+const NO_PACK_POSTS: BooruPost[] = []
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PackSeedFetcher
 // Thin bridge component whose ONLY job is to own the usePackSeedSearch call
@@ -843,6 +845,16 @@ export function PromptGallery() {
   const packSourceKeyRef = useRef(packSourceKey)
   useEffect(() => { packSourceKeyRef.current = packSourceKey }, [packSourceKey])
 
+
+  // Latest usePackSeedSearch result (freshly fetched posts), reported up by
+  // <PackSeedFetcher>, plus the posts saved for this source in earlier
+  // sessions. Pools are always sampled from both, merged. A small state
+  // snapshot carries what the UI shows (counts, load-more availability) so
+  // PromptGallery doesn't re-render from the full result on every page.
+  const packSeedSearchRef = useRef<UsePackSeedSearchResult | null>(null)
+  const packCachedRef = useRef<{ key: string; posts: BooruPost[] } | null>(null)
+  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ posts: BooruPost[]; postCount: number; savedCount: number; canLoadMore: boolean; ratings: RatingBreakdown } | null>(null)
+
   // Scenes engine (the default): its own pool, picks and prompts, fed by the same posts and settings.
   const packBaseCard = packMode.baseCard
   const packSceneNatural = useMemo(() => ({
@@ -853,10 +865,17 @@ export function PromptGallery() {
   }), [packBaseCard, search.booruProvider, packMode.focusCharacter])
   const packScenes = usePackScenes({
     enabled: packModeIsPackMode && packMode.hasBase && packMode.engine === 'scenes',
-    posts: packMode.poolPosts,
+    // The posts the header counts: the pool always shows what was collected.
+    posts: packSeedSnapshot?.posts ?? NO_PACK_POSTS,
     overrides: packMode.effectiveTagOverrides,
-    identityTags: packMode.sceneIdentityTags,
+    identityCandidates: packMode.sceneIdentityCandidates,
+    baseExtras: packMode.sceneBaseExtras,
+    baseFixed: packMode.sceneBaseFixed,
+    baseClothing: packMode.sceneBaseClothing,
+    removedTags: packMode.excludedBaseTags,
+    baseFromCharacter: packMode.baseFromCharacter,
     alwaysAdd: packMode.alwaysAddTags,
+    neverIncludeText: packMode.neverIncludeText,
     characterTags: packMode.focusedCharacterTags,
     contentRating: packMode.contentRating,
     settings: packMode.sceneSettings,
@@ -870,15 +889,6 @@ export function PromptGallery() {
     sourceKey: packSourceKey,
   })
   const packUsesScenes = packMode.engine === 'scenes'
-
-  // Latest usePackSeedSearch result (freshly fetched posts), reported up by
-  // <PackSeedFetcher>, plus the posts saved for this source in earlier
-  // sessions. Pools are always sampled from both, merged. A small state
-  // snapshot carries what the UI shows (counts, load-more availability) so
-  // PromptGallery doesn't re-render from the full result on every page.
-  const packSeedSearchRef = useRef<UsePackSeedSearchResult | null>(null)
-  const packCachedRef = useRef<{ key: string; posts: BooruPost[] } | null>(null)
-  const [packSeedSnapshot, setPackSeedSnapshot] = useState<{ postCount: number; savedCount: number; canLoadMore: boolean; ratings: RatingBreakdown } | null>(null)
   // Only seeds pools ONCE per base — re-running it on every incidental result
   // update would fight the user's own edits.
   const hasSeededRef = useRef(false)
@@ -909,6 +919,7 @@ export function PromptGallery() {
     const saved = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts.length : 0
     const posts = packPoolPosts()
     setPackSeedSnapshot({
+      posts,
       postCount: posts.length,
       savedCount: saved,
       canLoadMore: search ? !search.noMoreResults && !search.sessionCapReached : true,
@@ -2409,7 +2420,7 @@ export function PromptGallery() {
         axisMaxPerPrompt={packMode.axisMaxPerPrompt}
         tagOverrides={packMode.effectiveTagOverrides}
         baseClassified={packMode.baseClassified}
-        lockedTags={packUsesScenes ? packScenes.identity.kept : packMode.lockedTags}
+        lockedTags={packUsesScenes ? packScenes.pinnedTags : packMode.lockedTags}
         axisValues={packMode.axisValues}
         onAddAxisValue={packMode.addAxisValue}
         onRemoveAxisValue={handlePackRemoveAxisValue}
@@ -2483,7 +2494,8 @@ export function PromptGallery() {
         scenes={packScenes}
         sceneSettings={packMode.sceneSettings}
         onSceneSettingsChange={packMode.setSceneSettings}
-        sceneIdentityCandidates={packMode.sceneIdentityCandidates}
+        neverIncludeText={packMode.neverIncludeText}
+        onNeverIncludeTextChange={packMode.setNeverIncludeText}
       />}
 
       <GalleryModals

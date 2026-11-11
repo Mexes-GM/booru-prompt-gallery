@@ -332,16 +332,25 @@ export interface UsePackModeResult {
   /** Options of the scenes engine (see hooks/use-pack-scenes.ts). */
   sceneSettings: ScenePackSettings
   setSceneSettings: (settings: ScenePackSettings) => void
-  /** The source's posts as last seeded (reseedAllAxes), for the scenes engine. */
-  poolPosts: BooruPost[]
   /**
    * The character's identity for the scenes engine, whatever the classic
    * category roles say: name, look and signature accessories (the chips the
    * user can remove), before the user's removals.
    */
   sceneIdentityCandidates: string[]
-  /** What the scenes engine keeps: the candidates the user kept, a pasted prompt's other tags and "Always add". */
-  sceneIdentityTags: string[]
+  /**
+   * The rest of a card's or pasted prompt's look and clothing, which the scenes
+   * engine offers to pin ("More from this card"). Pose, camera and place are left
+   * out: those are the scene's. Empty for a character chosen by name.
+   */
+  sceneBaseExtras: string[]
+  /** The base's own clothing, for the scenes engine's "From the base" clothing. */
+  sceneBaseClothing: string[]
+  /** A pasted prompt's tags outside every category, kept in every prompt (minus the user's removals). */
+  sceneBaseFixed: string[]
+  /** "Never include" (scenes engine): tags left out of every prompt, as typed. */
+  neverIncludeText: string
+  setNeverIncludeText: (text: string) => void
   /** Character tags the cleaner sees (just the kept one on a multi-character base). */
   focusedCharacterTags: string[]
   /** "Always add" tags as typed. */
@@ -422,8 +431,7 @@ export function usePackMode(
   const [initialEngine] = useState(() => packEngineConfig(initialConfig))
   const [engine, setEngine] = useState<'scenes' | 'classic'>(initialEngine.engine)
   const [sceneSettings, setSceneSettings] = useState<ScenePackSettings>(initialEngine.sceneSettings)
-  // The source's posts for the scenes engine (the classic pools keep theirs in cachedPostsRef).
-  const [poolPosts, setPoolPosts] = useState<BooruPost[]>([])
+  const [neverIncludeText, setNeverIncludeText] = useState(initialConfig.neverIncludeText ?? '')
   const [lockedSlots, setLockedSlots] = useState<Set<string>>(() => new Set(initialConfig.lockedSlots))
   const [mutedSlots, setMutedSlots] = useState<Set<string>>(() => new Set(initialConfig.mutedSlots))
   const [varietyLevel, setVarietyLevelRaw] = useState<VarietySetting>(initialConfig.varietyLevel)
@@ -839,12 +847,17 @@ export function usePackMode(
     () => Array.from(new Set([...focusAppearance(baseClassified.appearance || []), ...identityParts.signature].filter(Boolean))),
     [focusAppearance, baseClassified, identityParts]
   )
-  const sceneIdentityTags = useMemo(() => {
-    const tags = sceneIdentityCandidates.filter((tag) => !excludedBaseTags.has(tag))
-    if (!baseCard) tags.push(...(keptBaseClassified.other || []))
-    if (customBaseText.trim()) tags.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
-    return Array.from(new Set(tags.filter(Boolean)))
-  }, [sceneIdentityCandidates, excludedBaseTags, baseCard, keptBaseClassified, customBaseText])
+  const sceneBaseExtras = useMemo(() => {
+    if (baseFromCharacter) return []
+    const own = new Set(sceneIdentityCandidates)
+    const tags = [...focusAppearance(ownBaseClassified.appearance || []), ...(ownBaseClassified.clothing || [])]
+    return Array.from(new Set(tags.filter((tag) => tag && !own.has(tag))))
+  }, [baseFromCharacter, sceneIdentityCandidates, focusAppearance, ownBaseClassified])
+  const sceneBaseClothing = useMemo(
+    () => (baseFromCharacter ? [] : (ownBaseClassified.clothing || []).filter((tag) => !excludedBaseTags.has(tag))),
+    [baseFromCharacter, ownBaseClassified, excludedBaseTags]
+  )
+  const sceneBaseFixed = useMemo(() => (baseCard ? [] : keptBaseClassified.other || []), [baseCard, keptBaseClassified])
 
   /** A real base card OR a non-empty pasted prompt — either way there's a base to vary against. */
   const hasBase = !!baseCard || basePrompt.trim() !== ''
@@ -1267,7 +1280,6 @@ export function usePackMode(
     (posts: BooruPost[], fallbacks: Partial<Record<TagCategory, string[]>> = {}) => {
       cachedPostsRef.current = posts
       cachedFallbacksRef.current = fallbacks
-      setPoolPosts(posts)
       resample(posts, PACK_AXES, axisTagModes, fallbacks, true)
       // Pasted-prompt base: figure out which of its tags are a character now
       // that seed posts are available (detectCharacterTags needs them).
@@ -1689,7 +1701,6 @@ export function usePackMode(
     setBaseFromCharacterFlag(false)
     setBaseLook('typical')
     setTypicalLooks({})
-    setPoolPosts([])
   }, [])
 
   // Persist the current builder config, debounced (300ms, same idle window as
@@ -1720,6 +1731,7 @@ export function usePackMode(
       clothingFromLibrary,
       engine,
       sceneSettings,
+      neverIncludeText,
     }
     persistTimerRef.current = setTimeout(() => {
       try {
@@ -1733,7 +1745,7 @@ export function usePackMode(
     return () => {
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
     }
-  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModesRaw, minTotalTags, minSetTags, clothingFromLibrary, engine, sceneSettings])
+  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModesRaw, minTotalTags, minSetTags, clothingFromLibrary, engine, sceneSettings, neverIncludeText])
 
   return {
     isPackMode,
@@ -1835,9 +1847,12 @@ export function usePackMode(
     setEngine,
     sceneSettings,
     setSceneSettings,
-    poolPosts,
     sceneIdentityCandidates,
-    sceneIdentityTags,
+    sceneBaseExtras,
+    sceneBaseClothing,
+    sceneBaseFixed,
+    neverIncludeText,
+    setNeverIncludeText,
     focusedCharacterTags,
     alwaysAddTags,
   }

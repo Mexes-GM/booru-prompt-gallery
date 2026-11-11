@@ -803,6 +803,8 @@ export interface PackModeConfigV2 {
   engine?: 'scenes' | 'classic'
   /** Options of the scenes engine (mix, clothing, scenery, extras). */
   sceneSettings?: ScenePackSettings
+  /** Scenes engine: tags left out of every prompt, as typed ("Never include"). */
+  neverIncludeText?: string
 }
 
 function isPackModeConfigV2(value: unknown): value is PackModeConfigV2 {
