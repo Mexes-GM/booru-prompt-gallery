@@ -233,8 +233,10 @@ export function groupSituations(scenes: Scene[], overrides: Record<string, strin
   }
 
   const usedIds = new Map<string, number>()
+  const usedLabels = new Set<string>()
   const situations: Situation[] = groups.map(({ tag, scenes: members }) => {
-    const label = [tag, ...commonCoTag(members, tag)]
+    const label = situationName(members, tag, overrides, usedLabels)
+    usedLabels.add(label.join(' + '))
     const base = label.join(' + ')
     const n = (usedIds.get(base) ?? 0) + 1
     usedIds.set(base, n)
@@ -254,21 +256,40 @@ function toSituation(id: string, label: string[], members: Scene[]): Situation {
   }
 }
 
-/** The skeleton tag, other than `tag`, most scenes of the group share (empty when none). */
-function commonCoTag(members: Scene[], tag: string): string[] {
+/** Slots that say what happens in a scene: posture, action, interaction, a hand gesture. */
+const DESCRIPTIVE_SLOTS = new Set(['pose:posture', 'pose:gesture', 'pose:kinetic', 'pose:combat', 'pose:interaction'])
+/** Camera tags that are a framing ("from above", "upper body"), not a gaze or an effect. */
+const FRAMING_RE = /^(from (above|below|behind|side|the side)|upper body|lower body|full body|cowboy shot|portrait|close-up|wide shot|dutch angle|head out of frame|feet out of frame|pov)$/
+
+/** Tags of the group by how many of its scenes carry them, most first (ties keep first-seen order). */
+function byFrequency(members: Scene[], pick: (scene: Scene) => string[]): string[] {
   const counts = new Map<string, number>()
-  for (const scene of members) {
-    for (const other of scene.units.skeleton) {
-      if (other !== tag) counts.set(other, (counts.get(other) ?? 0) + 1)
-    }
+  for (const scene of members) new Set(pick(scene)).forEach((tag) => counts.set(tag, (counts.get(tag) ?? 0) + 1))
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map(([tag]) => tag)
+}
+
+/**
+ * A situation's readable name: what happens in it (posture, action, interaction,
+ * gesture), then its framing, then its location. The tag that grouped the scenes
+ * leads when it is one of those; an effect or a symbol ("sweat", "squeans") never
+ * names a group. Two tags at most, and not a name an earlier group already has.
+ */
+function situationName(members: Scene[], tag: string, overrides: Record<string, string>, used: ReadonlySet<string>): string[] {
+  const slotOf = (t: string) => getTagSlotFromOverrides(t, overrides)?.slot
+  const descriptive = byFrequency(members, (scene) => scene.units.skeleton.filter((t) => DESCRIPTIVE_SLOTS.has(slotOf(t) ?? '')))
+  const framing = byFrequency(members, (scene) => scene.units.camera.filter((t) => FRAMING_RE.test(t)))
+  const setting = byFrequency(members, (scene) => scene.units.place.filter((t) => slotOf(t) === 'scenery:setting'))
+  const candidates = Array.from(new Set([
+    ...(DESCRIPTIVE_SLOTS.has(slotOf(tag) ?? '') ? [tag] : []),
+    ...descriptive,
+    ...framing,
+    ...setting,
+  ]))
+  if (candidates.length === 0) return [tag]
+  const [first, ...rest] = candidates
+  const pairs = rest.length > 0 ? rest.map((second) => [first, second]) : [[first]]
+  for (const [a, ...others] of candidates.map((c, i) => [c, ...candidates.slice(i + 1)])) {
+    for (const b of others) pairs.push([a, b])
   }
-  let best: string | null = null
-  let bestCount = 0
-  for (const [other, count] of counts) {
-    if (count > bestCount) {
-      best = other
-      bestCount = count
-    }
-  }
-  return best ? [best] : []
+  return pairs.find((pair) => !used.has(pair.join(' + '))) ?? pairs[0]
 }

@@ -86,7 +86,7 @@ assert(compositionOfIdentity(["long hair"]) === null && compositionOfIdentity(["
 // ── Situations ──
 assert(stats.situations === 3 && pool.situations.length === 3, "three situations")
 assert(pool.situations[0].sceneIds.join() === "1,2", "largest situation first, scenes in pool order")
-assert(pool.situations[0].label.join() === "standing", "label: the tag that covers the group")
+assert(pool.situations[0].label.join() === "standing,from above", "label: the tag that covers the group, then the framing")
 assert(pool.situations[1].label.join() === "lying,on back", "label: the tag and its most frequent co-tag")
 assert(pool.situations[2].sceneIds.join() === "5" && pool.situations[2].label.join() === "sitting,hug", "single-scene situation")
 assert(pool.situations.every((s) => s.previews.length > 0 && s.previews.length <= 3), "previews are kept, at most three")
@@ -121,6 +121,21 @@ assert(JSON.stringify(buildScenePool(posts, ctx)) === JSON.stringify(pool), "bui
   const split = groupSituations(mixed, ov)
   assert(split.length === 2 && split[0].label[0] === "a" && split[1].label[0] === "b", "informativeness decides, not coverage alone")
   assert(split[0].label[1] === "common", "the label adds the most frequent co-tag")
+  // an effect groups scenes but never names them: the group is named by what happens in it
+  const ov2: Record<string, string> = { sweat: "pose:physiological", lying: "pose:posture", "from above": "pose:camera", squeans: "pose:physiological", bedroom: "scenery:setting" }
+  const effects = synthetic(10, {}).map((scene, i) => ({
+    ...scene,
+    units: { ...scene.units, skeleton: i < 5 ? ["sweat", "squeans", "lying"] : ["other" + i], camera: ["from above"], place: ["bedroom"] },
+  }))
+  const named = groupSituations(effects, ov2)
+  assert(named[0].label.join() === "lying,from above", "an effect or a symbol never names a group; posture, then framing")
+  assert(!named.some((s) => s.label.includes("sweat") || s.label.includes("squeans")), "no effect in any label")
+  const twin = synthetic(10, {}).map((scene, i) => ({
+    ...scene,
+    units: { ...scene.units, skeleton: i < 5 ? ["sweat", "lying"] : ["squeans", "lying"], camera: ["from above"], place: ["bedroom"] },
+  }))
+  const twins = groupSituations(twin, ov2)
+  assert(twins.length === 2 && twins[0].label.join(" + ") !== twins[1].label.join(" + "), "two groups never share a name")
   const gestures = synthetic(3, {}).map((scene) => ({ ...scene, units: { ...scene.units, skeleton: ["smile"] } }))
   assert(groupSituations(gestures, OVERRIDES)[0].id === "other", "tags of other slots are not situation tags")
 }
@@ -142,8 +157,8 @@ assert(ids(5, 7).join() === ids(5, 7).join(), "same seed, same selection")
   assert(four.includes(1) && four.includes(2), "the fourth scene comes back to the largest situation")
 }
 assert(ids(50, 1).length === 5 && new Set(ids(50, 1)).size === 5, "fewer scenes than asked: returns the ones that exist")
-assert(!ids(5, 1, ["standing"]).some((id) => id === 1 || id === 2), "a switched-off situation gives no scenes")
-assert(ids(5, 1, ["standing"]).length === 3, "the others remain")
+assert(!ids(5, 1, [pool.situations[0].id]).some((id) => id === 1 || id === 2), "a switched-off situation gives no scenes")
+assert(ids(5, 1, [pool.situations[0].id]).length === 3, "the others remain")
 assert(ids(0, 1).length === 0, "count zero")
 {
   const trio = buildScenePool(
