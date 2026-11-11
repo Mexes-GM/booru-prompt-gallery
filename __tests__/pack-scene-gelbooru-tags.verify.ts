@@ -62,6 +62,29 @@ assert(kinds.get("old tag") === "deprecated" && kinds.get("leaf print") === "gen
   assert(all.includes("standing") && all.includes("smile"), "the scene keeps its own tags")
 }
 
+// ── A general tag with no slot travels only when the pool repeats it ──
+{
+  const once = SCENES.map((tags, i) => makePost(20 + i, `1girl solo ${tags} chara_${i}${i === 0 ? " ruddy_rose_witch" : ""}${i < 2 ? " leaf_print" : ""}`, { tag_string_character: `chara_${i}` }))
+  const general = (tag: string) => (tag === "ruddy rose witch" || tag === "leaf print" ? "general" as const : undefined)
+  const all = buildScenePool(once, { ...ctx, tagKind: general }).scenes.flatMap((scene) => Object.values(scene.units).flat())
+  assert(!all.includes("ruddy rose witch"), "a general, unslotted tag in one post stays out")
+  assert(all.includes("leaf print"), "in two posts, it travels")
+}
+
+// ── A garment named after a series ──
+{
+  const ov: Record<string, string> = { ...OVERRIDES, "school uniform": "clothing:outfit", "summer pockets school uniform": "clothing:outfit", "domino mask": "clothing:headwear", "mask": "clothing:headwear" }
+  const uniform = SCENES.map((tags, i) => makePost(30 + i, `1girl solo ${tags} chara_${i} summer_pockets_school_uniform domino_mask`, { tag_string_character: `chara_${i}` }))
+  const asked = untypedTags(uniform, tagKindsFromPosts(uniform), ov)
+  assert(asked.includes("summer pockets") && asked.includes("domino"), "the words before a known garment are looked up in the same list: " + asked.join())
+  assert(!asked.includes("summer pockets school uniform"), "the garment itself has a slot, so it isn't")
+  const kinds = gelbooruTagKinds(new Map<string, number | null>([["summer pockets", 3], ["domino", 4]]))
+  const pool = buildScenePool(uniform, { ...ctx, overrides: ov, permanence: createPermanence(PERMANENCE_DATA, ov), tagKind: (tag) => kinds.get(tag) })
+  const all = pool.scenes.flatMap((scene) => Object.values(scene.units).flat())
+  assert(!all.includes("summer pockets school uniform"), "a series' uniform leaves the scene")
+  assert(all.includes("domino mask"), "a character prefix doesn't make a garment a name ('domino mask' is a mask)")
+}
+
 // ── PostgREST list ──
 const BS = String.fromCharCode(92)
 assert(

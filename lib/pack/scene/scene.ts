@@ -361,7 +361,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     }
     const unit = slot ? unitOfSlot(slot) : null
     const garment = unit === 'outfit' || (!unit && (fallback === 'outfit' || hasGarmentQualifier(tag)))
-    if (garment && isFranchiseGarment(tag, ctx.overrides)) continue
+    if (garment && isFranchiseGarment(tag, ctx.overrides, ctx.tagKind)) continue
     if (unit) {
       put(unit, tag)
       continue

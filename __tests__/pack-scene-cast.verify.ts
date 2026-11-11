@@ -17,11 +17,12 @@
  */
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence } from "../lib/pack/scene/permanence"
-import { castAddition, castDefaultSearch, castMemberLook, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
-import { DEFAULT_SCENE_SETTINGS, applySceneOwnership, castComposition, generateScenePack, type ScenePackArgs } from "../lib/pack/scene-pack"
+import { castAddition, castDefaultSearch, castMemberLook, castMemberRole, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
+import { DEFAULT_SCENE_SETTINGS, applySceneOwnership, castChips, castComposition, generateScenePack, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { packNaturalSource } from "../lib/pack/pack-natural"
 import { profileIdentity, typicalLook } from "../lib/pack/character-identity"
 import { extractScene } from "../lib/pack/scene/scene"
+import { looseName, searchCharacters } from "../lib/pack/character-search"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -37,6 +38,10 @@ assert(roleFromProfile({ "1boy": 0.6, "1girl": 0.5 }) === null, "a profile that 
 // A man often drawn next to his family: 78% of his solo posts say 1boy, 22% 1girl.
 assert(roleFromProfile({ "solo 1boy": 0.783, "solo 1girl": 0.217, "black hair": 0.689, "long hair": 0.502 }) === "boy", "two to one in his solo posts is clear enough")
 assert(roleFromProfile(undefined) === null, "no profile, no role")
+assert(castMemberRole(undefined, null, { "solo 1boy": 0.783, "solo 1girl": 0.217 }) === "boy", "a character with a profile needs no pick")
+assert(castMemberRole(undefined, ["1boy"], { "solo 1girl": 0.9 }) === "boy", "their own solo posts come before the profile")
+assert(castMemberRole("girl", ["1boy"], { "solo 1boy": 0.9 }) === "girl", "the user's pick wins")
+assert(castMemberRole(undefined, null, undefined) === null && castMemberRole(undefined, [], { "1boy": 0.6, "1girl": 0.5 }) === null, "no data, or doubt: the panel asks")
 
 // ── Composition ──
 {
@@ -54,7 +59,15 @@ assert(roleFromProfile(undefined) === null, "no profile, no role")
 
 // ── Search: count tags while they fit, with room for the theme; else one tag ──
 assert(compositionQuery({ girls: 1, boys: 1 }, "danbooru") === "1girl, 1boy", "a girl and a boy: the count tags")
-assert(compositionQuery({ girls: 2, boys: 0 }, "gelbooru") === "2girls", "two girls")
+assert(compositionQuery({ girls: 2, boys: 0 }, "gelbooru") === "2girls, -1boy, -2boys", "two girls: and no boy (most 2girls posts have one at an explicit rating)")
+assert(compositionQuery({ girls: 0, boys: 2 }, "gelbooru", "", "sfw") === "2boys, -1girl, -2girls", "two boys: and no girl")
+assert(compositionQuery({ girls: 3, boys: 0 }, "gelbooru", "beach", "sfw") === "3girls, -1boy, -2boys, beach", "three girls, with the theme")
+assert(compositionQuery({ girls: 2, boys: 0 }, "danbooru") === "2girls, -1boy", "Danbooru's two tags: the count and the first exclusion")
+assert(compositionQuery({ girls: 2, boys: 0 }, "danbooru", "beach", "sfw") === "yuri, beach", "with a theme on Danbooru: the pairing, not the bare count")
+assert(compositionQuery({ girls: 3, boys: 0 }, "danbooru", "beach", "sfw") === "3girls, beach", "a safe trio of girls: no threesome tag")
+assert(compositionQuery({ girls: 3, boys: 0 }, "danbooru", "beach", "explicit") === "fff_threesome, beach", "an explicit trio of girls: the threesome tag")
+assert(compositionQuery({ girls: 2, boys: 1 }, "gelbooru", "", "sfw") === "2girls, 1boy", "a safe mixed trio on Gelbooru: the counts, never ffm_threesome")
+assert(compositionQuery({ girls: 2, boys: 0 }, "gelbooru", "2girls, -1boy, -2boys, beach") === "2girls, -1boy, -2boys, beach", "a source that already is the group's search comes back unchanged")
 assert(compositionQuery({ girls: 2, boys: 1 }, "gelbooru", "beach", "sfw") === "2girls, 1boy, beach", "no tag limit: counts and the whole theme")
 assert(compositionQuery({ girls: 1, boys: 1 }, "rule34") === "1girls, 1boy", "Rule34 spells one girl 1girls")
 assert(compositionQuery({ girls: 1, boys: 1 }, "e621") === "duo", "e621 counts with duo")
@@ -155,6 +168,80 @@ function args(over: Partial<ScenePackArgs> = {}): ScenePackArgs {
   }
 }
 
+// ── Two characters with opposite looks, mostly drawn together: no trait crosses blocks ──
+{
+  const ov: Record<string, string> = { ...overrides, "short hair": "appearance:hair", "long hair": "appearance:hair", "red eyes": "appearance:eyes", "green eyes": "appearance:eyes", "hairband": "clothing:headwear" }
+  const SHE = "spy wife (test)"
+  const HE = "spy husband (test)"
+  const u = (name: string) => name.replace(/ /g, "_")
+  const hers = ["black hair", "long hair", "red eyes", "hairband"]
+  const his = ["blonde hair", "short hair", "green eyes"]
+  const soloHer = (id: number) => makePost(id, `1girl solo ${u(SHE)} black_hair long_hair red_eyes hairband standing`, { tag_string_character: u(SHE) })
+  const soloHim = (id: number) => makePost(id, `1boy solo ${u(HE)} blonde_hair short_hair green_eyes standing`, { tag_string_character: u(HE) })
+  const together = (id: number, extra: string) => makePost(id, `1girl 1boy hetero ${u(SHE)} ${u(HE)} black_hair long_hair red_eyes hairband blonde_hair short_hair green_eyes ${extra}`, {
+    tag_string_character: `${u(SHE)} ${u(HE)}`,
+  })
+  const posts = [
+    ...[1, 2, 3, 4, 5].map(soloHer), ...[6, 7, 8, 9, 10].map(soloHim),
+    together(11, "standing hug smile from_above bedroom bed indoors skirt shirt"), together(12, "sitting hug blush from_side park outdoors dress boots"),
+    together(13, "lying hug smile looking_at_viewer beach outdoors sunset dress navel"), together(14, "standing hug open_mouth from_side kitchen indoors shirt skirt boots"),
+  ]
+  // Each look from their own solo posts, as usePackMode builds the cast.
+  const members = [SHE, HE].map((character) => ({ character, candidates: castMemberLook(character, typicalLook(posts, character, ov)) }))
+  assert(his.every((t) => members[1].candidates.includes(t)) && !hers.some((t) => members[1].candidates.includes(t)), "his look is only his: " + members[1].candidates.join())
+  assert(hers.every((t) => members[0].candidates.includes(t)) && !his.some((t) => members[0].candidates.includes(t)), "her look is only hers: " + members[0].candidates.join())
+  const perm = createPermanence(PERMANENCE_DATA, ov)
+  const noChoices = () => new Map<string, "pinned" | "scene">()
+  // She loses "long hair", he keeps every trait: her removal is hers alone.
+  const removals: Record<string, Set<string>> = { [SHE]: new Set(["long hair"]), [HE]: new Set() }
+  const chips = castChips({
+    members,
+    choices: (c) => (c === HE ? new Map([["short hair", "scene" as const]]) : noChoices()),
+    added: () => [],
+    removed: (c) => removals[c],
+    baseExtras: [],
+    baseFixed: [],
+    permanence: perm,
+    overrides: ov,
+  })
+  const [herBlock, hisBlock] = chips.blocks
+  assert(!herBlock.chips.some((c) => c.tag === "long hair") && herBlock.removed.join() === "long hair", "her removal leaves her block")
+  assert(herBlock.chips.every((c) => c.state === "pinned"), "his choice doesn't reach her block")
+  assert(hisBlock.chips.find((c) => c.tag === "short hair")?.state === "scene", "his own choice applies to him")
+  assert(chips.never.join() === "long hair", "a removed tag no one keeps is never wanted")
+  // A trait typed in with "+ Add" is taken back, not removed: it leaves no "removed" behind.
+  const withScarf = castChips({ members, choices: noChoices, added: (c) => (c === HE ? ["red scarf"] : []), removed: () => new Set(), baseExtras: [], baseFixed: [], permanence: perm, overrides: ov })
+  assert(withScarf.blocks[1].chips.find((c) => c.tag === "red scarf")?.origin === "added", "an added trait is marked as added")
+  const takenBack = castChips({ members, choices: noChoices, added: () => [], removed: () => new Set(), baseExtras: [], baseFixed: [], permanence: perm, overrides: ov })
+  assert(takenBack.blocks[1].removed.length === 0 && takenBack.never.length === 0 && !takenBack.blocks[1].chips.some((c) => c.tag === "red scarf"), "taken back, it simply goes")
+  const kept = castChips({ members: [{ character: SHE, candidates: [SHE, "long hair"] }, { character: HE, candidates: [HE, "long hair"] }], choices: noChoices, added: () => [], removed: (c) => removals[c], baseExtras: [], baseFixed: [], permanence: perm, overrides: ov })
+  assert(kept.never.length === 0 && kept.blocks[1].chips.some((c) => c.tag === "long hair"), "a tag she lost but he keeps stays his, and isn't banned")
+
+  const pairPool = buildScenePool(posts, { overrides: ov, permanence: perm, subject: "girl", cast: CAST, people: CAST })
+  assert(pairPool.scenes.length === 4, "the four pictures of the pair are scenes")
+  const { prompts } = generateScenePack(pairPool, args({ identity: chips.pinned, never: chips.never, overrides: ov, count: 4 }))
+  assert(prompts.length === 4, "four prompts")
+  for (const p of prompts) {
+    const tags = p.prompt.split(", ")
+    const start = tags.indexOf(HE)
+    const hisPart = tags.slice(start, start + hisBlock.chips.filter((c) => c.state === "pinned").length)
+    assert(start > tags.indexOf(SHE), "her block, then his: " + p.prompt)
+    assert(!hers.some((t) => hisPart.includes(t)), "none of her traits in his block: " + p.prompt)
+    assert(!his.some((t) => tags.slice(tags.indexOf(SHE), start).includes(t)), "none of his traits in her block: " + p.prompt)
+    assert(!tags.includes("long hair"), "her removed trait is gone: " + p.prompt)
+  }
+  // Control: his look counted over every post he is in (a static trait profile, the old
+  // source of a cast member's look; on the booru most of his posts show her too) puts
+  // her hair in his block.
+  const withHim = posts.filter((p) => p.tag_string_character?.includes(u(HE))).slice(3)
+  const share = (tag: string) => withHim.filter((p) => p.tag_string.split(" ").includes(u(tag))).length / withHim.length
+  const profile = Object.fromEntries([...hers, ...his].map((t) => [t, share(t)]))
+  const oldLook = [HE, ...profileIdentity(HE, { [HE]: profile }, ov)]
+  const old = castChips({ members: [members[0], { character: HE, candidates: oldLook }], choices: noChoices, added: () => [], removed: () => new Set(), baseExtras: [], baseFixed: [], permanence: perm, overrides: ov })
+  const leaked = generateScenePack(pairPool, args({ identity: old.pinned, overrides: ov, count: 4 })).prompts
+  assert(leaked.length > 0 && leaked.every((p) => { const tags = p.prompt.split(", "); return tags.slice(tags.indexOf(HE)).includes("black hair") }), "(control) the profile look would carry her black hair into his block")
+}
+
 // ── Natural formats get every named character ──
 {
   const prompt = { prompt: "1girl, 1boy, hetero, alice (test), long hair, bob (test), short hair, hug", values: [] }
@@ -182,4 +269,20 @@ function args(over: Partial<ScenePackArgs> = {}): ScenePackArgs {
   assert(single.some((p) => /(skirt|shirt|dress|boots)/.test(p.prompt)), "'own outfits' means nothing with one character: the scene's clothes stay")
 }
 
-done()
+// ── Character search ignores parentheses and punctuation ──
+void (async () => {
+  assert(looseName("twilight (spy x family)") === looseName("Twilight spy-x-family"), "names compare without separators")
+  const asked: string[] = []
+  const tags = [
+    { name: "twilight_(spy_x_family)_(cosplay)", category: 0, postCount: 168, displayName: "", matchedAlias: null },
+    { name: "twilight_sparkle", category: 4, postCount: 9000, displayName: "", matchedAlias: null },
+    { name: "twilight_(spy_x_family)", category: 4, postCount: 4957, displayName: "", matchedAlias: null },
+  ]
+  const fake = async (pattern: string) => { asked.push(pattern); return tags }
+  const found = await searchCharacters("twilight spy x family", fake)
+  assert(asked[0] === "twilight%spy%x%family", "the words become one wildcard pattern: " + asked[0])
+  assert(found[0]?.name === "twilight_(spy_x_family)" && found.every((t) => t.category === 4), "the exact name first, characters only")
+  await searchCharacters("ma ka", fake)
+  assert(asked[1] === "ma ka", "without a three-letter word, the query goes as typed (the index can't narrow a wildcard)")
+  done()
+})()

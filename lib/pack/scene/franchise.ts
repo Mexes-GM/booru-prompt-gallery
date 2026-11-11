@@ -15,6 +15,7 @@
  *    of the vocabulary: a proper name, not a kind of uniform ("summer", "gym").
  */
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
+import type { TagKind } from './scene'
 
 /** Booru disambiguators that only say what kind of thing the tag is. */
 const GENERIC_QUALIFIERS = new Set([
@@ -39,8 +40,30 @@ function wordCounts(overrides: Record<string, string>): Map<string, number> {
   return counts
 }
 
-/** True for a garment tag that names a work or something of it. `tag` is in spaced form. */
-export function isFranchiseGarment(tag: string, overrides: Record<string, string>): boolean {
+/**
+ * The words before a garment the taxonomy knows at the end of a tag: "summer pockets"
+ * for "summer pockets school uniform" (when "school uniform" is clothing). Null when no
+ * shorter tail is a garment or nothing is left before it.
+ */
+export function garmentPrefix(tag: string, overrides: Record<string, string>): string | null {
+  const words = tag.split(' ')
+  for (let i = 1; i < words.length; i++) {
+    const tail = words.slice(i).join(' ')
+    if (getTagSlotFromOverrides(tail, overrides)?.category === 'clothing' && overrides[tail]) return words.slice(0, i).join(' ')
+  }
+  return null
+}
+
+/**
+ * True for a garment tag that names a work or something of it. `tag` is in spaced form.
+ * `kindOf` is what the booru says a tag is: a garment whose prefix is a series there
+ * ("summer pockets" + "school uniform") is that work's. Only a series counts: a
+ * character prefix is as often a common word ("domino" is a character on Gelbooru,
+ * "domino mask" a mask).
+ */
+export function isFranchiseGarment(tag: string, overrides: Record<string, string>, kindOf?: (tag: string) => TagKind | undefined): boolean {
+  const prefix = garmentPrefix(tag, overrides)
+  if (prefix && (kindOf?.(prefix) === 'copyright' || getTagSlotFromOverrides(prefix, overrides)?.slot === 'other:copyright')) return true
   const parenthesised = PARENTHESISED.exec(tag)
   if (parenthesised) {
     const [, base, qualifier] = parenthesised

@@ -46,7 +46,7 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
-import { castAddition, castMemberLook, roleFromProfile, roleFromSubject, type CastRole } from '@/lib/pack/scene/cast'
+import { castAddition, castMemberLook, castMemberRole, roleFromProfile, roleFromSubject, type CastRole } from '@/lib/pack/scene/cast'
 import { fetchPostsPage } from '@/lib/api-client'
 import { packRatingToFilters } from '@/hooks/use-pack-seed-search'
 import { varietyPreset, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
@@ -786,13 +786,15 @@ export function usePackMode(
     if (!focusCharacter) return null
     if (baseFromCharacter) {
       if (typical?.look.length) return typical
-      const look = profileTags.length > 0 ? profileIdentity(focusCharacter, traitData.profiles, effectiveOverrides, traitData.aliases) : []
+      // In a cast the profile would lend them their partner's traits (it counts every
+      // post they are in): only the name until their own solo posts arrive.
+      const look = profileTags.length > 0 && castExtras.length === 0 ? profileIdentity(focusCharacter, traitData.profiles, effectiveOverrides, traitData.aliases) : []
       return { look, subject: typical?.subject ?? [] }
     }
     if (!baseCard || baseLook !== 'typical' || !typical?.look.length) return null
     const subject = subjectTags(ownBaseClassified.appearance ?? [], new Set(characterTags), effectiveOverrides)
     return { look: typical.look, subject }
-  }, [focusCharacter, baseFromCharacter, baseCard, baseLook, typical, profileTags, traitData, effectiveOverrides, ownBaseClassified, characterTags])
+  }, [focusCharacter, baseFromCharacter, baseCard, baseLook, typical, profileTags, castExtras, traitData, effectiveOverrides, ownBaseClassified, characterTags])
   // Signature accessories (headphones, glasses…) belong in Clothing, where they stay while it varies.
   const identityParts = useMemo(
     () => splitSignature(identity?.look ?? [], effectiveOverrides),
@@ -877,17 +879,19 @@ export function usePackMode(
     () => Array.from(new Set([...focusAppearance(baseClassified.appearance || []), ...identityParts.signature].filter(Boolean))),
     [focusAppearance, baseClassified, identityParts]
   )
-  // The other characters' looks come from posts that show them alone, read once per
-  // character: a pool searched for the mix of people rarely has any, and their static
-  // trait profile counts every post they are in (a man mostly drawn with his wife
-  // would get her hair). The profile still says their role when those posts don't.
+  // In a cast, every character's look comes from posts that show them alone, read once
+  // per character: a pool searched for the mix of people rarely has any, and their
+  // static trait profile counts every post they are in (a man mostly drawn with his
+  // wife would get her hair). The profile still says their role when those posts don't.
+  // The base character's are usually in already, from the solo source they started with.
   useEffect(() => {
     if (castExtras.length > 0) void loadCharacterTraits(castExtras)
   }, [castExtras])
   const soloRequestedRef = useRef<Set<string>>(new Set())
   useEffect(() => {
+    if (castExtras.length === 0) return
     const ratingFilter = packRatingToFilters(contentRating ?? 'sfw')[0]
-    for (const character of castExtras) {
+    for (const character of [...(baseFromCharacter && focusCharacter ? [focusCharacter] : []), ...castExtras]) {
       const key = `${booruProvider}|${ratingFilter}|${character}`
       if (typicalLooks[character]?.look.length || soloRequestedRef.current.has(key)) continue
       soloRequestedRef.current.add(key)
@@ -912,7 +916,7 @@ export function usePackMode(
           soloRequestedRef.current.delete(key)
         })
     }
-  }, [castExtras, typicalLooks, booruProvider, contentRating, enrichOverrides, currentOverrides])
+  }, [castExtras, baseFromCharacter, focusCharacter, typicalLooks, booruProvider, contentRating, enrichOverrides, currentOverrides])
   const profileOf = useCallback(
     (character: string) => traitData.profiles[character] ?? traitData.profiles[traitData.aliases[character] ?? ''],
     [traitData]
@@ -933,7 +937,7 @@ export function usePackMode(
       return {
         character,
         candidates: castMemberLook(character, typicalOfThem?.look),
-        role: castRoles[character] ?? roleFromSubject(typicalOfThem?.subject ?? []) ?? roleFromProfile(profileOf(character)),
+        role: castMemberRole(castRoles[character], typicalOfThem?.subject, profileOf(character)),
       }
     })
     return [primary, ...others]

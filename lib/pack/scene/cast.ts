@@ -51,6 +51,19 @@ export function roleFromProfile(profile: Record<string, number> | undefined): Ca
   return ratio >= 2 ? 'boy' : ratio <= 0.5 ? 'girl' : null
 }
 
+/**
+ * A cast member's role: the user's pick, else what their own solo posts say
+ * ("1boy"), else their trait profile. Null only when none of these knows: then
+ * the panel asks.
+ */
+export function castMemberRole(
+  picked: CastRole | null | undefined,
+  soloSubject: readonly string[] | null | undefined,
+  profile: Record<string, number> | undefined
+): CastRole | null {
+  return picked ?? roleFromSubject(soloSubject ?? []) ?? roleFromProfile(profile)
+}
+
 /** A role from subject tags ("1girl", "1boy"); null when they say neither, or both. */
 export function roleFromSubject(tags: readonly string[]): CastRole | null {
   const set = new Set(tags.map((tag) => tag.toLowerCase().replace(/_/g, ' ').trim()))
@@ -85,23 +98,44 @@ function countTags(people: PackPeople, provider: BooruProvider): string[] {
   return [...(people.girls > 0 ? [girl] : []), ...(people.boys > 0 ? [boy] : [])]
 }
 
-/** One tag for these people when the count tags don't fit: the pairing, or the rarer gender's count. */
-function singleTag(people: PackPeople, provider: BooruProvider, explicit: boolean): string {
+/**
+ * For a group of one gender, the count tags of the other one to leave out: most
+ * "2girls" posts at an explicit rating also have a boy, so the count alone finds few
+ * pictures of just the two girls. Empty for a mixed group and on e621.
+ */
+function exclusionTags(people: PackPeople, provider: BooruProvider): string[] {
+  const vocab = vocabularyOf(provider)
+  if (vocab === 'e621') return []
+  if (people.boys === 0) return ['-1boy', '-2boys']
+  if (people.girls === 0) return [vocab === 'rule34' ? '-1girls' : '-1girl', '-2girls']
+  return []
+}
+
+/** The pairing tag for these people, when the rating has enough posts with it. */
+function pairingTag(people: PackPeople, provider: BooruProvider, safe: boolean): string | null {
   const pairing = PAIRINGS[vocabularyOf(provider)][`${people.girls}g${people.boys}b`]
-  // Threesome pairings exist almost only on explicit posts: 1 to 12 posts at a safe rating.
-  const usable = pairing && (explicit || !pairing.includes('threesome'))
-  if (usable) return pairing
+  // Threesome pairings exist almost only on non-safe posts (a few dozen at a safe rating).
+  return pairing && (!safe || !pairing.includes('threesome')) ? pairing : null
+}
+
+/** The rarer gender's count tag: the one count that narrows the search most. */
+function rarerCount(people: PackPeople, provider: BooruProvider): string {
   const counts = countTags(people, provider)
   return people.boys > 0 && people.boys <= people.girls ? counts[counts.length - 1] : counts[0]
 }
 
 /**
- * The search for scenes with these people. Measured on Gelbooru at a safe and an
- * explicit rating, the count tags ("1girl 1boy", "2girls 1boy") give more posts with
- * exactly these people than the pairing tags ("hetero", "ffm_threesome") for every
- * group (the exact head count is checked on the posts afterwards). So the count
- * tags are used whenever they fit the booru's tag limit with room for the user's
- * theme; otherwise one tag. `extraTags` (the theme) are appended while the limit allows.
+ * The search for scenes with these people, best first among those that fit the
+ * booru's tag limit with room for the user's theme. Measured on Gelbooru at every
+ * rating (share of the top posts with exactly these people, and how many posts):
+ *  - a mixed group: the count tags ("1girl 1boy", "2girls 1boy") match as often as
+ *    the pairing tags and find several times more posts; threesome tags have only a
+ *    few dozen posts at a safe rating;
+ *  - one gender: the count alone is poor ("2girls" posts mostly have a boy too at
+ *    an explicit rating), the count without the other gender's counts is best
+ *    ("2girls -1boy -2boys"), then the pairing ("yuri").
+ * The exact head count is checked on the posts afterwards. `extraTags` (the theme)
+ * are appended while the limit allows; ratings are left to the source.
  */
 export function compositionQuery(
   people: PackPeople,
@@ -111,12 +145,17 @@ export function compositionQuery(
 ): string {
   const limit = getProviderTagLimit(provider)
   const counts = countTags(people, provider)
+  const exclusions = exclusionTags(people, provider)
+  const pairing = pairingTag(people, provider, rating === 'sfw')
   const extras = splitTags(extraTags.replace(/,/g, ' ')).filter((tag) => !tag.startsWith('rating:'))
-  const room = (n: number) => (Number.isFinite(limit) ? Math.max(0, limit - n) : extras.length)
-  const fits = !Number.isFinite(limit) || counts.length + (extras.length > 0 ? 1 : 0) <= limit
-  const lead = fits ? counts : [singleTag(people, provider, rating !== 'sfw')]
+  const candidates: string[][] = exclusions.length > 0
+    ? [[...counts, ...exclusions], [...counts, exclusions[0]], ...(pairing ? [[pairing]] : []), counts]
+    : [counts, [pairing ?? rarerCount(people, provider)]]
+  const fits = (lead: string[]) => !Number.isFinite(limit) || lead.length + (extras.length > 0 ? 1 : 0) <= limit
+  const lead = candidates.find(fits) ?? [pairing ?? rarerCount(people, provider)]
   const own = new Set(lead)
-  return [...lead, ...extras.filter((tag) => !own.has(tag)).slice(0, room(lead.length))].join(', ')
+  const room = Number.isFinite(limit) ? Math.max(0, limit - lead.length) : extras.length
+  return [...lead, ...extras.filter((tag) => !own.has(tag)).slice(0, room)].join(', ')
 }
 
 export type CastAddition = 'added' | 'duplicate' | 'full'

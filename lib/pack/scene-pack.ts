@@ -18,6 +18,7 @@ import { normalizeRating, type Scene, type SceneRating, type TagKind } from './s
 import { isQualifiedVariant } from './character-identity'
 import type { PackPeople, ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
+import { garmentPrefix } from './scene/franchise'
 
 /** The pack's content rating (same values as the source dialog). */
 export type ScenePackRating = 'sfw' | 'questionable' | 'explicit' | 'both'
@@ -111,7 +112,14 @@ export function untypedTags(posts: readonly BooruPost[], typed: ReadonlyMap<stri
   for (const post of posts) {
     for (const raw of splitTags(post.tag_string || '')) {
       const tag = normalizeTagForPack(raw)
-      if (tag && !typed.has(tag) && !getTagSlotFromOverrides(tag, overrides)?.slot) out.add(tag)
+      if (!tag) continue
+      const slot = getTagSlotFromOverrides(tag, overrides)
+      if (!typed.has(tag) && !slot?.slot) out.add(tag)
+      // A garment named after something ("summer pockets school uniform"): ask about its prefix too.
+      if (!slot || slot.category === 'clothing') {
+        const prefix = garmentPrefix(tag, overrides)
+        if (prefix && !typed.has(prefix) && !getTagSlotFromOverrides(prefix, overrides)?.slot) out.add(prefix)
+      }
     }
   }
   return Array.from(out).sort()
@@ -209,6 +217,61 @@ export function sceneChips(input: SceneChipsInput): { chips: SceneChip[]; pinned
   input.added.forEach((tag) => add(tag, 'added', 'pinned'))
   input.extras.forEach((tag) => add(tag, 'base', 'scene'))
   return { chips, pinned: chips.filter((chip) => chip.state === 'pinned').map((chip) => chip.tag), never }
+}
+
+/** One character of a cast, as castChips reads them. */
+export interface CastChipsMember {
+  character: string
+  /** Their name and look (for a cast member, from their own solo posts only). */
+  candidates: readonly string[]
+}
+
+export interface CastChipsBlock {
+  character: string
+  chips: SceneChip[]
+  /** Chips this character lost (they never appear in their block). */
+  removed: string[]
+}
+
+/**
+ * Every character's chips, each block on its own: a character's choices, additions
+ * and removals never reach another's (`choices`, `added` and `removed` are per
+ * character; the first character's removals are the base's). `pinned` is the blocks'
+ * pinned tags in cast order (with the base's typed tags after the first block);
+ * `never` is what was removed and no block still has.
+ */
+export function castChips(input: {
+  members: readonly CastChipsMember[]
+  choices: (character: string) => ReadonlyMap<string, ChipState>
+  added: (character: string) => readonly string[]
+  removed: (character: string, index: number) => ReadonlySet<string>
+  baseExtras: readonly string[]
+  baseFixed: readonly string[]
+  permanence: (tag: string) => Permanence
+  overrides: Record<string, string>
+}): { blocks: CastChipsBlock[]; pinned: string[]; never: string[] } {
+  const blocks: CastChipsBlock[] = []
+  const pinned: string[] = []
+  const removedAll: string[] = []
+  input.members.forEach((member, index) => {
+    const removed = input.removed(member.character, index)
+    const result = sceneChips({
+      candidates: member.candidates,
+      added: input.added(member.character),
+      // The rest of a card or pasted prompt belongs to the base character.
+      extras: index === 0 ? input.baseExtras : [],
+      removed,
+      choices: input.choices(member.character),
+      permanence: input.permanence,
+      overrides: input.overrides,
+    })
+    blocks.push({ character: member.character, chips: result.chips, removed: result.never })
+    pinned.push(...result.pinned, ...(index === 0 ? input.baseFixed.filter((tag) => !removed.has(tag)) : []))
+    removedAll.push(...result.never)
+  })
+  // A tag one character lost still belongs to another who keeps it: it isn't banned from the prompt.
+  const kept = new Set(blocks.flatMap((block) => block.chips.map((chip) => chip.tag)))
+  return { blocks, pinned, never: Array.from(new Set(removedAll.filter((tag) => !kept.has(tag)))) }
 }
 
 /** Same composition. */
