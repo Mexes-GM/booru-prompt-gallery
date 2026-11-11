@@ -2052,138 +2052,145 @@ export interface ConflictResolution {
 
   function resolveAgainstBase(baseTags: string[], addedTags: string[], options: ConflictOptions): ConflictResolution {
     const validTags: string[] = [];
-    const conflictingTags: {tag: string, reason: string}[] = [];
-
-    const normalizedBase = new Set(baseTags.map(t => normalize(t)));
-    const normalizedAdded = addedTags.map(t => normalize(t));
-
-    const baseTagsArray = Array.from(normalizedBase);
-    const baseKeys = new Set(baseTagsArray.map(flattenHyphens));
-
-    // Global Context: Are there multiple characters? ("1boy, 1girl" counts.)
-    // People are counted over the base and the added tag: adding "1girl" to "1boy" makes a pair.
-    const isCrowd = (tags: string[]) => countCharacters(tags) >= 2 || tags.some(t =>
-      /^[2-9]+(girls|boys)$/.test(t) ||
-      t.includes("multiple ") ||
-      /\band\b/.test(t) || // e.g. "boy and girl"
-      t === "girls" ||
-      t === "boys" ||
-      t === "group"
-    );
-
-    // Global Context: Where is the camera? Only consulted when the post has no framing tag.
-    const hasFramingTag = baseTagsArray.some(t => FRAMING_TRIGGERS.has(flattenHyphens(t)));
-    const legsVisible = baseTagsArray.some(t =>
-      LOWER_BODY_PARTS.some(part => isRelatedTag(part, t)) ||
-      LEGS_VISIBLE_TAGS.some(word => hasWord(flattenHyphens(t), word))
-    );
-    const closeShotTag = !options.experimental || hasFramingTag || legsVisible
-      ? undefined
-      : baseTagsArray.find(t => CLOSE_SHOT_TAGS.has(flattenHyphens(t)));
-  
-    // Global Context: Are there explicit face indicators active?
-    const hasFaceIndicators = baseTagsArray.some(t => 
-      t.includes("eyes") || 
-      t.includes("smile") || 
-      t.includes("blush") || 
-      t.includes("mouth") || 
-      t.includes("tears") || 
-      t.includes("looking at viewer") ||
-      t.includes("face")
-    );
-
-    // Global Context: Is the outfit intentionally layered? (unblocks garment-vs-garment conflicts)
-    const hasLayering = baseTagsArray.some(t => LAYERING_TRIGGERS.has(t));
-  
-    for (let i = 0; i < normalizedAdded.length; i++) {
-      const originalAddedTag = addedTags[i];
-      const added = normalizedAdded[i];
-      let isBlocked = false;
-      let reason = "";
-  
-      // GOLDEN RULE: If tag already exists in base, it's not a conflict
-      // (The base prompt is the source of truth about what characteristics the character has)
-      if (normalizedBase.has(added)) {
-        validTags.push(originalAddedTag);
-        continue;
-      }
-
-      const hasMultipleCharacters = isCrowd([...baseTagsArray, added]);
-
-      // Measured first: what real posts (almost) never show together, for one person or several.
-      const measured = dataConflict(baseTagsArray, added, { people: hasMultipleCharacters ? 2 : 1, rating: options.rating }, hasLayering);
-      if (measured) {
-        conflictingTags.push({ tag: originalAddedTag, reason: `Conflicts with '${measured}'` });
-        continue;
-      }
-  
-      for (const [trigger, rule] of TAG_CONFLICT_ENTRIES) {
-        if (baseKeys.has(triggerKey(trigger))) {
-          const blocksAdded = rule.blocks.some(blocked => isRelatedTag(blocked, added));
-
-          if (blocksAdded) {
-            let unblocked = false;
-
-            // GLOBAL EXCEPTION 1: Multiple characters invalidate character-specific blocks
-            // e.g. 1girl might wear a dress, while 1boy wears a shirt.
-            // Framing is not character-specific: an upper-body shot crops everyone.
-            if (hasMultipleCharacters && !GLOBAL_ENVIRONMENT_TAGS.includes(trigger) && !FRAMING_TRIGGERS.has(triggerKey(trigger)) && !["1girl", "1boy", "solo"].includes(trigger)) {
-              unblocked = true;
-            }
-  
-          // GLOBAL EXCEPTION 2: Face indicators unblock facial anatomy against posture blocks
-          if (!unblocked && POSTURE_TRIGGERS.includes(trigger)) {
-            if (hasFaceIndicators && FACIAL_FEATURES.some(f => isRelatedTag(f, added))) {
-              unblocked = true;
-            }
-          }
-
-          // GLOBAL EXCEPTION 3: Intentional layering unblocks garment-vs-garment conflicts only.
-          // Both the trigger and the added tag must be layerable garments (tops/bottoms/legwear).
-          // Footwear, nudity, anatomy and scenery are never in LAYERABLE_TAGS, so those conflicts
-          // stay blocked (e.g. nude+shirt, high_heels+sneakers remain contradictions).
-          if (!unblocked && hasLayering) {
-            if (LAYERABLE_TAGS.has(normalize(trigger)) && LAYERABLE_TAGS.has(added)) {
-              unblocked = true;
-            }
-          }
-
-          // SPECIFIC EXCEPTIONS (Iterate rules)
-          if (!unblocked && rule.exceptions) {
-            for (const [exceptionTrigger, unblockedList] of Object.entries(rule.exceptions)) {
-              if (baseKeys.has(triggerKey(exceptionTrigger))) {
-                if (unblockedList.some(unblockedTag => isRelatedTag(unblockedTag, added))) {
-                  unblocked = true;
-                  break; // Found an exception, tag is safe
-                }
-              }
-            }
-          }
-
-          if (!unblocked) {
-            isBlocked = true;
-            reason = FRAMING_TRIGGERS.has(triggerKey(trigger))
-              ? `Out of frame in a '${normalize(trigger)}' shot`
-              : `Conflicts with '${trigger}'`;
-            break; // Already proven blocked, no need to check other triggers
-          }
-        }
-      }
+    const conflictingTags: { tag: string; reason: string }[] = [];
+    const checker = new ConflictChecker(baseTags, options);
+    for (const tag of addedTags) {
+      const reason = checker.check(tag);
+      if (reason) conflictingTags.push({ tag, reason });
+      else validTags.push(tag);
     }
-
-    // Experimental, no framing tag: lower-body tags stay out only when the post
-    // points to a close shot of the faces and nothing in it shows the legs.
-    if (!isBlocked && closeShotTag && LOWER_BODY_PARTS.some(part => isRelatedTag(part, added))) {
-      isBlocked = true;
-      reason = `Close shot ('${closeShotTag}'): legs aren't in frame`;
-    }
-
-    if (isBlocked) {
-      conflictingTags.push({ tag: originalAddedTag, reason });
-    } else {
-      validTags.push(originalAddedTag);
-    }
+    return { validTags, conflictingTags };
   }
 
-  return { validTags, conflictingTags };
-}
+  // Rules by trigger key, in file order (the first blocking rule names the reason).
+  const RULES_BY_KEY = new Map<string, { order: number; trigger: string; rule: TagConflictRule }[]>();
+  TAG_CONFLICT_ENTRIES.forEach(([trigger, rule], order) => {
+    const key = triggerKey(trigger);
+    const list = RULES_BY_KEY.get(key);
+    if (list) list.push({ order, trigger, rule });
+    else RULES_BY_KEY.set(key, [{ order, trigger, rule }]);
+  });
+
+  /** A tag that says there are several people ("2girls", "multiple boys", "boy and girl", "group"). */
+  const isCrowdTag = (t: string) =>
+    /^[2-9]+(girls|boys)$/.test(t) ||
+    t.includes("multiple ") ||
+    /\band\b/.test(t) || // e.g. "boy and girl"
+    t === "girls" ||
+    t === "boys" ||
+    t === "group";
+
+  const isFaceIndicator = (t: string) =>
+    t.includes("eyes") ||
+    t.includes("smile") ||
+    t.includes("blush") ||
+    t.includes("mouth") ||
+    t.includes("tears") ||
+    t.includes("looking at viewer") ||
+    t.includes("face");
+
+  /**
+   * Smart Tag Exclusion against a base that grows: what the base says about the
+   * picture (people, framing, legs in view, layering...) and which rules its tags
+   * trigger is kept up to date tag by tag, so checking a candidate costs the rules
+   * the base actually triggers, not a pass over every rule and every base tag.
+   * resolveTagConflicts checks added tags against a fixed base with it; Pack Mode
+   * adds each tag it keeps (`add`) and checks the next one against all of them.
+   */
+  export class ConflictChecker {
+    private readonly options: ConflictOptions;
+    private readonly base = new Set<string>();
+    private readonly keys = new Set<string>();
+    private readonly list: string[] = [];
+    private readonly active: { order: number; trigger: string; rule: TagConflictRule }[] = [];
+    private characters = 0;
+    private crowd = false;
+    private framing = false;
+    private legs = false;
+    private face = false;
+    private layering = false;
+    private closeShot: string | undefined;
+
+    constructor(baseTags: readonly string[] = [], options: ConflictOptions = {}) {
+      this.options = options;
+      baseTags.forEach((tag) => this.add(tag));
+    }
+
+    /** True when the base already has the tag. */
+    has(tag: string): boolean {
+      return this.base.has(normalize(tag));
+    }
+
+    /** Makes `tag` part of the base. */
+    add(raw: string): void {
+      const t = normalize(raw);
+      if (this.base.has(t)) return;
+      this.base.add(t);
+      this.list.push(t);
+      const key = flattenHyphens(t);
+      this.keys.add(key);
+      this.characters += countCharacters([t]);
+      if (isCrowdTag(t)) this.crowd = true;
+      if (FRAMING_TRIGGERS.has(key)) this.framing = true;
+      if (!this.legs && (LOWER_BODY_PARTS.some((part) => isRelatedTag(part, t)) || LEGS_VISIBLE_TAGS.some((word) => hasWord(key, word)))) this.legs = true;
+      if (isFaceIndicator(t)) this.face = true;
+      if (LAYERING_TRIGGERS.has(t)) this.layering = true;
+      if (!this.closeShot && CLOSE_SHOT_TAGS.has(key)) this.closeShot = t;
+      const rules = RULES_BY_KEY.get(key);
+      if (rules) {
+        this.active.push(...rules);
+        this.active.sort((a, b) => a.order - b.order);
+      }
+    }
+
+    /** Why `raw` can't join the base, or null when it can. */
+    check(raw: string): string | null {
+      const added = normalize(raw);
+      // GOLDEN RULE: a tag the base already has is never a conflict (the base is the source of truth).
+      if (this.base.has(added)) return null;
+
+      // People are counted over the base and the added tag: adding "1girl" to "1boy" makes a pair.
+      const hasMultipleCharacters = this.crowd || isCrowdTag(added) || this.characters + countCharacters([added]) >= 2;
+
+      // Measured first: what real posts (almost) never show together, for one person or several.
+      const measured = dataConflict(this.list, added, { people: hasMultipleCharacters ? 2 : 1, rating: this.options.rating }, this.layering);
+      if (measured) return `Conflicts with '${measured}'`;
+
+      for (const { trigger, rule } of this.active) {
+        if (!rule.blocks.some((blocked) => isRelatedTag(blocked, added))) continue;
+
+        // GLOBAL EXCEPTION 1: Multiple characters invalidate character-specific blocks
+        // e.g. 1girl might wear a dress, while 1boy wears a shirt.
+        // Framing is not character-specific: an upper-body shot crops everyone.
+        if (hasMultipleCharacters && !GLOBAL_ENVIRONMENT_TAGS.includes(trigger) && !FRAMING_TRIGGERS.has(triggerKey(trigger)) && !["1girl", "1boy", "solo"].includes(trigger)) continue;
+
+        // GLOBAL EXCEPTION 2: Face indicators unblock facial anatomy against posture blocks
+        if (POSTURE_TRIGGERS.includes(trigger) && this.face && FACIAL_FEATURES.some((f) => isRelatedTag(f, added))) continue;
+
+        // GLOBAL EXCEPTION 3: Intentional layering unblocks garment-vs-garment conflicts only.
+        // Both the trigger and the added tag must be layerable garments (tops/bottoms/legwear).
+        // Footwear, nudity, anatomy and scenery are never in LAYERABLE_TAGS, so those conflicts
+        // stay blocked (e.g. nude+shirt, high_heels+sneakers remain contradictions).
+        if (this.layering && LAYERABLE_TAGS.has(normalize(trigger)) && LAYERABLE_TAGS.has(added)) continue;
+
+        // SPECIFIC EXCEPTIONS
+        const excepted = Object.entries(rule.exceptions ?? {}).some(
+          ([exceptionTrigger, unblockedList]) =>
+            this.keys.has(triggerKey(exceptionTrigger)) && unblockedList.some((unblockedTag) => isRelatedTag(unblockedTag, added))
+        );
+        if (excepted) continue;
+
+        return FRAMING_TRIGGERS.has(triggerKey(trigger))
+          ? `Out of frame in a '${normalize(trigger)}' shot`
+          : `Conflicts with '${trigger}'`;
+      }
+
+      // Experimental, no framing tag: lower-body tags stay out only when the post
+      // points to a close shot of the faces and nothing in it shows the legs.
+      const closeShot = this.options.experimental && !this.framing && !this.legs ? this.closeShot : undefined;
+      if (closeShot && LOWER_BODY_PARTS.some((part) => isRelatedTag(part, added))) {
+        return `Close shot ('${closeShot}'): legs aren't in frame`;
+      }
+      return null;
+    }
+  }

@@ -130,6 +130,54 @@ export function excludes(relations: TagRelations, a: string, b: string, context:
   return ratio <= Math.round(maxRatio * 1000)
 }
 
+const partnersCache = new WeakMap<TagRelations, Map<number, number[]>>()
+
+/** Every tag index excluded with each tag, built once per loaded file. */
+function partnerIndex(relations: TagRelations): Map<number, number[]> {
+  let index = partnersCache.get(relations)
+  if (index) return index
+  index = new Map()
+  relations.excluded.forEach((_, key) => {
+    const lo = Math.floor(key / 65536)
+    const hi = key % 65536
+    for (const [a, b] of [[lo, hi], [hi, lo]]) {
+      const list = index!.get(a)
+      if (list) list.push(b)
+      else index!.set(a, [b])
+    }
+  })
+  partnersCache.set(relations, index)
+  return index
+}
+
+/**
+ * The tags chosen so far and everything they exclude in one context: checking a
+ * candidate is one lookup, however many tags are chosen (Pack Mode's sampling).
+ */
+export class ExclusionSet {
+  private readonly blocked = new Set<number>()
+  constructor(private readonly relations: TagRelations, private readonly context: RelationContext, private readonly maxRatio = ALL_EXCLUSIONS) {}
+
+  /** Adds a chosen tag: what it excludes is blocked from now on. */
+  add(tag: string): void {
+    const i = this.relations.index.get(relationKey(tag))
+    if (i === undefined) return
+    const bit = contextBit(this.relations, this.context)
+    const limit = Math.round(this.maxRatio * 1000)
+    const shift = this.context.people >= 2 ? 18 : 10
+    for (const j of partnerIndex(this.relations).get(i) ?? []) {
+      const entry = this.relations.excluded.get(pairKey(i, j)) ?? 0
+      if ((entry & bit) !== 0 && ((entry >>> shift) & 0xff) <= limit) this.blocked.add(j)
+    }
+  }
+
+  /** True when a chosen tag excludes `tag`. */
+  blocks(tag: string): boolean {
+    const i = this.relations.index.get(relationKey(tag))
+    return i !== undefined && this.blocked.has(i)
+  }
+}
+
 /** Tags that `tag` requires ("skirt lift" requires "skirt"). */
 export function requiredBy(relations: TagRelations, tag: string): string[] {
   const i = relations.index.get(relationKey(tag))

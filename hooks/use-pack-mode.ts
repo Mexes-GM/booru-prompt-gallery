@@ -13,6 +13,7 @@ import {
   extractAllAxisBundlesWithCounts,
   canonicalizeBundleTags,
   generatePackPrompts,
+  generatePackPromptsAsync,
   filterValuesBySlotState,
   groupValuesBySlot,
   maxValuesPerPrompt,
@@ -395,6 +396,9 @@ export interface UsePackModeResult {
  * settings as every other prompt in the app, instead of a parallel, simpler
  * path that skipped optimizeTags/exclude/find&replace/tagAppendRules.
  */
+/** Lets the browser paint and handle input before the next slice of work. */
+const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 export function usePackMode(
   tagOverrides: Record<string, string> = {},
   globalWeights: Record<string, number> = {},
@@ -599,6 +603,8 @@ export function usePackMode(
   // plain state, only (re)computed inside `regenerate()`, which the
   // "Generate" button calls explicitly.
   const [generatedPrompts, setGeneratedPrompts] = useState<PackPrompt[]>([])
+  // The running Classic generation: a newer Generate, or clearing the prompts, makes it stale.
+  const classicRequestRef = useRef(0)
   // Driven by the source's rating (PromptGallery owns the source), never persisted.
   const [contentRating, setContentRating] = useState<PackRatingMode | null>(null)
 
@@ -627,6 +633,7 @@ export function usePackMode(
     setCastRoles({})
     // Previously generated prompts belong to the old base — clear them so the
     // results list doesn't show stale prompts until the user hits Generate again.
+    classicRequestRef.current++
     setGeneratedPrompts([])
   }, [])
 
@@ -641,6 +648,7 @@ export function usePackMode(
     setAxisCounts({})
     setAxisAspects({})
     setExcludedBaseTags(new Set())
+    classicRequestRef.current++
     setGeneratedPrompts([])
     setCastExtras([])
     setCastRoles({})
@@ -1121,7 +1129,7 @@ export function usePackMode(
   const axisMaxPerPrompt = useMemo(() => {
     const out: Partial<Record<TagCategory, number>> = {}
     PACK_AXES.forEach((cat) => {
-      out[cat] = maxValuesPerPrompt(axisSlotGroups[cat] || [])
+      out[cat] = maxValuesPerPrompt(axisSlotGroups[cat] || [], cat)
     })
     return out
   }, [axisSlotGroups])
@@ -1581,6 +1589,7 @@ export function usePackMode(
     // base (card or pasted prompt), or (no base at all) the free-text
     // customBaseText merged into lockedTags. Only bail when there's neither.
     if (!hasBase && lockedTags.length === 0) {
+      classicRequestRef.current++
       setGeneratedPrompts([])
       return
     }
@@ -1626,9 +1635,9 @@ export function usePackMode(
     // "both", whose halves are interleaved. Dedup is shared across passes.
     const seen = new Set<string>()
     const dupFilter = new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, lockedTags)
-    const runPass = ({ rule, count }: RatingPass): PackPrompt[] => {
+    const generationArgs = ({ rule, count }: RatingPass) => {
       const overGenerateCount = Math.min(count * 3, MAX_PACK_OVERGENERATE)
-      const rawPrompts = generatePackPrompts({
+      return {
         lockedTags,
         axes,
         axisMinCounts: effectiveAxisMinCounts,
@@ -1642,7 +1651,9 @@ export function usePackMode(
         tagOverrides: effectiveOverrides,
         ...relationArgs,
         ...ratingRuleArgs(rule),
-      })
+      }
+    }
+    const cleanPass = ({ rule, count }: RatingPass, rawPrompts: PackPrompt[]): PackPrompt[] => {
       // Only re-check after cleaning (exclude list, optimizeTags can drop the
       // tag) when the generator could enforce it in the first place.
       const enforceRequired = rule === 'require' && rawPrompts.some((p) => promptHasExplicitTag(p.prompt))
@@ -1688,15 +1699,30 @@ export function usePackMode(
       }
       return cleaned
     }
-    const cleaned = interleave(ratingPasses(contentRating, promptCount).map(runPass)).map(annotatePrompt)
-    setGeneratedPrompts(cleaned)
+    // Generation runs in slices that let the page respond, within a work budget, so no
+    // setup can freeze the tab; a newer Generate replaces a running one.
+    const id = ++classicRequestRef.current
+    const cancelled = () => classicRequestRef.current !== id
+    void (async () => {
+      const passes = ratingPasses(contentRating, promptCount)
+      const outputs: PackPrompt[][] = []
+      for (const pass of passes) {
+        const raw = await generatePackPromptsAsync(generationArgs(pass), { pause: nextTask, cancelled })
+        if (raw === null || cancelled()) return
+        outputs.push(cleanPass(pass, raw))
+      }
+      const cleaned = interleave(outputs).map(annotatePrompt)
+      setGeneratedPrompts(cleaned)
+      recordShown(cleaned)
+    })().catch((err) => console.error('Pack generation failed:', err))
 
     // Record the "shown" half of the pick/show signal (§7.2) ONCE per
     // generation, for every distinct axis value that ended up in the final
     // (cleaned, deduped) list — not the raw pre-clean candidates, since those
     // can include values the cleaner later dropped (e.g. Smart Tag Exclusion,
     // exclude list) that the user never actually saw on screen.
-    if (cleaned.length > 0) {
+    function recordShown(cleaned: PackPrompt[]) {
+      if (cleaned.length === 0) return
       const shownValues = new Map<string, { category: TagCategory; value: string }>()
       cleaned.forEach((p) => {
         p.values.forEach((rawValue) => {
@@ -1832,6 +1858,7 @@ export function usePackMode(
     setMutedSlots(new Set())
     setVarietyLevelRaw(DEFAULT_VARIETY_LEVEL)
     setPromptCount(DEFAULT_PROMPT_COUNT)
+    classicRequestRef.current++
     setGeneratedPrompts([])
     setBaseFromCharacterFlag(false)
     setBaseLook('typical')
