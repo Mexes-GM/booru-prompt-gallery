@@ -16,7 +16,7 @@ import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import type { TagCategory } from '../../tag-taxonomy'
 import { GENDER_AFFINITY } from '../../prompt/natural/gender-affinity'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isKinshipTag, type Permanence } from './permanence'
-import { hasGarmentQualifier, isFranchiseGarment } from './franchise'
+import { hasGarmentQualifier, isFranchiseGarment, isQualifiedName } from './franchise'
 import { isEnvironmentTag } from '../background-coherence'
 
 /**
@@ -336,6 +336,8 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     const slot = info?.slot
     if (info?.category === 'other' && slot && NON_SCENE_OTHER.has(slot.slice('other:'.length))) continue
     if (!kind && !slot && ctx.looksLikeName?.(tag)) continue
+    // A general tag qualified by a work or a character is a name tied to it ("... (project moon)").
+    if (!slot && isQualifiedName(tag, ctx.tagKind)) continue
 
     const permanence = ctx.permanence(tag)
     if (permanence === 'identity') {

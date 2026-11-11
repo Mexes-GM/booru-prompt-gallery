@@ -18,7 +18,7 @@ import { normalizeRating, type Scene, type SceneRating, type TagKind } from './s
 import { isQualifiedVariant } from './character-identity'
 import type { PackPeople, ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
-import { garmentPrefix } from './scene/franchise'
+import { garmentPrefix, lastQualifier } from './scene/franchise'
 
 /** The pack's content rating (same values as the source dialog). */
 export type ScenePackRating = 'sfw' | 'questionable' | 'explicit' | 'both'
@@ -115,6 +115,9 @@ export function untypedTags(posts: readonly BooruPost[], typed: ReadonlyMap<stri
       if (!tag) continue
       const slot = getTagSlotFromOverrides(tag, overrides)
       if (!typed.has(tag) && !slot?.slot) out.add(tag)
+      // A name qualified by a work ("... (identity) (project moon)"): ask about the qualifier too.
+      const qualifier = !slot?.slot ? lastQualifier(tag) : null
+      if (qualifier && !typed.has(qualifier) && !getTagSlotFromOverrides(qualifier, overrides)?.slot) out.add(qualifier)
       // A garment named after something ("summer pockets school uniform"): ask about its prefix too.
       if (!slot || slot.category === 'clothing') {
         const prefix = garmentPrefix(tag, overrides)

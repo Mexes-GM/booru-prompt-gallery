@@ -85,6 +85,17 @@ assert(kinds.get("old tag") === "deprecated" && kinds.get("leaf print") === "gen
   assert(all.includes("domino mask"), "a character prefix doesn't make a garment a name ('domino mask' is a mask)")
 }
 
+// ── A general tag qualified by a work ──
+{
+  const named = SCENES.map((tags, i) => makePost(40 + i, `1girl solo ${tags} chara_${i} la_manchaland_(identity)_(project_moon) leaf_print`, { tag_string_character: `chara_${i}` }))
+  const asked = untypedTags(named, tagKindsFromPosts(named), OVERRIDES)
+  assert(asked.includes("project moon") && asked.includes("la manchaland (identity) (project moon)"), "its last qualifier is looked up in the same list: " + asked.join())
+  const kinds = gelbooruTagKinds(new Map<string, number | null>([["la manchaland (identity) (project moon)", 0], ["project moon", 3], ["leaf print", 0]]))
+  const all = buildScenePool(named, { ...ctx, tagKind: (tag) => kinds.get(tag) }).scenes.flatMap((scene) => Object.values(scene.units).flat())
+  assert(!all.includes("la manchaland (identity) (project moon)"), "general on Gelbooru, but qualified by a series: it stays out")
+  assert(all.includes("leaf print"), "an ordinary general tag still travels")
+}
+
 // ── PostgREST list ──
 const BS = String.fromCharCode(92)
 assert(

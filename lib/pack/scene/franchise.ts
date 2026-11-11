@@ -83,3 +83,21 @@ export function hasGarmentQualifier(tag: string): boolean {
   const parenthesised = PARENTHESISED.exec(tag)
   return !!parenthesised && GENERIC_QUALIFIERS.has(parenthesised[2])
 }
+
+/** The last parenthesised qualifier of a tag: "project moon" for "la manchaland (identity) (project moon)". */
+export function lastQualifier(tag: string): string | null {
+  const match = /\(([^()]+)\)\s*$/.exec(tag)
+  return match ? match[1].trim() : null
+}
+
+/**
+ * True for a tag whose last qualifier is a work or a character the booru knows
+ * ("la manchaland (identity) (project moon)"): a name tied to that work, not a
+ * thing a scene can carry elsewhere. `kindOf` is the booru's own tag list.
+ */
+export function isQualifiedName(tag: string, kindOf?: (tag: string) => TagKind | undefined): boolean {
+  const qualifier = lastQualifier(tag)
+  if (!qualifier || !kindOf) return false
+  const kind = kindOf(qualifier)
+  return kind === 'copyright' || kind === 'character'
+}
