@@ -239,6 +239,15 @@ function CharacterBlock({
       {showName && !block.role && (
         <p className="text-xs text-muted-foreground">Pick whether {name} is a girl or a boy, so the scenes have room for them.</p>
       )}
+      {showName && block.lookSource === "loading" && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+          <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" aria-hidden />
+          Finding {name}&apos;s look…
+        </p>
+      )}
+      {showName && block.lookSource === "profile" && (
+        <p className="text-xs text-muted-foreground">Few pictures show {name} alone, so this look comes from their usual tags. Check it before you generate.</p>
+      )}
       <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-x-3.5 pointer-coarse:gap-y-5">
         {mainChips.map((chip) => (
           <TraitChip key={chip.tag} chip={chip} onToggle={toggle} onRemove={remove} />

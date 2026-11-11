@@ -47,7 +47,9 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
-import { castAddition, castMemberLook, castMemberRole, roleFromProfile, roleFromSubject, type CastRole } from '@/lib/pack/scene/cast'
+import { castAddition, castMemberLook, castMemberRole, cleanProfileLook, roleFromProfile, roleFromSubject, type CastLookSource, type CastRole } from '@/lib/pack/scene/cast'
+import { ConflictChecker } from '@/lib/tag-conflicts'
+import { ALL_EXCLUSIONS, excludes, loadedTagRelations } from '@/lib/tag-relations'
 import { fetchPostsPage } from '@/lib/api-client'
 import { packRatingToFilters } from '@/hooks/use-pack-seed-search'
 import { varietyPreset, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
@@ -159,6 +161,11 @@ export interface SceneCastMember {
   /** Name, look and signature accessories, before the user's removals. */
   candidates: string[]
   role: CastRole | null
+  /**
+   * Where the look comes from: their own solo posts, still loading them, or (too few
+   * of them, or the request failed) their trait profile cleaned of other people's traits.
+   */
+  lookSource?: CastLookSource
 }
 
 export interface UsePackModeResult {
@@ -396,6 +403,16 @@ export interface UsePackModeResult {
  * settings as every other prompt in the app, instead of a parallel, simpler
  * path that skipped optimizeTags/exclude/find&replace/tagAppendRules.
  */
+/** Waits before asking a second time for a cast member's solo posts. */
+const SOLO_RETRY_MS = 4000
+
+const omit = <T,>(record: Record<string, T>, key: string): Record<string, T> => {
+  if (!(key in record)) return record
+  const next = { ...record }
+  delete next[key]
+  return next
+}
+
 /** A Variety preset's counts, except that a category the user switched Off (0) stays Off. */
 function keepOffCategories(
   current: Partial<Record<TagCategory, number>>,
@@ -443,6 +460,8 @@ export function usePackMode(
   const [baseLook, setBaseLook] = useState<CharacterLook>('typical')
   // Each character's typical look and subject tags ("1girl"), from the source's posts as they arrive.
   const [typicalLooks, setTypicalLooks] = useState<Record<string, { look: string[]; subject: string[] }>>({})
+  // Cast members whose solo posts are on their way ('loading') or gave no look ('none': too few, or the request failed).
+  const [soloLookStatus, setSoloLookStatus] = useState<Record<string, 'loading' | 'none'>>({})
   // Static trait profiles: a named character's look until enough of their posts arrive.
   const traitData = useSyncExternalStore(subscribeCharacterTraits, getCharacterTraits, getNoCharacterTraits)
   const learning = usePackLearning()
@@ -799,6 +818,21 @@ export function usePackMode(
    * which the user can also choose (baseLook). A pasted prompt keeps the look
    * it was given, and a multi-character card keeps its own path (focusAppearance).
    */
+  /**
+   * A cast member's profile look without what it borrows from the others: their traits
+   * go, and of traits one person can't have together only the most frequent stays.
+   */
+  const cleanCastProfile = useCallback(
+    (character: string, look: string[], others: string[][]) => {
+      const profile = traitData.profiles[character] ?? traitData.profiles[traitData.aliases[character] ?? ''] ?? {}
+      const weight = (tag: string) => profile[tag] ?? profile[tag.replace(/ /g, '_')] ?? 0
+      const relations = loadedTagRelations()
+      return cleanProfileLook(look, weight, others, (kept, tag) =>
+        new ConflictChecker(kept).check(tag) !== null ||
+        (!!relations && kept.some((k) => excludes(relations, k, tag, { people: 1 }, ALL_EXCLUSIONS))))
+    },
+    [traitData]
+  )
   const typical = focusCharacter && !hasMultipleCharacters ? typicalLooks[focusCharacter] : undefined
   const typicalLookAvailable = !!baseCard && !!typical?.look.length
   // The look leaves out who is in the picture ("1girl"): a card says it, a named character's posts do.
@@ -806,15 +840,18 @@ export function usePackMode(
     if (!focusCharacter) return null
     if (baseFromCharacter) {
       if (typical?.look.length) return typical
-      // In a cast the profile would lend them their partner's traits (it counts every
-      // post they are in): only the name until their own solo posts arrive.
-      const look = profileTags.length > 0 && castExtras.length === 0 ? profileIdentity(focusCharacter, traitData.profiles, effectiveOverrides, traitData.aliases) : []
-      return { look, subject: typical?.subject ?? [] }
+      const profileLook = profileTags.length > 0 ? profileIdentity(focusCharacter, traitData.profiles, effectiveOverrides, traitData.aliases) : []
+      // In a cast the profile would lend them their partner's traits (it counts every post
+      // they are in): only the name while their own solo posts load, then the cleaned profile.
+      if (castExtras.length === 0) return { look: profileLook, subject: typical?.subject ?? [] }
+      if (soloLookStatus[focusCharacter] !== 'none') return { look: [], subject: typical?.subject ?? [] }
+      const others = castExtras.map((c) => typicalLooks[c]?.look ?? [])
+      return { look: cleanCastProfile(focusCharacter, profileLook, others), subject: typical?.subject ?? [] }
     }
     if (!baseCard || baseLook !== 'typical' || !typical?.look.length) return null
     const subject = subjectTags(ownBaseClassified.appearance ?? [], new Set(characterTags), effectiveOverrides)
     return { look: typical.look, subject }
-  }, [focusCharacter, baseFromCharacter, baseCard, baseLook, typical, profileTags, castExtras, traitData, effectiveOverrides, ownBaseClassified, characterTags])
+  }, [focusCharacter, baseFromCharacter, baseCard, baseLook, typical, profileTags, castExtras, soloLookStatus, typicalLooks, cleanCastProfile, traitData, effectiveOverrides, ownBaseClassified, characterTags])
   // Signature accessories (headphones, glasses…) belong in Clothing, where they stay while it varies.
   const identityParts = useMemo(
     () => splitSignature(identity?.look ?? [], effectiveOverrides),
@@ -915,7 +952,8 @@ export function usePackMode(
       const key = `${booruProvider}|${ratingFilter}|${character}`
       if (typicalLooks[character]?.look.length || soloRequestedRef.current.has(key)) continue
       soloRequestedRef.current.add(key)
-      void fetchPostsPage({
+      setSoloLookStatus((prev) => ({ ...prev, [character]: 'loading' }))
+      const fetchOnce = () => fetchPostsPage({
         tags: characterSearchTags(character, booruProvider),
         ratingFilter,
         order: 'popular',
@@ -923,17 +961,22 @@ export function usePackMode(
         hasPrompt: false,
         scoreTier: 'off',
       })
+      // A failed request is tried once more after a pause (three characters' requests can
+      // meet the booru's rate limit); after that the cleaned profile stands in.
+      void fetchOnce()
+        .catch(() => new Promise<BooruPost[]>((resolve, reject) => setTimeout(() => fetchOnce().then(resolve, reject), SOLO_RETRY_MS)))
         .then(async (posts) => {
           await enrichOverrides(collectPostTags(posts))
           const overrides = currentOverrides()
           const look = typicalLook(posts, character, overrides)
-          if (!look?.length) return
-          const subject = typicalSubject(posts, character, overrides) ?? []
-          setTypicalLooks((prev) => ({ ...prev, [character]: { look, subject } }))
+          if (look?.length) {
+            const subject = typicalSubject(posts, character, overrides) ?? []
+            setTypicalLooks((prev) => ({ ...prev, [character]: { look, subject } }))
+          }
+          setSoloLookStatus((prev) => (look?.length ? omit(prev, character) : { ...prev, [character]: 'none' }))
         })
         .catch(() => {
-          // Their name alone carries them; a later visit can try again.
-          soloRequestedRef.current.delete(key)
+          setSoloLookStatus((prev) => ({ ...prev, [character]: 'none' }))
         })
     }
   }, [castExtras, baseFromCharacter, focusCharacter, typicalLooks, booruProvider, contentRating, enrichOverrides, currentOverrides])
@@ -946,22 +989,33 @@ export function usePackMode(
       (character && castRoles[character]) ||
       roleFromSubject(identity?.subject ?? sceneIdentityCandidates) ||
       (character ? roleFromProfile(profileOf(character)) : null)
+    const lookSourceOf = (character: string | null): CastLookSource =>
+      character && typicalLooks[character]?.look.length ? 'solo' : character && soloLookStatus[character] === 'none' ? 'profile' : 'loading'
     const primary: SceneCastMember = {
       character: focusCharacter ?? '',
       candidates: sceneIdentityCandidates,
       role: primaryRole(focusCharacter),
+      ...(castExtras.length > 0 && baseFromCharacter ? { lookSource: lookSourceOf(focusCharacter) } : {}),
     }
     if (!baseFromCharacter) return [primary]
     const others = castExtras.map((character): SceneCastMember => {
       const typicalOfThem = typicalLooks[character]
+      const lookSource = lookSourceOf(character)
+      const otherLooks = [focusCharacter, ...castExtras].filter((c): c is string => !!c && c !== character).map((c) => typicalLooks[c]?.look ?? [])
+      const look = lookSource === 'solo'
+        ? typicalOfThem?.look
+        : lookSource === 'profile'
+          ? cleanCastProfile(character, profileIdentity(character, traitData.profiles, effectiveOverrides, traitData.aliases), otherLooks)
+          : undefined
       return {
         character,
-        candidates: castMemberLook(character, typicalOfThem?.look),
+        candidates: castMemberLook(character, look),
         role: castMemberRole(castRoles[character], typicalOfThem?.subject, profileOf(character)),
+        lookSource,
       }
     })
     return [primary, ...others]
-  }, [focusCharacter, sceneIdentityCandidates, identity, castRoles, profileOf, baseFromCharacter, castExtras, typicalLooks])
+  }, [focusCharacter, sceneIdentityCandidates, identity, castRoles, profileOf, baseFromCharacter, castExtras, typicalLooks, soloLookStatus, cleanCastProfile, traitData, effectiveOverrides])
 
   const addCastMember = useCallback((raw: string): 'added' | 'duplicate' | 'full' | 'not-a-character-base' => {
     const character = normalizeTagForPack(raw)

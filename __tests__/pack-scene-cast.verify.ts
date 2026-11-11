@@ -17,7 +17,7 @@
  */
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence } from "../lib/pack/scene/permanence"
-import { castAddition, castDefaultSearch, castMemberLook, castMemberRole, castTheme, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
+import { castAddition, castDefaultSearch, castMemberLook, castMemberRole, castTheme, cleanProfileLook, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
 import { DEFAULT_SCENE_SETTINGS, applySceneOwnership, castChips, castComposition, generateScenePack, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { packNaturalSource } from "../lib/pack/pack-natural"
 import { profileIdentity, typicalLook } from "../lib/pack/character-identity"
@@ -104,6 +104,19 @@ assert(compositionQuery({ girls: 2, boys: 1 }, "danbooru", "beach", "sfw") === "
   assert(!two.pairing.includes("multiple girls"), "the open count isn't carried when a number says how many")
   const open = extractScene(makePost(31, "multiple_girls standing smile bedroom"), ctx)!
   assert(open.people === null, "multiple girls alone stays open")
+}
+
+// ── Too few solo posts: the profile, cleaned of what it borrows from the others ──
+{
+  // A man mostly drawn with his wife: her black hair, long hair and red eyes outweigh some of his own traits.
+  const profile: Record<string, number> = { "black hair": 0.69, "blonde hair": 0.64, "short hair": 0.55, "long hair": 0.5, "red eyes": 0.41, "green eyes": 0.3 }
+  const look = Object.keys(profile)
+  const groups = [["black hair", "blonde hair"], ["short hair", "long hair"], ["red eyes", "green eyes"]]
+  const conflicts = (kept: readonly string[], tag: string) => groups.some((g) => g.includes(tag) && kept.some((k) => k !== tag && g.includes(k)))
+  const alone = cleanProfileLook(look, (t) => profile[t], [], conflicts)
+  assert(alone.join() === "black hair,short hair,red eyes", "one of each exclusive group, the most frequent: " + alone.join())
+  const withWife = cleanProfileLook(look, (t) => profile[t], [["black hair", "long hair", "red eyes"]], conflicts)
+  assert(withWife.join() === "blonde hair,short hair,green eyes", "her traits go first, then the rest is one per group: " + withWife.join())
 }
 
 // ── A source the user wrote: only its theme joins the group search ──

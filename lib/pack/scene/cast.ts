@@ -207,3 +207,32 @@ export function castDefaultSearch(
 export function castMemberLook(character: string, soloLook: readonly string[] | null | undefined): string[] {
   return Array.from(new Set([character, ...(soloLook ?? [])]))
 }
+
+/** Where a cast member's look comes from. */
+export type CastLookSource = 'solo' | 'loading' | 'profile'
+
+/**
+ * A cast member's look when too few posts show them alone: their static trait
+ * profile, cleaned of what it borrows from the people they're drawn with. A trait
+ * another cast member's own look has goes (their partner's hair is theirs), and
+ * among traits one person (almost) never has together (two hair colours, two
+ * lengths, two eye colours) only the most frequent stays. `look` is the profile's
+ * look (profileIdentity); `weightOf` its share of posts; `conflicts` says whether
+ * one person can't have both.
+ */
+export function cleanProfileLook(
+  look: readonly string[],
+  weightOf: (tag: string) => number,
+  othersLooks: ReadonlyArray<readonly string[]>,
+  conflicts: (kept: readonly string[], tag: string) => boolean
+): string[] {
+  const others = new Set(othersLooks.flat())
+  const kept: string[] = []
+  const ranked = look
+    .map((tag, i) => ({ tag, i }))
+    .filter(({ tag }) => !others.has(tag))
+    .sort((a, b) => weightOf(b.tag) - weightOf(a.tag) || a.i - b.i)
+  for (const { tag } of ranked) if (!conflicts(kept, tag)) kept.push(tag)
+  // Back in the profile's own order.
+  return look.filter((tag) => kept.includes(tag))
+}

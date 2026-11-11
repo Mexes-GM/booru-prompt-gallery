@@ -5,7 +5,7 @@ import { normalizeTagForPack } from '@/lib/pack/pack-generator'
 import { cleanSyntheticPrompt, type BulkSendCleanOptions } from '@/lib/pack/bulk-send'
 import { createPermanence, isCompositionPattern, type PermanenceData } from '@/lib/pack/scene/permanence'
 import { buildScenePool, compositionOfIdentity, type PackPeople, type ScenePool } from '@/lib/pack/scene/scene-pool'
-import { castPeople, holdsCast, type CastRole } from '@/lib/pack/scene/cast'
+import { castPeople, holdsCast, type CastLookSource, type CastRole } from '@/lib/pack/scene/cast'
 import { fetchGelbooruTagCategories } from '@/lib/supabase/client-queries'
 import type { TagKind } from '@/lib/pack/scene/scene'
 import {
@@ -59,7 +59,7 @@ export interface UsePackScenesArgs {
    * The characters the pack names, the base character first (usePackMode's sceneCast).
    * Each has a name, a look and a role (null until something or someone says it).
    */
-  members: ReadonlyArray<{ character: string; candidates: string[]; role: CastRole | null }>
+  members: ReadonlyArray<{ character: string; candidates: string[]; role: CastRole | null; lookSource?: CastLookSource }>
   /** The rest of a card's or pasted prompt's look and clothing. */
   baseExtras: string[]
   /** A pasted prompt's typed tags outside every category: always kept. */
@@ -103,6 +103,8 @@ export interface SceneCharacterBlock {
   chips: SceneChip[]
   /** Chips the user removed (they never appear). */
   removed: string[]
+  /** In a cast: where the look comes from (see SceneCastMember). */
+  lookSource?: CastLookSource
 }
 
 export interface PackSceneComposition {
@@ -325,7 +327,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       permanence: permanence ?? (() => 'identity'),
       overrides,
     })
-    const out: SceneCharacterBlock[] = result.blocks.map((block, index) => ({ ...block, role: members[index].role }))
+    const out: SceneCharacterBlock[] = result.blocks.map((block, index) => ({ ...block, role: members[index].role, lookSource: members[index].lookSource }))
     return { blocks: out, pinned: result.pinned, never: result.never }
   }, [members, choices, added, baseExtras, baseFixed, removedTags, removedOwn, permanence, overrides])
   // Each block keeps its own tags, even ones another character also has: they are different people.
