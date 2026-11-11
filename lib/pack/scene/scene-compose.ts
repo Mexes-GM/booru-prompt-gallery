@@ -240,10 +240,20 @@ function shuffled<T>(items: T[], rng: () => number): T[] {
 // ── Composition ───────────────────────────────────────────────────────────────
 
 export function composePack(pool: ScenePool, options: ComposeOptions): { prompts: ScenePrompt[]; shortBy: number } {
+  const prompts = Array.from(composePackPrompts(pool, options))
+  return { prompts, shortBy: Math.max(0, options.count - prompts.length) }
+}
+
+/**
+ * The prompts of composePack one at a time, in the same order: a caller that
+ * stops early skips the work of the rest, and one that pauses between them keeps
+ * the page responsive.
+ */
+export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): Generator<ScenePrompt> {
   const overrides = options.overrides ?? {}
   const rng = createSeededRng(options.seed)
   const base = selectScenes(pool, options.count, { rng, disabledSituations: options.disabledSituations })
-  if (base.length === 0) return { prompts: [], shortBy: Math.max(0, options.count) }
+  if (base.length === 0) return
 
   const situationOf = new Map<number, string>()
   const members = new Map<string, Scene[]>()
@@ -351,21 +361,26 @@ export function composePack(pool: ScenePool, options: ComposeOptions): { prompts
     return { tags, locked: fixed, rating, aspect: scene.aspect, sources }
   }
 
-  const prompts: ScenePrompt[] = []
   const seen = new Set<string>()
-  const add = (prompt: ScenePrompt) => {
+  const fresh = (prompt: ScenePrompt) => {
     const key = prompt.tags.join('\u0000')
-    if (seen.has(key)) return
+    if (seen.has(key)) return false
     seen.add(key)
-    prompts.push(prompt)
+    return true
   }
   if (options.mix === 'faithful') {
-    base.forEach((scene) => add(composeOne(scene)))
-  } else {
-    // With fewer scenes than prompts, skeletons come back with different swaps.
-    for (let i = 0; prompts.length < options.count && i < options.count * ATTEMPTS_PER_PROMPT; i++) {
-      add(composeOne(base[i % base.length]))
+    for (const scene of base) {
+      const prompt = composeOne(scene)
+      if (fresh(prompt)) yield prompt
     }
+    return
   }
-  return { prompts, shortBy: Math.max(0, options.count - prompts.length) }
+  // With fewer scenes than prompts, skeletons come back with different swaps.
+  let made = 0
+  for (let i = 0; made < options.count && i < options.count * ATTEMPTS_PER_PROMPT; i++) {
+    const prompt = composeOne(base[i % base.length])
+    if (!fresh(prompt)) continue
+    made++
+    yield prompt
+  }
 }

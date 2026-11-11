@@ -12,7 +12,7 @@ import { splitTags } from '../utils/tag-utils'
 import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
-import { composePack, dropDanglingReferences, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { composePack, composePackPrompts, dropDanglingReferences, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
 import { normalizeRating, type Scene, type SceneRating, type TagKind } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
@@ -420,10 +420,13 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   }
 }
 
-/** Composed scenes for a pack of `count`: a few more than asked, so the duplicate filter has room. */
-function composeForPack(pool: ScenePool, args: ScenePackArgs, count: number): ScenePrompt[] {
+/**
+ * Composed scenes for a pack of `count`, one at a time: up to a few more than asked,
+ * so the duplicate filter has room. Only as many are composed as the pack takes.
+ */
+function composeForPack(pool: ScenePool, args: ScenePackArgs, count: number): Generator<ScenePrompt> {
   const overGenerate = Math.min(Math.max(count * 2, count + 4), MAX_PACK_OVERGENERATE)
-  return composePack(pool, composeOptions(args, overGenerate, args.seed, args.disabledSituations)).prompts
+  return composePackPrompts(pool, composeOptions(args, overGenerate, args.seed, args.disabledSituations))
 }
 
 /**
@@ -470,14 +473,16 @@ export async function generateScenePackAsync(
   const composed = composeForPack(pool, args, count)
   const prompts: PackPrompt[] = []
   let started = Date.now()
-  for (const item of composed) {
-    if (prompts.length >= count) break
+  // Composing a scene is the costly part, so the pause comes before pulling the next one.
+  while (prompts.length < count) {
     if (Date.now() - started >= slice) {
       await control.pause()
       if (control.cancelled()) return null
       started = Date.now()
     }
-    const prompt = finishOne(f, item)
+    const next = composed.next()
+    if (next.done) break
+    const prompt = finishOne(f, next.value)
     if (prompt) prompts.push(prompt)
   }
   return { prompts, shortBy: count - prompts.length }
