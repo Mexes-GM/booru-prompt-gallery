@@ -73,6 +73,8 @@ export interface SceneContext {
   permanence: (tag: string) => Permanence
   /** Gender of the character the scenes are transplanted onto. */
   subject: 'girl' | 'boy'
+  /** People the pack names, by gender (a cast of two or three); default: the subject alone. */
+  cast?: { girls: number; boys: number }
   /** Number of pool posts that carry the tag. Without it, no unclassified tag is filtered by support. */
   poolSupport?: (tag: string) => number
   /**
@@ -289,10 +291,15 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
   const hasFullOutfit = rest.some(
     (tag) => ctx.permanence(tag) === 'state' && getTagSlotFromOverrides(tag, ctx.overrides)?.slot === 'clothing:outfit'
   )
-  // Another person's traits are their identity, like the subject's: the pack's partner is anonymous.
-  // They stay only when the source is about them, and only for a partner of the other gender.
-  const sameGender = people ? (ctx.subject === 'girl' ? people.girls : people.boys) : 0
-  const hasPartner = !!people && people.girls >= 1 && people.boys >= 1 && sameGender < 2
+  // Another person's traits are their identity, like the subject's. They stay only for someone
+  // nobody in the pack plays (an anonymous partner), when the source is about them, and only when
+  // no named person shares that gender (else nobody can tell whose trait it is).
+  const named = ctx.cast ?? (ctx.subject === 'girl' ? { girls: 1, boys: 0 } : { girls: 0, boys: 1 })
+  const anonymousTraitsOf = (gender: 'girl' | 'boy') => {
+    if (!people) return false
+    const [present, cast] = gender === 'girl' ? [people.girls, named.girls] : [people.boys, named.boys]
+    return cast === 0 && present > 0
+  }
 
   const units = emptyUnits()
   const seen = new Set<string>()
@@ -316,7 +323,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     const permanence = ctx.permanence(tag)
     if (permanence === 'identity') {
       const gender = tagGender(tag, rating)
-      if (hasPartner && gender && gender !== ctx.subject && isTheme(tag)) put('body', tag)
+      if (gender && anonymousTraitsOf(gender) && isTheme(tag)) put('body', tag)
       continue
     }
     // Comparisons with someone else (the partner, the donor's canon) mean nothing once moved.

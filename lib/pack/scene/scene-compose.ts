@@ -367,7 +367,9 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     const dangling = danglingReferences([...fixed, ...unitTags(units)], overrides)
     if (dangling.size > 0) for (const unit of UNIT_ORDER) units[unit] = units[unit].filter((tag) => !dangling.has(tag))
 
-    const tags = Array.from(new Set([...fixed, ...unitTags(units)]))
+    // Each character's block stays whole, even where two blocks share a tag: they are different people.
+    const fixedSet = new Set(fixed)
+    const tags = [...fixed, ...Array.from(new Set(unitTags(units))).filter((tag) => !fixedSet.has(tag))]
     const rating = (['g', 's', 'q', 'e'] as const)[ratingLevel]
     return { tags, locked: fixed, rating, aspect: scene.aspect, sources }
   }

@@ -17,6 +17,7 @@ import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/per
 import { normalizeRating, type Scene, type SceneRating, type TagKind } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
 import type { PackPeople, ScenePool } from './scene/scene-pool'
+import { holdsCast } from './scene/cast'
 
 /** The pack's content rating (same values as the source dialog). */
 export type ScenePackRating = 'sfw' | 'questionable' | 'explicit' | 'both'
@@ -24,8 +25,11 @@ export type ScenePackRating = 'sfw' | 'questionable' | 'explicit' | 'both'
 /** What the user picks in the scenes panel; persisted with the builder config. */
 export interface ScenePackSettings {
   mix: 'faithful' | 'remix'
-  /** 'base': the base's own clothing in every prompt (offered only when the base has some). */
-  clothing: 'scene' | 'library' | 'base'
+  /**
+   * 'base': the base's own clothing in every prompt (offered only when the base has some).
+   * 'own': with two or more characters, each wears what is pinned in their block.
+   */
+  clothing: 'scene' | 'library' | 'base' | 'own'
   scenery: 'scene' | 'vary' | 'plain'
   extras: boolean
 }
@@ -216,6 +220,21 @@ export function defaultComposition(
   return fits?.people ?? compositions[0]?.people ?? null
 }
 
+/**
+ * The composition a cast's pack uses: the user's pick while the pool has it and it
+ * holds the cast, else the one that matches the cast exactly, else the most common
+ * one with room for everyone. Null when no composition of the pool holds the cast.
+ */
+export function castComposition(
+  compositions: ReadonlyArray<{ people: PackPeople }>,
+  cast: PackPeople,
+  picked?: PackPeople | null
+): PackPeople | null {
+  const fits = compositions.filter((c) => holdsCast(c.people, cast))
+  if (picked && fits.some((c) => samePeople(c.people, picked))) return picked
+  return fits.find((c) => samePeople(c.people, cast))?.people ?? fits[0]?.people ?? null
+}
+
 /** Scenes the enabled situations hold. */
 export function enabledSceneCount(pool: ScenePool, disabled: readonly string[]): number {
   const off = new Set(disabled)
@@ -248,11 +267,16 @@ export function applySceneOwnership(
   tags: readonly string[],
   fixed: readonly string[],
   never: readonly string[],
-  overrides: Record<string, string>
+  overrides: Record<string, string>,
+  /**
+   * Whether a fixed garment takes its body slot. Off for a cast of two or more: the
+   * scene's shirt may be the other character's, so only variants of the same thing go.
+   */
+  bodySlots = true
 ): string[] {
   const kept = new Set(fixed)
   const owned = fixed.map(normalizeTagForPack)
-  const takenSlots = new Set(fixed.flatMap((tag) => slotsTakenBy(normalizeTagForPack(tag), overrides)))
+  const takenSlots = new Set(bodySlots ? fixed.flatMap((tag) => slotsTakenBy(normalizeTagForPack(tag), overrides)) : [])
   const unwanted = never.map(normalizeTagForPack).filter(Boolean)
   return tags.filter((raw) => {
     if (kept.has(raw)) return true
@@ -355,6 +379,8 @@ export interface ScenePackArgs {
   never?: readonly string[]
   /** The base's clothing, for `settings.clothing === 'base'`. */
   baseClothing?: readonly string[]
+  /** Characters the pack names (1 by default). With two or more, pinned garments don't take body slots. */
+  castSize?: number
   subject: 'girl' | 'boy'
   settings: ScenePackSettings
   count: number
@@ -369,22 +395,27 @@ export interface ScenePackArgs {
   resolution?: (aspect: number) => { width: number; height: number } | null
 }
 
-/** The base's clothing is used: the option is on and there is some. */
-const wearsBaseClothing = (args: ScenePackArgs) => args.settings.clothing === 'base' && (args.baseClothing?.length ?? 0) > 0
+const isCast = (args: ScenePackArgs) => (args.castSize ?? 1) >= 2
+/** The base's clothing is used: the option is on, there is some, and the pack has one character. */
+const wearsBaseClothing = (args: ScenePackArgs) => !isCast(args) && args.settings.clothing === 'base' && (args.baseClothing?.length ?? 0) > 0
+/** Every character wears what is pinned in their block, and nothing of the scene's. */
+const wearsOwnOutfits = (args: ScenePackArgs) => isCast(args) && args.settings.clothing === 'own'
 
-/** The tags every prompt keeps, in order: the character, then the base's clothing when it is worn. */
+/** The tags every prompt keeps, in order: the character blocks, then the base's clothing when it is worn. */
 function fixedTags(args: ScenePackArgs): string[] {
-  return wearsBaseClothing(args) ? Array.from(new Set([...args.identity, ...args.baseClothing!])) : args.identity
+  if (!wearsBaseClothing(args)) return args.identity
+  const own = new Set(args.identity)
+  return [...args.identity, ...args.baseClothing!.filter((tag) => !own.has(tag))]
 }
 
 function composeOptions(args: ScenePackArgs, count: number, seed: number, disabled: readonly string[] | undefined): ComposeOptions {
   const { settings } = args
-  const library = settings.clothing === 'library' && args.library && args.library.length > 0
+  const library = !isCast(args) && settings.clothing === 'library' && args.library && args.library.length > 0
   return {
     identity: fixedTags(args),
     subject: args.subject,
     mix: settings.mix,
-    clothing: wearsBaseClothing(args) ? 'own' : library ? { library: args.library!.map((o) => o.tags) } : 'scene',
+    clothing: wearsBaseClothing(args) || wearsOwnOutfits(args) ? 'own' : library ? { library: args.library!.map((o) => o.tags) } : 'scene',
     scenery: settings.scenery,
     extras: settings.extras,
     count,
@@ -438,12 +469,13 @@ function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filte
  */
 function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const { args } = f
-  const owned = applySceneOwnership(composed.tags, composed.locked, args.never ?? [], args.overrides)
+  const owned = applySceneOwnership(composed.tags, composed.locked, args.never ?? [], args.overrides, !isCast(args))
   const cleaned = args.clean(owned, composed.locked)
   if (!cleaned) return null
   // One rule wherever the tags come from (character, base clothing, library, scene): a generic
   // tag next to a qualified form of the same thing gives way to it.
-  const tags = dropRedundantSceneTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), [])
+  // With a cast the blocks are different people: one's "long hair" is not redundant with another's "very long hair".
+  const tags = dropRedundantSceneTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), isCast(args) ? composed.locked : [])
   const kept = dropDanglingReferences(tags, composed.locked, args.overrides)
   const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(args.alwaysAdd, composed.locked, args.people))
   if (!prompt || f.seen.has(prompt) || !f.filter.tryAccept(prompt)) return null
