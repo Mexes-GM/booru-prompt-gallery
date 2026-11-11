@@ -209,23 +209,27 @@ export function applySceneOwnership(
   })
 }
 
-/** Comparable words of a tag: "off-shoulder sweater" and "off shoulder" share theirs. */
-const wordsOf = (tag: string): string[] => normalizeTagForPack(tag).replace(/-/g, ' ').split(/\s+/).filter(Boolean)
+/**
+ * True when `longer` says everything `shorter` does: a qualified form of it
+ * ("lace bra" and "bra"), or a garment it describes with a hyphenated adjective
+ * ("off-shoulder sweater" and "off shoulder"). "blush stickers" is not "blush".
+ */
+function implies(longer: string, shorter: string): boolean {
+  if (longer === shorter) return false
+  if (isQualifiedVariant(longer, shorter)) return true
+  const words = shorter.split(' ')
+  return words.length > 1 && longer.split(' ').includes(words.join('-'))
+}
 
 /**
  * A booru tags both "lace bra" and "bra", "off-shoulder sweater" and "off shoulder":
- * the shorter one says nothing the longer doesn't. Drops a tag whose words all sit,
- * in order, inside a longer tag of the prompt. Tags in `fixed` are never dropped.
+ * the shorter one says nothing the longer doesn't, so it goes. Tags in `fixed` are
+ * never dropped.
  */
 export function dropRedundantSceneTags(tags: readonly string[], fixed: readonly string[]): string[] {
   const kept = new Set(fixed)
-  const phrases = tags.map((tag) => ({ tag, text: ` ${wordsOf(tag).join(' ')} ` }))
-  return tags.filter((tag, i) => {
-    if (kept.has(tag)) return true
-    const own = phrases[i].text
-    if (own.trim() === '') return true
-    return !phrases.some((other, j) => j !== i && other.text.length > own.length && other.text.includes(own))
-  })
+  const spaced = tags.map(normalizeTagForPack)
+  return tags.filter((tag, i) => kept.has(tag) || !spaced.some((other, j) => j !== i && implies(other, spaced[i])))
 }
 
 /**

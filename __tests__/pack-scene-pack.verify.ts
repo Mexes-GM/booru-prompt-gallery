@@ -278,6 +278,7 @@ assert(dropRedundantSceneTags(["lace bra", "bra", "off-shoulder sweater", "off s
 assert(dropRedundantSceneTags(["simple background", "white background"], []).length === 2, "different backgrounds are not redundant")
 assert(dropRedundantSceneTags(["hairband", "white hairband"], ["hairband"]).length === 2, "fixed tags are never dropped")
 assert(dropRedundantSceneTags(["skirt", "miniskirt"], []).length === 2, "only whole words count")
+assert(dropRedundantSceneTags(["blush", "blush stickers", "pussy juice", "pussy juice puddle"], []).length === 4, "a tag that starts with another is a different thing")
 
 // ── Async generation ──
 void (async () => {
