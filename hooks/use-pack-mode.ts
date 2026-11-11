@@ -1599,13 +1599,17 @@ export function usePackMode(
     [minTotalTags, lockedTags.length, axisBudgets]
   )
 
-  const estimatedTagsPerPrompt = useMemo(() => {
+  const rawEstimatedTags = useMemo(() => {
     const raised: Partial<Record<TagCategory, AxisBudget>> = {}
     ;(Object.keys(axisBudgets) as TagCategory[]).forEach((cat) => {
       raised[cat] = { ...axisBudgets[cat]!, count: raisedAxisCounts[cat] ?? axisBudgets[cat]!.count }
     })
     return estimateTagsPerPrompt(lockedTags.length, raised)
   }, [axisBudgets, raisedAxisCounts, lockedTags.length])
+  // What the last pack actually had: the estimate can't see what conflicts, slots and the
+  // cleaner take out, so once a pack exists for these settings its own average is shown.
+  const [measuredTags, setMeasuredTags] = useState<{ estimate: number; mean: number } | null>(null)
+  const estimatedTagsPerPrompt = measuredTags && measuredTags.estimate === rawEstimatedTags ? measuredTags.mean : rawEstimatedTags
 
   // Shared arg-assembly for both regenerate() and rerollPrompt(): active
   // axes' candidate pools, their learned+frequency sampling weights, and the
@@ -1787,6 +1791,10 @@ export function usePackMode(
       }
       const cleaned = interleave(outputs).map(annotatePrompt)
       setGeneratedPrompts(cleaned)
+      if (cleaned.length > 0) {
+        const mean = Math.round(cleaned.reduce((sum, p) => sum + countPromptTags(p.prompt), 0) / cleaned.length)
+        setMeasuredTags({ estimate: rawEstimatedTags, mean })
+      }
       recordShown(cleaned)
     })().catch((err) => console.error('Pack generation failed:', err))
 
@@ -1815,7 +1823,7 @@ export function usePackMode(
       }
     }
   }, [
-    hasBase, relationArgs, coherentClassicPrompt,
+    hasBase, relationArgs, coherentClassicPrompt, rawEstimatedTags,
     needsCharacterChoice,
     lockedTags,
     activeAxisCategories,
