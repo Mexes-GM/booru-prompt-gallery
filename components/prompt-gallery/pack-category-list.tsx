@@ -61,7 +61,7 @@ const SLOT_STATE_META: Record<PackSlotState, { label: string; icon: typeof Lock 
  * Small neutral tag chip; `onRemove` adds an X. The X shows on hover or
  * keyboard focus with a mouse, and always on touch screens.
  */
-function TagChip({
+export function PackTagChip({
   text,
   tone = "default",
   onRemove,
@@ -375,7 +375,7 @@ const CategoryRow = memo(function CategoryRow({
               <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
                 <AnimatePresence initial={false} mode="popLayout">
                   {visibleBase.map((tag) => (
-                    <TagChip
+                    <PackTagChip
                       key={tag}
                       text={tag}
                       tone={keptTags.has(tag) ? "kept" : "faded"}
@@ -599,7 +599,7 @@ const CategoryRow = memo(function CategoryRow({
                         </motion.span>
                       ) : null,
                       ...group.values.map((value) => (
-                        <TagChip
+                        <PackTagChip
                           key={value}
                           text={value}
                           onRemove={() => onRemove(category, value)}

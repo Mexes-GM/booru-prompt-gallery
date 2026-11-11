@@ -41,6 +41,9 @@ import { TagAutocompleteTextarea } from './tag-autocomplete-textarea'
 import { PackBuilderTour, findPackTourTargets, PACK_SOURCE_HINT_STORAGE_KEY, PACK_TOUR_OPEN_PARTS_EVENT, PACK_TOUR_STORAGE_KEY } from './pack-builder-tour'
 import type { VarietyLevel, VarietySetting } from '@/lib/pack/variety-presets'
 import type { CharacterLook } from '@/lib/pack/character-identity'
+import type { ScenePackSettings } from '@/lib/pack/scene-pack'
+import type { UsePackScenesResult } from '@/hooks/use-pack-scenes'
+import { PackScenesPanel } from './pack-scenes-panel'
 
 export interface PackBuilderStickyFooterProps {
     isOpen: boolean
@@ -132,8 +135,23 @@ export interface PackBuilderStickyFooterProps {
     onCopyPrompt: (prompt: PackPrompt, text: string, format: PromptFormat) => Promise<boolean>
     onCopyAll: (text: string, format: PromptFormat) => Promise<boolean>
     onResetLearning?: () => void
+    /** How prompts are built: whole scenes of real posts, or the classic per-category mixer. */
+    engine?: 'scenes' | 'classic'
+    onSetEngine?: (engine: 'scenes' | 'classic') => void
+    /** Scenes engine state (usePackScenes); its prompts arrive through `prompts`. */
+    scenes?: UsePackScenesResult
+    sceneSettings?: ScenePackSettings
+    onSceneSettingsChange?: (settings: ScenePackSettings) => void
+    /** Identity chips of the scenes engine (usePackMode's sceneIdentityCandidates). */
+    sceneIdentityCandidates?: string[]
     children?: React.ReactNode
 }
+
+const ENGINE_OPTIONS = [
+    { value: 'scenes', label: 'Scenes', hint: "Each prompt reuses a real post's scene with your character in it." },
+    { value: 'classic', label: 'Classic', hint: 'Mixes tags category by category, with a control for each one.' },
+] as const
+const NO_TAGS: string[] = []
 
 /** Bare lowercase tag text of one prompt token (weights/brackets stripped). */
 function bareTag(token: string): string {
@@ -168,6 +186,7 @@ const PromptRow = memo(({
     format,
     fullDetail,
     tagOverrides,
+    sceneMode = false,
 }: {
     prompt: PackPrompt
     index: number
@@ -181,6 +200,8 @@ const PromptRow = memo(({
     format: PromptFormat
     fullDetail: boolean
     tagOverrides: Record<string, string>
+    /** Scenes engine: everything but the identity is the scene, shown at normal weight. */
+    sceneMode?: boolean
 }) => {
     const tokens = useMemo(() => prompt.prompt.split(',').map((t) => t.trim()).filter(Boolean), [prompt.prompt])
     const [isCopied, triggerCopyFeedback] = useCopyFeedback()
@@ -214,12 +235,24 @@ const PromptRow = memo(({
                 {showResolution && prompt.width && prompt.height && (
                     <span
                         className="text-xs text-mode-pack-text tabular-nums whitespace-nowrap"
-                        title="Suggested size, from the posts this prompt's pose came from"
+                        title={prompt.scene ? "Suggested size, from the post this prompt's scene came from" : "Suggested size, from the posts this prompt's pose came from"}
                     >
                         {prompt.width}×{prompt.height}
                     </span>
                 )}
             </div>
+            {prompt.scene?.preview && (
+                <div className="relative w-10 h-14 flex-shrink-0 rounded-md overflow-hidden bg-muted border" title={`Scene from post #${prompt.scene.postId}`}>
+                    <Image
+                        src={getPostThumbnailUrl(prompt.scene.preview)}
+                        alt={`Scene from post ${prompt.scene.postId}`}
+                        fill
+                        sizes="40px"
+                        className="object-cover"
+                        unoptimized
+                    />
+                </div>
+            )}
             {naturalText ? (
                 <p className="flex-1 min-w-0 text-xs lg:text-[13px] leading-relaxed text-foreground break-words select-all">
                     {naturalText}
@@ -232,7 +265,9 @@ const PromptRow = memo(({
                         ? 'text-muted-foreground'
                         : variedSet.has(bare)
                             ? 'text-foreground font-semibold'
-                            : 'text-faint-foreground'
+                            : sceneMode
+                                ? 'text-foreground'
+                                : 'text-faint-foreground'
                     return (
                         <span key={`${i}-${token}`}>
                             <span className={tone}>{token}</span>
@@ -288,6 +323,7 @@ const PackResultsList = memo(({
     variedSet,
     isCollecting,
     minTotalTags,
+    sceneMode = false,
 }: {
     prompts: PackPrompt[]
     naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
@@ -299,6 +335,7 @@ const PackResultsList = memo(({
     variedSet: ReadonlySet<string>
     isCollecting: boolean
     minTotalTags: number
+    sceneMode?: boolean
 }) => {
     const { format, fullDetail } = usePromptFormat()
     const shortCount = minTotalTags > 0
@@ -363,7 +400,7 @@ const PackResultsList = memo(({
                             <span className="text-xs font-semibold bg-muted text-foreground px-2 py-0.5 rounded-full tabular-nums">
                                 {prompts.length}
                             </span>
-                            {format === 'tags' && (
+                            {format === 'tags' && !sceneMode && (
                                 <span className="text-xs text-muted-foreground">
                                     <span className="font-semibold text-foreground">bold</span> = varied
                                 </span>
@@ -403,7 +440,9 @@ const PackResultsList = memo(({
                                     <span className="flex flex-col gap-0.5">
                                         <span>Add size as [WIDTHxHEIGHT]</span>
                                         <span className="text-xs text-muted-foreground">
-                                            For the extension&apos;s Import List. Taken from the posts each prompt&apos;s pose came from.
+                                            {sceneMode
+                                                ? "For the extension's Import List. Taken from the post each prompt's scene came from."
+                                                : "For the extension's Import List. Taken from the posts each prompt's pose came from."}
                                         </span>
                                     </span>
                                 </DropdownMenuCheckboxItem>
@@ -427,14 +466,16 @@ const PackResultsList = memo(({
                         <>
                             <Loader2 className="w-6 h-6 text-faint-foreground animate-spin" />
                             <p className="text-xs text-muted-foreground max-w-xs">
-                                Collecting posts to sample from. You can set up the categories meanwhile, or generate now with what&apos;s already in.
+                                {sceneMode
+                                    ? "Collecting posts to take scenes from. You can generate now with what's already in."
+                                    : "Collecting posts to sample from. You can set up the categories meanwhile, or generate now with what's already in."}
                             </p>
                         </>
                     ) : (
                         <>
                             <Shuffle className="w-6 h-6 text-muted-foreground/40" />
                             <p className="text-xs text-muted-foreground max-w-xs">
-                                Choose what to keep and what to vary, then press <span className="font-semibold text-foreground">Generate</span>.
+                                {sceneMode ? 'Choose who is in the picture and which situations to use' : 'Choose what to keep and what to vary'}, then press <span className="font-semibold text-foreground">Generate</span>.
                             </p>
                         </>
                     )}
@@ -458,6 +499,7 @@ const PackResultsList = memo(({
                                 format={format}
                                 fullDetail={fullDetail}
                                 tagOverrides={tagOverrides}
+                                sceneMode={sceneMode}
                             />
                         ))}
                     </AnimatePresence>
@@ -477,6 +519,7 @@ function CollectionStatus({
     loadedPostCount,
     savedPostCount,
     poolSize,
+    poolUnit = 'tags',
     showSourceHint,
     onDismissSourceHint,
 }: {
@@ -490,6 +533,8 @@ function CollectionStatus({
     loadedPostCount: number
     savedPostCount: number
     poolSize: number
+    /** What poolSize counts: varied tags (classic) or usable scenes. */
+    poolUnit?: 'tags' | 'scenes'
 }) {
     const noPosts = !isCollecting && loadedPostCount === 0
     return (
@@ -511,7 +556,7 @@ function CollectionStatus({
                             <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                         </button>
                     </TooltipTrigger>
-                    <TooltipContent>Where the varied tags are sampled from. Select to change it.</TooltipContent>
+                    <TooltipContent>{poolUnit === 'scenes' ? 'Where the scenes come from. Select to change it.' : 'Where the varied tags are sampled from. Select to change it.'}</TooltipContent>
                 </Tooltip>
                 {showSourceHint && (
                     <div
@@ -551,7 +596,7 @@ function CollectionStatus({
                     <>
                         <span className="w-2 h-2 rounded-full bg-success flex-shrink-0" aria-hidden />
                         <span className="font-medium text-foreground">{loadedPostCount} posts</span>
-                        <span className="hidden sm:inline text-muted-foreground">· {poolSize} tags</span>
+                        <span className="hidden sm:inline text-muted-foreground">· {poolSize} {poolUnit}</span>
                     </>
                 )}
             </div>
@@ -629,8 +674,16 @@ const PackBuilderStickyFooterComponent = ({
     onCopyPrompt,
     onCopyAll,
     onResetLearning,
+    engine = 'classic',
+    onSetEngine,
+    scenes,
+    sceneSettings,
+    onSceneSettingsChange,
+    sceneIdentityCandidates = NO_TAGS,
     children,
 }: PackBuilderStickyFooterProps) => {
+    // The scenes panel replaces the category list once its state is wired in.
+    const sceneMode = engine === 'scenes' && !!scenes && !!sceneSettings && !!onSceneSettingsChange
 
     const lowMotion = useLowMotion()
 
@@ -664,8 +717,10 @@ const PackBuilderStickyFooterComponent = ({
         const ok = onRerollPrompt(index)
         if (!ok) {
             toast({
-                title: "No new variations",
-                description: "Collect more posts or raise Variety to get a fresh option here.",
+                title: sceneMode ? "No other scenes left" : "No new variations",
+                description: sceneMode
+                    ? "Turn on more situations or collect more posts to get a fresh scene here."
+                    : "Collect more posts or raise Variety to get a fresh option here.",
                 action: (
                     <ToastAction altText="Collect more posts" onClick={onLoadMorePosts}>
                         Collect more
@@ -673,7 +728,7 @@ const PackBuilderStickyFooterComponent = ({
                 ),
             })
         }
-    }, [onRerollPrompt, onLoadMorePosts])
+    }, [onRerollPrompt, onLoadMorePosts, sceneMode])
 
     // Live display value while dragging the "Prompts" count slider, decoupled
     // from the committed promptCount prop — onValueChange fires every
@@ -717,7 +772,11 @@ const PackBuilderStickyFooterComponent = ({
     const isCollecting = isSeeding || (loadedPostCount === 0 && canLoadMorePosts)
     const progress = seedProgress ? Math.min(1, seedProgress.current / Math.max(1, seedProgress.target)) : null
     const nothingVaries = PACK_AXES.every((cat) => categoryStates[cat] !== 'vary')
-    const generateBlocked = nothingVaries || needsCharacterChoice
+    const noScenes = sceneMode && !!scenes?.pool && scenes.pool.scenes.length === 0
+    const allSituationsOff = sceneMode && !!scenes?.pool && scenes.pool.scenes.length > 0 && scenes.enabledScenes === 0
+    const generateBlocked = sceneMode
+        ? needsCharacterChoice || !scenes?.pool || noScenes || allSituationsOff
+        : nothingVaries || needsCharacterChoice
     const poolsTooSmall = minTotalTags > 0 && estimatedTagsPerPrompt < minTotalTags
 
     // Guided tour (pack-builder-tour.tsx): auto-starts the first time the builder
@@ -845,7 +904,8 @@ const PackBuilderStickyFooterComponent = ({
                                 seedProgress={seedProgress}
                                 loadedPostCount={loadedPostCount}
                                 savedPostCount={savedPostCount}
-                                poolSize={poolSize}
+                                poolSize={sceneMode ? scenes?.pool?.scenes.length ?? 0 : poolSize}
+                                poolUnit={sceneMode ? 'scenes' : 'tags'}
                             />
                         </div>
 
@@ -860,7 +920,7 @@ const PackBuilderStickyFooterComponent = ({
                                     <RefreshCw className="w-4 h-4 text-muted-foreground" />
                                     Collect more posts
                                 </DropdownMenuItem>
-                                {onSetAllAxisTagModes && (
+                                {onSetAllAxisTagModes && !sceneMode && (
                                     <>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">All pools</DropdownMenuLabel>
@@ -1105,6 +1165,52 @@ const PackBuilderStickyFooterComponent = ({
                                         </div>
                                     </section>
 
+                                    {onSetEngine && (
+                                        <section className="rounded-xl border border-border/70 bg-card/70 px-3 py-2.5 sm:px-4 space-y-1" aria-label="Method">
+                                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                                                <span id="pack-engine-label" className="text-sm font-semibold">Method</span>
+                                                <div className="inline-flex rounded-lg border border-border/60 bg-muted/40 p-0.5" role="radiogroup" aria-labelledby="pack-engine-label">
+                                                    {ENGINE_OPTIONS.map((opt) => {
+                                                        const active = engine === opt.value
+                                                        return (
+                                                            <button
+                                                                key={opt.value}
+                                                                type="button"
+                                                                role="radio"
+                                                                aria-checked={active}
+                                                                onClick={() => onSetEngine(opt.value)}
+                                                                className={`h-8 pointer-coarse:h-11 px-3 text-xs font-medium rounded-md transition-colors ${active ? 'bg-mode-pack text-mode-pack-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
+                                                            >
+                                                                {opt.label}
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                {ENGINE_OPTIONS.find((opt) => opt.value === engine)?.hint}
+                                            </p>
+                                        </section>
+                                    )}
+
+                                    {sceneMode && scenes && sceneSettings && onSceneSettingsChange ? (
+                                        <PackScenesPanel
+                                            scenes={scenes}
+                                            settings={sceneSettings}
+                                            onSettingsChange={onSceneSettingsChange}
+                                            identityCandidates={sceneIdentityCandidates}
+                                            excludedBaseTags={excludedBaseTags}
+                                            onToggleExcludedBaseTag={onToggleExcludedBaseTag}
+                                            onRestoreExcludedBaseTags={onRestoreExcludedBaseTags}
+                                            hasMultipleCharacters={hasMultipleCharacters}
+                                            isCollecting={isCollecting}
+                                            loadedPostCount={loadedPostCount}
+                                            promptCount={promptCount}
+                                            canLoadMorePosts={canLoadMorePosts && !isCollecting}
+                                            onLoadMorePosts={onLoadMorePosts}
+                                            onOpenSource={handleOpenSource}
+                                        />
+                                    ) : (
                                     <PackCategoryList
                                         categories={PACK_AXES}
                                         categoryStates={categoryStates}
@@ -1137,6 +1243,7 @@ const PackBuilderStickyFooterComponent = ({
                                         onSetMinSetTags={onSetMinSetTags}
                                         hiddenThinSets={hiddenThinSets}
                                     />
+                                    )}
 
                                     {children}
                                 </div>
@@ -1159,7 +1266,8 @@ const PackBuilderStickyFooterComponent = ({
                                         lockedSet={lockedSet}
                                         variedSet={variedSet}
                                         isCollecting={isCollecting}
-                                        minTotalTags={minTotalTags}
+                                        minTotalTags={sceneMode ? 0 : minTotalTags}
+                                        sceneMode={sceneMode}
                                     />
                                 </div>
                             </div>
@@ -1186,6 +1294,7 @@ const PackBuilderStickyFooterComponent = ({
                                 </div>
 
                                 <div className="flex items-center gap-2 flex-wrap">
+                                    {!sceneMode && (<>
                                     <PackVarietySelect value={varietyLevel} onChange={onVarietyLevelChange} />
                                     <Popover>
                                         <PopoverTrigger asChild>
@@ -1220,6 +1329,7 @@ const PackBuilderStickyFooterComponent = ({
                                     <span className="hidden lg:inline ml-auto text-xs text-muted-foreground tabular-nums">
                                         ≈ {estimatedTagsPerPrompt} tags each
                                     </span>
+                                    </>)}
                                     <Button
                                         type="button"
                                         size="lg"
@@ -1232,9 +1342,17 @@ const PackBuilderStickyFooterComponent = ({
                                             ? 'Generated'
                                             : needsCharacterChoice
                                                 ? 'Pick a character first'
-                                                : nothingVaries
-                                                    ? 'Set a category to Vary'
-                                                    : `Generate ${livePromptCount} prompts`}
+                                                : sceneMode
+                                                    ? !scenes?.pool
+                                                        ? 'Finding scenes…'
+                                                        : noScenes
+                                                            ? 'No scenes to use yet'
+                                                            : allSituationsOff
+                                                                ? 'Turn on a situation'
+                                                                : `Generate ${livePromptCount} prompts`
+                                                    : nothingVaries
+                                                        ? 'Set a category to Vary'
+                                                        : `Generate ${livePromptCount} prompts`}
                                     </Button>
                                 </div>
                             </div>

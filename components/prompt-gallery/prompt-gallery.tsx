@@ -155,6 +155,7 @@ import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
 import { searchedCharacterIn, searchedCharacterOf } from "@/lib/pack/character-focus"
 import { characterSearchTags } from "@/lib/pack/character-identity"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
+import { usePackScenes } from "@/hooks/use-pack-scenes"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
 import type { PackSourceAnswers } from "./pack-source-modal"
 // Pack Mode's dialogs and builder load when Pack is first picked (or hovered).
@@ -842,6 +843,34 @@ export function PromptGallery() {
   const packSourceKeyRef = useRef(packSourceKey)
   useEffect(() => { packSourceKeyRef.current = packSourceKey }, [packSourceKey])
 
+  // Scenes engine (the default): its own pool, picks and prompts, fed by the same posts and settings.
+  const packBaseCard = packMode.baseCard
+  const packSceneNatural = useMemo(() => ({
+    provider: packBaseCard?._provider || search.booruProvider,
+    character: packMode.focusCharacter,
+    copyrights: packBaseCard?.tag_string_copyright || undefined,
+    baseRating: packBaseCard?.rating,
+  }), [packBaseCard, search.booruProvider, packMode.focusCharacter])
+  const packScenes = usePackScenes({
+    enabled: packModeIsPackMode && packMode.hasBase && packMode.engine === 'scenes',
+    posts: packMode.poolPosts,
+    overrides: packMode.effectiveTagOverrides,
+    identityTags: packMode.sceneIdentityTags,
+    alwaysAdd: packMode.alwaysAddTags,
+    characterTags: packMode.focusedCharacterTags,
+    contentRating: packMode.contentRating,
+    settings: packMode.sceneSettings,
+    promptCount: packMode.promptCount,
+    cleanOptions: packCleanOptions,
+    globalWeights,
+    isGlobalWeightsEnabled,
+    outfitOptions: packOutfitOptions,
+    natural: packSceneNatural,
+    baseKey: packBaseCard ? `card:${packBaseCard.id}` : `prompt:${packMode.basePrompt}`,
+    sourceKey: packSourceKey,
+  })
+  const packUsesScenes = packMode.engine === 'scenes'
+
   // Latest usePackSeedSearch result (freshly fetched posts), reported up by
   // <PackSeedFetcher>, plus the posts saved for this source in earlier
   // sessions. Pools are always sampled from both, merged. A small state
@@ -1131,9 +1160,12 @@ export function PromptGallery() {
   }, [packModeRemoveAxisValue, search.booruProvider, packMode.varietyLevel])
 
   const packModeRegenerate = packMode.regenerate
+  const packScenesGenerate = packScenes.generate
   const handlePackRegenerate = useCallback(() => {
-    packModeRegenerate()
+    if (packUsesScenes) packScenesGenerate()
+    else packModeRegenerate()
     track('pack_generated', {
+      engine: packUsesScenes ? 'scenes' : 'classic',
       booru_source: search.booruProvider,
       variety_level: packMode.varietyLevel,
       locked_categories: Array.from(packMode.lockedCategories).join(','),
@@ -1141,7 +1173,7 @@ export function PromptGallery() {
       locked_category_count: packMode.lockedCategories.size,
       active_axis_count: packMode.activeAxisCategories.length,
     })
-  }, [packModeRegenerate, search.booruProvider, packMode.varietyLevel, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
+  }, [packUsesScenes, packScenesGenerate, packModeRegenerate, search.booruProvider, packMode.varietyLevel, packMode.promptCount, packMode.lockedCategories, packMode.activeAxisCategories])
 
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
@@ -2377,7 +2409,7 @@ export function PromptGallery() {
         axisMaxPerPrompt={packMode.axisMaxPerPrompt}
         tagOverrides={packMode.effectiveTagOverrides}
         baseClassified={packMode.baseClassified}
-        lockedTags={packMode.lockedTags}
+        lockedTags={packUsesScenes ? packScenes.identity.kept : packMode.lockedTags}
         axisValues={packMode.axisValues}
         onAddAxisValue={packMode.addAxisValue}
         onRemoveAxisValue={handlePackRemoveAxisValue}
@@ -2411,7 +2443,7 @@ export function PromptGallery() {
         promptCount={packMode.promptCount}
         setPromptCount={packMode.setPromptCount}
         onRegenerate={handlePackRegenerate}
-        onRerollPrompt={packMode.rerollPrompt}
+        onRerollPrompt={packUsesScenes ? packScenes.reroll : packMode.rerollPrompt}
         onClearBase={() => {
           // A character base came from the entry dialog, not from a card: offer it again.
           const fromCharacter = packMode.baseFromCharacter
@@ -2437,8 +2469,8 @@ export function PromptGallery() {
         }}
         savedPostCount={packSeedSnapshot?.savedCount ?? 0}
         onClearSavedPosts={handleClearSavedPackPosts}
-        prompts={packMode.generatedPrompts}
-        naturalSourceOf={packMode.naturalSourceOf}
+        prompts={packUsesScenes ? packScenes.prompts : packMode.generatedPrompts}
+        naturalSourceOf={packUsesScenes ? packScenes.naturalSourceOf : packMode.naturalSourceOf}
         onCopyPrompt={async (prompt, text, format) => {
           const copied = await copyToClipboard(text, 0, true, undefined, format)
           if (copied) packMode.recordPromptCopied(prompt)
@@ -2446,6 +2478,12 @@ export function PromptGallery() {
         }}
         onCopyAll={(text, format) => copyToClipboard(text, 0, true, undefined, format)}
         onResetLearning={packMode.resetLearning}
+        engine={packMode.engine}
+        onSetEngine={packMode.setEngine}
+        scenes={packScenes}
+        sceneSettings={packMode.sceneSettings}
+        onSceneSettingsChange={packMode.setSceneSettings}
+        sceneIdentityCandidates={packMode.sceneIdentityCandidates}
       />}
 
       <GalleryModals
