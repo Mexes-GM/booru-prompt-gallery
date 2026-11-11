@@ -6,8 +6,11 @@
  *      go to their unit.
  *   2. People counts become `people`; "solo focus" goes to `pairing`, not to camera.
  *   3. A signature accessory travels only with a complete costume.
- *   4. A partner of the other gender keeps their traits; two people of the subject's
- *      gender drop every identity tag; one-gender scenes drop them too.
+ *   4. Another person's traits are their identity and stay behind, unless the source is
+ *      about them (a theme most of the pool shares); comparisons between people and
+ *      with the donor's canon stay behind too.
+ *   8. Surroundings (sky, background, light) belong to the place; garments named after
+ *      a work never travel.
  *   5. Unclassified tags need support in the pool.
  *   6. Anchors come from the data ("on bed" yes, "on back" no) and from the pool's place tags.
  *   7. Posts without people give no scene; kinship tags never reach the pairing.
@@ -85,8 +88,13 @@ const BASE_TAGS =
 
 // ── Donor identity and the partner rule ──
 {
-  const pair = extractScene(makePost(10, "1girl 1boy hetero blue_hair beard muscular_male large_breasts horns standing"), makeContext())!
-  assert(pair.units.body.includes("beard") && pair.units.body.includes("muscular male"), "partner traits of the other gender are kept")
+  const pair = extractScene(makePost(10, "1girl 1boy hetero blue_hair beard muscular_male large_breasts horns lion_boy standing"), makeContext())!
+  assert(pair.units.body.length === 0, "a partner's traits (hair, body, species) are their identity and stay behind")
+  const themed = extractScene(
+    makePost(10, "1girl 1boy hetero blue_hair beard muscular_male large_breasts standing"),
+    makeContext({ poolShare: (tag) => (tag === "muscular male" ? 0.8 : 0.1) })
+  )!
+  assert(themed.units.body.join() === "muscular male", "a partner trait most of the pool shares is the source's theme and travels")
   assert(!pair.units.body.includes("large breasts") && !pair.units.body.includes("horns"), "the subject's own traits are dropped")
   const asBoy = extractScene(makePost(10, "1girl 1boy hetero beard standing"), makeContext({ subject: "boy" }))!
   assert(!asBoy.units.body.includes("beard"), "a trait of the subject's own gender is dropped")
@@ -97,6 +105,53 @@ const BASE_TAGS =
   assert(tagGender("beard", "e") === "boy" && tagGender("muscular male", "g") === "boy" && tagGender("blue hair", "g") === null,
     "tagGender reads words and the affinity table")
   assert(tagGender("female body", "g") === "girl", "words of the female spelling are not read as male")
+}
+
+// ── Comparisons and the donor's canon ──
+{
+  const scene = extractScene(
+    makePost(17, "1girl 1boy hetero size_difference interspecies standing smile bedroom bed skirt shirt cosplay test_hero_(cosplay) alternate_costume"),
+    makeContext({ poolSupport: () => 5 })
+  )!
+  const all = Object.values(scene.units).flat()
+  for (const gone of ["size difference", "interspecies", "cosplay", "test hero (cosplay)", "alternate costume"]) {
+    assert(!all.includes(gone) && !scene.pairing.includes(gone), `${gone} stays behind`)
+  }
+  const theme = extractScene(makePost(17, "1girl 1boy hetero size_difference standing"), makeContext({ poolShare: (tag) => (tag === "size difference" ? 0.9 : 0) }))!
+  assert(theme.units.body.includes("size difference"), "a comparison the whole source is about travels")
+}
+
+// ── Surroundings belong to the place ──
+{
+  const ov = { "blurry background": "pose:camera" }
+  const scene = extractScene(
+    makePost(18, "1girl standing smile from_above park outdoors sunset pink_sky blurry_background skirt"),
+    makeContext({ overrides: { ...makeContext().overrides, ...ov }, poolSupport: () => 3 })
+  )!
+  assert(["park", "outdoors", "sunset", "pink sky", "blurry background"].every((t) => scene.units.place.includes(t)), "sky, light and any background go to the place")
+  assert(!scene.units.camera.includes("blurry background") && !scene.units.loose.includes("pink sky"), "not to the camera or the loose tags")
+  const unsupported = extractScene(makePost(19, "1girl standing smile park pink_sky skirt"), makeContext({ poolSupport: () => 1 }))!
+  assert(!unsupported.units.place.includes("pink sky"), "an unclassified surrounding still needs the pool's support")
+}
+
+// ── Garments named after a work ──
+{
+  const ov: Record<string, string> = {
+    "school uniform": "clothing:outfit", "summer uniform": "clothing:outfit", "summer dress": "clothing:top",
+    "kuoh academy school uniform": "clothing:outfit", "pom pom (clothes)": "clothing:accents", "pom pom": "clothing:accents",
+    "kita high school uniform (subarashiki hibi)": "clothing:outfit", "academy": "other:unclassified", "high school": "other:unclassified",
+  }
+  const overrides = { ...makeContext().overrides, ...ov }
+  const scene = extractScene(
+    makePost(20, "1girl standing smile bedroom school_uniform summer_uniform kuoh_academy_school_uniform pom_pom_(clothes) kita_high_school_uniform_(subarashiki_hibi) mizutsune_(armor)"),
+    makeContext({ overrides, poolSupport: () => 3 })
+  )!
+  const all = Object.values(scene.units).flat()
+  assert(scene.units.outfit.includes("school uniform") && scene.units.outfit.includes("summer uniform"), "generic uniforms travel")
+  assert(scene.units.outfit.includes("pom pom (clothes)"), "a generic qualifier on a garment is fine")
+  for (const gone of ["kuoh academy school uniform", "kita high school uniform (subarashiki hibi)", "mizutsune (armor)"]) {
+    assert(!all.includes(gone), `${gone} is the donor's, not the scene's`)
+  }
 }
 
 // ── Unclassified tags and support ──

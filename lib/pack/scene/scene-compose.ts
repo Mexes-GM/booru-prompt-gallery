@@ -10,7 +10,7 @@
 import { createSeededRng } from '../pack-generator'
 import { resolveTagConflicts } from '../../tag-conflicts'
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
-import { conflictsWithBackground, isPlainBackgroundTag, isSceneTag } from '../background-coherence'
+import { conflictsWithBackground, isEnvironmentTag, isPlainBackgroundTag } from '../background-coherence'
 import { selectScenes } from './scene-select'
 import type { ScenePool } from './scene-pool'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isCompositionPattern } from './permanence'
@@ -137,6 +137,15 @@ const BEFORE_GARMENT = /^(?:open|unbuttoned|torn) (.+)$/
 const AROUND = /^(.+?) around .+$/
 const GENERIC_CLOTHES = new Set(['clothes', 'clothing'])
 
+/**
+ * Verbs a scene only uses with an object: "holding" needs something held. With the
+ * object gone (extras off, the cleaner, another unit swapped in) the verb is left
+ * pointing at nothing.
+ */
+const OBJECT_VERBS = new Set(['holding', 'carrying', 'riding', 'wielding'])
+/** Categories whose tags can be the object of those verbs (a sword, a horse). */
+const OBJECT_CATEGORIES = new Set(['equipment', 'creature'])
+
 /** Comparable form of a garment word: "panties" and "panty" match, "shorts" and "short" too. */
 function stem(word: string): string {
   if (word.endsWith('ies')) return `${word.slice(0, -3)}y`
@@ -159,23 +168,31 @@ function garmentReferenced(tag: string, overrides: Record<string, string>): stri
 }
 
 /**
- * Tags among `tags` that refer to a garment no other tag names: a lifted skirt needs a
- * skirt in the prompt. Referring tags do not count as naming the garment.
+ * Tags among `tags` that refer to something nothing else names: a lifted skirt needs a
+ * skirt in the prompt, a bare "holding" needs a "holding X" or an object. Referring
+ * tags do not count as naming the garment.
  */
 export function danglingReferences(tags: string[], overrides: Record<string, string>): Set<string> {
+  const dangling = new Set<string>()
+  for (const verb of tags) {
+    if (!OBJECT_VERBS.has(verb)) continue
+    const hasObject = tags.some(
+      (tag) => tag.startsWith(`${verb} `) || OBJECT_CATEGORIES.has(getTagSlotFromOverrides(tag, overrides)?.category ?? '')
+    )
+    if (!hasObject) dangling.add(verb)
+  }
   const references = new Map<string, string>()
   for (const tag of tags) {
     const garment = garmentReferenced(tag, overrides)
     if (garment) references.set(tag, garment)
   }
-  if (references.size === 0) return new Set()
+  if (references.size === 0) return dangling
   const naming = tags.filter((tag) => !references.has(tag) && !tag.startsWith('no '))
   const named = new Set(naming.map((tag) => stem(lastWord(tag))))
   const clothing = naming.filter((tag) => getTagSlotFromOverrides(tag, overrides)?.category === 'clothing')
   // A compound garment word names its base garment too: a miniskirt is a skirt, a sundress a dress.
   const clothingWords = clothing.map((tag) => stem(lastWord(tag)))
   const isNamed = (garment: string) => named.has(garment) || clothingWords.some((word) => word.endsWith(garment))
-  const dangling = new Set<string>()
   references.forEach((garment, tag) => {
     if (garment === '*' ? clothing.length === 0 : !isNamed(garment)) dangling.add(tag)
   })
@@ -271,11 +288,15 @@ export function composePack(pool: ScenePool, options: ComposeOptions): { prompts
     const header = buildHeader(options.identity, scene, options.subject, overrides)
     const fixed = [...header.tags, ...header.identity]
 
-    // Clothing and scenery choices that do not depend on the mix.
-    if (options.clothing === 'own') units.outfit = []
-    else if (typeof options.clothing === 'object') {
+    // Clothing and scenery choices that do not depend on the mix. What the scene's
+    // character showed went with their clothes: another outfit leaves it behind.
+    if (options.clothing === 'own') {
+      units.outfit = []
+      units.exposure = []
+    } else if (typeof options.clothing === 'object') {
       const library = options.clothing.library
       units.outfit = library.length > 0 ? library[Math.floor(rng() * library.length)].slice() : []
+      units.exposure = []
     }
     if (options.scenery === 'plain') units.place = [PLAIN_BACKGROUND]
 
@@ -315,10 +336,10 @@ export function composePack(pool: ScenePool, options: ComposeOptions): { prompts
     )
     if (clashing.size > 0) for (const unit of UNIT_ORDER) units[unit] = units[unit].filter((tag) => !clashing.has(tag))
 
-    // A plain background leaves no room for scenery tags that survived elsewhere.
+    // A plain background leaves no room for surroundings that survived elsewhere.
     if (units.place.length === 1 && isPlainBackgroundTag(units.place[0])) {
       for (const unit of UNIT_ORDER) {
-        if (unit !== 'place') units[unit] = units[unit].filter((tag) => !isSceneTag(tag, overrides))
+        if (unit !== 'place') units[unit] = units[unit].filter((tag) => !isEnvironmentTag(tag, overrides))
       }
     }
 

@@ -16,6 +16,8 @@ import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import type { TagCategory } from '../../tag-taxonomy'
 import { GENDER_AFFINITY } from '../../prompt/natural/gender-affinity'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isKinshipTag, type Permanence } from './permanence'
+import { hasGarmentQualifier, isFranchiseGarment } from './franchise'
+import { isEnvironmentTag } from '../background-coherence'
 
 /** Types a booru gives its tags. */
 export type TagKind = 'general' | 'artist' | 'copyright' | 'character' | 'meta'
@@ -33,8 +35,9 @@ export interface SceneUnits {
   outfit: string[]
   /** Exposure: body parts the picture shows or leaves bare. It travels with the outfit. */
   exposure: string[]
-  /** State of the hair and the traits of a partner of the other gender. */
+  /** State of the hair, and what the source is about when it describes the people (see THEME_SHARE). */
   body: string[]
+  /** Everything about the surroundings: location, props, sky, weather, light, background. */
   place: string[]
   /** Equipment and creatures. */
   extras: string[]
@@ -85,12 +88,20 @@ export interface SceneContext {
   tagKind?: (tag: string) => TagKind | undefined
   /** Place tags of the pool together with their word suffixes ("bunk bed" adds "bed"). */
   poolPlace?: ReadonlySet<string>
+  /**
+   * Share of the pool's posts that carry the tag. A trait of the other people
+   * of a picture, or a comparison between them, travels only when the source is
+   * about it (THEME_SHARE): "dark-skinned male" in a pool searched for it.
+   */
+  poolShare?: (tag: string) => number
 }
 
 /** Posts, and different characters / series, a tag needs in the pool before an unclassified tag travels with its scene. */
 export const MIN_LOOSE_SUPPORT = 2
 /** Posts that carry a tag for it to count as typical of the pool. */
 export const MIN_TYPICAL_SUPPORT = 3
+/** Share of the pool's posts a tag about the people needs to be the source's theme rather than one donor's identity. */
+export const THEME_SHARE = 0.5
 
 /** Maps the rating vocabularies of the providers to g / s / q / e. */
 export function normalizeRating(rating: string | undefined): SceneRating {
@@ -269,15 +280,17 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     }
     rest.push(tag)
   }
+  const isTheme = (tag: string) => (ctx.poolShare?.(tag) ?? 0) >= THEME_SHARE
   const people = openCount || girls + boys === 0 ? null : { girls, boys }
 
   // A signature accessory (glasses, hat) travels only with a complete costume.
   const hasFullOutfit = rest.some(
     (tag) => ctx.permanence(tag) === 'state' && getTagSlotFromOverrides(tag, ctx.overrides)?.slot === 'clothing:outfit'
   )
-  // A partner of the other gender keeps their traits, unless two people share the subject's gender.
+  // Another person's traits are their identity, like the subject's: the pack's partner is anonymous.
+  // They stay only when the source is about them, and only for a partner of the other gender.
   const sameGender = people ? (ctx.subject === 'girl' ? people.girls : people.boys) : 0
-  const keepPartnerTraits = !!people && people.girls >= 1 && people.boys >= 1 && sameGender < 2
+  const hasPartner = !!people && people.girls >= 1 && people.boys >= 1 && sameGender < 2
 
   const units = emptyUnits()
   const seen = new Set<string>()
@@ -300,7 +313,12 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     const permanence = ctx.permanence(tag)
     if (permanence === 'identity') {
       const gender = tagGender(tag, rating)
-      if (keepPartnerTraits && gender && gender !== ctx.subject) put('body', tag)
+      if (hasPartner && gender && gender !== ctx.subject && isTheme(tag)) put('body', tag)
+      continue
+    }
+    // Comparisons with someone else (the partner, the donor's canon) mean nothing once moved.
+    if (permanence === 'relative') {
+      if (isTheme(tag)) put('body', tag)
       continue
     }
     if (permanence === 'signature') {
@@ -308,13 +326,20 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
       continue
     }
 
+    const fallback = unitOfCategory(info?.category ?? bucket.get(tag) ?? 'other')
+    // Surroundings all belong to the place, so a swapped or plain place leaves none of the old one behind.
+    if (isEnvironmentTag(tag, ctx.overrides)) {
+      if (slot || supported(tag)) put('place', tag)
+      continue
+    }
     const unit = slot ? unitOfSlot(slot) : null
+    const garment = unit === 'outfit' || (!unit && (fallback === 'outfit' || hasGarmentQualifier(tag)))
+    if (garment && isFranchiseGarment(tag, ctx.overrides)) continue
     if (unit) {
       put(unit, tag)
       continue
     }
     // No axis slot: the pool has to vouch for it.
-    const fallback = unitOfCategory(info?.category ?? bucket.get(tag) ?? 'other')
     if (fallback && supported(tag)) put(fallback, tag)
   }
 

@@ -197,6 +197,28 @@ assert(
   )
 }
 
+// ── Verbs that need an object ──
+{
+  const ov = { ...OVERRIDES, holding: "pose:gesture", "holding sword": "equipment:weapon", riding: "pose:kinetic", horse: "creature:animal" }
+  assert(dropDanglingReferences(["1girl", "holding", "standing"], [], ov).join() === "1girl,standing", "a bare 'holding' with nothing held goes")
+  assert(dropDanglingReferences(["holding", "holding sword"], [], ov).includes("holding"), "kept with a 'holding X' tag")
+  assert(dropDanglingReferences(["holding", "sword"], [], ov).includes("holding"), "kept with a held object")
+  assert(!dropDanglingReferences(["riding", "smile"], [], ov).includes("riding") && dropDanglingReferences(["riding", "horse"], [], ov).includes("riding"), "same for riding")
+  assert(dropDanglingReferences(["holding"], ["holding"], ov).includes("holding"), "a kept (identity) tag is never dropped")
+  const armed = buildScenePool([makePost(80, "1girl standing holding sword smile from_above bedroom bed indoors skirt shirt")], { ...ctx, overrides: ov })
+  const off = composePack(armed, options({ count: 1, overrides: ov })).prompts[0]
+  assert(!off.tags.includes("holding") && !off.tags.includes("sword"), "extras off: the object and the bare verb go together")
+  assert(composePack(armed, options({ count: 1, extras: true, overrides: ov })).prompts[0].tags.includes("holding"), "extras on: the verb stays with its object")
+}
+
+// ── Another outfit leaves the scene's exposure behind ──
+{
+  const shown = pool([makePost(81, "1girl standing navel smile from_above bedroom bed indoors shirt skirt")])
+  assert(composePack(shown, options({ count: 1 })).prompts[0].tags.includes("navel"), "the scene's own outfit keeps its exposure")
+  assert(!composePack(shown, options({ count: 1, clothing: { library: [["dress"]] } })).prompts[0].tags.includes("navel"), "a library outfit drops it")
+  assert(!composePack(shown, options({ count: 1, clothing: "own" })).prompts[0].tags.includes("navel"), "the character's own clothing drops it")
+}
+
 // ── Identity wins ──
 {
   const p = composePack(main, options({ identity: ["1girl", "nude"], count: 5 })).prompts.find((x) => x.sources.skeleton === 1)!

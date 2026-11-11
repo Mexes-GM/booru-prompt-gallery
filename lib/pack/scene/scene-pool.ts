@@ -72,7 +72,7 @@ export interface ScenePool {
   stats: ScenePoolStats
 }
 
-export type ScenePoolContext = Omit<SceneContext, 'poolSupport' | 'poolPlace' | 'poolSources'> & {
+export type ScenePoolContext = Omit<SceneContext, 'poolSupport' | 'poolPlace' | 'poolSources' | 'poolShare'> & {
   minStateTags?: number
   /** Tags of the character; its people-count tags (`1girl`, `solo`) decide which scenes fit. */
   identity?: readonly string[]
@@ -151,6 +151,7 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
   const sceneCtx: SceneContext = {
     ...ctx,
     poolSupport: (tag) => support.get(tag) ?? 0,
+    poolShare: (tag) => (distinct.length > 0 ? (support.get(tag) ?? 0) / distinct.length : 0),
     poolPlace: place,
     poolSources: spread ? (tag) => signatures.get(tag)?.size ?? 0 : undefined,
   }
