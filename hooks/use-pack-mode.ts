@@ -44,7 +44,8 @@ import { clampMaxLongSide } from '@/lib/extension/generation-resolution'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
-import { migratePackConfig } from '@/lib/pack/pack-config-migration'
+import { migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
+import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import { varietyPreset, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
 import { estimateTagsPerPrompt, raiseCountsForMinTotal, type AxisBudget } from '@/lib/pack/min-tags'
 import {
@@ -324,6 +325,27 @@ export interface UsePackModeResult {
   resetLearning: () => void
 
   clearAll: () => void
+
+  /** How prompts are built: whole scenes of real posts (default) or the classic per-category mixer. */
+  engine: 'scenes' | 'classic'
+  setEngine: (engine: 'scenes' | 'classic') => void
+  /** Options of the scenes engine (see hooks/use-pack-scenes.ts). */
+  sceneSettings: ScenePackSettings
+  setSceneSettings: (settings: ScenePackSettings) => void
+  /** The source's posts as last seeded (reseedAllAxes), for the scenes engine. */
+  poolPosts: BooruPost[]
+  /**
+   * The character's identity for the scenes engine, whatever the classic
+   * category roles say: name, look and signature accessories (the chips the
+   * user can remove), before the user's removals.
+   */
+  sceneIdentityCandidates: string[]
+  /** What the scenes engine keeps: the candidates the user kept, a pasted prompt's other tags and "Always add". */
+  sceneIdentityTags: string[]
+  /** Character tags the cleaner sees (just the kept one on a multi-character base). */
+  focusedCharacterTags: string[]
+  /** "Always add" tags as typed. */
+  alwaysAddTags: string[]
 }
 
 /**
@@ -397,6 +419,11 @@ export function usePackMode(
   const [lockedCategories, setLockedCategories] = useState<Set<TagCategory>>(
     new Set(initialConfig.lockedCategories)
   )
+  const [initialEngine] = useState(() => packEngineConfig(initialConfig))
+  const [engine, setEngine] = useState<'scenes' | 'classic'>(initialEngine.engine)
+  const [sceneSettings, setSceneSettings] = useState<ScenePackSettings>(initialEngine.sceneSettings)
+  // The source's posts for the scenes engine (the classic pools keep theirs in cachedPostsRef).
+  const [poolPosts, setPoolPosts] = useState<BooruPost[]>([])
   const [lockedSlots, setLockedSlots] = useState<Set<string>>(() => new Set(initialConfig.lockedSlots))
   const [mutedSlots, setMutedSlots] = useState<Set<string>>(() => new Set(initialConfig.mutedSlots))
   const [varietyLevel, setVarietyLevelRaw] = useState<VarietySetting>(initialConfig.varietyLevel)
@@ -798,6 +825,19 @@ export function usePackMode(
 
   /** "Always add" tags as typed — finalizePackPrompt puts them first, underscores intact. */
   const alwaysAddTags = useMemo(() => parseAlwaysAddTags(customBaseText), [customBaseText])
+
+  // Scenes engine: the identity is the character's look and signature
+  // accessories; everything else comes from each scene.
+  const sceneIdentityCandidates = useMemo(
+    () => Array.from(new Set([...focusAppearance(baseClassified.appearance || []), ...identityParts.signature].filter(Boolean))),
+    [focusAppearance, baseClassified, identityParts]
+  )
+  const sceneIdentityTags = useMemo(() => {
+    const tags = sceneIdentityCandidates.filter((tag) => !excludedBaseTags.has(tag))
+    if (!baseCard) tags.push(...(keptBaseClassified.other || []))
+    if (customBaseText.trim()) tags.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
+    return Array.from(new Set(tags.filter(Boolean)))
+  }, [sceneIdentityCandidates, excludedBaseTags, baseCard, keptBaseClassified, customBaseText])
 
   /** A real base card OR a non-empty pasted prompt — either way there's a base to vary against. */
   const hasBase = !!baseCard || basePrompt.trim() !== ''
@@ -1220,6 +1260,7 @@ export function usePackMode(
     (posts: BooruPost[], fallbacks: Partial<Record<TagCategory, string[]>> = {}) => {
       cachedPostsRef.current = posts
       cachedFallbacksRef.current = fallbacks
+      setPoolPosts(posts)
       resample(posts, PACK_AXES, axisTagModes, fallbacks, true)
       // Pasted-prompt base: figure out which of its tags are a character now
       // that seed posts are available (detectCharacterTags needs them).
@@ -1641,6 +1682,7 @@ export function usePackMode(
     setBaseFromCharacterFlag(false)
     setBaseLook('typical')
     setTypicalLooks({})
+    setPoolPosts([])
   }, [])
 
   // Persist the current builder config, debounced (300ms, same idle window as
@@ -1669,6 +1711,8 @@ export function usePackMode(
       minTotalTags,
       minSetTags,
       clothingFromLibrary,
+      engine,
+      sceneSettings,
     }
     persistTimerRef.current = setTimeout(() => {
       try {
@@ -1682,7 +1726,7 @@ export function usePackMode(
     return () => {
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
     }
-  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModesRaw, minTotalTags, minSetTags, clothingFromLibrary])
+  }, [lockedCategories, lockedSlots, mutedSlots, varietyLevel, axisMinCounts, promptCount, manualAxisValues, axisTagModesRaw, minTotalTags, minSetTags, clothingFromLibrary, engine, sceneSettings])
 
   return {
     isPackMode,
@@ -1779,5 +1823,15 @@ export function usePackMode(
     resetLearning: learning.resetModel,
 
     clearAll,
+
+    engine,
+    setEngine,
+    sceneSettings,
+    setSceneSettings,
+    poolPosts,
+    sceneIdentityCandidates,
+    sceneIdentityTags,
+    focusedCharacterTags,
+    alwaysAddTags,
   }
 }
