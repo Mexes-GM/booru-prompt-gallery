@@ -9,9 +9,14 @@
  *  - `composition` how many people there are and how they pair up.
  *  - `signature`   an accessory that usually belongs to the character, but that a
  *                  picture can also just show (glasses, a hat).
+ *  - `relative`    only means something next to who the donor is: a comparison
+ *                  between the people of the picture (age or size difference,
+ *                  interspecies) or with the donor's canon version (cosplay,
+ *                  alternate costume, genderswap). Meaningless once the scene
+ *                  is moved onto another character.
  *
- * The data file only lists the exceptions to the default of each slot, so it
- * stays small:
+ * A tag a list of the data file names has that permanence whatever its slot.
+ * Otherwise the default of its slot applies, so the lists stay small:
  *
  *  - appearance:hair | eyes | anatomy   default identity; `state` lists the exceptions.
  *  - appearance:demographics            default state; `composition` and `identity` list exceptions.
@@ -20,7 +25,7 @@
  */
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 
-export type Permanence = 'identity' | 'state' | 'composition' | 'signature'
+export type Permanence = 'identity' | 'state' | 'composition' | 'signature' | 'relative'
 
 /** Shape of `public/tag-permanence.json`. Tags are in display form (spaces). */
 export interface PermanenceData {
@@ -29,6 +34,7 @@ export interface PermanenceData {
   composition?: readonly string[]
   signature?: readonly string[]
   identity?: readonly string[]
+  relative?: readonly string[]
 }
 
 /** "1girl", "2boys", "6+girls", "3others". */
@@ -51,18 +57,29 @@ const COMPOSITION_RE = new RegExp(
   ].join('|')
 )
 
+/**
+ * The donor compared with their canon version: a cosplay of someone, an
+ * alternate costume, hairstyle or colouring, a genderswap, an aged-up take.
+ */
+const CANON_RELATIVE_RE =
+  /(^cosplay$|\(cosplay\)$|^(official )?alternate (costume|hairstyle|hair colou?r|hair length|eye colou?r|skin colou?r|breast size|species)\b|^adapted costume$|^costume switch$|^genderswap\b|^aged (up|down)$)/
+
 /** Relationships between the people of a picture: part of the donor, never of the character. */
 const KINSHIP_RE =
   /\b(mother|father|daughter|son|brothers?|sisters?|siblings?|aunt|uncle|niece|nephew|cousins?|grand(father|mother|son|daughter)|twins|triplets|quintuplets|sextuplets|incest)\b/
 
 const IDENTITY_BY_DEFAULT = new Set(['appearance:hair', 'appearance:eyes', 'appearance:anatomy'])
-const SIGNATURE_CANDIDATES = new Set(['clothing:headwear', 'clothing:eyewear', 'clothing:accents'])
 
 const normalize = (tag: string): string => tag.toLowerCase().replace(/_/g, ' ').trim()
 
 /** True for tags that describe the people count or pairing, whatever the data says. */
 export function isCompositionPattern(tag: string): boolean {
   return COMPOSITION_RE.test(normalize(tag))
+}
+
+/** True for tags that describe the donor against their canon version ("x (cosplay)", "alternate costume"). */
+export function isCanonRelativeTag(tag: string): boolean {
+  return CANON_RELATIVE_RE.test(normalize(tag))
 }
 
 /** True for tags that name a family relationship between the people of a picture. */
@@ -82,17 +99,19 @@ export function createPermanence(
   const composition = new Set((data.composition ?? []).map(normalize))
   const signature = new Set((data.signature ?? []).map(normalize))
   const identity = new Set((data.identity ?? []).map(normalize))
+  const relative = new Set((data.relative ?? []).map(normalize))
   const cache = new Map<string, Permanence>()
 
   const compute = (tag: string): Permanence => {
     if (COMPOSITION_RE.test(tag)) return 'composition'
+    if (relative.has(tag) || CANON_RELATIVE_RE.test(tag)) return 'relative'
+    // What the data names wins over the slot: "lion boy" is identity even where no slot is known.
+    if (composition.has(tag)) return 'composition'
+    if (identity.has(tag)) return 'identity'
+    if (signature.has(tag)) return 'signature'
+    if (state.has(tag)) return 'state'
     const slot = getTagSlotFromOverrides(tag, overrides)?.slot
-    if (slot && IDENTITY_BY_DEFAULT.has(slot)) return state.has(tag) ? 'state' : 'identity'
-    if (slot === 'appearance:demographics') {
-      if (composition.has(tag)) return 'composition'
-      return identity.has(tag) ? 'identity' : 'state'
-    }
-    if (slot && SIGNATURE_CANDIDATES.has(slot)) return signature.has(tag) ? 'signature' : 'state'
+    if (slot && IDENTITY_BY_DEFAULT.has(slot)) return 'identity'
     return 'state'
   }
 

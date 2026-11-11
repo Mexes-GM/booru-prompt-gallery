@@ -40,6 +40,20 @@ assert(permanence("blue skirt") === "state", "clothing variant inherits the slot
 assert(permanence("standing") === "state", "pose is state")
 assert(permanence("bedroom") === "state", "scenery is state")
 
+// ── What the data names wins over the slot ──
+assert(permanence("lion boy") === "identity", "a listed identity tag is identity even without a known slot")
+assert(permanence("size difference") === "relative" && permanence("interspecies") === "relative", "listed comparisons between people are relative")
+
+// ── Relative to the donor's canon ──
+for (const tag of ["cosplay", "yor briar (cosplay)", "alternate costume", "official alternate costume", "official alternate hairstyle",
+  "alternate hairstyle", "alternate hair color", "alternate hair length", "alternate hair length (longer)", "adapted costume",
+  "costume switch", "genderswap", "genderswap (mtf)", "aged up"]) {
+  assert(permanence(tag) === "relative", `${tag} is relative`)
+}
+for (const tag of ["costume", "halloween costume", "cosplay photo", "alternate", "hair color"]) {
+  assert(permanence(tag) !== "relative", `${tag} is not relative`)
+}
+
 // ── Composition patterns ──
 for (const tag of ["1girl", "2boys", "6+girls", "3others", "multiple girls", "multiple boys", "solo", "solo focus",
   "male focus", "female focus", "hetero", "yuri", "yaoi", "futa with male", "couple", "duo", "trio", "group"]) {

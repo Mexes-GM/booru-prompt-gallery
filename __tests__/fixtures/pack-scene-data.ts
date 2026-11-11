@@ -78,7 +78,8 @@ export const PERMANENCE_DATA: PermanenceData = {
   state: ["wet hair", "navel", "closed eyes"],
   composition: ["couple"],
   signature: ["glasses", "hat"],
-  identity: ["elf"],
+  identity: ["elf", "lion boy"],
+  relative: ["size difference", "interspecies"],
 }
 
 export function makeContext(overrides: Partial<SceneContext> = {}): SceneContext {
