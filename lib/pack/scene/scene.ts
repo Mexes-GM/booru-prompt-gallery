@@ -19,8 +19,11 @@ import { COUNT_TAG_RE, OPEN_COUNT_RE, isKinshipTag, type Permanence } from './pe
 import { hasGarmentQualifier, isFranchiseGarment } from './franchise'
 import { isEnvironmentTag } from '../background-coherence'
 
-/** Types a booru gives its tags. */
-export type TagKind = 'general' | 'artist' | 'copyright' | 'character' | 'meta'
+/**
+ * Types a booru gives its tags. 'deprecated' is a tag the booru retired; 'unlisted' is
+ * one a complete list of the booru's tags doesn't have (a new or very rare name).
+ */
+export type TagKind = 'general' | 'artist' | 'copyright' | 'character' | 'meta' | 'deprecated' | 'unlisted'
 
 export type SceneRating = 'g' | 's' | 'q' | 'e'
 

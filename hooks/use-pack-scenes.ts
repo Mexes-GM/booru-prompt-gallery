@@ -6,8 +6,12 @@ import { cleanSyntheticPrompt, type BulkSendCleanOptions } from '@/lib/pack/bulk
 import { createPermanence, isCompositionPattern, type PermanenceData } from '@/lib/pack/scene/permanence'
 import { buildScenePool, compositionOfIdentity, type PackPeople, type ScenePool } from '@/lib/pack/scene/scene-pool'
 import { castPeople, holdsCast, type CastRole } from '@/lib/pack/scene/cast'
+import { fetchGelbooruTagCategories } from '@/lib/supabase/client-queries'
+import type { TagKind } from '@/lib/pack/scene/scene'
 import {
   alwaysAddOmitted,
+  gelbooruTagKinds,
+  untypedTags,
   castComposition,
   defaultComposition,
   enabledSceneCount,
@@ -34,6 +38,8 @@ import { useOutfitDescriptions, useOutfitLibrary } from '@/hooks/use-outfit-sett
 import { usePromptFormat } from '@/hooks/use-natural-prompt'
 import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
 
+/** How long the pool waits for Gelbooru's tag list before it uses the built-in rules. */
+const GELBOORU_LOOKUP_TIMEOUT_MS = 8000
 /** Library outfits drawn for one pack. */
 const LIBRARY_DRAW_SIZE = 60
 const EMPTY_POSTS: BooruPost[] = []
@@ -86,6 +92,8 @@ export interface UsePackScenesArgs {
   baseKey: string
   /** Changes with the source: prompts, switched-off situations and the picked composition belong to it. */
   sourceKey: string
+  /** The source's booru: Gelbooru's own tag list tells its names apart. */
+  provider: string
 }
 
 export interface SceneCharacterBlock {
@@ -191,7 +199,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   const {
     enabled, posts, overrides, members, baseExtras, baseFixed, baseClothing, removedTags, baseFromCharacter,
     alwaysAdd, neverIncludeText, characterTags, contentRating, settings, promptCount, cleanOptions, globalWeights,
-    isGlobalWeightsEnabled, outfitOptions, natural, baseKey, sourceKey,
+    isGlobalWeightsEnabled, outfitOptions, natural, baseKey, sourceKey, provider,
   } = args
 
   // Permanence data (which tags are who the character is), fetched while enabled until it loads.
@@ -357,13 +365,52 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     () => (enabled ? postsForRating(posts, contentRating) : EMPTY_POSTS),
     [enabled, posts, contentRating]
   )
-  const tagKinds = useMemo(() => tagKindsFromPosts(rated), [rated])
+  const postKinds = useMemo(() => tagKindsFromPosts(rated), [rated])
+
+  // Gelbooru: what its own tag list says the pool's untyped, unslotted tags are. The
+  // pool waits for the first answer ("Finding scenes…"); a failed or slow lookup falls
+  // back to the engine's own rules (names.ts and the pool-support filter).
+  const lookupNames = useMemo(
+    () => (enabled && provider === 'gelbooru' ? untypedTags(rated, postKinds, overrides) : null),
+    [enabled, provider, rated, postKinds, overrides]
+  )
+  const lookupKey = lookupNames ? lookupNames.join('\n') : null
+  const [lookup, setLookup] = useState<{ key: string; kinds: Map<string, TagKind> | null } | null>(null)
+  useEffect(() => {
+    if (lookupKey === null || !lookupNames) return
+    let active = true
+    const timer = setTimeout(() => {
+      if (active) setLookup({ key: lookupKey, kinds: null })
+    }, GELBOORU_LOOKUP_TIMEOUT_MS)
+    fetchGelbooruTagCategories(lookupNames)
+      .then((categories) => {
+        if (active) setLookup({ key: lookupKey, kinds: gelbooruTagKinds(categories) })
+      })
+      .catch((err) => {
+        console.warn('Gelbooru tag lookup failed; using the built-in rules:', err)
+        if (active) setLookup({ key: lookupKey, kinds: null })
+      })
+      .finally(() => clearTimeout(timer))
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [lookupKey, lookupNames])
+  // The first answer gates the pool; later ones (more posts, more slots) refresh it.
+  const waitingForLookup = lookupKey !== null && lookup === null
+  const tableKinds = lookupKey !== null ? lookup?.kinds ?? null : null
+  const tagKinds = useMemo(() => {
+    if (!tableKinds) return postKinds
+    const merged = new Map(tableKinds)
+    postKinds.forEach((kind, tag) => merged.set(tag, kind))
+    return merged
+  }, [postKinds, tableKinds])
 
   // Built once without a composition: lists the compositions and covers the default case.
   const basePool = useMemo(() => {
-    if (!enabled || !permanence) return null
+    if (!enabled || !permanence || waitingForLookup) return null
     return buildScenePool(rated, { overrides, permanence, subject, cast: namedPeople, tagKind: (tag) => tagKinds.get(tag) })
-  }, [enabled, permanence, rated, overrides, subject, namedPeople, tagKinds])
+  }, [enabled, permanence, waitingForLookup, rated, overrides, subject, namedPeople, tagKinds])
 
   const firstCandidates = members[0]?.candidates ?? NO_TAGS
   const baseComposition = useMemo(

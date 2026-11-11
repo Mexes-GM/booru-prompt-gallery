@@ -204,6 +204,47 @@ export async function fetchTagOverridesForNames(
   return overrides
 }
 
+/** Gelbooru's own tag types (`gelbooru_tags`), by Gelbooru spelling; null = not in the table. Kept for the session. */
+const gelbooruTagCache = new Map<string, number | null>()
+const GELBOORU_TAG_CHUNK = 150
+const GELBOORU_TAG_PARALLEL = 4
+
+/** A PostgREST `in` list with every value quoted, so commas, parentheses and quotes in names are safe. */
+export function postgrestInList(values: readonly string[]): string {
+  return `(${values.map((v) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')})`
+}
+
+/**
+ * Gelbooru's type for each tag (0 general, 1 artist, 3 copyright, 4 character, 5 meta,
+ * 6 deprecated) from the public `gelbooru_tags` table, a full list of Gelbooru's tags
+ * with enough posts. `names` in any spelling ("pokemon scarlet and violet" or with
+ * underscores); the result is keyed by the spaced form, with null for a tag the table
+ * doesn't have. Answers are kept for the session. Throws when a chunk can't be read,
+ * so the caller can fall back instead of reading "no row" for "unknown".
+ */
+export async function fetchGelbooruTagCategories(names: readonly string[]): Promise<Map<string, number | null>> {
+  const spaced = (name: string) => name.trim().toLowerCase().replace(/_/g, ' ')
+  const wanted = Array.from(new Set(names.map(spaced).filter(Boolean)))
+  const missing = wanted.filter((name) => !gelbooruTagCache.has(name))
+  if (missing.length > 0) {
+    const supabase = createClient()
+    if (!supabase) throw new Error('Supabase is not configured')
+    const chunks = chunked(missing, GELBOORU_TAG_CHUNK)
+    for (let i = 0; i < chunks.length; i += GELBOORU_TAG_PARALLEL) {
+      await Promise.all(chunks.slice(i, i + GELBOORU_TAG_PARALLEL).map(async (chunk) => {
+        const { data, error } = await supabase
+          .from('gelbooru_tags')
+          .select('name, category')
+          .filter('name', 'in', postgrestInList(chunk.map((name) => name.replace(/ /g, '_'))))
+        if (error || !Array.isArray(data)) throw new Error(error?.message ?? 'gelbooru_tags lookup failed')
+        const found = new Map((data as { name: string; category: number }[]).map((row) => [spaced(row.name), Number(row.category)]))
+        chunk.forEach((name) => gelbooruTagCache.set(name, found.get(name) ?? null))
+      }))
+    }
+  }
+  return new Map(wanted.map((name) => [name, gelbooruTagCache.get(name) ?? null]))
+}
+
 /**
  * Approved taxonomy slots for a booru's own tag spellings (`lookup_provider_tag_slots`),
  * as overrides under both key shapes. `names` use the provider spelling (see

@@ -893,6 +893,7 @@ export function PromptGallery() {
     natural: packSceneNatural,
     baseKey: packBaseCard ? `card:${packBaseCard.id}` : `prompt:${packMode.basePrompt}`,
     sourceKey: packSourceKey,
+    provider: packSourceAnswers.booruProvider,
   })
   const packUsesScenes = packEngine === 'scenes'
   // Only seeds pools ONCE per base — re-running it on every incidental result

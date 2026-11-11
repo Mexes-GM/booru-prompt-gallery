@@ -88,6 +88,35 @@ export function tagKindsFromPosts(posts: readonly BooruPost[]): Map<string, TagK
   return kinds
 }
 
+const GELBOORU_KINDS: Record<number, TagKind> = { 0: 'general', 1: 'artist', 3: 'copyright', 4: 'character', 5: 'meta', 6: 'deprecated' }
+
+/**
+ * Tag kinds from Gelbooru's own tag list (`gelbooru_tags`, see fetchGelbooruTagCategories):
+ * its category for a listed tag, 'unlisted' for one the list doesn't have. A tag
+ * neither the taxonomy nor a complete list of Gelbooru knows is almost always a
+ * new or very rare name, so the scene leaves it out.
+ */
+export function gelbooruTagKinds(categories: ReadonlyMap<string, number | null>): Map<string, TagKind> {
+  const kinds = new Map<string, TagKind>()
+  categories.forEach((category, tag) => kinds.set(tag, category === null ? 'unlisted' : GELBOORU_KINDS[category] ?? 'meta'))
+  return kinds
+}
+
+/**
+ * Tags of `posts` that need the booru's own type: no typed field of a post lists them
+ * and the taxonomy has no slot for them. Sorted, so the list works as a stable key.
+ */
+export function untypedTags(posts: readonly BooruPost[], typed: ReadonlyMap<string, TagKind>, overrides: Record<string, string>): string[] {
+  const out = new Set<string>()
+  for (const post of posts) {
+    for (const raw of splitTags(post.tag_string || '')) {
+      const tag = normalizeTagForPack(raw)
+      if (tag && !typed.has(tag) && !getTagSlotFromOverrides(tag, overrides)?.slot) out.add(tag)
+    }
+  }
+  return Array.from(out).sort()
+}
+
 /** The character's gender from the people-count tags of their identity: a boy only when nothing says girl. */
 export function subjectOfTags(tags: readonly string[]): 'girl' | 'boy' {
   let girls = 0
