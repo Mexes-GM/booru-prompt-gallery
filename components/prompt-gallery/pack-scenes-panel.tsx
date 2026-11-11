@@ -21,6 +21,7 @@ import type { SceneChip, ScenePackSettings } from "@/lib/pack/scene-pack"
 import type { SceneCharacterBlock, UsePackScenesResult } from "@/hooks/use-pack-scenes"
 import type { CastRole } from "@/lib/pack/scene/cast"
 import { AddTagsField } from "./add-tags-field"
+import { pinnedConflictLines } from "./pack-category-list"
 import { radioGroupKeyDown } from "./radio-keys"
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -114,7 +115,7 @@ const SCENERY_OPTIONS: readonly Option<ScenePackSettings["scenery"]>[] = [
 const sectionClass = "rounded-xl border border-border/70 bg-card/70 p-3 sm:p-4 space-y-3"
 
 /** One Character chip: select it to pin it or leave it to the scene; the X removes it. */
-function TraitChip({ chip, onToggle, onRemove }: { chip: SceneChip; onToggle: (tag: string) => void; onRemove: (tag: string) => void }) {
+function TraitChip({ chip, onToggle, onRemove, clashesWith }: { chip: SceneChip; onToggle: (tag: string) => void; onRemove: (tag: string) => void; clashesWith?: string }) {
   const pinned = chip.state === "pinned"
   return (
     <span
@@ -132,6 +133,11 @@ function TraitChip({ chip, onToggle, onRemove }: { chip: SceneChip; onToggle: (t
       >
         {pinned && <Pin className="w-3 h-3 flex-shrink-0" aria-hidden />}
         <span className="truncate max-w-[14rem]">{chip.tag}</span>
+        {clashesWith && (
+          <span title={`Rarely goes with ${clashesWith}`} role="img" aria-label={`Rarely goes with ${clashesWith}`} className="inline-flex">
+            <AlertTriangle className="w-3 h-3 flex-shrink-0 text-warning-text" aria-hidden />
+          </span>
+        )}
       </button>
       <button
         type="button"
@@ -176,6 +182,7 @@ function CharacterBlock({
   const roleId = useId()
   const [showMore, setShowMore] = useState(false)
   const [adding, setAdding] = useState(false)
+  const conflictLines = pinnedConflictLines(block.conflicts, block.chips.filter((chip) => chip.state === "pinned").map((chip) => chip.tag))
   const name = block.character
   // The base's other tags stay folded unless pinned: they'd crowd the character.
   const mainChips = block.chips.filter((chip) => chip.origin !== "base" || chip.state === "pinned")
@@ -243,7 +250,7 @@ function CharacterBlock({
       )}
       <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-x-3.5 pointer-coarse:gap-y-5">
         {mainChips.map((chip) => (
-          <TraitChip key={chip.tag} chip={chip} onToggle={toggle} onRemove={remove} />
+          <TraitChip key={chip.tag} chip={chip} onToggle={toggle} onRemove={remove} clashesWith={block.conflicts[chip.tag]} />
         ))}
         {mainChips.length === 0 && (
           <span className="text-xs text-muted-foreground italic py-0.5">
@@ -272,6 +279,16 @@ function CharacterBlock({
           </button>
         )}
       </div>
+      {conflictLines.length > 0 && (
+        <div className="space-y-0.5" aria-live="polite">
+          {conflictLines.map((line) => (
+            <p key={line} className="flex items-start gap-1.5 text-xs text-warning-text">
+              <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden />
+              <span>{line}</span>
+            </p>
+          ))}
+        </div>
+      )}
       {adding && (
         <AddTagsField
           label={showName ? `Add to ${name}` : "Add to the character"}

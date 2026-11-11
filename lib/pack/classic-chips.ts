@@ -12,14 +12,17 @@ import type { ChipState } from './scene-pack'
  * The tags every Classic prompt keeps. `defaults` is what the categories say (Keep, a
  * kept part, signature accessories); a chip the user pinned joins them whatever its
  * category says, one they dashed leaves them, and traits added by hand are pinned.
+ * A category on Keep wins over a dash (`inKeptCategory`): nothing would pick the tag
+ * there, so its chip stays pinned until the category varies again, when the dash is back.
  */
 export function classicKeptTags(
   defaults: readonly string[],
   baseTags: readonly string[],
   choiceOf: (tag: string) => ChipState | undefined,
-  added: readonly string[]
+  added: readonly string[],
+  inKeptCategory: (tag: string) => boolean = () => false
 ): string[] {
-  const kept = defaults.filter((tag) => choiceOf(tag) !== 'scene')
+  const kept = defaults.filter((tag) => choiceOf(tag) !== 'scene' || inKeptCategory(tag))
   baseTags.forEach((tag) => { if (choiceOf(tag) === 'pinned') kept.push(tag) })
   kept.push(...added)
   return Array.from(new Set(kept.filter(Boolean)))
@@ -43,6 +46,23 @@ export function withoutNeverTags(values: readonly string[], isNever: (tag: strin
     out.push(next)
   }
   return { values: out, originOf }
+}
+
+/**
+ * Pinned tags that contradict another pinned tag, each with the one it clashes with:
+ * `reasonOf(tag, others)` is the conflict resolver's reason ("Conflicts with 'sitting'").
+ */
+export function pinnedConflicts(
+  pinned: readonly string[],
+  candidates: Iterable<string>,
+  reasonOf: (tag: string, others: string[]) => string | null
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const tag of candidates) {
+    const reason = reasonOf(tag, pinned.filter((t) => t !== tag))
+    if (reason) out[tag] = /'([^']+)'/.exec(reason)?.[1] ?? reason
+  }
+  return out
 }
 
 /** Where an added trait is shown: the category the taxonomy gives it, else the row it was added from. */

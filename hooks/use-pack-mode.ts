@@ -47,7 +47,7 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
-import { addedTraitCategory, classicKeptTags, withoutNeverTags } from '@/lib/pack/classic-chips'
+import { addedTraitCategory, classicKeptTags, pinnedConflicts, withoutNeverTags } from '@/lib/pack/classic-chips'
 import type { ChipState, ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isCompositionPattern } from '@/lib/pack/scene/permanence'
 import { isQualifiedVariant } from '@/lib/pack/character-identity'
@@ -175,7 +175,7 @@ export interface CharacterChipStore {
 export interface ClassicChipControls {
   /** Traits added by hand, under the category the taxonomy gives them (else the row they came from). */
   addedByCategory: Partial<Record<TagCategory, string[]>>
-  /** A pinned tag that contradicts another tag every prompt keeps, with why. */
+  /** A pinned tag that contradicts another tag every prompt keeps, with the tag it clashes with. */
   conflicts: Readonly<Record<string, string>>
   /** Removed base tags that "Always add" puts back (its text wins). */
   keptByAlwaysAdd: string[]
@@ -971,11 +971,15 @@ export function usePackMode(
     // says; one they dashed is left to the sampling; traits added by hand are pinned.
     const own = focusCharacter ?? ''
     const baseTags = PACK_AXES.flatMap((cat) => (cat === 'appearance' ? focusAppearance(baseClassified[cat] || []) : baseClassified[cat] || []))
+    const keptCategoryTags = new Set(
+      Array.from(lockedCategories).flatMap((cat) => (cat === 'appearance' ? focusAppearance(baseClassified[cat] || []) : baseClassified[cat] || []))
+    )
     const kept = classicKeptTags(
       tags,
       baseTags,
       (tag) => chipChoices.get(`${own}\u0000${tag}`),
-      (addedTraits.get(own) ?? []).filter((tag) => !excludedBaseTags.has(tag))
+      (addedTraits.get(own) ?? []).filter((tag) => !excludedBaseTags.has(tag)),
+      (tag) => keptCategoryTags.has(tag)
     )
     // Free-text base prompt ("always included"): merged in as additional constant tags,
     // on top of whatever categories are locked.
@@ -1804,11 +1808,7 @@ export function usePackMode(
     })
     // A pin the user chose that contradicts another tag every prompt keeps: allowed, but said.
     const userPinned = new Set([...added, ...lockedTags.filter((tag) => chipChoices.get(`${classicOwner}\u0000${tag}`) === 'pinned')])
-    const conflicts: Record<string, string> = {}
-    userPinned.forEach((tag) => {
-      const reason = new ConflictChecker(lockedTags.filter((t) => t !== tag), { rating: contentRating }).check(tag)
-      if (reason) conflicts[tag] = reason
-    })
+    const conflicts = pinnedConflicts(lockedTags, userPinned, (tag, others) => new ConflictChecker(others, { rating: contentRating }).check(tag))
     const always = new Set(alwaysAddTags.map(normalizeTagForPack))
     return {
       addedByCategory,

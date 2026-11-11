@@ -6,7 +6,8 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-classic-chips.verify.ts
  */
-import { addedTraitCategory, classicKeptTags, withoutNeverTags } from "../lib/pack/classic-chips"
+import { addedTraitCategory, classicKeptTags, pinnedConflicts, withoutNeverTags } from "../lib/pack/classic-chips"
+import { pinnedConflictLines } from "../components/prompt-gallery/pack-category-list"
 import { createSeededRng, generatePackPrompts } from "../lib/pack/pack-generator"
 import { castChips, type ChipState } from "../lib/pack/scene-pack"
 import { isQualifiedVariant } from "../lib/pack/character-identity"
@@ -23,6 +24,24 @@ const assert = (ok: unknown, label: string) => {
   const choices = new Map<string, ChipState>([["long hair", "scene"], ["black thighhighs", "pinned"]])
   const kept = classicKeptTags(["1girl", "long hair", "blue eyes"], ["long hair", "blue eyes", "black thighhighs", "skirt"], (t) => choices.get(t), ["red scarf"])
   assert(kept.join() === "1girl,blue eyes,black thighhighs,red scarf", "a dash leaves, a pin joins from a varying category, an added trait is pinned: " + kept.join())
+}
+
+// ── A category on Keep wins over a dash, and gives it back when it varies again ──
+{
+  const choices = new Map<string, ChipState>([["black thighhighs", "scene"]])
+  const onKeep = classicKeptTags(["1girl", "black thighhighs"], ["black thighhighs"], (t) => choices.get(t), [], (t) => t === "black thighhighs")
+  assert(onKeep.includes("black thighhighs"), "on Keep the dashed tag is still in every prompt")
+  const onVary = classicKeptTags(["1girl"], ["black thighhighs"], (t) => choices.get(t), [], () => false)
+  assert(!onVary.includes("black thighhighs"), "back on Vary, the user's dash applies again")
+}
+
+// ── Two pins that rarely go together: both stay, and it's said ──
+{
+  const reasons: Record<string, string> = { sitting: "Conflicts with 'standing'", standing: "Conflicts with 'sitting'" }
+  const conflicts = pinnedConflicts(["standing", "sitting", "smile"], ["standing", "sitting", "smile"], (tag) => reasons[tag] ?? null)
+  assert(conflicts.sitting === "standing" && conflicts.standing === "sitting" && !conflicts.smile, "each names the tag it clashes with")
+  const lines = pinnedConflictLines(conflicts, ["standing", "sitting", "smile"])
+  assert(lines.length === 1 && lines[0] === "standing and sitting rarely go together. Both are pinned, so both stay.", "one line per pair: " + lines.join(" | "))
 }
 
 // ── A pinned garment takes its slot ──

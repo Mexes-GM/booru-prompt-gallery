@@ -6,6 +6,8 @@ import { cleanSyntheticPrompt, type BulkSendCleanOptions } from '@/lib/pack/bulk
 import { createPermanence, isCompositionPattern, type PermanenceData } from '@/lib/pack/scene/permanence'
 import { buildScenePool, compositionOfIdentity, type PackPeople, type ScenePool } from '@/lib/pack/scene/scene-pool'
 import { castPeople, holdsCast, type CastLookSource, type CastRole } from '@/lib/pack/scene/cast'
+import { pinnedConflicts } from '@/lib/pack/classic-chips'
+import { ConflictChecker } from '@/lib/tag-conflicts'
 import { fetchGelbooruTagCategories } from '@/lib/supabase/client-queries'
 import type { TagKind } from '@/lib/pack/scene/scene'
 import {
@@ -108,6 +110,8 @@ export interface SceneCharacterBlock {
   removed: string[]
   /** In a cast: where the look comes from (see SceneCastMember). */
   lookSource?: CastLookSource
+  /** Pinned chips that contradict another pinned chip of the block, with that tag. */
+  conflicts: Readonly<Record<string, string>>
 }
 
 export interface PackSceneComposition {
@@ -328,7 +332,12 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       permanence: permanence ?? (() => 'identity'),
       overrides,
     })
-    const out: SceneCharacterBlock[] = result.blocks.map((block, index) => ({ ...block, role: members[index].role, lookSource: members[index].lookSource }))
+    const out: SceneCharacterBlock[] = result.blocks.map((block, index) => {
+      // Pins of one character that contradict each other: both stay (the user chose them), and the block says so.
+      const pinnedHere = block.chips.filter((chip) => chip.state === 'pinned').map((chip) => chip.tag)
+      const conflicts = pinnedConflicts(pinnedHere, pinnedHere, (tag, others) => new ConflictChecker(others).check(tag))
+      return { ...block, role: members[index].role, lookSource: members[index].lookSource, conflicts }
+    })
     return { blocks: out, pinned: result.pinned, never: result.never }
   }, [members, choices, added, baseExtras, baseFixed, removedTags, removedOwn, permanence, overrides])
   // Each block keeps its own tags, even ones another character also has: they are different people.

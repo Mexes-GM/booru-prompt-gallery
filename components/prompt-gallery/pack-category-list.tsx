@@ -69,6 +69,7 @@ function TagChip({
   removeLabel,
   onToggle,
   note,
+  title,
   lowMotion,
 }: {
   text: string
@@ -79,6 +80,8 @@ function TagChip({
   onToggle?: () => void
   /** A short warning for this chip (a pin that contradicts another kept tag). */
   note?: string
+  /** Tooltip of a chip that can't be switched, saying why. */
+  title?: string
   lowMotion: boolean
 }) {
   const toneClass =
@@ -109,7 +112,10 @@ function TagChip({
           <span className="truncate max-w-[16rem]">{text}</span>
         </button>
       ) : (
-        <span className="truncate max-w-[16rem]" title={text}>{text}</span>
+        <span className="inline-flex items-center gap-1 min-w-0" title={title ?? text}>
+          {title && tone === "kept" && <Pin className="w-3 h-3 flex-shrink-0" aria-hidden />}
+          <span className="truncate max-w-[16rem]">{text}</span>
+        </span>
       )}
       {note && (
         <span title={note} role="img" aria-label={note} className="inline-flex">
@@ -128,6 +134,24 @@ function TagChip({
       )}
     </motion.span>
   )
+}
+
+/** Tooltip of a base chip in a category on Keep: its pin can't be switched there. */
+const KEEP_CHIP_TITLE = "This category keeps its tags. Set it to Vary to let prompts decide, or remove the tag."
+
+/** One sentence per pair of pinned tags that rarely go together ({tag: the one it clashes with}). */
+export function pinnedConflictLines(conflicts: Readonly<Record<string, string>>, shown: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const tag of shown) {
+    const other = conflicts[tag]
+    if (!other) continue
+    const key = [tag, other].sort().join("\u0000")
+    if (seen.has(key)) continue
+    seen.add(key)
+    lines.push(`${tag} and ${other} rarely go together. Both are pinned, so both stay.`)
+  }
+  return lines
 }
 
 /** "− n +" stepper; 0 renders as `zeroLabel`. */
@@ -307,6 +331,7 @@ const CategoryRow = memo(function CategoryRow({
   const units = `${unit}s`
 
   const kept = visibleBase.filter((t) => keptTags.has(t))
+  const conflictLines = chips ? pinnedConflictLines(chips.conflicts, [...kept, ...added]) : []
   // A pin outlives Off: those tags still go in every prompt, and the row says so.
   const pinnedHere = [...kept, ...added]
   const summary =
@@ -412,8 +437,9 @@ const CategoryRow = memo(function CategoryRow({
                       key={tag}
                       text={tag}
                       tone={keptTags.has(tag) ? "kept" : "faded"}
-                      onToggle={chips ? () => chips.toggle(tag) : undefined}
-                      note={chips?.conflicts[tag]}
+                      onToggle={chips && state !== "keep" ? () => chips.toggle(tag) : undefined}
+                      title={chips && state === "keep" ? KEEP_CHIP_TITLE : undefined}
+                      note={chips?.conflicts[tag] ? `Rarely goes with ${chips.conflicts[tag]}` : undefined}
                       onRemove={() => onToggleExcludedBaseTag(tag)}
                       removeLabel={`Remove ${tag} from every prompt`}
                       lowMotion={lowMotion}
@@ -424,7 +450,7 @@ const CategoryRow = memo(function CategoryRow({
                       key={`added:${tag}`}
                       text={tag}
                       tone="kept"
-                      note={chips?.conflicts[tag]}
+                      note={chips?.conflicts[tag] ? `Rarely goes with ${chips.conflicts[tag]}` : undefined}
                       onRemove={() => chips?.remove(tag)}
                       removeLabel={`Take ${tag} back`}
                       lowMotion={lowMotion}
@@ -465,6 +491,16 @@ const CategoryRow = memo(function CategoryRow({
               onDone={() => setAdding(false)}
               refusedMessage="People counts like 1girl can't be added here. Put them in Always add."
             />
+          )}
+          {chips && conflictLines.length > 0 && (
+            <div className="space-y-0.5" aria-live="polite">
+              {conflictLines.map((line) => (
+                <p key={line} className="flex items-start gap-1.5 text-xs text-warning-text">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden />
+                  <span>{line}</span>
+                </p>
+              ))}
+            </div>
           )}
           {chips && (visibleBase.length > 0 || added.length > 0) && (
             <p className="text-xs text-muted-foreground">
