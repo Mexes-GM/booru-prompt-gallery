@@ -165,6 +165,6 @@ export class GelbooruProvider extends BaseBooruProvider {
   }
 
   override async enrich(posts: BooruPost[]): Promise<BooruPost[]> {
-    return this.enrichPostsWithCategories(posts, this.supabase)
+    return this.enrichPostsWithCategories(posts, this.supabase, 'gelbooru')
   }
 }
