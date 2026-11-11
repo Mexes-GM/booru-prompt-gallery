@@ -18,7 +18,8 @@
  *      cap, deterministic when a seeded rng is supplied.
  */
 import { BooruPost } from "../booru/types"
-import { TagCategory, classifyTags } from "../tag-classifier"
+import { TagCategory, classifyTag, classifyTags } from "../tag-classifier"
+import { excludes, loadedTagRelations, requiredBy, type RelationRating, type TagRelations } from "../tag-relations"
 import { resolveTagConflicts } from "../tag-conflicts"
 import { conflictsWithBackground } from "./background-coherence"
 import { applyWeights } from "../weight-utils"
@@ -646,6 +647,82 @@ export interface GeneratePackPromptsArgs {
    * (`lockedTags`) is left alone — it is the user's own choice.
    */
   forbiddenTag?: (tag: string) => boolean
+  /**
+   * Measured tag relations (lib/tag-relations.ts); defaults to the loaded ones. With
+   * them, each axis only draws values that don't contradict the base or what is
+   * already drawn, and a value that requires a tag brings it along (or isn't drawn
+   * when that tag can't be added). Without them, sampling is as before and the
+   * conflict resolver cleans up after.
+   */
+  relations?: TagRelations | null
+  /** The pack's content rating, for the measured exclusions. */
+  rating?: RelationRating | null
+  /** Categories set to Off: a value that requires a tag of one of these isn't drawn. */
+  offCategories?: readonly TagCategory[]
+  /** Tags the user excluded: a value that requires one isn't drawn. */
+  userExcluded?: (tag: string) => boolean
+}
+
+/** What compatible sampling checks a candidate against. */
+interface Compatibility {
+  relations: TagRelations
+  context: { people: number; rating?: RelationRating | null }
+  off: ReadonlySet<TagCategory>
+  userExcluded: (tag: string) => boolean
+  overrides?: Record<string, string>
+}
+
+const tagsOfValue = (value: string): string[] =>
+  (value.includes(",") ? splitCommaSeparatedTags(value) : [value]).map(normalizeTagForPack).filter(Boolean)
+
+const PEOPLE_RE = /^(\d+)\+?(girl|boy|other)s?$/
+function peopleIn(tags: readonly string[]): number {
+  let n = 0
+  for (const tag of tags) {
+    const m = PEOPLE_RE.exec(tag.replace(/ /g, ""))
+    if (m) n += Number(m[1])
+    else if (/^multiple (girls|boys|others)$/.test(tag)) n += 2
+  }
+  return n
+}
+
+/** True when a tag of `tags` and one of `chosen` (almost) never meet. */
+function clashes(c: Compatibility, tags: readonly string[], chosen: readonly string[]): boolean {
+  return tags.some((tag) => chosen.some((other) => excludes(c.relations, other, tag, c.context)))
+}
+
+/** "pleated skirt" names a skirt: a requirement counts as met when a tag ends with it. */
+const names = (present: readonly string[], tag: string) => present.some((p) => p === tag || p.endsWith(` ${tag}`))
+
+/**
+ * Tags `tags` require that `present` lacks, to add with them; null when one can't be
+ * added (its category is Off, the user excluded it, it contradicts what's there, or its
+ * slot is already full).
+ */
+function requirements(c: Compatibility, tags: readonly string[], present: readonly string[]): string[] | null {
+  const added: string[] = []
+  for (const tag of tags) {
+    for (const needed of requiredBy(c.relations, tag)) {
+      if (names(present, needed) || names(tags, needed) || added.includes(needed)) continue
+      if (c.userExcluded(needed) || c.off.has(classifyTag(needed, c.overrides))) return null
+      const around = [...present, ...tags, ...added]
+      if (clashes(c, [needed], around) || !checkSlotConstraints(needed, around, c.overrides)) return null
+      added.push(needed)
+    }
+  }
+  return added
+}
+
+/** All of `values` in a weighted random order (the keys of sampleWeightedCombination). */
+function weightedOrder<T>(values: T[], weights: number[] | undefined, rng: () => number): T[] {
+  const usable = !!weights && weights.length === values.length && weights.some((w) => w > 0)
+  return values
+    .map((value, i) => {
+      const w = usable && Number.isFinite(weights![i]) && weights![i] > 0 ? weights![i] : usable ? 1e-9 : 1
+      return { value, key: Math.pow(Math.max(rng(), Number.EPSILON), 1 / w) }
+    })
+    .sort((a, b) => b.key - a.key)
+    .map((entry) => entry.value)
 }
 
 export interface PackPrompt {
@@ -859,6 +936,10 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     tagOverrides,
     requiredTag,
     forbiddenTag,
+    relations = loadedTagRelations(),
+    rating,
+    offCategories = [],
+    userExcluded = () => false,
   } = args
 
   const normalizedLocked = Array.from(
@@ -906,13 +987,23 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
       axis !== null
   )
 
+  const compat: Compatibility | null = relations
+    ? {
+        relations,
+        context: { people: peopleIn(normalizedLocked) >= 2 ? 2 : 1, rating },
+        off: new Set(offCategories),
+        userExcluded,
+        overrides: tagOverrides,
+      }
+    : null
+
   const targetCap = Math.max(0, Math.min(count, maxPrompts))
   if (targetCap === 0) return []
 
   // No axes to vary → a single prompt of just the base (if any).
   if (activeAxes.length === 0) {
     if (normalizedLocked.length === 0) return []
-    const built = buildPrompt(normalizedLocked, [], globalWeights, isGlobalWeightsEnabled, tagOverrides)
+    const built = buildPrompt(normalizedLocked, [], globalWeights, isGlobalWeightsEnabled, tagOverrides, rating)
     return built ? [built] : []
   }
 
@@ -963,6 +1054,18 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     } else {
       selections = shuffle(cartesian(pools), rng)
     }
+    // Measured relations: leave out selections whose values contradict the base or each other.
+    if (compat) {
+      const coherent = selections.filter((picked) => {
+        const chosen = [...normalizedLocked]
+        for (const tags of picked.flat().map(tagsOfValue)) {
+          if (clashes(compat, tags, chosen)) return false
+          chosen.push(...tags)
+        }
+        return true
+      })
+      if (coherent.length > 0) selections = coherent
+    }
   } else {
     // Huge space: sample selections lazily below.
     selections = []
@@ -1001,14 +1104,39 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
   const trySelection = (rawPicked: string[][]) => {
     const picked = requiredSources.length > 0 ? withRequiredTag(rawPicked) : rawPicked
     if (!picked) return
-    const flatValues = picked.flat()
-    const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled, tagOverrides)
+    let flatValues = picked.flat()
+    if (compat) {
+      // What the picks require comes with them; a pick whose requirement can't come isn't used.
+      const tags = flatValues.flatMap(tagsOfValue)
+      const needed = requirements(compat, tags, normalizedLocked)
+      if (!needed) return
+      flatValues = [...flatValues, ...needed]
+    }
+    const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled, tagOverrides, rating)
     if (!built) return
     // Conflict resolution can still drop the swapped-in value.
     if (requiredSources.length > 0 && !passes(built.prompt.split(','))) return
     if (seenPrompts.has(built.prompt)) return
     seenPrompts.add(built.prompt)
     results.push(built)
+  }
+
+  // Measured relations: each axis draws, in weighted random order, only values that neither
+  // contradict the base and the values drawn so far nor require a tag that can't be added.
+  // An axis where nothing fits falls back to a plain draw (the resolver cleans it up).
+  const sampleCompatible = (c: Compatibility): string[][] => {
+    const chosen = [...normalizedLocked]
+    return activeAxes.map((axis) => {
+      const take: string[] = []
+      for (const value of weightedOrder(axis.vals, axis.weights, rng)) {
+        if (take.length >= axis.k) break
+        const tags = tagsOfValue(value)
+        if (clashes(c, tags, chosen) || !requirements(c, tags, chosen)) continue
+        take.push(value)
+        chosen.push(...tags)
+      }
+      return take.length > 0 ? take : sampleWeightedCombination(axis.vals, axis.k, axis.weights, rng)
+    })
   }
 
   if (selections.length > 0) {
@@ -1025,7 +1153,9 @@ export function generatePackPrompts(args: GeneratePackPromptsArgs): PackPrompt[]
     let tries = 0
     while (results.length < target && tries < maxTries) {
       tries++
-      const picked = activeAxes.map((axis) => sampleWeightedCombination(axis.vals, axis.k, axis.weights, rng))
+      const picked = compat
+        ? sampleCompatible(compat)
+        : activeAxes.map((axis) => sampleWeightedCombination(axis.vals, axis.k, axis.weights, rng))
       trySelection(picked)
     }
   }
@@ -1044,7 +1174,8 @@ function buildPrompt(
   pickedValues: string[],
   globalWeights: Record<string, number>,
   isGlobalWeightsEnabled: boolean,
-  tagOverrides?: Record<string, string>
+  tagOverrides?: Record<string, string>,
+  rating?: RelationRating | null
 ): PackPrompt | null {
   const lockedSet = new Set(lockedTags.map(normalize))
 
@@ -1068,7 +1199,7 @@ function buildPrompt(
   }
 
   // Pass 1: Smart Tag Exclusion: drop values that contradict the locked base.
-  const { validTags: validAgainstBase } = resolveTagConflicts(lockedTags, flatPickedTags)
+  const { validTags: validAgainstBase } = resolveTagConflicts(lockedTags, flatPickedTags, { rating })
 
   // Pass 2: Smart Tag Exclusion, pass 2: incremental contradiction check
   // across remaining tags so mutually contradictory picks don't co-exist,
@@ -1076,7 +1207,7 @@ function buildPrompt(
   const validTags: string[] = []
   let contextTags = lockedTags
   for (const candidate of validAgainstBase) {
-    const { validTags: stillValid } = resolveTagConflicts(contextTags, [candidate])
+    const { validTags: stillValid } = resolveTagConflicts(contextTags, [candidate], { rating })
     if (
       stillValid.length > 0 &&
       checkSlotConstraints(candidate, contextTags, tagOverrides) &&

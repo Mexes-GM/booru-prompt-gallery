@@ -1535,6 +1535,17 @@ export function usePackMode(
   // Shared arg-assembly for both regenerate() and rerollPrompt(): active
   // axes' candidate pools, their learned+frequency sampling weights, and the
   // min-count-per-axis clamped to what the slot constraints actually allow.
+  // Measured relations: Classic draws values that fit together, bringing what a value requires.
+  const excludeInputText = cleanOptions.excludeInput
+  const relationArgs = useMemo(() => {
+    const excluded = new Set([...excludedBaseTags, ...splitCommaSeparatedTags(excludeInputText ?? '').map(normalizeTagForPack)])
+    return {
+      rating: contentRating,
+      offCategories: PACK_AXES.filter((cat) => categoryStates[cat] === 'off'),
+      userExcluded: (tag: string) => excluded.has(normalizeTagForPack(tag)),
+    }
+  }, [contentRating, categoryStates, excludedBaseTags, excludeInputText])
+
   const buildGenerationArgs = useCallback(() => {
     const axes: Partial<Record<TagCategory, string[]>> = {}
     activeAxisCategories.forEach((cat) => {
@@ -1629,6 +1640,7 @@ export function usePackMode(
         // Slot whitelist is already applied to the pools (mergedAxisValues),
         // where manual values are deliberately exempt — not passed again here.
         tagOverrides: effectiveOverrides,
+        ...relationArgs,
         ...ratingRuleArgs(rule),
       })
       // Only re-check after cleaning (exclude list, optimizeTags can drop the
@@ -1703,7 +1715,7 @@ export function usePackMode(
       }
     }
   }, [
-    hasBase,
+    hasBase, relationArgs,
     needsCharacterChoice,
     lockedTags,
     activeAxisCategories,
@@ -1748,6 +1760,7 @@ export function usePackMode(
         globalWeights,
         isGlobalWeightsEnabled,
         tagOverrides: effectiveOverrides,
+        ...relationArgs,
         ...ratingRuleArgs(rule),
       })
       const others = generatedPrompts.filter((_, i) => i !== index).map((p) => p.prompt)
@@ -1766,7 +1779,7 @@ export function usePackMode(
       return true
     },
     [
-      generatedPrompts,
+      generatedPrompts, relationArgs,
       buildGenerationArgs,
       lockedTags,
       globalWeights,
