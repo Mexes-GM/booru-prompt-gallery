@@ -880,10 +880,12 @@ const PackBuilderStickyFooterComponent = ({
     // opened first so the steps about its parts and pool have something to point at.
     const contentRef = useRef<HTMLDivElement>(null)
     const [tourTargets, setTourTargets] = useState<string[] | null>(null)
+    // Scenes has its own tour; Classic keeps the per-category one.
+    const tourMethod = sceneMode ? 'scenes' : 'classic'
     const startTour = useCallback(() => {
-        window.dispatchEvent(new Event(PACK_TOUR_OPEN_PARTS_EVENT))
-        requestAnimationFrame(() => setTourTargets(findPackTourTargets(contentRef.current)))
-    }, [])
+        if (tourMethod === 'classic') window.dispatchEvent(new Event(PACK_TOUR_OPEN_PARTS_EVENT))
+        requestAnimationFrame(() => setTourTargets(findPackTourTargets(contentRef.current, tourMethod)))
+    }, [tourMethod])
     const builderOpen = isOpen && hasSetupAnswers
 
     // One-time hint on the source chip for people who finished the tour before
@@ -1565,7 +1567,7 @@ const PackBuilderStickyFooterComponent = ({
                     )}
 
                     {tourTargets && (
-                        <PackBuilderTour containerRef={contentRef} availableTargets={tourTargets} onClose={() => setTourTargets(null)} />
+                        <PackBuilderTour containerRef={contentRef} availableTargets={tourTargets} method={tourMethod} castSize={scenes?.castSize ?? 1} onClose={() => setTourTargets(null)} />
                     )}
                 </DialogContent>
             </Dialog>

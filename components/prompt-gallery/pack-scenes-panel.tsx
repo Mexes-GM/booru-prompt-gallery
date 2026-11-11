@@ -431,7 +431,7 @@ function PackScenesPanelComponent({
   return (
     <div className="@container space-y-2">
       {/* Who: each character's look and clothes */}
-      <section className={sectionClass} aria-label={isCast ? "Characters" : "Character"}>
+      <section className={sectionClass} aria-label={isCast ? "Characters" : "Character"} data-pack-tour="scene-characters">
         <div>
           <h3 className="text-sm font-semibold">{isCast ? "Characters" : "Character"}</h3>
           <p className="text-xs text-muted-foreground">
@@ -560,7 +560,7 @@ function PackScenesPanelComponent({
 
       {/* Who's in the picture */}
       {compositions.length > 0 && currentPeople && (
-        <section className={sectionClass} aria-labelledby={peopleId}>
+        <section className={sectionClass} aria-labelledby={peopleId} data-pack-tour="scene-people">
           <h3 id={peopleId} className="text-sm font-semibold">Who&apos;s in the picture</h3>
           <div
             className="flex flex-wrap gap-1.5"
@@ -595,7 +595,7 @@ function PackScenesPanelComponent({
 
       {/* Situations */}
       {pool && pool.situations.length > 0 && (
-        <section className={sectionClass} aria-labelledby={situationsId}>
+        <section className={sectionClass} aria-labelledby={situationsId} data-pack-tour="scene-situations">
           <div className="flex items-baseline justify-between gap-2 flex-wrap">
             <h3 id={situationsId} className="text-sm font-semibold">Situations</h3>
             <span className="text-xs text-muted-foreground tabular-nums">
@@ -668,7 +668,7 @@ function PackScenesPanelComponent({
       )}
 
       {/* How */}
-      <section className={sectionClass} aria-label="Scene options">
+      <section className={sectionClass} aria-label="Scene options" data-pack-tour="scene-options">
         <Segmented label="Mix" value={settings.mix} options={MIX_OPTIONS} onChange={(v) => set("mix", v)} />
         <div className="h-px bg-border/50" />
         <Segmented
