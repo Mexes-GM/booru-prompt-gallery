@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef, useSyncExternalStore } from 'react'
 import { BooruPost, BooruProvider } from '@/lib/booru/types'
-import { TagCategory } from '@/lib/tag-classifier'
+import { TagCategory, classifyTag } from '@/lib/tag-classifier'
 import { splitCommaSeparatedTags, splitTags } from '@/lib/utils/tag-utils'
 import {
   PACK_AXES,
@@ -47,7 +47,10 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
-import type { ScenePackSettings } from '@/lib/pack/scene-pack'
+import { addedTraitCategory, classicKeptTags, withoutNeverTags } from '@/lib/pack/classic-chips'
+import type { ChipState, ScenePackSettings } from '@/lib/pack/scene-pack'
+import { isCompositionPattern } from '@/lib/pack/scene/permanence'
+import { isQualifiedVariant } from '@/lib/pack/character-identity'
 import { castAddition, castMemberLook, castMemberRole, cleanProfileLook, roleFromProfile, roleFromSubject, type CastLookSource, type CastRole } from '@/lib/pack/scene/cast'
 import { ConflictChecker } from '@/lib/tag-conflicts'
 import { ALL_EXCLUSIONS, excludes, loadedTagRelations } from '@/lib/tag-relations'
@@ -155,6 +158,34 @@ function sampleAxes(
 const DEFAULT_OUTFIT_OPTIONS = { styles: [] as readonly OutfitStyle[], detail: 'simple' as OutfitDetail }
 /** Outfits shown in the library clothing pool at once; Re-sample draws others. */
 const LIBRARY_POOL_SIZE = 60
+
+/** The character chips both methods share (see usePackMode). */
+export interface CharacterChipStore {
+  /** Pin or dash per "<character>\u0000<tag>". */
+  choices: ReadonlyMap<string, ChipState>
+  /** Traits added by hand, per character. */
+  added: ReadonlyMap<string, string[]>
+  /** Sets (or, with null, forgets) a chip's pin or dash. */
+  setChoice: (character: string, tag: string, state: ChipState | null) => void
+  addTraits: (character: string, text: string) => string[]
+  removeTrait: (character: string, tag: string) => void
+}
+
+/** What Classic's category rows need of the chips. */
+export interface ClassicChipControls {
+  /** Traits added by hand, under the category the taxonomy gives them (else the row they came from). */
+  addedByCategory: Partial<Record<TagCategory, string[]>>
+  /** A pinned tag that contradicts another tag every prompt keeps, with why. */
+  conflicts: Readonly<Record<string, string>>
+  /** Removed base tags that "Always add" puts back (its text wins). */
+  keptByAlwaysAdd: string[]
+  /** Pins a base tag, or leaves it to the sampling when it's pinned. */
+  toggle: (tag: string) => void
+  /** Adds traits from a row, pinned. Returns the people-count tags it refused. */
+  add: (category: TagCategory, text: string) => string[]
+  /** Takes back an added trait. */
+  remove: (tag: string) => void
+}
 
 export interface SceneCastMember {
   /** Pack-normalized character tag. */
@@ -372,6 +403,10 @@ export interface UsePackModeResult {
   /** "Never include" (scenes engine): tags left out of every prompt, as typed. */
   neverIncludeText: string
   setNeverIncludeText: (text: string) => void
+  /** The character chips both methods share. */
+  chipStore: CharacterChipStore
+  /** Classic's side of the chips. */
+  classicChips: ClassicChipControls
   /**
    * The characters a scenes pack names: the base character first, then the ones
    * added to a character base (up to MAX_CAST). Card and pasted-prompt bases have
@@ -612,6 +647,12 @@ export function usePackMode(
   const [customBaseText, setCustomBaseText] = useState('')
   // Base tags the user deleted from the current base — per-base, never persisted.
   const [excludedBaseTags, setExcludedBaseTags] = useState<Set<string>>(() => new Set())
+  // The character chips both methods share, per base: a pin or dash the user chose per tag
+  // ("<character>\u0000<tag>"), and traits typed in by hand per character, with the
+  // category row each was added from (where it stays when the taxonomy has no category).
+  const [chipChoices, setChipChoices] = useState<ReadonlyMap<string, ChipState>>(() => new Map())
+  const [addedTraits, setAddedTraits] = useState<ReadonlyMap<string, string[]>>(() => new Map())
+  const [addedHome, setAddedHome] = useState<ReadonlyMap<string, TagCategory>>(() => new Map())
   const [minTotalTags, setMinTotalTagsRaw] = useState(initialConfig.minTotalTags ?? 0)
   const [minSetTags, setMinSetTagsRaw] = useState<Partial<Record<TagCategory, number>>>(initialConfig.minSetTags ?? {})
   const [promptCount, setPromptCount] = useState(initialConfig.promptCount)
@@ -659,6 +700,9 @@ export function usePackMode(
     setAxisCounts({})
     setAxisAspects({})
     setExcludedBaseTags(new Set())
+    setChipChoices(new Map())
+    setAddedTraits(new Map())
+    setAddedHome(new Map())
     setChosenCharacter(null)
     setCharacterProfiles({})
     setCastExtras([])
@@ -680,6 +724,9 @@ export function usePackMode(
     setAxisCounts({})
     setAxisAspects({})
     setExcludedBaseTags(new Set())
+    setChipChoices(new Map())
+    setAddedTraits(new Map())
+    setAddedHome(new Map())
     classicRequestRef.current++
     setGeneratedPrompts([])
     setCastExtras([])
@@ -920,16 +967,87 @@ export function usePackMode(
     })
     // The character's signature accessories stay while Clothing varies.
     tags.push(...pinnedTagsFor(identityParts.signature, 'clothing', { lockedCategories, excludedBaseTags, mutedSlots, axisMinCounts }, effectiveOverrides))
+    // The character chips: a tag the user pinned goes in every prompt, whatever its category
+    // says; one they dashed is left to the sampling; traits added by hand are pinned.
+    const own = focusCharacter ?? ''
+    const baseTags = PACK_AXES.flatMap((cat) => (cat === 'appearance' ? focusAppearance(baseClassified[cat] || []) : baseClassified[cat] || []))
+    const kept = classicKeptTags(
+      tags,
+      baseTags,
+      (tag) => chipChoices.get(`${own}\u0000${tag}`),
+      (addedTraits.get(own) ?? []).filter((tag) => !excludedBaseTags.has(tag))
+    )
     // Free-text base prompt ("always included"): merged in as additional constant tags,
     // on top of whatever categories are locked.
     if (customBaseText.trim()) {
-      tags.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
+      kept.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
     }
-    return Array.from(new Set(tags.filter(Boolean)))
-  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance, identityParts, excludedBaseTags, mutedSlots, axisMinCounts])
+    return Array.from(new Set(kept.filter(Boolean)))
+  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance, identityParts, excludedBaseTags, mutedSlots, axisMinCounts, focusCharacter, chipChoices, addedTraits])
 
   /** "Always add" tags as typed — finalizePackPrompt puts them first, underscores intact. */
   const alwaysAddTags = useMemo(() => parseAlwaysAddTags(customBaseText), [customBaseText])
+
+  // ── The character chips, one store for both methods ──
+  const setChipChoice = useCallback((character: string, tag: string, state: ChipState | null) => {
+    setChipChoices((prev) => {
+      const key = `${character}\u0000${tag}`
+      if (state === null && !prev.has(key)) return prev
+      const next = new Map(prev)
+      if (state === null) next.delete(key)
+      else next.set(key, state)
+      return next
+    })
+  }, [])
+  /** Adds traits to a character by hand, pinned. Returns the people-count tags it refused. */
+  const addTraits = useCallback((character: string, text: string, home?: TagCategory): string[] => {
+    const tags = splitCommaSeparatedTags(text).map(normalizeTagForPack).filter(Boolean)
+    const refused = tags.filter(isCompositionPattern)
+    const accepted = tags.filter((tag) => !isCompositionPattern(tag))
+    if (accepted.length > 0) {
+      setAddedTraits((prev) => new Map(prev).set(character, Array.from(new Set([...(prev.get(character) ?? []), ...accepted]))))
+      // Added tags start pinned, even one the base already had dashed.
+      setChipChoices((prev) => {
+        const next = new Map(prev)
+        accepted.forEach((tag) => next.set(`${character}\u0000${tag}`, 'pinned'))
+        return next
+      })
+      if (home) setAddedHome((prev) => {
+        const next = new Map(prev)
+        accepted.forEach((tag) => next.set(tag, home))
+        return next
+      })
+    }
+    return refused
+  }, [])
+  /** Takes back a trait added by hand: it simply goes, it isn't "removed". */
+  const removeTrait = useCallback((character: string, tag: string) => {
+    setAddedTraits((prev) => new Map(prev).set(character, (prev.get(character) ?? []).filter((t) => t !== tag)))
+    setChipChoice(character, tag, null)
+  }, [setChipChoice])
+  const chipStore = useMemo<CharacterChipStore>(
+    () => ({ choices: chipChoices, added: addedTraits, setChoice: setChipChoice, addTraits, removeTrait }),
+    [chipChoices, addedTraits, setChipChoice, addTraits, removeTrait]
+  )
+
+  /**
+   * Tags no Classic prompt may have: the base tags removed with their chip and "Never
+   * include", each with its qualified variants ("jewelry" also rules out "gold jewelry"),
+   * whether they'd come from the base, the pool, a full set or a requirement. A tag the
+   * user also put in "Always add" stays: that text is theirs, as typed.
+   */
+  const classicNeverTags = useMemo(() => {
+    const always = new Set(alwaysAddTags.map(normalizeTagForPack))
+    return Array.from(new Set([...excludedBaseTags, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack)]))
+      .filter((tag) => tag && !always.has(tag))
+  }, [excludedBaseTags, neverIncludeText, alwaysAddTags])
+  const isNeverTag = useCallback(
+    (tag: string) => {
+      const t = normalizeTagForPack(tag)
+      return classicNeverTags.some((never) => isQualifiedVariant(t, never))
+    },
+    [classicNeverTags]
+  )
 
   // Scenes engine: the identity is the character's look and signature
   // accessories; everything else comes from each scene.
@@ -1194,12 +1312,20 @@ export function usePackMode(
   }, [buildPools, lockedSlots, effectiveOverrides])
 
   const axisMaxPerPrompt = useMemo(() => {
+    // Tags every prompt keeps take part of their category's room: a category that varies
+    // picks fewer values next to pinned ones (at least one, so it stays on).
+    const kept: Partial<Record<TagCategory, number>> = {}
+    lockedTags.forEach((tag) => {
+      const cat = classifyTag(tag, effectiveOverrides)
+      if ((PACK_AXES as readonly string[]).includes(cat)) kept[cat as TagCategory] = (kept[cat as TagCategory] ?? 0) + 1
+    })
     const out: Partial<Record<TagCategory, number>> = {}
     PACK_AXES.forEach((cat) => {
-      out[cat] = maxValuesPerPrompt(axisSlotGroups[cat] || [], cat)
+      const max = maxValuesPerPrompt(axisSlotGroups[cat] || [], cat)
+      out[cat] = max > 0 && !lockedCategories.has(cat) ? Math.max(1, max - (kept[cat] ?? 0)) : max
     })
     return out
-  }, [axisSlotGroups])
+  }, [axisSlotGroups, lockedTags, effectiveOverrides, lockedCategories])
 
   /** Applies a Variety preset (§5) to the active axes and discards any 'custom' edits. */
   const setVarietyLevel = useCallback(
@@ -1621,15 +1747,19 @@ export function usePackMode(
     return {
       rating: contentRating,
       offCategories: PACK_AXES.filter((cat) => categoryStates[cat] === 'off'),
-      userExcluded: (tag: string) => excluded.has(normalizeTagForPack(tag)),
+      userExcluded: (tag: string) => excluded.has(normalizeTagForPack(tag)) || isNeverTag(tag),
     }
-  }, [contentRating, categoryStates, excludedBaseTags, excludeInputText])
+  }, [contentRating, categoryStates, excludedBaseTags, excludeInputText, isNeverTag])
 
   const buildGenerationArgs = useCallback(() => {
     const axes: Partial<Record<TagCategory, string[]>> = {}
+    // A removed or never-included tag leaves the pool; a full set that has it is used without it
+    // (the rest of the outfit still belongs together). `originOf` keeps each value's sampling weight.
+    const originOf = new Map<string, string>()
     activeAxisCategories.forEach((cat) => {
-      const vals = mergedAxisValues[cat]
-      if (vals && vals.length > 0) axes[cat] = vals
+      const stripped = withoutNeverTags(mergedAxisValues[cat] ?? [], isNeverTag)
+      stripped.originOf.forEach((from, value) => originOf.set(value, from))
+      if (stripped.values.length > 0) axes[cat] = stripped.values
     })
 
     // Per-axis sampling weights combining booru cross-post frequency with
@@ -1642,7 +1772,7 @@ export function usePackMode(
       const vals = axes[cat]
       if (!vals || vals.length === 0) return
       const countsForCat = axisCounts[cat] || {}
-      const valuesWithCounts = vals.map((v) => ({ value: v, count: countsForCat[v] ?? 1 }))
+      const valuesWithCounts = vals.map((v) => ({ value: v, count: countsForCat[originOf.get(v) ?? v] ?? 1 }))
       const weights = learning.weightsFor(learningContextKeys, cat, valuesWithCounts)
       axisWeights[cat] = Object.fromEntries(vals.map((v, i) => [v, weights[i]]))
     })
@@ -1653,10 +1783,43 @@ export function usePackMode(
     const effectiveAxisMinCounts: Partial<Record<TagCategory, number>> = { ...axisMinCounts, ...raisedAxisCounts }
 
     return { axes, axisWeights, effectiveAxisMinCounts }
-  }, [activeAxisCategories, mergedAxisValues, axisCounts, learning, learningContextKeys, axisMinCounts, raisedAxisCounts])
+  }, [activeAxisCategories, mergedAxisValues, axisCounts, learning, learningContextKeys, axisMinCounts, raisedAxisCounts, isNeverTag])
 
   // The last pass Scenes uses too: a generic tag yields to its qualified form, and tags
   // that refer to something the prompt lacks ("holding" with nothing held) go. The base stays.
+  // The cleaner's exclude list with the never tags, so nothing brings them back at the end.
+  const classicCleanOptions = useMemo(
+    () => ({ ...cleanOptions, excludeInput: [cleanOptions.excludeInput, ...classicNeverTags].filter((t) => t && t.trim()).join(', ') }),
+    [cleanOptions, classicNeverTags]
+  )
+
+  // Classic's chips: the base's tags of each category row, plus what was added by hand.
+  const classicOwner = focusCharacter ?? ''
+  const classicChips = useMemo<ClassicChipControls>(() => {
+    const added = addedTraits.get(classicOwner) ?? []
+    const addedByCategory: Partial<Record<TagCategory, string[]>> = {}
+    added.forEach((tag) => {
+      const cat = addedTraitCategory(tag, classifyTag(tag, effectiveOverrides), addedHome.get(tag))
+      ;(addedByCategory[cat] ??= []).push(tag)
+    })
+    // A pin the user chose that contradicts another tag every prompt keeps: allowed, but said.
+    const userPinned = new Set([...added, ...lockedTags.filter((tag) => chipChoices.get(`${classicOwner}\u0000${tag}`) === 'pinned')])
+    const conflicts: Record<string, string> = {}
+    userPinned.forEach((tag) => {
+      const reason = new ConflictChecker(lockedTags.filter((t) => t !== tag), { rating: contentRating }).check(tag)
+      if (reason) conflicts[tag] = reason
+    })
+    const always = new Set(alwaysAddTags.map(normalizeTagForPack))
+    return {
+      addedByCategory,
+      conflicts,
+      keptByAlwaysAdd: Array.from(new Set([...excludedBaseTags, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack)])).filter((tag) => always.has(tag)),
+      toggle: (tag: string) => setChipChoice(classicOwner, tag, lockedTags.includes(tag) ? 'scene' : 'pinned'),
+      add: (category: TagCategory, text: string) => addTraits(classicOwner, text, category),
+      remove: (tag: string) => removeTrait(classicOwner, tag),
+    }
+  }, [addedTraits, classicOwner, effectiveOverrides, addedHome, lockedTags, chipChoices, contentRating, alwaysAddTags, excludedBaseTags, neverIncludeText, setChipChoice, addTraits, removeTrait])
+
   const coherentClassicPrompt = useCallback(
     (prompt: string) => coherentPromptTags(prompt.split(',').map((t) => t.trim()).filter(Boolean), { keep: lockedTags, overrides: effectiveOverrides }).join(', '),
     [lockedTags, effectiveOverrides]
@@ -1747,7 +1910,7 @@ export function usePackMode(
           tags,
           focusedCharacterTags,
           {
-            ...cleanOptions,
+            ...classicCleanOptions,
             tagOverrides: effectiveOverrides,
             globalWeights,
             isGlobalWeightsEnabled,
@@ -1823,7 +1986,7 @@ export function usePackMode(
       }
     }
   }, [
-    hasBase, relationArgs, coherentClassicPrompt, rawEstimatedTags,
+    hasBase, relationArgs, coherentClassicPrompt, rawEstimatedTags, classicCleanOptions,
     needsCharacterChoice,
     lockedTags,
     activeAxisCategories,
@@ -1833,7 +1996,6 @@ export function usePackMode(
     globalWeights,
     isGlobalWeightsEnabled,
     effectiveOverrides,
-    cleanOptions,
     focusedCharacterTags,
     learning,
     learningContextKeys,
@@ -1876,7 +2038,7 @@ export function usePackMode(
         const cleaned = cleanSyntheticPrompt(
           tags,
           focusedCharacterTags,
-          { ...cleanOptions, tagOverrides: effectiveOverrides, globalWeights, isGlobalWeightsEnabled, lockedTags },
+          { ...classicCleanOptions, tagOverrides: effectiveOverrides, globalWeights, isGlobalWeightsEnabled, lockedTags },
           lockedTags
         )
         return cleaned && finalizePackPrompt(coherentClassicPrompt(cleaned), alwaysAddTags)
@@ -1887,14 +2049,13 @@ export function usePackMode(
       return true
     },
     [
-      generatedPrompts, relationArgs, coherentClassicPrompt,
+      generatedPrompts, relationArgs, coherentClassicPrompt, classicCleanOptions,
       buildGenerationArgs,
       lockedTags,
       globalWeights,
       isGlobalWeightsEnabled,
       effectiveOverrides,
       focusedCharacterTags,
-      cleanOptions,
       alwaysAddTags,
       contentRating,
       annotatePrompt,
@@ -1934,6 +2095,9 @@ export function usePackMode(
     cachedPostsRef.current = []
     setCustomBaseText('')
     setExcludedBaseTags(new Set())
+    setChipChoices(new Map())
+    setAddedTraits(new Map())
+    setAddedHome(new Map())
     setMinTotalTagsRaw(0)
     setLockedCategories(new Set<TagCategory>(['appearance']))
     setLockedSlots(new Set())
@@ -2097,6 +2261,8 @@ export function usePackMode(
     sceneBaseFixed,
     neverIncludeText,
     setNeverIncludeText,
+    chipStore,
+    classicChips,
     focusedCharacterTags,
     alwaysAddTags,
     sceneCast,

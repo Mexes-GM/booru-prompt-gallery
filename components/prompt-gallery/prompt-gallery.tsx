@@ -898,6 +898,7 @@ export function PromptGallery() {
     baseKey: packBaseCard ? `card:${packBaseCard.id}` : `prompt:${packMode.basePrompt}`,
     sourceKey: packSourceKey,
     provider: packSourceAnswers.booruProvider,
+    chipStore: packMode.chipStore,
   })
   const packUsesScenes = packEngine === 'scenes'
   // Only seeds pools ONCE per base — re-running it on every incidental result
@@ -2559,6 +2560,7 @@ export function PromptGallery() {
         sceneSettings={packMode.sceneSettings}
         onSceneSettingsChange={packMode.setSceneSettings}
         neverIncludeText={packMode.neverIncludeText}
+        classicChips={packMode.classicChips}
         onNeverIncludeTextChange={packMode.setNeverIncludeText}
         cast={packSceneCast}
         onAddCastMember={packMode.addCastMember}

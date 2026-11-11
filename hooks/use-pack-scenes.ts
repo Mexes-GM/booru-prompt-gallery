@@ -30,6 +30,7 @@ import {
 import { packNaturalSource } from '@/lib/pack/pack-natural'
 import type { NaturalPromptSource } from '@/lib/prompt/natural-format'
 import type { PackRatingMode } from '@/hooks/use-pack-seed-search'
+import type { CharacterChipStore } from '@/hooks/use-pack-mode'
 import { resolutionForAspect } from '@/lib/pack/prompt-resolution'
 import { clampMaxLongSide } from '@/lib/extension/generation-resolution'
 import { userPreferences } from '@/lib/storage'
@@ -95,6 +96,8 @@ export interface UsePackScenesArgs {
   sourceKey: string
   /** The source's booru: Gelbooru's own tag list tells its names apart. */
   provider: string
+  /** Pins, dashes and added traits per character, shared with Classic (usePackMode's chipStore). */
+  chipStore: CharacterChipStore
 }
 
 export interface SceneCharacterBlock {
@@ -209,7 +212,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   const {
     enabled, posts, overrides, members, baseExtras, baseFixed, baseClothing, removedTags, baseFromCharacter,
     alwaysAdd, neverIncludeText, characterTags, contentRating, settings, promptCount, cleanOptions, globalWeights,
-    isGlobalWeightsEnabled, outfitOptions, natural, baseKey, sourceKey, provider,
+    isGlobalWeightsEnabled, outfitOptions, natural, baseKey, sourceKey, provider, chipStore,
   } = args
 
   // Permanence data (which tags are who the character is), fetched while enabled until it loads.
@@ -251,8 +254,8 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   const [pickedPeople, setPickedPeople] = useState<PackPeople | null>(null)
   const [disabledSituations, setDisabledSituations] = useState<string[]>([])
   // Chip choices and added tags per character ("<character>\u0000<tag>" and character -> tags).
-  const [choices, setChoices] = useState<ReadonlyMap<string, ChipState>>(() => new Map())
-  const [added, setAdded] = useState<ReadonlyMap<string, string[]>>(() => new Map())
+  // Pins, dashes and added traits live with the base in usePackMode, shared with Classic.
+  const { choices, added } = chipStore
   // Chips removed from the other characters' blocks (the first character's removals are the base's).
   const [removedOwn, setRemovedOwn] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
   const [prompts, setPrompts] = useState<PackPrompt[]>(EMPTY_PROMPTS)
@@ -269,8 +272,6 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   const [prevBaseKey, setPrevBaseKey] = useState(baseKey)
   if (baseKey !== prevBaseKey) {
     setPrevBaseKey(baseKey)
-    setChoices(new Map())
-    setAdded(new Map())
     setRemovedOwn(new Map())
     setPrompts(EMPTY_PROMPTS)
     setShortBy(0)
@@ -343,42 +344,11 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   const toggleChip = useCallback((character: string, tag: string) => {
     const current = blocks.find((block) => block.character === character)?.chips.find((chip) => chip.tag === tag)
     if (!current) return
-    setChoices((prev) => new Map(prev).set(chipKey(character, tag), current.state === 'pinned' ? 'scene' : 'pinned'))
-  }, [blocks])
-  const resetChip = useCallback((character: string, tag: string) => {
-    setChoices((prev) => {
-      const key = chipKey(character, tag)
-      if (!prev.has(key)) return prev
-      const next = new Map(prev)
-      next.delete(key)
-      return next
-    })
-  }, [])
-  const addTraits = useCallback((character: string, text: string): string[] => {
-    const tags = splitCommaSeparatedTags(text).map(normalizeTagForPack).filter(Boolean)
-    const refused = tags.filter(isCompositionPattern)
-    const accepted = tags.filter((tag) => !isCompositionPattern(tag))
-    if (accepted.length > 0) {
-      setAdded((prev) => new Map(prev).set(character, Array.from(new Set([...(prev.get(character) ?? []), ...accepted]))))
-      // Added tags start pinned, even one the base already offered from the scene.
-      setChoices((prev) => {
-        const next = new Map(prev)
-        accepted.forEach((tag) => next.set(chipKey(character, tag), 'pinned'))
-        return next
-      })
-    }
-    return refused
-  }, [])
-  const removeTrait = useCallback((character: string, tag: string) => {
-    setAdded((prev) => new Map(prev).set(character, (prev.get(character) ?? []).filter((t) => t !== tag)))
-    setChoices((prev) => {
-      const key = chipKey(character, tag)
-      if (!prev.has(key)) return prev
-      const next = new Map(prev)
-      next.delete(key)
-      return next
-    })
-  }, [])
+    chipStore.setChoice(character, tag, current.state === 'pinned' ? 'scene' : 'pinned')
+  }, [blocks, chipStore])
+  const resetChip = useCallback((character: string, tag: string) => chipStore.setChoice(character, tag, null), [chipStore])
+  const addTraits = useCallback((character: string, text: string): string[] => chipStore.addTraits(character, text), [chipStore])
+  const removeTrait = useCallback((character: string, tag: string) => chipStore.removeTrait(character, tag), [chipStore])
 
   const toggleRemovedChip = useCallback((character: string, tag: string) => {
     setRemovedOwn((prev) => {

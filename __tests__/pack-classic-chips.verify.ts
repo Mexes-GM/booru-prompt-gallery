@@ -1,0 +1,83 @@
+/**
+ * The character chips in Classic (lib/pack/classic-chips.ts), with the same chip
+ * model as Scenes: a pinned tag goes in every prompt and takes its slot, a removed
+ * or never-included tag never appears (full sets included), an added trait is
+ * pinned and shown under its own category, and one choice serves both methods.
+ *
+ * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-classic-chips.verify.ts
+ */
+import { addedTraitCategory, classicKeptTags, withoutNeverTags } from "../lib/pack/classic-chips"
+import { createSeededRng, generatePackPrompts } from "../lib/pack/pack-generator"
+import { castChips, type ChipState } from "../lib/pack/scene-pack"
+import { isQualifiedVariant } from "../lib/pack/character-identity"
+
+let failed = 0
+let passed = 0
+const assert = (ok: unknown, label: string) => {
+  if (ok) passed++
+  else { failed++; console.log("FAIL: " + label) }
+}
+
+// ── What every prompt keeps ──
+{
+  const choices = new Map<string, ChipState>([["long hair", "scene"], ["black thighhighs", "pinned"]])
+  const kept = classicKeptTags(["1girl", "long hair", "blue eyes"], ["long hair", "blue eyes", "black thighhighs", "skirt"], (t) => choices.get(t), ["red scarf"])
+  assert(kept.join() === "1girl,blue eyes,black thighhighs,red scarf", "a dash leaves, a pin joins from a varying category, an added trait is pinned: " + kept.join())
+}
+
+// ── A pinned garment takes its slot ──
+{
+  const overrides: Record<string, string> = {
+    "black thighhighs": "clothing:legwear", "white thighhighs": "clothing:legwear", pantyhose: "clothing:legwear",
+    skirt: "clothing:bottom", shorts: "clothing:bottom", "school uniform": "clothing:outfit",
+  }
+  const prompts = generatePackPrompts({
+    lockedTags: ["1girl", "black thighhighs"],
+    axes: { clothing: ["white thighhighs", "pantyhose", "skirt", "shorts"] },
+    axisMinCounts: { clothing: 2 },
+    count: 30,
+    rng: createSeededRng(4),
+    tagOverrides: overrides,
+  })
+  assert(prompts.length > 0 && prompts.every((p) => p.prompt.includes("black thighhighs")), "the pinned stockings are in every prompt")
+  assert(prompts.every((p) => !/white thighhighs|pantyhose/.test(p.prompt)), "and no other legwear joins them")
+  assert(prompts.some((p) => /skirt|shorts/.test(p.prompt)), "the rest of the category still varies")
+}
+
+// ── Removed and never-included tags never appear, full sets included ──
+{
+  const never = ["earrings", "hat"]
+  const isNever = (tag: string) => never.some((n) => isQualifiedVariant(tag.toLowerCase().replace(/_/g, " "), n))
+  const pool = ["school uniform, earrings, loafers", "witch hat, black dress", "kimono", "gold earrings", "hat"]
+  const { values, originOf } = withoutNeverTags(pool, isNever)
+  assert(values.join("|") === "school uniform, loafers|black dress|kimono", "sets lose the tag and stay, singles go: " + values.join("|"))
+  assert(originOf.get("school uniform, loafers") === "school uniform, earrings, loafers", "each value remembers where it came from (its weight)")
+  const prompts = generatePackPrompts({ lockedTags: ["1girl"], axes: { clothing: values }, count: 20, rng: createSeededRng(2) })
+  assert(prompts.length > 0 && prompts.every((p) => !/earrings|hat/.test(p.prompt)), "no prompt has them")
+}
+
+// ── Where an added trait shows ──
+assert(addedTraitCategory("red scarf", "clothing", "appearance") === "clothing", "under the category the taxonomy gives it, whatever row it came from")
+assert(addedTraitCategory("my own tag", "other", "pose") === "pose", "no category: it stays where it was added")
+assert(addedTraitCategory("my own tag", "other", undefined) === "appearance", "else with the character")
+
+// ── One choice for both methods ──
+{
+  const choices = new Map<string, ChipState>([["\u0000short hair", "scene"]])
+  const scenes = castChips({
+    members: [{ character: "", candidates: ["short hair", "red eyes"] }],
+    choices: () => new Map([...choices].map(([k, v]) => [k.split("\u0000")[1], v])),
+    added: () => ["red scarf"],
+    removed: () => new Set(),
+    baseExtras: [],
+    baseFixed: [],
+    permanence: () => "identity",
+    overrides: {},
+  })
+  const classic = classicKeptTags(["short hair", "red eyes"], ["short hair", "red eyes"], (t) => choices.get(`\u0000${t}`), ["red scarf"])
+  assert(scenes.blocks[0].chips.find((c) => c.tag === "short hair")?.state === "scene" && !classic.includes("short hair"), "a dash chosen once shows in both methods")
+  assert(scenes.pinned.includes("red scarf") && classic.includes("red scarf"), "and so does an added trait")
+}
+
+console.log(`${passed} passed, ${failed} failed`)
+if (failed > 0) process.exit(1)

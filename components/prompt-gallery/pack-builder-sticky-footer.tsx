@@ -33,7 +33,7 @@ import Image from 'next/image'
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { withResolutionPrefix } from '@/lib/pack/prompt-resolution'
 import { userPreferences } from '@/lib/storage'
-import { MAX_MIN_TOTAL_TAGS, type PackCategoryState, type PackSlotState } from '@/hooks/use-pack-mode'
+import { MAX_MIN_TOTAL_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState } from '@/hooks/use-pack-mode'
 import { PROVIDER_LABELS, summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-modal'
 import { PackVarietySelect } from './pack-variety-select'
 import { PackCategoryList, PackStepper } from './pack-category-list'
@@ -148,7 +148,9 @@ export interface PackBuilderStickyFooterProps {
     scenes?: UsePackScenesResult
     sceneSettings?: ScenePackSettings
     onSceneSettingsChange?: (settings: ScenePackSettings) => void
-    /** "Never include" (scenes engine): tags left out of every prompt, as typed. */
+    /** Classic's character chips (pin, add, take back). */
+    classicChips?: ClassicChipControls
+    /** "Never include" (both methods): tags left out of every prompt, as typed. */
     neverIncludeText?: string
     onNeverIncludeTextChange?: (text: string) => void
     /** Scenes engine, character base: the characters the pack names (the base one first). */
@@ -739,6 +741,7 @@ const PackBuilderStickyFooterComponent = ({
     sceneSettings,
     onSceneSettingsChange,
     neverIncludeText = '',
+    classicChips,
     onNeverIncludeTextChange,
     cast,
     onAddCastMember,
@@ -1303,6 +1306,11 @@ const PackBuilderStickyFooterComponent = ({
                                                             Goes at the start of every prompt exactly as typed. It doesn&apos;t replace anything in the scene.
                                                         </p>
                                                     )}
+                                                    {!sceneMode && classicChips && classicChips.keptByAlwaysAdd.length > 0 && (
+                                                        <p className="text-xs text-muted-foreground" role="status">
+                                                            <span className="font-mono">{classicChips.keptByAlwaysAdd.join(', ')}</span> {classicChips.keptByAlwaysAdd.length === 1 ? "is" : "are"} removed, but Always add puts {classicChips.keptByAlwaysAdd.length === 1 ? "it" : "them"} in every prompt.
+                                                        </p>
+                                                    )}
                                                     {sceneMode && scenes && scenes.alwaysAddOmitted.length > 0 && (
                                                         <p className="text-xs text-muted-foreground" role="status">
                                                             <span>
@@ -1322,7 +1330,7 @@ const PackBuilderStickyFooterComponent = ({
                                                     Always add tags (LoRA triggers, quality tags…)
                                                 </button>
                                             )}
-                                            {sceneMode && onNeverIncludeTextChange && (showNever ? (
+                                            {onNeverIncludeTextChange && (showNever ? (
                                                 <div className="space-y-1">
                                                     <Label htmlFor="pack-never-include" className="text-xs font-medium text-muted-foreground">
                                                         Never include
@@ -1335,7 +1343,9 @@ const PackBuilderStickyFooterComponent = ({
                                                         className="text-xs font-mono min-h-[2.25rem] h-9 max-h-24 resize-y py-2"
                                                     />
                                                     <p className="text-xs text-muted-foreground">
-                                                        Left out of every prompt, along with its variants (jewelry also removes gold jewelry). The scenes are still used.
+                                                        {sceneMode
+                                                            ? "Left out of every prompt, along with its variants (jewelry also removes gold jewelry). The scenes are still used."
+                                                            : "Left out of every prompt, along with its variants (jewelry also removes gold jewelry), even from full sets."}
                                                     </p>
                                                 </div>
                                             ) : (
@@ -1443,6 +1453,7 @@ const PackBuilderStickyFooterComponent = ({
                                         minSetTags={minSetTags}
                                         onSetMinSetTags={onSetMinSetTags}
                                         hiddenThinSets={hiddenThinSets}
+                                        chips={classicChips}
                                     />
                                     )}
 

@@ -20,7 +20,7 @@ import { OTHER_SITUATION, type PackPeople, type Situation } from "@/lib/pack/sce
 import type { SceneChip, ScenePackSettings } from "@/lib/pack/scene-pack"
 import type { SceneCharacterBlock, UsePackScenesResult } from "@/hooks/use-pack-scenes"
 import type { CastRole } from "@/lib/pack/scene/cast"
-import { TagAutocompleteTextarea } from "./tag-autocomplete-textarea"
+import { AddTagsField } from "./add-tags-field"
 import { radioGroupKeyDown } from "./radio-keys"
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -176,8 +176,6 @@ function CharacterBlock({
   const roleId = useId()
   const [showMore, setShowMore] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState("")
-  const [refused, setRefused] = useState(false)
   const name = block.character
   // The base's other tags stay folded unless pinned: they'd crowd the character.
   const mainChips = block.chips.filter((chip) => chip.origin !== "base" || chip.state === "pinned")
@@ -198,11 +196,6 @@ function CharacterBlock({
     else scenes.toggleRemovedChip(name, tag)
   }
   const restore = () => block.removed.forEach(toggleRemoved)
-  const submitDraft = () => {
-    if (!draft.trim()) return
-    setRefused(scenes.addTraits(name, draft).length > 0)
-    setDraft("")
-  }
 
   return (
     <div className={showName ? "space-y-2 rounded-lg border border-border/50 bg-background/40 p-2.5" : "space-y-2"}>
@@ -280,41 +273,12 @@ function CharacterBlock({
         )}
       </div>
       {adding && (
-        <div className="space-y-1">
-          <label htmlFor={addId} className="text-xs font-medium text-muted-foreground">
-            {showName ? `Add to ${name}` : "Add to the character"}
-          </label>
-          <div className="flex items-start gap-1.5">
-            <TagAutocompleteTextarea
-              id={addId}
-              value={draft}
-              onValueChange={(value) => {
-                setDraft(value)
-                setRefused(false)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.defaultPrevented) {
-                  e.preventDefault()
-                  submitDraft()
-                }
-              }}
-              placeholder="e.g. red scarf, glasses"
-              rows={1}
-              autoFocus
-              onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" })}
-              className="text-xs font-mono min-h-[2.25rem] h-9 resize-none py-2"
-            />
-            <Button type="button" variant="outline" size="sm" onClick={submitDraft} disabled={!draft.trim()} className="h-9 pointer-coarse:h-11 text-xs">
-              Add
-            </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => { setAdding(false); setDraft(""); setRefused(false) }} className="h-9 pointer-coarse:h-11 text-xs">
-              Done
-            </Button>
-          </div>
-          {refused && (
-            <p className="text-xs text-warning-text" role="status">Set the number of people under Who&apos;s in the picture.</p>
-          )}
-        </div>
+        <AddTagsField
+          label={showName ? `Add to ${name}` : "Add to the character"}
+          onAdd={(text) => scenes.addTraits(name, text).length > 0}
+          onDone={() => setAdding(false)}
+          refusedMessage="Set the number of people under Who's in the picture."
+        />
       )}
       {foldLabel && foldedChips.length > 0 && (
         <div>

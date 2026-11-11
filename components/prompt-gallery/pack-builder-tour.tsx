@@ -124,7 +124,7 @@ const STEPS: TourStep[] = [
     target: "base",
     icon: <UserRound />,
     title: "Your base",
-    body: "The card or prompt you started from. Its tags are sorted into the categories below: open one to see them and remove any you don't want. “Always add” goes into every prompt (LoRA triggers, quality tags).",
+    body: "Where the pack starts: a card, a character or a prompt. Its tags are sorted into the categories below. Open one to pin a tag in every prompt, add your own, or remove one so it never appears. “Always add” goes into every prompt (LoRA triggers, quality tags).",
   },
   {
     target: "source",
@@ -211,7 +211,7 @@ function sceneSteps(castSize: number): TourStep[] {
       target: "base",
       icon: <UserRound />,
       title: "Your base",
-      body: "The character or prompt you started from. “Always add” goes into every prompt as you typed it, like LoRA triggers or quality tags.",
+      body: "Where the pack starts: a card, a character or a prompt. “Always add” goes into every prompt as you typed it, like LoRA triggers or quality tags.",
     },
     {
       target: "scene-characters",

@@ -16,7 +16,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { Ban, Check, ChevronDown, ChevronRight, Lock, Minus, Package, Plus, RefreshCw, RotateCcw, Shirt, Shuffle, X } from "lucide-react"
+import { AlertTriangle, Ban, Check, ChevronDown, ChevronRight, Lock, Minus, Package, Pin, Plus, RefreshCw, RotateCcw, Shirt, Shuffle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -33,7 +33,8 @@ import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
 import { TagCategory } from "@/lib/tag-classifier"
 import { MAX_MIN_TAGS_SLIDER, MAX_MIN_PACKS_SLIDER, type AxisTagMode, type SlotGroup } from "@/lib/pack/pack-generator"
 import { TAG_CATEGORIES, formatSubcategoryLabel, getTagSlotFromOverrides, slotsOf } from "@/lib/tag-taxonomy"
-import { DEFAULT_MIN_SET_TAGS, MAX_MIN_SET_TAGS, type PackCategoryState, type PackSlotState } from "@/hooks/use-pack-mode"
+import { DEFAULT_MIN_SET_TAGS, MAX_MIN_SET_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState } from "@/hooks/use-pack-mode"
+import { AddTagsField } from "./add-tags-field"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { PACK_TOUR_OPEN_PARTS_EVENT } from "./pack-builder-tour"
 
@@ -66,12 +67,18 @@ function TagChip({
   tone = "default",
   onRemove,
   removeLabel,
+  onToggle,
+  note,
   lowMotion,
 }: {
   text: string
   tone?: "default" | "kept" | "faded"
   onRemove?: () => void
   removeLabel?: string
+  /** Pins the tag in every prompt, or leaves it to the sampling (the base's chips). */
+  onToggle?: () => void
+  /** A short warning for this chip (a pin that contradicts another kept tag). */
+  note?: string
   lowMotion: boolean
 }) {
   const toneClass =
@@ -89,13 +96,32 @@ function TagChip({
       transition={lowMotion ? { duration: 0.12 } : { type: "spring", stiffness: 500, damping: 32 }}
       className={`group inline-flex items-center gap-1 max-w-full rounded-md border px-1.5 py-0.5 font-mono text-xs leading-5 ${toneClass}`}
     >
-      <span className="truncate max-w-[16rem]" title={text}>{text}</span>
+      {onToggle ? (
+        <button
+          type="button"
+          aria-pressed={tone === "kept"}
+          aria-label={`Pin ${text} in every prompt`}
+          title={tone === "kept" ? "In every prompt. Select to let the category decide." : "Only when it's picked. Select to pin it in every prompt."}
+          onClick={onToggle}
+          className="relative inline-flex items-center gap-1 min-w-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2.5 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
+        >
+          {tone === "kept" && <Pin className="w-3 h-3 flex-shrink-0" aria-hidden />}
+          <span className="truncate max-w-[16rem]">{text}</span>
+        </button>
+      ) : (
+        <span className="truncate max-w-[16rem]" title={text}>{text}</span>
+      )}
+      {note && (
+        <span title={note} role="img" aria-label={note} className="inline-flex">
+          <AlertTriangle className="w-3 h-3 flex-shrink-0 text-warning-text" aria-hidden />
+        </span>
+      )}
       {onRemove && (
         <button
           type="button"
           onClick={onRemove}
           aria-label={removeLabel ?? `Remove ${text}`}
-          className="relative -mr-0.5 rounded p-0.5 text-faint-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:after:absolute pointer-coarse:after:-inset-3.5 pointer-coarse:after:content-[''] hover:text-destructive-text hover:bg-destructive-soft transition-[color,background-color,opacity]"
+          className="relative -mr-0.5 rounded p-0.5 text-faint-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:px-2.5 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-3.5 pointer-coarse:after:left-0 pointer-coarse:after:-right-3 pointer-coarse:after:content-[''] hover:text-destructive-text hover:bg-destructive-soft transition-[color,background-color,opacity]"
         >
           <X className="w-3 h-3" />
         </button>
@@ -191,6 +217,8 @@ interface CategoryRowProps {
   /** Marks this row's controls as the Pack Builder tour's anchors. */
   tourRole?: boolean
   tourPool?: boolean
+  /** The character chips: pin a base tag, add traits, take them back. */
+  chips?: ClassicChipControls
 }
 
 const CategoryRow = memo(function CategoryRow({
@@ -226,8 +254,11 @@ const CategoryRow = memo(function CategoryRow({
   hiddenThinSets,
   tourRole,
   tourPool,
+  chips,
 }: CategoryRowProps) {
   const lowMotion = useLowMotion()
+  const [adding, setAdding] = useState(false)
+  const added = chips?.addedByCategory[category] ?? EMPTY_TAGS
   const [draft, setDraft] = useState("")
   const [expanded, setExpanded] = useState(false)
   const [showSlots, setShowSlots] = useState(false)
@@ -276,9 +307,11 @@ const CategoryRow = memo(function CategoryRow({
   const units = `${unit}s`
 
   const kept = visibleBase.filter((t) => keptTags.has(t))
+  // A pin outlives Off: those tags still go in every prompt, and the row says so.
+  const pinnedHere = [...kept, ...added]
   const summary =
     state === "off"
-      ? "Left out"
+      ? pinnedHere.length > 0 ? `Left out, except pinned ${previewTags(pinnedHere)}` : "Left out"
       : state === "keep"
         ? kept.length > 0
           ? previewTags(kept)
@@ -366,25 +399,49 @@ const CategoryRow = memo(function CategoryRow({
         <div id={bodyId} className="px-3 sm:px-4 pb-4 pt-1 space-y-3 border-t border-border/40">
           {note && <p className="pt-2 text-xs text-muted-foreground">{note}</p>}
 
-          {/* The base's own tags for this category */}
-          {baseTags.length > 0 && (
+          {/* The base's own tags for this category, and traits added by hand */}
+          {(baseTags.length > 0 || chips) && (
             <div className="flex items-start gap-3 pt-2">
               <span className="w-14 flex-shrink-0 pt-1 text-xs font-medium text-muted-foreground">
                 Base
               </span>
-              <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-x-3.5 pointer-coarse:gap-y-5 flex-1 min-w-0">
                 <AnimatePresence initial={false} mode="popLayout">
                   {visibleBase.map((tag) => (
                     <TagChip
                       key={tag}
                       text={tag}
                       tone={keptTags.has(tag) ? "kept" : "faded"}
+                      onToggle={chips ? () => chips.toggle(tag) : undefined}
+                      note={chips?.conflicts[tag]}
                       onRemove={() => onToggleExcludedBaseTag(tag)}
-                      removeLabel={`Remove ${tag} from the base`}
+                      removeLabel={`Remove ${tag} from every prompt`}
+                      lowMotion={lowMotion}
+                    />
+                  ))}
+                  {added.map((tag) => (
+                    <TagChip
+                      key={`added:${tag}`}
+                      text={tag}
+                      tone="kept"
+                      note={chips?.conflicts[tag]}
+                      onRemove={() => chips?.remove(tag)}
+                      removeLabel={`Take ${tag} back`}
                       lowMotion={lowMotion}
                     />
                   ))}
                 </AnimatePresence>
+                {chips && !adding && (
+                  <button
+                    type="button"
+                    onClick={() => setAdding(true)}
+                    aria-label={`Add to ${label}`}
+                    className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                )}
                 {removedCount > 0 && (
                   <button
                     type="button"
@@ -400,6 +457,19 @@ const CategoryRow = memo(function CategoryRow({
                 )}
               </div>
             </div>
+          )}
+          {chips && adding && (
+            <AddTagsField
+              label={`Add to ${label}`}
+              onAdd={(text) => chips.add(category, text).length > 0}
+              onDone={() => setAdding(false)}
+              refusedMessage="People counts like 1girl can't be added here. Put them in Always add."
+            />
+          )}
+          {chips && (visibleBase.length > 0 || added.length > 0) && (
+            <p className="text-xs text-muted-foreground">
+              Pinned tags go in every prompt, dashed ones only when they&apos;re picked; select a tag to switch it, or remove it to keep it out of every prompt.
+            </p>
           )}
 
           {/* Subcategories */}
@@ -684,6 +754,8 @@ export interface PackCategoryListProps {
   minSetTags: Partial<Record<TagCategory, number>>
   onSetMinSetTags: (category: TagCategory, count: number) => void
   hiddenThinSets: Partial<Record<TagCategory, number>>
+  /** The character chips (pin, add, take back); without them the base's chips only remove. */
+  chips?: ClassicChipControls
 }
 
 export function PackCategoryList({
@@ -717,6 +789,7 @@ export function PackCategoryList({
   minSetTags,
   onSetMinSetTags,
   hiddenThinSets,
+  chips,
 }: PackCategoryListProps) {
   const keptTags = useMemo(() => new Set(lockedTags), [lockedTags])
   const firstVarying = categories.find((c) => categoryStates[c] === "vary")
@@ -758,6 +831,7 @@ export function PackCategoryList({
           hiddenThinSets={hiddenThinSets[cat] ?? 0}
           tourRole={cat === categories[0]}
           tourPool={cat === firstVarying}
+          chips={chips}
           note={
             cat === "appearance" && hasMultipleCharacters
               ? "Faded tags belong to the other characters, or couldn't be matched to yours, so they stay out of the prompts."
