@@ -154,6 +154,7 @@ import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } fro
 import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
 import { searchedCharacterIn, searchedCharacterOf } from "@/lib/pack/character-focus"
 import { characterSearchTags } from "@/lib/pack/character-identity"
+import { castDefaultSearch, castPeople, compositionQuery } from "@/lib/pack/scene/cast"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackScenes } from "@/hooks/use-pack-scenes"
 import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
@@ -863,12 +864,17 @@ export function PromptGallery() {
     copyrights: packBaseCard?.tag_string_copyright || undefined,
     baseRating: packBaseCard?.rating,
   }), [packBaseCard, search.booruProvider, packMode.focusCharacter])
+  // Classic doesn't know about casts: with two or more characters the method is Scenes.
+  const packSceneCast = packMode.sceneCast
+  const packHasCast = packSceneCast.length >= 2
+  const packEngine = packHasCast ? 'scenes' : packMode.engine
+  const packCastNames = useMemo(() => packSceneCast.map((m) => m.character).filter(Boolean), [packSceneCast])
   const packScenes = usePackScenes({
-    enabled: packModeIsPackMode && packMode.hasBase && packMode.engine === 'scenes',
+    enabled: packModeIsPackMode && packMode.hasBase && packEngine === 'scenes',
     // The posts the header counts: the pool always shows what was collected.
     posts: packSeedSnapshot?.posts ?? NO_PACK_POSTS,
     overrides: packMode.effectiveTagOverrides,
-    identityCandidates: packMode.sceneIdentityCandidates,
+    members: packSceneCast,
     baseExtras: packMode.sceneBaseExtras,
     baseFixed: packMode.sceneBaseFixed,
     baseClothing: packMode.sceneBaseClothing,
@@ -876,7 +882,7 @@ export function PromptGallery() {
     baseFromCharacter: packMode.baseFromCharacter,
     alwaysAdd: packMode.alwaysAddTags,
     neverIncludeText: packMode.neverIncludeText,
-    characterTags: packMode.focusedCharacterTags,
+    characterTags: packHasCast ? packCastNames : packMode.focusedCharacterTags,
     contentRating: packMode.contentRating,
     settings: packMode.sceneSettings,
     promptCount: packMode.promptCount,
@@ -888,7 +894,7 @@ export function PromptGallery() {
     baseKey: packBaseCard ? `card:${packBaseCard.id}` : `prompt:${packMode.basePrompt}`,
     sourceKey: packSourceKey,
   })
-  const packUsesScenes = packMode.engine === 'scenes'
+  const packUsesScenes = packEngine === 'scenes'
   // Only seeds pools ONCE per base — re-running it on every incidental result
   // update would fight the user's own edits.
   const hasSeededRef = useRef(false)
@@ -956,6 +962,30 @@ export function PromptGallery() {
     if (nextKey !== packSourceKeyRef.current) resetPackSeeding()
     else rebasePackSeeding()
   }, [resetPackSeeding, rebasePackSeeding])
+
+  // A cast's scenes come from pictures of the same mix of people, not of these
+  // characters together (a crossover rarely has any). A source the app set up
+  // follows the cast; one the user wrote is kept, and the panel offers the search.
+  const packCastRolesKnown = packSceneCast.every((m) => !!m.role)
+  const packCastSearch = useMemo(() => {
+    if (!packHasCast || !packCastRolesKnown) return null
+    const people = castPeople(packSceneCast.map((m) => m.role))
+    return compositionQuery(people, packSourceAnswers.booruProvider, packSourceAnswers.fromCharacter ? '' : packSourceAnswers.searchTags)
+  }, [packHasCast, packCastRolesKnown, packSceneCast, packSourceAnswers])
+  const packPrimaryCharacter = packSceneCast[0]?.character ?? ''
+  useEffect(() => {
+    if (!packModeIsPackMode || !packMode.baseFromCharacter || !packSourceAnswers.fromCharacter || !packPrimaryCharacter) return
+    const wanted = castDefaultSearch(
+      packSceneCast.map((m) => m.role),
+      characterSearchTags(packPrimaryCharacter, packSourceAnswers.booruProvider),
+      packSourceAnswers.booruProvider
+    )
+    if (wanted && wanted !== packSourceAnswers.searchTags) applyPackSource({ ...packSourceAnswers, searchTags: wanted })
+  }, [packModeIsPackMode, packMode.baseFromCharacter, packSceneCast, packPrimaryCharacter, packSourceAnswers, applyPackSource])
+  const handleUseCompositionSearch = useCallback(() => {
+    if (!packCastSearch) return
+    applyPackSource({ ...packSourceAnswers, tagsSource: 'custom', searchTags: packCastSearch })
+  }, [packCastSearch, packSourceAnswers, applyPackSource])
 
   // Source for a new base: "Current search" follows the gallery's search and
   // provider as they are now; a custom or empty source the user chose stays.
@@ -2489,13 +2519,19 @@ export function PromptGallery() {
         }}
         onCopyAll={(text, format) => copyToClipboard(text, 0, true, undefined, format)}
         onResetLearning={packMode.resetLearning}
-        engine={packMode.engine}
+        engine={packEngine}
         onSetEngine={packMode.setEngine}
         scenes={packScenes}
         sceneSettings={packMode.sceneSettings}
         onSceneSettingsChange={packMode.setSceneSettings}
         neverIncludeText={packMode.neverIncludeText}
         onNeverIncludeTextChange={packMode.setNeverIncludeText}
+        cast={packSceneCast}
+        onAddCastMember={packMode.addCastMember}
+        onRemoveCastMember={packMode.removeCastMember}
+        onSetCastRole={packMode.setCastRole}
+        compositionSearch={packSourceAnswers.fromCharacter ? null : packCastSearch}
+        onUseCompositionSearch={handleUseCompositionSearch}
       />}
 
       <GalleryModals

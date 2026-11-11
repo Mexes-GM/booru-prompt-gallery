@@ -18,7 +18,8 @@ import { Switch } from "@/components/ui/switch"
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { OTHER_SITUATION, type PackPeople, type Situation } from "@/lib/pack/scene/scene-pool"
 import type { SceneChip, ScenePackSettings } from "@/lib/pack/scene-pack"
-import type { UsePackScenesResult } from "@/hooks/use-pack-scenes"
+import type { SceneCharacterBlock, UsePackScenesResult } from "@/hooks/use-pack-scenes"
+import type { CastRole } from "@/lib/pack/scene/cast"
 import { TagAutocompleteTextarea } from "./tag-autocomplete-textarea"
 import { radioGroupKeyDown } from "./radio-keys"
 
@@ -102,6 +103,7 @@ const MIX_OPTIONS: readonly Option<ScenePackSettings["mix"]>[] = [
 ]
 const CLOTHING_FROM_SCENE: Option<ScenePackSettings["clothing"]> = { value: "scene", label: "From the scene", hint: "Each prompt wears what the scene's character wore." }
 const CLOTHING_FROM_BASE: Option<ScenePackSettings["clothing"]> = { value: "base", label: "From the base", hint: "Every prompt wears your base's clothes instead of the scene's." }
+const CLOTHING_OWN: Option<ScenePackSettings["clothing"]> = { value: "own", label: "Own outfits", hint: "Each character wears only what's pinned in their block; the scene's clothes are left out." }
 const CLOTHING_FROM_LIBRARY: Option<ScenePackSettings["clothing"]> = { value: "library", label: "Outfit library", hint: "Whole outfits in the styles chosen under Customize prompt › Outfit." }
 const SCENERY_OPTIONS: readonly Option<ScenePackSettings["scenery"]>[] = [
   { value: "scene", label: "From the scene", hint: "Keeps each scene's place." },
@@ -143,12 +145,191 @@ function TraitChip({ chip, onToggle, onRemove }: { chip: SceneChip; onToggle: (t
   )
 }
 
+const ROLE_OPTIONS: readonly { value: CastRole; label: string }[] = [
+  { value: "girl", label: "Girl" },
+  { value: "boy", label: "Boy" },
+]
+
+/** One character's chips: their own pins, additions and removals, and a role picker when nothing says their role. */
+function CharacterBlock({
+  block,
+  showName,
+  foldLabel,
+  isCollecting,
+  scenes,
+  onToggleRemovedTag,
+  onSetRole,
+}: {
+  block: SceneCharacterBlock
+  showName: boolean
+  /** Names the fold of the base's other tags (first character only). */
+  foldLabel: string | null
+  isCollecting: boolean
+  scenes: UsePackScenesResult
+  onToggleRemovedTag: (tag: string) => void
+  onSetRole: (character: string, role: CastRole) => void
+}) {
+  const addId = useId()
+  const roleId = useId()
+  const [showMore, setShowMore] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState("")
+  const [refused, setRefused] = useState(false)
+  const name = block.character
+  // The base's other tags stay folded unless pinned: they'd crowd the character.
+  const mainChips = block.chips.filter((chip) => chip.origin !== "base" || chip.state === "pinned")
+  const foldedChips = block.chips.filter((chip) => chip.origin === "base" && chip.state !== "pinned")
+  const toggle = (tag: string) => scenes.toggleChip(name, tag)
+  const remove = (tag: string) => {
+    scenes.resetChip(name, tag)
+    onToggleRemovedTag(tag)
+  }
+  const restore = () => block.removed.forEach(remove)
+  const submitDraft = () => {
+    if (!draft.trim()) return
+    setRefused(scenes.addTraits(name, draft).length > 0)
+    setDraft("")
+  }
+
+  return (
+    <div className={showName ? "space-y-2 rounded-lg border border-border/50 bg-background/40 p-2.5" : "space-y-2"}>
+      {showName && (
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h4 className="text-xs font-semibold font-mono truncate">{name}</h4>
+          {!block.role && (
+            <div className="flex items-center gap-1.5">
+              <span id={roleId} className="text-xs text-warning-text">Role:</span>
+              <div
+                className="inline-flex rounded-md border border-border/60 bg-muted/40 p-0.5"
+                role="radiogroup"
+                aria-labelledby={roleId}
+                onKeyDown={(e) => radioGroupKeyDown(e, ROLE_OPTIONS.map((o) => o.value), ROLE_OPTIONS[0].value, (role) => onSetRole(name, role))}
+              >
+                {ROLE_OPTIONS.map((opt, i) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={false}
+                    tabIndex={i === 0 ? 0 : -1}
+                    onClick={() => onSetRole(name, opt.value)}
+                    className="h-7 pointer-coarse:h-11 px-2 text-xs font-medium rounded text-muted-foreground hover:text-foreground"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {showName && !block.role && (
+        <p className="text-xs text-muted-foreground">Pick whether {name} is a girl or a boy, so the scenes have room for them.</p>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-y-5">
+        {mainChips.map((chip) => (
+          <TraitChip key={chip.tag} chip={chip} onToggle={toggle} onRemove={remove} />
+        ))}
+        {mainChips.length === 0 && (
+          <span className="text-xs text-muted-foreground italic py-0.5">
+            {isCollecting ? "Finding the character's look…" : "Nothing pinned. The scenes decide the look."}
+          </span>
+        )}
+        {!adding && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            aria-label={showName ? `Add to ${name}` : undefined}
+            className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add
+          </button>
+        )}
+        {block.removed.length > 0 && (
+          <button
+            type="button"
+            onClick={restore}
+            className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className="w-3 h-3" />
+            {block.removed.length} removed · Restore
+          </button>
+        )}
+      </div>
+      {adding && (
+        <div className="space-y-1">
+          <label htmlFor={addId} className="text-xs font-medium text-muted-foreground">
+            {showName ? `Add to ${name}` : "Add to the character"}
+          </label>
+          <div className="flex items-start gap-1.5">
+            <TagAutocompleteTextarea
+              id={addId}
+              value={draft}
+              onValueChange={(value) => {
+                setDraft(value)
+                setRefused(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.defaultPrevented) {
+                  e.preventDefault()
+                  submitDraft()
+                }
+              }}
+              placeholder="e.g. red scarf, glasses"
+              rows={1}
+              autoFocus
+              onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" })}
+              className="text-xs font-mono min-h-[2.25rem] h-9 resize-none py-2"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={submitDraft} disabled={!draft.trim()} className="h-9 pointer-coarse:h-11 text-xs">
+              Add
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => { setAdding(false); setDraft(""); setRefused(false) }} className="h-9 pointer-coarse:h-11 text-xs">
+              Done
+            </Button>
+          </div>
+          {refused && (
+            <p className="text-xs text-warning-text" role="status">Set the number of people under Who&apos;s in the picture.</p>
+          )}
+        </div>
+      )}
+      {foldLabel && foldedChips.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowMore((v) => !v)}
+            aria-expanded={showMore}
+            className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {foldLabel} ({foldedChips.length})
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? "rotate-180" : ""}`} />
+          </button>
+          {showMore && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5 pointer-coarse:mt-4 pointer-coarse:gap-y-5">
+              {foldedChips.map((chip) => (
+                <TraitChip key={chip.tag} chip={chip} onToggle={toggle} onRemove={remove} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export interface PackScenesPanelProps {
   scenes: UsePackScenesResult
   settings: ScenePackSettings
   onSettingsChange: (settings: ScenePackSettings) => void
   /** Removes (or puts back) a base tag: removed tags never appear. */
   onToggleRemovedTag: (tag: string) => void
+  /** Sets a character's role when nothing says it. */
+  onSetRole: (character: string, role: CastRole) => void
+  /** The search for scenes with the cast's people, when the source doesn't ask for them ("hetero, beach"). */
+  compositionSearch?: string | null
+  /** Makes `compositionSearch` the source. */
+  onUseCompositionSearch?: () => void
   /** The base is a card (else a pasted prompt or a character); names the fold of the base's other tags. */
   baseIsCard: boolean
   hasMultipleCharacters: boolean
@@ -186,6 +367,9 @@ function PackScenesPanelComponent({
   settings,
   onSettingsChange,
   onToggleRemovedTag,
+  onSetRole,
+  compositionSearch = null,
+  onUseCompositionSearch,
   baseIsCard,
   hasMultipleCharacters,
   isCollecting,
@@ -197,38 +381,16 @@ function PackScenesPanelComponent({
 }: PackScenesPanelProps) {
   const peopleId = useId()
   const situationsId = useId()
-  const addId = useId()
-  const { pool, chips, removedChips, compositions, people, disabledSituations, enabledScenes } = scenes
+  const { pool, compositions, people, disabledSituations, enabledScenes } = scenes
+  const isCast = scenes.castSize >= 2
   const off = new Set(disabledSituations)
   const set = <K extends keyof ScenePackSettings>(key: K, value: ScenePackSettings[K]) => onSettingsChange({ ...settings, [key]: value })
 
-  const [showMore, setShowMore] = useState(false)
-  const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState("")
-  const [refused, setRefused] = useState(false)
-
-  // The base's other tags stay folded unless pinned: they'd crowd the character.
-  const mainChips = chips.filter((chip) => chip.origin !== "base" || chip.state === "pinned")
-  const foldedChips = chips.filter((chip) => chip.origin === "base" && chip.state !== "pinned")
-  const removeChip = (tag: string) => {
-    scenes.resetChip(tag)
-    onToggleRemovedTag(tag)
-  }
-  const restoreRemoved = () => {
-    removedChips.forEach((tag) => {
-      scenes.resetChip(tag)
-      onToggleRemovedTag(tag)
-    })
-  }
-  const submitDraft = () => {
-    if (!draft.trim()) return
-    const rejected = scenes.addTraits(draft)
-    setRefused(rejected.length > 0)
-    setDraft("")
-  }
-
-  const clothingOptions = [CLOTHING_FROM_SCENE, ...(scenes.hasBaseClothing ? [CLOTHING_FROM_BASE] : []), CLOTHING_FROM_LIBRARY]
-  const clothing = settings.clothing === "base" && !scenes.hasBaseClothing ? "scene" : settings.clothing
+  // With two or more characters, a single outfit (the base's, a library one) has no clear owner.
+  const clothingOptions = isCast
+    ? [CLOTHING_FROM_SCENE, CLOTHING_OWN]
+    : [CLOTHING_FROM_SCENE, ...(scenes.hasBaseClothing ? [CLOTHING_FROM_BASE] : []), CLOTHING_FROM_LIBRARY]
+  const clothing = clothingOptions.some((o) => o.value === settings.clothing) ? settings.clothing : "scene"
 
   const noScenes = !!pool && pool.scenes.length === 0
   const finding = !scenes.loadFailed && (!pool || (noScenes && isCollecting))
@@ -240,100 +402,29 @@ function PackScenesPanelComponent({
 
   return (
     <div className="@container space-y-2">
-      {/* Who: the character's look and clothes */}
-      <section className={sectionClass} aria-label="Character">
+      {/* Who: each character's look and clothes */}
+      <section className={sectionClass} aria-label={isCast ? "Characters" : "Character"}>
         <div>
-          <h3 className="text-sm font-semibold">Character</h3>
-          <p className="text-xs text-muted-foreground">How the character looks and what they wear. It doesn&apos;t change which scenes are picked.</p>
+          <h3 className="text-sm font-semibold">{isCast ? "Characters" : "Character"}</h3>
+          <p className="text-xs text-muted-foreground">
+            {isCast ? "How each character looks and what they wear." : "How the character looks and what they wear."} It doesn&apos;t change which scenes are picked.
+          </p>
         </div>
         {hasMultipleCharacters && (
           <p className="text-xs text-muted-foreground">Only the traits that match the character you picked are listed.</p>
         )}
-        <div className="flex flex-wrap items-center gap-1.5 pointer-coarse:gap-y-5">
-          {mainChips.map((chip) => (
-            <TraitChip key={chip.tag} chip={chip} onToggle={scenes.toggleChip} onRemove={removeChip} />
-          ))}
-          {mainChips.length === 0 && (
-            <span className="text-xs text-muted-foreground italic py-0.5">
-              {isCollecting ? "Finding the character's look…" : "Nothing pinned. The scenes decide the look."}
-            </span>
-          )}
-          {!adding && (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
-          )}
-          {removedChips.length > 0 && (
-            <button
-              type="button"
-              onClick={restoreRemoved}
-              className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <RotateCcw className="w-3 h-3" />
-              {removedChips.length} removed · Restore
-            </button>
-          )}
-        </div>
-        {adding && (
-          <div className="space-y-1">
-            <label htmlFor={addId} className="text-xs font-medium text-muted-foreground">Add to the character</label>
-            <div className="flex items-start gap-1.5">
-              <TagAutocompleteTextarea
-                id={addId}
-                value={draft}
-                onValueChange={(value) => {
-                  setDraft(value)
-                  setRefused(false)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.defaultPrevented) {
-                    e.preventDefault()
-                    submitDraft()
-                  }
-                }}
-                placeholder="e.g. red scarf, glasses"
-                rows={1}
-                autoFocus
-                onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" })}
-                className="text-xs font-mono min-h-[2.25rem] h-9 resize-none py-2"
-              />
-              <Button type="button" variant="outline" size="sm" onClick={submitDraft} disabled={!draft.trim()} className="h-9 pointer-coarse:h-11 text-xs">
-                Add
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => { setAdding(false); setDraft(""); setRefused(false) }} className="h-9 pointer-coarse:h-11 text-xs">
-                Done
-              </Button>
-            </div>
-            {refused && (
-              <p className="text-xs text-warning-text" role="status">Set the number of people under Who&apos;s in the picture.</p>
-            )}
-          </div>
-        )}
-        {foldedChips.length > 0 && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowMore((v) => !v)}
-              aria-expanded={showMore}
-              className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 text-xs text-muted-foreground hover:text-foreground"
-            >
-              {baseIsCard ? "More from this card" : "More from your prompt"} ({foldedChips.length})
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? "rotate-180" : ""}`} />
-            </button>
-            {showMore && (
-              <div className="mt-1.5 flex flex-wrap gap-1.5 pointer-coarse:mt-4 pointer-coarse:gap-y-5">
-                {foldedChips.map((chip) => (
-                  <TraitChip key={chip.tag} chip={chip} onToggle={scenes.toggleChip} onRemove={removeChip} />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {scenes.blocks.map((block, index) => (
+          <CharacterBlock
+            key={block.character || index}
+            block={block}
+            showName={isCast}
+            foldLabel={index === 0 ? (baseIsCard ? "More from this card" : "More from your prompt") : null}
+            isCollecting={isCollecting}
+            scenes={scenes}
+            onToggleRemovedTag={onToggleRemovedTag}
+            onSetRole={onSetRole}
+          />
+        ))}
         <p className="flex items-start gap-1 text-xs text-muted-foreground">
           <Pin className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden />
           <span>Pinned tags go in every prompt, dashed ones only when a scene has them; select a tag to switch it, or remove it to leave it out.</span>
@@ -360,7 +451,29 @@ function PackScenesPanelComponent({
           <p className="text-xs text-muted-foreground">Finding scenes in the collected posts…</p>
         </section>
       )}
-      {noScenes && !isCollecting && (
+      {scenes.castHasNoScenes && !isCollecting && (
+        <section className={`${sectionClass} border-warning-border bg-warning-soft`} aria-live="polite">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-warning-text">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            No scenes with room for {scenes.castSize === 2 ? "both characters" : `all ${scenes.castSize} characters`}
+          </p>
+          <p className="text-xs text-foreground/85">
+            The collected posts show other groups of people. Search for pictures of this group instead, then add your theme to the source.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {compositionSearch && onUseCompositionSearch && (
+              <Button type="button" size="sm" variant="outline" onClick={onUseCompositionSearch} className="h-8 pointer-coarse:h-11 text-xs gap-1.5">
+                <Database className="w-3.5 h-3.5" />
+                Search for &ldquo;{compositionSearch}&rdquo;
+              </Button>
+            )}
+            <Button type="button" size="sm" variant="outline" onClick={onOpenSource} className="h-8 pointer-coarse:h-11 text-xs gap-1.5">
+              Change source
+            </Button>
+          </div>
+        </section>
+      )}
+      {noScenes && !isCollecting && !scenes.castHasNoScenes && (
         <section className={`${sectionClass} border-warning-border bg-warning-soft`} aria-live="polite">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-warning-text">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -480,6 +593,14 @@ function PackScenesPanelComponent({
               Turn on at least one situation to generate.
               <Button type="button" size="sm" variant="outline" onClick={scenes.enableAllSituations} className="h-7 pointer-coarse:h-11 text-xs">
                 Turn all on
+              </Button>
+            </p>
+          )}
+          {fewScenes && isCast && compositionSearch && onUseCompositionSearch && (
+            <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              Few scenes here have room for this group.
+              <Button type="button" size="sm" variant="outline" onClick={onUseCompositionSearch} className="h-7 pointer-coarse:h-11 text-xs">
+                Search for &ldquo;{compositionSearch}&rdquo;
               </Button>
             </p>
           )}

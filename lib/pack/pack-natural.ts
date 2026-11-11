@@ -14,6 +14,11 @@ export interface PackNaturalContext {
   provider?: string
   /** The character the pack keeps (pack-normalized tag), or null. */
   character: string | null
+  /**
+   * Scenes engine: every character the pack names, the base one first. With two or
+   * more, the converter gets all of them and tells them apart by name.
+   */
+  characters?: readonly string[]
   /** The base card's copyright field (space-separated), when there is a base card. */
   copyrights?: string
   /** The source's content rating; null when it is not known. */
@@ -53,12 +58,15 @@ export function packNaturalSource(prompt: PackPrompt, context: PackNaturalContex
   // The name goes in only while the prompt still has it: "Include characters"
   // off, or an appearance left to vary, takes it out.
   const named = !!context.character && tags.has(bareTag(context.character))
+  const cast = (context.characters ?? []).filter((name) => tags.has(bareTag(name)))
   const outfit = prompt.outfitId !== undefined ? context.outfits?.get(prompt.outfitId) : undefined
   const text = prompt.outfitId !== undefined ? context.descriptions?.[prompt.outfitId] : undefined
   const outfitDescription = outfit && text ? packOutfitDescription(outfit, text, prompt.prompt) : undefined
   return {
     prompt: prompt.prompt,
-    ...(named ? { characters: fieldTag(context.character!) } : {}),
+    ...(cast.length >= 2
+      ? { characters: cast.map(fieldTag).join(' ') }
+      : named ? { characters: fieldTag(context.character!) } : {}),
     ...(named && context.copyrights ? { copyrights: context.copyrights } : {}),
     rating: packPromptRating(prompt.prompt, context.contentRating, context.baseRating),
     provider: context.provider,

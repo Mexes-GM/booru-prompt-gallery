@@ -5,8 +5,10 @@ import { normalizeTagForPack } from '@/lib/pack/pack-generator'
 import { cleanSyntheticPrompt, type BulkSendCleanOptions } from '@/lib/pack/bulk-send'
 import { createPermanence, isCompositionPattern, type PermanenceData } from '@/lib/pack/scene/permanence'
 import { buildScenePool, compositionOfIdentity, type PackPeople, type ScenePool } from '@/lib/pack/scene/scene-pool'
+import { castPeople, holdsCast, type CastRole } from '@/lib/pack/scene/cast'
 import {
   alwaysAddOmitted,
+  castComposition,
   defaultComposition,
   enabledSceneCount,
   generateScenePackAsync,
@@ -46,8 +48,11 @@ export interface UsePackScenesArgs {
   posts: BooruPost[]
   /** tag -> "category:subcategory", including the slots fetched for this pool. */
   overrides: Record<string, string>
-  /** The character's name, look and signature accessories (usePackMode's sceneIdentityCandidates). */
-  identityCandidates: string[]
+  /**
+   * The characters the pack names, the base character first (usePackMode's sceneCast).
+   * Each has a name, a look and a role (null until something or someone says it).
+   */
+  members: ReadonlyArray<{ character: string; candidates: string[]; role: CastRole | null }>
   /** The rest of a card's or pasted prompt's look and clothing. */
   baseExtras: string[]
   /** A pasted prompt's typed tags outside every category: always kept. */
@@ -83,6 +88,14 @@ export interface UsePackScenesArgs {
   sourceKey: string
 }
 
+export interface SceneCharacterBlock {
+  character: string
+  role: CastRole | null
+  chips: SceneChip[]
+  /** Chips the user removed (they never appear). */
+  removed: string[]
+}
+
 export interface PackSceneComposition {
   people: PackPeople
   scenes: number
@@ -96,18 +109,22 @@ export interface UsePackScenesResult {
   retryLoad: () => void
   /** Scenes of the pool for the chosen composition, or null until it can be built. */
   pool: ScenePool | null
-  /** Character chips: pinned (every prompt) or from the scene. */
-  chips: SceneChip[]
-  /** Chips the user removed (they never appear). */
-  removedChips: string[]
-  /** The tags every prompt keeps, in order (pinned chips and the base's typed tags). */
+  /** One block of Character chips per character, in cast order: pinned (every prompt) or from the scene. */
+  blocks: SceneCharacterBlock[]
+  /** The tags every prompt keeps, in order: each character's pinned chips, block by block. */
   pinnedTags: string[]
-  /** Switches a chip between pinned and from the scene. */
-  toggleChip: (tag: string) => void
+  /** Switches a chip of a character between pinned and from the scene. */
+  toggleChip: (character: string, tag: string) => void
   /** Forgets a chip's pinned/scene choice (it goes back to its default, e.g. when it's removed). */
-  resetChip: (tag: string) => void
-  /** Adds traits by hand. Returns the people-count tags it refused (those belong to the composition). */
-  addTraits: (text: string) => string[]
+  resetChip: (character: string, tag: string) => void
+  /** Adds traits to a character by hand. Returns the people-count tags it refused (those belong to the composition). */
+  addTraits: (character: string, text: string) => string[]
+  /** Characters the pack names (1 to 3). */
+  castSize: number
+  /** Characters whose role (girl or boy) nobody has said yet: a cast can't be placed until it is. */
+  missingRoles: string[]
+  /** The cast has no room in any composition of the pool (a pair in a pool of solo pictures). */
+  castHasNoScenes: boolean
   /** The base has clothing, so "From the base" can be offered. */
   hasBaseClothing: boolean
   /** "Always add" tags left out because they contradict who's in the picture ("solo" with two people). */
@@ -172,7 +189,7 @@ const nextFrame = () =>
  */
 export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   const {
-    enabled, posts, overrides, identityCandidates, baseExtras, baseFixed, baseClothing, removedTags, baseFromCharacter,
+    enabled, posts, overrides, members, baseExtras, baseFixed, baseClothing, removedTags, baseFromCharacter,
     alwaysAdd, neverIncludeText, characterTags, contentRating, settings, promptCount, cleanOptions, globalWeights,
     isGlobalWeightsEnabled, outfitOptions, natural, baseKey, sourceKey,
   } = args
@@ -215,8 +232,9 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   // Per-source picks; per-base chips. Prompts belong to both. Reset during render when a key changes.
   const [pickedPeople, setPickedPeople] = useState<PackPeople | null>(null)
   const [disabledSituations, setDisabledSituations] = useState<string[]>([])
+  // Chip choices and added tags per character ("<character>\u0000<tag>" and character -> tags).
   const [choices, setChoices] = useState<ReadonlyMap<string, ChipState>>(() => new Map())
-  const [added, setAdded] = useState<string[]>(NO_TAGS)
+  const [added, setAdded] = useState<ReadonlyMap<string, string[]>>(() => new Map())
   const [prompts, setPrompts] = useState<PackPrompt[]>(EMPTY_PROMPTS)
   const [shortBy, setShortBy] = useState(0)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -232,7 +250,16 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   if (baseKey !== prevBaseKey) {
     setPrevBaseKey(baseKey)
     setChoices(new Map())
-    setAdded(NO_TAGS)
+    setAdded(new Map())
+    setPrompts(EMPTY_PROMPTS)
+    setShortBy(0)
+  }
+  // Another cast (someone added, removed or given a role) makes other prompts and compositions.
+  const castKey = members.map((m) => `${m.character}:${m.role ?? '?'}`).join('|')
+  const [prevCastKey, setPrevCastKey] = useState(castKey)
+  if (castKey !== prevCastKey) {
+    setPrevCastKey(castKey)
+    setPickedPeople(null)
     setPrompts(EMPTY_PROMPTS)
     setShortBy(0)
   }
@@ -240,57 +267,86 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   // The running generation, and the base / source it was started for: a newer
   // Generate or another base or source makes it stale.
   const requestRef = useRef(0)
-  const keysRef = useRef(`${baseKey}|${sourceKey}`)
+  const keysRef = useRef(`${baseKey}|${sourceKey}|${castKey}`)
   useEffect(() => {
-    keysRef.current = `${baseKey}|${sourceKey}`
-  }, [baseKey, sourceKey])
+    keysRef.current = `${baseKey}|${sourceKey}|${castKey}`
+  }, [baseKey, sourceKey, castKey])
 
-  const subject = useMemo(() => subjectOfTags(identityCandidates), [identityCandidates])
-  const { chips, pinned, never } = useMemo(
-    () => sceneChips({
-      candidates: identityCandidates,
-      added,
-      extras: baseExtras,
-      removed: removedTags,
-      choices,
-      // Until the permanence data loads, only the people counts are known to come from the scene.
-      permanence: permanence ?? (() => 'identity'),
-      overrides,
-    }),
-    [identityCandidates, added, baseExtras, removedTags, choices, permanence, overrides]
+  const castSize = members.length
+  const isCast = castSize >= 2
+  // The first character's gender places them in a one-character pack; a cast needs everyone's role.
+  const subject = members[0]?.role ?? subjectOfTags(members[0]?.candidates ?? NO_TAGS)
+  const missingRoles = useMemo(
+    () => (isCast ? members.filter((m) => !m.role).map((m) => m.character) : NO_TAGS),
+    [isCast, members]
   )
+  const namedPeople = useMemo<PackPeople>(
+    () => (isCast ? castPeople(members.map((m) => m.role)) : subject === 'girl' ? { girls: 1, boys: 0 } : { girls: 0, boys: 1 }),
+    [isCast, members, subject]
+  )
+
+  const chipKey = (character: string, tag: string) => `${character}\u0000${tag}`
+  const { blocks, pinned, never } = useMemo(() => {
+    const out: SceneCharacterBlock[] = []
+    const pinnedAll: string[] = []
+    const neverAll: string[] = []
+    members.forEach((member, index) => {
+      const own = new Map<string, ChipState>()
+      choices.forEach((state, key) => {
+        const [character, tag] = key.split('\u0000')
+        if (character === member.character) own.set(tag, state)
+      })
+      const result = sceneChips({
+        candidates: member.candidates,
+        added: added.get(member.character) ?? NO_TAGS,
+        // The rest of a card or pasted prompt belongs to the base character.
+        extras: index === 0 ? baseExtras : NO_TAGS,
+        removed: removedTags,
+        choices: own,
+        // Until the permanence data loads, only the people counts are known to come from the scene.
+        permanence: permanence ?? (() => 'identity'),
+        overrides,
+      })
+      out.push({ character: member.character, role: member.role, chips: result.chips, removed: result.never })
+      pinnedAll.push(...result.pinned, ...(index === 0 ? baseFixed.filter((tag) => !removedTags.has(tag)) : []))
+      neverAll.push(...result.never)
+    })
+    return { blocks: out, pinned: pinnedAll, never: neverAll }
+  }, [members, choices, added, baseExtras, baseFixed, removedTags, permanence, overrides])
+  // Each block keeps its own tags, even ones another character also has: they are different people.
   const pinnedTags = useMemo(
-    () => Array.from(new Set([...pinned, ...baseFixed.filter((tag) => !removedTags.has(tag))])),
-    [pinned, baseFixed, removedTags]
+    () => (isCast ? pinned : Array.from(new Set(pinned))),
+    [isCast, pinned]
   )
   const neverTags = useMemo(
     () => Array.from(new Set([...never, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack).filter(Boolean)])),
     [never, neverIncludeText]
   )
 
-  const toggleChip = useCallback((tag: string) => {
-    const current = chips.find((chip) => chip.tag === tag)
+  const toggleChip = useCallback((character: string, tag: string) => {
+    const current = blocks.find((block) => block.character === character)?.chips.find((chip) => chip.tag === tag)
     if (!current) return
-    setChoices((prev) => new Map(prev).set(tag, current.state === 'pinned' ? 'scene' : 'pinned'))
-  }, [chips])
-  const resetChip = useCallback((tag: string) => {
+    setChoices((prev) => new Map(prev).set(chipKey(character, tag), current.state === 'pinned' ? 'scene' : 'pinned'))
+  }, [blocks])
+  const resetChip = useCallback((character: string, tag: string) => {
     setChoices((prev) => {
-      if (!prev.has(tag)) return prev
+      const key = chipKey(character, tag)
+      if (!prev.has(key)) return prev
       const next = new Map(prev)
-      next.delete(tag)
+      next.delete(key)
       return next
     })
   }, [])
-  const addTraits = useCallback((text: string): string[] => {
+  const addTraits = useCallback((character: string, text: string): string[] => {
     const tags = splitCommaSeparatedTags(text).map(normalizeTagForPack).filter(Boolean)
     const refused = tags.filter(isCompositionPattern)
     const accepted = tags.filter((tag) => !isCompositionPattern(tag))
     if (accepted.length > 0) {
-      setAdded((prev) => Array.from(new Set([...prev, ...accepted])))
+      setAdded((prev) => new Map(prev).set(character, Array.from(new Set([...(prev.get(character) ?? []), ...accepted]))))
       // Added tags start pinned, even one the base already offered from the scene.
       setChoices((prev) => {
         const next = new Map(prev)
-        accepted.forEach((tag) => next.set(tag, 'pinned'))
+        accepted.forEach((tag) => next.set(chipKey(character, tag), 'pinned'))
         return next
       })
     }
@@ -306,15 +362,28 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   // Built once without a composition: lists the compositions and covers the default case.
   const basePool = useMemo(() => {
     if (!enabled || !permanence) return null
-    return buildScenePool(rated, { overrides, permanence, subject, tagKind: (tag) => tagKinds.get(tag) })
-  }, [enabled, permanence, rated, overrides, subject, tagKinds])
+    return buildScenePool(rated, { overrides, permanence, subject, cast: namedPeople, tagKind: (tag) => tagKinds.get(tag) })
+  }, [enabled, permanence, rated, overrides, subject, namedPeople, tagKinds])
 
+  const firstCandidates = members[0]?.candidates ?? NO_TAGS
   const baseComposition = useMemo(
-    () => ({ declared: compositionOfIdentity([...identityCandidates, ...baseExtras]), character: baseFromCharacter }),
-    [identityCandidates, baseExtras, baseFromCharacter]
+    () => ({ declared: compositionOfIdentity([...firstCandidates, ...baseExtras]), character: baseFromCharacter }),
+    [firstCandidates, baseExtras, baseFromCharacter]
   )
-  const compositions = basePool?.stats.compositions ?? NO_COMPOSITIONS
-  const peopleKey = peopleKeyOf(basePool ? defaultComposition(compositions, subject, pickedPeople, baseComposition) : null)
+  const allCompositions = basePool?.stats.compositions ?? NO_COMPOSITIONS
+  // A cast is offered only the compositions with room for everyone it names.
+  const compositions = useMemo(
+    () => (isCast ? allCompositions.filter((c) => holdsCast(c.people, namedPeople)) : allCompositions),
+    [isCast, allCompositions, namedPeople]
+  )
+  const castHasNoScenes = isCast && missingRoles.length === 0 && !!basePool && compositions.length === 0
+  const peopleKey = peopleKeyOf(
+    !basePool || (isCast && missingRoles.length > 0)
+      ? null
+      : isCast
+        ? castComposition(compositions, namedPeople, pickedPeople)
+        : defaultComposition(compositions, subject, pickedPeople, baseComposition)
+  )
   // One object per composition, so the result only changes when the composition does.
   const people = useMemo<PackPeople | null>(() => {
     if (!peopleKey) return null
@@ -324,8 +393,8 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   const pool = useMemo(() => {
     if (!basePool || !permanence) return null
     if (!people || peopleKey === peopleKeyOf(basePool.stats.composition)) return basePool
-    return buildScenePool(rated, { overrides, permanence, subject, tagKind: (tag) => tagKinds.get(tag), people })
-  }, [basePool, permanence, people, peopleKey, rated, overrides, subject, tagKinds])
+    return buildScenePool(rated, { overrides, permanence, subject, cast: namedPeople, tagKind: (tag) => tagKinds.get(tag), people })
+  }, [basePool, permanence, people, peopleKey, rated, overrides, subject, namedPeople, tagKinds])
 
   const setPeople = useCallback((next: PackPeople) => {
     setPickedPeople(next)
@@ -364,6 +433,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       identity: pinnedTags,
       alwaysAdd,
       people,
+      castSize,
       never: neverTags,
       baseClothing,
       subject,
@@ -385,13 +455,13 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       resolution: (aspect) => resolutionForAspect(aspect, prefs),
     }
   }, [
-    useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, pinnedTags, alwaysAdd, people, neverTags, baseClothing, subject,
+    useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, pinnedTags, alwaysAdd, people, castSize, neverTags, baseClothing, subject,
     settings, promptCount, disabledSituations, overrides, characterTags, cleanOptions, globalWeights, isGlobalWeightsEnabled,
   ])
 
   const generate = useCallback(() => {
     const id = ++requestRef.current
-    if (!pool) {
+    if (!pool || missingRoles.length > 0) {
       setPrompts(EMPTY_PROMPTS)
       setShortBy(0)
       setIsGenerating(false)
@@ -424,7 +494,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
         console.error('Scene pack generation failed:', err)
         if (requestRef.current === id) setIsGenerating(false)
       })
-  }, [pool, packArgs])
+  }, [pool, packArgs, missingRoles])
 
   const reroll = useCallback((index: number): boolean => {
     if (!pool || index < 0 || index >= prompts.length) return false
@@ -442,13 +512,15 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     (prompt: PackPrompt) => packNaturalSource(prompt, {
       provider: natural.provider,
       character: natural.character,
+      // Every named character the prompt still has; the converter tells them apart by name.
+      characters: members.map((m) => m.character).filter(Boolean),
       copyrights: natural.copyrights,
       contentRating,
       baseRating: natural.baseRating,
       outfits: outfitsById,
       descriptions: outfitDescriptions,
     }),
-    [natural, contentRating, outfitsById, outfitDescriptions]
+    [natural, members, contentRating, outfitsById, outfitDescriptions]
   )
 
   const otherRatingPosts = enabled ? posts.length - rated.length : 0
@@ -459,12 +531,14 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     loadFailed: loadFailed && !permanence,
     retryLoad,
     pool,
-    chips,
-    removedChips: never,
+    blocks,
     pinnedTags,
     toggleChip,
     resetChip,
     addTraits,
+    castSize,
+    missingRoles,
+    castHasNoScenes,
     hasBaseClothing,
     alwaysAddOmitted: omitted,
     compositions,
@@ -483,7 +557,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     reroll,
     naturalSourceOf,
   }), [
-    permanence, loadFailed, retryLoad, pool, chips, never, pinnedTags, toggleChip, resetChip, addTraits, hasBaseClothing, omitted,
+    permanence, loadFailed, retryLoad, pool, blocks, pinnedTags, toggleChip, resetChip, addTraits, castSize, missingRoles, castHasNoScenes, hasBaseClothing, omitted,
     compositions, people, setPeople, disabledSituations, toggleSituation, enableAllSituations, enabledScenes,
     otherRatingPosts, libraryOutfitCount, prompts, shortBy, isGenerating, generate, reroll, naturalSourceOf,
   ])

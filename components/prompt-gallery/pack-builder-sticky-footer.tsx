@@ -45,6 +45,8 @@ import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import type { UsePackScenesResult } from '@/hooks/use-pack-scenes'
 import { PackScenesPanel } from './pack-scenes-panel'
 import { radioGroupKeyDown } from './radio-keys'
+import { PackCharacterSearch } from './pack-character-search'
+import { MAX_CAST, type CastRole } from '@/lib/pack/scene/cast'
 
 export interface PackBuilderStickyFooterProps {
     isOpen: boolean
@@ -146,6 +148,14 @@ export interface PackBuilderStickyFooterProps {
     /** "Never include" (scenes engine): tags left out of every prompt, as typed. */
     neverIncludeText?: string
     onNeverIncludeTextChange?: (text: string) => void
+    /** Scenes engine, character base: the characters the pack names (the base one first). */
+    cast?: readonly { character: string }[]
+    onAddCastMember?: (character: string) => 'added' | 'duplicate' | 'full' | 'not-a-character-base'
+    onRemoveCastMember?: (character: string) => void
+    onSetCastRole?: (character: string, role: CastRole) => void
+    /** The search for scenes with the cast's people, when the source doesn't ask for them. */
+    compositionSearch?: string | null
+    onUseCompositionSearch?: () => void
     children?: React.ReactNode
 }
 
@@ -325,6 +335,7 @@ const PackResultsList = memo(({
     isCollecting,
     minTotalTags,
     sceneMode = false,
+    castSize = 1,
 }: {
     prompts: PackPrompt[]
     naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
@@ -337,6 +348,8 @@ const PackResultsList = memo(({
     isCollecting: boolean
     minTotalTags: number
     sceneMode?: boolean
+    /** Characters the pack names: with two or more, the tags format gets an honest note. */
+    castSize?: number
 }) => {
     const { format, fullDetail } = usePromptFormat()
     const shortCount = minTotalTags > 0
@@ -452,6 +465,12 @@ const PackResultsList = memo(({
                     </div>
                 )}
             </div>
+
+            {castSize >= 2 && format === 'tags' && prompts.length > 0 && (
+                <p className="text-xs text-muted-foreground flex-shrink-0">
+                    In tag prompts, image models can mix up which traits belong to which character.
+                </p>
+            )}
 
             {shortCount > 0 && (
                 <p className="flex items-start gap-1.5 text-xs text-warning-text flex-shrink-0">
@@ -682,6 +701,12 @@ const PackBuilderStickyFooterComponent = ({
     onSceneSettingsChange,
     neverIncludeText = '',
     onNeverIncludeTextChange,
+    cast,
+    onAddCastMember,
+    onRemoveCastMember,
+    onSetCastRole,
+    compositionSearch = null,
+    onUseCompositionSearch,
     children,
 }: PackBuilderStickyFooterProps) => {
     // The scenes panel replaces the category list once its state is wired in.
@@ -718,6 +743,26 @@ const PackBuilderStickyFooterComponent = ({
         document.getElementById('pack-results-section')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }, [onRegenerate, showTab, sceneMode])
     const isGenerating = sceneMode && !!scenes?.isGenerating
+
+    // The cast (scenes engine, character base): add or remove characters.
+    const castSize = sceneMode ? scenes?.castSize ?? 1 : 1
+    const showCast = sceneMode && baseFromCharacter && !!cast && !!onAddCastMember
+    const [addingCharacter, setAddingCharacter] = useState(false)
+    const [castMessage, setCastMessage] = useState<string | null>(null)
+    const [castSearchOpen, setCastSearchOpen] = useState(false)
+    const handlePickCastMember = useCallback((character: string) => {
+        if (!onAddCastMember) return
+        const result = onAddCastMember(character)
+        if (result === 'added') {
+            setAddingCharacter(false)
+            setCastMessage(null)
+        } else if (result === 'duplicate') {
+            setCastMessage(`${character} is already in the pack.`)
+        } else if (result === 'full') {
+            setCastMessage(`A pack can have up to ${MAX_CAST} characters.`)
+        }
+    }, [onAddCastMember])
+    const handleSetCastRole = useCallback((character: string, role: CastRole) => onSetCastRole?.(character, role), [onSetCastRole])
 
     const handleReroll = useCallback((index: number) => {
         const ok = onRerollPrompt(index)
@@ -782,8 +827,9 @@ const PackBuilderStickyFooterComponent = ({
     const nothingVaries = PACK_AXES.every((cat) => categoryStates[cat] !== 'vary')
     const noScenes = sceneMode && !!scenes?.pool && scenes.pool.scenes.length === 0
     const allSituationsOff = sceneMode && !!scenes?.pool && scenes.pool.scenes.length > 0 && scenes.enabledScenes === 0
+    const missingRole = sceneMode ? scenes?.missingRoles[0] ?? null : null
     const generateBlocked = sceneMode
-        ? needsCharacterChoice || !scenes?.pool || noScenes || allSituationsOff
+        ? needsCharacterChoice || !!missingRole || !scenes?.pool || noScenes || allSituationsOff
         : nothingVaries || needsCharacterChoice
     const poolsTooSmall = minTotalTags > 0 && estimatedTagsPerPrompt < minTotalTags
 
@@ -889,7 +935,7 @@ const PackBuilderStickyFooterComponent = ({
                     // only that; the builder stays open.
                     onEscapeKeyDown={(e) => {
                         const target = e.target instanceof Element ? e.target : null
-                        if (target?.closest('[role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]')) e.preventDefault()
+                        if (castSearchOpen || target?.closest('[role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]')) e.preventDefault()
                     }}
                     onOpenAutoFocus={(e) => {
                         e.preventDefault()
@@ -1097,10 +1143,51 @@ const PackBuilderStickyFooterComponent = ({
                                                     </Button>
                                                 </div>
                                             </div>
-                                            {!baseCard && (
+                                            {!baseCard && !showCast && (
                                                 <p className="text-xs font-mono text-foreground/80 line-clamp-2 break-words" title={basePrompt}>
                                                     {baseFromCharacter ? basePrompt.replace(/_/g, ' ') : basePrompt}
                                                 </p>
+                                            )}
+                                            {showCast && cast && (
+                                                <div className="space-y-1.5">
+                                                    <ul className="flex flex-wrap gap-1.5" aria-label="Characters">
+                                                        {cast.map(({ character }) => (
+                                                            <li key={character} className="inline-flex items-center gap-1 rounded-md border border-border bg-foreground/[0.07] pl-2 pr-0.5 font-mono text-xs text-foreground">
+                                                                {character}
+                                                                {cast.length > 1 && onRemoveCastMember && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => onRemoveCastMember(character)}
+                                                                        aria-label={`Remove ${character} from the pack`}
+                                                                        className="relative rounded p-1 text-faint-foreground hover:text-destructive-text hover:bg-destructive-soft pointer-coarse:after:absolute pointer-coarse:after:-inset-3 pointer-coarse:after:content-['']"
+                                                                    >
+                                                                        <X className="w-3 h-3" />
+                                                                    </button>
+                                                                )}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                    {addingCharacter ? (
+                                                        <div className="space-y-1">
+                                                            <PackCharacterSearch onPick={handlePickCastMember} onSuggestionsOpenChange={setCastSearchOpen} />
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                {castMessage ? <p className="text-xs text-warning-text" role="status">{castMessage}</p> : <span />}
+                                                                <Button type="button" variant="ghost" size="sm" onClick={() => { setAddingCharacter(false); setCastMessage(null) }} className="h-8 pointer-coarse:h-11 text-xs">
+                                                                    Cancel
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    ) : cast.length < MAX_CAST ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setAddingCharacter(true)}
+                                                            className="inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 text-xs text-muted-foreground hover:text-foreground"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" />
+                                                            Add a character
+                                                        </button>
+                                                    ) : null}
+                                                </div>
                                             )}
                                             {!baseCard && (baseClassified.other?.length ?? 0) > 0 && (
                                                 <div className="flex items-start gap-2 flex-wrap">
@@ -1227,19 +1314,22 @@ const PackBuilderStickyFooterComponent = ({
                                                     className="inline-flex rounded-lg border border-border/60 bg-muted/40 p-0.5"
                                                     role="radiogroup"
                                                     aria-labelledby="pack-engine-label"
-                                                    onKeyDown={(e) => radioGroupKeyDown(e, ENGINE_OPTIONS.map((opt) => opt.value), engine, onSetEngine)}
+                                                    onKeyDown={(e) => radioGroupKeyDown(e, ENGINE_OPTIONS.filter((opt) => opt.value !== 'classic' || castSize < 2).map((opt) => opt.value), engine, onSetEngine)}
                                                 >
                                                     {ENGINE_OPTIONS.map((opt) => {
                                                         const active = engine === opt.value
+                                                        const disabled = opt.value === 'classic' && castSize >= 2
                                                         return (
                                                             <button
                                                                 key={opt.value}
                                                                 type="button"
                                                                 role="radio"
                                                                 aria-checked={active}
+                                                                aria-disabled={disabled || undefined}
+                                                                disabled={disabled}
                                                                 tabIndex={active ? 0 : -1}
                                                                 onClick={() => onSetEngine(opt.value)}
-                                                                className={`h-8 pointer-coarse:h-11 px-3 text-xs font-medium rounded-md transition-colors ${active ? 'bg-mode-pack text-mode-pack-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
+                                                                className={`h-8 pointer-coarse:h-11 px-3 text-xs font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-mode-pack text-mode-pack-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
                                                             >
                                                                 {opt.label}
                                                             </button>
@@ -1250,6 +1340,9 @@ const PackBuilderStickyFooterComponent = ({
                                             <p className="text-xs text-muted-foreground">
                                                 {ENGINE_OPTIONS.find((opt) => opt.value === engine)?.hint}
                                             </p>
+                                            {castSize >= 2 && (
+                                                <p className="text-xs text-muted-foreground">Classic works with one character. Remove the others to use it.</p>
+                                            )}
                                         </section>
                                     )}
 
@@ -1259,6 +1352,9 @@ const PackBuilderStickyFooterComponent = ({
                                             settings={sceneSettings}
                                             onSettingsChange={onSceneSettingsChange}
                                             onToggleRemovedTag={onToggleExcludedBaseTag}
+                                            onSetRole={handleSetCastRole}
+                                            compositionSearch={compositionSearch}
+                                            onUseCompositionSearch={onUseCompositionSearch}
                                             baseIsCard={!!baseCard}
                                             hasMultipleCharacters={hasMultipleCharacters}
                                             isCollecting={isCollecting}
@@ -1326,6 +1422,7 @@ const PackBuilderStickyFooterComponent = ({
                                         isCollecting={isCollecting}
                                         minTotalTags={sceneMode ? 0 : minTotalTags}
                                         sceneMode={sceneMode}
+                                        castSize={sceneMode ? scenes?.castSize ?? 1 : 1}
                                     />
                                 </div>
                             </div>
@@ -1404,7 +1501,9 @@ const PackBuilderStickyFooterComponent = ({
                                             : needsCharacterChoice
                                                 ? 'Pick a character first'
                                                 : sceneMode
-                                                    ? !scenes?.pool
+                                                    ? missingRole
+                                                        ? `Pick a role for ${missingRole}`
+                                                        : !scenes?.pool
                                                         ? 'Finding scenes…'
                                                         : noScenes
                                                             ? 'No scenes to use yet'

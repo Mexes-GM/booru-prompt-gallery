@@ -46,6 +46,7 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
+import { castAddition, roleFromProfile, roleFromSubject, type CastRole } from '@/lib/pack/scene/cast'
 import { varietyPreset, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
 import { estimateTagsPerPrompt, raiseCountsForMinTotal, type AxisBudget } from '@/lib/pack/min-tags'
 import {
@@ -147,6 +148,14 @@ function sampleAxes(
 const DEFAULT_OUTFIT_OPTIONS = { styles: [] as readonly OutfitStyle[], detail: 'simple' as OutfitDetail }
 /** Outfits shown in the library clothing pool at once; Re-sample draws others. */
 const LIBRARY_POOL_SIZE = 60
+
+export interface SceneCastMember {
+  /** Pack-normalized character tag. */
+  character: string
+  /** Name, look and signature accessories, before the user's removals. */
+  candidates: string[]
+  role: CastRole | null
+}
 
 export interface UsePackModeResult {
   isPackMode: boolean
@@ -351,6 +360,17 @@ export interface UsePackModeResult {
   /** "Never include" (scenes engine): tags left out of every prompt, as typed. */
   neverIncludeText: string
   setNeverIncludeText: (text: string) => void
+  /**
+   * The characters a scenes pack names: the base character first, then the ones
+   * added to a character base (up to MAX_CAST). Card and pasted-prompt bases have
+   * one. A role is null when nothing says it; the user picks it then.
+   */
+  sceneCast: SceneCastMember[]
+  /** Adds a character to a character base. */
+  addCastMember: (character: string) => 'added' | 'duplicate' | 'full' | 'not-a-character-base'
+  /** Removes a character; removing the first makes the next one the base. */
+  removeCastMember: (character: string) => void
+  setCastRole: (character: string, role: CastRole) => void
   /** Character tags the cleaner sees (just the kept one on a multi-character base). */
   focusedCharacterTags: string[]
   /** "Always add" tags as typed. */
@@ -432,6 +452,9 @@ export function usePackMode(
   const [engine, setEngine] = useState<'scenes' | 'classic'>(initialEngine.engine)
   const [sceneSettings, setSceneSettings] = useState<ScenePackSettings>(initialEngine.sceneSettings)
   const [neverIncludeText, setNeverIncludeText] = useState(initialConfig.neverIncludeText ?? '')
+  // A character base's other characters (scenes engine), and the roles the user picked.
+  const [castExtras, setCastExtras] = useState<string[]>([])
+  const [castRoles, setCastRoles] = useState<Record<string, CastRole>>({})
   const [lockedSlots, setLockedSlots] = useState<Set<string>>(() => new Set(initialConfig.lockedSlots))
   const [mutedSlots, setMutedSlots] = useState<Set<string>>(() => new Set(initialConfig.mutedSlots))
   const [varietyLevel, setVarietyLevelRaw] = useState<VarietySetting>(initialConfig.varietyLevel)
@@ -597,6 +620,8 @@ export function usePackMode(
     setExcludedBaseTags(new Set())
     setChosenCharacter(null)
     setCharacterProfiles({})
+    setCastExtras([])
+    setCastRoles({})
     // Previously generated prompts belong to the old base — clear them so the
     // results list doesn't show stale prompts until the user hits Generate again.
     setGeneratedPrompts([])
@@ -614,6 +639,8 @@ export function usePackMode(
     setAxisAspects({})
     setExcludedBaseTags(new Set())
     setGeneratedPrompts([])
+    setCastExtras([])
+    setCastRoles({})
   }, [])
 
   /**
@@ -847,6 +874,66 @@ export function usePackMode(
     () => Array.from(new Set([...focusAppearance(baseClassified.appearance || []), ...identityParts.signature].filter(Boolean))),
     [focusAppearance, baseClassified, identityParts]
   )
+  // The other characters' looks and roles come from their trait profiles (their own
+  // posts are rarely in a pool searched for the mix of people).
+  useEffect(() => {
+    if (castExtras.length > 0) void loadCharacterTraits(castExtras)
+  }, [castExtras])
+  const profileOf = useCallback(
+    (character: string) => traitData.profiles[character] ?? traitData.profiles[traitData.aliases[character] ?? ''],
+    [traitData]
+  )
+  const sceneCast = useMemo<SceneCastMember[]>(() => {
+    const primaryRole = (character: string | null) =>
+      (character && castRoles[character]) ||
+      roleFromSubject(identity?.subject ?? sceneIdentityCandidates) ||
+      (character ? roleFromProfile(profileOf(character)) : null)
+    const primary: SceneCastMember = {
+      character: focusCharacter ?? '',
+      candidates: sceneIdentityCandidates,
+      role: primaryRole(focusCharacter),
+    }
+    if (!baseFromCharacter) return [primary]
+    const others = castExtras.map((character): SceneCastMember => {
+      const typicalOfThem = typicalLooks[character]
+      const look = typicalOfThem?.look.length
+        ? typicalOfThem.look
+        : profileIdentity(character, traitData.profiles, effectiveOverrides, traitData.aliases)
+      return {
+        character,
+        candidates: Array.from(new Set([character, ...look])),
+        role: castRoles[character] ?? roleFromSubject(typicalOfThem?.subject ?? []) ?? roleFromProfile(profileOf(character)),
+      }
+    })
+    return [primary, ...others]
+  }, [focusCharacter, sceneIdentityCandidates, identity, castRoles, profileOf, baseFromCharacter, castExtras, typicalLooks, traitData, effectiveOverrides])
+
+  const addCastMember = useCallback((raw: string): 'added' | 'duplicate' | 'full' | 'not-a-character-base' => {
+    const character = normalizeTagForPack(raw)
+    if (!baseFromCharacter || !focusCharacter) return 'not-a-character-base'
+    const result = castAddition([focusCharacter, ...castExtras], character)
+    if (result === 'added') setCastExtras([...castExtras, character])
+    return result
+  }, [baseFromCharacter, focusCharacter, castExtras])
+
+  const removeCastMember = useCallback((character: string) => {
+    if (character !== focusCharacter) {
+      setCastExtras((prev) => prev.filter((c) => c !== character))
+      return
+    }
+    const [next, ...rest] = castExtras
+    if (!next) return
+    // The next character becomes the base; the rest stay in the cast, with their roles.
+    const roles = castRoles
+    setBaseFromCharacter(next)
+    setCastExtras(rest)
+    setCastRoles(roles)
+  }, [focusCharacter, castExtras, castRoles, setBaseFromCharacter])
+
+  const setCastRole = useCallback((character: string, role: CastRole) => {
+    setCastRoles((prev) => ({ ...prev, [character]: role }))
+  }, [])
+
   const sceneBaseExtras = useMemo(() => {
     if (baseFromCharacter) return []
     const own = new Set(sceneIdentityCandidates)
@@ -1855,5 +1942,9 @@ export function usePackMode(
     setNeverIncludeText,
     focusedCharacterTags,
     alwaysAddTags,
+    sceneCast,
+    addCastMember,
+    removeCastMember,
+    setCastRole,
   }
 }

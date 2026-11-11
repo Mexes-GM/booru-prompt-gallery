@@ -17,8 +17,9 @@
  */
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence } from "../lib/pack/scene/permanence"
-import { castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
+import { castAddition, castDefaultSearch, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
 import { DEFAULT_SCENE_SETTINGS, applySceneOwnership, castComposition, generateScenePack, type ScenePackArgs } from "../lib/pack/scene-pack"
+import { packNaturalSource } from "../lib/pack/pack-natural"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -53,6 +54,13 @@ assert(compositionQuery({ girls: 2, boys: 0 }, "gelbooru") === "yuri", "two girl
 assert(compositionQuery({ girls: 1, boys: 1 }, "e621") === "male/female", "e621's own pairing tag")
 assert(compositionQuery({ girls: 2, boys: 1 }, "danbooru") === "ffm_threesome", "a trio has its pairing tag")
 assert(compositionQuery({ girls: 1, boys: 1 }, "danbooru", "beach, rating:explicit, swimsuit") === "hetero, beach", "the theme fits within Danbooru's two tags; ratings are left to the source")
+
+// ── Adding characters and the source the app sets up ──
+assert(castAddition(["alice"], "alice") === "duplicate", "the same character twice is refused")
+assert(castAddition(["alice", "bob"], "cara") === "added" && castAddition(["alice", "bob", "cara"], "dan") === "full", "three at most")
+assert(castDefaultSearch(["girl"], "alice, solo", "danbooru") === "alice, solo", "one character: their own posts alone")
+assert(castDefaultSearch(["girl", "boy"], "alice, solo", "danbooru") === "hetero", "a cast: pictures of the same mix of people, without their names")
+assert(castDefaultSearch(["girl", null], "alice, solo", "danbooru") === null, "not until every role is known")
 
 // ── Prompts ──
 const scene = (id: number, tags: string) => makePost(id, `1girl 1boy hetero ${tags}`)
@@ -107,6 +115,15 @@ function args(over: Partial<ScenePackArgs> = {}): ScenePackArgs {
     assert(tags.slice(2, 11).join() === [...ALICE, ...CARA, ...BOB].join(), "three blocks, each whole, even where they share 'long hair': " + p.prompt)
     assert(!tags.includes("solo"), "never solo with three people")
   }
+}
+
+// ── Natural formats get every named character ──
+{
+  const prompt = { prompt: "1girl, 1boy, hetero, alice (test), long hair, bob (test), short hair, hug", values: [] }
+  const both = packNaturalSource(prompt, { character: "alice (test)", characters: ["alice (test)", "bob (test)"], contentRating: "sfw" })
+  assert(both.characters === "alice_(test) bob_(test)", "both names go to the converter, as booru fields: " + both.characters)
+  const gone = packNaturalSource({ ...prompt, prompt: "1girl, 1boy, hetero, alice (test), hug" }, { character: "alice (test)", characters: ["alice (test)", "bob (test)"], contentRating: "sfw" })
+  assert(gone.characters === "alice_(test)", "a name the prompt no longer has is left out")
 }
 
 // ── Clothing with a cast ──

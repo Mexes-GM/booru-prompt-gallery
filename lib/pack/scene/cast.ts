@@ -96,3 +96,26 @@ export function compositionQuery(people: PackPeople, provider: BooruProvider, ex
   const room = Number.isFinite(limit) ? Math.max(0, limit - 1) : extras.length
   return [lead, ...extras.slice(0, room)].join(', ')
 }
+
+export type CastAddition = 'added' | 'duplicate' | 'full'
+
+/** Whether `character` can join a cast that has `members` (pack-normalized names, the base character first). */
+export function castAddition(members: readonly string[], character: string): CastAddition {
+  if (members.includes(character)) return 'duplicate'
+  return members.length >= MAX_CAST ? 'full' : 'added'
+}
+
+/**
+ * The search the app sets up for a character base: the character's own posts
+ * alone (`soloSearch`, e.g. "name, solo"), or, for a cast of two or more, pictures
+ * of the same mix of people. Null while a cast member's role is unknown.
+ */
+export function castDefaultSearch(
+  roles: ReadonlyArray<CastRole | null>,
+  soloSearch: string,
+  provider: BooruProvider
+): string | null {
+  if (roles.length < 2) return soloSearch
+  if (roles.some((role) => !role)) return null
+  return compositionQuery(castPeople(roles), provider)
+}
