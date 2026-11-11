@@ -10,6 +10,7 @@
 import { createSeededRng } from '../pack-generator'
 import { resolveTagConflicts } from '../../tag-conflicts'
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
+import { loadedTagRelations, requiredBy, requiredSlots, type TagRelations } from '../../tag-relations'
 import { conflictsWithBackground, isEnvironmentTag, isPlainBackgroundTag } from '../background-coherence'
 import { selectScenes } from './scene-select'
 import type { ScenePool } from './scene-pool'
@@ -140,15 +141,15 @@ const GENERIC_CLOTHES = new Set(['clothes', 'clothing'])
 /**
  * Verbs a scene only uses with an object: "holding" needs something held. With the
  * object gone (extras off, the cleaner, another unit swapped in) the verb is left
- * pointing at nothing.
+ * pointing at nothing. The measured relations say this for most such tags ("reverse
+ * grip" requires a weapon, "drinking" something in hand); these are the ones they
+ * can't: verbs too general to require one kind of object, and "dual wielding",
+ * which falls short of the measured threshold.
  */
 const OBJECT_VERBS = new Set(['holding', 'carrying', 'riding', 'wielding'])
-/**
- * How an object is held or handled: nothing without the object either. The
- * taxonomy files them under pose:combat with stances that need no weapon, so
- * the slot can't tell them apart; kept short on purpose.
- */
-const HANDLING_TAGS = new Set(['dual wielding', 'reverse grip'])
+const HANDLING_TAGS = new Set(['dual wielding'])
+/** Until the measured relations load, the tags they cover that the composer used to list by hand. */
+const HANDLING_BEFORE_LOAD = new Set(['reverse grip'])
 /** Categories whose tags can be the object of those verbs (a sword, a horse). */
 const OBJECT_CATEGORIES = new Set(['equipment', 'creature'])
 
@@ -174,16 +175,43 @@ function garmentReferenced(tag: string, overrides: Record<string, string>): stri
 }
 
 /**
+ * The garment a tag refers to by the measured relations: a clothing tag it requires and
+ * names ("skirt lift" requires "skirt"; "panties aside" requires "panties"). Null when the
+ * relations don't say ("open shirt" only requires "open clothes": the shape rules decide).
+ */
+function measuredGarment(tag: string, relations: TagRelations, overrides: Record<string, string>): string | null {
+  if (tag.startsWith('no ')) return null
+  // A tag that ends in a garment is one ("white shirt", "turtleneck shirt"), whatever it requires.
+  if (getTagSlotFromOverrides(lastWord(tag), overrides)?.category === 'clothing') return null
+  const words = new Set(tag.split(' ').map(stem))
+  for (const needed of requiredBy(relations, tag)) {
+    // Only a garment counts: "shirt lift" also requires "clothes lift", a state, not something worn.
+    if (AFTER_GARMENT.test(needed) || BEFORE_GARMENT.test(needed) || AROUND.test(needed)) continue
+    const word = stem(lastWord(needed))
+    if (needed !== tag && words.has(word) && getTagSlotFromOverrides(needed, overrides)?.category === 'clothing') return word
+  }
+  return null
+}
+
+/**
  * Tags among `tags` that refer to something nothing else names: a lifted skirt needs a
  * skirt in the prompt, a bare "holding" needs a "holding X" or an object. Referring
  * tags do not count as naming the garment.
  */
-export function danglingReferences(tags: string[], overrides: Record<string, string>): Set<string> {
+export function danglingReferences(
+  tags: string[],
+  overrides: Record<string, string>,
+  relations: TagRelations | null = loadedTagRelations()
+): Set<string> {
   const dangling = new Set<string>()
   const categoryOf = (tag: string) => getTagSlotFromOverrides(tag, overrides)?.category ?? ''
+  // The measured relations first: a tag that requires an object ("drinking" needs something in hand).
+  const needsObject = (tag: string) =>
+    !!relations && requiredSlots(relations, tag).some((slot) => OBJECT_CATEGORIES.has(slot.slice(0, slot.indexOf(':'))))
   for (const verb of tags) {
     const isVerb = OBJECT_VERBS.has(verb)
-    if (!isVerb && !HANDLING_TAGS.has(verb)) continue
+    const handled = HANDLING_TAGS.has(verb) || (!relations && HANDLING_BEFORE_LOAD.has(verb)) || needsObject(verb)
+    if (!isVerb && !handled) continue
     const hasObject = tags.some(
       (tag) =>
         OBJECT_CATEGORIES.has(categoryOf(tag)) ||
@@ -194,7 +222,7 @@ export function danglingReferences(tags: string[], overrides: Record<string, str
   }
   const references = new Map<string, string>()
   for (const tag of tags) {
-    const garment = garmentReferenced(tag, overrides)
+    const garment = (relations && measuredGarment(tag, relations, overrides)) ?? garmentReferenced(tag, overrides)
     if (garment) references.set(tag, garment)
   }
   if (references.size === 0) return dangling
