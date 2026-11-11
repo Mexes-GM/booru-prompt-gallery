@@ -501,9 +501,12 @@ const fetcher = async (url: string, skipPage1Queue = false) => {
   }
 
   inflightRequests.set(url, promise)
-  promise.finally(() => {
+  // The cleanup chain must not rethrow: callers handle the rejection of `promise`
+  // itself, and an unhandled copy surfaced as "Uncaught (in promise)" on every failed page.
+  const forget = () => {
     setTimeout(() => inflightRequests.delete(url), 5000)
-  })
+  }
+  promise.then(forget, forget)
 
   return promise
 }
@@ -534,6 +537,15 @@ export { getFinalQueryTags, getFinalQueryTagsWithMeta, detectMisusedMetatags } f
 export type { QueryTagMeta, FinalQueryTagsResult, MisusedMetatagWarning, ScoreTier } from './booru/tag-limits'
 
 export { buildBooruQuery }
+
+/**
+ * One page of posts for a query, outside SWR (the same fetcher, retries and
+ * request dedupe): Pack Mode reads a cast member's own solo posts with it.
+ */
+export async function fetchPostsPage(query: Parameters<typeof createPostsKey>[0]): Promise<BooruPost[]> {
+  const url = createPostsKey(query)(0, null)
+  return url ? fetcher(url) : []
+}
 
 /**
  * `pageOrder`: see PostsQuery in lib/booru/posts-key.ts.

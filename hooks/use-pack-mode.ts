@@ -46,7 +46,9 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
-import { castAddition, roleFromProfile, roleFromSubject, type CastRole } from '@/lib/pack/scene/cast'
+import { castAddition, castMemberLook, roleFromProfile, roleFromSubject, type CastRole } from '@/lib/pack/scene/cast'
+import { fetchPostsPage } from '@/lib/api-client'
+import { packRatingToFilters } from '@/hooks/use-pack-seed-search'
 import { varietyPreset, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
 import { estimateTagsPerPrompt, raiseCountsForMinTotal, type AxisBudget } from '@/lib/pack/min-tags'
 import {
@@ -68,6 +70,7 @@ import {
   subscribeCharacterTraits,
 } from '@/lib/prompt/natural-prompt-loader'
 import {
+  characterSearchTags,
   pinnedTagsFor,
   profileIdentity,
   splitSignature,
@@ -874,11 +877,42 @@ export function usePackMode(
     () => Array.from(new Set([...focusAppearance(baseClassified.appearance || []), ...identityParts.signature].filter(Boolean))),
     [focusAppearance, baseClassified, identityParts]
   )
-  // The other characters' looks and roles come from their trait profiles (their own
-  // posts are rarely in a pool searched for the mix of people).
+  // The other characters' looks come from posts that show them alone, read once per
+  // character: a pool searched for the mix of people rarely has any, and their static
+  // trait profile counts every post they are in (a man mostly drawn with his wife
+  // would get her hair). The profile still says their role when those posts don't.
   useEffect(() => {
     if (castExtras.length > 0) void loadCharacterTraits(castExtras)
   }, [castExtras])
+  const soloRequestedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const ratingFilter = packRatingToFilters(contentRating ?? 'sfw')[0]
+    for (const character of castExtras) {
+      const key = `${booruProvider}|${ratingFilter}|${character}`
+      if (typicalLooks[character]?.look.length || soloRequestedRef.current.has(key)) continue
+      soloRequestedRef.current.add(key)
+      void fetchPostsPage({
+        tags: characterSearchTags(character, booruProvider),
+        ratingFilter,
+        order: 'popular',
+        provider: booruProvider,
+        hasPrompt: false,
+        scoreTier: 'off',
+      })
+        .then(async (posts) => {
+          await enrichOverrides(collectPostTags(posts))
+          const overrides = currentOverrides()
+          const look = typicalLook(posts, character, overrides)
+          if (!look?.length) return
+          const subject = typicalSubject(posts, character, overrides) ?? []
+          setTypicalLooks((prev) => ({ ...prev, [character]: { look, subject } }))
+        })
+        .catch(() => {
+          // Their name alone carries them; a later visit can try again.
+          soloRequestedRef.current.delete(key)
+        })
+    }
+  }, [castExtras, typicalLooks, booruProvider, contentRating, enrichOverrides, currentOverrides])
   const profileOf = useCallback(
     (character: string) => traitData.profiles[character] ?? traitData.profiles[traitData.aliases[character] ?? ''],
     [traitData]
@@ -896,17 +930,14 @@ export function usePackMode(
     if (!baseFromCharacter) return [primary]
     const others = castExtras.map((character): SceneCastMember => {
       const typicalOfThem = typicalLooks[character]
-      const look = typicalOfThem?.look.length
-        ? typicalOfThem.look
-        : profileIdentity(character, traitData.profiles, effectiveOverrides, traitData.aliases)
       return {
         character,
-        candidates: Array.from(new Set([character, ...look])),
+        candidates: castMemberLook(character, typicalOfThem?.look),
         role: castRoles[character] ?? roleFromSubject(typicalOfThem?.subject ?? []) ?? roleFromProfile(profileOf(character)),
       }
     })
     return [primary, ...others]
-  }, [focusCharacter, sceneIdentityCandidates, identity, castRoles, profileOf, baseFromCharacter, castExtras, typicalLooks, traitData, effectiveOverrides])
+  }, [focusCharacter, sceneIdentityCandidates, identity, castRoles, profileOf, baseFromCharacter, castExtras, typicalLooks])
 
   const addCastMember = useCallback((raw: string): 'added' | 'duplicate' | 'full' | 'not-a-character-base' => {
     const character = normalizeTagForPack(raw)

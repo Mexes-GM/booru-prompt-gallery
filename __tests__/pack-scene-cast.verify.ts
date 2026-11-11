@@ -17,9 +17,11 @@
  */
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence } from "../lib/pack/scene/permanence"
-import { castAddition, castDefaultSearch, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
+import { castAddition, castDefaultSearch, castMemberLook, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
 import { DEFAULT_SCENE_SETTINGS, applySceneOwnership, castComposition, generateScenePack, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { packNaturalSource } from "../lib/pack/pack-natural"
+import { profileIdentity, typicalLook } from "../lib/pack/character-identity"
+import { extractScene } from "../lib/pack/scene/scene"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -32,6 +34,8 @@ assert(roleFromSubject(["1girl", "1boy"]) === null && roleFromSubject(["solo"]) 
 assert(roleFromProfile({ "solo 1girl": 0.9, "solo 1boy": 0.01 }) === "girl", "a profile with clear solo girl posts")
 assert(roleFromProfile({ "solo 1boy": 0.8, "solo 1girl": 0.05 }) === "boy", "a profile with clear solo boy posts")
 assert(roleFromProfile({ "1boy": 0.6, "1girl": 0.5 }) === null, "a profile that leaves doubt gives no role")
+// A man often drawn next to his family: 78% of his solo posts say 1boy, 22% 1girl.
+assert(roleFromProfile({ "solo 1boy": 0.783, "solo 1girl": 0.217, "black hair": 0.689, "long hair": 0.502 }) === "boy", "two to one in his solo posts is clear enough")
 assert(roleFromProfile(undefined) === null, "no profile, no role")
 
 // ── Composition ──
@@ -48,18 +52,52 @@ assert(roleFromProfile(undefined) === null, "no profile, no role")
   assert(castComposition([{ people: { girls: 1, boys: 0 } }], pair) === null, "none holds them: null")
 }
 
-// ── Search ──
-assert(compositionQuery({ girls: 1, boys: 1 }, "danbooru") === "hetero", "a girl and a boy: hetero")
-assert(compositionQuery({ girls: 2, boys: 0 }, "gelbooru") === "yuri", "two girls: yuri")
-assert(compositionQuery({ girls: 1, boys: 1 }, "e621") === "male/female", "e621's own pairing tag")
-assert(compositionQuery({ girls: 2, boys: 1 }, "danbooru") === "ffm_threesome", "a trio has its pairing tag")
-assert(compositionQuery({ girls: 1, boys: 1 }, "danbooru", "beach, rating:explicit, swimsuit") === "hetero, beach", "the theme fits within Danbooru's two tags; ratings are left to the source")
+// ── Search: count tags while they fit, with room for the theme; else one tag ──
+assert(compositionQuery({ girls: 1, boys: 1 }, "danbooru") === "1girl, 1boy", "a girl and a boy: the count tags")
+assert(compositionQuery({ girls: 2, boys: 0 }, "gelbooru") === "2girls", "two girls")
+assert(compositionQuery({ girls: 2, boys: 1 }, "gelbooru", "beach", "sfw") === "2girls, 1boy, beach", "no tag limit: counts and the whole theme")
+assert(compositionQuery({ girls: 1, boys: 1 }, "rule34") === "1girls, 1boy", "Rule34 spells one girl 1girls")
+assert(compositionQuery({ girls: 1, boys: 1 }, "e621") === "duo", "e621 counts with duo")
+assert(compositionQuery({ girls: 1, boys: 1 }, "danbooru", "beach, rating:explicit, swimsuit") === "hetero, beach", "Danbooru's two tags: one for the pair, one for the theme; ratings are left to the source")
+assert(compositionQuery({ girls: 2, boys: 1 }, "danbooru", "beach", "explicit") === "ffm_threesome, beach", "an explicit trio on Danbooru uses its pairing tag")
+assert(compositionQuery({ girls: 2, boys: 1 }, "danbooru", "beach", "sfw") === "1boy, beach", "at a safe rating, never a threesome tag (almost no posts): the rarer count")
+
+// ── A cast member's look comes from their own solo posts ──
+{
+  const ov: Record<string, string> = { ...overrides, "short hair": "appearance:hair", "long hair": "appearance:hair", "red eyes": "appearance:eyes", "green eyes": "appearance:eyes" }
+  const him = "man (test)"
+  const her = "woman (test)"
+  const solo = (id: number) => makePost(id, `1boy solo ${him.replace(/ /g, "_")} blonde_hair short_hair green_eyes standing`, { tag_string_character: him.replace(/ /g, "_") })
+  const pair = (id: number) => makePost(id, `1girl 1boy ${him.replace(/ /g, "_")} ${her.replace(/ /g, "_")} blonde_hair short_hair black_hair long_hair red_eyes green_eyes standing`, {
+    tag_string_character: `${him.replace(/ /g, "_")} ${her.replace(/ /g, "_")}`,
+  })
+  const posts = [1, 2, 3, 4, 5, 6].map(solo).concat([7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(pair))
+  const look = typicalLook(posts, him, ov)!
+  const member = castMemberLook(him, look)
+  assert(member[0] === him && member.includes("blonde hair") && member.includes("short hair"), "his look: his own hair, name first")
+  assert(!member.includes("black hair") && !member.includes("long hair") && !member.includes("red eyes"), "none of the woman's traits, though most of his posts show her too")
+  // The static profile counts every post he is in: her hair and eyes would pass as his.
+  const profile = { "solo 1boy": 0.78, "solo 1girl": 0.22, "blonde hair": 0.64, "short hair": 0.55, "black hair": 0.69, "long hair": 0.5, "red eyes": 0.41 }
+  const fromProfile = profileIdentity(him, { [him]: profile }, ov)
+  assert(fromProfile.includes("black hair"), "(why the profile isn't used: it would give him her black hair)")
+  assert(castMemberLook(him, null).join() === him, "until his solo posts arrive, only his name")
+}
+
+// ── "multiple girls" next to "2girls" is a count, not an open one ──
+{
+  const ctx = { overrides, permanence, subject: "girl" as const }
+  const two = extractScene(makePost(30, "2girls multiple_girls yuri standing hug smile bedroom"), ctx)!
+  assert(two.people?.girls === 2 && two.people?.boys === 0, "2girls with multiple girls: two girls")
+  assert(!two.pairing.includes("multiple girls"), "the open count isn't carried when a number says how many")
+  const open = extractScene(makePost(31, "multiple_girls standing smile bedroom"), ctx)!
+  assert(open.people === null, "multiple girls alone stays open")
+}
 
 // ── Adding characters and the source the app sets up ──
 assert(castAddition(["alice"], "alice") === "duplicate", "the same character twice is refused")
 assert(castAddition(["alice", "bob"], "cara") === "added" && castAddition(["alice", "bob", "cara"], "dan") === "full", "three at most")
 assert(castDefaultSearch(["girl"], "alice, solo", "danbooru") === "alice, solo", "one character: their own posts alone")
-assert(castDefaultSearch(["girl", "boy"], "alice, solo", "danbooru") === "hetero", "a cast: pictures of the same mix of people, without their names")
+assert(castDefaultSearch(["girl", "boy"], "alice, solo", "danbooru") === "1girl, 1boy", "a cast: pictures of the same mix of people, without their names")
 assert(castDefaultSearch(["girl", null], "alice, solo", "danbooru") === null, "not until every role is known")
 
 // ── Prompts ──

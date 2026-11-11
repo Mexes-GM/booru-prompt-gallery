@@ -103,6 +103,8 @@ export interface SceneContext {
   looksLikeName?: (tag: string) => boolean
 }
 
+const MULTIPLE_RE = /^multiple (girls|boys|others)$/
+
 /** Posts, and different characters / series, a tag needs in the pool before an unclassified tag travels with its scene. */
 export const MIN_LOOSE_SUPPORT = 2
 /** Posts that carry a tag for it to count as typical of the pool. */
@@ -265,6 +267,8 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
   let girls = 0
   let boys = 0
   let openCount = false
+  // Boorus tag "multiple girls" next to "2girls": it's open only when no number says how many.
+  const multiple: string[] = []
   const pairing: string[] = []
   const rest: string[] = []
   for (const tag of ordered) {
@@ -274,6 +278,10 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
       const n = Number(count[1])
       if (count[3].startsWith('girl')) girls += n
       else boys += n
+      continue
+    }
+    if (MULTIPLE_RE.test(tag)) {
+      multiple.push(tag)
       continue
     }
     if (count || OPEN_COUNT_RE.test(tag)) {
@@ -286,6 +294,12 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
       continue
     }
     rest.push(tag)
+  }
+  for (const tag of multiple) {
+    const counted = tag.endsWith('girls') ? girls > 1 : tag.endsWith('boys') ? boys > 1 : false
+    if (counted) continue
+    openCount = true
+    pairing.push(tag)
   }
   const isTheme = (tag: string) => (ctx.poolShare?.(tag) ?? 0) >= THEME_SHARE
   const people = openCount || girls + boys === 0 ? null : { girls, boys }
