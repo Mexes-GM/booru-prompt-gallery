@@ -9,6 +9,8 @@ import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import { packOutfitDescription, type Outfit } from "@/lib/outfit-swap"
 import { promptHasExplicitTag } from "./explicit-tags"
 import { normalizeTagForPack, type PackPrompt } from "./pack-generator"
+// The Scenes engine adds `sceneRating` to PackPrompt (declared in scene-pack.ts).
+import type {} from "./scene-pack"
 
 export interface PackNaturalContext {
   provider?: string
@@ -30,12 +32,18 @@ export interface PackNaturalContext {
   descriptions?: readonly string[]
 }
 
+const SCENE_RATING_WORDS: Record<string, string> = { g: "general", s: "sensitive", q: "questionable", e: "explicit" }
+
 /**
- * A pack prompt's rating: explicit when it carries an explicit tag, else the
- * rating its pass was drawn from ("both" packs keep explicit tags out of their
- * questionable half). The rating picks the converter's wording ("woman" or "girl").
+ * A pack prompt's rating. When the prompt knows the rating of the picture it was built on
+ * (`sceneRating`, the Scenes engine), that one: a general post of a couple tagged "hetero"
+ * is still general. Otherwise it is read from the prompt: explicit when it carries an explicit
+ * tag, else the rating its pass was drawn from ("both" packs keep explicit tags out of their
+ * questionable half). The rating picks the converter's wording ("woman" or "girl") and the
+ * rating tag some formats write.
  */
-export function packPromptRating(prompt: string, contentRating: PackRatingMode | null, baseRating?: string): string | undefined {
+export function packPromptRating(prompt: string, contentRating: PackRatingMode | null, baseRating?: string, sceneRating?: string): string | undefined {
+  if (sceneRating && SCENE_RATING_WORDS[sceneRating]) return SCENE_RATING_WORDS[sceneRating]
   if (promptHasExplicitTag(prompt)) return "explicit"
   if (contentRating === "explicit") return "explicit"
   if (contentRating === "questionable" || contentRating === "both") return "questionable"
@@ -68,7 +76,7 @@ export function packNaturalSource(prompt: PackPrompt, context: PackNaturalContex
       ? { characters: cast.map(fieldTag).join(' ') }
       : named ? { characters: fieldTag(context.character!) } : {}),
     ...(named && context.copyrights ? { copyrights: context.copyrights } : {}),
-    rating: packPromptRating(prompt.prompt, context.contentRating, context.baseRating),
+    rating: packPromptRating(prompt.prompt, context.contentRating, context.baseRating, prompt.sceneRating),
     provider: context.provider,
     ...(outfitDescription ? { outfitDescription } : {}),
   }
