@@ -87,12 +87,12 @@ export function blockUrl(baseUrl: string, postId: number): string {
 export function decodePostTags(block: BlockData, names: readonly string[], postId: number): string[] {
   const ids = block[String(postId - blockOf(postId) * 1000)]
   if (!Array.isArray(ids)) return []
-  const out: string[] = []
+  const out = new Set<string>()
   for (const id of ids) {
     const name = typeof id === "number" ? names[id] : undefined
-    if (name && !out.includes(name)) out.push(name)
+    if (name) out.add(name)
   }
-  return out
+  return [...out]
 }
 
 /** The dataset commit in a resolved Hub URL (".../resolve-cache/datasets/<owner>/<name>/<sha>/..."). */
@@ -298,10 +298,10 @@ export function createIndexedDbStore(now: () => number = Date.now): AddedTagsSto
       // Housekeeping every 25 writes: drop expired entries, then the oldest over the cap.
       if (++writes % 25 !== 1) return
       const index = db.transaction(STORE, "readonly").objectStore(STORE).index("savedAt")
-      const keys = await requestToPromise(index.getAllKeys())
-      const expired = await requestToPromise(
-        db.transaction(STORE, "readonly").objectStore(STORE).index("savedAt").getAllKeys(IDBKeyRange.upperBound(now() - CACHE_TTL_MS)),
-      )
+      const [keys, expired] = await Promise.all([
+        requestToPromise(index.getAllKeys()),
+        requestToPromise(index.getAllKeys(IDBKeyRange.upperBound(now() - CACHE_TTL_MS))),
+      ])
       const blockKeys = keys.filter((k) => k !== "tags")
       const overflow = Math.max(0, blockKeys.length - MAX_CACHED_BLOCKS)
       const doomed = new Set<IDBValidKey>([...expired, ...blockKeys.slice(0, overflow)])
