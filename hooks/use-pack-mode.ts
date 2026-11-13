@@ -52,7 +52,7 @@ import { activeSceneIdeas, sceneIdeaOwnTags, sceneIdeasInUse, type ActiveSceneId
 import type { ChipState, ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isCompositionPattern } from '@/lib/pack/scene/permanence'
 import { isQualifiedVariant } from '@/lib/pack/character-identity'
-import { castAddition, castMemberLook, castMemberRole, cleanProfileLook, roleFromProfile, roleFromSubject, type CastLookSource, type CastRole } from '@/lib/pack/scene/cast'
+import { castAddition, castFromNames, castMemberLook, castMemberRole, cleanProfileLook, roleFromProfile, roleFromSubject, type CastLookSource, type CastRole } from '@/lib/pack/scene/cast'
 import { ConflictChecker } from '@/lib/tag-conflicts'
 import { ALL_EXCLUSIONS, excludes, loadedTagRelations } from '@/lib/tag-relations'
 import { fetchPostsPage } from '@/lib/api-client'
@@ -236,7 +236,7 @@ export interface UsePackModeResult {
    * "From my search" / "From a character": the character becomes the base,
    * with no card. Their look is what most of their posts show.
    */
-  setBaseFromCharacter: (character: string) => void
+  setBaseFromCharacter: (character: string, others?: readonly string[]) => void
   /** The base is a character chosen by name (no card, no pasted prompt). */
   baseFromCharacter: boolean
   /** Where a card base's look comes from: what most of the character's posts show, or the card. */
@@ -777,13 +777,16 @@ export function usePackMode(
   /**
    * A character chosen by name becomes the base, with no card. The name is
    * known to be a character already, so it doesn't wait for posts to say so;
-   * the remembered "From my prompt" text is left alone.
+   * the remembered "From my prompt" text is left alone. `others` join it as
+   * its cast, as "Add a character" would add them.
    */
-  const setBaseFromCharacter = useCallback((character: string) => {
+  const setBaseFromCharacter = useCallback((character: string, others: readonly string[] = []) => {
     const name = normalizeTagForPack(character)
     if (!name) return
     resetToPromptBase(name.replace(/ /g, '_'), [name])
     setBaseFromCharacterFlag(true)
+    const extras = castFromNames([name, ...others.map(normalizeTagForPack)]).slice(1)
+    if (extras.length > 0) setCastExtras(extras)
   }, [resetToPromptBase])
 
   // Whole-category toggle: locked -> varying; varying or partial -> locked.

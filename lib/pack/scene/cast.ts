@@ -183,6 +183,19 @@ export function castAddition(members: readonly string[], character: string): Cas
 }
 
 /**
+ * The cast that typing several names makes (pack-normalized, the base character
+ * first): each name joins as "Add a character" would take it, so repeats and names
+ * past MAX_CAST are left out, and empty ones are skipped.
+ */
+export function castFromNames(names: readonly string[]): string[] {
+  const cast: string[] = []
+  for (const name of names) {
+    if (name && castAddition(cast, name) === 'added') cast.push(name)
+  }
+  return cast
+}
+
+/**
  * The search the app sets up for a character base: the character's own posts
  * alone (`soloSearch`, e.g. "name, solo"), or, for a cast of two or more, pictures
  * of the same mix of people. Null while a cast member's role is unknown.

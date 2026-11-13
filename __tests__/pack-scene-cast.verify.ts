@@ -17,7 +17,7 @@
  */
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence } from "../lib/pack/scene/permanence"
-import { castAddition, castDefaultSearch, castMemberLook, castMemberRole, castTheme, cleanProfileLook, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
+import { castAddition, castDefaultSearch, castFromNames, castMemberLook, castMemberRole, castTheme, cleanProfileLook, castPeople, compositionQuery, holdsCast, roleFromProfile, roleFromSubject } from "../lib/pack/scene/cast"
 import { DEFAULT_SCENE_SETTINGS, applySceneOwnership, castChips, castComposition, generateScenePack, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { packNaturalSource } from "../lib/pack/pack-natural"
 import { profileIdentity, typicalLook } from "../lib/pack/character-identity"
@@ -132,6 +132,9 @@ assert(compositionQuery({ girls: 2, boys: 1 }, "danbooru", "beach", "sfw") === "
 // ── Adding characters and the source the app sets up ──
 assert(castAddition(["alice"], "alice") === "duplicate", "the same character twice is refused")
 assert(castAddition(["alice", "bob"], "cara") === "added" && castAddition(["alice", "bob", "cara"], "dan") === "full", "three at most")
+// "From a character" with several names: the first is the base, the rest join as "Add a character" would take them.
+assert(castFromNames(["alice", "bob", "alice", "cara", "dan"]).join() === "alice,bob,cara", "names typed together: repeats and the fourth are left out")
+assert(castFromNames(["", "bob"]).join() === "bob" && castFromNames([]).length === 0, "an empty name is skipped")
 assert(castDefaultSearch(["girl"], "alice, solo", "danbooru") === "alice, solo", "one character: their own posts alone")
 assert(castDefaultSearch(["girl", "boy"], "alice, solo", "danbooru") === "1girl, 1boy", "a cast: pictures of the same mix of people, without their names")
 assert(castDefaultSearch(["girl", null], "alice, solo", "danbooru") === null, "not until every role is known")

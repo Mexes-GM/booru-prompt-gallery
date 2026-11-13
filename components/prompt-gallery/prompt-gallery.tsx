@@ -932,9 +932,8 @@ export function PromptGallery() {
   }, [packModeSetBaseCard, packModeSetBasePromptForDiscard])
   // "Discard" on the kept-pack bar: back to the gallery, as it was.
   const handleDiscardKeptPack = useCallback(() => discardPackBase(false), [discardPackBase])
-  // "Change base" inside the builder: a character base came from the entry dialog, not from a card: offer it again.
-  const packModeBaseFromCharacter = packMode.baseFromCharacter
-  const handleClearPackBase = useCallback(() => discardPackBase(packModeBaseFromCharacter), [discardPackBase, packModeBaseFromCharacter])
+  // "Change base" inside the builder: the entry dialog offers every way to start the next one.
+  const handleClearPackBase = useCallback(() => discardPackBase(true), [discardPackBase])
   // Sources that already fetched fresh posts this session: picking another
   // base on the same source reuses what's in memory instead of refetching.
   const enrichedSourcesRef = useRef<Set<string>>(new Set())
@@ -1121,14 +1120,18 @@ export function PromptGallery() {
     setPackBuilderHidden(false)
   }, [packSearchCharacter, packModeSetBaseFromCharacter, applyPackSource, defaultPackSource])
 
-  // "From a character": no search needed, the character's own posts are the source.
-  const handleStartFromCharacter = useCallback((character: string) => {
-    packModeSetBaseFromCharacter(character)
+  // "From a character": no search needed, the first character's own posts are the
+  // source. The others join the pack as its cast, the same as "Add a character";
+  // once everyone's role is known, the source becomes the cast's group search (above).
+  const handleStartFromCharacters = useCallback((characters: readonly string[]) => {
+    const [first, ...others] = characters
+    if (!first) return
+    packModeSetBaseFromCharacter(first, others)
     applyPackSource({
       ...packSourceAnswers,
       tagsSource: 'custom',
       fromCharacter: true,
-      searchTags: characterSearchTags(character, search.booruProvider),
+      searchTags: characterSearchTags(first, search.booruProvider),
       booruProvider: search.booruProvider,
     })
     setPackEntryOpen(false)
@@ -2531,7 +2534,7 @@ export function PromptGallery() {
         onCancel={handlePackEntryCancel}
         searchCharacter={packSearchCharacter}
         onChooseSearch={handleStartFromSearch}
-        onSubmitCharacter={handleStartFromCharacter}
+        onSubmitCharacters={handleStartFromCharacters}
       />}
       {packSourceMounted && <PackSourceModal
         open={packSourceShown}
