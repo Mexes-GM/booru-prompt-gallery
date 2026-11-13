@@ -63,7 +63,7 @@ export const MATCH_STRICTNESS_DESCRIPTIONS: Record<MatchStrictness, string> = {
 }
 
 /** What "Fill in missing tags" does; the source is credited on the About page. */
-const FILL_MISSING_TAGS_HINT = "Add the clothing, scenery and framing a Danbooru image shows but its tags miss. Can be wrong"
+const FILL_MISSING_TAGS_HINT = "Add the clothing, scenery and framing a Danbooru image shows but its tags miss, on cards and in packs. Can be wrong"
 
 /** Background modes in Customize prompt (the extension keeps its own labels). */
 const BACKGROUND_MODES: { value: BackgroundMode; label: string }[] = [
