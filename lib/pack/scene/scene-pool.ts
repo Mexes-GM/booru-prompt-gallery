@@ -70,6 +70,12 @@ export interface ScenePoolStats {
 
 export interface ScenePool {
   scenes: Scene[]
+  /**
+   * Every scene that passed the quality threshold, of any composition (`stats.compositions` counts
+   * them): where a requested pose looks for its compositions (poseCompositions). Missing in pools
+   * built by hand; `scenes` then stands in.
+   */
+  allScenes?: Scene[]
   /** Largest first, "other" last. */
   situations: Situation[]
   stats: ScenePoolStats
@@ -109,7 +115,7 @@ function wordSuffixes(tag: string): string[] {
 }
 
 /** Exact compositions of `scenes` with their scene counts, most scenes first (ties keep first-seen order). */
-function compositionsOf(scenes: Scene[]): Array<{ people: PackPeople; scenes: number }> {
+export function compositionsOf(scenes: readonly Scene[]): Array<{ people: PackPeople; scenes: number }> {
   const counts = new Map<string, { people: PackPeople; scenes: number }>()
   for (const scene of scenes) {
     if (!scene.people) continue
@@ -199,7 +205,7 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
   const situations = groupSituations(scenes, ctx.overrides)
   stats.scenes = scenes.length
   stats.situations = situations.length
-  return { scenes, situations, stats }
+  return { scenes, allScenes: good, situations, stats }
 }
 
 /**
