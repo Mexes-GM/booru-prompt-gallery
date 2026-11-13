@@ -1164,12 +1164,19 @@ export function PromptGallery() {
       packCachedRef.current = { key, posts }
     }
     // Starts on the saved posts while fresh ones are fetched; awaited before the final reseed.
-    void loadPackDatasetTags()
+    const datasetVersion = datasetTagsVersion()
+    const savedDatasetTags = loadPackDatasetTags()
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     updatePackSnapshot()
 
     if (enrichedSourcesRef.current.has(key)) {
       void persistPackPool(key)
+      // No fresh posts follow, so nothing else would reseed: do it once the
+      // saved posts' dataset tags are in, if any were still missing.
+      await savedDatasetTags
+      if (packSourceKeyRef.current !== key || datasetTagsVersion() === datasetVersion) return
+      packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
+      updatePackSnapshot()
       return
     }
     enrichedSourcesRef.current.add(key)
