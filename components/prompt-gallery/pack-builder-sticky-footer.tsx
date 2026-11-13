@@ -249,7 +249,6 @@ const PromptRow = memo(({
             layout={!lowMotion}
             initial={lowMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
             animate={lowMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-            exit={lowMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
             transition={lowMotion ? { duration: 0.15 } : { type: "spring", stiffness: 400, damping: 30 }}
             className="group flex items-start gap-2.5 rounded-lg border border-border/50 bg-background hover:border-border transition-colors p-2.5"
         >
@@ -371,15 +370,6 @@ const PackResultsList = memo(({
     castSize?: number
 }) => {
     const { format, fullDetail, setFormat } = usePromptFormat()
-    // A new pack replaces the list whole: remount the animated list so the old rows
-    // don't linger in their exit animation (a tab in the background pauses it).
-    const [listKey, setListKey] = useState(0)
-    const [prevPrompts, setPrevPrompts] = useState(prompts)
-    if (prompts !== prevPrompts) {
-        const before = new Set(prevPrompts.map((p) => p.prompt))
-        if (!prompts.some((p) => before.has(p.prompt))) setListKey((k) => k + 1)
-        setPrevPrompts(prompts)
-    }
     const shortCount = minTotalTags > 0
         ? prompts.filter((p) => p.prompt.split(',').filter((t) => t.trim()).length < minTotalTags).length
         : 0
@@ -547,25 +537,25 @@ const PackResultsList = memo(({
                 // One scroll area per screen: the column scrolls on its own on lg+,
                 // and below lg the whole Prompts tab scrolls instead (no nesting).
                 <div className="flex flex-col gap-2 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-                    <AnimatePresence key={listKey} mode="popLayout">
-                        {prompts.map((p, i) => (
-                            <PromptRow
-                                key={`${i}-${p.prompt}`}
-                                prompt={p}
-                                index={i}
-                                onCopy={handleCopyPrompt}
-                                onReroll={onReroll}
-                                lockedSet={lockedSet}
-                                variedSet={variedSet}
-                                showResolution={addResolution}
-                                naturalSourceOf={naturalSourceOf}
-                                format={format}
-                                fullDetail={fullDetail}
-                                tagOverrides={tagOverrides}
-                                sceneMode={sceneMode}
-                            />
-                        ))}
-                    </AnimatePresence>
+                    {/* No exit animation: a replaced row goes at once. An exit waits for frames, and
+                        in a tab that isn't painted the old row stayed next to its replacement. */}
+                    {prompts.map((p, i) => (
+                        <PromptRow
+                            key={`${i}-${p.prompt}`}
+                            prompt={p}
+                            index={i}
+                            onCopy={handleCopyPrompt}
+                            onReroll={onReroll}
+                            lockedSet={lockedSet}
+                            variedSet={variedSet}
+                            showResolution={addResolution}
+                            naturalSourceOf={naturalSourceOf}
+                            format={format}
+                            fullDetail={fullDetail}
+                            tagOverrides={tagOverrides}
+                            sceneMode={sceneMode}
+                        />
+                    ))}
                 </div>
             )}
         </div>
