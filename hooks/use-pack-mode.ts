@@ -47,6 +47,7 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
+import { yieldToPage } from '@/lib/utils/yield-to-page'
 import { addedTraitCategory, classicKeptTags, dashedAddedByCategory, pinnedConflicts, withoutKeptValues, withoutNeverTags } from '@/lib/pack/classic-chips'
 import { activeSceneIdeas, sceneIdeaOwnTags, sceneIdeasInUse, type ActiveSceneIdeas, type SceneIdea, type SceneIdeaChipState } from '@/lib/pack/scene-ideas'
 import type { ChipState, ScenePackSettings } from '@/lib/pack/scene-pack'
@@ -479,8 +480,6 @@ const omit = <T,>(record: Record<string, T>, key: string): Record<string, T> => 
   return next
 }
 
-/** Lets the browser paint and handle input before the next slice of work. */
-const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 export function usePackMode(
   tagOverrides: Record<string, string> = {},
@@ -2067,7 +2066,7 @@ export function usePackMode(
       const passes = ratingPasses(contentRating, promptCount)
       const outputs: PackPrompt[][] = []
       for (const pass of passes) {
-        const raw = await generatePackPromptsAsync(generationArgs(pass), { pause: nextTask, cancelled })
+        const raw = await generatePackPromptsAsync(generationArgs(pass), { pause: yieldToPage, cancelled })
         if (raw === null || cancelled()) return
         outputs.push(cleanPass(pass, raw))
       }

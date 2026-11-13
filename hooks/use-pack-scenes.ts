@@ -45,6 +45,7 @@ import { chosenOutfit, loadCharacterOutfits, outfitTags, type CharacterOutfits }
 import { loadTraitAliases } from '@/lib/prompt/natural-prompt-loader'
 import { NO_ACTIVE_SCENE_IDEAS, sceneIdeasInUse, type ActiveSceneIdeas } from '@/lib/pack/scene-ideas'
 import { useInventedScenes, type InventedScenesStatus } from '@/hooks/use-invented-scenes'
+import { nextPaint, yieldToPage } from '@/lib/utils/yield-to-page'
 
 /** How long the pool waits for Gelbooru's tag list before it uses the built-in rules. */
 const GELBOORU_LOOKUP_TIMEOUT_MS = 8000
@@ -218,13 +219,6 @@ function sizePrefs() {
 
 const peopleKeyOf = (people: PackPeople | null | undefined) => (people ? `${people.girls}/${people.boys}` : '')
 
-/** Lets the browser paint and handle input before the next slice of work. */
-const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
-const nextFrame = () =>
-  new Promise<void>((resolve) => {
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(resolve, 0))
-    else setTimeout(resolve, 0)
-  })
 
 /**
  * Pack Mode's scenes engine: each prompt is a real post's scene transplanted
@@ -635,9 +629,9 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     void generateScenePackAsync(pool, packArgs(Math.floor(Math.random() * 1e9)), {
       // The first pause lets the busy button paint; the rest only let input through.
       pause: () => {
-        if (!first) return nextTask()
+        if (!first) return yieldToPage()
         first = false
-        return nextFrame()
+        return nextPaint()
       },
       cancelled: stale,
     })
