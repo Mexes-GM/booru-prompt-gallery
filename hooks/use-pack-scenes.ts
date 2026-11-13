@@ -14,6 +14,7 @@ import {
   alwaysAddOmitted,
   castChips,
   gelbooruTagKinds,
+  identityWithOutfits,
   untypedTags,
   castComposition,
   defaultComposition,
@@ -40,6 +41,8 @@ import { splitCommaSeparatedTags } from '@/lib/utils/tag-utils'
 import { useOutfitDescriptions, useOutfitLibrary } from '@/hooks/use-outfit-settings'
 import { usePromptFormat } from '@/hooks/use-natural-prompt'
 import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
+import { loadCharacterOutfits, outfitTags, type CharacterOutfits } from '@/lib/pack/character-outfits'
+import { loadTraitAliases } from '@/lib/prompt/natural-prompt-loader'
 
 /** How long the pool waits for Gelbooru's tag list before it uses the built-in rules. */
 const GELBOORU_LOOKUP_TIMEOUT_MS = 8000
@@ -106,12 +109,22 @@ export interface SceneCharacterBlock {
   character: string
   role: CastRole | null
   chips: SceneChip[]
+  /** The tags this block puts in every prompt, in order. */
+  pinned: string[]
   /** Chips the user removed (they never appear). */
   removed: string[]
   /** In a cast: where the look comes from (see SceneCastMember). */
   lookSource?: CastLookSource
   /** Pinned chips that contradict another pinned chip of the block, with that tag. */
   conflicts: Readonly<Record<string, string>>
+}
+
+/** A character of the pack whose own outfits are known (Clothing: "Their outfits"). */
+export interface SceneCharacterOutfit {
+  character: string
+  outfits: CharacterOutfits
+  /** The outfit they wear: '' for the usual one, else an official outfit's name. */
+  chosen: string
 }
 
 export interface PackSceneComposition {
@@ -152,6 +165,13 @@ export interface UsePackScenesResult {
   castHasNoScenes: boolean
   /** The base has clothing, so "From the base" can be offered. */
   hasBaseClothing: boolean
+  /**
+   * The characters the pack names (by name: a character base, or a card whose character
+   * chip is pinned) whose outfits are known. Empty: the character's outfit isn't offered.
+   */
+  characterOutfits: SceneCharacterOutfit[]
+  /** Picks the outfit a character wears ('' for the usual one). */
+  setCharacterOutfit: (character: string, name: string) => void
   /** "Always add" tags left out because they contradict who's in the picture ("solo" with two people). */
   alwaysAddOmitted: string[]
   compositions: PackSceneComposition[]
@@ -341,14 +361,61 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     return { blocks: out, pinned: result.pinned, never: result.never }
   }, [members, choices, added, baseExtras, baseFixed, removedTags, removedOwn, permanence, overrides])
   // Each block keeps its own tags, even ones another character also has: they are different people.
-  const pinnedTags = useMemo(
-    () => (isCast ? pinned : Array.from(new Set(pinned))),
-    [isCast, pinned]
-  )
   const neverTags = useMemo(
     () => Array.from(new Set([...never, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack).filter(Boolean)])),
     [never, neverIncludeText]
   )
+
+  // The characters' own outfits (public/character-outfits/), read once per name and page.
+  const [outfitData, setOutfitData] = useState<ReadonlyMap<string, CharacterOutfits | null>>(() => new Map())
+  const [outfitChoices, setOutfitChoices] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const memberNames = members.map((m) => m.character).filter(Boolean).join('|')
+  useEffect(() => {
+    if (!enabled || !memberNames) return
+    let active = true
+    const names = memberNames.split('|')
+    void loadTraitAliases()
+      .then((aliases) => Promise.all(names.map(async (name) => [name, await loadCharacterOutfits(name, aliases)] as const)))
+      .then((entries) => {
+        if (!active) return
+        setOutfitData((prev) => {
+          if (entries.every(([name, outfits]) => prev.get(name) === outfits)) return prev
+          const next = new Map(prev)
+          entries.forEach(([name, outfits]) => next.set(name, outfits))
+          return next
+        })
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [enabled, memberNames])
+  const setCharacterOutfit = useCallback((character: string, name: string) => {
+    setOutfitChoices((prev) => new Map(prev).set(character, name))
+  }, [])
+  const characterOutfits = useMemo<SceneCharacterOutfit[]>(
+    () => blocks.flatMap((block) => {
+      const outfits = block.character ? outfitData.get(block.character) : null
+      // Only a character the prompts name: a card whose character chip was dashed or removed isn't one.
+      const named = baseFromCharacter || block.chips.some((chip) => chip.tag === block.character && chip.state === 'pinned')
+      if (!outfits || !named) return []
+      const chosen = outfitChoices.get(block.character) ?? ''
+      return [{ character: block.character, outfits, chosen: outfits.official.some((o) => o.name === chosen) ? chosen : '' }]
+    }),
+    [blocks, outfitData, outfitChoices, baseFromCharacter]
+  )
+  // "Their outfits": each block's pinned tags, then that character's outfit.
+  const wornOutfits = useMemo(() => {
+    if (settings.clothing !== 'character' || characterOutfits.length === 0) return null
+    return new Map(characterOutfits.map((o) => [o.character, outfitTags(o.outfits, o.chosen)]))
+  }, [settings.clothing, characterOutfits])
+  const characterOutfitTags = useMemo(() => (wornOutfits ? Array.from(wornOutfits.values()).flat() : NO_TAGS), [wornOutfits])
+  const pinnedTags = useMemo(() => {
+    const tags = wornOutfits
+      ? identityWithOutfits(blocks.map((block) => ({ pinned: block.pinned, outfit: wornOutfits.get(block.character) ?? NO_TAGS })), neverTags)
+      : pinned
+    return isCast ? tags : Array.from(new Set(tags))
+  }, [isCast, pinned, wornOutfits, blocks, neverTags])
 
   const toggleChip = useCallback((character: string, tag: string) => {
     const current = blocks.find((block) => block.character === character)?.chips.find((chip) => chip.tag === tag)
@@ -493,6 +560,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       castSize,
       never: neverTags,
       baseClothing,
+      characterOutfit: characterOutfitTags,
       subject,
       settings,
       count: promptCount,
@@ -512,7 +580,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       resolution: (aspect) => resolutionForAspect(aspect, prefs),
     }
   }, [
-    useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, pinnedTags, alwaysAdd, people, castSize, neverTags, baseClothing, subject,
+    useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, pinnedTags, alwaysAdd, people, castSize, neverTags, baseClothing, characterOutfitTags, subject,
     settings, promptCount, disabledSituations, overrides, characterTags, cleanOptions, globalWeights, isGlobalWeightsEnabled,
   ])
 
@@ -599,6 +667,8 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     missingRoles,
     castHasNoScenes,
     hasBaseClothing,
+    characterOutfits,
+    setCharacterOutfit,
     alwaysAddOmitted: omitted,
     compositions,
     people,
@@ -616,7 +686,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     reroll,
     naturalSourceOf,
   }), [
-    permanence, loadFailed, retryLoad, pool, blocks, pinnedTags, toggleChip, resetChip, addTraits, removeTrait, toggleRemovedChip, castSize, missingRoles, castHasNoScenes, hasBaseClothing, omitted,
+    permanence, loadFailed, retryLoad, pool, blocks, pinnedTags, toggleChip, resetChip, addTraits, removeTrait, toggleRemovedChip, castSize, missingRoles, castHasNoScenes, hasBaseClothing, characterOutfits, setCharacterOutfit, omitted,
     compositions, people, setPeople, disabledSituations, toggleSituation, enableAllSituations, enabledScenes,
     otherRatingPosts, libraryOutfitCount, prompts, shortBy, isGenerating, generate, reroll, naturalSourceOf,
   ])

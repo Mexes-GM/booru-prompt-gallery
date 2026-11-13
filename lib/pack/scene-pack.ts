@@ -30,8 +30,10 @@ export interface ScenePackSettings {
   /**
    * 'base': the base's own clothing in every prompt (offered only when the base has some).
    * 'own': with two or more characters, each wears what is pinned in their block.
+   * 'character': each character wears their own outfit (ScenePackArgs.characterOutfit);
+   * without outfit data the scene's clothes stay.
    */
-  clothing: 'scene' | 'library' | 'base' | 'own'
+  clothing: 'scene' | 'library' | 'base' | 'own' | 'character'
   scenery: 'scene' | 'vary' | 'plain'
   extras: boolean
 }
@@ -233,6 +235,8 @@ export interface CastChipsMember {
 export interface CastChipsBlock {
   character: string
   chips: SceneChip[]
+  /** The tags this block puts in every prompt, in order (the first block ends with the base's typed tags). */
+  pinned: string[]
   /** Chips this character lost (they never appear in their block). */
   removed: string[]
 }
@@ -269,13 +273,36 @@ export function castChips(input: {
       permanence: input.permanence,
       overrides: input.overrides,
     })
-    blocks.push({ character: member.character, chips: result.chips, removed: result.never })
-    pinned.push(...result.pinned, ...(index === 0 ? input.baseFixed.filter((tag) => !removed.has(tag)) : []))
+    const own = [...result.pinned, ...(index === 0 ? input.baseFixed.filter((tag) => !removed.has(tag)) : [])]
+    blocks.push({ character: member.character, chips: result.chips, removed: result.never, pinned: own })
+    pinned.push(...own)
     removedAll.push(...result.never)
   })
   // A tag one character lost still belongs to another who keeps it: it isn't banned from the prompt.
   const kept = new Set(blocks.flatMap((block) => block.chips.map((chip) => chip.tag)))
   return { blocks, pinned, never: Array.from(new Set(removedAll.filter((tag) => !kept.has(tag)))) }
+}
+
+/**
+ * The tags every prompt keeps when each character wears their own outfit: each block's
+ * pinned tags followed by that character's outfit, minus what the block already has
+ * (or a qualified form of it) and what is never wanted. A character without an outfit
+ * keeps just their pinned tags.
+ */
+export function identityWithOutfits(
+  blocks: ReadonlyArray<{ pinned: readonly string[]; outfit: readonly string[] }>,
+  never: readonly string[]
+): string[] {
+  const unwanted = never.map(normalizeTagForPack).filter(Boolean)
+  return blocks.flatMap((block) => {
+    const own = block.pinned.map(normalizeTagForPack)
+    const outfit = block.outfit.filter((raw) => {
+      const tag = normalizeTagForPack(raw)
+      if (!tag || unwanted.some((base) => isQualifiedVariant(tag, base))) return false
+      return !own.some((have) => have === tag || isQualifiedVariant(have, tag))
+    })
+    return [...block.pinned, ...Array.from(new Set(outfit))]
+  })
 }
 
 /** Same composition. */
@@ -455,6 +482,12 @@ export interface ScenePackArgs {
   never?: readonly string[]
   /** The base's clothing, for `settings.clothing === 'base'`. */
   baseClothing?: readonly string[]
+  /**
+   * For `settings.clothing === 'character'`: the outfit tags the characters wear, already
+   * placed in `identity` (identityWithOutfits). Empty or missing: no outfit data, so the
+   * scene's clothes stay.
+   */
+  characterOutfit?: readonly string[]
   /** Characters the pack names (1 by default). With two or more, pinned garments don't take body slots. */
   castSize?: number
   subject: 'girl' | 'boy'
@@ -474,8 +507,10 @@ export interface ScenePackArgs {
 const isCast = (args: ScenePackArgs) => (args.castSize ?? 1) >= 2
 /** The base's clothing is used: the option is on, there is some, and the pack has one character. */
 const wearsBaseClothing = (args: ScenePackArgs) => !isCast(args) && args.settings.clothing === 'base' && (args.baseClothing?.length ?? 0) > 0
+/** Every character wears their own outfit (it is in the identity), and nothing of the scene's. */
+const wearsCharacterOutfit = (args: ScenePackArgs) => args.settings.clothing === 'character' && (args.characterOutfit?.length ?? 0) > 0
 /** Every character wears what is pinned in their block, and nothing of the scene's. */
-const wearsOwnOutfits = (args: ScenePackArgs) => isCast(args) && args.settings.clothing === 'own'
+const wearsOwnOutfits = (args: ScenePackArgs) => (isCast(args) && args.settings.clothing === 'own') || wearsCharacterOutfit(args)
 
 /** The tags every prompt keeps, in order: the character blocks, then the base's clothing when it is worn. */
 function fixedTags(args: ScenePackArgs): string[] {

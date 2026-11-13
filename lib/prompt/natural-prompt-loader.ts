@@ -282,7 +282,8 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json()
 }
 
-function loadTraitAliases(): Promise<Record<string, string>> {
+/** Other boorus' character names -> Danbooru name, loaded once per page ({} if it fails). Pack Mode's outfit shards use it too. */
+export function loadTraitAliases(): Promise<Record<string, string>> {
   aliasesTask ??= fetchJson<Record<string, string>>(TRAIT_ALIASES_URL)
     .catch(() => ({}))
     .then((aliases) => {

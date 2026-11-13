@@ -15,11 +15,13 @@ import Image from "next/image"
 import { AlertTriangle, ChevronDown, Database, Loader2, Pin, Plus, RefreshCw, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { OTHER_SITUATION, type PackPeople, type Situation } from "@/lib/pack/scene/scene-pool"
 import type { SceneChip, ScenePackSettings } from "@/lib/pack/scene-pack"
-import type { SceneCharacterBlock, UsePackScenesResult } from "@/hooks/use-pack-scenes"
+import type { SceneCharacterBlock, SceneCharacterOutfit, UsePackScenesResult } from "@/hooks/use-pack-scenes"
 import type { CastRole } from "@/lib/pack/scene/cast"
+import { outfitTags } from "@/lib/pack/character-outfits"
 import { AddTagsField } from "./add-tags-field"
 import { pinnedConflictLines } from "./pack-category-list"
 import { radioGroupKeyDown } from "./radio-keys"
@@ -106,6 +108,51 @@ const CLOTHING_FROM_SCENE: Option<ScenePackSettings["clothing"]> = { value: "sce
 const CLOTHING_FROM_BASE: Option<ScenePackSettings["clothing"]> = { value: "base", label: "From the base", hint: "Every prompt wears your base's clothes instead of the scene's." }
 const CLOTHING_OWN: Option<ScenePackSettings["clothing"]> = { value: "own", label: "Own outfits", hint: "Each character wears only what's pinned in their block; the scene's clothes are left out." }
 const CLOTHING_FROM_LIBRARY: Option<ScenePackSettings["clothing"]> = { value: "library", label: "Outfit library", hint: "Whole outfits in the styles chosen under Customize prompt › Outfit." }
+const CLOTHING_CHARACTER: Option<ScenePackSettings["clothing"]> = { value: "character", label: "Character's outfit", hint: "Every prompt wears the character's own outfit instead of the scene's." }
+const CLOTHING_CAST_OUTFITS: Option<ScenePackSettings["clothing"]> = { value: "character", label: "Their outfits", hint: "Each character wears their own outfit and what's pinned in their block; the scene's clothes are left out." }
+/** Select value of the usual outfit (an empty value isn't allowed). */
+const USUAL_OUTFIT = "__usual"
+
+/** Up to `max` tags joined, with "+N" for the rest. */
+function previewTags(tags: readonly string[], max = 6): string {
+  const shown = tags.slice(0, max).join(", ")
+  return tags.length > max ? `${shown} +${tags.length - max}` : shown
+}
+
+/** Which outfit each character wears, with the outfit's tags under it. */
+function CharacterOutfitPicker({ entries, showName, onChange }: { entries: readonly SceneCharacterOutfit[]; showName: boolean; onChange: (character: string, name: string) => void }) {
+  return (
+    <div className="space-y-2">
+      {entries.map((entry) => {
+        const tags = outfitTags(entry.outfits, entry.chosen)
+        const label = showName ? `Outfit for ${entry.character}` : "Outfit"
+        const official = entry.outfits.official
+        return (
+          <div key={entry.character} className="space-y-1">
+            {official.length > 0 ? (
+              <Select value={entry.chosen || USUAL_OUTFIT} onValueChange={(v) => onChange(entry.character, v === USUAL_OUTFIT ? "" : v)}>
+                <SelectTrigger aria-label={label} className="h-8 pointer-coarse:h-11 w-auto max-w-full gap-1.5 bg-background px-2.5 text-xs">
+                  <span className="text-muted-foreground truncate">{showName ? `${entry.character}:` : "Outfit:"}</span>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {entry.outfits.usual && <SelectItem value={USUAL_OUTFIT} className="text-xs">Usual outfit</SelectItem>}
+                  {official.map((o) => (
+                    <SelectItem key={o.name} value={o.name} className="text-xs">{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              showName && <p className="text-xs font-mono">{entry.character}</p>
+            )}
+            <p className="text-xs font-mono text-muted-foreground break-words">{previewTags(tags)}</p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 const SCENERY_OPTIONS: readonly Option<ScenePackSettings["scenery"]>[] = [
   { value: "scene", label: "From the scene", hint: "Keeps each scene's place." },
   { value: "vary", label: "Vary", hint: "Moves each scene to another place that fits the pose." },
@@ -396,9 +443,11 @@ function PackScenesPanelComponent({
   const set = <K extends keyof ScenePackSettings>(key: K, value: ScenePackSettings[K]) => onSettingsChange({ ...settings, [key]: value })
 
   // With two or more characters, a single outfit (the base's, a library one) has no clear owner.
+  // The characters' own outfits are offered when the data has some for a character the prompts name.
+  const hasOutfits = scenes.characterOutfits.length > 0
   const clothingOptions = isCast
-    ? [CLOTHING_FROM_SCENE, CLOTHING_OWN]
-    : [CLOTHING_FROM_SCENE, ...(scenes.hasBaseClothing ? [CLOTHING_FROM_BASE] : []), CLOTHING_FROM_LIBRARY]
+    ? [CLOTHING_FROM_SCENE, CLOTHING_OWN, ...(hasOutfits ? [CLOTHING_CAST_OUTFITS] : [])]
+    : [CLOTHING_FROM_SCENE, ...(scenes.hasBaseClothing ? [CLOTHING_FROM_BASE] : []), CLOTHING_FROM_LIBRARY, ...(hasOutfits ? [CLOTHING_CHARACTER] : [])]
   const clothing = clothingOptions.some((o) => o.value === settings.clothing) ? settings.clothing : "scene"
 
   const noScenes = !!pool && pool.scenes.length === 0
@@ -657,7 +706,7 @@ function PackScenesPanelComponent({
           value={clothing}
           options={clothingOptions}
           onChange={(v) => set("clothing", v)}
-          extra={clothing === "library" && (
+          extra={clothing === "library" ? (
             <p className="text-xs text-muted-foreground">
               {scenes.libraryOutfitCount === null
                 ? "Loading the outfit library…"
@@ -665,7 +714,9 @@ function PackScenesPanelComponent({
                   ? "No outfits in the chosen styles. Pick some under Customize prompt › Outfit."
                   : `${scenes.libraryOutfitCount.toLocaleString("en")} outfits to draw from.`}
             </p>
-          )}
+          ) : clothing === "character" ? (
+            <CharacterOutfitPicker entries={scenes.characterOutfits} showName={isCast} onChange={scenes.setCharacterOutfit} />
+          ) : null}
         />
         <div className="h-px bg-border/50" />
         <Segmented label="Scenery" value={settings.scenery} options={SCENERY_OPTIONS} onChange={(v) => set("scenery", v)} />
