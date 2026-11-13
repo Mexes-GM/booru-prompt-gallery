@@ -152,6 +152,8 @@ import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
 import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
+import { enrichPoolPosts, prefetchPoolDatasetTags } from "@/lib/pack/dataset-tags"
+import { datasetTagsVersion } from "@/lib/dataset-tags-cache"
 import { searchedCharacterIn, searchedCharacterOf } from "@/lib/pack/character-focus"
 import { characterSearchTags } from "@/lib/pack/character-identity"
 import { castDefaultSearch, castPeople, castTheme, compositionQuery } from "@/lib/pack/scene/cast"
@@ -917,15 +919,39 @@ export function PromptGallery() {
   // collapsed to one (lib/pack/near-duplicates.ts). Memoized on the two input
   // arrays: seeding polls this every 150ms while pages land.
   const packPoolMemoRef = useRef<{ fresh: BooruPost[]; cached: BooruPost[]; posts: BooruPost[] } | null>(null)
+  // "Fill in missing tags" for the pool's Danbooru posts. Read through a ref:
+  // the pool readers below are stable callbacks.
+  const packDatasetRef = useRef({ enabled: fillMissingTags, provider: packSourceAnswers.booruProvider as string })
+  useEffect(() => {
+    packDatasetRef.current = { enabled: fillMissingTags, provider: packSourceAnswers.booruProvider }
+  }, [fillMissingTags, packSourceAnswers.booruProvider])
+  const packEnrichedMemoRef = useRef<{ base: BooruPost[]; enabled: boolean; provider: string; version: number; posts: BooruPost[] } | null>(null)
   const packPoolPosts = useCallback((): BooruPost[] => {
     const cached = packCachedRef.current?.key === packSourceKeyRef.current ? packCachedRef.current.posts : []
     const fresh = packSeedSearchRef.current?.allPosts ?? []
     const memo = packPoolMemoRef.current
-    if (memo && memo.fresh === fresh && memo.cached === cached) return memo.posts
-    const posts = collapseNearDuplicates(mergePostLists(fresh, cached))
-    packPoolMemoRef.current = { fresh, cached, posts }
+    let base: BooruPost[]
+    if (memo && memo.fresh === fresh && memo.cached === cached) base = memo.posts
+    else {
+      base = collapseNearDuplicates(mergePostLists(fresh, cached))
+      packPoolMemoRef.current = { fresh, cached, posts: base }
+    }
+    // Dataset tags join each post's own tags when the pool is read (the saved
+    // pool keeps posts as fetched), using only those already loaded.
+    const { enabled, provider } = packDatasetRef.current
+    const version = datasetTagsVersion()
+    const enriched = packEnrichedMemoRef.current
+    if (enriched && enriched.base === base && enriched.enabled === enabled && enriched.provider === provider && enriched.version === version) return enriched.posts
+    const posts = enrichPoolPosts(base, enabled, provider)
+    packEnrichedMemoRef.current = { base, enabled, provider, version, posts }
     return posts
   }, [])
+
+  /** Waits (up to its time budget) for the pool's dataset tags; never fails, never blocks past the budget. */
+  const loadPackDatasetTags = useCallback(
+    () => prefetchPoolDatasetTags(packPoolPosts(), packDatasetRef.current),
+    [packPoolPosts]
+  )
 
   const updatePackSnapshot = useCallback(() => {
     const search = packSeedSearchRef.current
@@ -1137,6 +1163,8 @@ export function PromptGallery() {
       if (packSourceKeyRef.current !== key) return
       packCachedRef.current = { key, posts }
     }
+    // Starts on the saved posts while fresh ones are fetched; awaited before the final reseed.
+    void loadPackDatasetTags()
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     updatePackSnapshot()
 
@@ -1159,9 +1187,11 @@ export function PromptGallery() {
       await packSeed.ensureSeeded(poolSearch(search), PACK_SEED_TARGET_POSTS, makeLiveReseed(packPoolPosts().length))
     }
     if (packSourceKeyRef.current !== key) return
+    await loadPackDatasetTags()
+    if (packSourceKeyRef.current !== key) return
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     await persistPackPool(key)
-  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed, makeLiveReseed, packPoolPosts, poolSearch, updatePackSnapshot, persistPackPool])
+  }, [packModeReseedAllAxes, packAxisFallbacks, packSeed, makeLiveReseed, packPoolPosts, poolSearch, updatePackSnapshot, persistPackPool, loadPackDatasetTags])
 
   // Runs a pending seed once a base and fetched results both exist.
   const packHasBase = packMode.hasBase
@@ -1184,9 +1214,11 @@ export function PromptGallery() {
     const start = packPoolPosts().length
     await packSeed.ensureSeeded(poolSearch(search), start + PACK_SEED_TARGET_POSTS, makeLiveReseed(start))
     if (packSourceKeyRef.current !== key) return
+    await loadPackDatasetTags()
+    if (packSourceKeyRef.current !== key) return
     packModeReseedAllAxes(packPoolPosts(), packAxisFallbacks)
     await persistPackPool(key)
-  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks, makeLiveReseed, packPoolPosts, poolSearch, persistPackPool])
+  }, [packSeed, packModeReseedAllAxes, packAxisFallbacks, makeLiveReseed, packPoolPosts, poolSearch, persistPackPool, loadPackDatasetTags])
 
   // The booru refused or couldn't be reached: ask again, then seed as if the source were new.
   const handleRetryPackPosts = useCallback(() => {
