@@ -72,6 +72,44 @@ export default function AboutPage() {
 
         <Card className="glass-effect">
           <CardHeader>
+            <CardTitle>Data sources</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>
+              The tags that <strong>Fill in missing tags</strong> adds to Danbooru posts come from{" "}
+              <a
+                href="https://huggingface.co/datasets/Mexes/danbooru-added-tags"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-primary-text"
+              >
+                Mexes/danbooru-added-tags
+              </a>
+              , built from{" "}
+              <a
+                href="https://huggingface.co/datasets/BootsofLagrangian/danbooru-multitier-captions-202606"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-primary-text"
+              >
+                BootsofLagrangian/danbooru-multitier-captions-202606
+              </a>
+              . Both are licensed under{" "}
+              <a
+                href="https://creativecommons.org/licenses/by/4.0/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-primary-text"
+              >
+                CC BY 4.0
+              </a>
+              .
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-effect">
+          <CardHeader>
             <CardTitle>The Creator</CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-4">

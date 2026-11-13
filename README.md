@@ -59,6 +59,7 @@ The artist, the series and the metadata are gone. `dress`, `sleeveless`, `sleeve
 - **Tag cleaning**: removes artist names, ratings, metadata and tags that restrict the generation.
 - **Smart Tag Combination**: `hair, long hair, white hair` becomes `long white hair`.
 - **Smart Tag Exclusion**: 300+ conflict rules, so a character seen "from behind" doesn't also get tags that only make sense from the front.
+- **Fill in missing tags**: on Danbooru posts, adds the clothing, scenery and framing tags that the image shows but the post isn't tagged with. They're guesses, so some will be wrong.
 - **Background Options**: keep the original background, remove it, replace it with your own tags, or randomize it (simple colors and gradients, or full detailed scenes).
 
 ### Make them yours
@@ -141,6 +142,7 @@ Only the worker URL is required. Everything else switches itself off when missin
 | `DANBOORU_USERNAME` + `DANBOORU_API_KEY` | Higher Danbooru rate limits | Public API limits. |
 | `NEXT_PUBLIC_CDN_PROXY_URL` | CDN for Danbooru images | Images go through the app's own download route. |
 | `NEXT_PUBLIC_GELBOORU_CDN_URL` | CDN for Gelbooru images | Images go through the worker. |
+| `NEXT_PUBLIC_ADDED_TAGS_URL` | Your own copy of the added-tags dataset | The public dataset on Hugging Face. |
 | `NEXT_PUBLIC_POSTHOG_KEY` | Analytics | Disabled. |
 | `DISCORD_FEEDBACK_WEBHOOK_URL` | Feedback form | Feedback form disabled. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` | CAPTCHA on the feedback form | The form works without a challenge. |
@@ -192,6 +194,10 @@ Found a bug or have an idea? Open an issue or leave a comment on the [Civitai ar
 ## Support
 
 The app runs on free hosting, so if it's ever down, that's probably why. If you want to help keep it running, you can [buy me a coffee](https://buymeacoffee.com/Mexes).
+
+## Data credits
+
+The tags that Fill in missing tags adds come from [Mexes/danbooru-added-tags](https://huggingface.co/datasets/Mexes/danbooru-added-tags), which is built from the captions in [BootsofLagrangian/danbooru-multitier-captions-202606](https://huggingface.co/datasets/BootsofLagrangian/danbooru-multitier-captions-202606). Both datasets are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## License
 
