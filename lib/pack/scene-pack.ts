@@ -13,13 +13,24 @@ import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
 import { composePack, composePackPrompts, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
-import { coherentPromptTags, dropRedundantTags } from './prompt-coherence'
+import { coherentPromptTags, dropRedundantTags, loneCompanyTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
 import { normalizeRating, type Scene, type SceneRating, type TagKind } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
 import type { PackPeople, ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
 import { garmentPrefix, lastQualifier } from './scene/franchise'
+import type { SceneRequests } from './brief'
+
+declare module './pack-generator' {
+  interface PackPrompt {
+    /**
+     * Scenes engine: the rating of the scene the prompt was built on (the highest of the posts
+     * it took parts from). It is what the picture is; pack-natural.ts tells the converter so.
+     */
+    sceneRating?: SceneRating
+  }
+}
 
 /** The pack's content rating (same values as the source dialog). */
 export type ScenePackRating = 'sfw' | 'questionable' | 'explicit' | 'both'
@@ -516,26 +527,191 @@ export interface ScenePackArgs {
   clean: (tags: string[], locked: string[]) => string
   /** Suggested size for a post's proportions (width / height), or null. */
   resolution?: (aspect: number) => { width: number; height: number } | null
+  /**
+   * What the user asked for, by role (lib/pack/brief.ts). Each request is a condition every
+   * prompt meets, not a tag pasted on top: what contradicts it leaves the prompt. Without it,
+   * the engine runs as before (`alwaysAdd`, traits in `identity`, the clothing and scenery options).
+   *  - `wearing`: in every prompt; the scene's clothes and what the character usually wears (in
+   *    `identity`) go, unless the scene's clothes already are it ("white bikini" for "bikini").
+   *    What the character is stays: names, look, signature accessories (`permanence`).
+   *  - `where`: replaces the scene's place.
+   *  - `select`, `also`: owned like a pinned trait; a posture, an expression or a camera tag
+   *    takes the place of the scene's.
+   *  - `literal`: first, as typed (like `alwaysAdd`).
+   */
+  requests?: SceneRequests
+  /** Who the identity's tags are (lib/pack/scene/permanence.ts): decides what `requests.wearing` leaves of the character. */
+  permanence?: (tag: string) => Permanence
+}
+
+/** A request's role in the brief (keys of SceneRequests). */
+export type RequestRole = keyof SceneRequests
+
+/**
+ * What the engine could not do as asked, for the interface to say in words. One entry per
+ * request and kind, with how many prompts of the pack it touches. Planned next: 'few-scenes'
+ * (the pool has few scenes with a selected pose) and 'scenes-reused'.
+ */
+export type ScenePackIssue =
+  /** The request needs more than one person and the pack shows one: it stays in, contradicted. */
+  | { kind: 'needs-company'; tag: string; role: RequestRole; prompts: number }
+  /** The request was left out of the pack, and why. */
+  | { kind: 'request-dropped'; tag: string; role: RequestRole; reason: RequestDropReason }
+
+export type RequestDropReason =
+  /** The same tag is in "Never include" (or a removed chip). */
+  | 'never'
+  /** A people-count or pairing tag the pack's composition contradicts ("2girls" in a pack of one). */
+  | 'composition'
+
+export interface ScenePackResult {
+  prompts: PackPrompt[]
+  /** How many prompts are missing (Faithful makes at most one prompt per scene). */
+  shortBy: number
+  issues: ScenePackIssue[]
 }
 
 const isCast = (args: ScenePackArgs) => (args.castSize ?? 1) >= 2
-/** The base's clothing is used: the option is on, there is some, and the pack has one character. */
-const wearsBaseClothing = (args: ScenePackArgs) => !isCast(args) && args.settings.clothing === 'base' && (args.baseClothing?.length ?? 0) > 0
+/** The base's clothing is used: the option is on, there is some, the pack has one character, and no garment was asked for. */
+const wearsBaseClothing = (args: ScenePackArgs) =>
+  !isCast(args) && args.settings.clothing === 'base' && (args.baseClothing?.length ?? 0) > 0 && requestPlan(args).wearing.length === 0
 /** Every character wears their own outfit (it is in the identity), and nothing of the scene's. */
 const wearsCharacterOutfit = (args: ScenePackArgs) => args.settings.clothing === 'character' && (args.characterOutfit?.length ?? 0) > 0
 /** Every character wears what is pinned in their block, and nothing of the scene's. */
-const wearsOwnOutfits = (args: ScenePackArgs) => (isCast(args) && args.settings.clothing === 'own') || wearsCharacterOutfit(args)
+const wearsOwnOutfits = (args: ScenePackArgs) =>
+  requestPlan(args).wearing.length === 0 && ((isCast(args) && args.settings.clothing === 'own') || wearsCharacterOutfit(args))
 
-/** The tags every prompt keeps, in order: the character blocks, then the base's clothing when it is worn. */
+// ── Requests ──────────────────────────────────────────────────────────────────
+
+/** Slots that hold one thing at a time and that a requested tag takes from the scene: a posture, an expression, a camera. */
+const DISPLACING_SLOTS = new Set(['pose:posture', 'pose:expression', 'pose:camera'])
+/** Slots whose items the permanence data may mark as the character's own (signature) when `permanence` is missing. */
+const SIGNATURE_SLOTS = new Set(['clothing:headwear', 'clothing:eyewear'])
+
+/**
+ * True for a tag of the character's identity that is something they wear, not something they
+ * are: a clothing tag the permanence data marks as picture state ("crop top", "suspenders",
+ * "fingerless gloves", "earrings"). Signature accessories ("glasses", "hairband", "hat") and
+ * every non-clothing tag (name, hair, eyes, body) are the character. Without permanence data,
+ * headwear and eyewear count as signature.
+ */
+export function isWornByCharacter(tag: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence): boolean {
+  const info = getTagSlotFromOverrides(normalizeTagForPack(tag), overrides)
+  if (info?.category !== 'clothing') return false
+  if (permanence) return permanence(tag) === 'state'
+  return !(info.slot && SIGNATURE_SLOTS.has(info.slot))
+}
+
+interface RequestPlan {
+  /** The identity the scenes are composed onto: the character (less what they wear, when a garment is asked for) and every imposed request. */
+  identity: string[]
+  /** Imposed requests (every role but `literal`), as the engine spells them. */
+  imposed: string[]
+  wearing: string[]
+  where: string[]
+  /** `select` and `also`: owned like pinned traits; they take the place of the scene's posture, expression or camera. */
+  owning: string[]
+  /** What the character usually wears, set aside for the garments asked for: it doesn't come back through the scene either. */
+  setAside: string[]
+  literal: string[]
+  roleOf: Map<string, RequestRole>
+  /** Requests left out before composing, and why. */
+  dropped: ScenePackIssue[]
+}
+
+const NO_REQUESTS: RequestPlan = { identity: [], imposed: [], wearing: [], where: [], owning: [], setAside: [], literal: [], roleOf: new Map(), dropped: [] }
+const plans = new WeakMap<ScenePackArgs, RequestPlan>()
+
+/** What `args.requests` means for this pack, worked out once per args. */
+function requestPlan(args: ScenePackArgs): RequestPlan {
+  const requests = args.requests
+  if (!requests) return { ...NO_REQUESTS, identity: args.identity }
+  const cached = plans.get(args)
+  if (cached) return cached
+  const never = (args.never ?? []).map(normalizeTagForPack).filter(Boolean)
+  const roleOf = new Map<string, RequestRole>()
+  const dropped: ScenePackIssue[] = []
+  const take = (role: Exclude<RequestRole, 'literal'>): string[] =>
+    requests[role].flatMap((raw) => {
+      const tag = normalizeTagForPack(raw)
+      if (!tag || roleOf.has(tag)) return []
+      roleOf.set(tag, role)
+      if (never.some((base) => isQualifiedVariant(tag, base))) {
+        dropped.push({ kind: 'request-dropped', tag, role, reason: 'never' })
+        return []
+      }
+      if (args.people && isCompositionPattern(tag) && !fitsComposition(tag, args.people)) {
+        dropped.push({ kind: 'request-dropped', tag, role, reason: 'composition' })
+        return []
+      }
+      return [tag]
+    })
+  const wearing = take('wearing')
+  const where = take('where')
+  const owning = [...take('select'), ...take('also')]
+  const imposed = [...wearing, ...where, ...owning]
+  const literal = requests.literal.filter((tag) => tag.trim())
+  literal.forEach((tag) => roleOf.set(normalizeTagForPack(tag), roleOf.get(normalizeTagForPack(tag)) ?? 'literal'))
+  alwaysAddOmitted(literal, args.people ?? null).forEach((tag) =>
+    dropped.push({ kind: 'request-dropped', tag, role: 'literal', reason: 'composition' })
+  )
+  // What the character wears gives way to the garment asked for; what they are stays.
+  const setAside = wearing.length > 0 ? args.identity.filter((tag) => isWornByCharacter(tag, args.overrides, args.permanence)) : []
+  const character = args.identity.filter((tag) => !setAside.includes(tag))
+  const have = new Set(character.map(normalizeTagForPack))
+  const plan: RequestPlan = {
+    identity: [...character, ...imposed.filter((tag) => !have.has(tag))],
+    imposed,
+    wearing,
+    where,
+    owning,
+    setAside: setAside.map(normalizeTagForPack),
+    literal,
+    roleOf,
+    dropped,
+  }
+  plans.set(args, plan)
+  return plan
+}
+
+/**
+ * `tags` without the scene's tags of a slot a request takes: a requested posture, expression or
+ * camera tag stands for the scene's ("sitting" sends "standing" out). A longer form of the request
+ * ("sitting on chair" for "sitting") stays, and so do `locked` tags.
+ */
+export function displaceRequestedSlots(
+  tags: readonly string[],
+  requested: readonly string[],
+  locked: readonly string[],
+  overrides: Record<string, string>
+): string[] {
+  const taken = new Map<string, string[]>()
+  for (const tag of requested) {
+    const slot = getTagSlotFromOverrides(tag, overrides)?.slot
+    if (slot && DISPLACING_SLOTS.has(slot)) taken.set(slot, [...(taken.get(slot) ?? []), tag])
+  }
+  if (taken.size === 0) return [...tags]
+  const kept = new Set(locked)
+  return tags.filter((raw) => {
+    if (kept.has(raw)) return true
+    const tag = normalizeTagForPack(raw)
+    const owners = taken.get(getTagSlotFromOverrides(tag, overrides)?.slot ?? '')
+    return !owners || owners.some((owner) => tag === owner || tag.startsWith(`${owner} `) || isQualifiedVariant(tag, owner))
+  })
+}
+
+/** The tags every prompt keeps, in order: the character blocks (and the imposed requests), then the base's clothing when it is worn. */
 function fixedTags(args: ScenePackArgs): string[] {
-  if (!wearsBaseClothing(args)) return args.identity
-  const own = new Set(args.identity)
-  return [...args.identity, ...args.baseClothing!.filter((tag) => !own.has(tag))]
+  const identity = requestPlan(args).identity
+  if (!wearsBaseClothing(args)) return identity
+  const own = new Set(identity)
+  return [...identity, ...args.baseClothing!.filter((tag) => !own.has(tag))]
 }
 
 function composeOptions(args: ScenePackArgs, count: number, seed: number, disabled: readonly string[] | undefined): ComposeOptions {
   const { settings } = args
-  const library = !isCast(args) && settings.clothing === 'library' && args.library && args.library.length > 0
+  const plan = requestPlan(args)
+  const library = !isCast(args) && settings.clothing === 'library' && args.library && args.library.length > 0 && plan.wearing.length === 0
   return {
     identity: fixedTags(args),
     subject: args.subject,
@@ -549,6 +725,8 @@ function composeOptions(args: ScenePackArgs, count: number, seed: number, disabl
     disabledSituations: disabled ? [...disabled] : undefined,
     overrides: args.overrides,
     sceneIdeaTags: args.sceneIdea?.core.length ? args.sceneIdea.core : undefined,
+    ...(plan.wearing.length > 0 ? { wearing: plan.wearing } : {}),
+    ...(plan.where.length > 0 ? { where: plan.where } : {}),
   }
 }
 
@@ -609,12 +787,25 @@ interface Finisher {
   filter: NearDuplicateFilter
   sceneById: Map<number, Scene>
   situationOf: Map<number, string>
+  /** Requests that need company, kept in a one-person prompt: prompts each was in. */
+  lonely: Map<string, number>
 }
 
 function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filter: NearDuplicateFilter): Finisher {
   const situationOf = new Map<number, string>()
   pool.situations.forEach((situation) => situation.sceneIds.forEach((id) => situationOf.set(id, situation.id)))
-  return { pool, args, leftOut: ideaClothesLeftOut(args), seen, filter, sceneById: new Map(pool.scenes.map((scene) => [scene.postId, scene])), situationOf }
+  return {
+    pool, args, leftOut: ideaClothesLeftOut(args), seen, filter,
+    sceneById: new Map(pool.scenes.map((scene) => [scene.postId, scene])), situationOf, lonely: new Map(),
+  }
+}
+
+/** The issues of a finished pack: requests left out before composing, then requests that needed company. */
+function packIssues(f: Finisher): ScenePackIssue[] {
+  const plan = requestPlan(f.args)
+  const issues = [...plan.dropped]
+  f.lonely.forEach((prompts, tag) => issues.push({ kind: 'needs-company', tag, role: plan.roleOf.get(normalizeTagForPack(tag)) ?? 'literal', prompts }))
+  return issues
 }
 
 /**
@@ -628,29 +819,46 @@ function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filte
  */
 function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const { args } = f
+  const plan = requestPlan(args)
   const locked = new Set(composed.locked)
   const tags = f.leftOut.size > 0 ? composed.tags.filter((tag) => locked.has(tag) || !f.leftOut.has(tag)) : composed.tags
-  const owned = applySceneOwnership(tags, composed.locked, args.never ?? [], args.overrides, !isCast(args))
-  const cleaned = args.clean(owned, composed.locked)
+  // Clothes of the scene that already are the garments asked for stay whole: the request doesn't own them.
+  const wearing = new Set(composed.sceneWears ? plan.wearing : [])
+  const owner = wearing.size > 0 ? composed.locked.filter((tag) => !wearing.has(tag)) : composed.locked
+  const owned = new Set(applySceneOwnership(tags, owner, [...(args.never ?? []), ...plan.setAside], args.overrides, !isCast(args)))
+  const ownedTags = tags.filter((tag) => locked.has(tag) || owned.has(tag))
+  const displaced = displaceRequestedSlots(ownedTags, plan.owning, composed.locked, args.overrides)
+  const cleaned = args.clean(displaced, composed.locked)
   if (!cleaned) return null
   // One rule wherever the tags come from (character, base clothing, library, scene): a generic
-  // tag next to a qualified form of the same thing gives way to it.
+  // tag next to a qualified form of the same thing gives way to it. A request never does.
   // With a cast the blocks are different people: one's "long hair" is not redundant with another's "very long hair".
-  // The last pass shared with Classic: redundant generics, then references to nothing.
+  // The last pass shared with Classic: redundant generics, tags that need company in a
+  // one-person prompt, then references to nothing.
   const kept = coherentPromptTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), {
     keep: composed.locked,
-    fixed: isCast(args) ? composed.locked : [],
+    fixed: [...(isCast(args) ? composed.locked : []), ...plan.imposed],
     overrides: args.overrides,
+    people: true,
   })
-  const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(args.alwaysAdd, composed.locked, args.people))
+  const front = Array.from(new Set([...plan.literal, ...args.alwaysAdd]))
+  const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(front, composed.locked, args.people))
   if (!prompt || f.seen.has(prompt) || !f.filter.tryAccept(prompt)) return null
   f.seen.add(prompt)
+  // A request that needs company stays in a one-person prompt; the pack says so.
+  if (args.requests) {
+    const finalTags = prompt.split(',').map((tag) => tag.trim()).filter(Boolean)
+    loneCompanyTags(finalTags).forEach((tag) => {
+      if (plan.roleOf.has(normalizeTagForPack(tag))) f.lonely.set(tag, (f.lonely.get(tag) ?? 0) + 1)
+    })
+  }
   const postId = composed.sources.skeleton
   const size = composed.aspect && args.resolution ? args.resolution(composed.aspect) : null
   const outfitId = args.settings.clothing === 'library' ? outfitOf(composed, args.library) : undefined
   return {
     prompt,
     values: [],
+    sceneRating: composed.rating,
     ...(size ?? {}),
     ...(outfitId !== undefined ? { outfitId } : {}),
     scene: {
@@ -678,11 +886,11 @@ function* composeForPack(pool: ScenePool, args: ScenePackArgs, count: number): G
 
 /**
  * A pack of `args.count` prompts from `pool`. `shortBy` is how many are missing
- * (Faithful makes at most one prompt per scene).
+ * (Faithful makes at most one prompt per scene); `issues`, what was asked and not met.
  */
-export function generateScenePack(pool: ScenePool, args: ScenePackArgs): { prompts: PackPrompt[]; shortBy: number } {
+export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePackResult {
   const count = Math.max(0, Math.floor(args.count))
-  if (count === 0) return { prompts: [], shortBy: 0 }
+  if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
   const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)))
   const prompts: PackPrompt[] = []
   for (const composed of composeForPack(pool, args, count)) {
@@ -690,7 +898,7 @@ export function generateScenePack(pool: ScenePool, args: ScenePackArgs): { promp
     const prompt = finishOne(f, composed)
     if (prompt) prompts.push(prompt)
   }
-  return { prompts, shortBy: count - prompts.length }
+  return { prompts, shortBy: count - prompts.length, issues: packIssues(f) }
 }
 
 export interface AsyncControl {
@@ -710,9 +918,9 @@ export async function generateScenePackAsync(
   pool: ScenePool,
   args: ScenePackArgs,
   control: AsyncControl
-): Promise<{ prompts: PackPrompt[]; shortBy: number } | null> {
+): Promise<ScenePackResult | null> {
   const count = Math.max(0, Math.floor(args.count))
-  if (count === 0) return { prompts: [], shortBy: 0 }
+  if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
   const slice = control.slice ?? 12
   await control.pause()
   if (control.cancelled()) return null
@@ -732,7 +940,7 @@ export async function generateScenePackAsync(
     const prompt = finishOne(f, next.value)
     if (prompt) prompts.push(prompt)
   }
-  return { prompts, shortBy: count - prompts.length }
+  return { prompts, shortBy: count - prompts.length, issues: packIssues(f) }
 }
 
 /** `pool` with each situation reduced to the scenes in `allowed`. */
