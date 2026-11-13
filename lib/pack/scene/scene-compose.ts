@@ -59,6 +59,12 @@ export interface ComposeOptions {
    * in, and pose tags tied to a support the imposed place doesn't name ("lying on bed" at a beach) go.
    */
   where?: readonly string[]
+  /**
+   * With `where`: a scene whose place already has every imposed place, or a qualified form,
+   * keeps its own place (as `wearing` keeps clothes that already are the garments). Off by
+   * default: the imposed place replaces the scene's whatever it is.
+   */
+  whereKeepsPlace?: boolean
 }
 
 /** True when the scene already has one of the picked scenes' own tags. */
@@ -111,7 +117,7 @@ export interface ScenePrompt {
    * Post each unit came from. `skeleton` is the base scene; the other units appear
    * only when they were swapped in from another scene.
    */
-  sources: { skeleton: number; face?: number; camera?: number; place?: number; outfit?: number }
+  sources: { skeleton: number; face?: number; camera?: number; place?: number; outfit?: number; pose?: number }
   /** With imposed garments (`ComposeOptions.wearing`): the scene's own clothes already have them, so they stayed. */
   sceneWears?: boolean
 }
@@ -382,7 +388,7 @@ export function dropDanglingReferences(
 const peopleKey = (scene: Scene): string => (scene.people ? `${scene.people.girls}g${scene.people.boys}b` : 'open')
 
 /** True when `donor` offers a place that supports the posture of `scene` without contradicting it. */
-function placeFits(scene: Scene, donor: Scene): boolean {
+export function placeFits(scene: Scene, donor: Scene): boolean {
   if (donor.units.place.length === 0) return false
   const has = (tag: string) => donor.anchors.includes(tag) || donor.units.place.includes(tag)
   const covered = (anchor: string) =>
@@ -482,7 +488,8 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     // An imposed place replaces the scene's, with what the pose leaned on there.
     const where = options.where ?? []
     if (where.length > 0) {
-      units.place = []
+      const atPlace = options.whereKeepsPlace === true && where.every((tag) => units.place.some((own) => isQualifiedVariant(own, tag)))
+      if (!atPlace) units.place = []
       const named = (noun: string) => where.some((tag) => tag === noun || tag.endsWith(` ${noun}`))
       const lost = new Set(scene.anchors.filter((anchor) => anchor !== 'indoors' && anchor !== 'outdoors' && !named(anchor)))
       if (lost.size > 0) units.skeleton = units.skeleton.filter((tag) => ![...lost].some((noun) => tag.endsWith(` ${noun}`)))
@@ -580,4 +587,52 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     made++
     yield prompt
   }
+}
+
+// ── One unit from another scene ───────────────────────────────────────────────
+
+/** Where a lent unit's scene is recorded in ScenePrompt.sources. */
+export type LentSource = Exclude<keyof ScenePrompt['sources'], 'skeleton'>
+
+/** Supports that `units` still lean on, among `anchors`: a noun a pose or place tag names, indoors / outdoors when tagged. */
+function anchorsIn(units: SceneUnits, anchors: readonly string[]): string[] {
+  const tags = [...units.skeleton, ...units.place]
+  const all = new Set(unitTags(units))
+  return Array.from(new Set(anchors)).filter((anchor) =>
+    anchor === 'indoors' || anchor === 'outdoors' ? all.has(anchor) : tags.some((tag) => tag === anchor || tag.endsWith(` ${anchor}`))
+  )
+}
+
+/** `base` with the units in `parts` taken from `donor`: a scene of its own, rated as the higher of the two. */
+export function lentScene(base: Scene, donor: Scene, parts: readonly UnitName[]): Scene {
+  const units: SceneUnits = { ...base.units }
+  for (const part of parts) units[part] = donor.units[part].slice()
+  const rating = RATING_LEVEL[donor.rating] > RATING_LEVEL[base.rating] ? donor.rating : base.rating
+  return { ...base, units, rating, anchors: anchorsIn(units, [...base.anchors, ...donor.anchors]) }
+}
+
+/**
+ * `base` with the units in `parts` taken from `donor` (null: the base as it is), composed as a
+ * Faithful prompt of its own: the same steps as any scene (identity, imposed garments and place,
+ * conflicts against the identity, dangling references), and no swaps. `source` records the donor
+ * in `sources`. Null when the composer gives nothing.
+ */
+export function composeLent(
+  pool: ScenePool,
+  base: Scene,
+  donor: Scene | null,
+  parts: readonly UnitName[],
+  source: LentSource,
+  options: ComposeOptions
+): ScenePrompt | null {
+  const scene = donor ? lentScene(base, donor, parts) : base
+  const single: ScenePool = {
+    ...pool,
+    scenes: [scene],
+    allScenes: undefined,
+    situations: [{ id: 'lent', label: [], sceneIds: [scene.postId], previews: [] }],
+  }
+  const first = composePackPrompts(single, { ...options, mix: 'faithful', count: 1, disabledSituations: undefined }).next()
+  if (first.done) return null
+  return donor ? { ...first.value, sources: { ...first.value.sources, [source]: donor.postId } } : first.value
 }
