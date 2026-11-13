@@ -928,12 +928,20 @@ export function PromptGallery() {
     // Keep the fetched posts: the next base on this source reuses them.
     hasSeededRef.current = false
   }, [packModeSetBaseCard, packModeSetBasePromptForDiscard])
-  // "Change base" inside the builder: the entry dialog offers every way to start the next one.
-  const handleClearPackBase = useCallback(() => {
-    handleDiscardKeptPack()
+  // "Change base" inside the builder offers every way to start another, over the
+  // builder. The pack stays as it is until a new base is confirmed: closing the
+  // dialog (Cancel, Escape, a click outside) goes back to it.
+  const handleChangePackBase = useCallback(() => {
     setPackEntryStartInPrompt(false)
     setPackEntryOpen(true)
-  }, [handleDiscardKeptPack])
+  }, [])
+  const packModeHasBaseForEntry = packMode.hasBase
+  // "From a card": the gallery is where the next card is picked. A pack already
+  // there is kept aside (its bar shows) until a card replaces it, or it is reopened.
+  const handlePackEntryChooseCard = useCallback(() => {
+    setPackEntryOpen(false)
+    if (packModeHasBaseForEntry) setPackBuilderHidden(true)
+  }, [packModeHasBaseForEntry])
 
   // What the pack is built on, to tell a base picked again from a new one.
   const packCurrentBaseKey = useMemo<PackBaseKey | null>(() => {
@@ -2548,7 +2556,7 @@ export function PromptGallery() {
         isOpen={packEntryOpen}
         initialPrompt={packMode.basePrompt || userPreferences.getLastPackBasePrompt()}
         startInPromptView={packEntryStartInPrompt}
-        onChooseCard={() => setPackEntryOpen(false)}
+        onChooseCard={handlePackEntryChooseCard}
         onSubmitPrompt={handleSubmitPackPrompt}
         onCancel={handlePackEntryCancel}
         searchCharacter={packSearchCharacter}
@@ -2642,7 +2650,8 @@ export function PromptGallery() {
         setPromptCount={packMode.setPromptCount}
         onRegenerate={handlePackRegenerate}
         onRerollPrompt={packUsesScenes ? packScenes.reroll : packMode.rerollPrompt}
-        onClearBase={handleClearPackBase}
+        onClearBase={handleDiscardKeptPack}
+        onChangeBase={handleChangePackBase}
         baseFromCharacter={packMode.baseFromCharacter}
         baseLook={packMode.baseLook}
         onSetBaseLook={packMode.setBaseLook}

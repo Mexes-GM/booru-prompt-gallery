@@ -124,7 +124,10 @@ export interface PackBuilderStickyFooterProps {
     onRegenerate: () => void
     /** Re-rolls one generated prompt in place (§6). Returns false if no candidate was found. */
     onRerollPrompt: (index: number) => boolean
+    /** Drops the base (closing the builder, when there is no `onHide`). */
     onClearBase: () => void
+    /** "Change base": offers another base while the pack stays as it is. Without it, the button drops the base. */
+    onChangeBase?: () => void
     /** Puts the pack aside without losing it (closing the builder). Without it, closing drops the base. */
     onHide?: () => void
     /** The base is a character chosen by name, with no card. */
@@ -747,6 +750,7 @@ const PackBuilderStickyFooterComponent = ({
     onRegenerate,
     onRerollPrompt,
     onClearBase,
+    onChangeBase,
     onHide,
     baseFromCharacter = false,
     baseLook = 'typical',
@@ -1214,7 +1218,7 @@ const PackBuilderStickyFooterComponent = ({
                                                             </SelectContent>
                                                         </Select>
                                                     )}
-                                                    <Button type="button" variant="outline" size="sm" onClick={baseCard || baseFromCharacter ? onClearBase : onEditBasePrompt} className="h-8 pointer-coarse:h-11 px-2.5 text-xs flex-shrink-0">
+                                                    <Button type="button" variant="outline" size="sm" onClick={baseCard || baseFromCharacter ? onChangeBase ?? onClearBase : onEditBasePrompt} className="h-8 pointer-coarse:h-11 px-2.5 text-xs flex-shrink-0">
                                                         <Pencil className="w-3 h-3 mr-1.5" />
                                                         {baseCard || baseFromCharacter ? "Change base" : "Edit prompt"}
                                                     </Button>
