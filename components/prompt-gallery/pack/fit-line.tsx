@@ -6,7 +6,7 @@
  * changes, not on every count while scenes are still coming in.
  */
 import { memo } from "react"
-import { AlertTriangle, Check, Repeat2, Search, Shuffle } from "lucide-react"
+import { AlertTriangle, Check, Info, Repeat2, RotateCcw, Search, Shuffle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { fitText, type FitState } from "./pack-text"
@@ -18,6 +18,11 @@ const TONE: Record<FitState["kind"], { icon: typeof Check; className: string }> 
   reuse: { icon: Repeat2, className: "text-info-text" },
   similar: { icon: Shuffle, className: "text-info-text" },
   short: { icon: AlertTriangle, className: "text-warning-text" },
+  imposed: { icon: Shuffle, className: "text-info-text" },
+  "no-pose-here": { icon: AlertTriangle, className: "text-warning-text" },
+  "needs-company": { icon: AlertTriangle, className: "text-warning-text" },
+  dropped: { icon: Info, className: "text-info-text" },
+  stale: { icon: RotateCcw, className: "text-muted-foreground" },
 }
 
 export interface FitLineProps {
