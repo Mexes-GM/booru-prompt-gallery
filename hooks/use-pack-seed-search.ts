@@ -77,7 +77,7 @@ function buildTags(searchTags: string): string {
  * On Danbooru/Aibooru those "recent" pages are visited in a random order
  * (useRandomPageOrder), so the pool isn't just the newest uploads.
  */
-function useSingleRatingFeed(tags: string, ratingFilter: string, provider: BooruProvider, seed: number) {
+export function useSingleRatingFeed(tags: string, ratingFilter: string, provider: BooruProvider, seed: number) {
   const isRandomSafe = isRandomOrderSafeProvider(provider)
   const order = isRandomSafe ? "random" : "recent"
   const pageOrder = useRandomPageOrder(tags, ratingFilter, provider, seed)
