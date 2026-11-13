@@ -161,16 +161,18 @@ import { castDefaultSearch, castPeople, castTheme, compositionQuery } from "@/li
 import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
 import { usePackAxisFallbacks } from "@/hooks/use-pack-axis-fallbacks"
 import { usePackScenes } from "@/hooks/use-pack-scenes"
-import { usePackSeedSearch, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
+import { usePackSeedSearch, type PackRatingMode, type UsePackSeedSearchResult } from "@/hooks/use-pack-seed-search"
 import { useTagRelations } from "@/hooks/use-tag-relations"
 import type { PackSourceAnswers } from "./pack-source-modal"
 // Pack Mode's dialogs and builder load when Pack is first picked (or hovered).
 const loadPackEntryModal = () => import("./pack-entry-modal")
 const loadPackSourceModal = () => import("./pack-source-modal")
 const loadPackBuilderStickyFooter = () => import("./pack-builder-sticky-footer")
+const loadPackBriefBuilder = () => import("./pack/pack-brief-builder")
 const PackEntryModal = dynamic(() => loadPackEntryModal().then(m => m.PackEntryModal), { ssr: false, loading: () => null })
 const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSourceModal), { ssr: false, loading: () => null })
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
+const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBriefBuilder), { ssr: false, loading: () => null })
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, Package, PenLine, SlidersHorizontal } from "lucide-react"
 import { ControlSection } from "@/components/prompt-gallery/control-section"
@@ -199,7 +201,7 @@ const preloadFiltersSection = () => { void loadTagsManagementPanel() }
 const preloadPromptSection = () => { void loadTagsManagementPanel(); void loadPromptGenerationOptionsPanel(); void loadGlobalWeightsModal() }
 const preloadMode = (mode: "browse" | "merge" | "pack") => {
   if (mode === "merge") void loadMergeStickyFooter()
-  if (mode === "pack") { void loadPackEntryModal(); void loadPackSourceModal(); void loadPackBuilderStickyFooter() }
+  if (mode === "pack") { void loadPackEntryModal(); void loadPackSourceModal(); void loadPackBuilderStickyFooter(); void loadPackBriefBuilder() }
 }
 
 /**
@@ -802,6 +804,12 @@ export function PromptGallery() {
 
   // Extract stable packMode pieces to avoid dependency churn
   const packModeIsPackMode = packMode.isPackMode
+  // The brief builder (components/prompt-gallery/pack/pack-brief-builder.tsx), open with
+  // the characters it started from. It lives inside Pack Mode: leaving Pack Mode closes it.
+  // While it is open the old builder is neither shown nor fed.
+  const [packBriefCast, setPackBriefCast] = useState<string[] | null>(null)
+  if (packBriefCast && !packModeIsPackMode) setPackBriefCast(null)
+  const packBriefOpen = packBriefCast !== null
   // Pack Mode picks and cleans tags with the measured tag relations: load them while it's open.
   useTagRelations(packModeIsPackMode)
   const packModeSetBaseCard = packMode.setBaseCard
@@ -877,7 +885,7 @@ export function PromptGallery() {
   const packEngine = packHasCast ? 'scenes' : packMode.engine
   const packCastNames = useMemo(() => packSceneCast.map((m) => m.character).filter(Boolean), [packSceneCast])
   const packScenes = usePackScenes({
-    enabled: packModeIsPackMode && packMode.hasBase && packEngine === 'scenes',
+    enabled: packModeIsPackMode && packMode.hasBase && packEngine === 'scenes' && !packBriefOpen,
     // The posts the header counts: the pool always shows what was collected.
     posts: packSeedSnapshot?.posts ?? NO_PACK_POSTS,
     overrides: packMode.effectiveTagOverrides,
@@ -1107,6 +1115,7 @@ export function PromptGallery() {
     // otherwise the builder asks which one to keep.
     packModeSetFocusCharacter(searchedCharacterOf(post, source.searchTags))
     applyPackSource(source)
+    setPackBriefCast(null)
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
     setPackBuilderHidden(false)
@@ -1146,25 +1155,32 @@ export function PromptGallery() {
     setPackBuilderHidden(false)
   }, [reopenIfSamePackBase, packSearchCharacter, packModeSetBaseFromCharacter, applyPackSource, defaultPackSource])
 
-  // "From a character": no search needed, the first character's own posts are the
-  // source. The others join the pack as its cast, the same as "Add a character";
-  // once everyone's role is known, the source becomes the cast's group search (above).
+  // "From a character": opens the brief builder with those characters. It finds its
+  // own posts; the old builder's base and source stay as they were.
+  const packModeEnablePackMode = packMode.enablePackMode
   const handleStartFromCharacters = useCallback((characters: readonly string[]) => {
-    const [first, ...others] = characters
-    if (!first) return
-    if (reopenIfSamePackBase({ kind: 'character', names: characters })) return
-    packModeSetBaseFromCharacter(first, others)
-    applyPackSource({
-      ...packSourceAnswers,
-      tagsSource: 'custom',
-      fromCharacter: true,
-      searchTags: characterSearchTags(first, search.booruProvider),
-      booruProvider: search.booruProvider,
-    })
+    if (!characters[0]) return
+    packModeEnablePackMode()
+    setPackBriefCast([...characters])
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
-    setPackBuilderHidden(false)
-  }, [reopenIfSamePackBase, packModeSetBaseFromCharacter, applyPackSource, packSourceAnswers, search.booruProvider])
+  }, [packModeEnablePackMode])
+  const packModeDisablePackMode = packMode.disablePackMode
+  const handleExitPackBrief = useCallback(() => {
+    setPackBriefCast(null)
+    packModeDisablePackMode()
+  }, [packModeDisablePackMode])
+  const handlePackBriefRating = useCallback((ratingMode: PackRatingMode) => {
+    setPackSourceAnswers((prev) => {
+      const next = { ...prev, ratingMode }
+      try {
+        userPreferences.setPackSourceAnswers(next)
+      } catch {
+        // Non-fatal: the choice lasts this session.
+      }
+      return next
+    })
+  }, [])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
@@ -1734,6 +1750,11 @@ export function PromptGallery() {
     }
   }, [search.booruProvider, toast])
 
+  // The brief builder copies its prompts the way every card does.
+  const packBriefCopy = useCallback(
+    (text: string, format: PromptFormat) => copyToClipboard(text, 0, true, undefined, format),
+    [copyToClipboard]
+  )
   // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
   useLayoutEffect(() => {
     copyToClipboardRef.current = copyToClipboard
@@ -2544,7 +2565,7 @@ export function PromptGallery() {
         meta={aiConvertMeta}
         onExit={() => setIsAiConvertMode(false)}
       />}
-      {packModeIsPackMode && packFetcherActive && (
+      {packModeIsPackMode && packFetcherActive && !packBriefOpen && (
         <PackSeedFetcher
           key={JSON.stringify(packSourceAnswers)}
           answers={packSourceAnswers}
@@ -2572,7 +2593,7 @@ export function PromptGallery() {
         postCount={packSeedSnapshot?.postCount ?? 0}
         ratingBreakdown={packSeedSnapshot?.ratings}
       />}
-      {packModeIsPackMode && packBuilderHidden && packMode.hasBase && (
+      {packModeIsPackMode && packBuilderHidden && packMode.hasBase && !packBriefOpen && (
         <div
           role="status"
           className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-lg rounded-2xl border shadow-2xl bg-background/95 backdrop-blur-xl p-4 flex items-center gap-3"
@@ -2589,7 +2610,24 @@ export function PromptGallery() {
           </Button>
         </div>
       )}
-      {packBuilderMounted && <PackBuilderStickyFooter
+      {packBriefCast && (
+        <PackBriefBuilder
+          characters={packBriefCast}
+          overrides={packMode.effectiveTagOverrides}
+          enrichTagSlots={packMode.enrichTagSlots}
+          provider={search.booruProvider}
+          rating={packSourceAnswers.ratingMode}
+          onRatingChange={handlePackBriefRating}
+          gallerySearch={search.searchTags}
+          cleanOptions={packCleanOptions}
+          globalWeights={globalWeights}
+          isGlobalWeightsEnabled={isGlobalWeightsEnabled}
+          outfitOptions={packOutfitOptions}
+          onCopy={packBriefCopy}
+          onExit={handleExitPackBrief}
+        />
+      )}
+      {packBuilderMounted && !packBriefOpen && <PackBuilderStickyFooter
         isOpen={packModeIsPackMode && !packBuilderHidden}
         onHide={handleHidePackBuilder}
         baseCard={packMode.baseCard}
