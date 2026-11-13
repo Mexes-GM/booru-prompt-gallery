@@ -10,7 +10,8 @@
 import { createSeededRng } from '../pack-generator'
 import { resolveTagConflicts } from '../../tag-conflicts'
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
-import { loadedTagRelations, relationKey, requiredBy, requiredSlots, type TagRelations } from '../../tag-relations'
+import { loadedTagRelations, needsCompany, relationKey, requiredBy, requiredSlots, type TagRelations } from '../../tag-relations'
+import { isQualifiedVariant } from '../character-identity'
 import { conflictsWithBackground, isEnvironmentTag, isPlainBackgroundTag, isSceneTag } from '../background-coherence'
 import { selectScenes } from './scene-select'
 import type { ScenePool } from './scene-pool'
@@ -47,6 +48,17 @@ export interface ComposeOptions {
    * Places are never swapped in: the picked scene says where the picture is.
    */
   sceneIdeaTags?: readonly string[]
+  /**
+   * Garments the user imposed (they are also in `identity`). The scene keeps its own clothes
+   * only when they already have every one of them, or a qualified form ("white bikini" for
+   * "bikini"); otherwise its outfit and exposure are left out.
+   */
+  wearing?: readonly string[]
+  /**
+   * A place the user imposed (also in `identity`): the scene's place is left out, never swapped
+   * in, and pose tags tied to a support the imposed place doesn't name ("lying on bed" at a beach) go.
+   */
+  where?: readonly string[]
 }
 
 /** True when the scene already has one of the picked scenes' own tags. */
@@ -100,7 +112,15 @@ export interface ScenePrompt {
    * only when they were swapped in from another scene.
    */
   sources: { skeleton: number; face?: number; camera?: number; place?: number; outfit?: number }
+  /** With imposed garments (`ComposeOptions.wearing`): the scene's own clothes already have them, so they stayed. */
+  sceneWears?: boolean
 }
+
+/** True when `outfit` has every garment of `wearing`, or a qualified form of it ("white bikini" for "bikini"). */
+export function outfitWears(outfit: readonly string[], wearing: readonly string[]): boolean {
+  return wearing.length > 0 && wearing.every((garment) => outfit.some((tag) => isQualifiedVariant(tag, garment)))
+}
+
 
 export const PLAIN_BACKGROUND = 'simple background'
 /** Chance that each swappable unit is replaced in `remix` mix. */
@@ -218,6 +238,44 @@ function canBeHeld(tag: string, verb: string, overrides: Record<string, string>,
   return relations.held.has(relations.index.get(relationKey(tag)) ?? -1)
 }
 
+/** A one-word gerund ("carrying", "reading"): an action, whatever slot the taxonomy files it under. */
+const GERUND = /^[a-z]{3,}ing$/
+
+/** True for a tag that names an action rather than a thing: the grip verbs, and one-word gerunds. */
+function isVerbTag(tag: string): boolean {
+  return OBJECT_VERBS.has(tag) || GERUND.test(tag)
+}
+
+/**
+ * Whether the measured relations say `tag` needs an object: it requires something of an
+ * equipment or creature slot. For an interaction between people (it needs company, or its
+ * slot is an interaction), the requirement counts only when a thing backs it ("shared
+ * umbrella" requires "umbrella"): one backed only by a verb filed in that slot is not an
+ * object. "princess carry" requires "carrying", filed with the hand objects, and what is
+ * carried is the other person.
+ */
+export function needsObject(tag: string, overrides: Record<string, string>, relations: TagRelations | null): boolean {
+  if (!relations) return false
+  const slots = requiredSlots(relations, tag).filter((slot) => OBJECT_CATEGORIES.has(slot.slice(0, slot.indexOf(':'))))
+  if (slots.length === 0) return false
+  const interaction = needsCompany(relations, tag) || getTagSlotFromOverrides(tag, overrides)?.slot === 'pose:interaction'
+  if (!interaction) return true
+  const required = requiredBy(relations, tag)
+  return slots.some((slot) => {
+    const inSlot = required.filter((needed) => getTagSlotFromOverrides(needed, overrides)?.slot === slot)
+    return inSlot.length === 0 || inSlot.some((needed) => !isVerbTag(needed))
+  })
+}
+
+/**
+ * Whether `tag` is something `verb` can refer to in a prompt: an object it can hold, or a tag
+ * that names what the verb acts on ("holding sword"; "holding hands" is an interaction, not an object).
+ */
+function objectOf(verb: string, tag: string, overrides: Record<string, string>, relations: TagRelations | null): boolean {
+  if (canBeHeld(tag, verb, overrides, relations)) return true
+  return OBJECT_VERBS.has(verb) && tag.startsWith(`${verb} `) && getTagSlotFromOverrides(tag, overrides)?.category !== 'pose'
+}
+
 /** Comparable form of a garment word: "panties" and "panty" match, "shorts" and "short" too. */
 function stem(word: string): string {
   if (word.endsWith('ies')) return `${word.slice(0, -3)}y`
@@ -258,6 +316,18 @@ function measuredGarment(tag: string, relations: TagRelations, overrides: Record
   return null
 }
 
+/** Tags of `tags` that only make sense with an object: the bare grip verbs, and what the measured relations say needs one. */
+function objectVerbs(tags: readonly string[], overrides: Record<string, string>, relations: TagRelations | null): string[] {
+  return tags.filter(
+    (tag) =>
+      OBJECT_VERBS.has(tag) ||
+      HANDLING_TAGS.has(tag) ||
+      (!relations && HANDLING_BEFORE_LOAD.has(tag)) ||
+      // The measured relations: a tag that requires an object ("drinking" needs something in hand).
+      needsObject(tag, overrides, relations)
+  )
+}
+
 /**
  * Tags among `tags` that refer to something nothing else names: a lifted skirt needs a
  * skirt in the prompt, a bare "holding" needs a "holding X" or an object. Referring
@@ -269,21 +339,8 @@ export function danglingReferences(
   relations: TagRelations | null = loadedTagRelations()
 ): Set<string> {
   const dangling = new Set<string>()
-  const categoryOf = (tag: string) => getTagSlotFromOverrides(tag, overrides)?.category ?? ''
-  // The measured relations first: a tag that requires an object ("drinking" needs something in hand).
-  const needsObject = (tag: string) =>
-    !!relations && requiredSlots(relations, tag).some((slot) => OBJECT_CATEGORIES.has(slot.slice(0, slot.indexOf(':'))))
-  for (const verb of tags) {
-    const isVerb = OBJECT_VERBS.has(verb)
-    const handled = HANDLING_TAGS.has(verb) || (!relations && HANDLING_BEFORE_LOAD.has(verb)) || needsObject(verb)
-    if (!isVerb && !handled) continue
-    const hasObject = tags.some(
-      (tag) =>
-        canBeHeld(tag, verb, overrides, relations) ||
-        // "holding sword" names what is held; "holding hands" is an interaction, not an object.
-        (isVerb && tag.startsWith(`${verb} `) && categoryOf(tag) !== 'pose')
-    )
-    if (!hasObject) dangling.add(verb)
+  for (const verb of objectVerbs(tags, overrides, relations)) {
+    if (!tags.some((tag) => objectOf(verb, tag, overrides, relations))) dangling.add(verb)
   }
   const references = new Map<string, string>()
   for (const tag of tags) {
@@ -422,8 +479,16 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
       units.exposure = []
     }
     if (options.scenery === 'plain') units.place = [PLAIN_BACKGROUND]
+    // An imposed place replaces the scene's, with what the pose leaned on there.
+    const where = options.where ?? []
+    if (where.length > 0) {
+      units.place = []
+      const named = (noun: string) => where.some((tag) => tag === noun || tag.endsWith(` ${noun}`))
+      const lost = new Set(scene.anchors.filter((anchor) => anchor !== 'indoors' && anchor !== 'outdoors' && !named(anchor)))
+      if (lost.size > 0) units.skeleton = units.skeleton.filter((tag) => ![...lost].some((noun) => tag.endsWith(` ${noun}`)))
+    }
 
-    const swap = (unit: SwapUnit, force: boolean) => {
+    const swap =(unit: SwapUnit, force: boolean) => {
       const roll = rng()
       const wanted = force || (options.mix === 'remix' && roll < SWAP_CHANCE)
       if (!wanted) return
@@ -448,14 +513,25 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     }
     swap('face', false)
     swap('camera', false)
-    if (options.scenery !== 'plain' && ideaTags.length === 0) swap('place', options.scenery === 'vary')
+    if (options.scenery !== 'plain' && ideaTags.length === 0 && where.length === 0) swap('place', options.scenery === 'vary')
     if (options.clothing === 'scene') swap('outfit', false)
+
+    // Imposed garments: the scene's clothes stay only when they already are what was asked for.
+    const wearing = options.wearing ?? []
+    const sceneWears = outfitWears(units.outfit, wearing)
+    if (wearing.length > 0 && !sceneWears) {
+      units.outfit = []
+      units.exposure = []
+    }
 
     // The identity wins over anything the scene says about the same thing.
     const identityTags = new Set(fixed)
     for (const unit of UNIT_ORDER) units[unit] = units[unit].filter((tag) => !identityTags.has(tag))
+    // Clothes that already are the imposed garments don't clash with them.
+    const wearingSet = new Set(wearing)
+    const rivals = sceneWears ? fixed.filter((tag) => !wearingSet.has(tag)) : fixed
     const clashing = new Set(
-      resolveTagConflicts(fixed, unitTags(units)).conflictingTags.map((conflict) => conflict.tag)
+      resolveTagConflicts(rivals, unitTags(units)).conflictingTags.map((conflict) => conflict.tag)
     )
     if (clashing.size > 0) for (const unit of UNIT_ORDER) units[unit] = units[unit].filter((tag) => !clashing.has(tag))
 
@@ -479,7 +555,7 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     const fixedSet = new Set(fixed)
     const tags = [...fixed, ...Array.from(new Set(unitTags(units))).filter((tag) => !fixedSet.has(tag))]
     const rating = (['g', 's', 'q', 'e'] as const)[ratingLevel]
-    return { tags, locked: fixed, rating, aspect: scene.aspect, sources }
+    return { tags, locked: fixed, rating, aspect: scene.aspect, sources, ...(sceneWears ? { sceneWears } : {}) }
   }
 
   const seen = new Set<string>()
