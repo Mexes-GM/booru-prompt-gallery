@@ -1171,16 +1171,14 @@ export function PromptGallery() {
     packModeDisablePackMode()
   }, [packModeDisablePackMode])
   const handlePackBriefRating = useCallback((ratingMode: PackRatingMode) => {
-    setPackSourceAnswers((prev) => {
-      const next = { ...prev, ratingMode }
-      try {
-        userPreferences.setPackSourceAnswers(next)
-      } catch {
-        // Non-fatal: the choice lasts this session.
-      }
-      return next
-    })
-  }, [])
+    const next = { ...packSourceAnswers, ratingMode }
+    setPackSourceAnswers(next)
+    try {
+      userPreferences.setPackSourceAnswers(next)
+    } catch {
+      // Non-fatal: the choice lasts this session.
+    }
+  }, [packSourceAnswers])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
