@@ -260,6 +260,15 @@ export function activeSceneIdeas(
   }
 }
 
+/**
+ * The added scenes a method uses. Classic: always (the control lives in its Scenery
+ * row). Scenes: only while Scenery is on "Pick a scene" ('picked'); on any other
+ * Scenery option they stay added but put nothing in the prompts.
+ */
+export function sceneIdeasInUse(engine: 'scenes' | 'classic', scenery: string | undefined, active: ActiveSceneIdeas): ActiveSceneIdeas {
+  return engine === 'classic' || scenery === 'picked' ? active : NO_ACTIVE_SCENE_IDEAS
+}
+
 /** Tags whose chip state can be forgotten when a scene goes: those no other added scene has. */
 export function sceneIdeaOwnTags(idea: SceneIdea, others: readonly SceneIdea[]): string[] {
   const shared = new Set(others.filter((o) => o.id !== idea.id).flatMap((o) => [...o.tags, ...o.optional]))

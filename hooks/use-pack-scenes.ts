@@ -43,7 +43,7 @@ import { usePromptFormat } from '@/hooks/use-natural-prompt'
 import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
 import { chosenOutfit, loadCharacterOutfits, outfitTags, type CharacterOutfits } from '@/lib/pack/character-outfits'
 import { loadTraitAliases } from '@/lib/prompt/natural-prompt-loader'
-import { NO_ACTIVE_SCENE_IDEAS, type ActiveSceneIdeas } from '@/lib/pack/scene-ideas'
+import { NO_ACTIVE_SCENE_IDEAS, sceneIdeasInUse, type ActiveSceneIdeas } from '@/lib/pack/scene-ideas'
 
 /** How long the pool waits for Gelbooru's tag list before it uses the built-in rules. */
 const GELBOORU_LOOKUP_TIMEOUT_MS = 8000
@@ -238,8 +238,10 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     enabled, posts, overrides, members, baseExtras, baseFixed, baseClothing, removedTags, baseFromCharacter,
     alwaysAdd, neverIncludeText, characterTags, contentRating, settings, promptCount, cleanOptions, globalWeights,
     isGlobalWeightsEnabled, outfitOptions, natural, baseKey, sourceKey, provider, chipStore,
-    sceneIdeas = NO_ACTIVE_SCENE_IDEAS,
+    sceneIdeas: addedIdeas = NO_ACTIVE_SCENE_IDEAS,
   } = args
+  // Picked scenes apply only while Scenery is on "Pick a scene"; they stay added otherwise.
+  const sceneIdeas = useMemo(() => sceneIdeasInUse('scenes', settings.scenery, addedIdeas), [settings.scenery, addedIdeas])
 
   // Permanence data (which tags are who the character is), fetched while enabled until it loads.
   const [permanenceData, setPermanenceData] = useState<PermanenceData | null>(null)

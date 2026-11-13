@@ -35,7 +35,6 @@ import { withResolutionPrefix } from '@/lib/pack/prompt-resolution'
 import { userPreferences } from '@/lib/storage'
 import { MAX_MIN_TOTAL_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState, type SceneIdeaControls } from '@/hooks/use-pack-mode'
 import type { PackRatingMode } from '@/hooks/use-pack-seed-search'
-import { PackSceneIdeas } from './pack-scene-ideas'
 import { PROVIDER_LABELS, summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-modal'
 import { PackVarietySelect } from './pack-variety-select'
 import { PackCategoryList, PackStepper } from './pack-category-list'
@@ -1297,10 +1296,6 @@ const PackBuilderStickyFooterComponent = ({
                                                 </div>
                                             )}
 
-                                            {sceneIdeas && (
-                                                <PackSceneIdeas controls={sceneIdeas} rating={contentRating} />
-                                            )}
-
                                             {showAlwaysAdd ? (
                                                 <div className="space-y-1">
                                                     <Label htmlFor="pack-always-add" className="text-xs font-medium text-muted-foreground">
@@ -1432,6 +1427,8 @@ const PackBuilderStickyFooterComponent = ({
                                             canLoadMorePosts={canLoadMorePosts && !isCollecting}
                                             onLoadMorePosts={onLoadMorePosts}
                                             onOpenSource={handleOpenSource}
+                                            sceneIdeas={sceneIdeas}
+                                            contentRating={contentRating}
                                         />
                                     ) : (
                                     <PackCategoryList
@@ -1466,6 +1463,8 @@ const PackBuilderStickyFooterComponent = ({
                                         onSetMinSetTags={onSetMinSetTags}
                                         hiddenThinSets={hiddenThinSets}
                                         chips={classicChips}
+                                        sceneIdeas={sceneIdeas}
+                                        contentRating={contentRating}
                                     />
                                     )}
 

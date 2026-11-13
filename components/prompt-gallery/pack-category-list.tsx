@@ -37,6 +37,9 @@ import { DEFAULT_MIN_SET_TAGS, MAX_MIN_SET_TAGS, type ClassicChipControls, type 
 import { AddTagsField } from "./add-tags-field"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { PACK_TOUR_OPEN_PARTS_EVENT } from "./pack-builder-tour"
+import { PackSceneIdeas } from "./pack-scene-ideas"
+import type { SceneIdeaControls } from "@/hooks/use-pack-mode"
+import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 
 const EMPTY_GROUPS: SlotGroup[] = []
 const EMPTY_COUNTS: Record<string, number> = {}
@@ -243,6 +246,9 @@ interface CategoryRowProps {
   tourPool?: boolean
   /** The character chips: pin a base tag, add traits, take them back. */
   chips?: ClassicChipControls
+  /** Scenery only: the scene picker and the picked scenes, with their titles for the summary. */
+  scenePicker?: React.ReactNode
+  pickedScenes?: string
 }
 
 const CategoryRow = memo(function CategoryRow({
@@ -279,6 +285,8 @@ const CategoryRow = memo(function CategoryRow({
   tourRole,
   tourPool,
   chips,
+  scenePicker,
+  pickedScenes,
 }: CategoryRowProps) {
   const lowMotion = useLowMotion()
   const [adding, setAdding] = useState(false)
@@ -380,6 +388,7 @@ const CategoryRow = memo(function CategoryRow({
           <span className="min-w-0 flex-1">
             <span className={`block text-sm font-semibold leading-tight ${state === "off" ? "text-muted-foreground" : ""}`}>{label}</span>
             <span className={`block text-xs truncate ${state === "keep" && kept.length > 0 ? "font-mono text-foreground/80" : "text-muted-foreground"}`}>
+              {pickedScenes && <span className="font-sans">Scene: {pickedScenes} · </span>}
               {summary}
               {summaryExtra && <span className="font-sans text-mode-pack-text">{summaryExtra}</span>}
             </span>
@@ -507,6 +516,14 @@ const CategoryRow = memo(function CategoryRow({
             <p className="text-xs text-muted-foreground">
               Pinned tags go in every prompt, dashed ones only when they&apos;re picked; select a tag to switch it, or remove it to keep it out of every prompt.
             </p>
+          )}
+
+          {/* Scenery: named scenes whose tags join every prompt (Scene ideas) */}
+          {scenePicker && (
+            <div className="flex items-start gap-3">
+              <span className="w-14 flex-shrink-0 pt-1 text-xs font-medium text-muted-foreground">Scene</span>
+              <div className="flex-1 min-w-0">{scenePicker}</div>
+            </div>
           )}
 
           {/* Subcategories */}
@@ -793,6 +810,10 @@ export interface PackCategoryListProps {
   hiddenThinSets: Partial<Record<TagCategory, number>>
   /** The character chips (pin, add, take back); without them the base's chips only remove. */
   chips?: ClassicChipControls
+  /** Scene ideas, offered in the Scenery row. */
+  sceneIdeas?: SceneIdeaControls
+  /** The pack's content rating: scene ideas above it aren't offered. */
+  contentRating?: PackRatingMode | null
 }
 
 export function PackCategoryList({
@@ -827,8 +848,16 @@ export function PackCategoryList({
   onSetMinSetTags,
   hiddenThinSets,
   chips,
+  sceneIdeas,
+  contentRating = null,
 }: PackCategoryListProps) {
   const keptTags = useMemo(() => new Set(lockedTags), [lockedTags])
+  // One element, so the Scenery row only re-renders when the scenes or the rating change.
+  const scenePicker = useMemo(
+    () => (sceneIdeas ? <PackSceneIdeas controls={sceneIdeas} rating={contentRating} /> : undefined),
+    [sceneIdeas, contentRating]
+  )
+  const pickedScenes = sceneIdeas?.applied.map((idea) => idea.title).join(", ") || undefined
   const firstVarying = categories.find((c) => categoryStates[c] === "vary")
   const handleRestore = useCallback((category: TagCategory) => onRestoreExcluded(category), [onRestoreExcluded])
 
@@ -869,6 +898,8 @@ export function PackCategoryList({
           tourRole={cat === categories[0]}
           tourPool={cat === firstVarying}
           chips={chips}
+          scenePicker={cat === "scenery" ? scenePicker : undefined}
+          pickedScenes={cat === "scenery" ? pickedScenes : undefined}
           note={
             cat === "appearance" && hasMultipleCharacters
               ? "Faded tags belong to the other characters, or couldn't be matched to yours, so they stay out of the prompts."

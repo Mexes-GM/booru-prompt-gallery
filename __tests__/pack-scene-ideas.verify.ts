@@ -15,6 +15,9 @@
  *      entries; an SFW pack gets nothing of the higher ones.
  *   9. Scenes with a picked scene: matching posts first; other posts lend only the person;
  *      dashed clothing tags follow the Clothing option.
+ *  10. Where the scenes apply: Classic always; Scenes only on Scenery › Pick a scene (kept
+ *      but unused on the other options, back when it's picked again); Pick a scene with
+ *      no scene works as the default; saved configs accept the option.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-ideas.verify.ts
  */
@@ -30,6 +33,7 @@ import {
   sceneIdeaChips,
   sceneIdeaOwnTags,
   sceneIdeasForRating,
+  sceneIdeasInUse,
   searchSceneIdeas,
   sortSceneIdeas,
   type SceneIdea,
@@ -40,6 +44,7 @@ import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { composePack, type ComposeOptions } from "../lib/pack/scene/scene-compose"
 import { createPermanence } from "../lib/pack/scene/permanence"
 import { DEFAULT_SCENE_SETTINGS, MIN_IDEA_DONORS, generateScenePack, type ChipState, type ScenePackArgs } from "../lib/pack/scene-pack"
+import { packEngineConfig } from "../lib/pack/pack-config-migration"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -292,6 +297,39 @@ const ideas = parseSceneIdeas(RAW)
   // Two picked scenes: a post matching either one counts.
   const two = generateScenePack(pool, args({ sceneIdea: { core: ["library", "bookshelf", "book", "forest"], dashed: [] } })).prompts
   assert(two.some((p) => p.scene!.postId === 4 && p.prompt.includes("forest")), "with two scenes, a post that has the other one keeps its surroundings")
+}
+
+// ── 10. Where the scenes apply ──
+{
+  const beach = ideas.find((i) => i.id === "a")!
+  const added = activeSceneIdeas([beach], () => undefined, "sfw")
+  assert(sceneIdeasInUse("classic", "scene", added) === added, "Classic: the picked scenes always apply")
+  assert(sceneIdeasInUse("scenes", "picked", added).pinned.join() === "beach,ocean", "Scenes on Pick a scene: they apply")
+  for (const other of ["scene", "vary", "plain"]) {
+    const off = sceneIdeasInUse("scenes", other, added)
+    assert(off.pinned.length + off.dashed.length + off.core.length + off.never.length === 0, `Scenes on ${other}: nothing of the scenes reaches the prompts`)
+  }
+  assert(sceneIdeasInUse("scenes", "picked", added).core.join() === "beach,ocean", "back on Pick a scene, the same scenes apply again")
+
+  // Pick a scene with no scene picked: the same prompts as the default Scenery option.
+  const ctx = { overrides: OVERRIDES, permanence: createPermanence(PERMANENCE_DATA, OVERRIDES), subject: "girl" as const }
+  const posts = [
+    makePost(1, "1girl solo standing smile from_above bedroom bed indoors skirt shirt"),
+    makePost(2, "1girl solo lying on_back blush looking_at_viewer beach outdoors sunset dress boots"),
+  ]
+  const pool = buildScenePool(posts, { ...ctx, identity: ["my character"] })
+  const args = (scenery: typeof DEFAULT_SCENE_SETTINGS.scenery): ScenePackArgs => ({
+    identity: ["my character"], alwaysAdd: [], subject: "girl", settings: { ...DEFAULT_SCENE_SETTINGS, scenery },
+    count: 2, seed: 9, overrides: OVERRIDES, clean: (tags) => tags.join(", "),
+  })
+  const picked = generateScenePack(pool, args("picked")).prompts.map((p) => p.prompt)
+  const scene = generateScenePack(pool, args("scene")).prompts.map((p) => p.prompt)
+  assert(picked.length === 2 && picked.join("|") === scene.join("|"), "Pick a scene with nothing picked = From the scene")
+
+  const saved = packEngineConfig({ engine: "scenes", sceneSettings: { ...DEFAULT_SCENE_SETTINGS, scenery: "picked" } })
+  assert(saved.sceneSettings.scenery === "picked", "a saved config keeps Pick a scene")
+  const unknown = packEngineConfig({ engine: "scenes", sceneSettings: { ...DEFAULT_SCENE_SETTINGS, scenery: "elsewhere" as never } })
+  assert(unknown.sceneSettings.scenery === "scene" && DEFAULT_SCENE_SETTINGS.scenery === "scene", "anything else, and new packs, start from the scene's place")
 }
 
 done()

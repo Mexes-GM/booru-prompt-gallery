@@ -22,6 +22,9 @@ import type { SceneChip, ScenePackSettings } from "@/lib/pack/scene-pack"
 import type { SceneCharacterBlock, SceneCharacterOutfit, UsePackScenesResult } from "@/hooks/use-pack-scenes"
 import type { CastRole } from "@/lib/pack/scene/cast"
 import { outfitTags } from "@/lib/pack/character-outfits"
+import type { SceneIdeaControls } from "@/hooks/use-pack-mode"
+import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
+import { PackSceneIdeas } from "./pack-scene-ideas"
 import { AddTagsField } from "./add-tags-field"
 import { pinnedConflictLines } from "./pack-category-list"
 import { radioGroupKeyDown } from "./radio-keys"
@@ -157,6 +160,7 @@ const SCENERY_OPTIONS: readonly Option<ScenePackSettings["scenery"]>[] = [
   { value: "scene", label: "From the scene", hint: "Keeps each scene's place." },
   { value: "vary", label: "Vary", hint: "Moves each scene to another place that fits the pose." },
   { value: "plain", label: "Plain background", hint: "Puts the character on a plain background." },
+  { value: "picked", label: "Pick a scene", hint: "Puts every prompt in the scenes you choose, like a library or a beach." },
 ]
 
 const sectionClass = "rounded-xl border border-border/70 bg-card/70 p-3 sm:p-4 space-y-3"
@@ -394,6 +398,10 @@ export interface PackScenesPanelProps {
   canLoadMorePosts: boolean
   onLoadMorePosts: () => void
   onOpenSource: () => void
+  /** Scene ideas, offered under Scenery › Pick a scene. */
+  sceneIdeas?: SceneIdeaControls
+  /** The pack's content rating: scene ideas above it aren't offered. */
+  contentRating?: PackRatingMode | null
 }
 
 /** Why posts were left out, with the verb agreeing with the count. */
@@ -434,6 +442,8 @@ function PackScenesPanelComponent({
   canLoadMorePosts,
   onLoadMorePosts,
   onOpenSource,
+  sceneIdeas,
+  contentRating = null,
 }: PackScenesPanelProps) {
   const peopleId = useId()
   const situationsId = useId()
@@ -723,7 +733,20 @@ function PackScenesPanelComponent({
           ) : null}
         />
         <div className="h-px bg-border/50" />
-        <Segmented label="Scenery" value={settings.scenery} options={SCENERY_OPTIONS} onChange={(v) => set("scenery", v)} />
+        <Segmented
+          label="Scenery"
+          value={settings.scenery}
+          options={sceneIdeas ? SCENERY_OPTIONS : SCENERY_OPTIONS.filter((o) => o.value !== "picked")}
+          onChange={(v) => set("scenery", v)}
+          extra={settings.scenery === "picked" && sceneIdeas ? (
+            <div className="space-y-1.5">
+              {sceneIdeas.applied.length === 0 && (
+                <p className="text-xs text-muted-foreground">No scene chosen yet, so each prompt keeps its own place.</p>
+              )}
+              <PackSceneIdeas controls={sceneIdeas} rating={contentRating} />
+            </div>
+          ) : null}
+        />
         <div className="h-px bg-border/50" />
         <div className="flex items-center justify-between gap-3">
           <label htmlFor="pack-scene-extras" className="min-w-0 cursor-pointer">

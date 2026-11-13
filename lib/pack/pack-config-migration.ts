@@ -116,7 +116,7 @@ export function packEngineConfig(config: Pick<PackModeConfigV2, 'engine' | 'scen
     sceneSettings: {
       mix: pick(saved.mix, ['faithful', 'remix'], DEFAULT_SCENE_SETTINGS.mix),
       clothing: pick(saved.clothing, ['scene', 'library', 'base', 'own', 'character'], DEFAULT_SCENE_SETTINGS.clothing),
-      scenery: pick(saved.scenery, ['scene', 'vary', 'plain'], DEFAULT_SCENE_SETTINGS.scenery),
+      scenery: pick(saved.scenery, ['scene', 'vary', 'plain', 'picked'], DEFAULT_SCENE_SETTINGS.scenery),
       extras: typeof saved.extras === 'boolean' ? saved.extras : DEFAULT_SCENE_SETTINGS.extras,
       ...savedOutfits(saved.characterOutfits),
     },

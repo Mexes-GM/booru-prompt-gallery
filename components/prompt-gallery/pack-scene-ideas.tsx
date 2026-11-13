@@ -1,7 +1,8 @@
 "use client"
 
 /**
- * "Scene ideas" in Pack Builder (both methods): a searchable list of named scenes,
+ * "Scene ideas" in Pack Builder: in Scenes under Scenery › Pick a scene, in Classic
+ * inside the Scenery category row. A searchable list of named scenes,
  * this month's first, the rest by category, each title once at the highest level
  * the pack's content rating allows (lib/pack/scene-ideas.ts). Added scenes show
  * under the button, each with its own chips: the scene's own tags pinned, the ones
@@ -133,7 +134,7 @@ function PackSceneIdeasComponent({ controls, rating }: PackSceneIdeasProps) {
             className="self-start inline-flex items-center gap-1 min-h-7 pointer-coarse:min-h-11 text-xs text-muted-foreground hover:text-foreground"
           >
             <Lightbulb className="w-3.5 h-3.5" aria-hidden />
-            Scene ideas
+            Browse scene ideas
           </button>
         </PopoverTrigger>
         <PopoverContent

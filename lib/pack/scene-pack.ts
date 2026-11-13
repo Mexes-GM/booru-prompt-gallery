@@ -36,7 +36,8 @@ export interface ScenePackSettings {
   clothing: 'scene' | 'library' | 'base' | 'own' | 'character'
   /** For 'character': the official outfit picked per character name ('' or missing: the usual one). */
   characterOutfits?: Readonly<Record<string, string>>
-  scenery: 'scene' | 'vary' | 'plain'
+  /** 'picked': the place comes from the scenes the user picked (Scene ideas); with none, as 'scene'. */
+  scenery: 'scene' | 'vary' | 'plain' | 'picked'
   extras: boolean
 }
 
@@ -534,7 +535,8 @@ function composeOptions(args: ScenePackArgs, count: number, seed: number, disabl
     subject: args.subject,
     mix: settings.mix,
     clothing: wearsBaseClothing(args) || wearsOwnOutfits(args) ? 'own' : library ? { library: args.library!.map((o) => o.tags) } : 'scene',
-    scenery: settings.scenery,
+    // "Pick a scene" with no scene picked keeps each scene's place, like the default.
+    scenery: settings.scenery === 'picked' ? 'scene' : settings.scenery,
     extras: settings.extras,
     count,
     seed,
