@@ -80,6 +80,7 @@ import {
 import {
   characterSearchTags,
   pinnedTagsFor,
+  lookYieldingTo,
   poolSoloShare,
   profileIdentity,
   splitSignature,
@@ -943,9 +944,13 @@ export function usePackMode(
     return { look: typical.look, subject }
   }, [focusCharacter, baseFromCharacter, baseCard, baseLook, typical, profileTags, castExtras, soloLookStatus, typicalLooks, cleanCastProfile, traitData, effectiveOverrides, ownBaseClassified, characterTags, tagBaseline])
   // "solo" follows the pool, not the character: a pool of group scenes keeps it out of the base.
+  // A trait the user wrote in "Always add" ("gigantic breasts") replaces the character's own.
   const identity = useMemo(
-    () => characterIdentity && { look: characterIdentity.look, subject: subjectForPool(characterIdentity.subject, soloShareOfPool) },
-    [characterIdentity, soloShareOfPool]
+    () => characterIdentity && {
+      look: lookYieldingTo(characterIdentity.look, splitCommaSeparatedTags(customBaseText)),
+      subject: subjectForPool(characterIdentity.subject, soloShareOfPool),
+    },
+    [characterIdentity, soloShareOfPool, customBaseText]
   )
   // Signature accessories (headphones, glasses…) belong in Clothing, where they stay while it varies.
   const identityParts = useMemo(

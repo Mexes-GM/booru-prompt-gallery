@@ -25,6 +25,7 @@ import {
   splitSignature,
   subjectTags,
   tidyCardLook,
+  lookYieldingTo,
   poolSoloShare,
   subjectForPool,
   typicalLook,
@@ -181,6 +182,18 @@ const posts = [
   assert(eq(subjectForPool(["1girl", "solo"], 0.5), ["1girl"]), "so does a pool that mixes both")
   assert(eq(subjectForPool(["1girl"], 0.8), ["1girl", "solo"]), "a solo pool adds it")
   assert(eq(subjectForPool(["1girl", "solo focus"], null), ["1girl"]), "unknown pool: no solo")
+}
+
+// ── 3f) What the user wrote in "Always add" replaces the character's trait of the same kind ──
+{
+  const look = ["black hair", "short hair", "short hair with long locks", "black eyes", "small breasts", "flat chest"]
+  assert(eq(lookYieldingTo(look, ["shiny skin", "gigantic_breasts", "2boys"]), ["black hair", "short hair", "short hair with long locks", "black eyes"]),
+    `a typed breast size replaces theirs, "flat chest" included (got ${JSON.stringify(lookYieldingTo(look, ["gigantic_breasts"]))})`)
+  assert(eq(lookYieldingTo(look, ["white hair", "red eyes"]), ["short hair", "short hair with long locks", "small breasts", "flat chest"]), "hair and eye colours too")
+  assert(eq(lookYieldingTo(look, ["long hair"]), ["black hair", "short hair with long locks", "black eyes", "small breasts", "flat chest"]), "and hair length, not hairstyle")
+  assert(eq(lookYieldingTo(look, ["black hair", "smile"]), look), "the same tag, or unrelated ones, change nothing")
+  const overrides = { "small breasts": "appearance:anatomy", "flat chest": "appearance:anatomy" }
+  assert(eq(identityTags([["flat chest", 0.6], ["small breasts", 0.55]], overrides, { baseline: null }), ["flat chest"]), "one size: \"flat chest\" counts as one")
 }
 
 // ── 4) Signature accessories live in Clothing and stay while it varies ──

@@ -1335,7 +1335,9 @@ function buildPrompt(
     } else {
       around = contextTags.filter((t) => !shareSet(t, candidate))
       // A tag in two picked sets ("blush" in both) is checked against what is outside both.
-      conflict = sets.size === 1 ? checkerOutside.get([...sets][0])!.check(candidate) : new ConflictChecker(around, { rating }).check(candidate)
+      const [only] = sets
+      const outside = sets.size === 1 ? checkerOutside.get(only) : undefined
+      conflict = (outside ?? new ConflictChecker(around, { rating })).check(candidate)
     }
     if (
       conflict === null &&

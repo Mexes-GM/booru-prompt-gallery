@@ -49,7 +49,7 @@ const HAIR_COLOR_RE = /^(aqua|black|blonde|blue|brown|green|grey|orange|pink|pur
 // On a booru's explicit posts most bodies are bare: these say what the picture shows, not who she is.
 // "breasts" alone is on most pictures of any woman; a size ("small breasts") can be hers.
 const UNDRESSED_RE = /^(breasts|nipples|areolae?|pussy|vagina|clitoris|anus|ass|penis|testicles|navel|cleavage|thighs|nude|completely nude|collarbone|armpits|barefoot)$/
-const SIZED_BREASTS_RE = /^(small|medium|large|huge|gigantic) breasts$/
+const SIZED_BREASTS_RE = /^((flat|small|medium|large|huge|gigantic) (breasts|chest))$/
 
 const isSignatureSlot = (tag: string, overrides: Record<string, string>) => {
   const slot = getTagSlotFromOverrides(tag, overrides)
@@ -116,6 +116,26 @@ export function identityTags(
   const names = picked.map(([tag]) => tag)
   const specific = picked.filter(([tag]) => !names.some((other) => other !== tag && isQualifiedVariant(other, tag)))
   return specific.slice(0, MAX_IDENTITY_TAGS).map(([tag]) => tag)
+}
+
+// Kinds of trait a character has one of: a tag the user wrote of the same kind replaces theirs.
+const TRAIT_KINDS: readonly RegExp[] = [
+  HAIR_COLOR_RE,
+  /^(aqua|black|blue|brown|green|grey|orange|pink|purple|red|yellow|white) eyes$/,
+  SIZED_BREASTS_RE,
+  /^(short|medium|long|very long|absurdly long) hair$/,
+]
+
+/**
+ * A character's look with the traits the user's own tags ("Always add") replace:
+ * "gigantic breasts" typed there takes the character's "small breasts" out, and
+ * "white hair" their "black hair", so a prompt never says both.
+ */
+export function lookYieldingTo(look: readonly string[], userTags: readonly string[]): string[] {
+  const typed = userTags.map(normalizeTagForPack)
+  const replaced = TRAIT_KINDS.filter((kind) => typed.some((t) => kind.test(t)))
+  if (replaced.length === 0) return [...look]
+  return look.filter((tag) => typed.includes(tag) || !replaced.some((kind) => kind.test(tag)))
 }
 
 /**
