@@ -47,7 +47,8 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
-import { addedTraitCategory, classicKeptTags, pinnedConflicts, withoutNeverTags } from '@/lib/pack/classic-chips'
+import { addedTraitCategory, classicKeptTags, dashedAddedByCategory, pinnedConflicts, withoutNeverTags } from '@/lib/pack/classic-chips'
+import { sceneIdeaChips, sceneIdeaRemoval, type SceneIdea } from '@/lib/pack/scene-ideas'
 import type { ChipState, ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isCompositionPattern } from '@/lib/pack/scene/permanence'
 import { isQualifiedVariant } from '@/lib/pack/character-identity'
@@ -158,6 +159,7 @@ function sampleAxes(
 const DEFAULT_OUTFIT_OPTIONS = { styles: [] as readonly OutfitStyle[], detail: 'simple' as OutfitDetail }
 /** Outfits shown in the library clothing pool at once; Re-sample draws others. */
 const LIBRARY_POOL_SIZE = 60
+const NO_ADDED: readonly string[] = []
 
 /** The character chips both methods share (see usePackMode). */
 export interface CharacterChipStore {
@@ -171,10 +173,25 @@ export interface CharacterChipStore {
   removeTrait: (character: string, tag: string) => void
 }
 
+/**
+ * Scene ideas (lib/pack/scene-ideas.ts), in both methods: a scene's tags become the
+ * base character's added traits, its own tags pinned and the ones that often come
+ * with it dashed. Each stays a chip like any other.
+ */
+export interface SceneIdeaControls {
+  /** The base character's added traits (a scene counts as added while it has all its own tags here). */
+  added: readonly string[]
+  add: (idea: SceneIdea) => void
+  /** Takes the scene's tags back, except those another added scene (`others`) also has. */
+  remove: (idea: SceneIdea, others: readonly SceneIdea[]) => void
+}
+
 /** What Classic's category rows need of the chips. */
 export interface ClassicChipControls {
   /** Traits added by hand, under the category the taxonomy gives them (else the row they came from). */
   addedByCategory: Partial<Record<TagCategory, string[]>>
+  /** Added traits the user dashed: in the category's pool, not in every prompt. */
+  dashed: ReadonlySet<string>
   /** A pinned tag that contradicts another tag every prompt keeps, with the tag it clashes with. */
   conflicts: Readonly<Record<string, string>>
   /** Removed base tags that "Always add" puts back (its text wins). */
@@ -407,6 +424,8 @@ export interface UsePackModeResult {
   chipStore: CharacterChipStore
   /** Classic's side of the chips. */
   classicChips: ClassicChipControls
+  /** Scene ideas, shared by both methods. */
+  sceneIdeas: SceneIdeaControls
   /**
    * The characters a scenes pack names: the base character first, then the ones
    * added to a character base (up to MAX_CAST). Card and pasted-prompt bases have
@@ -1021,6 +1040,23 @@ export function usePackMode(
     () => ({ choices: chipChoices, added: addedTraits, setChoice: setChipChoice, addTraits, removeTrait }),
     [chipChoices, addedTraits, setChipChoice, addTraits, removeTrait]
   )
+  // Scene ideas belong to the base character (the first of a cast).
+  const ideaOwner = focusCharacter ?? ''
+  const ideaOwnerAdded = addedTraits.get(ideaOwner) ?? NO_ADDED
+  const sceneIdeas = useMemo<SceneIdeaControls>(() => ({
+    added: ideaOwnerAdded,
+    add: (idea) => {
+      const { pinned, dashed } = sceneIdeaChips(idea, ideaOwnerAdded)
+      // People counts ("solo focus") are refused: who is in the picture is chosen apart.
+      addTraits(ideaOwner, pinned.join(', '))
+      if (dashed.length === 0) return
+      addTraits(ideaOwner, dashed.join(', '))
+      dashed.forEach((tag) => setChipChoice(ideaOwner, tag, 'scene'))
+    },
+    remove: (idea, others) => {
+      sceneIdeaRemoval(idea, ideaOwnerAdded, others).forEach((tag) => removeTrait(ideaOwner, tag))
+    },
+  }), [ideaOwner, ideaOwnerAdded, addTraits, setChipChoice, removeTrait])
 
   /**
    * Tags no Classic prompt may have: the base tags removed with their chip and "Never
@@ -1238,6 +1274,18 @@ export function usePackMode(
     (cat: TagCategory) => (cat === 'clothing' && clothingFromLibrary ? libraryPool ?? [] : axisValues[cat] || []),
     [clothingFromLibrary, libraryPool, axisValues]
   )
+  // Added traits the user dashed (a scene idea's optional tags) are Classic pool values:
+  // the sampling may pick them. Keyed by text, so the pools only change when they do.
+  const classicDashedKey = useMemo(() => {
+    const own = focusCharacter ?? ''
+    const byCategory = dashedAddedByCategory(
+      (addedTraits.get(own) ?? []).filter((tag) => !excludedBaseTags.has(tag)),
+      (tag) => chipChoices.get(`${own}\u0000${tag}`),
+      (tag) => addedTraitCategory(tag, classifyTag(tag, effectiveOverrides), addedHome.get(tag))
+    )
+    return JSON.stringify(byCategory)
+  }, [focusCharacter, addedTraits, excludedBaseTags, chipChoices, effectiveOverrides, addedHome])
+  const classicDashed = useMemo(() => JSON.parse(classicDashedKey) as Partial<Record<TagCategory, string[]>>, [classicDashedKey])
   const buildPools = useCallback(
     (state: { lockedSlots: ReadonlySet<string>; mutedSlots: ReadonlySet<string> }) => {
       const merged: Partial<Record<TagCategory, string[]>> = {}
@@ -1250,7 +1298,7 @@ export function usePackMode(
           sampled = sampled.filter((v) => splitCommaSeparatedTags(v).length >= min)
         }
         const seen = new Set(sampled)
-        const extraManual = (manualAxisValues[cat] || []).filter((v) => {
+        const extraManual = [...(manualAxisValues[cat] || []), ...(classicDashed[cat] || [])].filter((v) => {
           if (seen.has(v)) return false
           seen.add(v)
           return true
@@ -1260,7 +1308,7 @@ export function usePackMode(
       })
       return merged
     },
-    [sourceValues, manualAxisValues, effectiveOverrides, bundleCategories, minSetTags]
+    [sourceValues, manualAxisValues, classicDashed, effectiveOverrides, bundleCategories, minSetTags]
   )
   const mergedAxisValues = useMemo(() => buildPools(slotState), [buildPools, slotState])
 
@@ -1801,12 +1849,14 @@ export function usePackMode(
       const cat = addedTraitCategory(tag, classifyTag(tag, effectiveOverrides), addedHome.get(tag))
       ;(addedByCategory[cat] ??= []).push(tag)
     })
+    const dashed = new Set(added.filter((tag) => chipChoices.get(`${classicOwner}\u0000${tag}`) === 'scene'))
     // A pin the user chose that contradicts another tag every prompt keeps: allowed, but said.
-    const userPinned = new Set([...added, ...lockedTags.filter((tag) => chipChoices.get(`${classicOwner}\u0000${tag}`) === 'pinned')])
+    const userPinned = new Set([...added.filter((tag) => !dashed.has(tag)), ...lockedTags.filter((tag) => chipChoices.get(`${classicOwner}\u0000${tag}`) === 'pinned')])
     const conflicts = pinnedConflicts(lockedTags, userPinned, (tag, others) => new ConflictChecker(others, { rating: contentRating }).check(tag))
     const always = new Set(alwaysAddTags.map(normalizeTagForPack))
     return {
       addedByCategory,
+      dashed,
       conflicts,
       keptByAlwaysAdd: Array.from(new Set([...excludedBaseTags, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack)])).filter((tag) => always.has(tag)),
       toggle: (tag: string) => setChipChoice(classicOwner, tag, lockedTags.includes(tag) ? 'scene' : 'pinned'),
@@ -2258,6 +2308,7 @@ export function usePackMode(
     setNeverIncludeText,
     chipStore,
     classicChips,
+    sceneIdeas,
     focusedCharacterTags,
     alwaysAddTags,
     sceneCast,

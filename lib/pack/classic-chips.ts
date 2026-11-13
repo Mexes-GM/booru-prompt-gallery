@@ -11,7 +11,7 @@ import type { ChipState } from './scene-pack'
 /**
  * The tags every Classic prompt keeps. `defaults` is what the categories say (Keep, a
  * kept part, signature accessories); a chip the user pinned joins them whatever its
- * category says, one they dashed leaves them, and traits added by hand are pinned.
+ * category says, one they dashed leaves them, and traits added by hand are pinned unless dashed.
  * A category on Keep wins over a dash (`inKeptCategory`): nothing would pick the tag
  * there, so its chip stays pinned until the category varies again, when the dash is back.
  */
@@ -24,7 +24,8 @@ export function classicKeptTags(
 ): string[] {
   const kept = defaults.filter((tag) => choiceOf(tag) !== 'scene' || inKeptCategory(tag))
   baseTags.forEach((tag) => { if (choiceOf(tag) === 'pinned') kept.push(tag) })
-  kept.push(...added)
+  // An added trait is pinned unless the user dashed it (then it is one of the pool's values).
+  kept.push(...added.filter((tag) => choiceOf(tag) !== 'scene'))
   return Array.from(new Set(kept.filter(Boolean)))
 }
 
@@ -68,4 +69,21 @@ export function pinnedConflicts(
 /** Where an added trait is shown: the category the taxonomy gives it, else the row it was added from. */
 export function addedTraitCategory(tag: string, taxonomyCategory: string, home: TagCategory | undefined): TagCategory {
   return (PACK_AXES as readonly string[]).includes(taxonomyCategory) ? (taxonomyCategory as TagCategory) : home ?? 'appearance'
+}
+
+/**
+ * Added traits the user dashed (a scene idea's optional tags), by the category row they
+ * show in: Classic offers them to that category's sampling instead of every prompt.
+ */
+export function dashedAddedByCategory(
+  added: readonly string[],
+  choiceOf: (tag: string) => ChipState | undefined,
+  categoryOf: (tag: string) => TagCategory
+): Partial<Record<TagCategory, string[]>> {
+  const out: Partial<Record<TagCategory, string[]>> = {}
+  for (const tag of added) {
+    if (choiceOf(tag) !== 'scene') continue
+    ;(out[categoryOf(tag)] ??= []).push(tag)
+  }
+  return out
 }

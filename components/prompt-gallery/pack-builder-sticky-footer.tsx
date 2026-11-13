@@ -33,7 +33,9 @@ import Image from 'next/image'
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { withResolutionPrefix } from '@/lib/pack/prompt-resolution'
 import { userPreferences } from '@/lib/storage'
-import { MAX_MIN_TOTAL_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState } from '@/hooks/use-pack-mode'
+import { MAX_MIN_TOTAL_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState, type SceneIdeaControls } from '@/hooks/use-pack-mode'
+import type { PackRatingMode } from '@/hooks/use-pack-seed-search'
+import { PackSceneIdeas } from './pack-scene-ideas'
 import { PROVIDER_LABELS, summarizePackSourceAnswers, type PackSourceAnswers } from './pack-source-modal'
 import { PackVarietySelect } from './pack-variety-select'
 import { PackCategoryList, PackStepper } from './pack-category-list'
@@ -150,6 +152,10 @@ export interface PackBuilderStickyFooterProps {
     onSceneSettingsChange?: (settings: ScenePackSettings) => void
     /** Classic's character chips (pin, add, take back). */
     classicChips?: ClassicChipControls
+    /** Scene ideas (both methods): named scenes whose tags join the character's chips. */
+    sceneIdeas?: SceneIdeaControls
+    /** The pack's content rating: scene ideas above it aren't offered. */
+    contentRating?: PackRatingMode | null
     /** "Never include" (both methods): tags left out of every prompt, as typed. */
     neverIncludeText?: string
     onNeverIncludeTextChange?: (text: string) => void
@@ -742,6 +748,8 @@ const PackBuilderStickyFooterComponent = ({
     onSceneSettingsChange,
     neverIncludeText = '',
     classicChips,
+    sceneIdeas,
+    contentRating = null,
     onNeverIncludeTextChange,
     cast,
     onAddCastMember,
@@ -1287,6 +1295,10 @@ const PackBuilderStickyFooterComponent = ({
                                                         })}
                                                     </div>
                                                 </div>
+                                            )}
+
+                                            {sceneIdeas && (
+                                                <PackSceneIdeas controls={sceneIdeas} rating={contentRating} sceneMode={sceneMode} />
                                             )}
 
                                             {showAlwaysAdd ? (

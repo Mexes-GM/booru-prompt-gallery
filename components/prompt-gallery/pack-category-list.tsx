@@ -333,7 +333,7 @@ const CategoryRow = memo(function CategoryRow({
   const kept = visibleBase.filter((t) => keptTags.has(t))
   const conflictLines = chips ? pinnedConflictLines(chips.conflicts, [...kept, ...added]) : []
   // A pin outlives Off: those tags still go in every prompt, and the row says so.
-  const pinnedHere = [...kept, ...added]
+  const pinnedHere = [...kept, ...added.filter((tag) => !chips?.dashed.has(tag))]
   const summary =
     state === "off"
       ? pinnedHere.length > 0 ? `Left out, except pinned ${previewTags(pinnedHere)}` : "Left out"
@@ -449,7 +449,8 @@ const CategoryRow = memo(function CategoryRow({
                     <TagChip
                       key={`added:${tag}`}
                       text={tag}
-                      tone="kept"
+                      tone={chips?.dashed.has(tag) ? "faded" : "kept"}
+                      onToggle={chips ? () => chips.toggle(tag) : undefined}
                       note={chips?.conflicts[tag] ? `Rarely goes with ${chips.conflicts[tag]}` : undefined}
                       onRemove={() => chips?.remove(tag)}
                       removeLabel={`Take ${tag} back`}

@@ -2561,6 +2561,8 @@ export function PromptGallery() {
         onSceneSettingsChange={packMode.setSceneSettings}
         neverIncludeText={packMode.neverIncludeText}
         classicChips={packMode.classicChips}
+        sceneIdeas={packMode.sceneIdeas}
+        contentRating={packMode.contentRating}
         onNeverIncludeTextChange={packMode.setNeverIncludeText}
         cast={packSceneCast}
         onAddCastMember={packMode.addCastMember}

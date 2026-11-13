@@ -11,7 +11,7 @@ import { createSeededRng } from '../pack-generator'
 import { resolveTagConflicts } from '../../tag-conflicts'
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import { loadedTagRelations, relationKey, requiredBy, requiredSlots, type TagRelations } from '../../tag-relations'
-import { conflictsWithBackground, isEnvironmentTag, isPlainBackgroundTag } from '../background-coherence'
+import { conflictsWithBackground, isEnvironmentTag, isPlainBackgroundTag, isSceneTag } from '../background-coherence'
 import { selectScenes } from './scene-select'
 import type { ScenePool } from './scene-pool'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isCompositionPattern } from './permanence'
@@ -407,6 +407,12 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
       resolveTagConflicts(fixed, unitTags(units)).conflictingTags.map((conflict) => conflict.tag)
     )
     if (clashing.size > 0) for (const unit of UNIT_ORDER) units[unit] = units[unit].filter((tag) => !clashing.has(tag))
+
+    // A place the identity pins (a scene idea's "beach") wins over a plain background
+    // (Scenery: Plain, or the scene's own), as the identity wins any other clash.
+    if (fixed.some((tag) => isSceneTag(tag, overrides))) {
+      for (const unit of UNIT_ORDER) units[unit] = units[unit].filter((tag) => !isPlainBackgroundTag(tag))
+    }
 
     // A plain background leaves no room for surroundings that survived elsewhere.
     if (units.place.length === 1 && isPlainBackgroundTag(units.place[0])) {
