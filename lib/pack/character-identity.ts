@@ -3,7 +3,9 @@
  * else varies.
  *
  * A character's identity is what most of their posts agree on: hair, eyes,
- * the accessories they always wear (Sonico's headphones) and body traits. It
+ * the accessories they always wear (Sonico's headphones) and body traits, plus
+ * what they carry far more often than anyone else even when taggers leave it
+ * out of many posts (Sui-Feng's "short hair with long locks"). It
  * comes from the posts that show them alone (typicalLook) or, when those are
  * too few, from their static trait profile (profileIdentity). One card can be
  * an odd one (another artist's take, an alternate outfit); the posts together
@@ -14,12 +16,25 @@ import { getProviderTagLimit } from '../booru/tag-limits'
 import { getTagSlotFromOverrides, type TagCategory } from '../tag-taxonomy'
 import { classifyPostForPack, normalizeTagForPack } from './pack-generator'
 import { TRAIT_SHARE, isGroupCountTag, postCharacters } from './character-focus'
+import { loadedTagBaseline, type TagBaseline } from './pack-vocabulary'
 
 /** Most identity tags a character contributes, strongest first. */
 export const MAX_IDENTITY_TAGS = 8
 
 /** Posts showing the character alone needed before their typical look is trusted. */
 export const MIN_TYPICAL_POSTS = 5
+
+/**
+ * A trait on fewer than half of a character's posts still counts when it is on
+ * this share of them and DISTINCT_LIFT times as common as on pictures of one
+ * person in general: taggers skip details, so a defining one can sit at 35%.
+ */
+export const DISTINCT_SHARE = 0.25
+export const DISTINCT_LIFT = 3
+/** Posts a distinctive trait must be on, when the sample size is known: two posts can be one artist. */
+const MIN_DISTINCT_POSTS = 3
+/** Most hair tags in an identity, so eyes and body always fit under MAX_IDENTITY_TAGS. */
+const MAX_HAIR_TAGS = 5
 
 /** Where a card base's look comes from: what most of the character's posts show, or the card itself. */
 export type CharacterLook = 'typical' | 'card'
@@ -32,7 +47,8 @@ const SIGNATURE_SLOTS = new Set(['accents', 'headwear', 'eyewear'])
 const LEAD_COLOR_SHARE = 0.25
 const HAIR_COLOR_RE = /^(aqua|black|blonde|blue|brown|green|grey|orange|pink|purple|red|silver|white) hair$/
 // On a booru's explicit posts most bodies are bare: these say what the picture shows, not who she is.
-const UNDRESSED_RE = /^(nipples|areolae?|pussy|vagina|clitoris|anus|ass|penis|testicles|navel|cleavage|thighs|nude|completely nude|collarbone|armpits|barefoot)$/
+// "breasts" alone is on most pictures of any woman; a size ("small breasts") can be hers.
+const UNDRESSED_RE = /^(breasts|nipples|areolae?|pussy|vagina|clitoris|anus|ass|penis|testicles|navel|cleavage|thighs|nude|completely nude|collarbone|armpits|barefoot)$/
 const SIZED_BREASTS_RE = /^(small|medium|large|huge|gigantic) breasts$/
 
 const isSignatureSlot = (tag: string, overrides: Record<string, string>) => {
@@ -40,13 +56,27 @@ const isSignatureSlot = (tag: string, overrides: Record<string, string>) => {
   return slot?.category === 'clothing' && !!slot.subcategory && SIGNATURE_SLOTS.has(slot.subcategory)
 }
 
+export interface IdentityOptions {
+  /** How common each tag is on pictures of one person; defaults to the loaded vocabulary's. Null: no distinctive traits. */
+  baseline?: TagBaseline | null
+  /** Posts the shares were measured on, when known. */
+  posts?: number
+}
+
 /**
  * Who a character is, from how often each tag appears on them. Traits need half
- * their posts, except the leading hair and eye colour: Miku's eyes are "aqua" on
- * 38% of her posts and "blue" on 27%, yet they are one colour. Hair and eyes come
- * first so the cap never cuts them for body tags.
+ * their posts, or a quarter when they are distinctive (DISTINCT_LIFT times as
+ * common as on anyone): Sui-Feng's "blunt bangs" are on 41% of her posts and 6%
+ * of everyone's. The leading hair and eye colour count under half too: Miku's
+ * eyes are "aqua" on 38% of her posts and "blue" on 27%, yet they are one colour.
+ * One breast size at most. Hair and eyes come first so the cap never cuts them
+ * for body tags.
  */
-export function identityTags(shares: Iterable<readonly [string, number]>, overrides: Record<string, string>): string[] {
+export function identityTags(
+  shares: Iterable<readonly [string, number]>,
+  overrides: Record<string, string>,
+  { baseline = loadedTagBaseline(), posts }: IdentityOptions = {}
+): string[] {
   const groups = new Map<string, [string, number][]>()
   for (const [tag, share] of shares) {
     if (UNDRESSED_RE.test(tag)) continue
@@ -62,14 +92,24 @@ export function identityTags(shares: Iterable<readonly [string, number]>, overri
     const [top] = entries.filter(([, share]) => share >= LEAD_COLOR_SHARE)
     return top ? [top] : []
   }
+  // A tag too rare for the vocabulary is rarer than any in it: distinctive.
+  const distinct = (tag: string, share: number) =>
+    !!baseline && share >= DISTINCT_SHARE && (posts === undefined || share * posts >= MIN_DISTINCT_POSTS - 1e-9) &&
+    share >= DISTINCT_LIFT * (baseline.get(tag) ?? 0)
   const picked = IDENTITY_ORDER.flatMap((group) => {
     const entries = [...(groups.get(group) ?? [])].sort((a, b) => b[1] - a[1])
-    const common = entries.filter(([, share]) => share >= TRAIT_SHARE)
+    const common = entries.filter(([tag, share]) => share >= TRAIT_SHARE || distinct(tag, share))
     if (group === 'eyes') return common.length ? common : lead(entries)
-    if (group === 'hair' && !common.some(([tag]) => HAIR_COLOR_RE.test(tag))) {
-      return [...common, ...lead(entries.filter(([tag]) => HAIR_COLOR_RE.test(tag)))]
+    if (group === 'hair') {
+      const hair = common.some(([tag]) => HAIR_COLOR_RE.test(tag))
+        ? common
+        : [...common, ...lead(entries.filter(([tag]) => HAIR_COLOR_RE.test(tag)))]
+      return hair.slice(0, MAX_HAIR_TAGS)
     }
-    if (group === 'anatomy' && common.some(([tag]) => SIZED_BREASTS_RE.test(tag))) return common.filter(([tag]) => tag !== 'breasts')
+    if (group === 'anatomy') {
+      const [size] = common.filter(([tag]) => SIZED_BREASTS_RE.test(tag))
+      return common.filter(([tag]) => !SIZED_BREASTS_RE.test(tag) || tag === size?.[0])
+    }
     return common
   })
   // "black hairband" already says "hairband": keep the more specific of the two.
@@ -98,12 +138,13 @@ export function profileIdentity(
   character: string,
   profiles: TraitProfiles,
   overrides: Record<string, string>,
-  aliases: Record<string, string> = {}
+  aliases: Record<string, string> = {},
+  baseline: TagBaseline | null = loadedTagBaseline()
 ): string[] {
   const name = normalizeTagForPack(character)
   const profile = profiles[name] ?? profiles[aliases[name] ?? '']
   if (!profile) return []
-  return identityTags(Object.entries(profile).map(([tag, share]) => [normalizeTagForPack(tag), share] as const), overrides)
+  return identityTags(Object.entries(profile).map(([tag, share]) => [normalizeTagForPack(tag), share] as const), overrides, { baseline })
 }
 
 const SUBJECT_RE = /^(\d+\+?(girls?|boys?|others?)|multiple (girls|boys|others)|solo|solo focus)$/
@@ -151,7 +192,12 @@ function postsAlone(posts: readonly BooruPost[], name: string): BooruPost[] {
  * traits their solo posts agree on (identityTags). Null when there are too
  * few posts of them alone to tell.
  */
-export function typicalLook(posts: readonly BooruPost[], character: string, overrides: Record<string, string>): string[] | null {
+export function typicalLook(
+  posts: readonly BooruPost[],
+  character: string,
+  overrides: Record<string, string>,
+  baseline: TagBaseline | null = loadedTagBaseline()
+): string[] | null {
   const name = normalizeTagForPack(character)
   const alone = postsAlone(posts, name)
   if (alone.length < MIN_TYPICAL_POSTS) return null
@@ -162,7 +208,7 @@ export function typicalLook(posts: readonly BooruPost[], character: string, over
     const look = tidyCardLook([...appearance, ...clothing].filter((t) => isLookTag(t, names, overrides)))
     look.forEach((t) => seen.set(t, (seen.get(t) ?? 0) + 1))
   }
-  return identityTags([...seen].map(([tag, n]) => [tag, n / alone.length] as const), overrides)
+  return identityTags([...seen].map(([tag, n]) => [tag, n / alone.length] as const), overrides, { baseline, posts: alone.length })
 }
 
 /**
@@ -172,6 +218,33 @@ export function typicalLook(posts: readonly BooruPost[], character: string, over
  */
 export function subjectTags(tags: readonly string[], names: ReadonlySet<string>, overrides: Record<string, string>): string[] {
   return tags.filter((t) => !names.has(t) && !STYLE_TAG_RE.test(t) && !isLookTag(t, names, overrides))
+}
+
+const SOLO_RE = /^(solo|solo focus)$/
+/**
+ * Share of a pool's posts tagged `solo` from which its prompts say "solo". High on
+ * purpose: a pool that mixes solo pictures with people together would otherwise
+ * lose every pose that involves someone else.
+ */
+export const SOLO_POOL_SHARE = 0.8
+
+/** Share of `posts` tagged `solo`; null for no posts. */
+export function poolSoloShare(posts: readonly BooruPost[]): number | null {
+  if (posts.length === 0) return null
+  const solo = posts.filter((p) => (p.tag_string || '').split(/\s+/).includes('solo')).length
+  return solo / posts.length
+}
+
+/**
+ * A character's subject tags for a pack built from a pool: "1girl" is who they
+ * are, but "solo" says what the picture is, so it comes from the pool, not from
+ * the character's own posts (searched with "solo"). It stays when nearly all the
+ * pool's posts are solo and goes when the pool shows people together, where it
+ * would keep out every pose that involves someone else.
+ */
+export function subjectForPool(subject: readonly string[], soloShare: number | null): string[] {
+  const own = subject.filter((t) => !SOLO_RE.test(t))
+  return soloShare !== null && soloShare >= SOLO_POOL_SHARE ? [...own, 'solo'] : own
 }
 
 /**

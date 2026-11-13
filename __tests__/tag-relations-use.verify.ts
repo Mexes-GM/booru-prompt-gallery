@@ -86,6 +86,16 @@ const overrides: Record<string, string> = { skirt: "clothing:bottom", cup: "equi
   assert(lift({ offCategories: ["clothing"] }).every((p) => !p.prompt.includes("skirt lift")), "not drawn when what it requires is in an Off category")
   assert(lift({ lockedTags: ["1girl", "pleated skirt"] }).every((p) => p.prompt.split(", ").filter((t) => t === "skirt").length === 0), "a pleated skirt already names the skirt")
 
+  // A full slot keeps a loose value's requirement out, but not a full set's: the set came from a real post.
+  // (Test-only slots: "skirt" filed under a one-tag slot the base already fills, with no hand rule between them.)
+  const bottoms = { ...overrides, skirt: "pose:gesture", "peace sign": "pose:gesture", smile: "pose:expression" }
+  const full = ["1girl", "peace sign"]
+  const looseLift = generatePackPrompts({ lockedTags: full, axes: { clothing: ["skirt lift"] }, count: 5, rng: createSeededRng(3), tagOverrides: bottoms })
+  assert(looseLift.every((p) => !p.prompt.split(", ").includes("skirt")), "a loose value can't bring a requirement into a full slot")
+  const setLift = generatePackPrompts({ lockedTags: full, axes: { pose: ["skirt lift, smile"] }, count: 5, rng: createSeededRng(3), tagOverrides: bottoms })
+  assert(setLift.length > 0 && setLift.every((p) => ["skirt lift", "skirt", "smile"].every((t) => p.prompt.split(", ").includes(t))),
+    `a full set brings its requirements whatever the slot limits (got ${setLift.map((p) => p.prompt).join(" / ")})`)
+
   setTagRelations(null)
   const plain = generatePackPrompts({ lockedTags: ["1girl"], axes: { clothing: ["skirt lift"] }, count: 5, rng: createSeededRng(3) })
   assert(plain.every((p) => p.prompt === "1girl, skirt lift"), "without the relations, sampling is as before")
@@ -138,6 +148,14 @@ const overrides: Record<string, string> = { skirt: "clothing:bottom", cup: "equi
   assert(resolveTagConflicts(["smile"], ["looking at another"]).validTags.length === 1, "and when the prompt doesn't say how many")
   const classic = generatePackPrompts({ lockedTags: ["1girl", "solo"], axes: { pose: ["looking at another", "crouching"] }, count: 10, rng: createSeededRng(5) })
   assert(classic.length > 0 && classic.every((p) => !p.prompt.includes("looking at another")), "Classic doesn't draw it for one person")
+  // "1girl" counts girls: without "solo" she may have company (a pool of scenes with partners).
+  assert(resolveTagConflicts(["1girl"], ["looking at another"]).validTags.length === 1, "\"1girl\" alone doesn't say she's alone")
+  const withPartner = generatePackPrompts({ lockedTags: ["1girl"], axes: { pose: ["looking at another"] }, count: 5, rng: createSeededRng(5) })
+  assert(withPartner.some((p) => p.prompt.includes("looking at another")), "Classic draws it for \"1girl\" without \"solo\"")
+  // A full set that needs company, next to "solo" and a head count of more than one: the count wins.
+  const set = "looking at another, crouching"
+  const group = generatePackPrompts({ lockedTags: ["1girl", "solo", "2boys"], axes: { pose: [set] }, count: 5, rng: createSeededRng(5) })
+  assert(group.some((p) => p.prompt.includes("looking at another")), "\"solo\" with \"2boys\" doesn't keep a full set with company out")
   setTagRelations(null)
 }
 

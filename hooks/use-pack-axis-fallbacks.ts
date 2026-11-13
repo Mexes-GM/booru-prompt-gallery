@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { TagCategory } from "@/lib/tag-classifier"
 import { PACK_AXES, slotsOf } from "@/lib/tag-taxonomy"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import { isExplicitTag } from "@/lib/pack/explicit-tags"
+import { loadPackVocabulary, loadedPackVocabulary, type PackVocabulary, type VocabularyEntry } from "@/lib/pack/pack-vocabulary"
 
 export type PackAxisFallbacks = Partial<Record<TagCategory, string[]>>
-
-/** [tag, post_count, nsfw flag] — see scripts/generate-pack-vocabulary.ts. */
-type VocabularyEntry = [string, number, 0 | 1]
-type Vocabulary = Record<string, VocabularyEntry[]>
 
 /** Slots never used to top up an SFW pack, whatever each tag's own flag says. */
 const SFW_EXCLUDED_SLOTS = new Set(["clothing:underwear", "pose:physiological"])
@@ -27,39 +24,25 @@ function explicitFirst(entries: VocabularyEntry[]): VocabularyEntry[] {
 /**
  * Pack Mode's safety net for sparse pools (a niche search with a handful of
  * posts): the most-used approved tags of each slot, from
- * `/pack-vocabulary.json` (built from the tags database by
- * scripts/generate-pack-vocabulary.ts). Fetched once, only while Pack Mode
+ * `/pack-vocabulary.json` (lib/pack/pack-vocabulary.ts). Fetched once, only while Pack Mode
  * is on. Slots are interleaved so a topped-up pool spans subcategories
  * instead of being all hair colours; SFW sources skip flagged tags and the
  * explicit-prone slots, Questionable sources skip explicit tags, Explicit
  * sources get them first.
  */
 export function usePackAxisFallbacks(enabled: boolean, ratingMode: PackRatingMode): PackAxisFallbacks {
-  const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null)
-  const loadedRef = useRef(false)
+  const [vocabulary, setVocabulary] = useState<PackVocabulary | null>(loadedPackVocabulary)
 
   useEffect(() => {
-    if (!enabled || loadedRef.current) return
-    loadedRef.current = true
-
-    const controller = new AbortController()
-    fetch("/pack-vocabulary.json", { signal: controller.signal })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data || typeof data.slots !== "object" || data.slots === null) {
-          throw new Error("Invalid pack-vocabulary.json format")
-        }
-        setVocabulary(data.slots as Vocabulary)
-      })
-      .catch((err) => {
-        if (err?.name !== "AbortError") {
-          loadedRef.current = false // allow retry after a failure
-          console.error("Failed to load pack vocabulary:", err)
-        }
-      })
-
-    return () => controller.abort()
-  }, [enabled])
+    if (!enabled || vocabulary) return
+    let cancelled = false
+    void loadPackVocabulary().then((data) => {
+      if (!cancelled && data) setVocabulary(data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, vocabulary])
 
   return useMemo(() => {
     if (!vocabulary) return {}

@@ -674,7 +674,7 @@ const MAX_CANDIDATES_PER_PICK = 60
 interface Compatibility {
   relations: TagRelations
   context: { people: number; rating?: RelationRating | null }
-  /** The base says one person ("1girl", "solo"): tags that need company aren't drawn. */
+  /** The base says the picture is of one person alone ("solo"): tags that need company aren't drawn. */
   onePerson: boolean
   off: ReadonlySet<TagCategory>
   userExcluded: (tag: string) => boolean
@@ -713,16 +713,17 @@ const names = (present: readonly string[], tag: string) => present.some((p) => p
 /**
  * Tags `tags` require that `present` lacks, to add with them; null when one can't be
  * added (its category is Off, the user excluded it, it contradicts what's there, or its
- * slot is already full).
+ * slot is already full). What a full set requires ("multiple boys" for its "gangbang")
+ * comes with it like the set's own tags: no slot limit (`slotLimits` false).
  */
-function requirements(c: Compatibility, tags: readonly string[], present: readonly string[]): string[] | null {
+function requirements(c: Compatibility, tags: readonly string[], present: readonly string[], slotLimits = true): string[] | null {
   const added: string[] = []
   for (const tag of tags) {
     for (const needed of requiredBy(c.relations, tag)) {
       if (names(present, needed) || names(tags, needed) || added.includes(needed)) continue
       if (c.userExcluded(needed) || c.off.has(classifyTag(needed, c.overrides))) return null
       const around = [...present, ...tags, ...added]
-      if (clashes(c, [needed], around) || !checkSlotConstraints(needed, around, c.overrides)) return null
+      if (clashes(c, [needed], around) || (slotLimits && !checkSlotConstraints(needed, around, c.overrides))) return null
       added.push(needed)
     }
   }
@@ -1063,7 +1064,9 @@ function* packPromptSteps(args: GeneratePackPromptsArgs, stop: () => boolean): G
     ? {
         relations,
         context: { people: peopleIn(normalizedLocked) >= 2 ? 2 : 1, rating },
-        onePerson: peopleIn(normalizedLocked) === 1 || normalizedLocked.includes("solo"),
+        // "1girl" says one girl, not that she's alone: with "1boy", or a pool of group
+        // scenes, she isn't. Only "solo", with no head count of more than one, does.
+        onePerson: normalizedLocked.includes("solo") && peopleIn(normalizedLocked) <= 1,
         off: new Set(offCategories),
         userExcluded,
         overrides: tagOverrides,
@@ -1178,14 +1181,20 @@ function* packPromptSteps(args: GeneratePackPromptsArgs, stop: () => boolean): G
     const picked = requiredSources.length > 0 ? withRequiredTag(rawPicked) : rawPicked
     if (!picked) return
     let flatValues = picked.flat()
+    let withSets: string[] = []
     if (compat) {
       // What the picks require comes with them; a pick whose requirement can't come isn't used.
-      const tags = flatValues.flatMap(tagsOfValue)
-      const needed = requirements(compat, tags, normalizedLocked)
+      // A full set's requirements come like its own tags (see requirements).
+      const looseTags = flatValues.filter((v) => !v.includes(",")).flatMap(tagsOfValue)
+      const setTags = flatValues.filter((v) => v.includes(",")).flatMap(tagsOfValue)
+      const needed = requirements(compat, looseTags, [...normalizedLocked, ...setTags])
       if (!needed) return
-      flatValues = [...flatValues, ...needed]
+      const setNeeds = requirements(compat, setTags, [...normalizedLocked, ...looseTags, ...needed], false)
+      if (!setNeeds) return
+      withSets = setNeeds
+      flatValues = [...flatValues, ...needed, ...withSets]
     }
-    const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled, tagOverrides, rating)
+    const built = buildPrompt(normalizedLocked, flatValues, globalWeights, isGlobalWeightsEnabled, tagOverrides, rating, new Set(withSets))
     if (!built) return
     // Conflict resolution can still drop the swapped-in value.
     if (requiredSources.length > 0 && !passes(built.prompt.split(','))) return
@@ -1209,7 +1218,7 @@ function* packPromptSteps(args: GeneratePackPromptsArgs, stop: () => boolean): G
         if (take.length >= axis.k || looked >= MAX_CANDIDATES_PER_PICK * axis.k) break
         looked++
         const tags = tagsOfValue(value)
-        if (tags.some((tag) => blocked.blocks(tag) || (c.onePerson && needsCompany(c.relations, tag))) || !requirements(c, tags, chosen)) continue
+        if (tags.some((tag) => blocked.blocks(tag) || (c.onePerson && needsCompany(c.relations, tag))) || !requirements(c, tags, chosen, !value.includes(","))) continue
         take.push(value)
         chosen.push(...tags)
         tags.forEach((tag) => blocked.add(tag))
@@ -1256,7 +1265,9 @@ function buildPrompt(
   globalWeights: Record<string, number>,
   isGlobalWeightsEnabled: boolean,
   tagOverrides?: Record<string, string>,
-  rating?: RelationRating | null
+  rating?: RelationRating | null,
+  /** Tags a full set brought along (its requirements): free of the slot limits, like the set's own. */
+  setRequirements: ReadonlySet<string> = new Set()
 ): PackPrompt | null {
   const lockedSet = new Set(lockedTags.map(normalize))
 
@@ -1282,23 +1293,59 @@ function buildPrompt(
   // Pass 1: Smart Tag Exclusion: drop values that contradict the locked base.
   const { validTags: validAgainstBase } = resolveTagConflicts(lockedTags, flatPickedTags, { rating })
 
+  // Full sets each picked tag came from. Tags of one set appeared together on a real
+  // post, so they are never checked against each other, and the slot limits (a guess
+  // for mixing loose tags that never met: one expression, one sex act...) don't apply
+  // to them. The measured relations and hand rules still check them against the base
+  // and the other values: "sex" in the base doesn't take "anal" out of a set.
+  const setsOf = new Map<string, Set<string>>()
+  for (const [item, tags] of itemToTags) {
+    if (!item.includes(",")) continue
+    for (const t of tags) {
+      const sets = setsOf.get(t) ?? new Set<string>()
+      sets.add(item)
+      setsOf.set(t, sets)
+    }
+  }
+  const shareSet = (a: string, b: string) => {
+    const setsA = setsOf.get(a)
+    const setsB = setsOf.get(b)
+    if (!setsA || !setsB) return false
+    for (const item of setsA) if (setsB.has(item)) return true
+    return false
+  }
+
   // Pass 2: Smart Tag Exclusion, pass 2: incremental contradiction check
   // across remaining tags so mutually contradictory picks don't co-exist,
-  // augmented with physical slot constraint checking.
+  // augmented with physical slot constraint checking for loose tags.
   const validTags: string[] = []
   const contextTags = [...lockedTags]
-  // One checker for the whole prompt: each kept tag joins it, so a candidate is checked
-  // against what the prompt holds without re-reading every rule and tag each time.
+  // One checker for the whole prompt, and one per full set holding everything but that
+  // set's own tags: each kept tag joins them, so a candidate is checked against what the
+  // prompt holds without re-reading every rule and tag each time.
   const checker = new ConflictChecker(lockedTags, { rating })
+  const checkerOutside = new Map<string, ConflictChecker>()
+  for (const item of itemToTags.keys()) if (item.includes(",")) checkerOutside.set(item, new ConflictChecker(lockedTags, { rating }))
   for (const candidate of validAgainstBase) {
+    const sets = setsOf.get(candidate)
+    let conflict: string | null
+    let around: string[] = contextTags
+    if (!sets) {
+      conflict = checker.check(candidate)
+    } else {
+      around = contextTags.filter((t) => !shareSet(t, candidate))
+      // A tag in two picked sets ("blush" in both) is checked against what is outside both.
+      conflict = sets.size === 1 ? checkerOutside.get([...sets][0])!.check(candidate) : new ConflictChecker(around, { rating }).check(candidate)
+    }
     if (
-      checker.check(candidate) === null &&
-      checkSlotConstraints(candidate, contextTags, tagOverrides) &&
-      !conflictsWithBackground(candidate, contextTags, tagOverrides)
+      conflict === null &&
+      (!!sets || setRequirements.has(candidate) || checkSlotConstraints(candidate, contextTags, tagOverrides)) &&
+      !conflictsWithBackground(candidate, around, tagOverrides)
     ) {
       validTags.push(candidate)
       contextTags.push(candidate)
       checker.add(candidate)
+      for (const [item, outside] of checkerOutside) if (!sets?.has(item)) outside.add(candidate)
     }
   }
 

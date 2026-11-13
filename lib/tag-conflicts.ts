@@ -2157,9 +2157,10 @@ export interface ConflictResolution {
       // Measured first: what real posts (almost) never show together, for one person or several.
       const measured = dataConflict(this.list, added, { people: hasMultipleCharacters ? 2 : 1, rating: this.options.rating }, this.layering);
       if (measured) return `Conflicts with '${measured}'`;
-      // A tag that needs company ("looking at another") has no place where the base says one person.
+      // A tag that needs company ("looking at another") has no place where the base says the
+      // person is alone ("solo"). "1girl" alone doesn't: it counts girls, not everyone there.
       const full = loadedTagRelations();
-      const onePerson = !hasMultipleCharacters && (this.solo || this.characters === 1);
+      const onePerson = !hasMultipleCharacters && this.solo;
       if (onePerson && full && needsCompany(full, added)) return "Needs more than one person";
 
       for (const { trigger, rule } of this.active) {
