@@ -24,9 +24,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useLowMotion } from '@/hooks/use-low-motion'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useNaturalPrompt, usePromptFormat } from '@/hooks/use-natural-prompt'
-import { convertPromptOnce } from '@/lib/prompt/natural-prompt-loader'
+import { convertPromptOnce, preloadNaturalPrompt } from '@/lib/prompt/natural-prompt-loader'
 import type { NaturalPromptSource } from '@/lib/prompt/natural-format'
-import type { PromptFormat } from '@/lib/prompt/prompt-format'
+import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
 import { toast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 import Image from 'next/image'
@@ -367,7 +367,7 @@ const PackResultsList = memo(({
     /** Characters the pack names: with two or more, the tags format gets an honest note. */
     castSize?: number
 }) => {
-    const { format, fullDetail } = usePromptFormat()
+    const { format, fullDetail, setFormat } = usePromptFormat()
     // A new pack replaces the list whole: remount the animated list so the old rows
     // don't linger in their exit animation (a tab in the background pauses it).
     const [listKey, setListKey] = useState(0)
@@ -434,6 +434,21 @@ const PackResultsList = memo(({
             <div className="flex items-center justify-between gap-2 pb-2 border-b border-border/40 flex-shrink-0 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-background max-lg:pt-1">
                 <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
                     <h3 className="text-sm font-semibold text-foreground">Prompts</h3>
+                    {/* The app-wide prompt format, here too: the prompts below re-render in it without leaving the pack. */}
+                    <Select
+                        value={format}
+                        onValueChange={(value) => { if (isPromptFormat(value)) setFormat(value) }}
+                        onOpenChange={(open) => { if (open) preloadNaturalPrompt() }}
+                    >
+                        <SelectTrigger aria-label="Prompt format" className="h-8 pointer-coarse:h-11 w-auto min-w-[6.5rem] gap-1.5 bg-background px-2.5 text-xs">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {PROMPT_FORMATS.map((option) => (
+                                <SelectItem key={option} value={option} className="text-xs">{PROMPT_FORMAT_INFO[option].label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                     {prompts.length > 0 && (
                         <>
                             <span className="text-xs font-semibold bg-muted text-foreground px-2 py-0.5 rounded-full tabular-nums">
