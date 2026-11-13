@@ -23,6 +23,7 @@ import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence } from "../lib/pack/scene/permanence"
 import { DEFAULT_SCENE_SETTINGS, generateScenePack, sceneIdeaPhases, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { packEngineConfig } from "../lib/pack/pack-config-migration"
+import { inventedScenesOn, sceneModelBaseUrl } from "../lib/scene-model/protocol"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -145,6 +146,15 @@ const REAL = [
   assert(on.sceneSettings.inventedScenes === true, "saved on, read on")
   const junk = packEngineConfig({ engine: "scenes", sceneSettings: { ...DEFAULT_SCENE_SETTINGS, inventedScenes: "yes" as unknown as boolean } })
   assert(junk.sceneSettings.inventedScenes === false, "anything but true reads off")
+}
+
+// ── 9. Only where there is a model ──
+{
+  assert(sceneModelBaseUrl(undefined) === null && sceneModelBaseUrl("") === null && sceneModelBaseUrl("  ") === null, "no URL set: no model, and no default")
+  assert(sceneModelBaseUrl("/scene-model/") === "/scene-model" && sceneModelBaseUrl(" https://cdn.example/m ") === "https://cdn.example/m", "a set URL, without the trailing slash")
+  assert(sceneModelBaseUrl("/") === "/", "the site root is a URL too")
+  assert(!inventedScenesOn(true, null), "a saved 'on' does nothing without a model")
+  assert(inventedScenesOn(true, "/scene-model") && !inventedScenesOn(false, "/scene-model") && !inventedScenesOn(undefined, "/scene-model"), "with a model, the setting decides")
 }
 
 done()

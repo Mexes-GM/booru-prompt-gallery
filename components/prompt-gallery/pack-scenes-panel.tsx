@@ -786,36 +786,41 @@ function PackScenesPanelComponent({
             />
           </span>
         </div>
-        <div className="h-px bg-border/50" />
-        <div className="space-y-1">
-          <div className="flex items-center justify-between gap-3">
-            <label htmlFor="pack-scene-invented" className="min-w-0 cursor-pointer">
-              <span className="block text-sm font-semibold">Invented scenes</span>
-              <span className="block text-xs text-muted-foreground">
-                Adds scenes written by a small AI model to the pool, for more variety. They aren&apos;t real posts, so some may not make sense.
-              </span>
-            </label>
-            <span className="flex items-center justify-center flex-shrink-0 pointer-coarse:min-h-11 pointer-coarse:min-w-11">
-              <Switch
-                id="pack-scene-invented"
-                checked={settings.inventedScenes === true}
-                onCheckedChange={(v) => set("inventedScenes", v)}
-                className="data-[state=checked]:bg-mode-pack"
-              />
-            </span>
-          </div>
-          {settings.inventedScenes && inventedScenesLine(scenes.inventedScenes, pool?.stats.invented ?? 0) && (
-            <p
-              className={`flex items-center gap-1.5 text-xs ${scenes.inventedScenes.phase === "failed" || scenes.inventedScenes.phase === "unavailable" ? "text-warning-text" : "text-muted-foreground"}`}
-              role="status"
-            >
-              {(scenes.inventedScenes.phase === "loading" || scenes.inventedScenes.phase === "generating") && (
-                <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" aria-hidden />
+        {/* Only where this deployment has a scene model (NEXT_PUBLIC_SCENE_MODEL_URL). */}
+        {scenes.inventedScenesAvailable && (
+          <>
+            <div className="h-px bg-border/50" />
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="pack-scene-invented" className="min-w-0 cursor-pointer">
+                  <span className="block text-sm font-semibold">Invented scenes</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Adds scenes written by a small AI model to the pool, for more variety. They aren&apos;t real posts, so some may not make sense.
+                  </span>
+                </label>
+                <span className="flex items-center justify-center flex-shrink-0 pointer-coarse:min-h-11 pointer-coarse:min-w-11">
+                  <Switch
+                    id="pack-scene-invented"
+                    checked={settings.inventedScenes === true}
+                    onCheckedChange={(v) => set("inventedScenes", v)}
+                    className="data-[state=checked]:bg-mode-pack"
+                  />
+                </span>
+              </div>
+              {settings.inventedScenes && inventedScenesLine(scenes.inventedScenes, pool?.stats.invented ?? 0) && (
+                <p
+                  className={`flex items-center gap-1.5 text-xs ${scenes.inventedScenes.phase === "failed" || scenes.inventedScenes.phase === "unavailable" ? "text-warning-text" : "text-muted-foreground"}`}
+                  role="status"
+                >
+                  {(scenes.inventedScenes.phase === "loading" || scenes.inventedScenes.phase === "generating") && (
+                    <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" aria-hidden />
+                  )}
+                  {inventedScenesLine(scenes.inventedScenes, pool?.stats.invented ?? 0)}
+                </p>
               )}
-              {inventedScenesLine(scenes.inventedScenes, pool?.stats.invented ?? 0)}
-            </p>
-          )}
-        </div>
+            </div>
+          </>
+        )}
       </section>
     </div>
   )

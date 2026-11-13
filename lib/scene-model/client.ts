@@ -2,14 +2,16 @@
  * The page's side of the scene model: one worker per page, created the first
  * time something asks for the model (nothing is downloaded before that).
  *
- * The files live under NEXT_PUBLIC_SCENE_MODEL_URL (default /scene-model):
- * see SCENE_MODEL_FILES. When they aren't there the model reports itself
- * unavailable and every request resolves empty.
+ * The files live under NEXT_PUBLIC_SCENE_MODEL_URL (see SCENE_MODEL_FILES); they
+ * aren't part of the app. Without the variable there is no model: nothing is
+ * requested and the option isn't offered. When it is set but the files aren't
+ * there, the model reports itself unavailable and every request resolves empty.
  */
 import type { GeneratedScene, GenerateSceneInput } from './sampler'
-import type { SceneModelLoadStep, SceneModelRequest, SceneModelResponse } from './protocol'
+import { sceneModelBaseUrl, type SceneModelLoadStep, type SceneModelRequest, type SceneModelResponse } from './protocol'
 
-export const SCENE_MODEL_BASE_URL = (process.env.NEXT_PUBLIC_SCENE_MODEL_URL || '/scene-model').replace(/\/+$/, '')
+/** Where the model's files are, or null when this deployment has none. */
+export const SCENE_MODEL_BASE_URL = sceneModelBaseUrl(process.env.NEXT_PUBLIC_SCENE_MODEL_URL)
 
 export type SceneModelState =
   | { status: 'idle' }
@@ -75,7 +77,7 @@ const send = (message: SceneModelRequest) => worker?.postMessage(message)
 
 /** Starts loading the model (once per page; again after a failure). */
 export function loadSceneModel(): void {
-  if (typeof window === 'undefined' || typeof Worker === 'undefined') {
+  if (SCENE_MODEL_BASE_URL === null || typeof window === 'undefined' || typeof Worker === 'undefined') {
     setState({ status: 'unavailable' })
     return
   }

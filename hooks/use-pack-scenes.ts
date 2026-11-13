@@ -45,6 +45,8 @@ import { chosenOutfit, loadCharacterOutfits, outfitTags, type CharacterOutfits }
 import { loadTraitAliases } from '@/lib/prompt/natural-prompt-loader'
 import { NO_ACTIVE_SCENE_IDEAS, sceneIdeasInUse, type ActiveSceneIdeas } from '@/lib/pack/scene-ideas'
 import { useInventedScenes, type InventedScenesStatus } from '@/hooks/use-invented-scenes'
+import { SCENE_MODEL_BASE_URL } from '@/lib/scene-model/client'
+import { inventedScenesOn } from '@/lib/scene-model/protocol'
 import { nextPaint, yieldToPage } from '@/lib/utils/yield-to-page'
 
 /** How long the pool waits for Gelbooru's tag list before it uses the built-in rules. */
@@ -192,6 +194,8 @@ export interface UsePackScenesResult {
   otherRatingPosts: number
   /** Scenes written by the scene model (settings.inventedScenes): loading, generating, how many are in the pool. */
   inventedScenes: InventedScenesStatus
+  /** This deployment has a scene model (NEXT_PUBLIC_SCENE_MODEL_URL): without it "Invented scenes" isn't offered. */
+  inventedScenesAvailable: boolean
   /** Library outfits in the chosen styles; null until the library loads (or when it isn't used). */
   libraryOutfitCount: number | null
   prompts: PackPrompt[]
@@ -523,8 +527,10 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   const castNames = useMemo(() => members.map((m) => m.character).filter(Boolean), [members])
   const castIdentity = useMemo(() => Array.from(new Set([...pinnedTags, ...members.flatMap((m) => m.candidates)])), [pinnedTags, members])
   const inventedFixed = useMemo(() => Array.from(new Set([...pinnedTags, ...sceneIdeas.core])), [pinnedTags, sceneIdeas])
+  // Only where this deployment has a scene model: a saved "on" does nothing without one.
+  const inventedOn = inventedScenesOn(settings.inventedScenes, SCENE_MODEL_BASE_URL)
   const invented = useInventedScenes({
-    enabled: enabled && settings.inventedScenes === true,
+    enabled: enabled && inventedOn,
     posts: rated,
     contentRating,
     people: inventedPeople,
@@ -625,7 +631,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     let first = true
     setIsGenerating(true)
     // The next pack gets new invented scenes; this one uses those already in the pool.
-    if (settings.inventedScenes) refreshInvented()
+    if (inventedOn) refreshInvented()
     void generateScenePackAsync(pool, packArgs(Math.floor(Math.random() * 1e9)), {
       // The first pause lets the busy button paint; the rest only let input through.
       pause: () => {
@@ -649,7 +655,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
         console.error('Scene pack generation failed:', err)
         if (requestRef.current === id) setIsGenerating(false)
       })
-  }, [pool, packArgs, missingRoles, settings.inventedScenes, refreshInvented])
+  }, [pool, packArgs, missingRoles, inventedOn, refreshInvented])
 
   const reroll = useCallback((index: number): boolean => {
     if (!pool || index < 0 || index >= prompts.length) return false
@@ -708,6 +714,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     enabledScenes,
     otherRatingPosts,
     inventedScenes: invented.status,
+    inventedScenesAvailable: SCENE_MODEL_BASE_URL !== null,
     libraryOutfitCount,
     prompts,
     shortBy,

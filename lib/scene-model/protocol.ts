@@ -3,6 +3,21 @@
  */
 import type { GeneratedScene, GenerateSceneInput } from './sampler'
 
+/**
+ * The model's base URL from NEXT_PUBLIC_SCENE_MODEL_URL, or null when it isn't set:
+ * the files aren't part of the app, so without it there is no scene model at all.
+ */
+export function sceneModelBaseUrl(raw: string | undefined): string | null {
+  const url = raw?.trim() ?? ''
+  if (!url) return null
+  return url.replace(/\/+$/, '') || '/'
+}
+
+/** "Invented scenes" is on only where there is a model: a saved setting alone doesn't turn it on. */
+export function inventedScenesOn(setting: boolean | undefined, baseUrl: string | null): boolean {
+  return baseUrl !== null && setting === true
+}
+
 /** Files the worker reads from the model's base URL. */
 export const SCENE_MODEL_FILES = {
   model: 'scene_model_v2_int8_rowemb.onnx',
