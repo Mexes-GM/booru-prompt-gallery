@@ -2,7 +2,8 @@
  * Tests for the characters' own outfits (lib/pack/character-outfits.ts) in Pack Mode's Scenes.
  *
  * Covers:
- *   1. Parsing a shard entry; which outfit's tags a choice gives.
+ *   1. Parsing a shard entry; which outfit's tags a choice gives; a saved pick, and a
+ *      character with no usual outfit (their most drawn official one is preselected).
  *   2. Loading: the shard the trait profiles' function picks, through the alias map;
  *      a failed request means no outfits and is tried again.
  *   3. identityWithOutfits: each character's outfit after their pinned tags, without
@@ -15,7 +16,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
-import { characterOutfitsUrl, loadCharacterOutfits, outfitTags, parseCharacterOutfits } from "../lib/pack/character-outfits"
+import { characterOutfitsUrl, chosenOutfit, loadCharacterOutfits, outfitTags, parseCharacterOutfits } from "../lib/pack/character-outfits"
 import { traitShard, traitShardFile } from "../lib/prompt/natural-traits"
 import { DEFAULT_SCENE_SETTINGS, generateScenePack, identityWithOutfits, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { packEngineConfig } from "../lib/pack/pack-config-migration"
@@ -40,6 +41,14 @@ async function main() {
     assert(onlyOfficial.usual === null && outfitTags(onlyOfficial, "").join() === "armor,gauntlets,cape", "no usual outfit: the first official one")
     assert(parseCharacterOutfits({}) === null && parseCharacterOutfits(null) === null, "nothing usable: null")
     assert(outfitTags(null, "").length === 0, "no data, no tags")
+
+    // A saved pick holds while the character has that outfit; otherwise the usual one.
+    assert(chosenOutfit(outfits, "Bunny") === "Bunny" && chosenOutfit(outfits, "Gone") === "" && chosenOutfit(outfits, undefined) === "", "saved picks fall back to the usual outfit")
+    // No usual outfit: only the official ones, the most drawn (listed first) preselected.
+    const noUsual = parseCharacterOutfits({ o: [["Bunny", ["leotard", "bowtie", "pantyhose"]], ["School uniform", ["school uniform", "skirt", "shirt"]]] })!
+    assert(noUsual.usual === null, "no usual outfit")
+    assert(chosenOutfit(noUsual, undefined) === "Bunny" && chosenOutfit(noUsual, "") === "Bunny", "without a usual outfit, the most drawn official one is preselected")
+    assert(chosenOutfit(noUsual, "School uniform") === "School uniform" && outfitTags(noUsual, chosenOutfit(noUsual, "Gone")).join() === "leotard,bowtie,pantyhose", "a pick that's gone goes back to the first official one")
   }
 
   // ── 2. Loading ──
@@ -121,6 +130,9 @@ async function main() {
 
     const saved = packEngineConfig({ engine: "scenes", sceneSettings: { ...DEFAULT_SCENE_SETTINGS, clothing: "character" } })
     assert(saved.sceneSettings.clothing === "character", "a saved config keeps the option")
+    const picks = packEngineConfig({ engine: "scenes", sceneSettings: { ...DEFAULT_SCENE_SETTINGS, clothing: "character", characterOutfits: { "tifa lockhart": "Cowgirl", bad: 3 as unknown as string } } })
+    assert(JSON.stringify(picks.sceneSettings.characterOutfits) === JSON.stringify({ "tifa lockhart": "Cowgirl" }), "the outfit picked per character is saved; anything malformed is dropped")
+    assert(saved.sceneSettings.characterOutfits === undefined, "no picks saved: none read")
     const old = packEngineConfig({ engine: "scenes", sceneSettings: { mix: "remix", clothing: "own", scenery: "vary", extras: true } })
     assert(old.sceneSettings.clothing === "own" && DEFAULT_SCENE_SETTINGS.clothing === "scene", "older configs read as before; new packs start from the scene's clothes")
   }
@@ -161,7 +173,10 @@ async function main() {
     assert(blocked === 0, "nothing the block list catches")
     const asuna = JSON.parse(readFileSync(join(dir, traitShardFile(traitShard("asuna (blue archive)"))), "utf8"))["asuna (blue archive)"]
     const names = (asuna?.o ?? []).map(([n]: [string]) => n)
-    assert(names.includes("Bunny") && names.includes("School uniform"), "asuna (blue archive): Bunny and School uniform, by readable name")
+    assert(names[0] === "Bunny" && names.includes("School uniform"), "asuna (blue archive): Bunny (most drawn) and School uniform, by readable name")
+    assert(asuna?.d === undefined, "asuna (blue archive): no usual outfit (the one computed from leftover posts isn't used)")
+    const yor = JSON.parse(readFileSync(join(dir, traitShardFile(traitShard("yor briar"))), "utf8"))["yor briar"]
+    assert(yor?.d?.includes("black dress") && yor?.o === undefined, "yor briar: her usual outfit, no official ones")
   }
 }
 

@@ -34,6 +34,8 @@ export interface ScenePackSettings {
    * without outfit data the scene's clothes stay.
    */
   clothing: 'scene' | 'library' | 'base' | 'own' | 'character'
+  /** For 'character': the official outfit picked per character name ('' or missing: the usual one). */
+  characterOutfits?: Readonly<Record<string, string>>
   scenery: 'scene' | 'vary' | 'plain'
   extras: boolean
 }

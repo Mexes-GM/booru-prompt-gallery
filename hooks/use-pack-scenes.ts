@@ -41,7 +41,7 @@ import { splitCommaSeparatedTags } from '@/lib/utils/tag-utils'
 import { useOutfitDescriptions, useOutfitLibrary } from '@/hooks/use-outfit-settings'
 import { usePromptFormat } from '@/hooks/use-natural-prompt'
 import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
-import { loadCharacterOutfits, outfitTags, type CharacterOutfits } from '@/lib/pack/character-outfits'
+import { chosenOutfit, loadCharacterOutfits, outfitTags, type CharacterOutfits } from '@/lib/pack/character-outfits'
 import { loadTraitAliases } from '@/lib/prompt/natural-prompt-loader'
 
 /** How long the pool waits for Gelbooru's tag list before it uses the built-in rules. */
@@ -170,8 +170,6 @@ export interface UsePackScenesResult {
    * chip is pinned) whose outfits are known. Empty: the character's outfit isn't offered.
    */
   characterOutfits: SceneCharacterOutfit[]
-  /** Picks the outfit a character wears ('' for the usual one). */
-  setCharacterOutfit: (character: string, name: string) => void
   /** "Always add" tags left out because they contradict who's in the picture ("solo" with two people). */
   alwaysAddOmitted: string[]
   compositions: PackSceneComposition[]
@@ -368,7 +366,6 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
 
   // The characters' own outfits (public/character-outfits/), read once per name and page.
   const [outfitData, setOutfitData] = useState<ReadonlyMap<string, CharacterOutfits | null>>(() => new Map())
-  const [outfitChoices, setOutfitChoices] = useState<ReadonlyMap<string, string>>(() => new Map())
   const memberNames = members.map((m) => m.character).filter(Boolean).join('|')
   useEffect(() => {
     if (!enabled || !memberNames) return
@@ -390,19 +387,16 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       active = false
     }
   }, [enabled, memberNames])
-  const setCharacterOutfit = useCallback((character: string, name: string) => {
-    setOutfitChoices((prev) => new Map(prev).set(character, name))
-  }, [])
   const characterOutfits = useMemo<SceneCharacterOutfit[]>(
     () => blocks.flatMap((block) => {
       const outfits = block.character ? outfitData.get(block.character) : null
       // Only a character the prompts name: a card whose character chip was dashed or removed isn't one.
       const named = baseFromCharacter || block.chips.some((chip) => chip.tag === block.character && chip.state === 'pinned')
       if (!outfits || !named) return []
-      const chosen = outfitChoices.get(block.character) ?? ''
-      return [{ character: block.character, outfits, chosen: outfits.official.some((o) => o.name === chosen) ? chosen : '' }]
+      // The outfit picked for them (saved with the settings), while they still have it.
+      return [{ character: block.character, outfits, chosen: chosenOutfit(outfits, settings.characterOutfits?.[block.character]) }]
     }),
-    [blocks, outfitData, outfitChoices, baseFromCharacter]
+    [blocks, outfitData, settings.characterOutfits, baseFromCharacter]
   )
   // "Their outfits": each block's pinned tags, then that character's outfit.
   const wornOutfits = useMemo(() => {
@@ -668,7 +662,6 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     castHasNoScenes,
     hasBaseClothing,
     characterOutfits,
-    setCharacterOutfit,
     alwaysAddOmitted: omitted,
     compositions,
     people,
@@ -686,7 +679,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     reroll,
     naturalSourceOf,
   }), [
-    permanence, loadFailed, retryLoad, pool, blocks, pinnedTags, toggleChip, resetChip, addTraits, removeTrait, toggleRemovedChip, castSize, missingRoles, castHasNoScenes, hasBaseClothing, characterOutfits, setCharacterOutfit, omitted,
+    permanence, loadFailed, retryLoad, pool, blocks, pinnedTags, toggleChip, resetChip, addTraits, removeTrait, toggleRemovedChip, castSize, missingRoles, castHasNoScenes, hasBaseClothing, characterOutfits, omitted,
     compositions, people, setPeople, disabledSituations, toggleSituation, enableAllSituations, enabledScenes,
     otherRatingPosts, libraryOutfitCount, prompts, shortBy, isGenerating, generate, reroll, naturalSourceOf,
   ])

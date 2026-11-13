@@ -58,6 +58,15 @@ export function outfitTags(outfits: CharacterOutfits | null | undefined, name: s
   return (chosen ?? outfits.usual ?? outfits.official[0])?.tags ?? []
 }
 
+/**
+ * The outfit a character wears for a saved pick: the pick while they have it, else
+ * their usual outfit ('') or, with none, their most drawn official outfit.
+ */
+export function chosenOutfit(outfits: CharacterOutfits, picked: string | undefined): string {
+  if (picked && outfits.official.some((o) => o.name === picked)) return picked
+  return outfits.usual ? '' : outfits.official[0]?.name ?? ''
+}
+
 /** The Danbooru name the shards use for a pack-normalized character name. */
 export const canonicalCharacter = (name: string, aliases: Readonly<Record<string, string>>): string => aliases[name] ?? name
 

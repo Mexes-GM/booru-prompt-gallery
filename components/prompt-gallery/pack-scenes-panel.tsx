@@ -715,7 +715,11 @@ function PackScenesPanelComponent({
                   : `${scenes.libraryOutfitCount.toLocaleString("en")} outfits to draw from.`}
             </p>
           ) : clothing === "character" ? (
-            <CharacterOutfitPicker entries={scenes.characterOutfits} showName={isCast} onChange={scenes.setCharacterOutfit} />
+            <CharacterOutfitPicker
+              entries={scenes.characterOutfits}
+              showName={isCast}
+              onChange={(character, name) => set("characterOutfits", { ...settings.characterOutfits, [character]: name })}
+            />
           ) : null}
         />
         <div className="h-px bg-border/50" />

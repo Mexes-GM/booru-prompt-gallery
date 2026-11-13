@@ -92,6 +92,13 @@ export function migratePackConfig(
 const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
   allowed.includes(value as T) ? (value as T) : fallback
 
+/** The outfit picked per character, keeping only name -> outfit-name strings. */
+function savedOutfits(value: unknown): Pick<ScenePackSettings, 'characterOutfits'> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  return entries.length > 0 ? { characterOutfits: Object.fromEntries(entries) } : {}
+}
+
 /**
  * The engine fields of a saved config, with defaults for configs saved before
  * they existed (or with values this version doesn't know): the scenes engine,
@@ -111,6 +118,7 @@ export function packEngineConfig(config: Pick<PackModeConfigV2, 'engine' | 'scen
       clothing: pick(saved.clothing, ['scene', 'library', 'base', 'own', 'character'], DEFAULT_SCENE_SETTINGS.clothing),
       scenery: pick(saved.scenery, ['scene', 'vary', 'plain'], DEFAULT_SCENE_SETTINGS.scenery),
       extras: typeof saved.extras === 'boolean' ? saved.extras : DEFAULT_SCENE_SETTINGS.extras,
+      ...savedOutfits(saved.characterOutfits),
     },
   }
 }
