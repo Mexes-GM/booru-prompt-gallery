@@ -56,20 +56,36 @@ export function sceneHasIdeaTag(scene: Scene, tags: readonly string[]): boolean 
   return unitTags(scene.units).some((tag) => wanted.has(tag))
 }
 
-/** Categories a post that doesn't match the picked scene can't lend. */
-const NOT_THE_PERSON = new Set(['scenery', 'equipment', 'creature'])
+/** What a post that doesn't match the picked scene lends of the person: posture, gesture, expression, framing. */
+const PERSON_SLOTS = new Set(['pose:posture', 'pose:gesture', 'pose:expression', 'pose:camera'])
+/** The light physiological states it may lend too: blush, sweat, tears. */
+const LIGHT_STATE = /\b(blush(ing)?|sweat(ing|drop)?|tears?|teardrops?)\b/
+/** Harm, dirt and intoxication: never lent, whatever their slot ("blood", "bloody", "injury", "drunk"). */
+const HARM = /\b(blood\w*|bleeding|injur\w*|bruis\w*|wound\w*|dirt\w*|drunk)\b/
 
-/** `units` reduced to the person: no place, extras or unclassified tags, nothing about the surroundings or held. */
+/** True for a tag a post that doesn't match the picked scene may lend: the person's pose, face and framing. */
+export function isPersonTag(tag: string, overrides: Record<string, string>): boolean {
+  if (HARM.test(tag)) return false
+  const slot = getTagSlotFromOverrides(tag, overrides)?.slot
+  if (!slot) return false
+  if (slot === 'pose:physiological') return LIGHT_STATE.test(tag)
+  return PERSON_SLOTS.has(slot)
+}
+
+/**
+ * `units` reduced to the person: posture, gesture, expression and framing by the
+ * taxonomy's slots (isPersonTag), and the outfit with its exposure (the clothing
+ * option decides on those), less anything about harm. No place, extras, combat,
+ * movement, interaction, hair state or unclassified tags.
+ */
 function personOnly(units: SceneUnits, overrides: Record<string, string>): void {
   units.place = []
   units.extras = []
   units.loose = []
-  for (const unit of ['skeleton', 'face', 'camera', 'outfit', 'exposure', 'body'] as const) {
-    units[unit] = units[unit].filter((tag) => {
-      if (isEnvironmentTag(tag, overrides)) return false
-      const category = getTagSlotFromOverrides(tag, overrides)?.category
-      return !category || !NOT_THE_PERSON.has(category)
-    })
+  units.body = []
+  for (const unit of ['skeleton', 'face', 'camera'] as const) units[unit] = units[unit].filter((tag) => isPersonTag(tag, overrides))
+  for (const unit of ['outfit', 'exposure'] as const) {
+    units[unit] = units[unit].filter((tag) => !HARM.test(tag) && !isEnvironmentTag(tag, overrides))
   }
 }
 

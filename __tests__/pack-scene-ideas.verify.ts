@@ -272,6 +272,23 @@ const ideas = parseSceneIdeas(RAW)
   assert(fewPrompts.length === 3, "with fewer matching posts than that, every post is used at once")
   assert(fewPrompts.filter((p) => p.scene!.postId !== 1).every((p) => !p.prompt.includes("forest")), "and the others still lend only the person")
 
+  // A post without the scene lends only the person: no combat, no harm or intoxication; light states stay.
+  {
+    const ov: Record<string, string> = { ...overrides, blood: "pose:physiological", "dual wielding": "pose:combat", drunk: "pose:expression", sweat: "pose:physiological" }
+    const c = { overrides: ov, permanence: createPermanence(PERMANENCE_DATA, ov), subject: "girl" as const }
+    const donor = makePost(30, "1girl solo sitting blush blood dual_wielding drunk from_side forest outdoors")
+    const idea = ["library", "bookshelf", "book"]
+    const harmPool = buildScenePool([donor], { ...c, identity })
+    const options: ComposeOptions = { identity: ["my character"], subject: "girl", mix: "faithful", clothing: "scene", scenery: "scene", extras: true, count: 1, seed: 1, overrides: ov, sceneIdeaTags: idea }
+    const sceneTags = harmPool.scenes[0] ? Object.values(harmPool.scenes[0].units).flat() : []
+    const lent = composePack(harmPool, options).prompts[0]
+    const fromDonor = lent ? lent.tags.filter((t) => !lent.locked.includes(t)) : []
+    assert(["blood", "dual wielding", "drunk", "blush", "sitting"].every((t) => sceneTags.includes(t)), "the donor has all five tags: " + sceneTags.join(", "))
+    assert(fromDonor.slice().sort().join() === "blush,from side,sitting", "only blush and sitting (and the framing) are lent: " + fromDonor.join(", "))
+    const without = composePack(harmPool, { ...options, sceneIdeaTags: undefined }).prompts[0]
+    assert(!!without && without.tags.includes("blood"), "without a picked scene the post is used whole, as before")
+  }
+
   // Two picked scenes: a post matching either one counts.
   const two = generateScenePack(pool, args({ sceneIdea: { core: ["library", "bookshelf", "book", "forest"], dashed: [] } })).prompts
   assert(two.some((p) => p.scene!.postId === 4 && p.prompt.includes("forest")), "with two scenes, a post that has the other one keeps its surroundings")
