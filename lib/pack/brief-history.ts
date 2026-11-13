@@ -3,8 +3,7 @@
  * the one it received untouched. A change is applied at once and can be taken back;
  * the history keeps the brief as it was before each change, with the change's label.
  */
-import { castFromNames } from './scene/cast'
-import { emptyBrief, briefTags, type BriefCharacter, type PackBrief } from './brief'
+import { addCharacter, emptyBrief, briefTags, type PackBrief } from './brief'
 import { normalizeTagForPack } from './pack-generator'
 
 export interface BriefChange { brief: PackBrief; label: string }
@@ -72,8 +71,5 @@ export function seedNever(brief: PackBrief, defaults: readonly string[]): PackBr
  * without repeats, up to the cast limit. With no usable name, the unnamed character stays.
  */
 export function briefFromCharacters(names: readonly string[]): PackBrief {
-  const cast = castFromNames(names.map(normalizeTagForPack))
-  if (cast.length === 0) return emptyBrief()
-  const who: BriefCharacter[] = cast.map((tag) => ({ tag, addedLook: [], removedLook: [] }))
-  return { ...emptyBrief(), who }
+  return names.reduce(addCharacter, emptyBrief())
 }

@@ -10,6 +10,7 @@ import {
   removeNever, removeTag, restoreScene, routeTag, setCharacterRole, setChanges, setPeople, toSceneRequests,
   type BriefRoute, type PackBrief, type RequestRole,
 } from "../lib/pack/brief"
+import { addCharacter, addLook, removeLook, restoreLook } from "../lib/pack/brief"
 
 let passed = 0
 const check = (fn: () => void) => { fn(); passed++ }
@@ -183,6 +184,76 @@ check(() => {
   assert.equal(setChanges(base, "pose").changes, "pose")
   assert.deepEqual(leaveOutScene(leaveOutScene(base, "x"), "x").leftOut, ["x"])
   assert.deepEqual(restoreScene(leaveOutScene(base, "x"), "x").leftOut, [])
+})
+
+// addCharacter, addLook, removeLook, restoreLook
+check(() => {
+  const empty = emptyBrief()
+  assert.deepEqual(addCharacter(empty, "tifa lockhart").who, [{ tag: "tifa lockhart", addedLook: [], removedLook: [] }])
+
+  const unnamed: PackBrief = { ...emptyBrief(), who: [{ tag: null, role: "girl", addedLook: ["silver hair"], removedLook: ["red eyes"] }] }
+  assert.deepEqual(addCharacter(unnamed, "tifa lockhart").who, [
+    { tag: "tifa lockhart", role: "girl", addedLook: ["silver hair"], removedLook: ["red eyes"] },
+  ])
+
+  let cast = addCharacter(addCharacter(addCharacter(empty, "tifa lockhart"), "aerith gainsborough"), "cloud strife")
+  assert.equal(cast.who.length, 3)
+  assert.equal(addCharacter(cast, "barret wallace").who.length, 3)
+  assert.equal(addCharacter(cast, "Tifa_Lockhart").who.length, 3)
+  cast = addCharacter(empty, "Yor_Briar")
+  assert.equal(cast.who[0].tag, "yor briar")
+  assert.equal(addCharacter(cast, "  ").who.length, 1)
+})
+
+check(() => {
+  const base = addCharacter(addCharacter(emptyBrief(), "tifa lockhart"), "aerith gainsborough")
+  const added = addLook(base, "tifa lockhart", "Silver_Hair")
+  assert.deepEqual(added.who[0].addedLook, ["silver hair"])
+  assert.deepEqual(added.who[1].addedLook, [])
+  assert.deepEqual(addLook(added, "tifa lockhart", "silver hair").who[0].addedLook, ["silver hair"])
+
+  // A usual trait taken off goes to removedLook once; restoring and re-adding clear it.
+  const off = removeLook(removeLook(base, "aerith gainsborough", "long hair"), "aerith gainsborough", "Long_Hair")
+  assert.deepEqual(off.who[1].removedLook, ["long hair"])
+  assert.deepEqual(off.who[0].removedLook, [])
+  assert.deepEqual(restoreLook(off, "aerith gainsborough", "long hair").who[1].removedLook, [])
+  assert.deepEqual(addLook(off, "aerith gainsborough", "long hair").who[1].removedLook, [])
+
+  // A trait the user added just leaves.
+  const gone = removeLook(added, "tifa lockhart", "silver hair")
+  assert.deepEqual(gone.who[0].addedLook, [])
+  assert.deepEqual(gone.who[0].removedLook, [])
+
+  // The unnamed character is addressed with null.
+  const solo = addLook(emptyBrief(), null, "black hair")
+  assert.deepEqual(solo.who[0].addedLook, ["black hair"])
+  assert.deepEqual(removeLook(solo, null, "black hair").who[0].addedLook, [])
+})
+
+check(() => {
+  const base = addCharacter(emptyBrief(), "tifa lockhart")
+  assert.equal(addLook(base, "nobody", "x"), base)
+  assert.equal(removeLook(base, "nobody", "x"), base)
+  assert.equal(restoreLook(base, "nobody", "x"), base)
+  assert.equal(addLook(base, null, "x"), base, "the unnamed character is gone once a name replaced it")
+})
+
+check(() => {
+  const base = addLook(addCharacter(addCharacter(emptyBrief(), "tifa lockhart"), "cloud strife"), "tifa lockhart", "silver hair")
+  const withRemoved = removeLook(base, "tifa lockhart", "red eyes")
+  const ops: Array<(b: PackBrief) => PackBrief> = [
+    (b) => addCharacter(b, "yor briar"), (b) => addLook(b, "cloud strife", "black hair"),
+    (b) => removeLook(b, "tifa lockhart", "silver hair"), (b) => removeLook(b, "cloud strife", "blue eyes"),
+    (b) => restoreLook(b, "tifa lockhart", "red eyes"),
+  ]
+  for (const input of [base, withRemoved]) {
+    const snapshot = structuredClone(input)
+    for (const op of ops) {
+      op(input)
+      assert.deepEqual(input, snapshot, "input unchanged")
+    }
+  }
+  assert.notEqual(addLook(base, "cloud strife", "black hair"), base)
 })
 
 console.log(`${passed} passed, 0 failed`)

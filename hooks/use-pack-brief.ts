@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addNever, addTag, briefFromCard, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeNever,
-  removeTag, restoreScene, setChanges, setCharacterRole, setPeople, toSceneRequests,
+  addCharacter, addLook, addNever, addTag, briefFromCard, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
+  removeTag, restoreLook, restoreScene, setChanges, setCharacterRole, setPeople, toSceneRequests,
   type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
 import {
@@ -21,6 +21,10 @@ export const BRIEF_LABELS = {
   never: (tag: string) => `Never: ${tag}`,
   unnever: (tag: string) => `Allowed ${tag} again`,
   removeCharacter: (name: string) => `Removed ${name}`,
+  addCharacter: (name: string) => `Added ${name}`,
+  addLook: (tag: string) => `Added ${tag}`,
+  removeLook: (tag: string) => `Removed ${tag}`,
+  restoreLook: (tag: string) => `Put ${tag} back`,
   setRole: (name: string) => `Changed ${name}'s role`,
   setPeople: "Changed who's in the picture",
   setChanges: 'Changed what varies',
@@ -41,6 +45,12 @@ export interface UsePackBriefResult {
   never: (tag: string) => void
   unnever: (tag: string) => void
   removeCharacter: (tag: string) => void
+  /** Adds a character by name; the name needn't be in the overrides yet. */
+  addCharacter: (name: string) => void
+  /** `character` null picks the unnamed character. */
+  addLook: (character: string | null, tag: string) => void
+  removeLook: (character: string | null, tag: string) => void
+  restoreLook: (character: string | null, tag: string) => void
   /** `tag` null picks the unnamed character; `role` undefined clears the role. */
   setRole: (tag: string | null, role: CastRole | undefined) => void
   setPeople: (people: PackPeople | null) => void
@@ -127,6 +137,22 @@ export function usePackBrief(overrides: Record<string, string>): UsePackBriefRes
     (tag: string) => change(BRIEF_LABELS.removeCharacter(tag), (b) => removeCharacter(b, tag)),
     [change]
   )
+  const addCharacterAction = useCallback(
+    (name: string) => change(BRIEF_LABELS.addCharacter(name.trim()), (b) => addCharacter(b, name)),
+    [change]
+  )
+  const addLookAction = useCallback(
+    (character: string | null, tag: string) => change(BRIEF_LABELS.addLook(tag.trim()), (b) => addLook(b, character, tag)),
+    [change]
+  )
+  const removeLookAction = useCallback(
+    (character: string | null, tag: string) => change(BRIEF_LABELS.removeLook(tag), (b) => removeLook(b, character, tag)),
+    [change]
+  )
+  const restoreLookAction = useCallback(
+    (character: string | null, tag: string) => change(BRIEF_LABELS.restoreLook(tag), (b) => restoreLook(b, character, tag)),
+    [change]
+  )
   const setRole = useCallback(
     (tag: string | null, role: CastRole | undefined) =>
       change(BRIEF_LABELS.setRole(tag ?? 'the character'), (b) => setCharacterRole(b, tag, role)),
@@ -194,6 +220,7 @@ export function usePackBrief(overrides: Record<string, string>): UsePackBriefRes
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
     add, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
+    addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
     startEmpty, startFromCharacters, startFromPrompt, startFromCard,
