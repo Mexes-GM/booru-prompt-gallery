@@ -21,6 +21,16 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 }
 
 /**
+ * True when `post` is a near-copy of one of `others`, whatever their characters.
+ * For posts added to a pool already collapsed (Pack Mode's invented scenes).
+ */
+export function isNearDuplicateOfAny(post: BooruPost, others: readonly BooruPost[], threshold = NEAR_DUPLICATE_THRESHOLD): boolean {
+  const tags = new Set(splitTags(post.tag_string || ""))
+  if (tags.size < MIN_TAGS_TO_COMPARE) return false
+  return others.some((other) => jaccard(tags, new Set(splitTags(other.tag_string || ""))) >= threshold)
+}
+
+/**
  * Keeps the first post of every group of near-identical ones (order is
  * preserved, so put the posts you'd rather keep first). Only posts with the
  * same character tags are compared — a series shares its character, and it

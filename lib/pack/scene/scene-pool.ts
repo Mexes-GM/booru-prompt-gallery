@@ -4,7 +4,7 @@
  */
 import type { BooruPost } from '../../booru/types'
 import { classifyPostForPack, normalizeTagForPack } from '../pack-generator'
-import { collapseNearDuplicates } from '../near-duplicates'
+import { collapseNearDuplicates, isNearDuplicateOfAny } from '../near-duplicates'
 import { splitTags } from '../../utils/tag-utils'
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import { postIsBlocked } from './blocked'
@@ -12,6 +12,7 @@ import { isPhotoPost } from './medium'
 import { COUNT_TAG_RE } from './permanence'
 import { nameDetector } from './names'
 import { extractScene, sceneTags, stateTagCount, MIN_TYPICAL_SUPPORT, type Scene, type SceneContext } from './scene'
+import { isInventedPost } from './invented'
 
 /** Scenes with fewer state tags than this are too poor to be worth a prompt. */
 export const DEFAULT_MIN_STATE_TAGS = 6
@@ -43,7 +44,7 @@ export interface PackPeople {
   boys: number
 }
 
-/** Posts that each step of the pool build removed. */
+/** Real posts that each step of the pool build removed (invented scenes are counted apart). */
 export interface ScenePoolStats {
   posts: number
   blocked: number
@@ -63,6 +64,8 @@ export interface ScenePoolStats {
   compositionSource: 'identity' | 'option' | 'pool' | 'none'
   /** Every exact composition among the scenes that passed the quality threshold, most scenes first. */
   compositions: Array<{ people: PackPeople; scenes: number }>
+  /** Of `scenes`, how many are invented (lib/pack/scene/invented.ts). */
+  invented: number
 }
 
 export interface ScenePool {
@@ -120,24 +123,33 @@ function compositionsOf(scenes: Scene[]): Array<{ people: PackPeople; scenes: nu
 
 export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): ScenePool {
   const minState = ctx.minStateTags ?? DEFAULT_MIN_STATE_TAGS
+  // Invented scenes go through every step, but only real posts are counted and only real
+  // posts are evidence of what a tag is (support, names, places): a scene the model
+  // wrote must not vouch for a tag.
+  const real = (list: readonly BooruPost[]) => list.filter((post) => !isInventedPost(post)).length
   const stats: ScenePoolStats = {
-    posts: posts.length, blocked: 0, notIllustration: 0, nearDuplicates: 0, unextractable: 0, belowQuality: 0,
-    incompatible: 0, scenes: 0, situations: 0, composition: null, compositionSource: 'none', compositions: [],
+    posts: real(posts), blocked: 0, notIllustration: 0, nearDuplicates: 0, unextractable: 0, belowQuality: 0,
+    incompatible: 0, scenes: 0, situations: 0, composition: null, compositionSource: 'none', compositions: [], invented: 0,
   }
 
   const allowed = posts.filter((post) => !postIsBlocked(post))
-  stats.blocked = posts.length - allowed.length
+  stats.blocked = stats.posts - real(allowed)
   const drawn = allowed.filter((post) => !isPhotoPost(post))
-  stats.notIllustration = allowed.length - drawn.length
-  const distinct = collapseNearDuplicates(drawn)
-  stats.nearDuplicates = drawn.length - distinct.length
+  stats.notIllustration = real(allowed) - real(drawn)
+  const evidence = collapseNearDuplicates(drawn.filter((post) => !isInventedPost(post)))
+  stats.nearDuplicates = real(drawn) - evidence.length
+  // An invented scene that copies a kept post (of any character) or another invented one adds nothing.
+  const distinct = [...evidence]
+  for (const post of drawn) {
+    if (isInventedPost(post) && !isNearDuplicateOfAny(post, distinct)) distinct.push(post)
+  }
 
   // How many posts carry each tag, among how many characters / series, and which tags place the character somewhere.
   const support = new Map<string, number>()
   const place = new Set<string>()
   const signatures = new Map<string, Set<string>>()
   const signatureOf = (post: BooruPost) => `${post.tag_string_character || ''}|${post.tag_string_copyright || ''}`
-  for (const post of distinct) {
+  for (const post of evidence) {
     const signature = signatureOf(post)
     new Set(splitTags(post.tag_string || '').map(normalizeTagForPack)).forEach((tag) => {
       support.set(tag, (support.get(tag) ?? 0) + 1)
@@ -147,23 +159,24 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
     })
     classifyPostForPack(post, ctx.overrides).scenery.forEach((tag) => wordSuffixes(tag).forEach((s) => place.add(s)))
   }
-  const spread = new Set(distinct.map(signatureOf)).size >= MIN_SIGNATURES_FOR_SPREAD
+  const spread = new Set(evidence.map(signatureOf)).size >= MIN_SIGNATURES_FOR_SPREAD
   const sceneCtx: SceneContext = {
     ...ctx,
     poolSupport: (tag) => support.get(tag) ?? 0,
-    poolShare: (tag) => (distinct.length > 0 ? (support.get(tag) ?? 0) / distinct.length : 0),
+    poolShare: (tag) => (evidence.length > 0 ? (support.get(tag) ?? 0) / evidence.length : 0),
     poolPlace: place,
     poolSources: spread ? (tag) => signatures.get(tag)?.size ?? 0 : undefined,
-    looksLikeName: nameDetector({ posts: distinct, overrides: ctx.overrides }),
+    looksLikeName: nameDetector({ posts: evidence, overrides: ctx.overrides }),
   }
 
   const good: Scene[] = []
   for (const post of distinct) {
     const scene = extractScene(post, sceneCtx)
+    const counted = !isInventedPost(post)
     if (!scene) {
-      stats.unextractable++
+      if (counted) stats.unextractable++
     } else if (scene.units.skeleton.length === 0 || stateTagCount(scene) < minState) {
-      stats.belowQuality++
+      if (counted) stats.belowQuality++
     } else {
       const tags = sceneTags(scene)
       scene.typicality = tags.length ? tags.filter((tag) => (support.get(tag) ?? 0) >= MIN_TYPICAL_SUPPORT).length / tags.length : 1
@@ -180,7 +193,8 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
   const scenes = good.filter(
     (scene) => !!composition && !!scene.people && scene.people.girls === composition.girls && scene.people.boys === composition.boys
   )
-  stats.incompatible = good.length - scenes.length
+  stats.incompatible = good.filter((scene) => !scene.invented).length - scenes.filter((scene) => !scene.invented).length
+  stats.invented = scenes.filter((scene) => scene.invented).length
 
   const situations = groupSituations(scenes, ctx.overrides)
   stats.scenes = scenes.length

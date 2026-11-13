@@ -278,6 +278,8 @@ export interface UsePackModeResult {
 
   /** tagOverrides merged with the per-tag slots fetched for the current pool. */
   effectiveTagOverrides: Record<string, string>
+  /** Fetches the slots of tags effectiveTagOverrides doesn't cover yet (tags no pool post had). True if any arrived. */
+  enrichTagSlots: (tags: string[]) => Promise<boolean>
 
   /** Classified tags of the base card (5 buckets), normalized for display. */
   baseClassified: Record<TagCategory, string[]>
@@ -2353,5 +2355,6 @@ export function usePackMode(
     addCastMember,
     removeCastMember,
     setCastRole,
+    enrichTagSlots: enrichOverrides,
   }
 }

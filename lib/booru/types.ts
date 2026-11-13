@@ -14,6 +14,8 @@ export interface BooruPost {
   width?: number
   height?: number
   _provider?: string // Added for internal use in Favorites UI
+  /** Pack Mode: a scene the scene model wrote, not a real post (negative id, no image). See lib/pack/scene/invented.ts. */
+  _invented?: boolean
   ai_metadata?: {
     prompt?: string
     negative_prompt?: string
