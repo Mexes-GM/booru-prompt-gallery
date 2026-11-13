@@ -111,9 +111,11 @@ export function emptyBrief(): PackBrief {
 
 /**
  * Puts a typed tag where it belongs. `into` is the slot of the brief the user typed it
- * in: it settles requests and unknown tags, but a character, a look tag or a count
- * goes where it goes whatever the user typed it into. Counts are ignored here: the
- * number of people is decided elsewhere.
+ * in, and it only matters for a tag the taxonomy doesn't know: that one stays in the
+ * slot as a request. A known request keeps its own role (the role decides how the
+ * engine treats it: a pose picks scenes, a place is imposed), and a character, a look
+ * tag or a count goes where it goes. Counts are ignored here: the number of people
+ * is decided elsewhere.
  */
 export function addTag(brief: PackBrief, tag: string, overrides: Record<string, string>, into?: RequestRole): PackBrief {
   const typed = tag.trim()
@@ -129,7 +131,9 @@ export function addTag(brief: PackBrief, tag: string, overrides: Record<string, 
   if (route.kind === 'character') {
     if (next.who.some((c) => c.tag !== null && same(c.tag, name))) return next
     const [first] = next.who
-    if (next.who.length === 1 && first.tag === null && first.addedLook.length === 0 && first.removedLook.length === 0) {
+    // The first named character takes over the unnamed one with its look and role: a pasted
+    // single-character prompt must not become a group.
+    if (next.who.length === 1 && first.tag === null) {
       next.who = [{ ...first, tag: name }]
     } else if (next.who.length < MAX_CAST) {
       next.who.push({ tag: name, addedLook: [], removedLook: [] })
@@ -144,7 +148,7 @@ export function addTag(brief: PackBrief, tag: string, overrides: Record<string, 
     return next
   }
 
-  const role: RequestRole | null = into ?? (route.kind === 'request' ? route.role : null)
+  const role: RequestRole | null = route.kind === 'request' ? route.role : into ?? null
   if (role) {
     if (!next.requests.some((r) => same(r.tag, name))) next.requests.push({ tag: name, role })
   } else if (!has(next.literal, name)) {
