@@ -152,6 +152,7 @@ import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
 import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
+import { keptPackMessage } from "@/lib/pack/kept-pack"
 import { enrichPoolPosts, prefetchPoolDatasetTags } from "@/lib/pack/dataset-tags"
 import { datasetTagsVersion } from "@/lib/dataset-tags-cache"
 import { searchedCharacterIn, searchedCharacterOf } from "@/lib/pack/character-focus"
@@ -171,7 +172,7 @@ const PackEntryModal = dynamic(() => loadPackEntryModal().then(m => m.PackEntryM
 const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSourceModal), { ssr: false, loading: () => null })
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
-import { FileCheck2, PenLine, SlidersHorizontal } from "lucide-react"
+import { FileCheck2, Package, PenLine, SlidersHorizontal } from "lucide-react"
 import { ControlSection } from "@/components/prompt-gallery/control-section"
 import { ProviderSelect } from "@/components/prompt-gallery/provider-select"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
@@ -907,6 +908,33 @@ export function PromptGallery() {
   // Only seeds pools ONCE per base — re-running it on every incidental result
   // update would fight the user's own edits.
   const hasSeededRef = useRef(false)
+
+  // Closing the builder puts the pack aside instead of dropping it: base,
+  // characters, settings and prompts all live up here (usePackMode,
+  // usePackScenes), so they stay as they are while the gallery is in use.
+  // A new base, or Discard, starts over; leaving Pack Mode forgets the flag.
+  const [packBuilderHidden, setPackBuilderHidden] = useState(false)
+  if (packBuilderHidden && !packModeIsPackMode) setPackBuilderHidden(false)
+  const handleHidePackBuilder = useCallback(() => setPackBuilderHidden(true), [])
+  const handleShowPackBuilder = useCallback(() => setPackBuilderHidden(false), [])
+  const packModeSetBasePromptForDiscard = packMode.setBasePrompt
+  /** Drops the base (and with it the pack); Pack Mode stays on. `reopenEntry` offers every way to start another. */
+  const discardPackBase = useCallback((reopenEntry: boolean) => {
+    packModeSetBaseCard(null)
+    packModeSetBasePromptForDiscard('')
+    setPackBuilderHidden(false)
+    // Keep the fetched posts: the next base on this source reuses them.
+    hasSeededRef.current = false
+    if (reopenEntry) {
+      setPackEntryStartInPrompt(false)
+      setPackEntryOpen(true)
+    }
+  }, [packModeSetBaseCard, packModeSetBasePromptForDiscard])
+  // "Discard" on the kept-pack bar: back to the gallery, as it was.
+  const handleDiscardKeptPack = useCallback(() => discardPackBase(false), [discardPackBase])
+  // "Change base" inside the builder: a character base came from the entry dialog, not from a card: offer it again.
+  const packModeBaseFromCharacter = packMode.baseFromCharacter
+  const handleClearPackBase = useCallback(() => discardPackBase(packModeBaseFromCharacter), [discardPackBase, packModeBaseFromCharacter])
   // Sources that already fetched fresh posts this session: picking another
   // base on the same source reuses what's in memory instead of refetching.
   const enrichedSourcesRef = useRef<Set<string>>(new Set())
@@ -1048,7 +1076,13 @@ export function PromptGallery() {
   // default source; the header chip changes it. Editing an existing prompt
   // base keeps the source as it is.
   const packModeSetFocusCharacter = packMode.setFocusCharacter
+  const packCurrentBaseId = packMode.baseCard?.id ?? null
   const handleSetAsPackBase = useCallback((post: BooruPost) => {
+    // The base of the pack put aside: bring the pack back as it was.
+    if (packBuilderHidden && packCurrentBaseId === post.id) {
+      setPackBuilderHidden(false)
+      return
+    }
     const source = defaultPackSource()
     packModeSetBaseCard(post)
     // A multi-character post keeps the character the search is about, if any;
@@ -1057,7 +1091,8 @@ export function PromptGallery() {
     applyPackSource(source)
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
-  }, [packModeSetBaseCard, packModeSetFocusCharacter, applyPackSource, defaultPackSource])
+    setPackBuilderHidden(false)
+  }, [packModeSetBaseCard, packModeSetFocusCharacter, applyPackSource, defaultPackSource, packBuilderHidden, packCurrentBaseId])
 
   const packModeSetBasePrompt = packMode.setBasePrompt
   const handleSubmitPackPrompt = useCallback((text: string) => {
@@ -1066,6 +1101,7 @@ export function PromptGallery() {
     else applyPackSource(defaultPackSource())
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
+    setPackBuilderHidden(false)
   }, [packModeSetBasePrompt, rebasePackSeeding, applyPackSource, defaultPackSource, packEntryStartInPrompt])
 
   // "From my search": the one character the gallery's search is about, from
@@ -1082,6 +1118,7 @@ export function PromptGallery() {
     applyPackSource(defaultPackSource())
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
+    setPackBuilderHidden(false)
   }, [packSearchCharacter, packModeSetBaseFromCharacter, applyPackSource, defaultPackSource])
 
   // "From a character": no search needed, the character's own posts are the source.
@@ -1096,6 +1133,7 @@ export function PromptGallery() {
     })
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
+    setPackBuilderHidden(false)
   }, [packModeSetBaseFromCharacter, applyPackSource, packSourceAnswers, search.booruProvider])
 
   const handlePackEntryCancel = useCallback(() => {
@@ -2504,8 +2542,26 @@ export function PromptGallery() {
         postCount={packSeedSnapshot?.postCount ?? 0}
         ratingBreakdown={packSeedSnapshot?.ratings}
       />}
+      {packModeIsPackMode && packBuilderHidden && packMode.hasBase && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-lg rounded-2xl border shadow-2xl bg-background/95 backdrop-blur-xl p-4 flex items-center gap-3"
+        >
+          <Package className="w-5 h-5 text-mode-pack-text flex-shrink-0" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground min-w-0 flex-1">
+            {keptPackMessage(packUsesScenes ? packScenes.prompts.length : packMode.generatedPrompts.length)}
+          </p>
+          <Button variant="ghost" size="sm" onClick={handleDiscardKeptPack} className="h-9 pointer-coarse:h-11 flex-shrink-0 text-muted-foreground hover:text-foreground">
+            Discard
+          </Button>
+          <Button size="sm" onClick={handleShowPackBuilder} className="h-9 pointer-coarse:h-11 flex-shrink-0 bg-mode-pack hover:bg-mode-pack/90 text-mode-pack-foreground">
+            Open pack
+          </Button>
+        </div>
+      )}
       {packBuilderMounted && <PackBuilderStickyFooter
-        isOpen={packModeIsPackMode}
+        isOpen={packModeIsPackMode && !packBuilderHidden}
+        onHide={handleHidePackBuilder}
         baseCard={packMode.baseCard}
         basePrompt={packMode.basePrompt}
         onEditBasePrompt={handleEditBasePrompt}
@@ -2564,18 +2620,7 @@ export function PromptGallery() {
         setPromptCount={packMode.setPromptCount}
         onRegenerate={handlePackRegenerate}
         onRerollPrompt={packUsesScenes ? packScenes.reroll : packMode.rerollPrompt}
-        onClearBase={() => {
-          // A character base came from the entry dialog, not from a card: offer it again.
-          const fromCharacter = packMode.baseFromCharacter
-          packMode.setBaseCard(null)
-          packMode.setBasePrompt('')
-          // Keep the fetched posts: the next base on this source reuses them.
-          hasSeededRef.current = false
-          if (fromCharacter) {
-            setPackEntryStartInPrompt(false)
-            setPackEntryOpen(true)
-          }
-        }}
+        onClearBase={handleClearPackBase}
         baseFromCharacter={packMode.baseFromCharacter}
         baseLook={packMode.baseLook}
         onSetBaseLook={packMode.setBaseLook}
@@ -2586,6 +2631,7 @@ export function PromptGallery() {
           packMode.setBasePrompt('')
           resetPackSeeding()
           setPackFetcherActive(false)
+          setPackBuilderHidden(false)
         }}
         savedPostCount={packSeedSnapshot?.savedCount ?? 0}
         onClearSavedPosts={handleClearSavedPackPosts}

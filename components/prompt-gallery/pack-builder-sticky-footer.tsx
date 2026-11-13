@@ -125,6 +125,8 @@ export interface PackBuilderStickyFooterProps {
     /** Re-rolls one generated prompt in place (§6). Returns false if no candidate was found. */
     onRerollPrompt: (index: number) => boolean
     onClearBase: () => void
+    /** Puts the pack aside without losing it (closing the builder). Without it, closing drops the base. */
+    onHide?: () => void
     /** The base is a character chosen by name, with no card. */
     baseFromCharacter?: boolean
     /** Where a card base's look comes from (Typical or This card), offered when the typical look is known. */
@@ -730,6 +732,7 @@ const PackBuilderStickyFooterComponent = ({
     onRegenerate,
     onRerollPrompt,
     onClearBase,
+    onHide,
     baseFromCharacter = false,
     baseLook = 'typical',
     onSetBaseLook,
@@ -943,12 +946,15 @@ const PackBuilderStickyFooterComponent = ({
         onOpenSource()
     }, [onOpenSource])
 
-    // Closing the builder — the X, Escape or a click outside — always does the
-    // same thing: it drops the base and goes back to the gallery to pick
-    // another one. Pack Mode itself stays on; leaving it is in the ⋯ menu.
+    // Closing the builder — the X, Escape or a click outside — puts the pack
+    // aside, whole (base, characters, settings, prompts), so the gallery can be
+    // used and the pack picked up again. Without `onHide` it drops the base.
+    // "Change base" drops it on purpose; leaving Pack Mode is in the ⋯ menu.
     const handleDialogOpenChange = useCallback((open: boolean) => {
-        if (!open) onClearBase()
-    }, [onClearBase])
+        if (open) return
+        if (onHide) onHide()
+        else onClearBase()
+    }, [onHide, onClearBase])
 
     const headerButtonClass = "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 flex-shrink-0 text-muted-foreground hover:text-foreground"
 
@@ -1084,12 +1090,12 @@ const PackBuilderStickyFooterComponent = ({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <DialogClose asChild>
-                                    <Button variant="ghost" size="icon" className={headerButtonClass} aria-label="Close builder and pick another base">
+                                    <Button variant="ghost" size="icon" className={headerButtonClass} aria-label={onHide ? "Close builder and keep the pack" : "Close builder and pick another base"}>
                                         <X className="w-4 h-4" />
                                     </Button>
                                 </DialogClose>
                             </TooltipTrigger>
-                            <TooltipContent>Close and pick another base (Esc)</TooltipContent>
+                            <TooltipContent>{onHide ? "Close and keep the pack (Esc)" : "Close and pick another base (Esc)"}</TooltipContent>
                         </Tooltip>
 
                         {/* Collection progress — determinate while chasing a target, sweeping while connecting. */}
