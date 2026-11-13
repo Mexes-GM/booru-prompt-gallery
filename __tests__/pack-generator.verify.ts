@@ -737,5 +737,46 @@ const POSTS: BooruPost[] = [
   assert(!checkSlotConstraints("red dress", ["skirt"], overrides), "derived outfit rejected against a bottom")
 }
 
+// ── 31) Full sets keep all their tags: slot limits don't apply to them ──
+{
+  const overrides: Record<string, string> = {
+    anal: "pose:physiological",
+    "double penetration": "pose:physiological",
+    "group sex": "pose:physiological",
+    sex: "pose:physiological",
+    fellatio: "pose:interaction",
+    blush: "pose:expression",
+    ahegao: "pose:expression",
+    beach: "scenery:setting",
+    forest: "scenery:setting",
+  }
+  const set = "ahegao, anal, blush, double penetration, fellatio, group sex"
+  const [bundled] = generatePackPrompts({ lockedTags: ["1girl"], axes: { pose: [set] }, count: 1, rng: createSeededRng(31), tagOverrides: overrides })
+  for (const tag of ["anal", "double penetration", "group sex", "ahegao", "blush", "fellatio"]) {
+    assert(!!bundled?.prompt.includes(tag), `full set keeps '${tag}' (got '${bundled?.prompt}')`)
+  }
+  // The base's own sex tags ("Always add") don't take the set's out either.
+  const [withBase] = generatePackPrompts({ lockedTags: ["1girl", "2boys", "sex", "double penetration"], axes: { pose: [set] }, count: 1, rng: createSeededRng(31), tagOverrides: overrides })
+  for (const tag of ["anal", "group sex", "ahegao", "fellatio"]) {
+    assert(!!withBase?.prompt.includes(tag), `a base with "sex" keeps the set's '${tag}' (got '${withBase?.prompt}')`)
+  }
+  // Two sets in one prompt keep their tags too, the one they share included.
+  const [two] = generatePackPrompts({
+    lockedTags: ["1girl"], axes: { pose: ["anal, blush, group sex", "ahegao, blush, fellatio"] }, axisMinCounts: { pose: 2 },
+    count: 1, rng: createSeededRng(31), tagOverrides: overrides,
+  })
+  for (const tag of ["anal", "group sex", "ahegao", "fellatio", "blush"]) {
+    assert(!!two?.prompt.includes(tag), `two sets keep '${tag}' (got '${two?.prompt}')`)
+  }
+
+  // Loose values still respect the per-slot limit.
+  const loose = generatePackPrompts({
+    lockedTags: ["1girl"], axes: { scenery: ["beach", "forest"] }, axisMinCounts: { scenery: 2 },
+    count: 1, rng: createSeededRng(31), tagOverrides: overrides,
+  })
+  assert(loose.length === 1 && !(loose[0].prompt.includes("beach") && loose[0].prompt.includes("forest")),
+    `two loose settings still collapse to one (got '${loose[0]?.prompt}')`)
+}
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

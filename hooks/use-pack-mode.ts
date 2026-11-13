@@ -80,13 +80,17 @@ import {
 import {
   characterSearchTags,
   pinnedTagsFor,
+  lookYieldingTo,
+  poolSoloShare,
   profileIdentity,
   splitSignature,
+  subjectForPool,
   subjectTags,
   typicalLook,
   typicalSubject,
   type CharacterLook,
 } from '@/lib/pack/character-identity'
+import { loadPackVocabulary, loadedTagBaseline, tagBaselineOf } from '@/lib/pack/pack-vocabulary'
 
 const DEFAULT_PROMPT_COUNT = 10
 /** Upper bound for the "Min tags per prompt" control. */
@@ -646,6 +650,20 @@ export function usePackMode(
   // lib/pack/prompt-resolution.ts). Manual values have none.
   const [axisAspects, setAxisAspects] = useState<Partial<Record<TagCategory, Record<string, number>>>>({})
   const [poolAspect, setPoolAspect] = useState<number | null>(null)
+  // Share of the pool's posts tagged "solo": whether the character's base says "solo" (subjectForPool).
+  const [soloShareOfPool, setSoloShareOfPool] = useState<number | null>(null)
+  // How common each tag is anywhere: what tells a character's own traits from everyone's (identityTags).
+  const [tagBaseline, setTagBaseline] = useState(loadedTagBaseline)
+  useEffect(() => {
+    if (tagBaseline) return
+    let cancelled = false
+    void loadPackVocabulary().then((vocabulary) => {
+      if (!cancelled && vocabulary) setTagBaseline(tagBaselineOf(vocabulary))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [tagBaseline])
   // Values the user typed in by hand via the axis editor's "Add" input —
   // these ARE persisted, since they don't come from sampling and represent
   // an explicit, durable preference (e.g. always wanting "beach" in the
@@ -912,11 +930,11 @@ export function usePackMode(
   const typical = focusCharacter && !hasMultipleCharacters ? typicalLooks[focusCharacter] : undefined
   const typicalLookAvailable = !!baseCard && !!typical?.look.length
   // The look leaves out who is in the picture ("1girl"): a card says it, a named character's posts do.
-  const identity = useMemo<{ look: string[]; subject: string[] } | null>(() => {
+  const characterIdentity = useMemo<{ look: string[]; subject: string[] } | null>(() => {
     if (!focusCharacter) return null
     if (baseFromCharacter) {
       if (typical?.look.length) return typical
-      const profileLook = profileTags.length > 0 ? profileIdentity(focusCharacter, traitData.profiles, effectiveOverrides, traitData.aliases) : []
+      const profileLook = profileTags.length > 0 ? profileIdentity(focusCharacter, traitData.profiles, effectiveOverrides, traitData.aliases, tagBaseline) : []
       // In a cast the profile would lend them their partner's traits (it counts every post
       // they are in): only the name while their own solo posts load, then the cleaned profile.
       if (castExtras.length === 0) return { look: profileLook, subject: typical?.subject ?? [] }
@@ -927,7 +945,16 @@ export function usePackMode(
     if (!baseCard || baseLook !== 'typical' || !typical?.look.length) return null
     const subject = subjectTags(ownBaseClassified.appearance ?? [], new Set(characterTags), effectiveOverrides)
     return { look: typical.look, subject }
-  }, [focusCharacter, baseFromCharacter, baseCard, baseLook, typical, profileTags, castExtras, soloLookStatus, typicalLooks, cleanCastProfile, traitData, effectiveOverrides, ownBaseClassified, characterTags])
+  }, [focusCharacter, baseFromCharacter, baseCard, baseLook, typical, profileTags, castExtras, soloLookStatus, typicalLooks, cleanCastProfile, traitData, effectiveOverrides, ownBaseClassified, characterTags, tagBaseline])
+  // "solo" follows the pool, not the character: a pool of group scenes keeps it out of the base.
+  // A trait the user wrote in "Always add" ("gigantic breasts") replaces the character's own.
+  const identity = useMemo(
+    () => characterIdentity && {
+      look: lookYieldingTo(characterIdentity.look, splitCommaSeparatedTags(customBaseText)),
+      subject: subjectForPool(characterIdentity.subject, soloShareOfPool),
+    },
+    [characterIdentity, soloShareOfPool, customBaseText]
+  )
   // Signature accessories (headphones, glasses…) belong in Clothing, where they stay while it varies.
   const identityParts = useMemo(
     () => splitSignature(identity?.look ?? [], effectiveOverrides),
@@ -1142,9 +1169,9 @@ export function usePackMode(
       void fetchOnce()
         .catch(() => new Promise<BooruPost[]>((resolve, reject) => setTimeout(() => fetchOnce().then(resolve, reject), SOLO_RETRY_MS)))
         .then(async (posts) => {
-          await enrichOverrides(collectPostTags(posts))
+          const [, vocabulary] = await Promise.all([enrichOverrides(collectPostTags(posts)), loadPackVocabulary()])
           const overrides = currentOverrides()
-          const look = typicalLook(posts, character, overrides)
+          const look = typicalLook(posts, character, overrides, tagBaselineOf(vocabulary))
           if (look?.length) {
             const subject = typicalSubject(posts, character, overrides) ?? []
             setTypicalLooks((prev) => ({ ...prev, [character]: { look, subject } }))
@@ -1181,7 +1208,7 @@ export function usePackMode(
       const look = lookSource === 'solo'
         ? typicalOfThem?.look
         : lookSource === 'profile'
-          ? cleanCastProfile(character, profileIdentity(character, traitData.profiles, effectiveOverrides, traitData.aliases), otherLooks)
+          ? cleanCastProfile(character, profileIdentity(character, traitData.profiles, effectiveOverrides, traitData.aliases, tagBaseline), otherLooks)
           : undefined
       return {
         character,
@@ -1191,7 +1218,7 @@ export function usePackMode(
       }
     })
     return [primary, ...others]
-  }, [focusCharacter, sceneIdentityCandidates, identity, castRoles, profileOf, baseFromCharacter, castExtras, typicalLooks, soloLookStatus, cleanCastProfile, traitData, effectiveOverrides])
+  }, [focusCharacter, sceneIdentityCandidates, identity, castRoles, profileOf, baseFromCharacter, castExtras, typicalLooks, soloLookStatus, cleanCastProfile, traitData, effectiveOverrides, tagBaseline])
 
   const addCastMember = useCallback((raw: string): 'added' | 'duplicate' | 'full' | 'not-a-character-base' => {
     const character = normalizeTagForPack(raw)
@@ -1602,6 +1629,7 @@ export function usePackMode(
         setAxisAspects((prev) => (replaceAll ? aspects : { ...prev, ...aspects }))
         const logs = posts.map(postAspectLog).filter((l): l is number => l !== null)
         if (logs.length > 0) setPoolAspect(medianAspect(logs))
+        setSoloShareOfPool(poolSoloShare(posts))
       }
       apply()
       void enrichOverrides(collectPostTags(posts)).then((changed) => {
@@ -1706,12 +1734,16 @@ export function usePackMode(
       }
       // The base character's typical look, from the source's posts: what a
       // one-character pack keeps for Character.
-      const looks: Record<string, { look: string[]; subject: string[] }> = {}
-      ;(baseCard ? characterTags : basePromptTags).forEach((c) => {
-        const look = typicalLook(posts, c, currentOverrides())
-        if (look?.length) looks[c] = { look, subject: typicalSubject(posts, c, currentOverrides()) ?? [] }
+      const lookOwners = baseCard ? characterTags : basePromptTags
+      void loadPackVocabulary().then((vocabulary) => {
+        const baseline = tagBaselineOf(vocabulary)
+        const looks: Record<string, { look: string[]; subject: string[] }> = {}
+        lookOwners.forEach((c) => {
+          const look = typicalLook(posts, c, currentOverrides(), baseline)
+          if (look?.length) looks[c] = { look, subject: typicalSubject(posts, c, currentOverrides()) ?? [] }
+        })
+        if (Object.keys(looks).length > 0) setTypicalLooks((prev) => ({ ...prev, ...looks }))
       })
-      if (Object.keys(looks).length > 0) setTypicalLooks((prev) => ({ ...prev, ...looks }))
     },
     [resample, axisTagModes, baseCard, basePromptTags, baseFromCharacter, currentOverrides, characterTags]
   )
