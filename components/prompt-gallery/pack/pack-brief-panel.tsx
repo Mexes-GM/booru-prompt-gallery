@@ -74,7 +74,7 @@ export interface PackBriefPanelProps {
    * Wearing goes to Who). Give a new `key` each time: the row lights up once and
    * screen readers hear "Added to Who".
    */
-  routed?: { slot: SlotId; key: number } | null
+  routed?: { slot: SlotId | "people"; key: number } | null
   /** Focus the card's first control on mount (opening it from the summary). */
   autoFocus?: boolean
 
@@ -128,7 +128,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     // Only when the card opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const flashFor = (slot: SlotId) => (routed?.slot === slot ? routed.key : undefined)
+  const flashFor = (slot: SlotId | "people") => (routed?.slot === slot ? routed.key : undefined)
 
   // Suggestions belong to the field that asked for them.
   const [querySlot, setQuerySlot] = useState<SlotId | null>(null)
@@ -265,12 +265,12 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
 
         {(people || changes) && (
           <div className="mt-1 border-t border-border/60 pt-1">
-            {people && <PeopleLine {...people} />}
+            {people && <PeopleLine {...people} flashKey={flashFor("people")} />}
             {changes && <ChangesSelect value={changes.value} onChange={changes.onChange} unavailable={changes.unavailable} />}
           </div>
         )}
         <span className="sr-only" role="status" aria-live="polite">
-          {routed ? <span key={routed.key}>Added to {SLOTS[routed.slot].label}</span> : null}
+          {routed ? <span key={routed.key}>Added to {routed.slot === "people" ? "People" : SLOTS[routed.slot].label}</span> : null}
         </span>
       </section>
     </TooltipProvider>

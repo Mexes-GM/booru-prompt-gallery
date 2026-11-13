@@ -6,10 +6,10 @@
  * changes, not on every count while scenes are still coming in.
  */
 import { memo } from "react"
-import { AlertTriangle, Check, Info, Repeat2, RotateCcw, Search, Shuffle } from "lucide-react"
+import { AlertTriangle, Check, Info, Pause, Repeat2, RotateCcw, Search, Shuffle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { fitText, type FitState } from "./pack-text"
+import { BUILDER_TEXT, fitText, type FitState } from "./pack-text"
 
 const TONE: Record<FitState["kind"], { icon: typeof Check; className: string }> = {
   finding: { icon: Search, className: "text-muted-foreground" },
@@ -23,6 +23,8 @@ const TONE: Record<FitState["kind"], { icon: typeof Check; className: string }> 
   "needs-company": { icon: AlertTriangle, className: "text-warning-text" },
   dropped: { icon: Info, className: "text-info-text" },
   stale: { icon: RotateCcw, className: "text-muted-foreground" },
+  "people-missing": { icon: AlertTriangle, className: "text-warning-text" },
+  paused: { icon: Pause, className: "text-muted-foreground" },
 }
 
 export interface FitLineProps {
@@ -45,6 +47,18 @@ export const FitLine = memo(function FitLine({ state, hint, className }: FitLine
       {state.kind === "few-rated" && (
         <Button type="button" variant="outline" size="sm" onClick={state.onInclude} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
           Include sensitive
+        </Button>
+      )}
+      {state.kind === "paused" && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={state.onLoadMore}
+          disabled={state.waiting}
+          className="h-7 px-2.5 text-xs pointer-coarse:h-11"
+        >
+          {BUILDER_TEXT.findMore}
         </Button>
       )}
       <span className="sr-only" role="status" aria-live="polite">

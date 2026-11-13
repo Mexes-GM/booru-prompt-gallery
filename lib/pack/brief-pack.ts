@@ -8,7 +8,7 @@ import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { toSceneRequests, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
-import type { Permanence } from './scene/permanence'
+import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
 import {
   DEFAULT_SCENE_SETTINGS,
@@ -262,6 +262,10 @@ export type FitNote =
   | { kind: 'dropped'; tag: string; reason: 'never' | 'composition' }
   /** The brief changed after the prompts were made. */
   | { kind: 'stale' }
+  /** The people the user asked for ("2girls") aren't in any scene; `using` are. */
+  | { kind: 'people-missing'; asked: PackPeople; using: PackPeople | null; cast: PackPeople }
+  /** Fetching stopped at the pace limit while the source still has posts; one more page can be asked for. */
+  | { kind: 'paused' }
 
 export const poseWords = (poses: number) => (poses === 1 ? 'this pose' : 'these poses')
 
@@ -275,6 +279,8 @@ export interface PredictInput {
   finding: boolean
   /** Sensitive posts can still be added (a safe pack that leaves them out). */
   canOfferSensitive: boolean
+  /** Fetching stopped at the pace limit and the source has more: the line offers another page. */
+  paused?: boolean
 }
 
 /**
@@ -283,7 +289,12 @@ export interface PredictInput {
  * the pose once, then again with other parts (REUSES_PER_SCENE), then the pose imposed
  * on the scenes that can take it; the rest is missing.
  */
-export function predictFit({ candidates, count, poses, finding, canOfferSensitive }: PredictInput): FitNote[] {
+export function predictFit(input: PredictInput): FitNote[] {
+  const notes = predictNotes(input)
+  return input.paused && notes.some((n) => n.kind !== 'fit' && n.kind !== 'finding') ? [...notes, { kind: 'paused' }] : notes
+}
+
+function predictNotes({ candidates, count, poses, finding, canOfferSensitive }: PredictInput): FitNote[] {
   if (!candidates) return [{ kind: 'finding', found: 0 }]
   const total = candidates.length
   if (poses.length === 0) {
@@ -315,10 +326,17 @@ export interface IssuesInput {
   /** Scenes that fit (for the line when nothing went wrong). */
   scenes: number | null
   canOfferSensitive: boolean
+  /** As in PredictInput. */
+  paused?: boolean
 }
 
 /** What the fit line says after generating: one sentence for every issue the engine reported, none dropped. */
-export function issuesFit({ issues, count, made, cast, scenes, canOfferSensitive }: IssuesInput): FitNote[] {
+export function issuesFit(input: IssuesInput): FitNote[] {
+  const notes = issueNotes(input)
+  return input.paused && notes.some((n) => n.kind !== 'fit') ? [...notes, { kind: 'paused' }] : notes
+}
+
+function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive }: IssuesInput): FitNote[] {
   const order: Record<ScenePackIssue['kind'], number> = {
     'few-scenes': 0, 'composition-without-pose': 1, 'scenes-reused': 2, 'pose-imposed': 3, 'needs-company': 4, 'request-dropped': 5,
   }
@@ -350,17 +368,86 @@ export interface PeopleLineInput {
   compositions: readonly PoseComposition[]
   /** The composition the pack uses. */
   current: PackPeople | null
+  /** The people the user set (brief.people), e.g. by typing "2girls". */
+  picked?: PackPeople | null
+  /** Every composition of the pool (with room for the cast): the options when no pose asks for company. */
+  available?: readonly PoseComposition[]
 }
 
-/** The People line: shown only when a requested pose needs more than one person and some scene has it. */
-export function peopleLineState({ poses, needsCompany, compositions, current }: PeopleLineInput): {
+const samePeople = (a: PackPeople | null | undefined, b: PackPeople | null | undefined) =>
+  !!a && !!b && a.girls === b.girls && a.boys === b.boys
+
+/**
+ * The People line: shown when a requested pose needs more than one person and some
+ * scene has it, or when the user set who is in the picture (then a composition the
+ * pool lacks is listed too, with no scenes).
+ */
+export function peopleLineState({ poses, needsCompany, compositions, current, picked, available = [] }: PeopleLineInput): {
   options: PoseComposition[]
   value: PackPeople | null
-  poseNeeds: number
+  poseNeeds?: number
 } | null {
-  if (!poses.some(needsCompany) || compositions.length === 0) return null
-  const sizes = compositions.map((c) => c.people.girls + c.people.boys).filter((n) => n >= 2)
-  return { options: [...compositions], value: current, poseNeeds: sizes.length > 0 ? Math.min(...sizes) : 2 }
+  if (poses.some(needsCompany) && compositions.length > 0) {
+    const sizes = compositions.map((c) => c.people.girls + c.people.boys).filter((n) => n >= 2)
+    return { options: [...compositions], value: current, poseNeeds: sizes.length > 0 ? Math.min(...sizes) : 2 }
+  }
+  if (!picked) return null
+  const options = [...available]
+  if (!options.some((o) => samePeople(o.people, picked))) options.push({ people: { ...picked }, scenes: 0 })
+  return { options, value: current }
+}
+
+/** The fit line's word on the people the user set, when the pool has no scene of them. */
+export function pickedPeopleNote({ picked, available, using, cast }: {
+  picked: PackPeople | null
+  /** Every composition of the pool; null while it isn't built. */
+  available: readonly { people: PackPeople }[] | null
+  using: PackPeople | null
+  cast: PackPeople
+}): FitNote | null {
+  if (!picked || !available || available.some((c) => samePeople(c.people, picked))) return null
+  return { kind: 'people-missing', asked: { ...picked }, using, cast }
+}
+
+/**
+ * The people a typed count asks for ("2girls", "1boy", "solo"), given who the
+ * characters are. A gender the tags don't mention keeps the cast's own count, so
+ * "1boy" next to one girl is a girl and a boy; never fewer than the cast. Null when
+ * no tag is a count.
+ */
+export function peopleFromCountTags(tags: readonly string[], cast: PackPeople): PackPeople | null {
+  let girls: number | null = null
+  let boys: number | null = null
+  let solo = false
+  for (const raw of tags) {
+    const tag = normalizeTagForPack(raw)
+    if (tag === 'solo') { solo = true; continue }
+    const match = COUNT_TAG_RE.exec(tag)
+    if (!match) continue
+    const n = Number(match[1])
+    if (match[3].startsWith('girl')) girls = (girls ?? 0) + n
+    else if (match[3].startsWith('boy')) boys = (boys ?? 0) + n
+  }
+  if (girls === null && boys === null) return solo ? { ...cast } : null
+  return { girls: Math.max(girls ?? cast.girls, cast.girls), boys: Math.max(boys ?? cast.boys, cast.boys) }
+}
+
+// ── Suggestions ───────────────────────────────────────────────────────────────
+
+/** A tag the lookup returned (lib/supabase/client-queries.ts's TagResult). */
+export interface FoundTag { name: string; postCount: number; category: number }
+
+/** Danbooru tag categories: 0 general, 4 character. */
+const GENERAL = 0
+const CHARACTER = 4
+
+/** What a slot of the brief offers while typing: characters in Who, general tags elsewhere. */
+export function slotSuggestions(found: readonly FoundTag[], slot: 'who' | 'other', limit = 8): Array<{ name: string; count: number; kind?: string }> {
+  const wanted = slot === 'who' ? CHARACTER : GENERAL
+  return found
+    .filter((t) => t.category === wanted)
+    .slice(0, limit)
+    .map((t) => ({ name: t.name, count: t.postCount, ...(slot === 'who' ? { kind: 'Character' } : {}) }))
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────

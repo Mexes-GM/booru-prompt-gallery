@@ -36,6 +36,7 @@ export const BUILDER_TEXT = {
   retry: "Try again",
   sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
+  findMore: "Find more scenes",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
 } as const
 
@@ -106,9 +107,11 @@ export function outfitFromKey(key: string): OutfitSource {
  * sensitive pictures carries what accepting it does.
  */
 export type FitState =
-  | Exclude<FitNote, { kind: "few-rated" }>
+  | Exclude<FitNote, { kind: "few-rated" | "paused" }>
   /** Few scenes at the safe content rating; the user can allow the next one. */
   | { kind: "few-rated"; onInclude: () => void }
+  /** Fetching stopped at the pace limit; `waiting` while it cools down. */
+  | { kind: "paused"; onLoadMore: () => void; waiting: boolean }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
@@ -150,6 +153,15 @@ function fitSentence(state: FitState): string {
         : `Left out ${state.tag}: it doesn't match who's in the picture`
     case "stale":
       return "The pack changed. Generate again to update these prompts."
+    case "people-missing": {
+      const asked = companionsLabel(state.asked, state.cast)
+      const instead = state.using ? ` Using “${companionsLabel(state.using, state.cast)}” instead.` : ""
+      return `No scenes for “${asked}”.${instead}`
+    }
+    case "paused":
+      return state.waiting
+        ? "Paused to avoid too many requests. You can search again in a few seconds."
+        : "Paused to avoid too many requests. Search again for more scenes."
   }
 }
 
