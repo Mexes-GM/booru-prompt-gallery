@@ -144,6 +144,9 @@ export const STORAGE_KEYS = {
   // a single config replaces the per-archetype PACK_MODE_CONFIG map above.
   // V1 keys are kept (read-only) so migratePackConfig can still translate them.
   PACK_MODE_CONFIG_V2: 'pack-mode-config-v2',
+  // Pack Mode redesign: the few settings remembered between packs (count, default
+  // "Never" tags, sensitive posts). Everything else belongs to one pack.
+  PACK_PREFERENCES: 'pack-preferences',
   // Last-used "source of variations" answers (rating/solo/tags/provider),
   // reused as the popover's default and to detect first use.
   PACK_SOURCE_ANSWERS: 'pack-source-answers',
@@ -726,6 +729,15 @@ export const userPreferences = {
   setPackModeConfigV2: (config: PackModeConfigV2) =>
     storage.set(STORAGE_KEYS.PACK_MODE_CONFIG_V2, config),
 
+  // Validated on read: a corrupted value reads back as null (see migratePackPreferences).
+  getPackPreferences: (): PackPreferences | null => {
+    const stored = storage.get<unknown>(STORAGE_KEYS.PACK_PREFERENCES, null)
+    return isPackPreferences(stored) ? stored : null
+  },
+
+  setPackPreferences: (prefs: PackPreferences) =>
+    storage.set(STORAGE_KEYS.PACK_PREFERENCES, prefs),
+
   getPackAddResolution: (): boolean =>
     storage.get(STORAGE_KEYS.PACK_ADD_RESOLUTION, false),
 
@@ -811,6 +823,26 @@ export interface PackModeConfigV2 {
   sceneSettings?: ScenePackSettings
   /** Scenes engine: tags left out of every prompt, as typed ("Never include"). */
   neverIncludeText?: string
+}
+
+/** What Pack Mode remembers between sessions. Everything else belongs to one pack. */
+export interface PackPreferences {
+  /** 1 to 100, default 10. */
+  promptCount: number
+  /** Tags every new pack starts with in "Never". */
+  neverDefaults: string[]
+  /** SFW packs also draw from sensitive-rated posts; default false. */
+  includeSensitive: boolean
+}
+
+function isPackPreferences(value: unknown): value is PackPreferences {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Partial<PackPreferences>
+  return (
+    typeof v.promptCount === 'number' && Number.isFinite(v.promptCount) &&
+    Array.isArray(v.neverDefaults) && v.neverDefaults.every((t) => typeof t === 'string') &&
+    typeof v.includeSensitive === 'boolean'
+  )
 }
 
 function isPackModeConfigV2(value: unknown): value is PackModeConfigV2 {

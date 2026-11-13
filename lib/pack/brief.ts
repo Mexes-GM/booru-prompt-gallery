@@ -128,25 +128,9 @@ export function addTag(brief: PackBrief, tag: string, overrides: Record<string, 
   // Asking for a tag undoes a "never" for it.
   next.never = without(next.never, name)
 
-  if (route.kind === 'character') {
-    if (next.who.some((c) => c.tag !== null && same(c.tag, name))) return next
-    const [first] = next.who
-    // The first named character takes over the unnamed one with its look and role: a pasted
-    // single-character prompt must not become a group.
-    if (next.who.length === 1 && first.tag === null) {
-      next.who = [{ ...first, tag: name }]
-    } else if (next.who.length < MAX_CAST) {
-      next.who.push({ tag: name, addedLook: [], removedLook: [] })
-    }
-    return next
-  }
+  if (route.kind === 'character') return addCharacter(next, name)
 
-  if (route.kind === 'look') {
-    const first = next.who[0]
-    first.removedLook = without(first.removedLook, name)
-    if (!has(first.addedLook, name)) first.addedLook.push(name)
-    return next
-  }
+  if (route.kind === 'look') return addLook(next, next.who[0].tag, name)
 
   const role: RequestRole | null = route.kind === 'request' ? route.role : into ?? null
   if (role) {
@@ -154,6 +138,64 @@ export function addTag(brief: PackBrief, tag: string, overrides: Record<string, 
   } else if (!has(next.literal, name)) {
     next.literal.push(typed)
   }
+  return next
+}
+
+/**
+ * Adds a character by name, without asking the taxonomy (a name from a character search
+ * may not be in the overrides yet). It is normalized, never repeated and capped at
+ * MAX_CAST. The first named character takes over the unnamed one with its look and role:
+ * a pasted single-character prompt must not become a group.
+ */
+export function addCharacter(brief: PackBrief, name: string): PackBrief {
+  const tag = normalizeTagForPack(name)
+  if (!tag) return brief
+  const next = cloneBrief(brief)
+  if (next.who.some((c) => c.tag !== null && same(c.tag, tag))) return next
+  const [first] = next.who
+  if (next.who.length === 1 && first.tag === null) {
+    next.who = [{ ...first, tag }]
+  } else if (next.who.length < MAX_CAST) {
+    next.who.push({ tag, addedLook: [], removedLook: [] })
+  }
+  return next
+}
+
+/** The character with this tag (null: the unnamed one), or undefined. */
+const findCharacter = (brief: PackBrief, character: string | null) =>
+  brief.who.find((c) => (character === null ? c.tag === null : c.tag !== null && same(c.tag, character)))
+
+/** Adds a look tag to a character and takes it off that character's removed look. Unknown character: unchanged. */
+export function addLook(brief: PackBrief, character: string | null, tag: string): PackBrief {
+  const name = normalizeTagForPack(tag)
+  if (!name || !findCharacter(brief, character)) return brief
+  const next = cloneBrief(brief)
+  const target = findCharacter(next, character)!
+  target.removedLook = without(target.removedLook, name)
+  if (!has(target.addedLook, name)) target.addedLook.push(name)
+  return next
+}
+
+/**
+ * Takes a look tag off a character. One the user added just goes; otherwise it is one of
+ * the character's usual traits and joins the removed look. Unknown character: unchanged.
+ */
+export function removeLook(brief: PackBrief, character: string | null, tag: string): PackBrief {
+  const name = normalizeTagForPack(tag)
+  if (!name || !findCharacter(brief, character)) return brief
+  const next = cloneBrief(brief)
+  const target = findCharacter(next, character)!
+  if (has(target.addedLook, name)) target.addedLook = without(target.addedLook, name)
+  else if (!has(target.removedLook, name)) target.removedLook.push(name)
+  return next
+}
+
+/** Gives back a usual trait that was taken off a character. Unknown character: unchanged. */
+export function restoreLook(brief: PackBrief, character: string | null, tag: string): PackBrief {
+  if (!findCharacter(brief, character)) return brief
+  const next = cloneBrief(brief)
+  const target = findCharacter(next, character)!
+  target.removedLook = without(target.removedLook, tag)
   return next
 }
 

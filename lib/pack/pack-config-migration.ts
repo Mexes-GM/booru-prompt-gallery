@@ -5,6 +5,9 @@
  * Pure function: no storage reads/writes here, callers pass in what they read.
  */
 import type { PackModeConfig, PackModeConfigByKind, PackModeConfigV2, PackModeKind } from '../storage'
+import type { PackPreferences } from '../storage'
+import { splitCommaSeparatedTags } from '../utils/tag-utils'
+import { normalizeTagForPack } from './pack-generator'
 import { PACK_ARCHETYPES, type PackArchetypeId } from '../tag-taxonomy'
 import { DEFAULT_VARIETY_LEVEL } from './variety-presets'
 import { DEFAULT_SCENE_SETTINGS, type ScenePackSettings } from './scene-pack'
@@ -122,4 +125,41 @@ export function packEngineConfig(config: Pick<PackModeConfigV2, 'engine' | 'scen
       ...savedOutfits(saved.characterOutfits),
     },
   }
+}
+
+export const DEFAULT_PACK_PREFERENCES: Readonly<PackPreferences> = {
+  promptCount: DEFAULT_PROMPT_COUNT,
+  neverDefaults: [],
+  includeSensitive: false,
+}
+
+/** Preferences in range: a whole count from 1 to 100, normalized tags without repeats. */
+export function sanitizePackPreferences(prefs: PackPreferences): PackPreferences {
+  const count = Number.isFinite(prefs.promptCount) ? Math.round(prefs.promptCount) : DEFAULT_PROMPT_COUNT
+  const neverDefaults: string[] = []
+  for (const tag of prefs.neverDefaults) {
+    const name = normalizeTagForPack(tag)
+    if (name && !neverDefaults.includes(name)) neverDefaults.push(name)
+  }
+  return {
+    promptCount: Math.min(100, Math.max(1, count)),
+    neverDefaults,
+    includeSensitive: prefs.includeSensitive === true,
+  }
+}
+
+/**
+ * The preferences Pack Mode starts with: the saved ones when they exist, else those
+ * the old config carries (count and the "Never include" text), else the defaults.
+ * The rest of the old config is engine tuning the redesign retires, so it is not
+ * migrated; the old config itself is left as it is.
+ */
+export function migratePackPreferences(saved: PackPreferences | null, v2: PackModeConfigV2 | null): PackPreferences {
+  if (saved) return sanitizePackPreferences(saved)
+  if (!v2) return sanitizePackPreferences(DEFAULT_PACK_PREFERENCES)
+  return sanitizePackPreferences({
+    promptCount: v2.promptCount,
+    neverDefaults: splitCommaSeparatedTags(v2.neverIncludeText ?? ''),
+    includeSensitive: false,
+  })
 }
