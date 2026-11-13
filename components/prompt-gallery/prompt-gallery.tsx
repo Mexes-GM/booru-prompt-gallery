@@ -152,7 +152,7 @@ import { usePackSeed, PACK_SEED_TARGET_POSTS, PACK_ENRICH_POSTS } from "@/hooks/
 import { poolCacheKey, loadPoolCache, savePoolCache, clearPoolCache, mergePostLists } from "@/lib/pack/pool-cache"
 import { normalizePackSourceRating, countPostRatings, type RatingBreakdown } from "@/lib/pack/source-rating"
 import { collapseNearDuplicates } from "@/lib/pack/near-duplicates"
-import { keptPackMessage } from "@/lib/pack/kept-pack"
+import { isSamePackBase, keptPackMessage, type PackBaseKey } from "@/lib/pack/kept-pack"
 import { enrichPoolPosts, prefetchPoolDatasetTags } from "@/lib/pack/dataset-tags"
 import { datasetTagsVersion } from "@/lib/dataset-tags-cache"
 import { searchedCharacterIn, searchedCharacterOf } from "@/lib/pack/character-focus"
@@ -919,22 +919,37 @@ export function PromptGallery() {
   const handleHidePackBuilder = useCallback(() => setPackBuilderHidden(true), [])
   const handleShowPackBuilder = useCallback(() => setPackBuilderHidden(false), [])
   const packModeSetBasePromptForDiscard = packMode.setBasePrompt
-  /** Drops the base (and with it the pack); Pack Mode stays on. `reopenEntry` offers every way to start another. */
-  const discardPackBase = useCallback((reopenEntry: boolean) => {
+  // "Discard" on the kept-pack bar: drops the base (and with it the pack) and goes
+  // back to the gallery; Pack Mode stays on.
+  const handleDiscardKeptPack = useCallback(() => {
     packModeSetBaseCard(null)
     packModeSetBasePromptForDiscard('')
     setPackBuilderHidden(false)
     // Keep the fetched posts: the next base on this source reuses them.
     hasSeededRef.current = false
-    if (reopenEntry) {
-      setPackEntryStartInPrompt(false)
-      setPackEntryOpen(true)
-    }
   }, [packModeSetBaseCard, packModeSetBasePromptForDiscard])
-  // "Discard" on the kept-pack bar: back to the gallery, as it was.
-  const handleDiscardKeptPack = useCallback(() => discardPackBase(false), [discardPackBase])
   // "Change base" inside the builder: the entry dialog offers every way to start the next one.
-  const handleClearPackBase = useCallback(() => discardPackBase(true), [discardPackBase])
+  const handleClearPackBase = useCallback(() => {
+    handleDiscardKeptPack()
+    setPackEntryStartInPrompt(false)
+    setPackEntryOpen(true)
+  }, [handleDiscardKeptPack])
+
+  // What the pack is built on, to tell a base picked again from a new one.
+  const packCurrentBaseKey = useMemo<PackBaseKey | null>(() => {
+    if (!packMode.hasBase) return null
+    if (packMode.baseCard) return { kind: 'card', id: packMode.baseCard.id }
+    if (packMode.baseFromCharacter) return { kind: 'character', names: packCastNames.length > 0 ? packCastNames : [packMode.basePrompt] }
+    return { kind: 'prompt', text: packMode.basePrompt }
+  }, [packMode.hasBase, packMode.baseCard, packMode.baseFromCharacter, packMode.basePrompt, packCastNames])
+  /** The base the pack already has, picked again (a card, the entry dialog): the pack comes back as it is. */
+  const reopenIfSamePackBase = useCallback((next: PackBaseKey): boolean => {
+    if (!isSamePackBase(packCurrentBaseKey, next)) return false
+    setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
+    setPackBuilderHidden(false)
+    return true
+  }, [packCurrentBaseKey])
   // Sources that already fetched fresh posts this session: picking another
   // base on the same source reuses what's in memory instead of refetching.
   const enrichedSourcesRef = useRef<Set<string>>(new Set())
@@ -1076,13 +1091,8 @@ export function PromptGallery() {
   // default source; the header chip changes it. Editing an existing prompt
   // base keeps the source as it is.
   const packModeSetFocusCharacter = packMode.setFocusCharacter
-  const packCurrentBaseId = packMode.baseCard?.id ?? null
-  const handleSetAsPackBase = useCallback((post: BooruPost) => {
-    // The base of the pack put aside: bring the pack back as it was.
-    if (packBuilderHidden && packCurrentBaseId === post.id) {
-      setPackBuilderHidden(false)
-      return
-    }
+  const setAsPackBaseNow = useCallback((post: BooruPost) => {
+    if (reopenIfSamePackBase({ kind: 'card', id: post.id })) return
     const source = defaultPackSource()
     packModeSetBaseCard(post)
     // A multi-character post keeps the character the search is about, if any;
@@ -1092,17 +1102,23 @@ export function PromptGallery() {
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
     setPackBuilderHidden(false)
-  }, [packModeSetBaseCard, packModeSetFocusCharacter, applyPackSource, defaultPackSource, packBuilderHidden, packCurrentBaseId])
+  }, [reopenIfSamePackBase, packModeSetBaseCard, packModeSetFocusCharacter, applyPackSource, defaultPackSource])
+  // Cards keep the first handler they get (MasonryItem's arePropsEqual skips callbacks),
+  // so theirs is stable and always runs the latest one: a stale one saw an old pack.
+  const setAsPackBaseRef = useRef(setAsPackBaseNow)
+  useLayoutEffect(() => { setAsPackBaseRef.current = setAsPackBaseNow }, [setAsPackBaseNow])
+  const handleSetAsPackBase = useCallback((post: BooruPost) => setAsPackBaseRef.current(post), [])
 
   const packModeSetBasePrompt = packMode.setBasePrompt
   const handleSubmitPackPrompt = useCallback((text: string) => {
+    if (reopenIfSamePackBase({ kind: 'prompt', text })) return
     packModeSetBasePrompt(text)
     if (packEntryStartInPrompt) rebasePackSeeding()
     else applyPackSource(defaultPackSource())
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
     setPackBuilderHidden(false)
-  }, [packModeSetBasePrompt, rebasePackSeeding, applyPackSource, defaultPackSource, packEntryStartInPrompt])
+  }, [reopenIfSamePackBase, packModeSetBasePrompt, rebasePackSeeding, applyPackSource, defaultPackSource, packEntryStartInPrompt])
 
   // "From my search": the one character the gallery's search is about, from
   // its results. That character becomes the base with no card, and the
@@ -1114,12 +1130,13 @@ export function PromptGallery() {
   const packModeSetBaseFromCharacter = packMode.setBaseFromCharacter
   const handleStartFromSearch = useCallback(() => {
     if (!packSearchCharacter) return
+    if (reopenIfSamePackBase({ kind: 'character', names: [packSearchCharacter] })) return
     packModeSetBaseFromCharacter(packSearchCharacter)
     applyPackSource(defaultPackSource())
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
     setPackBuilderHidden(false)
-  }, [packSearchCharacter, packModeSetBaseFromCharacter, applyPackSource, defaultPackSource])
+  }, [reopenIfSamePackBase, packSearchCharacter, packModeSetBaseFromCharacter, applyPackSource, defaultPackSource])
 
   // "From a character": no search needed, the first character's own posts are the
   // source. The others join the pack as its cast, the same as "Add a character";
@@ -1127,6 +1144,7 @@ export function PromptGallery() {
   const handleStartFromCharacters = useCallback((characters: readonly string[]) => {
     const [first, ...others] = characters
     if (!first) return
+    if (reopenIfSamePackBase({ kind: 'character', names: characters })) return
     packModeSetBaseFromCharacter(first, others)
     applyPackSource({
       ...packSourceAnswers,
@@ -1138,7 +1156,7 @@ export function PromptGallery() {
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
     setPackBuilderHidden(false)
-  }, [packModeSetBaseFromCharacter, applyPackSource, packSourceAnswers, search.booruProvider])
+  }, [reopenIfSamePackBase, packModeSetBaseFromCharacter, applyPackSource, packSourceAnswers, search.booruProvider])
 
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
