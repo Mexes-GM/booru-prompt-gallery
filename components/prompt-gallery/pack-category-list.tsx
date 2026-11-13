@@ -7,7 +7,8 @@
  *
  *   - the base's own tags for it, each removable from the base;
  *   - its subcategories, each Keep-from-base / Vary / Off;
- *   - when varying: the sampled pool, picks per prompt, loose tags vs. full sets.
+ *   - when varying: the sampled pool, picks per prompt, loose tags vs. full sets;
+ *     a pool value can be pinned into every prompt, like the base's tags.
  *
  * Rows set to Off don't open: there's nothing in them to edit.
  *
@@ -18,7 +19,6 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { AlertTriangle, Ban, Check, ChevronDown, ChevronRight, Lock, Minus, Package, Pin, Plus, RefreshCw, RotateCcw, Shirt, Shuffle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
@@ -32,6 +32,7 @@ import {
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
 import { TagCategory } from "@/lib/tag-classifier"
 import { MAX_MIN_TAGS_SLIDER, MAX_MIN_PACKS_SLIDER, type AxisTagMode, type SlotGroup } from "@/lib/pack/pack-generator"
+import { poolEntriesFromInput, withoutKeptValues } from "@/lib/pack/classic-chips"
 import { TAG_CATEGORIES, formatSubcategoryLabel, getTagSlotFromOverrides, slotsOf } from "@/lib/tag-taxonomy"
 import { DEFAULT_MIN_SET_TAGS, MAX_MIN_SET_TAGS, type ClassicChipControls, type PackCategoryState, type PackSlotState } from "@/hooks/use-pack-mode"
 import { AddTagsField } from "./add-tags-field"
@@ -291,7 +292,6 @@ const CategoryRow = memo(function CategoryRow({
   const lowMotion = useLowMotion()
   const [adding, setAdding] = useState(false)
   const added = chips?.addedByCategory[category] ?? EMPTY_TAGS
-  const [draft, setDraft] = useState("")
   const [expanded, setExpanded] = useState(false)
   const [showSlots, setShowSlots] = useState(false)
   // The Pack Builder tour opens this row and its subcategories when it explains them.
@@ -312,6 +312,16 @@ const CategoryRow = memo(function CategoryRow({
 
   const visibleBase = baseTags.filter((t) => !excludedBaseTags.has(t))
   const removedCount = baseTags.length - visibleBase.length
+  // A pool value every prompt keeps already (pinned from here, say) moves to the Base line: it no longer varies.
+  const poolValues = useMemo(() => withoutKeptValues(values, (tag) => keptTags.has(tag)), [values, keptTags])
+  const poolGroups = useMemo(
+    () => {
+      if (poolValues.length === values.length) return groups
+      const left = new Set(poolValues)
+      return groups.map((g) => ({ ...g, values: g.values.filter((v) => left.has(v)) })).filter((g) => g.values.length > 0)
+    },
+    [groups, poolValues, values.length]
+  )
 
   // Base tags per slot, for the subcategory list's "n on base" hints.
   const baseSlotCounts = useMemo(() => {
@@ -331,7 +341,7 @@ const CategoryRow = memo(function CategoryRow({
   }).length
 
   const ceiling = mode === "bundle" ? MAX_MIN_PACKS_SLIDER : Math.min(MAX_MIN_TAGS_SLIDER, maxPerPrompt > 0 ? maxPerPrompt : MAX_MIN_TAGS_SLIDER)
-  const maxPicks = Math.max(1, Math.min(values.length, ceiling))
+  const maxPicks = Math.max(1, Math.min(poolValues.length, ceiling))
   const picks = Math.max(1, Math.min(minCount, maxPicks))
 
   // A "full set" is an outfit for clothing; elsewhere (weapons, poses…) just a set.
@@ -349,21 +359,20 @@ const CategoryRow = memo(function CategoryRow({
         ? kept.length > 0
           ? previewTags(kept)
           : "Nothing to keep on the base"
-        : values.length === 0
+        : poolValues.length === 0
           ? isCollecting
             ? "Collecting tags…"
             : "No tags found yet"
-          : `${kept.length > 0 ? `Always ${previewTags(kept)} · ` : ""}${values.length} ${values.length === 1 ? unit : units} · ${picks} per prompt`
+          : `${kept.length > 0 ? `Always ${previewTags(kept)} · ` : ""}${poolValues.length} ${poolValues.length === 1 ? unit : units} · ${picks} per prompt`
   const summaryExtra = customizedSlots > 0 ? ` · ${customizedSlots} ${customizedSlots === 1 ? "part" : "parts"} changed` : ""
 
-  const handleAdd = () => {
-    const trimmed = draft.trim()
-    if (!trimmed) return
-    onAdd(category, trimmed)
-    setDraft("")
+  // Commas separate tags, except in full sets, where they make one set.
+  const addToPool = (text: string) => {
+    poolEntriesFromInput(text, mode).forEach((value) => onAdd(category, value))
+    return false
   }
 
-  const showGrouping = mode === "individual" && groups.some((g) => g.slot !== null)
+  const showGrouping = mode === "individual" && poolGroups.some((g) => g.slot !== null)
 
   return (
     <section
@@ -614,7 +623,7 @@ const CategoryRow = memo(function CategoryRow({
               </span>
               <div className="flex-1 min-w-0 space-y-2">
                 <div className="flex items-center gap-x-3 gap-y-2 flex-wrap text-xs text-muted-foreground">
-                  {values.length > 0 && (
+                  {poolValues.length > 0 && (
                     <div className="flex items-center gap-1.5">
                       <span>Per prompt</span>
                       <Stepper
@@ -707,12 +716,12 @@ const CategoryRow = memo(function CategoryRow({
                       ? "Loading the outfit library…"
                       : libraryCount === 0
                         ? "No outfits in the chosen styles. Pick some under Customize prompt › Outfit."
-                        : `${values.length} of ${libraryCount.toLocaleString("en")} outfits, in the styles and detail chosen under Customize prompt › Outfit.`}
+                        : `${poolValues.length} of ${libraryCount.toLocaleString("en")} outfits, in the styles and detail chosen under Customize prompt › Outfit.`}
                   </p>
                 )}
                 <div className="flex flex-wrap gap-1.5 content-start">
                   <AnimatePresence initial={false} mode="popLayout">
-                    {(showGrouping ? groups : [{ slot: null, values }]).flatMap((group) => [
+                    {(showGrouping ? poolGroups : [{ slot: null, values: poolValues }]).flatMap((group) => [
                       showGrouping ? (
                         <motion.span
                           key={`h:${group.slot ?? "none"}`}
@@ -727,40 +736,36 @@ const CategoryRow = memo(function CategoryRow({
                         <TagChip
                           key={value}
                           text={value}
+                          onToggle={chips ? () => chips.add(category, value) : undefined}
                           onRemove={() => onRemove(category, value)}
                           lowMotion={lowMotion}
                         />
                       )),
                     ])}
                   </AnimatePresence>
-                  {values.length === 0 && isCollecting &&
+                  {poolValues.length === 0 && isCollecting &&
                     [56, 72, 48, 88, 64, 52].map((w, i) => (
                       <span key={i} className="h-6 rounded-md bg-muted animate-pulse" style={{ width: w }} />
                     ))}
-                  {values.length === 0 && !isCollecting && !fromLibrary && (
+                  {poolValues.length === 0 && !isCollecting && !fromLibrary && (
                     <span className="text-xs text-muted-foreground italic py-1">
                       Nothing found in the collected posts. Add some below or collect more posts.
                     </span>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5 max-w-md">
-                  <Input
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
-                        handleAdd()
-                      }
-                    }}
-                    aria-label={`Add to the ${label.toLowerCase()} pool`}
-                    placeholder={mode === "bundle" ? "Add a set (tag1, tag2, …)" : `Add a ${label.toLowerCase()} tag`}
-                    className="h-8 pointer-coarse:h-11 text-xs"
+                {chips && poolValues.length > 0 && (
+                  <p className="text-xs text-muted-foreground">Select a tag to pin it in every prompt.</p>
+                )}
+
+                <div className="max-w-md">
+                  <AddTagsField
+                    label={`Add to the ${label.toLowerCase()} pool`}
+                    labelHidden
+                    autoFocus={false}
+                    onAdd={addToPool}
+                    placeholder={mode === "bundle" ? "Add a set (tag1, tag2, …)" : `Add ${label.toLowerCase()} tags`}
                   />
-                  <Button type="button" variant="outline" size="sm" onClick={handleAdd} disabled={!draft.trim()} aria-label="Add" className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 p-0">
-                    <Plus className="w-3.5 h-3.5" />
-                  </Button>
                 </div>
               </div>
             </div>

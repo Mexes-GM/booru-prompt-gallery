@@ -47,7 +47,7 @@ import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
-import { addedTraitCategory, classicKeptTags, dashedAddedByCategory, pinnedConflicts, withoutNeverTags } from '@/lib/pack/classic-chips'
+import { addedTraitCategory, classicKeptTags, dashedAddedByCategory, pinnedConflicts, withoutKeptValues, withoutNeverTags } from '@/lib/pack/classic-chips'
 import { activeSceneIdeas, sceneIdeaOwnTags, sceneIdeasInUse, type ActiveSceneIdeas, type SceneIdea, type SceneIdeaChipState } from '@/lib/pack/scene-ideas'
 import type { ChipState, ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isCompositionPattern } from '@/lib/pack/scene/permanence'
@@ -1836,10 +1836,12 @@ export function usePackMode(
     // A removed or never-included tag leaves the pool; a full set that has it is used without it
     // (the rest of the outfit still belongs together). `originOf` keeps each value's sampling weight.
     const originOf = new Map<string, string>()
+    // A value every prompt keeps already (a pool value pinned in the category row) can't vary: it leaves the pool.
+    const keptNow = new Set(lockedTags.map(normalizeTagForPack))
     activeAxisCategories.forEach((cat) => {
       const pool = mergedAxisValues[cat] ?? []
       const extra = (classicDashed[cat] ?? []).filter((tag) => !pool.includes(tag))
-      const stripped = withoutNeverTags([...pool, ...extra], isNeverTag)
+      const stripped = withoutNeverTags(withoutKeptValues([...pool, ...extra], (tag) => keptNow.has(normalizeTagForPack(tag))), isNeverTag)
       stripped.originOf.forEach((from, value) => originOf.set(value, from))
       if (stripped.values.length > 0) axes[cat] = stripped.values
     })
@@ -1865,7 +1867,7 @@ export function usePackMode(
     const effectiveAxisMinCounts: Partial<Record<TagCategory, number>> = { ...axisMinCounts, ...raisedAxisCounts }
 
     return { axes, axisWeights, effectiveAxisMinCounts }
-  }, [activeAxisCategories, mergedAxisValues, classicDashed, axisCounts, learning, learningContextKeys, axisMinCounts, raisedAxisCounts, isNeverTag])
+  }, [activeAxisCategories, mergedAxisValues, classicDashed, axisCounts, learning, learningContextKeys, axisMinCounts, raisedAxisCounts, isNeverTag, lockedTags])
 
   // The last pass Scenes uses too: a generic tag yields to its qualified form, and tags
   // that refer to something the prompt lacks ("holding" with nothing held) go. The base stays.

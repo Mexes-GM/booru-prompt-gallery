@@ -87,3 +87,27 @@ export function dashedAddedByCategory(
   }
   return out
 }
+
+/**
+ * Pool values that can still vary: a value whose every tag each prompt keeps already
+ * (pinned from the pool, the base or Always add) would only take a pick and add
+ * nothing, so it leaves the pool. A full set with one kept tag stays.
+ */
+export function withoutKeptValues(values: readonly string[], isKept: (tag: string) => boolean): string[] {
+  return values.filter((value) => {
+    const tags = value.includes(',') ? splitCommaSeparatedTags(value) : [value]
+    return !tags.every((tag) => isKept(tag))
+  })
+}
+
+/**
+ * What typing `text` into a category's pool adds: one value per comma-separated tag,
+ * or, for a pool of full sets, the whole text as one set.
+ */
+export function poolEntriesFromInput(text: string, mode: 'individual' | 'bundle'): string[] {
+  if (mode === 'bundle') {
+    const set = splitCommaSeparatedTags(text)
+    return set.length > 0 ? [set.join(', ')] : []
+  }
+  return Array.from(new Set(splitCommaSeparatedTags(text)))
+}

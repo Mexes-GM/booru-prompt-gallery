@@ -6,7 +6,7 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-classic-chips.verify.ts
  */
-import { addedTraitCategory, classicKeptTags, pinnedConflicts, withoutNeverTags } from "../lib/pack/classic-chips"
+import { addedTraitCategory, classicKeptTags, pinnedConflicts, poolEntriesFromInput, withoutKeptValues, withoutNeverTags } from "../lib/pack/classic-chips"
 import { pinnedConflictLines } from "../components/prompt-gallery/pack-category-list"
 import { createSeededRng, generatePackPrompts } from "../lib/pack/pack-generator"
 import { castChips, type ChipState } from "../lib/pack/scene-pack"
@@ -96,6 +96,31 @@ assert(addedTraitCategory("my own tag", "other", undefined) === "appearance", "e
   const classic = classicKeptTags(["short hair", "red eyes"], ["short hair", "red eyes"], (t) => choices.get(`\u0000${t}`), ["red scarf"])
   assert(scenes.blocks[0].chips.find((c) => c.tag === "short hair")?.state === "scene" && !classic.includes("short hair"), "a dash chosen once shows in both methods")
   assert(scenes.pinned.includes("red scarf") && classic.includes("red scarf"), "and so does an added trait")
+}
+
+// ── Pinning a pool value ──
+{
+  // Pinning a pool value adds it as a trait, pinned: it joins what every prompt keeps.
+  const choices = new Map<string, ChipState>([["sitting", "pinned"]])
+  const kept = classicKeptTags(["long hair"], ["long hair"], (t) => choices.get(t), ["sitting"])
+  assert(kept.includes("sitting"), "a pinned pool value is in every prompt")
+  const isKept = (t: string) => kept.includes(t)
+  const pool = withoutKeptValues(["sitting", "standing", "sitting, crossed legs", "long hair"], isKept)
+  assert(!pool.includes("sitting") && pool.includes("standing"), "the pinned value leaves the pool")
+  assert(pool.includes("sitting, crossed legs"), "a full set with one kept tag still varies")
+  assert(!pool.includes("long hair"), "a value the base keeps doesn't take a pick either")
+  // Unpinned (dashed), it is a value the sampling may pick again.
+  choices.set("sitting", "scene")
+  const after = classicKeptTags(["long hair"], ["long hair"], (t) => choices.get(t), ["sitting"])
+  assert(!after.includes("sitting") && withoutKeptValues(["sitting"], (t) => after.includes(t)).length === 1, "unpinned, it varies again")
+}
+
+// ── Typing into a pool ──
+{
+  assert(poolEntriesFromInput("red scarf, glasses ,  ", "individual").join("|") === "red scarf|glasses", "commas separate loose tags")
+  assert(poolEntriesFromInput("hat, hat", "individual").length === 1, "a tag typed twice is added once")
+  assert(poolEntriesFromInput("school uniform, red ribbon", "bundle").join("|") === "school uniform, red ribbon", "in full sets the text is one set")
+  assert(poolEntriesFromInput(" , ", "bundle").length === 0 && poolEntriesFromInput("", "individual").length === 0, "nothing typed adds nothing")
 }
 
 console.log(`${passed} passed, ${failed} failed`)
