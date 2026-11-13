@@ -43,6 +43,7 @@ import { usePromptFormat } from '@/hooks/use-natural-prompt'
 import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from '@/lib/outfit-swap'
 import { chosenOutfit, loadCharacterOutfits, outfitTags, type CharacterOutfits } from '@/lib/pack/character-outfits'
 import { loadTraitAliases } from '@/lib/prompt/natural-prompt-loader'
+import { NO_ACTIVE_SCENE_IDEAS, type ActiveSceneIdeas } from '@/lib/pack/scene-ideas'
 
 /** How long the pool waits for Gelbooru's tag list before it uses the built-in rules. */
 const GELBOORU_LOOKUP_TIMEOUT_MS = 8000
@@ -103,6 +104,8 @@ export interface UsePackScenesArgs {
   provider: string
   /** Pins, dashes and added traits per character, shared with Classic (usePackMode's chipStore). */
   chipStore: CharacterChipStore
+  /** What the picked Scene ideas put in or keep out (usePackMode's activeSceneIdeas). */
+  sceneIdeas?: ActiveSceneIdeas
 }
 
 export interface SceneCharacterBlock {
@@ -235,6 +238,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     enabled, posts, overrides, members, baseExtras, baseFixed, baseClothing, removedTags, baseFromCharacter,
     alwaysAdd, neverIncludeText, characterTags, contentRating, settings, promptCount, cleanOptions, globalWeights,
     isGlobalWeightsEnabled, outfitOptions, natural, baseKey, sourceKey, provider, chipStore,
+    sceneIdeas = NO_ACTIVE_SCENE_IDEAS,
   } = args
 
   // Permanence data (which tags are who the character is), fetched while enabled until it loads.
@@ -360,8 +364,8 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   }, [members, choices, added, baseExtras, baseFixed, removedTags, removedOwn, permanence, overrides])
   // Each block keeps its own tags, even ones another character also has: they are different people.
   const neverTags = useMemo(
-    () => Array.from(new Set([...never, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack).filter(Boolean)])),
-    [never, neverIncludeText]
+    () => Array.from(new Set([...never, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack).filter(Boolean), ...sceneIdeas.never])),
+    [never, neverIncludeText, sceneIdeas]
   )
 
   // The characters' own outfits (public/character-outfits/), read once per name and page.
@@ -408,8 +412,11 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     const tags = wornOutfits
       ? identityWithOutfits(blocks.map((block) => ({ pinned: block.pinned, outfit: wornOutfits.get(block.character) ?? NO_TAGS })), neverTags)
       : pinned
-    return isCast ? tags : Array.from(new Set(tags))
-  }, [isCast, pinned, wornOutfits, blocks, neverTags])
+    // The picked scenes' pinned tags come after every character's.
+    const own = new Set(tags)
+    const withIdeas = [...tags, ...sceneIdeas.pinned.filter((tag) => !own.has(tag))]
+    return isCast ? withIdeas : Array.from(new Set(withIdeas))
+  }, [isCast, pinned, wornOutfits, blocks, neverTags, sceneIdeas])
 
   const toggleChip = useCallback((character: string, tag: string) => {
     const current = blocks.find((block) => block.character === character)?.chips.find((chip) => chip.tag === tag)
@@ -555,6 +562,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       never: neverTags,
       baseClothing,
       characterOutfit: characterOutfitTags,
+      sceneIdea: sceneIdeas.core.length > 0 || sceneIdeas.dashed.length > 0 ? { core: sceneIdeas.core, dashed: sceneIdeas.dashed } : undefined,
       subject,
       settings,
       count: promptCount,
@@ -574,7 +582,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
       resolution: (aspect) => resolutionForAspect(aspect, prefs),
     }
   }, [
-    useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, pinnedTags, alwaysAdd, people, castSize, neverTags, baseClothing, characterOutfitTags, subject,
+    useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, pinnedTags, alwaysAdd, people, castSize, neverTags, baseClothing, characterOutfitTags, sceneIdeas, subject,
     settings, promptCount, disabledSituations, overrides, characterTags, cleanOptions, globalWeights, isGlobalWeightsEnabled,
   ])
 

@@ -48,7 +48,7 @@ import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
 import { addedTraitCategory, classicKeptTags, dashedAddedByCategory, pinnedConflicts, withoutNeverTags } from '@/lib/pack/classic-chips'
-import { sceneIdeaChips, sceneIdeaRemoval, type SceneIdea } from '@/lib/pack/scene-ideas'
+import { activeSceneIdeas, sceneIdeaOwnTags, type ActiveSceneIdeas, type SceneIdea, type SceneIdeaChipState } from '@/lib/pack/scene-ideas'
 import type { ChipState, ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isCompositionPattern } from '@/lib/pack/scene/permanence'
 import { isQualifiedVariant } from '@/lib/pack/character-identity'
@@ -159,7 +159,6 @@ function sampleAxes(
 const DEFAULT_OUTFIT_OPTIONS = { styles: [] as readonly OutfitStyle[], detail: 'simple' as OutfitDetail }
 /** Outfits shown in the library clothing pool at once; Re-sample draws others. */
 const LIBRARY_POOL_SIZE = 60
-const NO_ADDED: readonly string[] = []
 
 /** The character chips both methods share (see usePackMode). */
 export interface CharacterChipStore {
@@ -174,16 +173,20 @@ export interface CharacterChipStore {
 }
 
 /**
- * Scene ideas (lib/pack/scene-ideas.ts), in both methods: a scene's tags become the
- * base character's added traits, its own tags pinned and the ones that often come
- * with it dashed. Each stays a chip like any other.
+ * Scene ideas (lib/pack/scene-ideas.ts), in both methods. Added scenes keep their own
+ * chips, apart from the character's: the scene's own tags pinned, the ones that often
+ * come with it dashed, any of them removable.
  */
 export interface SceneIdeaControls {
-  /** The base character's added traits (a scene counts as added while it has all its own tags here). */
-  added: readonly string[]
+  /** Added scenes, in the order they were added (one entry per id). */
+  applied: readonly SceneIdea[]
+  /** The user's pin, dash or removal per tag (none: the scene's default). */
+  states: ReadonlyMap<string, SceneIdeaChipState>
   add: (idea: SceneIdea) => void
-  /** Takes the scene's tags back, except those another added scene (`others`) also has. */
-  remove: (idea: SceneIdea, others: readonly SceneIdea[]) => void
+  /** Takes a scene back whole (by id). */
+  remove: (id: string) => void
+  /** Sets a tag's chip state; null forgets the choice (back to the default, or restored). */
+  setState: (tag: string, state: SceneIdeaChipState | null) => void
 }
 
 /** What Classic's category rows need of the chips. */
@@ -426,6 +429,8 @@ export interface UsePackModeResult {
   classicChips: ClassicChipControls
   /** Scene ideas, shared by both methods. */
   sceneIdeas: SceneIdeaControls
+  /** What the added scenes put in (or keep out of) the prompts, for the scenes engine. */
+  activeSceneIdeas: ActiveSceneIdeas
   /**
    * The characters a scenes pack names: the base character first, then the ones
    * added to a character base (up to MAX_CAST). Card and pasted-prompt bases have
@@ -687,6 +692,13 @@ export function usePackMode(
   const classicRequestRef = useRef(0)
   // Driven by the source's rating (PromptGallery owns the source), never persisted.
   const [contentRating, setContentRating] = useState<PackRatingMode | null>(null)
+  // Scene ideas: the added scenes and the user's chip state per tag. Not tied to the base.
+  const [appliedIdeas, setAppliedIdeas] = useState<readonly SceneIdea[]>([])
+  const [ideaStates, setIdeaStates] = useState<ReadonlyMap<string, SceneIdeaChipState>>(() => new Map())
+  const activeIdeas = useMemo(
+    () => activeSceneIdeas(appliedIdeas, (tag) => ideaStates.get(tag), contentRating),
+    [appliedIdeas, ideaStates, contentRating]
+  )
 
   const togglePackMode = useCallback(() => setIsPackMode((prev) => !prev), [])
   const enablePackMode = useCallback(() => setIsPackMode(true), [])
@@ -993,8 +1005,10 @@ export function usePackMode(
     if (customBaseText.trim()) {
       kept.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
     }
+    // The added scenes' pinned tags, after the character's.
+    kept.push(...activeIdeas.pinned)
     return Array.from(new Set(kept.filter(Boolean)))
-  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance, identityParts, excludedBaseTags, mutedSlots, axisMinCounts, focusCharacter, chipChoices, addedTraits])
+  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance, identityParts, excludedBaseTags, mutedSlots, axisMinCounts, focusCharacter, chipChoices, addedTraits, activeIdeas])
 
   /** "Always add" tags as typed — finalizePackPrompt puts them first, underscores intact. */
   const alwaysAddTags = useMemo(() => parseAlwaysAddTags(customBaseText), [customBaseText])
@@ -1040,23 +1054,29 @@ export function usePackMode(
     () => ({ choices: chipChoices, added: addedTraits, setChoice: setChipChoice, addTraits, removeTrait }),
     [chipChoices, addedTraits, setChipChoice, addTraits, removeTrait]
   )
-  // Scene ideas belong to the base character (the first of a cast).
-  const ideaOwner = focusCharacter ?? ''
-  const ideaOwnerAdded = addedTraits.get(ideaOwner) ?? NO_ADDED
   const sceneIdeas = useMemo<SceneIdeaControls>(() => ({
-    added: ideaOwnerAdded,
-    add: (idea) => {
-      const { pinned, dashed } = sceneIdeaChips(idea, ideaOwnerAdded)
-      // People counts ("solo focus") are refused: who is in the picture is chosen apart.
-      addTraits(ideaOwner, pinned.join(', '))
-      if (dashed.length === 0) return
-      addTraits(ideaOwner, dashed.join(', '))
-      dashed.forEach((tag) => setChipChoice(ideaOwner, tag, 'scene'))
+    applied: appliedIdeas,
+    states: ideaStates,
+    add: (idea) => setAppliedIdeas((prev) => (prev.some((o) => o.id === idea.id) ? prev : [...prev, idea])),
+    remove: (id) => {
+      const idea = appliedIdeas.find((o) => o.id === id)
+      if (!idea) return
+      // The choices made on its tags go with it, unless another added scene has the tag.
+      const own = new Set(sceneIdeaOwnTags(idea, appliedIdeas))
+      setIdeaStates((prev) => {
+        if (!Array.from(prev.keys()).some((tag) => own.has(tag))) return prev
+        return new Map(Array.from(prev).filter(([tag]) => !own.has(tag)))
+      })
+      setAppliedIdeas((prev) => prev.filter((o) => o.id !== id))
     },
-    remove: (idea, others) => {
-      sceneIdeaRemoval(idea, ideaOwnerAdded, others).forEach((tag) => removeTrait(ideaOwner, tag))
-    },
-  }), [ideaOwner, ideaOwnerAdded, addTraits, setChipChoice, removeTrait])
+    setState: (tag, state) => setIdeaStates((prev) => {
+      if (state === null && !prev.has(tag)) return prev
+      const next = new Map(prev)
+      if (state === null) next.delete(tag)
+      else next.set(tag, state)
+      return next
+    }),
+  }), [appliedIdeas, ideaStates])
 
   /**
    * Tags no Classic prompt may have: the base tags removed with their chip and "Never
@@ -1066,9 +1086,9 @@ export function usePackMode(
    */
   const classicNeverTags = useMemo(() => {
     const always = new Set(alwaysAddTags.map(normalizeTagForPack))
-    return Array.from(new Set([...excludedBaseTags, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack)]))
+    return Array.from(new Set([...excludedBaseTags, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack), ...activeIdeas.never]))
       .filter((tag) => tag && !always.has(tag))
-  }, [excludedBaseTags, neverIncludeText, alwaysAddTags])
+  }, [excludedBaseTags, neverIncludeText, alwaysAddTags, activeIdeas])
   const isNeverTag = useCallback(
     (tag: string) => {
       const t = normalizeTagForPack(tag)
@@ -1274,18 +1294,25 @@ export function usePackMode(
     (cat: TagCategory) => (cat === 'clothing' && clothingFromLibrary ? libraryPool ?? [] : axisValues[cat] || []),
     [clothingFromLibrary, libraryPool, axisValues]
   )
-  // Added traits the user dashed (a scene idea's optional tags) are Classic pool values:
-  // the sampling may pick them. Keyed by text, so the pools only change when they do.
-  const classicDashedKey = useMemo(() => {
+  // Dashed tags (added traits the user dashed, a scene idea's optional tags) are values
+  // Classic's sampling may pick: they join their category's pool when a pack is generated,
+  // without showing in the category rows. A scene's clothing ones stay out while the
+  // clothing comes from the outfit library.
+  const classicDashed = useMemo(() => {
     const own = focusCharacter ?? ''
+    const categoryOf = (tag: string) => addedTraitCategory(tag, classifyTag(tag, effectiveOverrides), addedHome.get(tag))
     const byCategory = dashedAddedByCategory(
       (addedTraits.get(own) ?? []).filter((tag) => !excludedBaseTags.has(tag)),
       (tag) => chipChoices.get(`${own}\u0000${tag}`),
-      (tag) => addedTraitCategory(tag, classifyTag(tag, effectiveOverrides), addedHome.get(tag))
+      categoryOf
     )
-    return JSON.stringify(byCategory)
-  }, [focusCharacter, addedTraits, excludedBaseTags, chipChoices, effectiveOverrides, addedHome])
-  const classicDashed = useMemo(() => JSON.parse(classicDashedKey) as Partial<Record<TagCategory, string[]>>, [classicDashedKey])
+    activeIdeas.dashed.forEach((tag) => {
+      const cat = categoryOf(tag)
+      if (cat === 'clothing' && clothingFromLibrary) return
+      ;(byCategory[cat] ??= []).push(tag)
+    })
+    return byCategory
+  }, [focusCharacter, addedTraits, excludedBaseTags, chipChoices, effectiveOverrides, addedHome, activeIdeas, clothingFromLibrary])
   const buildPools = useCallback(
     (state: { lockedSlots: ReadonlySet<string>; mutedSlots: ReadonlySet<string> }) => {
       const merged: Partial<Record<TagCategory, string[]>> = {}
@@ -1298,7 +1325,7 @@ export function usePackMode(
           sampled = sampled.filter((v) => splitCommaSeparatedTags(v).length >= min)
         }
         const seen = new Set(sampled)
-        const extraManual = [...(manualAxisValues[cat] || []), ...(classicDashed[cat] || [])].filter((v) => {
+        const extraManual = (manualAxisValues[cat] || []).filter((v) => {
           if (seen.has(v)) return false
           seen.add(v)
           return true
@@ -1308,7 +1335,7 @@ export function usePackMode(
       })
       return merged
     },
-    [sourceValues, manualAxisValues, classicDashed, effectiveOverrides, bundleCategories, minSetTags]
+    [sourceValues, manualAxisValues, effectiveOverrides, bundleCategories, minSetTags]
   )
   const mergedAxisValues = useMemo(() => buildPools(slotState), [buildPools, slotState])
 
@@ -1804,7 +1831,9 @@ export function usePackMode(
     // (the rest of the outfit still belongs together). `originOf` keeps each value's sampling weight.
     const originOf = new Map<string, string>()
     activeAxisCategories.forEach((cat) => {
-      const stripped = withoutNeverTags(mergedAxisValues[cat] ?? [], isNeverTag)
+      const pool = mergedAxisValues[cat] ?? []
+      const extra = (classicDashed[cat] ?? []).filter((tag) => !pool.includes(tag))
+      const stripped = withoutNeverTags([...pool, ...extra], isNeverTag)
       stripped.originOf.forEach((from, value) => originOf.set(value, from))
       if (stripped.values.length > 0) axes[cat] = stripped.values
     })
@@ -1830,7 +1859,7 @@ export function usePackMode(
     const effectiveAxisMinCounts: Partial<Record<TagCategory, number>> = { ...axisMinCounts, ...raisedAxisCounts }
 
     return { axes, axisWeights, effectiveAxisMinCounts }
-  }, [activeAxisCategories, mergedAxisValues, axisCounts, learning, learningContextKeys, axisMinCounts, raisedAxisCounts, isNeverTag])
+  }, [activeAxisCategories, mergedAxisValues, classicDashed, axisCounts, learning, learningContextKeys, axisMinCounts, raisedAxisCounts, isNeverTag])
 
   // The last pass Scenes uses too: a generic tag yields to its qualified form, and tags
   // that refer to something the prompt lacks ("holding" with nothing held) go. The base stays.
@@ -2139,6 +2168,8 @@ export function usePackMode(
     setAxisTagModes({})
     cachedPostsRef.current = []
     setCustomBaseText('')
+    setAppliedIdeas([])
+    setIdeaStates(new Map())
     setExcludedBaseTags(new Set())
     setChipChoices(new Map())
     setAddedTraits(new Map())
@@ -2309,6 +2340,7 @@ export function usePackMode(
     chipStore,
     classicChips,
     sceneIdeas,
+    activeSceneIdeas: activeIdeas,
     focusedCharacterTags,
     alwaysAddTags,
     sceneCast,

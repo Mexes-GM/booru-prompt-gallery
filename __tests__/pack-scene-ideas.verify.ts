@@ -5,22 +5,30 @@
  *   1. Parsing: malformed and blocked scenes are dropped; tags are normalized.
  *   2. The pack's content rating decides which scenes are offered (general packs: general only).
  *   3. Order: this month's scenes first, then by category; search by title, tag or category.
- *   4. Chips: a scene's own tags pinned, the rest dashed; taking a scene back keeps shared tags.
+ *   4. Chips: a scene's own tags pinned, the rest dashed, any removable; what the added
+ *      scenes put in the prompts, by id (titles repeat across ratings).
  *   5. Classic: a dashed added trait isn't in every prompt but joins its category's pool.
  *   6. Scenes: a pinned place replaces the scene's place and wins over a plain background.
- *   7. The exported public/scene-ideas.json: shape, size, ratings, block list.
+ *   7. The exported public/scene-ideas.json: shape, size, ratings, block list, the
+ *      sensitive floor and the left-out themes.
+ *   8. One title, several ratings: the real "Library shelves" and "Kitchen cooking"
+ *      entries; an SFW pack gets nothing of the higher ones.
+ *   9. Scenes with a picked scene: matching posts first; other posts lend only the person;
+ *      dashed clothing tags follow the Clothing option.
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-ideas.verify.ts
  */
 import { readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import {
+  activeSceneIdeas,
   groupSceneIdeas,
-  isSceneIdeaAdded,
+  matchedOptionalTags,
   maxSceneIdeaRating,
+  offeredSceneIdeas,
   parseSceneIdeas,
   sceneIdeaChips,
-  sceneIdeaRemoval,
+  sceneIdeaOwnTags,
   sceneIdeasForRating,
   searchSceneIdeas,
   sortSceneIdeas,
@@ -31,7 +39,7 @@ import { isBlockedTheme } from "../lib/pack/scene/blocked"
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { composePack, type ComposeOptions } from "../lib/pack/scene/scene-compose"
 import { createPermanence } from "../lib/pack/scene/permanence"
-import type { ChipState } from "../lib/pack/scene-pack"
+import { DEFAULT_SCENE_SETTINGS, MIN_IDEA_DONORS, generateScenePack, type ChipState, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { OVERRIDES, PERMANENCE_DATA, makeAssert, makePost } from "./fixtures/pack-scene-data"
 
 const { assert, done } = makeAssert()
@@ -99,13 +107,26 @@ const ideas = parseSceneIdeas(RAW)
 // ── 4. Chips ──
 {
   const beach = ideas.find((i) => i.id === "a")!
-  const chips = sceneIdeaChips(beach, ["sand"])
-  assert(chips.pinned.join() === "beach,ocean", "the scene's own tags are pinned")
-  assert(chips.dashed.join() === "swimsuit", "the tags that come with it are dashed, unless already a trait")
-  assert(isSceneIdeaAdded(beach, ["beach", "ocean", "red scarf"]) && !isSceneIdeaAdded(beach, ["beach"]), "a scene is added while all its own tags are")
-  const pier: SceneIdea = { id: "p", title: "Pier", category: "place", rating: "g", tags: ["pier", "ocean"], optional: ["swimsuit"] }
-  const back = sceneIdeaRemoval(beach, ["beach", "ocean", "swimsuit", "sand", "pier", "red scarf"], [beach, pier])
-  assert(back.join() === "beach,sand", "taking a scene back keeps tags another added scene has, and other traits: " + back.join())
+  const chips = sceneIdeaChips(beach, () => undefined)
+  assert(chips.map((c) => `${c.tag}:${c.state}`).join() === "beach:pinned,ocean:pinned,swimsuit:scene,sand:scene", "own tags pinned, the rest dashed")
+  const chosen = sceneIdeaChips(beach, (t) => (t === "ocean" ? "scene" : t === "sand" ? "removed" : t === "swimsuit" ? "pinned" : undefined))
+  assert(chosen.map((c) => c.state).join() === "pinned,scene,pinned,removed", "the user's pin, dash or removal wins")
+  const withCount: SceneIdea = { id: "x", title: "Leash", category: "adult", rating: "e", tags: ["leash", "solo focus"], optional: [] }
+  assert(sceneIdeaChips(withCount, () => undefined).map((c) => c.tag).join() === "leash", "people counts are left out")
+
+  const pier: SceneIdea = { id: "p", title: "Pier", category: "place", rating: "g", tags: ["pier", "ocean"], optional: ["swimsuit", "sand"] }
+  const states = new Map([["sand", "removed" as const], ["swimsuit", "pinned" as const]])
+  const active = activeSceneIdeas([beach, pier], (t) => states.get(t), "sfw")
+  assert(active.pinned.join() === "beach,ocean,swimsuit,pier", "pinned: both scenes' own tags and the pinned optional one: " + active.pinned.join())
+  assert(active.never.join() === "sand" && active.dashed.length === 0, "removed tags are never used")
+  assert(active.core.join() === "beach,ocean,pier", "own tags in use")
+  const lingerie = ideas.find((i) => i.id === "d")!
+  assert(activeSceneIdeas([lingerie], () => undefined, "sfw").pinned.length === 0, "a scene above the pack's rating has no effect")
+  assert(activeSceneIdeas([lingerie], () => undefined, "questionable").pinned.join() === "lingerie,bed", "and works again at its rating")
+  assert(sceneIdeaOwnTags(beach, [beach, pier]).join() === "beach", "a scene's own choices go with it, except tags another added scene has")
+
+  assert(matchedOptionalTags(beach, "sand").join() === "sand", "a search that matched an optional tag says which")
+  assert(matchedOptionalTags(beach, "beach").length === 0 && matchedOptionalTags(beach, "beach sw").join() === "swimsuit", "only for the words the title and own tags don't explain")
 }
 
 // ── 5. Classic: dashed added traits ──
@@ -151,6 +172,109 @@ const ideas = parseSceneIdeas(RAW)
   assert(["g", "s", "q", "e"].every((r) => parsed.some((i) => i.rating === r)), "every rating level is present")
   assert(parsed.some((i) => i.month === 12) && parsed.some((i) => i.month === 1), "seasonal scenes are marked")
   assert(sceneIdeasForRating(parsed, "sfw").every((i) => i.rating === "g"), "a general pack gets general scenes only")
+  const floor = ["cigarette", "smoking", "alcohol", "beer", "sake", "wine", "handcuffs", "bdsm", "bondage", "whip", "gun to another's head", "at gunpoint", "blood"]
+  assert(parsed.filter((i) => i.tags.some((t) => floor.includes(t))).every((i) => i.rating !== "g"), "scenes about smoking, drinking, restraints, guns or blood are never general")
+  assert(parsed.every((i) => ![...i.tags, ...i.optional].some((t) => t === "marijuana" || t === "drugs")), "drug scenes are left out")
+}
+
+// ── 8. One title, several ratings (the real entries) ──
+{
+  const real = parseSceneIdeas(JSON.parse(readFileSync(join(__dirname, "..", "public", "scene-ideas.json"), "utf8")))
+  const shelves = real.filter((i) => i.title === "Library shelves").map((i) => i.id).sort()
+  assert(shelves.join() === "e-0021,q-0017,sfw-0006", "Library shelves has three entries: " + shelves.join())
+  const kitchen = real.filter((i) => i.title === "Kitchen cooking").map((i) => i.id).sort()
+  assert(kitchen.join() === "q-0039,sfw-0029", "Kitchen cooking has two: " + kitchen.join())
+  const titleOnce = (rating: Parameters<typeof offeredSceneIdeas>[1]) => {
+    const offered = offeredSceneIdeas(real, rating)
+    return offered.length === new Set(offered.map((i) => i.title.toLowerCase())).size
+  }
+  assert(["sfw", "questionable", "explicit", "both", null].every((r) => titleOnce(r as Parameters<typeof offeredSceneIdeas>[1])), "each title is offered once, whatever the rating")
+  const pick = (title: string, rating: Parameters<typeof offeredSceneIdeas>[1]) => offeredSceneIdeas(real, rating).find((i) => i.title === title)?.id
+  assert(pick("Library shelves", "sfw") === "sfw-0006" && pick("Library shelves", "questionable") === "q-0017" && pick("Library shelves", "explicit") === "e-0021", "the highest entry the rating allows")
+  assert(pick("Kitchen cooking", "sfw") === "sfw-0029" && pick("Kitchen cooking", "explicit") === "q-0039", "Kitchen cooking: general in SFW, questionable above")
+
+  // Adding the offered entry adds only it; in an SFW pack nothing of the higher entries gets in.
+  const sfwPicks = ["Library shelves", "Kitchen cooking"].map((title) => offeredSceneIdeas(real, "sfw").find((i) => i.title === title)!)
+  assert(sfwPicks.every((i) => i.rating === "g"), "SFW offers the general entries")
+  const active = activeSceneIdeas(sfwPicks, () => undefined, "sfw")
+  const used = new Set([...active.pinned, ...active.dashed])
+  const higherOnly = real
+    .filter((i) => (i.title === "Library shelves" || i.title === "Kitchen cooking") && i.rating !== "g")
+    .flatMap((i) => [...i.tags, ...i.optional])
+    .filter((t) => !sfwPicks.some((p) => p.tags.includes(t) || p.optional.includes(t)))
+  assert(higherOnly.includes("naked apron") && higherOnly.every((t) => !used.has(t)), "no tag of a higher entry reaches an SFW pack: " + higherOnly.join())
+  // Even added by hand before the rating changed, a higher entry does nothing in an SFW pack.
+  const explicitShelves = real.find((i) => i.id === "e-0021")!
+  const kitchenQ = real.find((i) => i.id === "q-0039")!
+  assert(activeSceneIdeas([explicitShelves, kitchenQ], () => undefined, "sfw").pinned.length === 0, "higher entries added earlier are not used in an SFW pack")
+}
+
+// ── 9. Scenes with a picked scene ──
+{
+  const overrides: Record<string, string> = {
+    ...OVERRIDES, library: "scenery:setting", bookshelf: "scenery:props", book: "equipment:handheld",
+    reading: "pose:gesture", apron: "clothing:accents", maid: "clothing:outfit", forest: "scenery:setting",
+  }
+  const ctx = { overrides, permanence: createPermanence(PERMANENCE_DATA, overrides), subject: "girl" as const }
+  const identity = ["my character", "long hair", "library", "bookshelf", "book"]
+  const P = {
+    1: makePost(1, "1girl solo sitting reading smile from_side library bookshelf book indoors skirt shirt boots"),
+    2: makePost(2, "1girl solo standing arms_up blush looking_at_viewer library bookshelf indoors dress"),
+    3: makePost(3, "1girl solo lying on_back open_mouth from_above library book indoors maid_outfit glasses"),
+    4: makePost(4, "1girl solo standing blush from_above forest outdoors sunset sword skirt shirt"),
+    5: makePost(5, "1girl solo sitting smile looking_at_viewer park outdoors cat dress boots hat scarf"),
+    6: makePost(6, "1girl solo running open_mouth from_side beach outdoors sunset apron skirt shirt glasses"),
+  }
+  const posts = Object.values(P)
+  const pool = buildScenePool(posts, { ...ctx, identity })
+  assert(pool.scenes.length === 6, `a pool of six scenes (${pool.scenes.length})`)
+  const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
+    identity,
+    alwaysAdd: [],
+    subject: "girl",
+    settings: DEFAULT_SCENE_SETTINGS,
+    count: 6,
+    seed: 5,
+    overrides,
+    clean: (tags) => tags.join(", "),
+    sceneIdea: { core: ["library", "bookshelf", "book"], dashed: ["apron", "indoors"] },
+    ...over,
+  })
+  const { prompts } = generateScenePack(pool, args())
+  assert(prompts.length === 6, "six prompts")
+  assert(MIN_IDEA_DONORS === 3, "three matching posts are enough to go first")
+  assert(prompts.slice(0, 3).every((p) => [1, 2, 3].includes(p.scene!.postId)), "posts that have the scene come first: " + prompts.map((p) => p.scene!.postId).join())
+  const fromOthers = prompts.filter((p) => [4, 5, 6].includes(p.scene!.postId))
+  assert(fromOthers.length === 3, "then the others")
+  for (const p of fromOthers) {
+    const tags = p.prompt.split(", ")
+    assert(!tags.some((t) => ["forest", "park", "beach", "outdoors", "sunset", "sword", "cat"].includes(t)), "another post lends no place, sky, object or animal: " + p.prompt)
+    assert(tags.includes("library"), "the picked place stays")
+  }
+  const p4 = fromOthers.find((p) => p.scene!.postId === 4)!.prompt.split(", ")
+  assert(p4.includes("standing") && p4.includes("blush") && p4.includes("from above") && p4.includes("skirt"), "it lends the posture, the expression, the framing and, with From the scene, its clothes")
+  const matching = prompts.find((p) => p.scene!.postId === 1)!
+  assert(matching.prompt.includes("reading") && matching.prompt.includes("indoors"), "a post with the scene keeps its own surroundings")
+  assert(prompts.some((p) => p.prompt.split(", ").includes("apron")), "From the scene: a dashed clothing tag can come with a post")
+
+  const own = generateScenePack(pool, args({ settings: { ...DEFAULT_SCENE_SETTINGS, clothing: "base" }, baseClothing: ["red dress"] })).prompts
+  assert(own.length > 0 && own.every((p) => !p.prompt.split(", ").includes("apron")), "another Clothing option: the scene's dashed clothing tags don't apply")
+  const pinnedApron = generateScenePack(pool, args({
+    identity: [...identity, "apron"],
+    settings: { ...DEFAULT_SCENE_SETTINGS, clothing: "base" },
+    baseClothing: ["red dress"],
+    sceneIdea: { core: ["library", "bookshelf", "book"], dashed: ["indoors"] },
+  })).prompts
+  assert(pinnedApron.every((p) => p.prompt.split(", ").includes("apron")), "a pinned one does")
+
+  const few = buildScenePool([P[1], P[4], P[5]], { ...ctx, identity })
+  const fewPrompts = generateScenePack(few, args({ count: 3 })).prompts
+  assert(fewPrompts.length === 3, "with fewer matching posts than that, every post is used at once")
+  assert(fewPrompts.filter((p) => p.scene!.postId !== 1).every((p) => !p.prompt.includes("forest")), "and the others still lend only the person")
+
+  // Two picked scenes: a post matching either one counts.
+  const two = generateScenePack(pool, args({ sceneIdea: { core: ["library", "bookshelf", "book", "forest"], dashed: [] } })).prompts
+  assert(two.some((p) => p.scene!.postId === 4 && p.prompt.includes("forest")), "with two scenes, a post that has the other one keeps its surroundings")
 }
 
 done()

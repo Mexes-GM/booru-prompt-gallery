@@ -40,6 +40,37 @@ export interface ComposeOptions {
   disabledSituations?: string[]
   /** tag (spaces) -> "category:subcategory"; used for conflict and garment checks. */
   overrides?: Record<string, string>
+  /**
+   * The own tags of the scenes the user picked (Scene ideas). A post with none of them
+   * lends only the person: posture, gesture, expression, framing and (per the clothing
+   * option) the outfit; never its place, objects, creatures or anything unclassified.
+   * Places are never swapped in: the picked scene says where the picture is.
+   */
+  sceneIdeaTags?: readonly string[]
+}
+
+/** True when the scene already has one of the picked scenes' own tags. */
+export function sceneHasIdeaTag(scene: Scene, tags: readonly string[]): boolean {
+  if (tags.length === 0) return false
+  const wanted = new Set(tags)
+  return unitTags(scene.units).some((tag) => wanted.has(tag))
+}
+
+/** Categories a post that doesn't match the picked scene can't lend. */
+const NOT_THE_PERSON = new Set(['scenery', 'equipment', 'creature'])
+
+/** `units` reduced to the person: no place, extras or unclassified tags, nothing about the surroundings or held. */
+function personOnly(units: SceneUnits, overrides: Record<string, string>): void {
+  units.place = []
+  units.extras = []
+  units.loose = []
+  for (const unit of ['skeleton', 'face', 'camera', 'outfit', 'exposure', 'body'] as const) {
+    units[unit] = units[unit].filter((tag) => {
+      if (isEnvironmentTag(tag, overrides)) return false
+      const category = getTagSlotFromOverrides(tag, overrides)?.category
+      return !category || !NOT_THE_PERSON.has(category)
+    })
+  }
 }
 
 export interface ScenePrompt {
@@ -360,6 +391,10 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     const header = buildHeader(options.identity, scene, options.subject, overrides)
     const fixed = [...header.tags, ...header.identity]
 
+    // A post that has nothing of the picked scene lends only the person.
+    const ideaTags = options.sceneIdeaTags ?? []
+    if (ideaTags.length > 0 && !sceneHasIdeaTag(scene, ideaTags)) personOnly(units, overrides)
+
     // Clothing and scenery choices that do not depend on the mix. What the scene's
     // character showed went with their clothes: another outfit leaves it behind.
     if (options.clothing === 'own') {
@@ -397,7 +432,7 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     }
     swap('face', false)
     swap('camera', false)
-    if (options.scenery !== 'plain') swap('place', options.scenery === 'vary')
+    if (options.scenery !== 'plain' && ideaTags.length === 0) swap('place', options.scenery === 'vary')
     if (options.clothing === 'scene') swap('outfit', false)
 
     // The identity wins over anything the scene says about the same thing.

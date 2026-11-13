@@ -11,6 +11,7 @@
 import type { PackRatingMode } from '@/hooks/use-pack-seed-search'
 import { normalizeTagForPack } from './pack-generator'
 import { isBlockedTheme } from './scene/blocked'
+import { isCompositionPattern } from './scene/permanence'
 
 export const SCENE_IDEAS_URL = '/scene-ideas.json'
 
@@ -160,30 +161,107 @@ export function searchSceneIdeas(ideas: readonly SceneIdea[], query: string): Sc
   })
 }
 
-/** What adding a scene does to the chips: its own tags pinned, the rest dashed. */
-export interface SceneIdeaChips {
-  pinned: string[]
-  /** Optional tags that aren't a trait already (an existing trait keeps its pin or dash). */
-  dashed: string[]
-}
-
-export function sceneIdeaChips(idea: SceneIdea, added: readonly string[]): SceneIdeaChips {
-  const existing = new Set(added)
-  return { pinned: idea.tags.slice(), dashed: idea.optional.filter((tag) => !existing.has(tag)) }
-}
-
-/** A scene counts as added while every one of its own tags is an added trait. */
-export function isSceneIdeaAdded(idea: SceneIdea, added: readonly string[]): boolean {
-  const existing = new Set(added)
-  return idea.tags.every((tag) => existing.has(tag))
+/**
+ * Optional tags a search matched through, for the words the title, the scene's own
+ * tags and the category don't explain ("tray" finds "Pouring tea" by its "tray").
+ */
+export function matchedOptionalTags(idea: SceneIdea, query: string): string[] {
+  const wanted = words(query)
+  if (wanted.length === 0) return []
+  const main = [...words(idea.title), ...idea.tags.flatMap(words), ...words(SCENE_IDEA_CATEGORY_LABELS[idea.category])]
+  const unexplained = wanted.filter((w) => !main.some((h) => h.startsWith(w)))
+  return idea.optional.filter((tag) => words(tag).some((h) => unexplained.some((w) => h.startsWith(w))))
 }
 
 /**
- * Tags to take back when a scene is removed: its tags and optional tags that are
- * added traits, except those another added scene also has.
+ * The scenes the picker offers: those the pack's rating allows, each title once. A
+ * title with entries at several ratings ("Library shelves" is general, questionable
+ * and explicit) shows the highest one the rating allows: the general one in an SFW
+ * pack, the explicit one in an explicit pack.
  */
-export function sceneIdeaRemoval(idea: SceneIdea, added: readonly string[], others: readonly SceneIdea[]): string[] {
-  const existing = new Set(added)
+export function offeredSceneIdeas(ideas: readonly SceneIdea[], rating: PackRatingMode | null): SceneIdea[] {
+  const best = new Map<string, SceneIdea>()
+  for (const idea of sceneIdeasForRating(ideas, rating)) {
+    const key = idea.title.trim().toLowerCase()
+    const current = best.get(key)
+    if (!current || RATING_LEVEL[idea.rating] > RATING_LEVEL[current.rating]) best.set(key, idea)
+  }
+  return Array.from(best.values())
+}
+
+/** A scene chip: pinned (every prompt), dashed (the scene or the sampling decides) or removed (never). */
+export type SceneIdeaChipState = 'pinned' | 'scene' | 'removed'
+
+export interface SceneIdeaChip {
+  tag: string
+  state: SceneIdeaChipState
+  /** One of the scene's own tags (pinned by default), else one that often comes with it (dashed). */
+  core: boolean
+}
+
+/**
+ * The chips of an added scene: its own tags pinned and the others dashed unless the
+ * user chose otherwise. People counts ("solo focus") are left out: who is in the
+ * picture is chosen apart.
+ */
+export function sceneIdeaChips(idea: SceneIdea, stateOf: (tag: string) => SceneIdeaChipState | undefined): SceneIdeaChip[] {
+  const out: SceneIdeaChip[] = []
+  const seen = new Set<string>()
+  const add = (tag: string, core: boolean) => {
+    if (seen.has(tag) || isCompositionPattern(tag)) return
+    seen.add(tag)
+    out.push({ tag, core, state: stateOf(tag) ?? (core ? 'pinned' : 'scene') })
+  }
+  idea.tags.forEach((tag) => add(tag, true))
+  idea.optional.forEach((tag) => add(tag, false))
+  return out
+}
+
+/** What the added scenes mean for the prompts. */
+export interface ActiveSceneIdeas {
+  /** Tags in every prompt. */
+  pinned: string[]
+  /** Tags the scene or the sampling decides (Classic: its category's pool). */
+  dashed: string[]
+  /** Tags the user removed: in no prompt. */
+  never: string[]
+  /** The scenes' own tags still in use: Scenes prefers donor posts that have one. */
+  core: string[]
+}
+
+export const NO_ACTIVE_SCENE_IDEAS: ActiveSceneIdeas = { pinned: [], dashed: [], never: [], core: [] }
+
+/**
+ * The added scenes' tags by state. A scene above the pack's rating (added before the
+ * rating changed) has no effect; a tag that is one scene's own and another's optional
+ * is pinned by default.
+ */
+export function activeSceneIdeas(
+  applied: readonly SceneIdea[],
+  stateOf: (tag: string) => SceneIdeaChipState | undefined,
+  rating: PackRatingMode | null
+): ActiveSceneIdeas {
+  const inRating = sceneIdeasForRating(applied, rating)
+  if (inRating.length === 0) return NO_ACTIVE_SCENE_IDEAS
+  const coreTags = new Set(inRating.flatMap((idea) => idea.tags))
+  const states = new Map<string, SceneIdeaChipState>()
+  for (const idea of inRating) {
+    for (const chip of sceneIdeaChips(idea, stateOf)) {
+      const state = stateOf(chip.tag) ?? (coreTags.has(chip.tag) ? 'pinned' : 'scene')
+      states.set(chip.tag, state)
+    }
+  }
+  const of = (state: SceneIdeaChipState) => Array.from(states).filter(([, s]) => s === state).map(([tag]) => tag)
+  return {
+    pinned: of('pinned'),
+    dashed: of('scene'),
+    never: of('removed'),
+    core: Array.from(coreTags).filter((tag) => states.has(tag) && states.get(tag) !== 'removed'),
+  }
+}
+
+/** Tags whose chip state can be forgotten when a scene goes: those no other added scene has. */
+export function sceneIdeaOwnTags(idea: SceneIdea, others: readonly SceneIdea[]): string[] {
   const shared = new Set(others.filter((o) => o.id !== idea.id).flatMap((o) => [...o.tags, ...o.optional]))
-  return [...idea.tags, ...idea.optional].filter((tag) => existing.has(tag) && !shared.has(tag))
+  return [...idea.tags, ...idea.optional].filter((tag) => !shared.has(tag))
 }

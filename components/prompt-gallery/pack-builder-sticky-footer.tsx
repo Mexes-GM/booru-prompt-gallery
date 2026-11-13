@@ -1298,7 +1298,7 @@ const PackBuilderStickyFooterComponent = ({
                                             )}
 
                                             {sceneIdeas && (
-                                                <PackSceneIdeas controls={sceneIdeas} rating={contentRating} sceneMode={sceneMode} />
+                                                <PackSceneIdeas controls={sceneIdeas} rating={contentRating} />
                                             )}
 
                                             {showAlwaysAdd ? (

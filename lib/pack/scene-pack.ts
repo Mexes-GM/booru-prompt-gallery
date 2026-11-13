@@ -12,7 +12,7 @@ import { splitTags } from '../utils/tag-utils'
 import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
-import { composePack, composePackPrompts, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { composePack, composePackPrompts, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
 import { coherentPromptTags, dropRedundantTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
 import { normalizeRating, type Scene, type SceneRating, type TagKind } from './scene/scene'
@@ -490,6 +490,11 @@ export interface ScenePackArgs {
    * scene's clothes stay.
    */
   characterOutfit?: readonly string[]
+  /**
+   * The picked scenes (Scene ideas): their own tags still in use, and their dashed tags.
+   * Their pinned tags are already in `identity`.
+   */
+  sceneIdea?: { core: readonly string[]; dashed: readonly string[] }
   /** Characters the pack names (1 by default). With two or more, pinned garments don't take body slots. */
   castSize?: number
   subject: 'girl' | 'boy'
@@ -535,7 +540,30 @@ function composeOptions(args: ScenePackArgs, count: number, seed: number, disabl
     seed,
     disabledSituations: disabled ? [...disabled] : undefined,
     overrides: args.overrides,
+    sceneIdeaTags: args.sceneIdea?.core.length ? args.sceneIdea.core : undefined,
   }
+}
+
+/**
+ * Posts that already have one of the picked scenes' own tags are used first, when the
+ * pool has at least this many of them; the rest follow, lending only the person.
+ */
+export const MIN_IDEA_DONORS = 3
+
+/** The pool split for the picked scenes: the matching posts first, then the others; null when there's no split. */
+export function sceneIdeaPhases(pool: ScenePool, core: readonly string[] | undefined): ScenePool[] | null {
+  if (!core || core.length === 0) return null
+  const matching = new Set(pool.scenes.filter((scene) => sceneHasIdeaTag(scene, core)).map((scene) => scene.postId))
+  if (matching.size < MIN_IDEA_DONORS) return null
+  const others = new Set(pool.scenes.map((scene) => scene.postId).filter((id) => !matching.has(id)))
+  return [restrictPool(pool, matching), restrictPool(pool, others)]
+}
+
+/** A dashed clothing tag of a picked scene is the scene's clothes: only "From the scene" keeps it. */
+function ideaClothesLeftOut(args: ScenePackArgs): Set<string> {
+  const dashed = args.sceneIdea?.dashed ?? []
+  if (dashed.length === 0 || composeOptions(args, 0, 0, undefined).clothing === 'scene') return new Set()
+  return new Set(dashed.filter((tag) => getTagSlotFromOverrides(tag, args.overrides)?.category === 'clothing'))
 }
 
 /** The library outfit a composed prompt wears: the one most of whose tags it has (at least half). */
@@ -559,6 +587,8 @@ function outfitOf(prompt: ScenePrompt, library: readonly LibraryOutfit[] | undef
 interface Finisher {
   pool: ScenePool
   args: ScenePackArgs
+  /** Dashed clothing tags of the picked scenes that the clothing option leaves out. */
+  leftOut: ReadonlySet<string>
   seen: Set<string>
   filter: NearDuplicateFilter
   sceneById: Map<number, Scene>
@@ -568,7 +598,7 @@ interface Finisher {
 function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filter: NearDuplicateFilter): Finisher {
   const situationOf = new Map<number, string>()
   pool.situations.forEach((situation) => situation.sceneIds.forEach((id) => situationOf.set(id, situation.id)))
-  return { pool, args, seen, filter, sceneById: new Map(pool.scenes.map((scene) => [scene.postId, scene])), situationOf }
+  return { pool, args, leftOut: ideaClothesLeftOut(args), seen, filter, sceneById: new Map(pool.scenes.map((scene) => [scene.postId, scene])), situationOf }
 }
 
 /**
@@ -582,7 +612,9 @@ function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filte
  */
 function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const { args } = f
-  const owned = applySceneOwnership(composed.tags, composed.locked, args.never ?? [], args.overrides, !isCast(args))
+  const locked = new Set(composed.locked)
+  const tags = f.leftOut.size > 0 ? composed.tags.filter((tag) => locked.has(tag) || !f.leftOut.has(tag)) : composed.tags
+  const owned = applySceneOwnership(tags, composed.locked, args.never ?? [], args.overrides, !isCast(args))
   const cleaned = args.clean(owned, composed.locked)
   if (!cleaned) return null
   // One rule wherever the tags come from (character, base clothing, library, scene): a generic
@@ -618,9 +650,13 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
  * Composed scenes for a pack of `count`, one at a time: up to a few more than asked,
  * so the duplicate filter has room. Only as many are composed as the pack takes.
  */
-function composeForPack(pool: ScenePool, args: ScenePackArgs, count: number): Generator<ScenePrompt> {
+function* composeForPack(pool: ScenePool, args: ScenePackArgs, count: number): Generator<ScenePrompt> {
   const overGenerate = Math.min(Math.max(count * 2, count + 4), MAX_PACK_OVERGENERATE)
-  return composePackPrompts(pool, composeOptions(args, overGenerate, args.seed, args.disabledSituations))
+  // With picked scenes, the posts that have them come first (see sceneIdeaPhases).
+  const phases = sceneIdeaPhases(pool, args.sceneIdea?.core) ?? [pool]
+  for (let i = 0; i < phases.length; i++) {
+    yield* composePackPrompts(phases[i], composeOptions(args, overGenerate, args.seed + i, args.disabledSituations))
+  }
 }
 
 /**

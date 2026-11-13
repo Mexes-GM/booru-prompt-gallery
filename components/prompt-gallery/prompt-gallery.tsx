@@ -899,6 +899,7 @@ export function PromptGallery() {
     sourceKey: packSourceKey,
     provider: packSourceAnswers.booruProvider,
     chipStore: packMode.chipStore,
+    sceneIdeas: packMode.activeSceneIdeas,
   })
   const packUsesScenes = packEngine === 'scenes'
   // Only seeds pools ONCE per base — re-running it on every incidental result
