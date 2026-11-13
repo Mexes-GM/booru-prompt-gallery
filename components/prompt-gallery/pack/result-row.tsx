@@ -40,7 +40,8 @@ export interface ResultRowProps {
   /** Resolves true when the copy worked. */
   onCopy: (index: number) => Promise<boolean> | boolean
   onReroll: (index: number) => void
-  onToggleLock: (index: number) => void
+  /** Without it the row has no lock. */
+  onToggleLock?: (index: number) => void
   onAlways: (tag: string) => void
   onNever: (tag: string) => void
 }
@@ -271,7 +272,7 @@ export const ResultRow = memo(function ResultRow({
           >
             <Dices className="size-4" aria-hidden />
           </button>
-          <button
+          {onToggleLock && <button
             type="button"
             onClick={() => onToggleLock(index)}
             aria-pressed={locked}
@@ -280,7 +281,7 @@ export const ResultRow = memo(function ResultRow({
             className={cn(ACTION, locked && "text-foreground")}
           >
             {locked ? <Lock className="size-4" aria-hidden /> : <LockOpen className="size-4" aria-hidden />}
-          </button>
+          </button>}
         </div>
       </div>
       <span className="sr-only" role="status" aria-live="polite">

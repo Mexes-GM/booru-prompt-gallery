@@ -3,7 +3,9 @@
  * components so each component file exports only components.
  */
 import type { ChangesAxis } from "@/lib/pack/brief"
+import type { FitNote } from "@/lib/pack/brief-pack"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
+import { companionsLabel } from "./slots"
 
 // ── Generate ─────────────────────────────────────────────────────────────────────
 
@@ -15,6 +17,35 @@ export function generateLabel(count: number, generating: boolean, done?: number)
   if (generating) return done === undefined ? "Generating…" : `Generating… ${done} of ${count}`
   return `Generate ${count} ${count === 1 ? "prompt" : "prompts"}`
 }
+
+/** Why Generate can't run yet. */
+export const BLOCKED = {
+  noCharacter: "Pick a character first",
+  roles: "Choose Girl or Boy for each character",
+  waiting: "Waiting for scenes",
+  noScenes: "No scenes to make prompts from. Try changing what they're doing.",
+} as const
+
+// ── The builder ──────────────────────────────────────────────────────────────────
+
+export const BUILDER_TEXT = {
+  title: "Pack",
+  exit: "Exit Pack Mode",
+  ratingMenu: "Content rating",
+  loadFailed: "Couldn't load the pack data. Check your connection and try again.",
+  retry: "Try again",
+  sheetHint: "Select a scene to leave it out",
+  rerollFailed: "No other scene is left for this prompt.",
+  convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
+} as const
+
+/** The pack's content ratings, as the rating menu names them. */
+export const RATING_OPTIONS = [
+  { value: "sfw", label: "Safe" },
+  { value: "questionable", label: "Questionable" },
+  { value: "explicit", label: "Explicit" },
+  { value: "both", label: "Questionable and explicit" },
+] as const
 
 // ── Copy ─────────────────────────────────────────────────────────────────────────
 
@@ -70,43 +101,61 @@ export function outfitFromKey(key: string): OutfitSource {
 
 // ── Fit line ─────────────────────────────────────────────────────────────────────
 
+/**
+ * One sentence of the fit line (lib/pack/brief-pack.ts's FitNote); the offer of
+ * sensitive pictures carries what accepting it does.
+ */
 export type FitState =
-  | { kind: "finding"; found: number }
-  | { kind: "fit"; scenes: number }
+  | Exclude<FitNote, { kind: "few-rated" }>
   /** Few scenes at the safe content rating; the user can allow the next one. */
   | { kind: "few-rated"; onInclude: () => void }
-  | { kind: "reuse"; scenes: number; reused: number }
-  /** A close pose stands in for the requested one. */
-  | { kind: "similar"; tag: string }
-  | { kind: "short"; made: number; asked: number; scenes: number; what: string }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-/** The visible sentence and the shorter one a screen reader hears. */
-export function fitText(state: FitState): { text: string; spoken: string } {
+function shortText(state: Extract<FitState, { kind: "short" }>): string {
+  if (state.scenes === 0) return state.what ? `No scene has ${state.what}` : "No scenes found"
+  const lead = `${state.made} of ${state.asked}`
+  if (!state.what) return `${lead}: only ${plural(state.scenes, "scene")} found`
+  return `${lead}: only ${plural(state.scenes, "scene")} ${state.scenes === 1 ? "has" : "have"} ${state.what}`
+}
+
+function fitSentence(state: FitState): string {
   switch (state.kind) {
     case "finding":
-      return { text: `Finding scenes… ${state.found} so far`, spoken: "Finding scenes" }
-    case "fit": {
-      const text = `${plural(state.scenes, "scene")} fit`
-      return { text, spoken: text }
+      return `Finding scenes… ${state.found} so far`
+    case "fit":
+      return `${plural(state.scenes, "scene")} fit`
+    case "few-rated":
+      return "Few general-rated pictures. Include sensitive ones?"
+    case "reuse":
+      return `Only ${plural(state.scenes, "scene")}: ${plural(state.reused, "prompt")} ${state.done ? "reuse" : "will reuse"} a scene`
+    case "similar":
+      return `Also using: ${state.tag}`
+    case "short":
+      return shortText(state)
+    case "imposed":
+      return state.done
+        ? `Added ${state.tag} to ${plural(state.prompts, "scene")} that didn't have it`
+        : `${plural(state.prompts, "prompt")} will add ${state.tag} to a scene that doesn't have it`
+    case "no-pose-here": {
+      const who = companionsLabel(state.people, state.cast)
+      const others = state.scenes > 0 ? `. ${plural(state.scenes, "scene")} with other people ${state.scenes === 1 ? "has" : "have"} it` : ""
+      return `${who}: no scene has ${state.what}${others}`
     }
-    case "few-rated": {
-      const text = "Few general-rated pictures. Include sensitive ones?"
-      return { text, spoken: text }
-    }
-    case "reuse": {
-      const text = `Only ${plural(state.scenes, "scene")}: ${plural(state.reused, "prompt")} will reuse a scene`
-      return { text, spoken: text }
-    }
-    case "similar": {
-      const text = `Also using: ${state.tag}`
-      return { text, spoken: text }
-    }
-    case "short": {
-      const text = `${state.made} of ${state.asked}: only ${plural(state.scenes, "scene")} ${state.scenes === 1 ? "has" : "have"} ${state.what}`
-      return { text, spoken: text }
-    }
+    case "needs-company":
+      return `${state.tag} needs two people, but ${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "shows" : "show"} one`
+    case "dropped":
+      return state.reason === "never"
+        ? `Left out ${state.tag}: it's also under Never`
+        : `Left out ${state.tag}: it doesn't match who's in the picture`
+    case "stale":
+      return "The pack changed. Generate again to update these prompts."
   }
+}
+
+/** The visible sentence and the shorter one a screen reader hears. */
+export function fitText(state: FitState): { text: string; spoken: string } {
+  const text = fitSentence(state)
+  return { text, spoken: state.kind === "finding" ? "Finding scenes" : text }
 }
 
