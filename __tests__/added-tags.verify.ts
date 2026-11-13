@@ -1,6 +1,6 @@
 /**
  * The added-tags dataset loader (lib/added-tags.ts), the card gate
- * (hooks/use-dataset-tags.ts) and how the tags land in a card's prompt
+ * (lib/dataset-tags-cache.ts) and how the tags land in a card's prompt
  * (lib/prompt/derive-post-prompt.ts).
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/added-tags.verify.ts
@@ -18,7 +18,7 @@ import {
   type CacheEntry,
   type FetchResponseLike,
 } from "../lib/added-tags"
-import { requestDatasetTags, wantsDatasetTags } from "../hooks/use-dataset-tags"
+import { requestDatasetTags, wantsDatasetTags } from "../lib/dataset-tags-cache"
 import { derivePostPrompt } from "../lib/prompt/derive-post-prompt"
 import type { BooruPost } from "../lib/booru/types"
 
