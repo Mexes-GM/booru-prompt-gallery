@@ -657,7 +657,8 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
   )
   // What the character wears gives way to the garment asked for; what they are stays.
   const setAside = wearing.length > 0 ? args.identity.filter((tag) => isWornByCharacter(tag, args.overrides, args.permanence)) : []
-  const character = args.identity.filter((tag) => !setAside.includes(tag))
+  const aside = new Set(setAside)
+  const character = args.identity.filter((tag) => !aside.has(tag))
   const have = new Set(character.map(normalizeTagForPack))
   const plan: RequestPlan = {
     identity: [...character, ...imposed.filter((tag) => !have.has(tag))],
