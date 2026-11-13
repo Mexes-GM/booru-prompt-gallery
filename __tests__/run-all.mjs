@@ -32,7 +32,8 @@ for (const file of files) {
   const result = spawnSync(
     process.execPath,
     [join(root, "node_modules/ts-node/dist/bin.js"), "--transpile-only", "--project", "__tests__/tsconfig.json", file],
-    { cwd: root, encoding: "utf8" },
+    // windowsHide: on Windows each child would otherwise open its own console window.
+    { cwd: root, encoding: "utf8", windowsHide: true },
   )
   const ms = Date.now() - start
   if (result.status === 0) {
