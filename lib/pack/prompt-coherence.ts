@@ -12,6 +12,7 @@ import { normalizeTagForPack } from './pack-generator'
 import { dropDanglingReferences } from './scene/scene-compose'
 import { loadedTagRelations, needsCompany, requiredBy, type TagRelations } from '../tag-relations'
 import { COUNT_TAG_RE } from './scene/permanence'
+import { getTagSlotFromOverrides } from '../tag-taxonomy'
 
 /** Comparable form of a word: "earrings" and "earring" match. */
 function stem(word: string): string {
@@ -66,15 +67,28 @@ export function showsOnePerson(tags: readonly string[]): boolean {
 }
 
 /**
- * Tags of a one-person prompt that need more than one person ("princess carry", "looking at
- * another": the measured `company` list), with what requires them. Empty when the prompt
- * doesn't show one person or the relations aren't loaded.
+ * Slots of what the people of a picture do: the people rule's scope. The measured `company`
+ * list also has tags about how the picture is laid out ("multiple views", "4koma"), its framing
+ * ("eye contact" is a camera tag) and relations between bodies or people ("height difference",
+ * "sisters"): those are not acts, and a one-person prompt from a real post may carry them.
  */
-export function loneCompanyTags(tags: readonly string[], relations: TagRelations | null = loadedTagRelations()): Set<string> {
+const PEOPLE_SLOTS = new Set(['pose:interaction', 'pose:physiological', 'pose:posture', 'pose:combat', 'pose:gesture', 'pose:kinetic'])
+
+/**
+ * Tags of a one-person prompt that need more than one person ("princess carry", "looking at
+ * another": the measured `company` list, within PEOPLE_SLOTS), with what requires them. Empty
+ * when the prompt doesn't show one person or the relations aren't loaded.
+ */
+export function loneCompanyTags(
+  tags: readonly string[],
+  overrides: Record<string, string>,
+  relations: TagRelations | null = loadedTagRelations()
+): Set<string> {
   const out = new Set<string>()
   if (!relations || !showsOnePerson(tags)) return out
-  tags.forEach((tag) => {
-    if (needsCompany(relations, normalizeTagForPack(tag))) out.add(tag)
+  tags.forEach((raw) => {
+    const tag = normalizeTagForPack(raw)
+    if (needsCompany(relations, tag) && PEOPLE_SLOTS.has(getTagSlotFromOverrides(tag, overrides)?.slot ?? '')) out.add(raw)
   })
   if (out.size === 0) return out
   const gone = new Set(Array.from(out).map(normalizeTagForPack))
@@ -103,7 +117,7 @@ export function coherentPromptTags(tags: readonly string[], options: CoherenceOp
   const relations = options.relations === undefined ? loadedTagRelations() : options.relations
   let out = dropRedundantTags(tags, options.fixed ?? [], relations)
   if (options.people) {
-    const lone = loneCompanyTags(out, relations)
+    const lone = loneCompanyTags(out, options.overrides, relations)
     if (lone.size > 0) {
       const kept = new Set(options.keep)
       out = out.filter((tag) => kept.has(tag) || !lone.has(tag))

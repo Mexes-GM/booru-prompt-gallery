@@ -9,8 +9,6 @@ import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import { packOutfitDescription, type Outfit } from "@/lib/outfit-swap"
 import { promptHasExplicitTag } from "./explicit-tags"
 import { normalizeTagForPack, type PackPrompt } from "./pack-generator"
-// The Scenes engine adds `sceneRating` to PackPrompt (declared in scene-pack.ts).
-import type {} from "./scene-pack"
 
 export interface PackNaturalContext {
   provider?: string

@@ -10,10 +10,11 @@
  *      clothes go, signature accessories stay; a scene already wearing it keeps its own clothes;
  *      the usual clothes don't come back through that scene.
  *   3. where: the scene's place goes, with the pose tags tied to it ("lying on bed").
- *   4. select / also: a requested posture or expression takes the scene's place.
+ *   4. select / also: a requested posture, expression or camera tag sends out only the scene's
+ *      tags of its slot that the measured relations say can't go with it.
  *   5. literal: first, as typed.
- *   6. The people rule: a scene tag that needs company leaves a one-person prompt; a requested
- *      one stays and the result reports it.
+ *   6. The people rule: a scene tag of an act that needs company leaves a one-person prompt (layout
+ *      and framing tags of the company list don't count); a requested one stays and is reported.
  *   7. Requests in "Never include" or against the composition are reported, not applied.
  *   8. Without requests nothing is reported; the async version returns the same issues.
  *   9. The natural formats take a Scenes prompt's rating from its scene, not from its words.
@@ -28,8 +29,10 @@ import { composePack, danglingReferences, needsObject } from "../lib/pack/scene/
 import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import { parseTagRelations, setTagRelations, type TagRelationsFile } from "../lib/tag-relations"
 import { packNaturalSource, packPromptRating } from "../lib/pack/pack-natural"
+import { loneCompanyTags } from "../lib/pack/prompt-coherence"
 import {
   DEFAULT_SCENE_SETTINGS,
+  displaceRequestedSlots,
   generateScenePack,
   generateScenePackAsync,
   isWornByCharacter,
@@ -143,9 +146,16 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
   const { prompts } = generateScenePack(pool, args({ identity: IDENTITY.slice(0, 5), requests: requests({ select: ["sitting"], also: ["smile"] }) }))
   for (const p of prompts) {
     const tags = tagsOf(p.prompt)
-    assert(tags.includes("sitting") && !tags.includes("standing") && !tags.includes("lying"), "a requested posture takes the scene's: " + p.prompt)
-    assert(tags.includes("smile") && !tags.includes("open mouth") && !tags.includes("blush"), "a requested expression takes the scene's: " + p.prompt)
+    assert(tags.includes("sitting") && !tags.includes("standing") && !tags.includes("lying"), "a requested posture sends out the postures it can't go with: " + p.prompt)
+    assert(tags.includes("smile"), "the requested expression is there: " + p.prompt)
   }
+  // Only what can't go with the request leaves: "smile" keeps the scene's "blush", "sitting" its "crossed legs".
+  const blushing = prompts.find((p) => p.scene?.postId === 205)
+  assert(!!blushing && tagsOf(blushing.prompt).includes("blush"), "an expression compatible with the request stays: " + blushing?.prompt)
+  const kept = displaceRequestedSlots(["sitting", "wariza", "standing", "squatting", "blush", "crying", "cowboy shot"], ["sitting", "smile", "from behind"], [], overrides)
+  assert(kept.includes("wariza") && !kept.includes("standing") && !kept.includes("squatting") && !kept.includes("crying"), "a compatible posture stays, an incompatible one goes: " + kept.join())
+  assert(kept.includes("blush") && kept.includes("cowboy shot"), "a compatible expression and framing stay: " + kept.join())
+  assert(displaceRequestedSlots(["standing"], ["sitting"], [], overrides, 1, null).includes("standing"), "without the relations nothing is displaced here")
 }
 
 // ── 5. literal ──
@@ -159,6 +169,10 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
   const plain = generateScenePack(pool, args({ identity: IDENTITY.slice(0, 5) }))
   const street = plain.prompts.find((p) => p.scene?.postId === 206)
   assert(!!street && !tagsOf(street.prompt).includes("looking at another"), "a scene tag that needs company leaves a one-person prompt: " + street?.prompt)
+  // The rule is about what people do: a layout tag of the company list stays.
+  const solo = ["1girl", "solo", "multiple views", "4koma", "looking at another", "standing"]
+  const lone = loneCompanyTags(solo, { ...overrides, "multiple views": "pose:camera" })
+  assert(lone.has("looking at another") && !lone.has("multiple views") && !lone.has("4koma"), "only acts count: " + Array.from(lone).join())
 
   const { prompts, issues } = generateScenePack(pool, args({ identity: IDENTITY.slice(0, 5), requests: requests({ select: ["princess carry"] }) }))
   assert(prompts.length > 0 && prompts.every((p) => tagsOf(p.prompt).includes("princess carry")), "a requested pose that needs company stays")

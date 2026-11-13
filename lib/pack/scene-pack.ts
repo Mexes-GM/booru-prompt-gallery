@@ -21,16 +21,8 @@ import type { PackPeople, ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
 import { garmentPrefix, lastQualifier } from './scene/franchise'
 import type { SceneRequests } from './brief'
-
-declare module './pack-generator' {
-  interface PackPrompt {
-    /**
-     * Scenes engine: the rating of the scene the prompt was built on (the highest of the posts
-     * it took parts from). It is what the picture is; pack-natural.ts tells the converter so.
-     */
-    sceneRating?: SceneRating
-  }
-}
+import { excludes, loadedTagRelations, type TagRelations } from '../tag-relations'
+import { resolveTagConflicts } from '../tag-conflicts'
 
 /** The pack's content rating (same values as the source dialog). */
 export type ScenePackRating = 'sfw' | 'questionable' | 'explicit' | 'both'
@@ -544,8 +536,8 @@ export interface ScenePackArgs {
   permanence?: (tag: string) => Permanence
 }
 
-/** A request's role in the brief (keys of SceneRequests). */
-export type RequestRole = keyof SceneRequests
+/** A request's role for the engine (keys of SceneRequests); not brief.ts's RequestRole, which names the brief's slots. */
+export type SceneRequestRole = keyof SceneRequests
 
 /**
  * What the engine could not do as asked, for the interface to say in words. One entry per
@@ -554,9 +546,9 @@ export type RequestRole = keyof SceneRequests
  */
 export type ScenePackIssue =
   /** The request needs more than one person and the pack shows one: it stays in, contradicted. */
-  | { kind: 'needs-company'; tag: string; role: RequestRole; prompts: number }
+  | { kind: 'needs-company'; tag: string; role: SceneRequestRole; prompts: number }
   /** The request was left out of the pack, and why. */
-  | { kind: 'request-dropped'; tag: string; role: RequestRole; reason: RequestDropReason }
+  | { kind: 'request-dropped'; tag: string; role: SceneRequestRole; reason: RequestDropReason }
 
 export type RequestDropReason =
   /** The same tag is in "Never include" (or a removed chip). */
@@ -583,7 +575,7 @@ const wearsOwnOutfits = (args: ScenePackArgs) =>
 
 // ── Requests ──────────────────────────────────────────────────────────────────
 
-/** Slots that hold one thing at a time and that a requested tag takes from the scene: a posture, an expression, a camera. */
+/** Slots where a requested tag displaces the scene's tags it can't go with: a posture, an expression, a camera. */
 const DISPLACING_SLOTS = new Set(['pose:posture', 'pose:expression', 'pose:camera'])
 /** Slots whose items the permanence data may mark as the character's own (signature) when `permanence` is missing. */
 const SIGNATURE_SLOTS = new Set(['clothing:headwear', 'clothing:eyewear'])
@@ -614,7 +606,7 @@ interface RequestPlan {
   /** What the character usually wears, set aside for the garments asked for: it doesn't come back through the scene either. */
   setAside: string[]
   literal: string[]
-  roleOf: Map<string, RequestRole>
+  roleOf: Map<string, SceneRequestRole>
   /** Requests left out before composing, and why. */
   dropped: ScenePackIssue[]
 }
@@ -629,9 +621,9 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
   const cached = plans.get(args)
   if (cached) return cached
   const never = (args.never ?? []).map(normalizeTagForPack).filter(Boolean)
-  const roleOf = new Map<string, RequestRole>()
+  const roleOf = new Map<string, SceneRequestRole>()
   const dropped: ScenePackIssue[] = []
-  const take = (role: Exclude<RequestRole, 'literal'>): string[] =>
+  const take = (role: Exclude<SceneRequestRole, 'literal'>): string[] =>
     requests[role].flatMap((raw) => {
       const tag = normalizeTagForPack(raw)
       if (!tag || roleOf.has(tag)) return []
@@ -676,29 +668,43 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
 }
 
 /**
- * `tags` without the scene's tags of a slot a request takes: a requested posture, expression or
- * camera tag stands for the scene's ("sitting" sends "standing" out). A longer form of the request
- * ("sitting on chair" for "sitting") stays, and so do `locked` tags.
+ * `tags` without the scene's tags a requested posture, expression or camera tag rules out: those
+ * of the same slot that can't go with it, by the measured relations for a picture of `people`
+ * (`excludes`) or by the conflict resolver the composer uses, either way round ("sitting" sends
+ * "standing", "kneeling" and "squatting" out but keeps "wariza"; "smile" keeps "blush" and sends
+ * "crying" out; "from behind" keeps "cowboy shot"). Variants of the request already left with the
+ * ownership rule. `locked` tags stay. Without the relations loaded nothing is displaced here (the
+ * composer's conflict pass still applies).
  */
 export function displaceRequestedSlots(
   tags: readonly string[],
   requested: readonly string[],
   locked: readonly string[],
-  overrides: Record<string, string>
+  overrides: Record<string, string>,
+  people = 1,
+  relations: TagRelations | null = loadedTagRelations()
 ): string[] {
-  const taken = new Map<string, string[]>()
+  if (!relations) return [...tags]
+  const owners = new Map<string, string[]>()
   for (const tag of requested) {
     const slot = getTagSlotFromOverrides(tag, overrides)?.slot
-    if (slot && DISPLACING_SLOTS.has(slot)) taken.set(slot, [...(taken.get(slot) ?? []), tag])
+    if (slot && DISPLACING_SLOTS.has(slot)) owners.set(slot, [...(owners.get(slot) ?? []), tag])
   }
-  if (taken.size === 0) return [...tags]
+  if (owners.size === 0) return [...tags]
   const kept = new Set(locked)
   return tags.filter((raw) => {
     if (kept.has(raw)) return true
     const tag = normalizeTagForPack(raw)
-    const owners = taken.get(getTagSlotFromOverrides(tag, overrides)?.slot ?? '')
-    return !owners || owners.some((owner) => tag === owner || tag.startsWith(`${owner} `) || isQualifiedVariant(tag, owner))
+    const rivals = owners.get(getTagSlotFromOverrides(tag, overrides)?.slot ?? '')
+    return !rivals || !rivals.some((owner) => cannotGoWith(owner, tag, people, relations))
   })
+}
+
+/** True when `a` and `b` can't be in one picture: the measured relations or the conflict resolver say so, either way round. */
+function cannotGoWith(a: string, b: string, people: number, relations: TagRelations): boolean {
+  if (excludes(relations, a, b, { people })) return true
+  const base = people >= 2 ? ['2girls'] : []
+  return resolveTagConflicts([...base, a], [b]).conflictingTags.length > 0 || resolveTagConflicts([...base, b], [a]).conflictingTags.length > 0
 }
 
 /** The tags every prompt keeps, in order: the character blocks (and the imposed requests), then the base's clothing when it is worn. */
@@ -828,7 +834,8 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const owner = wearing.size > 0 ? composed.locked.filter((tag) => !wearing.has(tag)) : composed.locked
   const owned = new Set(applySceneOwnership(tags, owner, [...(args.never ?? []), ...plan.setAside], args.overrides, !isCast(args)))
   const ownedTags = tags.filter((tag) => locked.has(tag) || owned.has(tag))
-  const displaced = displaceRequestedSlots(ownedTags, plan.owning, composed.locked, args.overrides)
+  const people = args.people ? args.people.girls + args.people.boys : 1
+  const displaced = displaceRequestedSlots(ownedTags, plan.owning, composed.locked, args.overrides, people)
   const cleaned = args.clean(displaced, composed.locked)
   if (!cleaned) return null
   // One rule wherever the tags come from (character, base clothing, library, scene): a generic
@@ -849,7 +856,7 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   // A request that needs company stays in a one-person prompt; the pack says so.
   if (args.requests) {
     const finalTags = prompt.split(',').map((tag) => tag.trim()).filter(Boolean)
-    loneCompanyTags(finalTags).forEach((tag) => {
+    loneCompanyTags(finalTags, args.overrides).forEach((tag) => {
       if (plan.roleOf.has(normalizeTagForPack(tag))) f.lonely.set(tag, (f.lonely.get(tag) ?? 0) + 1)
     })
   }
