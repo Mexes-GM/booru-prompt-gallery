@@ -219,6 +219,8 @@ interface MasonryItemProps {
     backgroundMatchStrictness?: MatchStrictness
     /** "Random outfit" bundle; undefined keeps the post's clothing. */
     outfitSettings?: OutfitSettings
+    /** "Fill in missing tags": add the dataset's tags to Danbooru posts. */
+    datasetTagsEnabled?: boolean
     tagOverrides: Record<string, string>
     copiedId: number | null
     isPreviouslyCopied?: boolean
@@ -286,6 +288,7 @@ export const MasonryItem = memo(function MasonryItem({
     detailedBackgroundsList,
     backgroundMatchStrictness,
     outfitSettings,
+    datasetTagsEnabled = false,
     tagOverrides,
     copiedId,
     isPreviouslyCopied,
@@ -349,6 +352,7 @@ export const MasonryItem = memo(function MasonryItem({
         hasReplacements,
         replacedTags,
         outfitDescription,
+        datasetAddedTags,
     } = useCardPrompt({
         post,
         tagCounts,
@@ -376,6 +380,8 @@ export const MasonryItem = memo(function MasonryItem({
         tagOverrides,
         globalWeights,
         isGlobalWeightsEnabled,
+        provider: itemProvider,
+        datasetTagsEnabled,
         onBaseContentChange: () => setModifiedContent(null),
     })
 
@@ -910,6 +916,7 @@ export const MasonryItem = memo(function MasonryItem({
                                 globalWeights={isGlobalWeightsEnabled ? globalWeights : {}}
                                 onSearch={onSearch}
                                 conflictingTags={conflictingTags}
+                                imageTags={datasetAddedTags}
                             />
                         )}
                     </div>
@@ -1027,6 +1034,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.detailedBackgroundsList !== next.detailedBackgroundsList) return false
     if (prev.backgroundMatchStrictness !== next.backgroundMatchStrictness) return false
     if (prev.outfitSettings !== next.outfitSettings) return false
+    if (prev.datasetTagsEnabled !== next.datasetTagsEnabled) return false
     if (prev.isGlobalWeightsEnabled !== next.isGlobalWeightsEnabled) return false
     if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false
     if (prev.showCategoryTagBadges !== next.showCategoryTagBadges) return false

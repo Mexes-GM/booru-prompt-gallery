@@ -62,6 +62,9 @@ export const MATCH_STRICTNESS_DESCRIPTIONS: Record<MatchStrictness, string> = {
   strict: "Tries even harder to keep the scenery close to the original post.",
 }
 
+/** What "Fill in missing tags" does; the source is credited on the About page. */
+const FILL_MISSING_TAGS_HINT = "Add the clothing, scenery and framing a Danbooru image shows but its tags miss. Can be wrong"
+
 /** Background modes in Customize prompt (the extension keeps its own labels). */
 const BACKGROUND_MODES: { value: BackgroundMode; label: string }[] = [
   { value: "keep", label: "Keep original" },
@@ -92,6 +95,9 @@ interface PromptGenerationOptionsPanelProps {
    *  prompt get silently appended to the final prompt. */
   autoAppendSearchTags?: boolean
   setAutoAppendSearchTags?: (val: boolean) => void
+  /** "Fill in missing tags" (added-tags dataset, Danbooru only). The switch shows only with its setter. */
+  fillMissingTags?: boolean
+  setFillMissingTags?: (val: boolean) => void
 
   removeLoRaTags: boolean
   setRemoveLoRaTags: (val: boolean) => void
@@ -176,6 +182,8 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   setExperimentalPromptRules: _setExperimentalPromptRules,
   autoAppendSearchTags = true,
   setAutoAppendSearchTags: _setAutoAppendSearchTags,
+  fillMissingTags = true,
+  setFillMissingTags: _setFillMissingTags,
   removeLoRaTags,
   setRemoveLoRaTags: _setRemoveLoRaTags,
   removeQualityTags,
@@ -227,6 +235,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   const setPrependAnimaArtist = (val: boolean) => { trackSetting('prependAnimaArtist', val); _setPrependAnimaArtist(val); };
   const setExperimentalPromptRules = (val: boolean) => { trackSetting('experimentalPromptRules', val); _setExperimentalPromptRules?.(val); };
   const setAutoAppendSearchTags = (val: boolean) => { trackSetting('autoAppendSearchTags', val); _setAutoAppendSearchTags?.(val); };
+  const setFillMissingTags = (val: boolean) => { trackSetting('fillMissingTags', val); _setFillMissingTags?.(val); };
   const setRemoveLoRaTags = (val: boolean) => { trackSetting('removeLoRaTags', val); _setRemoveLoRaTags(val); };
   const setRemoveQualityTags = (val: boolean) => { trackSetting('removeQualityTags', val); _setRemoveQualityTags(val); };
   const toggleGlobalWeights = (enabled: boolean) => { trackSetting('globalWeights', enabled); _toggleGlobalWeights?.(enabled); };
@@ -496,6 +505,14 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
                 </div>
                 <Switch id="prepend-anima-artist" checked={prependAnimaArtist} onCheckedChange={setPrependAnimaArtist} className={switchClass} aria-label="Prepend the post's artist as @artist" />
               </div>
+              {_setFillMissingTags && (
+                <div className={rowClass}>
+                  <InfoTooltip title="Fill in missing tags" description={FILL_MISSING_TAGS_HINT}>
+                    <Label htmlFor="fill-missing-tags" className={labelClass}>Fill in missing tags</Label>
+                  </InfoTooltip>
+                  <Switch id="fill-missing-tags" checked={fillMissingTags} onCheckedChange={setFillMissingTags} className={switchClass} aria-label="Fill in missing tags on Danbooru posts" />
+                </div>
+              )}
               {_setExperimentalPromptRules && (
                 <div className={rowClass}>
                   <div className="flex items-center gap-2">
@@ -634,6 +651,9 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
   )
   if (!isAibooru) {
     options.push({ id: "prepend-anima-artist", label: "Start with @artist", hint: "Only for checkpoints that support Anima's @artist syntax", checked: prependAnimaArtist, onChange: setPrependAnimaArtist })
+    if (_setFillMissingTags) {
+      options.push({ id: "fill-missing-tags", label: "Fill in missing tags", hint: FILL_MISSING_TAGS_HINT, checked: fillMissingTags, onChange: setFillMissingTags })
+    }
     if (_setExperimentalPromptRules) {
       options.push({ id: "experimental-prompt-rules", label: "Experimental rules", hint: "Drop leg tags you add from close shots and the tags of multi-panel posts. Can be wrong", checked: experimentalPromptRules, onChange: setExperimentalPromptRules })
     }

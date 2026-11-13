@@ -607,9 +607,9 @@ export function PromptGallery() {
   const {
     promptOptions, setPromptOptions,
     includeCharacters, optimizeTags, smartTagExclusion, prependAnimaArtist,
-    autoAppendSearchTags, experimentalPromptRules,
+    autoAppendSearchTags, experimentalPromptRules, fillMissingTags,
     setIncludeCharacters, setOptimizeTags, setSmartTagExclusion, setPrependAnimaArtist,
-    setAutoAppendSearchTags, setExperimentalPromptRules,
+    setAutoAppendSearchTags, setExperimentalPromptRules, setFillMissingTags,
   } = usePromptOptions()
   const { format: promptFormat, fullDetail: promptFullDetail } = usePromptFormat()
 
@@ -1657,6 +1657,7 @@ export function PromptGallery() {
   const cardPrependAnimaArtist = useDeferredValue(prependAnimaArtist)
   const cardExperimentalPromptRules = useDeferredValue(experimentalPromptRules)
   const cardAutoAppendSearchTags = useDeferredValue(autoAppendSearchTags)
+  const cardFillMissingTags = useDeferredValue(fillMissingTags)
   const cardRemoveLoRaTags = useDeferredValue(search.removeLoRaTags)
   const cardRemoveQualityTags = useDeferredValue(search.removeQualityTags)
   const cardIsGlobalWeightsEnabled = useDeferredValue(isGlobalWeightsEnabled)
@@ -1783,6 +1784,7 @@ export function PromptGallery() {
       addInput={debouncedAddInput}
       searchTags={search.debouncedSearchTags}
       autoAppendSearchTags={cardAutoAppendSearchTags}
+      datasetTagsEnabled={cardFillMissingTags}
       findInput={debouncedFindInput}
       replaceInput={debouncedReplaceInput}
       tagAppendRules={tagAppendRules}
@@ -1824,7 +1826,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, cardFillMissingTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -2132,6 +2134,8 @@ export function PromptGallery() {
                                 setExperimentalPromptRules={setExperimentalPromptRules}
                                 autoAppendSearchTags={autoAppendSearchTags}
                                 setAutoAppendSearchTags={setAutoAppendSearchTags}
+                                fillMissingTags={fillMissingTags}
+                                setFillMissingTags={setFillMissingTags}
                                 removeLoRaTags={search.removeLoRaTags}
                                 setRemoveLoRaTags={search.setRemoveLoRaTags}
                                 removeQualityTags={search.removeQualityTags}

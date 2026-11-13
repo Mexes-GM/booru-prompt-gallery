@@ -1,9 +1,9 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, useRef } from "react"
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
-import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle, Copy, Check } from "lucide-react"
+import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle, Copy, Check, ImagePlus } from "lucide-react"
 import { track } from '@/lib/analytics'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -28,7 +28,14 @@ interface InteractivePromptProps {
   globalWeights?: Record<string, number>
   onSearch?: (tag: string) => void
   conflictingTags?: { tag: string; reason: string }[]
+  /** Tags added from the image (the added-tags dataset), normalized; shown as added. */
+  imageTags?: readonly string[]
 }
+
+/** Hint on tags that the added-tags dataset put in the prompt. */
+export const IMAGE_TAG_HINT = "Added from the image, not on the original post"
+
+const matchKey = (text: string) => text.replace(/\\/g, "").replace(/_/g, " ").toLowerCase().trim()
 
 const buildPrompt = (tags: TagData[]): string => {
   return tags.map(tag => {
@@ -45,9 +52,11 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
   onPromoteToGlobal,
   globalWeights = {},
   onSearch,
-  conflictingTags = []
+  conflictingTags = [],
+  imageTags,
 }: InteractivePromptProps) {
   const [tags, setTags] = useState<TagData[]>([])
+  const imageTagSet = useMemo(() => new Set((imageTags ?? []).map(matchKey)), [imageTags])
 
   useEffect(() => {
     if (!initialPrompt) {
@@ -148,6 +157,7 @@ export const InteractivePrompt = React.memo(function InteractivePrompt({
                 onCommit={handleCommit}
                 isEditable={isEditable}
                 isGlobal={isGlobal}
+                fromImage={imageTagSet.size > 0 && imageTagSet.has(matchKey(tag.text))}
                 onPromoteTag={onPromoteToGlobal ? handlePromoteTag : undefined}
                 canPromote={!!onPromoteToGlobal}
                 onSearchTag={onSearch ? handleSearchTag : undefined}
@@ -189,12 +199,14 @@ interface PromptTagProps {
   onCommit: (id: string, weight: number) => void
   isEditable: boolean
   isGlobal: boolean
+  /** Added from the image by the added-tags dataset. */
+  fromImage?: boolean
   onPromoteTag?: (text: string, weight: number) => void
   canPromote?: boolean
   onSearchTag?: (text: string) => void
 }
 
-const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocusTag, onCommit, isEditable, isGlobal, onPromoteTag, canPromote, onSearchTag }: PromptTagProps) {
+const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocusTag, onCommit, isEditable, isGlobal, fromImage = false, onPromoteTag, canPromote, onSearchTag }: PromptTagProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [draftWeight, setDraftWeight] = useState(tag.weight)
   const [justCopied, setJustCopied] = useState(false)
@@ -308,6 +320,8 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
           className={cn(
             "cursor-pointer px-0.5 -mx-0.5 pointer-coarse:py-1 rounded transition-colors duration-200 decoration-clone select-text outline-none focus-visible:ring-2 focus-visible:ring-ring inline relative border-none bg-transparent font-inherit whitespace-normal text-left break-words",
             textClass,
+            // Same family as the other "changed by an option" marks, but quieter: no fill, a dotted underline.
+            fromImage && "underline decoration-dotted decoration-info/70 underline-offset-[3px]",
             justCopied ? "!bg-success/25 ring-1 ring-success/50" : bgClass
           )}
           animate={
@@ -332,8 +346,8 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
               handleOpenChange(!isOpen)
             }
           }}
-          title={isGlobal ? "Global weight applied · Right-click to copy" : "Right-click to copy"}
-          aria-label={isGlobal ? `Edit weight for ${tag.text} (Global). Right-click to copy.` : `Edit weight for ${tag.text}. Right-click to copy.`}
+          title={[isGlobal ? "Global weight applied" : null, fromImage ? IMAGE_TAG_HINT : null, "Right-click to copy"].filter(Boolean).join(" · ")}
+          aria-label={`Edit weight for ${tag.text}${isGlobal ? " (Global)" : ""}.${fromImage ? ` ${IMAGE_TAG_HINT}.` : ""} Right-click to copy.`}
         >
           {displayText}
           {isGlobal && (
@@ -382,6 +396,12 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
               <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-primary-text bg-primary/10 rounded-sm mb-0.5">
                 <Globe className="h-3 w-3" />
                 <span className="font-medium">Global Weight</span>
+              </div>
+            )}
+            {fromImage && (
+              <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-info-text bg-info-soft rounded-sm mb-0.5">
+                <ImagePlus className="h-3 w-3" aria-hidden="true" />
+                <span>{IMAGE_TAG_HINT}</span>
               </div>
             )}
 

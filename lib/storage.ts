@@ -218,6 +218,12 @@ export interface PromptOptions {
    * from close shots, drop tags of posts made of several pictures. Off by default.
    */
   experimentalPromptRules?: boolean
+  /**
+   * "Fill in missing tags": Danbooru cards get the clothing, scenery and
+   * framing tags their image shows but the post lacks, from the added-tags
+   * dataset. On by default; off means the dataset is never requested.
+   */
+  fillMissingTags?: boolean
 }
 
 // History entries embed a self-contained snapshot of the copied post
