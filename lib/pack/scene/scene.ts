@@ -68,6 +68,8 @@ export interface Scene {
   typicality?: number
   /** Physical supports that tie pose and place together ("bed", "wall"), plus indoors / outdoors. */
   anchors: string[]
+  /** Written by the scene model, not taken from a real post (lib/pack/scene/invented.ts). */
+  invented?: true
 }
 
 export interface SceneContext {
@@ -382,5 +384,6 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     pairing,
     units,
     anchors: anchorsOf(units, ctx),
+    ...(post._invented ? { invented: true as const } : {}),
   }
 }

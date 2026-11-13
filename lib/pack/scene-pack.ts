@@ -39,6 +39,11 @@ export interface ScenePackSettings {
   /** 'picked': the place comes from the scenes the user picked (Scene ideas); with none, as 'scene'. */
   scenery: 'scene' | 'vary' | 'plain' | 'picked'
   extras: boolean
+  /**
+   * Adds scenes written by the scene model to the pool (lib/pack/scene/invented.ts).
+   * Off (or missing, in configs saved before it existed): nothing is downloaded.
+   */
+  inventedScenes?: boolean
 }
 
 export const DEFAULT_SCENE_SETTINGS: ScenePackSettings = {
@@ -46,6 +51,7 @@ export const DEFAULT_SCENE_SETTINGS: ScenePackSettings = {
   clothing: 'scene',
   scenery: 'scene',
   extras: false,
+  inventedScenes: false,
 }
 
 // ── Inputs ────────────────────────────────────────────────────────────────────
@@ -552,13 +558,21 @@ function composeOptions(args: ScenePackArgs, count: number, seed: number, disabl
  */
 export const MIN_IDEA_DONORS = 3
 
-/** The pool split for the picked scenes: the matching posts first, then the others; null when there's no split. */
+/**
+ * The pool split for the picked scenes: the matching posts first, then the others; null when
+ * there's no split. Among the matching ones, real posts come before invented scenes (which are
+ * written with the picked scene's tags, so they all match).
+ */
 export function sceneIdeaPhases(pool: ScenePool, core: readonly string[] | undefined): ScenePool[] | null {
   if (!core || core.length === 0) return null
-  const matching = new Set(pool.scenes.filter((scene) => sceneHasIdeaTag(scene, core)).map((scene) => scene.postId))
-  if (matching.size < MIN_IDEA_DONORS) return null
+  const matchingScenes = pool.scenes.filter((scene) => sceneHasIdeaTag(scene, core))
+  if (matchingScenes.length < MIN_IDEA_DONORS) return null
+  const matching = new Set(matchingScenes.map((scene) => scene.postId))
+  const realMatching = new Set(matchingScenes.filter((scene) => !scene.invented).map((scene) => scene.postId))
+  const inventedMatching = new Set(matchingScenes.filter((scene) => scene.invented).map((scene) => scene.postId))
   const others = new Set(pool.scenes.map((scene) => scene.postId).filter((id) => !matching.has(id)))
-  return [restrictPool(pool, matching), restrictPool(pool, others)]
+  const phases = realMatching.size > 0 && inventedMatching.size > 0 ? [realMatching, inventedMatching, others] : [matching, others]
+  return phases.map((ids) => restrictPool(pool, ids))
 }
 
 /** A dashed clothing tag of a picked scene is the scene's clothes: only "From the scene" keeps it. */
@@ -642,6 +656,7 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
     scene: {
       postId,
       preview: f.sceneById.get(postId)?.preview,
+      ...(f.sceneById.get(postId)?.invented ? { invented: true } : {}),
       situation: f.situationOf.get(postId),
       donors: Array.from(new Set(Object.values(composed.sources).filter((id): id is number => id !== undefined))),
     },

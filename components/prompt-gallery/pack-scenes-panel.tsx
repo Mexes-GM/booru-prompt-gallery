@@ -5,7 +5,7 @@
  * place of the per-category list. Top to bottom: the character (chips pinned
  * in every prompt or left to each scene), who is in the picture, the
  * situations of the pool (each with a switch and a few example thumbnails),
- * then Mix, Clothing, Scenery and Extras.
+ * then Mix, Clothing, Scenery, Extras and Invented scenes.
  *
  * Same visual language as the category list: neutral cards, the Pack Mode
  * colour only on active choices.
@@ -24,6 +24,7 @@ import type { CastRole } from "@/lib/pack/scene/cast"
 import { outfitTags } from "@/lib/pack/character-outfits"
 import type { SceneIdeaControls } from "@/hooks/use-pack-mode"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
+import type { InventedScenesStatus } from "@/hooks/use-invented-scenes"
 import { PackSceneIdeas } from "./pack-scene-ideas"
 import { AddTagsField } from "./add-tags-field"
 import { pinnedConflictLines } from "./pack-category-list"
@@ -164,6 +165,29 @@ const SCENERY_OPTIONS: readonly Option<ScenePackSettings["scenery"]>[] = [
 ]
 
 const sectionClass = "rounded-xl border border-border/70 bg-card/70 p-3 sm:p-4 space-y-3"
+
+/**
+ * One line on where the invented scenes are: downloading the model, writing, how many
+ * made it into the pool (`inPool`, after the pool's own filters), or why there are none.
+ */
+function inventedScenesLine(status: InventedScenesStatus, inPool: number): string | null {
+  switch (status.phase) {
+    case "loading":
+      return status.progress === null
+        ? "Downloading the model (about 9 MB, only the first time)…"
+        : `Downloading the model (about 9 MB, only the first time)… ${Math.round(status.progress * 100)}%`
+    case "generating":
+      return status.count > 0 ? `${plural(inPool, "invented scene")} in the pool. Writing new ones…` : "Writing scenes…"
+    case "ready":
+      return `${plural(inPool, "invented scene")} in the pool.`
+    case "unavailable":
+      return "Invented scenes aren't available on this site."
+    case "failed":
+      return "Couldn't load the model. Turn this off and on again to retry."
+    default:
+      return null
+  }
+}
 
 /** One Character chip: select it to pin it or leave it to the scene; the X removes it. */
 function TraitChip({ chip, onToggle, onRemove, clashesWith }: { chip: SceneChip; onToggle: (tag: string) => void; onRemove: (tag: string) => void; clashesWith?: string }) {
@@ -761,6 +785,36 @@ function PackScenesPanelComponent({
               className="data-[state=checked]:bg-mode-pack"
             />
           </span>
+        </div>
+        <div className="h-px bg-border/50" />
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor="pack-scene-invented" className="min-w-0 cursor-pointer">
+              <span className="block text-sm font-semibold">Invented scenes</span>
+              <span className="block text-xs text-muted-foreground">
+                Adds scenes written by a small AI model to the pool, for more variety. They aren&apos;t real posts, so some may not make sense.
+              </span>
+            </label>
+            <span className="flex items-center justify-center flex-shrink-0 pointer-coarse:min-h-11 pointer-coarse:min-w-11">
+              <Switch
+                id="pack-scene-invented"
+                checked={settings.inventedScenes === true}
+                onCheckedChange={(v) => set("inventedScenes", v)}
+                className="data-[state=checked]:bg-mode-pack"
+              />
+            </span>
+          </div>
+          {settings.inventedScenes && inventedScenesLine(scenes.inventedScenes, pool?.stats.invented ?? 0) && (
+            <p
+              className={`flex items-center gap-1.5 text-xs ${scenes.inventedScenes.phase === "failed" || scenes.inventedScenes.phase === "unavailable" ? "text-warning-text" : "text-muted-foreground"}`}
+              role="status"
+            >
+              {(scenes.inventedScenes.phase === "loading" || scenes.inventedScenes.phase === "generating") && (
+                <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" aria-hidden />
+              )}
+              {inventedScenesLine(scenes.inventedScenes, pool?.stats.invented ?? 0)}
+            </p>
+          )}
         </div>
       </section>
     </div>

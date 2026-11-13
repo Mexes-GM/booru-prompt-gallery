@@ -44,6 +44,7 @@ import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, ty
 import { chosenOutfit, loadCharacterOutfits, outfitTags, type CharacterOutfits } from '@/lib/pack/character-outfits'
 import { loadTraitAliases } from '@/lib/prompt/natural-prompt-loader'
 import { NO_ACTIVE_SCENE_IDEAS, sceneIdeasInUse, type ActiveSceneIdeas } from '@/lib/pack/scene-ideas'
+import { useInventedScenes, type InventedScenesStatus } from '@/hooks/use-invented-scenes'
 
 /** How long the pool waits for Gelbooru's tag list before it uses the built-in rules. */
 const GELBOORU_LOOKUP_TIMEOUT_MS = 8000
@@ -106,6 +107,8 @@ export interface UsePackScenesArgs {
   chipStore: CharacterChipStore
   /** What the picked Scene ideas put in or keep out (usePackMode's activeSceneIdeas). */
   sceneIdeas?: ActiveSceneIdeas
+  /** Fetches the taxonomy slots of tags no pool post had (usePackMode's enrichTagSlots), for invented scenes. */
+  enrichTags?: (tags: string[]) => Promise<unknown>
 }
 
 export interface SceneCharacterBlock {
@@ -186,6 +189,8 @@ export interface UsePackScenesResult {
   enabledScenes: number
   /** Posts of the source left out for having another content rating. */
   otherRatingPosts: number
+  /** Scenes written by the scene model (settings.inventedScenes): loading, generating, how many are in the pool. */
+  inventedScenes: InventedScenesStatus
   /** Library outfits in the chosen styles; null until the library loads (or when it isn't used). */
   libraryOutfitCount: number | null
   prompts: PackPrompt[]
@@ -238,7 +243,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     enabled, posts, overrides, members, baseExtras, baseFixed, baseClothing, removedTags, baseFromCharacter,
     alwaysAdd, neverIncludeText, characterTags, contentRating, settings, promptCount, cleanOptions, globalWeights,
     isGlobalWeightsEnabled, outfitOptions, natural, baseKey, sourceKey, provider, chipStore,
-    sceneIdeas: addedIdeas = NO_ACTIVE_SCENE_IDEAS,
+    sceneIdeas: addedIdeas = NO_ACTIVE_SCENE_IDEAS, enrichTags,
   } = args
   // Picked scenes apply only while Scenery is on "Pick a scene"; they stay added otherwise.
   const sceneIdeas = useMemo(() => sceneIdeasInUse('scenes', settings.scenery, addedIdeas), [settings.scenery, addedIdeas])
@@ -517,11 +522,36 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     const [girls, boys] = peopleKey.split('/').map(Number)
     return { girls, boys }
   }, [peopleKey])
+
+  // Invented scenes (lib/pack/scene/invented.ts): written in the background for the composition
+  // in use (the cast's own when the posts have none), then added to the pool like real posts.
+  const inventedPeople = people ?? (basePool && missingRoles.length === 0 ? namedPeople : null)
+  const castNames = useMemo(() => members.map((m) => m.character).filter(Boolean), [members])
+  const castIdentity = useMemo(() => Array.from(new Set([...pinnedTags, ...members.flatMap((m) => m.candidates)])), [pinnedTags, members])
+  const inventedFixed = useMemo(() => Array.from(new Set([...pinnedTags, ...sceneIdeas.core])), [pinnedTags, sceneIdeas])
+  const invented = useInventedScenes({
+    enabled: enabled && settings.inventedScenes === true,
+    posts: rated,
+    contentRating,
+    people: inventedPeople,
+    identity: castIdentity,
+    characters: castNames,
+    copyrights: natural.copyrights,
+    fixed: inventedFixed,
+    never: neverTags,
+    enrichTags,
+  })
+  const inventedPosts = invented.posts
+  const refreshInvented = invented.refresh
+
   const pool = useMemo(() => {
     if (!basePool || !permanence) return null
+    if (inventedPosts.length > 0 && inventedPeople) {
+      return buildScenePool([...rated, ...inventedPosts], { overrides, permanence, subject, cast: namedPeople, tagKind: (tag) => tagKinds.get(tag), people: inventedPeople })
+    }
     if (!people || peopleKey === peopleKeyOf(basePool.stats.composition)) return basePool
     return buildScenePool(rated, { overrides, permanence, subject, cast: namedPeople, tagKind: (tag) => tagKinds.get(tag), people })
-  }, [basePool, permanence, people, peopleKey, rated, overrides, subject, namedPeople, tagKinds])
+  }, [basePool, permanence, people, peopleKey, rated, overrides, subject, namedPeople, tagKinds, inventedPosts, inventedPeople])
 
   const setPeople = useCallback((next: PackPeople) => {
     setPickedPeople(next)
@@ -600,6 +630,8 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     const stale = () => requestRef.current !== id || keysRef.current !== keys
     let first = true
     setIsGenerating(true)
+    // The next pack gets new invented scenes; this one uses those already in the pool.
+    if (settings.inventedScenes) refreshInvented()
     void generateScenePackAsync(pool, packArgs(Math.floor(Math.random() * 1e9)), {
       // The first pause lets the busy button paint; the rest only let input through.
       pause: () => {
@@ -623,7 +655,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
         console.error('Scene pack generation failed:', err)
         if (requestRef.current === id) setIsGenerating(false)
       })
-  }, [pool, packArgs, missingRoles])
+  }, [pool, packArgs, missingRoles, settings.inventedScenes, refreshInvented])
 
   const reroll = useCallback((index: number): boolean => {
     if (!pool || index < 0 || index >= prompts.length) return false
@@ -681,6 +713,7 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
     enableAllSituations,
     enabledScenes,
     otherRatingPosts,
+    inventedScenes: invented.status,
     libraryOutfitCount,
     prompts,
     shortBy,
@@ -691,6 +724,6 @@ export function usePackScenes(args: UsePackScenesArgs): UsePackScenesResult {
   }), [
     permanence, loadFailed, retryLoad, pool, blocks, pinnedTags, toggleChip, resetChip, addTraits, removeTrait, toggleRemovedChip, castSize, missingRoles, castHasNoScenes, hasBaseClothing, characterOutfits, omitted,
     compositions, people, setPeople, disabledSituations, toggleSituation, enableAllSituations, enabledScenes,
-    otherRatingPosts, libraryOutfitCount, prompts, shortBy, isGenerating, generate, reroll, naturalSourceOf,
+    otherRatingPosts, invented.status, libraryOutfitCount, prompts, shortBy, isGenerating, generate, reroll, naturalSourceOf,
   ])
 }

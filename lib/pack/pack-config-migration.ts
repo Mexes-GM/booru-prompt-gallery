@@ -118,6 +118,7 @@ export function packEngineConfig(config: Pick<PackModeConfigV2, 'engine' | 'scen
       clothing: pick(saved.clothing, ['scene', 'library', 'base', 'own', 'character'], DEFAULT_SCENE_SETTINGS.clothing),
       scenery: pick(saved.scenery, ['scene', 'vary', 'plain', 'picked'], DEFAULT_SCENE_SETTINGS.scenery),
       extras: typeof saved.extras === 'boolean' ? saved.extras : DEFAULT_SCENE_SETTINGS.extras,
+      inventedScenes: saved.inventedScenes === true,
       ...savedOutfits(saved.characterOutfits),
     },
   }
