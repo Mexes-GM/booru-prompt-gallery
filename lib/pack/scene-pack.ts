@@ -10,9 +10,10 @@ import type { BooruPost } from '../booru/types'
 import { SLOT_CONSTRAINTS, getTagSlotFromOverrides } from '../tag-taxonomy'
 import { splitTags } from '../utils/tag-utils'
 import { finalizePackPrompt } from './always-add'
-import { MAX_PACK_OVERGENERATE, normalizeTagForPack, type PackPrompt } from './pack-generator'
+import { MAX_PACK_OVERGENERATE, createSeededRng, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
-import { composePack, composePackPrompts, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { composeLent, composePack, composePackPrompts, outfitWears, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { AXIS_SOURCE, AXIS_UNITS, DonorQueue, axisKey, axisOfTag, axisTags, canLend, lendingClashes, showsFace, type OneAxis } from './scene/scene-axis'
 import { coherentPromptTags, dropRedundantTags, isCompanyAct, loneCompanyTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
 import { normalizeRating, sceneTags, type Scene, type SceneRating, type TagKind } from './scene/scene'
@@ -20,7 +21,7 @@ import { isQualifiedVariant } from './character-identity'
 import { compositionsOf, type PackPeople, type ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
 import { garmentPrefix, lastQualifier } from './scene/franchise'
-import type { SceneRequests } from './brief'
+import type { ChangesAxis, SceneRequests } from './brief'
 import { excludes, loadedTagRelations, needsCompany, type TagRelations } from '../tag-relations'
 import { resolveTagConflicts } from '../tag-conflicts'
 
@@ -648,6 +649,23 @@ export interface ScenePackArgs {
   preferredPosts?: readonly number[]
   /** Scenes the user took out (post ids): never the scene of a prompt, nor a donor of its parts. */
   removedScenes?: readonly number[]
+  /**
+   * What changes from prompt to prompt. Missing or 'scene': each prompt is another scene, as
+   * always. Another axis: every prompt is one base scene (`baseScene`) with only that part taken
+   * from another scene, the donor: 'outfit' its clothes and what they show of the body, 'pose' its
+   * pose, 'place' its place, 'expression' its face. The first prompt is the base as it is; no two
+   * prompts share the same value of the axis; a donor that contradicts what stays is skipped, so
+   * the pack may come out short (`few-variations`). The mix doesn't apply; "Only the outfit"
+   * takes the clothes from the scenes whatever the Clothing option says, and "Only the place" the
+   * place whatever the Scenery option says. Requests still hold: one on the axis stays in every
+   * prompt and the donors vary the rest of it (`axis-requested`).
+   */
+  changes?: ChangesAxis
+  /**
+   * With `changes` on one axis: the post id of the base scene. Missing, not in the pool, removed,
+   * or without a selected pose it can't take: the first scene the pack would use otherwise.
+   */
+  baseScene?: number
 }
 
 /** A request's role for the engine (keys of SceneRequests); not brief.ts's RequestRole, which names the brief's slots. */
@@ -676,6 +694,17 @@ export type ScenePackIssue =
    * other compositions have them (poseCompositions lists which).
    */
   | { kind: 'composition-without-pose'; tags: string[]; people: PackPeople; scenes: number }
+  /**
+   * One-axis pack (`changes`): `tags` were asked for on the axis that changes. They stay in every
+   * prompt; the donors vary the rest of it (other clothes with the garment, other places at the
+   * place, other forms of the pose, other faces with the expression).
+   */
+  | { kind: 'axis-requested'; axis: Exclude<ChangesAxis, 'scene'>; tags: string[] }
+  /**
+   * One-axis pack (`changes`) that came out short: only `variations` different values of the axis
+   * (the base's included) go with the base scene, so `prompts` prompts were made.
+   */
+  | { kind: 'few-variations'; axis: Exclude<ChangesAxis, 'scene'>; variations: number; prompts: number }
 
 export type RequestDropReason =
   /** The same tag is in "Never include" (or a removed chip). */
@@ -1185,13 +1214,268 @@ function* composeForPack(args: ScenePackArgs, phases: readonly Phase[], used?: R
   }
 }
 
+// ── Only one thing changes ────────────────────────────────────────────────────
+
+/** The axis of a one-axis pack, or null for a pack of whole scenes. */
+const oneAxis = (args: ScenePackArgs): OneAxis | null => (args.changes && args.changes !== 'scene' ? args.changes : null)
+
+/**
+ * The args a one-axis pack composes with: always Faithful (the mix doesn't apply), and the option
+ * that would take the axis away from the scenes off: "Only the outfit" takes the clothes from the
+ * scenes, "Only the place" the place.
+ */
+function axisArgs(args: ScenePackArgs, axis: OneAxis): ScenePackArgs {
+  const { settings } = args
+  return {
+    ...args,
+    settings: {
+      ...settings,
+      mix: 'faithful',
+      ...(axis === 'outfit' ? { clothing: 'scene' as const } : {}),
+      ...(axis === 'place' ? { scenery: 'scene' as const } : {}),
+    },
+  }
+}
+
+/** A prompt's tags as the scenes spell them (the cleaner may escape brackets). */
+const promptTagsOf = (prompt: string): string[] =>
+  prompt.split(',').map((tag) => normalizeTagForPack(tag.replace(/\\/g, ''))).filter(Boolean)
+
+interface AxisBase {
+  scene: Scene
+  /** The phase of the plain pack it comes from: 'imposed' when a selected posture is imposed on it. */
+  kind: PhaseKind
+}
+
+/** The base the user picked (`baseScene`), when the pool has it, it isn't removed and it can take the selected poses. */
+function pickedBase(pool: ScenePool, args: ScenePackArgs): AxisBase | null {
+  const id = args.baseScene
+  if (id === undefined || (args.removedScenes ?? []).includes(id)) return null
+  const scene = pool.scenes.find((s) => s.postId === id)
+  if (!scene) return null
+  const selection = args.requests ? poseSelection(args) : null
+  const fit = selection ? poseFit(scene, selection) : 'all'
+  if (fit === 'none') return null
+  return { scene, kind: fit === 'imposable' ? 'imposed' : selection ? 'pose' : 'scene' }
+}
+
+/**
+ * The first scene the plain pack (Faithful, same args) makes a prompt from: preferred posts first,
+ * a scene with the selected poses when there are some. Every prompt of the pack repeats the base,
+ * so a scene whose prompt contradicts a request ("smile" on a picture "from behind") is passed
+ * over for the next one (lendingClashes, the rule the donors go through), and so is one that hides
+ * the face when the expression is what changes (showsFace); when they all are, the first. Null,
+ * with the plain pack's issues (no scene has the poses...), when it makes none.
+ */
+function defaultBase(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: number): { base: AxisBase | null; issues: ScenePackIssue[] } {
+  const plain: ScenePackArgs = { ...args, changes: undefined, baseScene: undefined }
+  // The same base whatever the pack's size (sceneCandidates asks for every prompt).
+  const plan = packPlan(pool, plain, Math.max(count, MAX_PACK_OVERGENERATE))
+  const f = finisher(pool, plain, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(plain)), plan.pose)
+  const requested = new Set(requestPlan(plain).imposed)
+  const people = plain.people ? plain.people.girls + plain.people.boys : 1
+  const relations = loadedTagRelations()
+  let first: AxisBase | null = null
+  for (const item of composeForPack(plain, plan.phases, f.pose?.used)) {
+    const prompt = finishOne(f, item.prompt)
+    const scene = prompt && f.sceneById.get(item.prompt.sources.skeleton)
+    if (!prompt || !scene) continue
+    const base = { scene, kind: item.kind }
+    first ??= base
+    const tags = promptTagsOf(prompt.prompt)
+    const face = new Set(scene.units.face)
+    if (axis === 'expression' && !showsFace(tags.filter((tag) => !face.has(tag)))) continue
+    const asked = tags.filter((tag) => requested.has(tag))
+    if (asked.length === 0 || !lendingClashes(asked, tags.filter((tag) => !requested.has(tag)), people, plain.overrides, relations)) return { base, issues: [] }
+  }
+  return first ? { base: first, issues: [] } : { base: null, issues: packIssues(f, 0, count) }
+}
+
+/**
+ * True when a donor's prompt (`tags`) keeps the rest of the base's prompt (`base`): off the axis
+ * (`onAxis`, the base's and the donor's units), nothing of the base is missing and nothing new
+ * came in, except a tag of the base scene itself (`composed`) that the base's own prompt left out
+ * because its unit on the axis already said it ("armpits" next to "presenting own armpit").
+ */
+function sameRest(tags: readonly string[], base: readonly string[], onAxis: ReadonlySet<string>, composed: ReadonlySet<string>): boolean {
+  const mine = new Set(tags.filter((tag) => !onAxis.has(tag)))
+  const theirs = new Set(base.filter((tag) => !onAxis.has(tag)))
+  return Array.from(theirs).every((tag) => mine.has(tag)) && Array.from(mine).every((tag) => theirs.has(tag) || composed.has(tag))
+}
+
+interface AxisRunOptions {
+  /** Keep this base (a reroll keeps the pack's). */
+  base?: number
+  /** Don't make the base's own prompt (a reroll). */
+  skipBase?: boolean
+  /** Donors the pack already uses. */
+  usedDonors?: ReadonlySet<number>
+  /** Prompts the pack already has: their values of the axis aren't repeated. */
+  usedPrompts?: readonly string[]
+}
+
+interface AxisRun {
+  base: AxisBase | null
+  /** The pack's prompts one at a time: the base as it is, then one per donor that passes. */
+  prompts: Generator<{ prompt: PackPrompt; donor: Scene | null }>
+  /** The issues of a pack of `made` prompts, `count` asked. */
+  issues: (made: number, count: number) => ScenePackIssue[]
+}
+
+/**
+ * A one-axis pack, prompt by prompt. The base is the picked one or the plain pack's first scene.
+ * Donors: the scenes in play (enabled, not removed) with something on the axis, the same people
+ * for a pose or an outfit, a place that holds the base's pose, a pose its place supports
+ * (canLend); with a request on the axis, only those that already have it (a pose's scenes for
+ * a selected pose, an outfit with the garment, a place at the requested place). Each is tried in
+ * DonorQueue order and skipped when:
+ *  - its value of the axis is already in the pack;
+ *  - its unit clashes with what stays of the base (lendingClashes);
+ *  - once composed and finished, anything off the axis changed (a reference left dangling, a tag
+ *    another rule took out): the donor would have been patched, not lent;
+ *  - the prompt's tags on the axis repeat another prompt's (the near-duplicate filter doesn't
+ *    apply: every prompt shares the base on purpose).
+ */
+function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: number, run: AxisRunOptions = {}): AxisRun {
+  const a = axisArgs(args, axis)
+  const plan = requestPlan(a)
+  let base: AxisBase | null = null
+  let missing: ScenePackIssue[] = []
+  if (run.base !== undefined) {
+    const scene = pool.scenes.find((s) => s.postId === run.base)
+    base = scene ? { scene, kind: 'scene' } : null
+  } else {
+    base = pickedBase(pool, a)
+    if (!base) ({ base, issues: missing } = defaultBase(pool, a, axis, count))
+  }
+  // Every prompt shares the base on purpose: only exact repeats go through the finisher's filter.
+  const f = finisher(pool, a, new Set(), new NearDuplicateFilter(Number.POSITIVE_INFINITY), null)
+  const selection = a.requests ? poseSelection(a) : null
+  const parts = AXIS_UNITS[axis]
+  const options: ComposeOptions = { ...composeOptions(a, 1, a.seed, undefined), ...(axis === 'place' && plan.where.length > 0 ? { whereKeepsPlace: true } : {}) }
+
+  function* prompts(): Generator<{ prompt: PackPrompt; donor: Scene | null }> {
+    if (!base) return
+    const scene = base.scene
+    const composed = composeLent(pool, scene, null, parts, AXIS_SOURCE[axis], options)
+    const own = composed && finishOne(f, composed)
+    if (!composed || !own) return
+    const baseValue = axisTags(scene, axis)
+    const onBase = new Set(baseValue)
+    const fixed = new Set(composed.locked)
+    const rest = composed.tags.filter((tag) => !onBase.has(tag))
+    const final = promptTagsOf(own.prompt)
+    const composedBase = new Set(composed.tags)
+    const restOfBase = new Set(final.filter((tag) => !onBase.has(tag)))
+    const keyOf = (tags: readonly string[]) => axisKey(tags.filter((tag) => !restOfBase.has(tag)))
+    const usedKeys = new Set([keyOf(final)])
+    for (const prompt of run.usedPrompts ?? []) {
+      usedKeys.add(keyOf(promptTagsOf(prompt)))
+      f.seen.add(prompt)
+    }
+    if (!run.skipBase) yield { prompt: own, donor: null }
+
+    const removed = new Set(a.removedScenes ?? [])
+    const lendsTo = (donor: Scene): boolean => {
+      if (donor.postId === scene.postId || removed.has(donor.postId) || run.usedDonors?.has(donor.postId)) return false
+      if (axisTags(donor, axis).length === 0) return false
+      if (axis === 'pose' && selection && poseFit(donor, selection) !== 'all') return false
+      if (axis === 'outfit' && plan.wearing.length > 0 && !outfitWears(donor.units.outfit, plan.wearing)) return false
+      if (axis === 'place' && plan.where.length > 0 && !plan.where.every((tag) => donor.units.place.some((at) => isQualifiedVariant(at, tag)))) return false
+      return canLend(scene, donor, axis, axis === 'place' ? [] : plan.where)
+    }
+    // A face lent to a picture that doesn't show it contradicts it, whatever the expression.
+    const shown = axis !== 'expression' || showsFace(rest)
+    const queue = new DonorQueue(
+      shown ? scenesInPlay(pool, a.disabledSituations).filter(lendsTo) : [],
+      (donor) => axisTags(donor, axis),
+      [baseValue],
+      new Set(a.preferredPosts ?? []),
+      createSeededRng(a.seed)
+    )
+    const people = a.people ? a.people.girls + a.people.boys : Math.max(1, headcount(scene))
+    const relations = loadedTagRelations()
+    const lentValues = new Set([axisKey(baseValue)])
+    for (let donor = queue.next(); donor; donor = queue.next()) {
+      const value = axisTags(donor, axis)
+      if (lentValues.has(axisKey(value))) continue
+      if (lendingClashes(value.filter((tag) => !fixed.has(tag)), rest, people, a.overrides, relations)) continue
+      const lent = composeLent(pool, scene, donor, parts, AXIS_SOURCE[axis], options)
+      if (!lent) continue
+      const lonely = new Map(f.lonely)
+      const prompt = finishOne(f, lent)
+      if (!prompt) continue
+      const tags = promptTagsOf(prompt.prompt)
+      const onAxis = new Set([...baseValue, ...value])
+      const key = keyOf(tags)
+      if (!sameRest(tags, final, onAxis, composedBase) || !key || usedKeys.has(key)) {
+        f.lonely = lonely
+        f.seen.delete(prompt.prompt)
+        continue
+      }
+      usedKeys.add(key)
+      lentValues.add(axisKey(value))
+      queue.accept(value)
+      yield { prompt, donor }
+    }
+  }
+
+  /** The requests on the axis: a selected pose, the garments, the place, an expression (or anything else) by its slot. */
+  const onAxis = plan.imposed.filter((tag) => {
+    switch (plan.roleOf.get(tag)) {
+      case 'select': return axis === 'pose'
+      case 'wearing': return axis === 'outfit'
+      case 'where': return axis === 'place'
+      default: return axisOfTag(tag, a.overrides) === axis
+    }
+  })
+  const issues = (made: number, total: number): ScenePackIssue[] => {
+    const out = base ? packIssues(f, made, total) : [...missing]
+    if (base?.kind === 'imposed' && selection) {
+      const has = new Set(posesOf(base.scene, selection))
+      selection.tags.forEach((tag) => {
+        if (!has.has(tag) && made > 0) out.push({ kind: 'pose-imposed', tag, prompts: made })
+      })
+    }
+    if (onAxis.length > 0) out.push({ kind: 'axis-requested', axis, tags: onAxis })
+    if (made < total) out.push({ kind: 'few-variations', axis, variations: made, prompts: made })
+    return out
+  }
+  return { base, prompts: prompts(), issues }
+}
+
+/** A one-axis pack of `count` prompts (see axisRun). */
+function axisPack(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: number): ScenePackResult {
+  const run = axisRun(pool, args, axis, count)
+  const prompts: PackPrompt[] = []
+  for (const item of run.prompts) {
+    prompts.push(item.prompt)
+    if (prompts.length >= count) break
+  }
+  return { prompts, shortBy: count - prompts.length, issues: run.issues(prompts.length, count) }
+}
+
+/** A new prompt for row `index` of a one-axis pack: the same base with a donor the pack doesn't use yet. */
+function rerollAxisPrompt(pool: ScenePool, prompts: readonly PackPrompt[], index: number, args: ScenePackArgs, axis: OneAxis): PackPrompt | null {
+  const current = prompts[index]
+  const base = current?.scene?.postId
+  if (base === undefined) return null
+  const usedDonors = new Set(prompts.flatMap((p) => (p.scene?.donors ?? []).filter((id) => id !== base)))
+  const usedPrompts = prompts.map((p) => p.prompt)
+  const next = axisRun(pool, args, axis, 1, { base, skipBase: true, usedDonors, usedPrompts }).prompts.next()
+  return next.done ? null : next.value.prompt
+}
+
 /**
  * A pack of `args.count` prompts from `pool`. `shortBy` is how many are missing
  * (Faithful makes at most one prompt per scene); `issues`, what was asked and not met.
+ * With `args.changes` on one axis, a one-axis pack (see ScenePackArgs.changes).
  */
 export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePackResult {
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
+  const axis = oneAxis(args)
+  if (axis) return axisPack(pool, args, axis, count)
   const plan = packPlan(pool, args, count)
   const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)), plan.pose)
   const prompts: PackPrompt[] = []
@@ -1228,6 +1512,23 @@ export async function generateScenePackAsync(
   const slice = control.slice ?? 12
   await control.pause()
   if (control.cancelled()) return null
+  const axis = oneAxis(args)
+  if (axis) {
+    const run = axisRun(pool, args, axis, count)
+    const made: PackPrompt[] = []
+    let start = Date.now()
+    while (made.length < count) {
+      if (Date.now() - start >= slice) {
+        await control.pause()
+        if (control.cancelled()) return null
+        start = Date.now()
+      }
+      const next = run.prompts.next()
+      if (next.done) break
+      made.push(next.value.prompt)
+    }
+    return { prompts: made, shortBy: count - made.length, issues: run.issues(made.length, count) }
+  }
   const plan = packPlan(pool, args, count)
   const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)), plan.pose)
   const composed = composeForPack(args, plan.phases, f.pose?.used)
@@ -1263,6 +1564,8 @@ export interface SceneCandidate {
   preferred: boolean
   situation?: string
   invented?: boolean
+  /** One-axis pack (`ScenePackArgs.changes`): 'base' for the base scene, 'donor' for a scene that lends it the axis. */
+  axisRole?: 'base' | 'donor'
 }
 
 /**
@@ -1274,10 +1577,14 @@ export interface SceneCandidate {
  * scene don't add to it.
  * Scenes in `args.removedScenes` are left out. Pure, but it composes every scene of the pool once
  * (a few milliseconds each): call it when the pool or the args change, not on every render.
+ * With `args.changes` on one axis: the base scene first (`axisRole: 'base'`), then the donors in
+ * the order the pack uses them (`'donor'`); its length is the most prompts that pack can make.
  */
 export function sceneCandidates(pool: ScenePool, args: ScenePackArgs): SceneCandidate[] {
   // Enough to take every phase to its end: the composer never makes more than MAX_PACK_OVERGENERATE per phase.
   const count = Math.max(pool.scenes.length, MAX_PACK_OVERGENERATE)
+  const axis = oneAxis(args)
+  if (axis) return axisCandidates(pool, args, axis, count)
   const faithful: ScenePackArgs = { ...args, settings: { ...args.settings, mix: 'faithful' }, count }
   const plan = packPlan(pool, faithful, count)
   const f = finisher(pool, faithful, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(faithful)), plan.pose)
@@ -1308,6 +1615,36 @@ export function sceneCandidates(pool: ScenePool, args: ScenePackArgs): SceneCand
   })
 }
 
+/**
+ * sceneCandidates of a one-axis pack: the base scene first, then the donors in the order the pack
+ * uses them; its length is the most prompts the pack can make.
+ */
+function axisCandidates(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: number): SceneCandidate[] {
+  const run = axisRun(pool, args, axis, count)
+  const base = run.base?.scene
+  if (!base) return []
+  const preferred = new Set(args.preferredPosts ?? [])
+  const selection = args.requests ? poseSelection(args) : null
+  const situationOf = new Map<number, string>()
+  pool.situations.forEach((situation) => situation.sceneIds.forEach((id) => situationOf.set(id, situation.id)))
+  const list: SceneCandidate[] = []
+  for (const item of run.prompts) {
+    const scene = item.donor ?? base
+    list.push({
+      postId: scene.postId,
+      preview: scene.preview,
+      people: scene.people ? { girls: scene.people.girls, boys: scene.people.boys } : null,
+      hasPose: !selection || poseFit(scene, selection) === 'all',
+      preferred: preferred.has(scene.postId),
+      situation: situationOf.get(scene.postId),
+      ...(scene.invented ? { invented: true } : {}),
+      axisRole: item.donor ? 'donor' : 'base',
+    })
+    if (list.length >= count) break
+  }
+  return list
+}
+
 /** `pool` with each situation reduced to the scenes in `allowed`. */
 function restrictPool(pool: ScenePool, allowed: ReadonlySet<number>): ScenePool {
   return {
@@ -1324,10 +1661,16 @@ function restrictPool(pool: ScenePool, allowed: ReadonlySet<number>): ScenePool 
  * pack does not use yet, then an unused scene of any enabled situation. In
  * Remix, the same situation's scenes may come back with other swaps once every
  * scene is used. Null when nothing new and different enough is left.
+ * With `args.changes` on one axis: the pack's base with a donor the pack doesn't use yet and a
+ * value of the axis it doesn't have (also for the base's own row: the base never changes); null
+ * when none is left.
  */
 export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[], index: number, args: ScenePackArgs): PackPrompt | null {
   const current = prompts[index]
   if (!current) return null
+  // One-axis pack: the same base with another donor the pack doesn't use yet (the base's own row too).
+  const axis = oneAxis(args)
+  if (axis) return rerollAxisPrompt(pool, prompts, index, args, axis)
   const disabled = new Set(args.disabledSituations ?? [])
   const enabled = pool.situations.filter((situation) => !disabled.has(situation.id))
   const used = new Set(prompts.flatMap((p) => (p.scene ? [p.scene.postId] : [])))
