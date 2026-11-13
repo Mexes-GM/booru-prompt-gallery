@@ -1,4 +1,4 @@
-export { PackBriefPanel, type PackBriefPanelProps, type CharacterInfo, type BriefOffer } from "./pack-brief-panel"
+export { PackBriefPanel, type PackBriefPanelProps, type BriefOffer } from "./pack-brief-panel"
 export { BriefSlot, SlotLabel, SlotNote, type BriefSlotProps } from "./brief-slot"
 export { RequestChip, type RequestChipProps, type RequestChipVariant } from "./request-chip"
 export { TagEntry, type TagEntryProps } from "./tag-entry"
@@ -28,6 +28,7 @@ export {
   showTag,
   slotTags,
   splitTyped,
+  type CharacterInfo,
   type SlotId,
   type SlotMeta,
   type SuggestionStatus,
@@ -35,12 +36,17 @@ export {
 } from "./slots"
 export {
   CHANGES_OPTIONS,
+  COPY_FAILED,
   MAX_PROMPTS,
   MIN_PROMPTS,
   fitText,
   generateLabel,
   outfitSourceLabel,
+  outfitSourceValue,
   peopleKey,
+  poseNeedsText,
   type FitState,
   type OutfitSource,
 } from "./pack-text"
+export { useCopyResult, type CopyResult } from "./use-copy-result"
+export { focusSlotEntry, restoreFocus, slotEntry } from "./focus"

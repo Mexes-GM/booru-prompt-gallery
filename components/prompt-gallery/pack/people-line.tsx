@@ -2,7 +2,8 @@
 
 /**
  * Who else is in the picture. Shown only when the pose needs more than one person
- * or the scenes come in more than one make-up; each option says how many scenes it has.
+ * (then it says so: "This pose needs 2 people") or the scenes come in more than one
+ * make-up; each option says how many scenes it has.
  */
 import { memo, useId, useMemo } from "react"
 import { Users } from "lucide-react"
@@ -10,7 +11,7 @@ import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 import { ChoiceGroup, type Choice } from "./choice-group"
 import { SLOT_ROW, SlotLabel } from "./brief-slot"
 import { companionsLabel } from "./slots"
-import { peopleKey } from "./pack-text"
+import { peopleKey, poseNeedsText } from "./pack-text"
 
 export interface PeopleOption {
   people: PackPeople
@@ -24,13 +25,11 @@ export interface PeopleLineProps {
   onChange: (people: PackPeople) => void
   /** The people on the card itself, so the options read as who else is there. */
   cast: PackPeople
-  /** The requested pose needs more than one person. */
-  poseNeedsCompany?: boolean
-  /** Why the line is here, in a few words ("From this pose"). */
-  reason?: string
+  /** How many people the requested pose needs, when it needs company (2 for a princess carry). */
+  poseNeeds?: number
 }
 
-export const PeopleLine = memo(function PeopleLine({ options, value, onChange, cast, poseNeedsCompany = false, reason }: PeopleLineProps) {
+export const PeopleLine = memo(function PeopleLine({ options, value, onChange, cast, poseNeeds }: PeopleLineProps) {
   const labelId = useId()
   const reasonId = useId()
   const choices = useMemo<Choice<string>[]>(
@@ -43,7 +42,9 @@ export const PeopleLine = memo(function PeopleLine({ options, value, onChange, c
       })),
     [options, cast],
   )
-  if (!poseNeedsCompany && options.length < 2) return null
+  const needsCompany = poseNeeds !== undefined && poseNeeds >= 2
+  if (!needsCompany && options.length < 2) return null
+  const reason = needsCompany ? poseNeedsText(poseNeeds) : null
 
   const byKey = (key: string) => options.find((o) => peopleKey(o.people) === key)?.people
   return (

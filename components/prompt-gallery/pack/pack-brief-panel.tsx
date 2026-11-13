@@ -7,7 +7,7 @@
  * Presentational: it shows a `PackBrief` and reports what the user did. The parent
  * runs the brief functions (addTag, removeTag, addNever…) and fetches suggestions.
  */
-import { memo, useCallback, useMemo, useState, type ReactNode } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AlertTriangle, MapPin } from "lucide-react"
 import type { BriefCharacter, ChangesAxis, PackBrief, RequestRole } from "@/lib/pack/brief"
 import type { CastRole } from "@/lib/pack/scene/cast"
@@ -18,16 +18,11 @@ import { ChangesSelect } from "./changes-select"
 import { ChoiceGroup, type Choice } from "./choice-group"
 import { PeopleLine, type PeopleLineProps } from "./people-line"
 import { RequestChip } from "./request-chip"
-import { characterName, showTag, slotTags, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
+import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { WearingSourceMenu } from "./wearing-source-menu"
 import type { OutfitSource } from "./pack-text"
 
-export interface CharacterInfo {
-  /** Display name; defaults to the tag in title case. */
-  name?: string
-  /** The character's usual look (hair, eyes, body), as tags. */
-  usualLook: readonly string[]
-}
+export type { CharacterInfo }
 
 export interface BriefOffer {
   id: string
@@ -74,6 +69,15 @@ export interface PackBriefPanelProps {
   suggestionStatus?: SuggestionStatus
   onQueryChange?: (query: string, slot: SlotId) => void
 
+  /**
+   * The row that just received a tag typed in another row (a character typed in
+   * Wearing goes to Who). Give a new `key` each time: the row lights up once and
+   * screen readers hear "Added to Who".
+   */
+  routed?: { slot: SlotId; key: number } | null
+  /** Focus the card's first control on mount (opening it from the summary). */
+  autoFocus?: boolean
+
   className?: string
 }
 
@@ -112,8 +116,19 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     suggestions,
     suggestionStatus,
     onQueryChange,
+    routed,
+    autoFocus = false,
     className,
   } = props
+
+  const sectionRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!autoFocus) return
+    sectionRef.current?.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled]), [tabindex='0']")?.focus()
+    // Only when the card opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const flashFor = (slot: SlotId) => (routed?.slot === slot ? routed.key : undefined)
 
   // Suggestions belong to the field that asked for them.
   const [querySlot, setQuerySlot] = useState<SlotId | null>(null)
@@ -157,7 +172,14 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     const lastTag = tags[tags.length - 1]
     const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveTag(lastTag) } : null
     const offered = offersIn(slot)
-    const notes = [conflictNotes(tags), extra?.notes].filter(Boolean)
+    const conflictLines = conflictNotes(tags)
+    const notes =
+      conflictLines || extra?.notes ? (
+        <>
+          {conflictLines}
+          {extra?.notes}
+        </>
+      ) : undefined
     return (
       <BriefSlot
         key={slot}
@@ -165,7 +187,8 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
         filled={tags.length > 0}
         entry={entryFor(slot, last)}
         actions={extra?.actions}
-        notes={notes.length ? notes : undefined}
+        notes={notes}
+        flashKey={flashFor(slot)}
       >
         {tags.map((tag, i) => (
           <RequestChip
@@ -187,7 +210,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
 
   return (
     <TooltipProvider delayDuration={300}>
-      <section aria-label="Pack" className={cn("@container", className)}>
+      <section ref={sectionRef} aria-label="Pack" className={cn("@container", className)}>
         <WhoRow
           who={brief.who}
           characterInfo={characterInfo}
@@ -200,6 +223,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           onSetRole={onSetRole}
           onRemoveTrait={onRemoveTrait}
           onRestoreTrait={onRestoreTrait}
+          flashKey={flashFor("who")}
         />
         {requestRow("wearing", {
           actions:
@@ -236,6 +260,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           picked={picked === "never"}
           entryFor={entryFor}
           onRemoveNever={onRemoveNever}
+          flashKey={flashFor("never")}
         />
 
         {(people || changes) && (
@@ -244,6 +269,9 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
             {changes && <ChangesSelect value={changes.value} onChange={changes.onChange} unavailable={changes.unavailable} />}
           </div>
         )}
+        <span className="sr-only" role="status" aria-live="polite">
+          {routed ? <span key={routed.key}>Added to {SLOTS[routed.slot].label}</span> : null}
+        </span>
       </section>
     </TooltipProvider>
   )
@@ -254,16 +282,18 @@ function NeverRow({
   picked,
   entryFor,
   onRemoveNever,
+  flashKey,
 }: {
   tags: readonly string[]
   picked: boolean
   entryFor: (slot: SlotId, last: LastChip | null) => SlotEntryProps
   onRemoveNever: (tag: string) => void
+  flashKey?: number
 }) {
   const lastTag = tags[tags.length - 1]
   const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveNever(lastTag) } : null
   return (
-    <BriefSlot slot="never" filled={tags.length > 0} entry={entryFor("never", last)}>
+    <BriefSlot slot="never" filled={tags.length > 0} entry={entryFor("never", last)} flashKey={flashKey}>
       {tags.map((tag, i) => (
         <RequestChip
           key={tag}
@@ -289,6 +319,7 @@ interface WhoRowProps {
   onSetRole: (tag: string | null, role: CastRole) => void
   onRemoveTrait: (character: string | null, tag: string) => void
   onRestoreTrait: (character: string | null, tag: string) => void
+  flashKey?: number
 }
 
 /** Who: each character on its own line with its usual look; a role picker once there are two. */
@@ -304,6 +335,7 @@ function WhoRow({
   onSetRole,
   onRemoveTrait,
   onRestoreTrait,
+  flashKey,
 }: WhoRowProps) {
   const named = who.filter((c) => c.tag !== null)
   const showRoles = who.length >= 2
@@ -317,7 +349,7 @@ function WhoRow({
         // Added look tags that are already part of the usual look show once, as the trait.
         const added = c.addedLook.filter((t) => !usual.some((u) => same(u, t)))
         const removed = new Set(c.removedLook.map((t) => t.toLowerCase()))
-        return { c, name: c.tag ? (info?.name ?? characterName(c.tag)) : null, usual, added, removed }
+        return { c, name: c.tag ? characterName(c.tag, info) : null, usual, added, removed }
       }),
     [who, characterInfo],
   )
@@ -347,6 +379,7 @@ function WhoRow({
       entry={entryFor("who", last)}
       placeholder={!filled ? undefined : full ? "Add a look tag" : undefined}
       notes={full ? <SlotNote>A pack can have up to {maxCharacters} characters.</SlotNote> : undefined}
+      flashKey={flashKey}
     >
       {lines.map(({ c, name, usual, added, removed }, i) => {
         const isLast = i === lines.length - 1
@@ -365,6 +398,9 @@ function WhoRow({
                 onChange={(role) => onSetRole(c.tag, role)}
                 label={`${name} is a`}
               />
+            )}
+            {name && showRoles && !c.role && (
+              <span className="text-xs text-muted-foreground">Pick one so the pack knows who is who</span>
             )}
             {usual.map((t) => {
               const off = removed.has(t.toLowerCase())

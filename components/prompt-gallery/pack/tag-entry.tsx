@@ -30,6 +30,8 @@ export interface TagEntryProps {
   onPickLast?: (picked: boolean) => void
   onRemoveLast?: () => void
   disabled?: boolean
+  /** Marks the field as the one for this card row, so focus can be sent back to it. */
+  slotId?: string
   className?: string
 }
 
@@ -47,6 +49,7 @@ export const TagEntry = memo(function TagEntry({
   onPickLast,
   onRemoveLast,
   disabled = false,
+  slotId,
   className,
 }: TagEntryProps) {
   const listId = useId()
@@ -173,6 +176,7 @@ export const TagEntry = memo(function TagEntry({
         {!empty && <Plus className="size-3.5 shrink-0 text-faint-foreground" aria-hidden />}
         <input
           ref={inputRef}
+          data-slot-entry={slotId}
           type="text"
           role="combobox"
           aria-labelledby={labelledBy}
@@ -197,7 +201,7 @@ export const TagEntry = memo(function TagEntry({
           }}
           className={cn(
             "h-full w-full min-w-0 text-sm text-foreground outline-none",
-            "placeholder:text-faint-foreground",
+            "placeholder:text-muted-foreground",
           )}
         />
       </div>
@@ -230,7 +234,7 @@ export const TagEntry = memo(function TagEntry({
             <span className="min-w-0 flex-1 truncate">{showTag(s.name)}</span>
             {s.kind && <span className="shrink-0 text-xs text-muted-foreground">{s.kind}</span>}
             {s.count !== undefined && (
-              <span className="shrink-0 font-mono text-xs tabular-nums text-faint-foreground">{compact.format(s.count)}</span>
+              <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{compact.format(s.count)}</span>
             )}
           </li>
         ))}

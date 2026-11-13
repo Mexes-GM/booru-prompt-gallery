@@ -10,10 +10,15 @@ import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 export const MIN_PROMPTS = 1
 export const MAX_PROMPTS = 100
 
-export function generateLabel(count: number, generating: boolean) {
-  if (generating) return "Generating…"
+/** "Generate 10 prompts"; while generating, "Generating… 4 of 10" (or "Generating…" before the first one). */
+export function generateLabel(count: number, generating: boolean, done?: number) {
+  if (generating) return done === undefined ? "Generating…" : `Generating… ${done} of ${count}`
   return `Generate ${count} ${count === 1 ? "prompt" : "prompts"}`
 }
+
+// ── Copy ─────────────────────────────────────────────────────────────────────────
+
+export const COPY_FAILED = "Couldn't copy. Select the text and copy it yourself."
 
 // ── Changes ──────────────────────────────────────────────────────────────────────
 
@@ -28,6 +33,9 @@ export const CHANGES_OPTIONS: ReadonlyArray<{ value: ChangesAxis; label: string;
 // ── People ───────────────────────────────────────────────────────────────────────
 
 export const peopleKey = (p: PackPeople) => `${p.girls}g${p.boys}b`
+
+/** The line under People when the requested pose needs company: "This pose needs 2 people". */
+export const poseNeedsText = (people: number) => `This pose needs ${people} people`
 
 // ── Wearing ──────────────────────────────────────────────────────────────────────
 
@@ -45,6 +53,12 @@ export const OUTFIT_KIND_LABEL = {
 
 export function outfitSourceLabel(source: OutfitSource): string {
   return source.kind === "official" ? source.name : OUTFIT_KIND_LABEL[source.kind]
+}
+
+/** The value after "Outfit:" on the menu button: "each scene's", "usual", "from the library", or the outfit's name. */
+const OUTFIT_SHORT = { scene: "each scene's", usual: "usual", library: "from the library" } as const
+export function outfitSourceValue(source: OutfitSource): string {
+  return source.kind === "official" ? source.name : OUTFIT_SHORT[source.kind]
 }
 
 export const outfitKey = (s: OutfitSource) => (s.kind === "official" ? `official:${s.name}` : s.kind)

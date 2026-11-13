@@ -6,12 +6,12 @@
  * Copy all, which confirms the copy where it happened.
  */
 import { memo, useId, useState, type ReactNode } from "react"
-import { Check, Copy, Minus, Plus } from "lucide-react"
+import { AlertTriangle, Check, Copy, Info, Minus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useCopyFeedback } from "@/hooks/use-copy-feedback"
 import { cn } from "@/lib/utils"
 import { ChoiceGroup, type Choice } from "./choice-group"
-import { MAX_PROMPTS, MIN_PROMPTS, generateLabel } from "./pack-text"
+import { COPY_FAILED, MAX_PROMPTS, MIN_PROMPTS, generateLabel } from "./pack-text"
+import { useCopyResult } from "./use-copy-result"
 
 const clamp = (n: number) => Math.min(MAX_PROMPTS, Math.max(MIN_PROMPTS, Math.round(n)))
 
@@ -88,7 +88,7 @@ export const CountStepper = memo(function CountStepper({ value, onChange, label 
             }
           }}
           className={cn(
-            "h-full w-10 text-center font-mono text-sm tabular-nums text-foreground outline-none",
+            "h-full w-10 text-center font-mono pointer-coarse:w-12 text-sm tabular-nums text-foreground outline-none",
             "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
           )}
         />
@@ -112,6 +112,8 @@ export interface GenerateBarProps {
   onCountChange: (count: number) => void
   onGenerate: () => void
   generating?: boolean
+  /** While generating: prompts done so far, shown as "Generating… 4 of 10". */
+  done?: number
   /** Why Generate can't run yet; disables it and is shown beside it. */
   blockedReason?: string
   /** Prompts that are locked and won't be generated again. */
@@ -124,28 +126,42 @@ export const GenerateBar = memo(function GenerateBar({
   onCountChange,
   onGenerate,
   generating = false,
+  done,
   blockedReason,
   locked = 0,
   className,
 }: GenerateBarProps) {
   const reasonId = useId()
+  const blocked = !!blockedReason && !generating
   return (
     <div className={cn("flex flex-wrap items-center justify-end gap-x-3 gap-y-2", className)}>
-      {(blockedReason || locked > 0) && (
-        <p id={reasonId} className="mr-auto min-w-0 text-xs text-muted-foreground text-pretty">
-          {blockedReason ?? `${locked} locked ${locked === 1 ? "prompt stays" : "prompts stay"} as ${locked === 1 ? "it is" : "they are"}`}
+      {blocked ? (
+        <p id={reasonId} className="mr-auto flex min-w-0 items-start gap-1.5 text-xs text-foreground text-pretty">
+          <Info className="mt-px size-3.5 shrink-0 text-info-text" aria-hidden />
+          {blockedReason}
         </p>
+      ) : (
+        locked > 0 && (
+          <p className="mr-auto min-w-0 text-xs text-muted-foreground text-pretty">
+            {`${locked} locked ${locked === 1 ? "prompt stays" : "prompts stay"} as ${locked === 1 ? "it is" : "they are"}`}
+          </p>
+        )
       )}
       <CountStepper value={count} onChange={onCountChange} disabled={generating} />
+      {/*
+        Generating keeps the button at full strength (it is working, not unavailable) and shows
+        progress in its text; only a blocked button is drawn faded.
+      */}
       <Button
         type="button"
-        onClick={onGenerate}
-        disabled={generating || !!blockedReason}
+        onClick={generating ? undefined : onGenerate}
+        disabled={blocked}
+        aria-disabled={generating || undefined}
         aria-busy={generating}
-        aria-describedby={blockedReason ? reasonId : undefined}
-        className="h-10 tabular-nums pointer-coarse:h-11"
+        aria-describedby={blocked ? reasonId : undefined}
+        className={cn("h-10 tabular-nums pointer-coarse:h-11", generating && "cursor-progress hover:bg-primary")}
       >
-        {generateLabel(count, generating)}
+        {generateLabel(count, generating, done)}
       </Button>
     </div>
   )
@@ -173,9 +189,17 @@ function ResultsToolbarInner<F extends string>({
   children,
   className,
 }: ResultsToolbarProps<F>) {
-  const [copied, flashCopied] = useCopyFeedback(2000)
+  const [result, reportCopy] = useCopyResult(2000, 5000)
+  const copied = result === "copied"
+  const failed = result === "failed"
   const copy = async () => {
-    if (await onCopyAll()) flashCopied()
+    let ok = false
+    try {
+      ok = await onCopyAll()
+    } catch {
+      ok = false
+    }
+    reportCopy(ok)
   }
   return (
     <div className={cn("flex flex-wrap items-center justify-between gap-2", className)}>
@@ -191,15 +215,22 @@ function ResultsToolbarInner<F extends string>({
           className={cn(
             "h-8 gap-1.5 tabular-nums pointer-coarse:h-11",
             copied && "bg-primary text-primary-foreground hover:bg-primary",
+            failed && "text-destructive-text",
           )}
         >
-          {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-          {copied ? `Copied ${count}` : "Copy all"}
+          {copied ? <Check aria-hidden /> : failed ? <AlertTriangle aria-hidden /> : <Copy aria-hidden />}
+          {copied ? `Copied ${count}` : failed ? "Couldn't copy" : "Copy all"}
         </Button>
         <span className="sr-only" role="status" aria-live="polite">
-          {copied ? `Copied ${count} ${count === 1 ? "prompt" : "prompts"}` : ""}
+          {copied ? `Copied ${count} ${count === 1 ? "prompt" : "prompts"}` : failed ? COPY_FAILED : ""}
         </span>
       </div>
+      {failed && (
+        <p className="flex basis-full items-start gap-1.5 text-xs text-destructive-text" aria-hidden>
+          <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+          {COPY_FAILED}
+        </p>
+      )}
     </div>
   )
 }

@@ -6,19 +6,28 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
 import {
+  addCharacter,
+  addLook,
   addNever,
   addTag,
   briefFromPrompt,
   emptyBrief,
+  leaveOutScene,
   removeCharacter,
+  removeLook,
   removeNever,
   removeTag,
+  restoreLook,
+  restoreScene,
+  routeTag,
   setChanges,
   setCharacterRole,
   setPeople,
   type ChangesAxis,
   type PackBrief,
+  type RequestRole,
 } from "@/lib/pack/brief"
 import { castPeople } from "@/lib/pack/scene/cast"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
@@ -36,8 +45,11 @@ import {
   ResultsToolbar,
   TagEntry,
   UndoNotice,
+  CHANGES_OPTIONS,
   briefSummaryParts,
+  characterName,
   companionsLabel,
+  restoreFocus,
   peopleKey,
   type Choice,
   type FitState,
@@ -106,7 +118,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 
 function Specimen({ label, children, width }: { label: string; children: ReactNode; width?: "phone" | "mid" }) {
   return (
-    <div className={width === "phone" ? "w-[343px] max-w-full" : width === "mid" ? "w-[560px] max-w-full" : undefined}>
+    <div className={cn("min-w-0 max-w-full", width === "phone" ? "w-[343px]" : width === "mid" ? "w-[560px]" : undefined)}>
       <p className="mb-1.5 font-mono text-xs text-muted-foreground">{label}</p>
       <div className="rounded-xl border border-border bg-card p-3">{children}</div>
     </div>
@@ -149,6 +161,31 @@ function makeRows(count: number, keep: ReadonlyMap<number, Row>, seed: number): 
   })
 }
 
+const nameOf = (tag: string) => characterName(tag, CHARACTER_INFO[tag])
+
+/** Adds one typed tag where it belongs and says which row got it. */
+function place(b: PackBrief, tag: string, typedIn: SlotId): { brief: PackBrief; dest: SlotId } {
+  if (typedIn === "never") return { brief: addNever(b, tag), dest: "never" }
+  const route = routeTag(tag, OVERRIDES)
+  if (route.kind === "character") return { brief: addCharacter(b, tag), dest: "who" }
+  if (route.kind === "look") return { brief: addLook(b, b.who[0]?.tag ?? null, tag), dest: "who" }
+  if (route.kind === "request") return { brief: addTag(b, tag, OVERRIDES), dest: route.role }
+  if (route.kind === "people") return { brief: b, dest: typedIn }
+  // Unknown to the taxonomy: stays where it was typed (Who sends it to Also).
+  const into: RequestRole = typedIn === "who" ? "also" : typedIn
+  return { brief: addTag(b, tag, OVERRIDES, into), dest: into }
+}
+
+interface UndoEntry {
+  message: string
+  brief: PackBrief
+  rows: Row[]
+  /** Where focus was when the change happened. */
+  focus: Element | null
+  /** The row the change touched, for focus when the old control is gone. */
+  slot?: SlotId
+}
+
 function Playground() {
   const [brief, setBrief] = useState<PackBrief>(startBrief)
   const [outfit, setOutfit] = useState<OutfitSource>({ kind: "scene" })
@@ -158,53 +195,66 @@ function Playground() {
   const [locked, setLocked] = useState<ReadonlySet<number>>(new Set())
   const [format, setFormat] = useState<Format>("tags")
   const seed = useRef(0)
-  const [undo, setUndo] = useState<{ message: string; brief: PackBrief; rows: Row[] } | null>(null)
+  const [undo, setUndo] = useState<UndoEntry | null>(null)
   const [folded, setFolded] = useState(false)
+  const [openedFromSummary, setOpenedFromSummary] = useState(false)
   const [offerTaken, setOfferTaken] = useState(false)
+  const [routed, setRouted] = useState<{ slot: SlotId; key: number } | null>(null)
+  const [progress, setProgress] = useState<number | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const suggestions = useMemo<TagSuggestion[]>(() => suggest(query), [query])
   const cast = useMemo(() => castPeople(brief.who.map((c) => c.role ?? "girl")), [brief.who])
   const doing = brief.requests.some((r) => r.role === "doing")
 
-  const update = useCallback((fn: (b: PackBrief) => PackBrief) => setBrief((b) => fn(b)), [])
+  // Every change to the card goes through here, so each one can be undone.
+  const change = (message: string, next: PackBrief, slot?: SlotId) => {
+    setUndo({ message, brief, rows, focus: document.activeElement, slot })
+    setBrief(next)
+  }
 
-  const onAddTags = useCallback(
-    (tags: string[], slot: SlotId) =>
-      update((b) =>
-        tags.reduce(
-          (acc, t) => (slot === "never" ? addNever(acc, t) : addTag(acc, t, OVERRIDES, slot === "who" ? undefined : slot)),
-          b,
-        ),
-      ),
-    [update],
-  )
-
-  const setLook = (character: string | null, tag: string, off: boolean) =>
-    update((b) => ({
-      ...b,
-      who: b.who.map((c) =>
-        c.tag !== character
-          ? c
-          : { ...c, removedLook: off ? [...c.removedLook.filter((t) => t !== tag), tag] : c.removedLook.filter((t) => t !== tag) },
-      ),
-    }))
+  const onAddTags = (tags: string[], slot: SlotId) => {
+    let next = brief
+    let elsewhere: SlotId | null = null
+    for (const t of tags) {
+      const placed = place(next, t, slot)
+      next = placed.brief
+      if (placed.dest !== slot) elsewhere = placed.dest
+    }
+    change(`Added ${tags.join(", ")}`, next, slot)
+    if (elsewhere) setRouted({ slot: elsewhere, key: Date.now() })
+  }
 
   const scenes = SCENES_60
   const inUse = scenes.length - brief.leftOut.length
   const fit: FitState = inUse >= count ? { kind: "fit", scenes: inUse } : { kind: "reuse", scenes: inUse, reused: count - inUse }
 
-  const onToggleScene = useCallback(
-    (id: string) =>
-      update((b) => ({ ...b, leftOut: b.leftOut.includes(id) ? b.leftOut.filter((x) => x !== id) : [...b.leftOut, id] })),
-    [update],
-  )
+  const onToggleScene = (id: string) => {
+    const out = brief.leftOut.includes(id)
+    change(out ? "Put a scene back" : "Left out a scene", out ? restoreScene(brief, id) : leaveOutScene(brief, id))
+  }
 
   const generate = () => {
+    if (progress !== null) return
     const keep = new Map<number, Row>()
     rows.forEach((r, i) => locked.has(i) && keep.set(i, r))
-    seed.current += 1
-    setRows(makeRows(count, keep, seed.current))
-    setFolded(true)
+    // A stand-in for the engine: one prompt every 120 ms, then the list.
+    let done = 0
+    setProgress(0)
+    const step = () => {
+      done += 1
+      if (done < count) {
+        setProgress(done)
+        window.setTimeout(step, 120)
+        return
+      }
+      seed.current += 1
+      setRows(makeRows(count, keep, seed.current))
+      setProgress(null)
+      setFolded(true)
+      setOpenedFromSummary(false)
+    }
+    window.setTimeout(step, 120)
   }
 
   const onCopy = useCallback((i: number) => writeClipboard(rows[i]?.tokens.join(", ") ?? ""), [rows])
@@ -223,36 +273,67 @@ function Playground() {
       }),
     [],
   )
-  const onAlways = useCallback((tag: string) => update((b) => addTag(b, tag, OVERRIDES, "also")), [update])
+  const onAlways = useCallback(
+    (tag: string) => {
+      setUndo({ message: `Added ${tag} to every prompt`, brief, rows, focus: document.activeElement, slot: "also" })
+      setBrief(addTag(brief, tag, OVERRIDES, "also"))
+    },
+    [brief, rows],
+  )
   const onNever = useCallback(
     (tag: string) => {
       const touched = rows.filter((r) => r.tokens.includes(tag)).length
-      setUndo({ message: `Removed ${tag} from ${touched} ${touched === 1 ? "prompt" : "prompts"}`, brief, rows })
+      setUndo({
+        message: `Removed ${tag} from ${touched} ${touched === 1 ? "prompt" : "prompts"}`,
+        brief,
+        rows,
+        focus: document.activeElement,
+        slot: "never",
+      })
       setBrief(addNever(brief, tag))
       setRows(rows.map((r) => ({ ...r, tokens: r.tokens.filter((t) => t !== tag) })))
     },
     [rows, brief],
   )
 
+  const closeUndo = (restore: boolean) => {
+    if (!undo) return
+    if (restore) {
+      setBrief(undo.brief)
+      setRows(undo.rows)
+      if (folded) setFolded(false)
+    }
+    setUndo(null)
+    restoreFocus(undo.focus, panelRef.current, undo.slot)
+  }
+
   const peopleLabel = brief.people ? companionsLabel(brief.people, cast) : null
-  const summary = briefSummaryParts(brief, peopleLabel)
+  const summary = briefSummaryParts(brief, peopleLabel, CHARACTER_INFO)
 
   return (
     <div className="space-y-3">
       {folded ? (
-        <BriefSummary parts={summary} onExpand={() => setFolded(false)} />
+        <BriefSummary
+          parts={summary}
+          onExpand={() => {
+            setFolded(false)
+            setOpenedFromSummary(true)
+          }}
+        />
       ) : (
-        <div className="rounded-xl border border-border bg-card p-3">
+        <div ref={panelRef} className="rounded-xl border border-border bg-card p-3">
           <PackBriefPanel
             brief={brief}
             characterInfo={CHARACTER_INFO}
+            autoFocus={openedFromSummary}
+            routed={routed}
             onAddTags={onAddTags}
-            onRemoveTag={(t) => update((b) => removeTag(b, t))}
-            onRemoveNever={(t) => update((b) => removeNever(b, t))}
-            onRemoveCharacter={(t) => update((b) => (t ? removeCharacter(b, t) : b))}
-            onSetRole={(t, role) => update((b) => setCharacterRole(b, t, role))}
-            onRemoveTrait={(c, t) => setLook(c, t, true)}
-            onRestoreTrait={(c, t) => setLook(c, t, false)}
+            onRemoveTag={(t) => change(`Removed ${t}`, removeTag(brief, t), "also")}
+            onRemoveNever={(t) => change(`Removed ${t} from Never`, removeNever(brief, t), "never")}
+            onRemoveCharacter={(t) => t && change(`Removed ${nameOf(t)}`, removeCharacter(brief, t), "who")}
+            onSetRole={(t, role) => change(`${t ? nameOf(t) : "Character"} is a ${role}`, setCharacterRole(brief, t, role), "who")}
+            onRemoveTrait={(c, t) => change(`Removed ${t}`, removeLook(brief, c, t), "who")}
+            onRestoreTrait={(c, t) => change(`Put back ${t}`, restoreLook(brief, c, t), "who")}
             outfitSource={outfit}
             onOutfitSourceChange={setOutfit}
             officialOutfits={OFFICIAL_OUTFITS}
@@ -279,14 +360,17 @@ function Playground() {
                 ? {
                     options: PEOPLE_OPTIONS,
                     value: brief.people,
-                    onChange: (p: PackPeople) => update((b) => setPeople(b, p)),
+                    onChange: (p: PackPeople) => change(`People: ${companionsLabel(p, cast).toLowerCase()}`, setPeople(brief, p)),
                     cast,
-                    poseNeedsCompany: true,
-                    reason: "From this pose",
+                    poseNeeds: 2,
                   }
                 : null
             }
-            changes={{ value: brief.changes, onChange: (v: ChangesAxis) => update((b) => setChanges(b, v)) }}
+            changes={{
+              value: brief.changes,
+              onChange: (v: ChangesAxis) =>
+                change(`Changes: ${CHANGES_OPTIONS.find((o) => o.value === v)?.label.toLowerCase()}`, setChanges(brief, v)),
+            }}
             suggestions={suggestions}
             suggestionStatus="idle"
             onQueryChange={(q) => setQuery(q)}
@@ -299,19 +383,17 @@ function Playground() {
         <ContactSheet scenes={scenes} leftOut={brief.leftOut} onToggle={onToggleScene} />
       </div>
 
-      <GenerateBar count={count} onCountChange={setCount} onGenerate={generate} locked={locked.size} />
+      <GenerateBar
+        count={count}
+        onCountChange={setCount}
+        onGenerate={generate}
+        generating={progress !== null}
+        done={progress ?? undefined}
+        locked={locked.size}
+        blockedReason={brief.who.some((c) => c.tag) ? undefined : "Pick a character first"}
+      />
 
-      {undo && (
-        <UndoNotice
-          message={undo.message}
-          onUndo={() => {
-            setBrief(undo.brief)
-            setRows(undo.rows)
-            setUndo(null)
-          }}
-          onDismiss={() => setUndo(null)}
-        />
-      )}
+      {undo && <UndoNotice message={undo.message} onUndo={() => closeUndo(true)} onDismiss={() => closeUndo(false)} />}
 
       {rows.length > 0 && (
         <div className="space-y-2">
@@ -372,7 +454,7 @@ function StaticPanel({ brief, people, changes }: { brief: PackBrief; people?: bo
       outfitSource={{ kind: "scene" }}
       onOutfitSourceChange={noop}
       officialOutfits={OFFICIAL_OUTFITS}
-      people={people ? { options: PEOPLE_OPTIONS, value: PEOPLE_OPTIONS[0].people, onChange: noop, cast, reason: "From this pose" } : null}
+      people={people ? { options: PEOPLE_OPTIONS, value: PEOPLE_OPTIONS[0].people, onChange: noop, cast, poseNeeds: 2 } : null}
       changes={changes ? { value: "scene", onChange: noop } : null}
     />
   )
@@ -394,7 +476,7 @@ export function PackKitPreview() {
     let b = startBrief()
     b = addTag(b, "yor briar", OVERRIDES)
     b = setCharacterRole(b, "tifa lockhart", "girl")
-    return { ...b, who: b.who.map((c) => (c.tag === "tifa lockhart" ? { ...c, removedLook: ["long hair"] } : c)) }
+    return removeLook(b, "tifa lockhart", "long hair")
   }, [])
   const fullBrief = useMemo(() => {
     let b = startBrief()
@@ -433,7 +515,7 @@ export function PackKitPreview() {
         </Section>
 
         <Section title="Entrada de tags" note="Escribe «b» o «ha» para ver sugerencias. Enter o coma añaden; Backspace en vacío selecciona el último chip.">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="with suggestions">
               <span id="entry-a" className="sr-only">Wearing</span>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -469,7 +551,7 @@ export function PackKitPreview() {
         </Section>
 
         <Section title="Ficha" note="Vacía, con un personaje, con dos (selector Girl / Boy y un rasgo quitado) y con todo, incluido People y Changes.">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="empty brief" width="mid">
               <StaticPanel brief={emptyBrief()} />
             </Specimen>
@@ -486,14 +568,13 @@ export function PackKitPreview() {
         </Section>
 
         <Section title="People y Changes">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="People · three options">
               <PeopleLine
                 options={PEOPLE_OPTIONS}
                 value={people}
                 onChange={setPeopleValue}
                 cast={{ girls: 1, boys: 0 }}
-                reason="From this pose"
               />
               <p className="mt-2 font-mono text-xs text-muted-foreground">value: {people ? peopleKey(people) : "null"}</p>
             </Specimen>
@@ -503,8 +584,7 @@ export function PackKitPreview() {
                 value={{ girls: 1, boys: 1 }}
                 onChange={noop}
                 cast={{ girls: 1, boys: 0 }}
-                poseNeedsCompany
-                reason="From this pose"
+                poseNeeds={2}
               />
             </Specimen>
             <Specimen label="Changes">
@@ -514,7 +594,7 @@ export function PackKitPreview() {
         </Section>
 
         <Section title="Hoja de contactos" note="Toca una miniatura para dejarla fuera y otra vez para volver a meterla.">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="60 scenes, 3 out" width="mid">
               <ContactSheet scenes={SCENES_60} leftOut={sheetOut} onToggle={toggleSheet} />
             </Specimen>
@@ -547,7 +627,7 @@ export function PackKitPreview() {
         </Section>
 
         <Section title="Filas de resultado" note="Toca un tag para abrir su menú.">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="tags · locked · pending" width="mid">
               <div className="space-y-1.5">
                 <ResultRow index={0} tokens={SAMPLE_PROMPTS[0]} postId={4812345} onCopy={() => true} onReroll={noop} onToggleLock={noop} onAlways={noop} onNever={noop} />
@@ -562,11 +642,11 @@ export function PackKitPreview() {
         </Section>
 
         <Section title="Generar, copiar, resumen, deshacer">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="generate bar" width="mid">
               <div className="space-y-3">
                 <GenerateBar count={count} onCountChange={setCount} onGenerate={noop} />
-                <GenerateBar count={count} onCountChange={setCount} onGenerate={noop} generating />
+                <GenerateBar count={count} onCountChange={setCount} onGenerate={noop} generating done={4} />
                 <GenerateBar count={1} onCountChange={noop} onGenerate={noop} blockedReason="Pick a character first" />
               </div>
             </Specimen>
@@ -586,7 +666,7 @@ export function PackKitPreview() {
         </Section>
 
         <Section title="Estado vacío">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
             <Specimen label="empty pack" width="mid">
               <PackEmptyState examples={EXAMPLES} onPick={(id) => window.alert(EXAMPLE_PROMPTS[id])} />
             </Specimen>
