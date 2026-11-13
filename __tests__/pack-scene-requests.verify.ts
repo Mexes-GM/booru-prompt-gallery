@@ -174,10 +174,18 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
   const lone = loneCompanyTags(solo, { ...overrides, "multiple views": "pose:camera" })
   assert(lone.has("looking at another") && !lone.has("multiple views") && !lone.has("4koma"), "only acts count: " + Array.from(lone).join())
 
+  // A selected pose that needs company picks scenes that have it: none here, so it is never imposed.
   const { prompts, issues } = generateScenePack(pool, args({ identity: IDENTITY.slice(0, 5), requests: requests({ select: ["princess carry"] }) }))
-  assert(prompts.length > 0 && prompts.every((p) => tagsOf(p.prompt).includes("princess carry")), "a requested pose that needs company stays")
-  const issue = issues.find((i) => i.kind === "needs-company")
-  assert(!!issue && issue.tag === "princess carry" && issue.role === "select" && issue.kind === "needs-company" && issue.prompts === prompts.length, "and the result says it needs more than one person: " + JSON.stringify(issues))
+  assert(prompts.length === 0, "a selected pose that needs company is not imposed on one-person scenes without it: " + prompts.map((p) => p.prompt).join(" | "))
+  const issue = issues.find((i) => i.kind === "few-scenes")
+  assert(!!issue && issue.kind === "few-scenes" && issue.tags.includes("princess carry") && issue.scenes === 0 && issue.prompts === 0, "and the result says no scene has it: " + JSON.stringify(issues))
+  // Through `also` or `literal` it stays in a one-person prompt, and the result says it needs company.
+  for (const role of ["also", "literal"] as const) {
+    const lonely = generateScenePack(pool, args({ identity: IDENTITY.slice(0, 5), requests: requests({ [role]: ["princess carry"] }) }))
+    const said = lonely.issues.find((i) => i.kind === "needs-company")
+    assert(lonely.prompts.length > 0 && lonely.prompts.every((p) => tagsOf(p.prompt).includes("princess carry")), `through ${role} the tag stays`)
+    assert(!!said && said.kind === "needs-company" && said.tag === "princess carry" && said.role === role && said.prompts === lonely.prompts.length, `through ${role} the result says it needs company: ` + JSON.stringify(lonely.issues))
+  }
 }
 
 // ── 7. Requests that can't be applied ──
@@ -190,7 +198,7 @@ const args = (over: Partial<ScenePackArgs> = {}): ScenePackArgs => ({
 
 // ── 8. Async ──
 void (async () => {
-  const a = args({ identity: IDENTITY.slice(0, 5), requests: requests({ select: ["princess carry"] }) })
+  const a = args({ identity: IDENTITY.slice(0, 5), requests: requests({ also: ["princess carry"] }) })
   const sync = generateScenePack(pool, a)
   const async = await generateScenePackAsync(pool, a, { pause: () => Promise.resolve(), cancelled: () => false })
   assert(!!async && JSON.stringify(async.issues) === JSON.stringify(sync.issues), "the async version reports the same issues")

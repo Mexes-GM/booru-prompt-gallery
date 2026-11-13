@@ -75,9 +75,21 @@ export function showsOnePerson(tags: readonly string[]): boolean {
 const PEOPLE_SLOTS = new Set(['pose:interaction', 'pose:physiological', 'pose:posture', 'pose:combat', 'pose:gesture', 'pose:kinetic'])
 
 /**
- * Tags of a one-person prompt that need more than one person ("princess carry", "looking at
- * another": the measured `company` list, within PEOPLE_SLOTS), with what requires them. Empty
- * when the prompt doesn't show one person or the relations aren't loaded.
+ * True for an act that needs more than one person ("princess carry", "looking at another"): the
+ * measured `company` list, within PEOPLE_SLOTS. False when the relations aren't loaded.
+ */
+export function isCompanyAct(
+  tag: string,
+  overrides: Record<string, string>,
+  relations: TagRelations | null = loadedTagRelations()
+): boolean {
+  const key = normalizeTagForPack(tag)
+  return !!relations && needsCompany(relations, key) && PEOPLE_SLOTS.has(getTagSlotFromOverrides(key, overrides)?.slot ?? '')
+}
+
+/**
+ * Tags of a one-person prompt that need more than one person (isCompanyAct), with what requires
+ * them. Empty when the prompt doesn't show one person or the relations aren't loaded.
  */
 export function loneCompanyTags(
   tags: readonly string[],
@@ -87,8 +99,7 @@ export function loneCompanyTags(
   const out = new Set<string>()
   if (!relations || !showsOnePerson(tags)) return out
   tags.forEach((raw) => {
-    const tag = normalizeTagForPack(raw)
-    if (needsCompany(relations, tag) && PEOPLE_SLOTS.has(getTagSlotFromOverrides(tag, overrides)?.slot ?? '')) out.add(raw)
+    if (isCompanyAct(raw, overrides, relations)) out.add(raw)
   })
   if (out.size === 0) return out
   const gone = new Set(Array.from(out).map(normalizeTagForPack))

@@ -13,15 +13,15 @@ import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
 import { composePack, composePackPrompts, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
-import { coherentPromptTags, dropRedundantTags, loneCompanyTags } from './prompt-coherence'
+import { coherentPromptTags, dropRedundantTags, isCompanyAct, loneCompanyTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
-import { normalizeRating, type Scene, type SceneRating, type TagKind } from './scene/scene'
+import { normalizeRating, sceneTags, type Scene, type SceneRating, type TagKind } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
-import type { PackPeople, ScenePool } from './scene/scene-pool'
+import { compositionsOf, type PackPeople, type ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
 import { garmentPrefix, lastQualifier } from './scene/franchise'
 import type { SceneRequests } from './brief'
-import { excludes, loadedTagRelations, type TagRelations } from '../tag-relations'
+import { excludes, loadedTagRelations, needsCompany, type TagRelations } from '../tag-relations'
 import { resolveTagConflicts } from '../tag-conflicts'
 
 /** The pack's content rating (same values as the source dialog). */
@@ -332,20 +332,24 @@ export interface BaseComposition {
 /**
  * The composition a pack uses, first one the pool has:
  *  1. the user's pick;
- *  2. what the base's count tags declare;
- *  3. for a character base, that character alone;
- *  4. the most common one with someone of the character's gender;
- *  5. the most common one.
+ *  2. with a selected pose (`poses`, from poseCompositions, when it isn't empty): the most common
+ *     composition among the scenes that have it;
+ *  3. what the base's count tags declare;
+ *  4. for a character base, that character alone;
+ *  5. the most common one with someone of the character's gender;
+ *  6. the most common one.
  */
 export function defaultComposition(
   compositions: ReadonlyArray<{ people: PackPeople }>,
   subject: 'girl' | 'boy',
   picked?: PackPeople | null,
-  base?: BaseComposition
+  base?: BaseComposition,
+  poses?: readonly PoseComposition[]
 ): PackPeople | null {
   const has = (people: PackPeople | null | undefined): people is PackPeople =>
     !!people && compositions.some((c) => samePeople(c.people, people))
   if (has(picked)) return picked
+  if (poses && poses.length > 0) return poses[0].people
   if (has(base?.declared)) return base!.declared
   if (base?.character) {
     const alone: PackPeople = subject === 'girl' ? { girls: 1, boys: 0 } : { girls: 0, boys: 1 }
@@ -359,14 +363,19 @@ export function defaultComposition(
  * The composition a cast's pack uses: the user's pick while the pool has it and it
  * holds the cast, else the one that matches the cast exactly, else the most common
  * one with room for everyone. Null when no composition of the pool holds the cast.
+ * With a selected pose (`poses`, from poseCompositions), the compositions whose scenes have it
+ * come first; when none holds the cast, the pool's own.
  */
 export function castComposition(
   compositions: ReadonlyArray<{ people: PackPeople }>,
   cast: PackPeople,
-  picked?: PackPeople | null
+  picked?: PackPeople | null,
+  poses?: readonly PoseComposition[]
 ): PackPeople | null {
   const fits = compositions.filter((c) => holdsCast(c.people, cast))
   if (picked && fits.some((c) => samePeople(c.people, picked))) return picked
+  const posed = (poses ?? []).filter((c) => holdsCast(c.people, cast))
+  if (posed.length > 0) return posed.find((c) => samePeople(c.people, cast))?.people ?? posed[0].people
   return fits.find((c) => samePeople(c.people, cast))?.people ?? fits[0]?.people ?? null
 }
 
@@ -374,6 +383,99 @@ export function castComposition(
 export function enabledSceneCount(pool: ScenePool, disabled: readonly string[]): number {
   const off = new Set(disabled)
   return pool.situations.reduce((sum, situation) => sum + (off.has(situation.id) ? 0 : situation.sceneIds.length), 0)
+}
+
+// ── Selected poses ────────────────────────────────────────────────────────────
+
+/** A composition the selected poses offer, with how many of its scenes have them. */
+export interface PoseComposition {
+  people: PackPeople
+  scenes: number
+}
+
+/** The poses of `requests.select` and how they pick scenes. */
+interface PoseSelection {
+  /** As the engine spells them, without those in "Never include". */
+  tags: string[]
+  /** Poses only a scene that has them can give (poseNeedsScene); the others can be imposed. */
+  needed: ReadonlySet<string>
+  /** Acts that need company (isCompanyAct): a scene of fewer than two people doesn't have them, whatever its tags say. */
+  company: ReadonlySet<string>
+}
+
+type PoseArgs = Pick<ScenePackArgs, 'requests' | 'never' | 'overrides'>
+const selections = new WeakMap<PoseArgs, PoseSelection | null>()
+
+/** The selected poses of `args`, or null when there are none (worked out once per args). */
+function poseSelection(args: PoseArgs): PoseSelection | null {
+  const cached = selections.get(args)
+  if (cached !== undefined) return cached
+  const never = (args.never ?? []).map(normalizeTagForPack).filter(Boolean)
+  const tags = Array.from(new Set((args.requests?.select ?? []).map(normalizeTagForPack)))
+    .filter((tag) => tag && !never.some((base) => isQualifiedVariant(tag, base)))
+  let selection: PoseSelection | null = null
+  if (tags.length > 0) {
+    const relations = loadedTagRelations()
+    selection = {
+      tags,
+      needed: new Set(tags.filter((tag) => poseNeedsScene(tag, args.overrides, relations))),
+      company: new Set(tags.filter((tag) => isCompanyAct(tag, args.overrides, relations))),
+    }
+  }
+  selections.set(args, selection)
+  return selection
+}
+
+/**
+ * True for a pose only a scene that already has it can give: an interaction between people (its
+ * slot) or a tag the measured relations say needs company ("princess carry", "hug"). Imposed on
+ * another scene it contradicts it. A plain posture ("sitting") can be imposed.
+ */
+export function poseNeedsScene(tag: string, overrides: Record<string, string>, relations: TagRelations | null = loadedTagRelations()): boolean {
+  const key = normalizeTagForPack(tag)
+  if (getTagSlotFromOverrides(key, overrides)?.slot === 'pose:interaction') return true
+  return !!relations && needsCompany(relations, key)
+}
+
+const headcount = (scene: Scene): number => (scene.people ? scene.people.girls + scene.people.boys : 0)
+
+/**
+ * The selected poses `scene` has, itself or a qualified form ("reverse princess carry" for
+ * "princess carry"). An act that needs company counts only in a scene of two people or more: in
+ * a scene of one ("carrying" a creature in someone's arms), it is not that pose.
+ */
+function posesOf(scene: Scene, selection: PoseSelection): string[] {
+  const tags = sceneTags(scene)
+  return selection.tags.filter(
+    (pose) => !(selection.company.has(pose) && headcount(scene) < 2) && tags.some((tag) => isQualifiedVariant(tag, pose))
+  )
+}
+
+/** 'all': the scene has every selected pose; 'imposable': the ones it lacks can be imposed; 'none': it can't serve. */
+function poseFit(scene: Scene, selection: PoseSelection): 'all' | 'imposable' | 'none' {
+  const has = new Set(posesOf(scene, selection))
+  const missing = selection.tags.filter((pose) => !has.has(pose))
+  if (missing.length === 0) return 'all'
+  return missing.some((pose) => selection.needed.has(pose)) ? 'none' : 'imposable'
+}
+
+/**
+ * The compositions the selected poses offer, most scenes first, counted over every scene of the
+ * pool (`pool.allScenes`: the pool built without a composition lists them all) less the removed
+ * ones: those with every selected pose; when none has them all, those with every pose that can't
+ * be imposed. An act that needs company leaves out the scenes of one person. Empty without a
+ * selected pose, or when no scene has it: the composition is then chosen as before. Pass it to
+ * defaultComposition / castComposition; the interface lists it ("With 1 boy · 41").
+ */
+export function poseCompositions(pool: ScenePool, args: PoseArgs & Pick<ScenePackArgs, 'removedScenes'>): PoseComposition[] {
+  const selection = poseSelection(args)
+  if (!selection) return []
+  const removed = new Set(args.removedScenes ?? [])
+  const scenes = (pool.allScenes ?? pool.scenes).filter((scene) => !removed.has(scene.postId))
+  const fits = scenes.map((scene) => poseFit(scene, selection))
+  const full = scenes.filter((_, i) => fits[i] === 'all')
+  const counted = full.length > 0 || selection.needed.size === 0 ? full : scenes.filter((_, i) => fits[i] === 'imposable')
+  return compositionsOf(counted)
 }
 
 // ── What the character owns ─────────────────────────────────────────────────
@@ -527,13 +629,25 @@ export interface ScenePackArgs {
    *    `identity`) go, unless the scene's clothes already are it ("white bikini" for "bikini").
    *    What the character is stays: names, look, signature accessories (`permanence`).
    *  - `where`: replaces the scene's place.
-   *  - `select`, `also`: owned like a pinned trait; a posture, an expression or a camera tag
+   *  - `select`: picks the scenes. Prompts come from scenes that already have the pose (or a
+   *    qualified form of it; with several, those that have them all first). With too few: those
+   *    scenes again with other parts (as Remix does), then, for a plain posture only, the pose
+   *    imposed on other scenes; never on a scene without it for an interaction or an act that
+   *    needs company. Each step taken is in `issues`. In the prompt, owned like `also`.
+   *  - `also`: owned like a pinned trait; a posture, an expression or a camera tag
    *    takes the place of the scene's.
    *  - `literal`: first, as typed (like `alwaysAdd`).
    */
   requests?: SceneRequests
   /** Who the identity's tags are (lib/pack/scene/permanence.ts): decides what `requests.wearing` leaves of the character. */
   permanence?: (tag: string) => Permanence
+  /**
+   * Posts whose scenes are used first (post ids): the character's own posts with the requested
+   * pose, among the posts of anyone found by theme. Ids the pool doesn't have do nothing.
+   */
+  preferredPosts?: readonly number[]
+  /** Scenes the user took out (post ids): never the scene of a prompt, nor a donor of its parts. */
+  removedScenes?: readonly number[]
 }
 
 /** A request's role for the engine (keys of SceneRequests); not brief.ts's RequestRole, which names the brief's slots. */
@@ -541,14 +655,27 @@ export type SceneRequestRole = keyof SceneRequests
 
 /**
  * What the engine could not do as asked, for the interface to say in words. One entry per
- * request and kind, with how many prompts of the pack it touches. Planned next: 'few-scenes'
- * (the pool has few scenes with a selected pose) and 'scenes-reused'.
+ * request (or per set of selected poses) and kind, with how many prompts of the pack it touches.
  */
 export type ScenePackIssue =
   /** The request needs more than one person and the pack shows one: it stays in, contradicted. */
   | { kind: 'needs-company'; tag: string; role: SceneRequestRole; prompts: number }
   /** The request was left out of the pack, and why. */
   | { kind: 'request-dropped'; tag: string; role: SceneRequestRole; reason: RequestDropReason }
+  /**
+   * The pack is short: only `scenes` scenes of its composition have the selected poses (0: none)
+   * and they can't be imposed on others. `prompts` were made (the pack asked for more).
+   */
+  | { kind: 'few-scenes'; tags: string[]; scenes: number; prompts: number }
+  /** `prompts` prompts use one of the `scenes` scenes with the selected poses again, with other parts. */
+  | { kind: 'scenes-reused'; tags: string[]; scenes: number; prompts: number }
+  /** A plain posture imposed on `prompts` scenes that don't have it, once those that have it ran out. */
+  | { kind: 'pose-imposed'; tag: string; prompts: number }
+  /**
+   * The pack's composition (`people`) has no scene with the selected poses; `scenes` scenes of
+   * other compositions have them (poseCompositions lists which).
+   */
+  | { kind: 'composition-without-pose'; tags: string[]; people: PackPeople; scenes: number }
 
 export type RequestDropReason =
   /** The same tag is in "Never include" (or a removed chip). */
@@ -603,6 +730,8 @@ interface RequestPlan {
   where: string[]
   /** `select` and `also`: owned like pinned traits; they take the place of the scene's posture, expression or camera. */
   owning: string[]
+  /** `select`: the poses that pick the scenes (see poseSelection). */
+  select: string[]
   /** What the character usually wears, set aside for the garments asked for: it doesn't come back through the scene either. */
   setAside: string[]
   literal: string[]
@@ -611,7 +740,7 @@ interface RequestPlan {
   dropped: ScenePackIssue[]
 }
 
-const NO_REQUESTS: RequestPlan = { identity: [], imposed: [], wearing: [], where: [], owning: [], setAside: [], literal: [], roleOf: new Map(), dropped: [] }
+const NO_REQUESTS: RequestPlan = { identity: [], imposed: [], wearing: [], where: [], owning: [], select: [], setAside: [], literal: [], roleOf: new Map(), dropped: [] }
 const plans = new WeakMap<ScenePackArgs, RequestPlan>()
 
 /** What `args.requests` means for this pack, worked out once per args. */
@@ -640,7 +769,8 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
     })
   const wearing = take('wearing')
   const where = take('where')
-  const owning = [...take('select'), ...take('also')]
+  const select = take('select')
+  const owning = [...select, ...take('also')]
   const imposed = [...wearing, ...where, ...owning]
   const literal = requests.literal.filter((tag) => tag.trim())
   literal.forEach((tag) => roleOf.set(normalizeTagForPack(tag), roleOf.get(normalizeTagForPack(tag)) ?? 'literal'))
@@ -658,6 +788,7 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
     wearing,
     where,
     owning,
+    select,
     setAside: setAside.map(normalizeTagForPack),
     literal,
     roleOf,
@@ -796,22 +927,63 @@ interface Finisher {
   situationOf: Map<number, string>
   /** Requests that need company, kept in a one-person prompt: prompts each was in. */
   lonely: Map<string, number>
+  /** With selected poses: the scenes the pack used and the steps it took. */
+  pose: PoseTally | null
 }
 
-function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filter: NearDuplicateFilter): Finisher {
+interface PoseTally {
+  plan: PosePlan
+  /** Base scenes of the prompts made so far. */
+  used: Set<number>
+  /** Prompts whose base scene an earlier prompt already used. */
+  reused: number
+  /** Selected pose -> prompts it was imposed on (a scene without it). */
+  imposed: Map<string, number>
+}
+
+function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filter: NearDuplicateFilter, pose: PosePlan | null = null): Finisher {
   const situationOf = new Map<number, string>()
   pool.situations.forEach((situation) => situation.sceneIds.forEach((id) => situationOf.set(id, situation.id)))
   return {
     pool, args, leftOut: ideaClothesLeftOut(args), seen, filter,
     sceneById: new Map(pool.scenes.map((scene) => [scene.postId, scene])), situationOf, lonely: new Map(),
+    pose: pose ? { plan: pose, used: new Set(), reused: 0, imposed: new Map() } : null,
   }
 }
 
-/** The issues of a finished pack: requests left out before composing, then requests that needed company. */
-function packIssues(f: Finisher): ScenePackIssue[] {
+/** Notes a prompt made from `composed` in a phase of `kind`: a scene used again, a pose imposed. */
+function tallyPose(f: Finisher, kind: PhaseKind, composed: ScenePrompt): void {
+  const tally = f.pose
+  if (!tally) return
+  const id = composed.sources.skeleton
+  if (tally.used.has(id)) tally.reused++
+  tally.used.add(id)
+  if (kind !== 'imposed') return
+  const { selection } = tally.plan
+  const scene = f.sceneById.get(id)
+  const has = new Set(scene ? posesOf(scene, selection) : [])
+  selection.tags.forEach((pose) => {
+    if (!has.has(pose)) tally.imposed.set(pose, (tally.imposed.get(pose) ?? 0) + 1)
+  })
+}
+
+/**
+ * The issues of a finished pack of `made` prompts (of `count` asked): requests left out before
+ * composing, requests that needed company, then what the selected poses could not give.
+ */
+function packIssues(f: Finisher, made: number, count: number): ScenePackIssue[] {
   const plan = requestPlan(f.args)
   const issues = [...plan.dropped]
   f.lonely.forEach((prompts, tag) => issues.push({ kind: 'needs-company', tag, role: plan.roleOf.get(normalizeTagForPack(tag)) ?? 'literal', prompts }))
+  const tally = f.pose
+  if (!tally) return issues
+  const { selection, carriers, elsewhere } = tally.plan
+  const tags = selection.tags
+  const people = f.args.people ?? f.pool.stats.composition
+  if (carriers.length === 0 && elsewhere > 0 && people) issues.push({ kind: 'composition-without-pose', tags, people, scenes: elsewhere })
+  if (tally.reused > 0) issues.push({ kind: 'scenes-reused', tags, scenes: carriers.length, prompts: tally.reused })
+  tally.imposed.forEach((prompts, tag) => issues.push({ kind: 'pose-imposed', tag, prompts }))
+  if (made < count && selection.needed.size > 0) issues.push({ kind: 'few-scenes', tags, scenes: carriers.length, prompts: made })
   return issues
 }
 
@@ -880,15 +1052,136 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
 }
 
 /**
- * Composed scenes for a pack of `count`, one at a time: up to a few more than asked,
- * so the duplicate filter has room. Only as many are composed as the pack takes.
+ * How many more prompts each scene with the selected poses may make once they have all been used.
+ * Remix can make dozens of different prompts from one scene; past one more each, the pack is
+ * mostly the same few pictures, and a plain posture is better imposed on other scenes.
  */
-function* composeForPack(pool: ScenePool, args: ScenePackArgs, count: number): Generator<ScenePrompt> {
+export const REUSES_PER_SCENE = 1
+
+/** What a phase of the pack is: plain scenes, scenes with the selected poses, those again (reuse), or a pose imposed. */
+type PhaseKind = 'scene' | 'pose' | 'reuse' | 'imposed'
+
+/** One run of the composer over part of the pool. */
+interface Phase {
+  pool: ScenePool
+  /** How many prompts the composer makes at most (Faithful: one per scene). A reuse phase sets its own. */
+  count: number
+  kind: PhaseKind
+  seed: number
+  /** The phase's own mix: reusing scenes swaps their parts, as Remix does. */
+  mix?: 'remix'
+}
+
+/** What the selected poses make of the pool, for one pack. */
+interface PosePlan {
+  selection: PoseSelection
+  /** Scenes in play (enabled, not removed) with every selected pose, in the order they are used. */
+  carriers: Scene[]
+  /** Scenes in play that lack only poses that can be imposed, most selected poses first. */
+  imposable: Scene[]
+  /** Scenes of other compositions with every selected pose (the pool's `allScenes`). */
+  elsewhere: number
+}
+
+interface PackPlan {
+  phases: Phase[]
+  pose: PosePlan | null
+}
+
+/** `pool` without the scenes in `removed`, as skeletons and as donors. */
+function withoutScenes(pool: ScenePool, removed: ReadonlySet<number>): ScenePool {
+  return {
+    ...pool,
+    scenes: pool.scenes.filter((scene) => !removed.has(scene.postId)),
+    situations: pool.situations.map((situation) => ({ ...situation, sceneIds: situation.sceneIds.filter((id) => !removed.has(id)) })),
+  }
+}
+
+/** The scenes of the enabled situations, situation by situation. */
+function scenesInPlay(pool: ScenePool, disabled: readonly string[] | undefined): Scene[] {
+  const off = new Set(disabled ?? [])
+  const byId = new Map(pool.scenes.map((scene) => [scene.postId, scene]))
+  return pool.situations.filter((situation) => !off.has(situation.id)).flatMap((situation) => situation.sceneIds.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])))
+}
+
+const idsOf = (scenes: readonly Scene[]): Set<number> => new Set(scenes.map((scene) => scene.postId))
+
+/**
+ * The phases of a pack of `count`, in order. Without selected poses, preferred posts or removed
+ * scenes, as always: the pool (split for the picked scenes, sceneIdeaPhases), up to a few more
+ * prompts than asked, so the duplicate filter has room. With preferred posts, their scenes first.
+ * With selected poses, the ladder (each step it takes goes to `issues`):
+ *  1. the scenes with every selected pose, each once (preferred posts first);
+ *  2. those of them that made a prompt, once more each (REUSES_PER_SCENE) with other parts, as
+ *     Remix does (a scene whose own prompt didn't pass, a near-duplicate of another, doesn't
+ *     come back this way);
+ *  3. only when the poses they lack can be imposed (a plain posture): the other scenes, those with
+ *     the most selected poses first, with the poses imposed;
+ *  4. nothing more: the pack is short. A pose that needs a scene with it is never imposed.
+ */
+function packPlan(pool: ScenePool, args: ScenePackArgs, count: number): PackPlan {
   const overGenerate = Math.min(Math.max(count * 2, count + 4), MAX_PACK_OVERGENERATE)
-  // With picked scenes, the posts that have them come first (see sceneIdeaPhases).
-  const phases = sceneIdeaPhases(pool, args.sceneIdea?.core) ?? [pool]
-  for (let i = 0; i < phases.length; i++) {
-    yield* composePackPrompts(phases[i], composeOptions(args, overGenerate, args.seed + i, args.disabledSituations))
+  const removed = new Set(args.removedScenes ?? [])
+  const preferred = new Set(args.preferredPosts ?? [])
+  const selection = args.requests ? poseSelection(args) : null
+  const phases: Phase[] = []
+  const add = (phasePool: ScenePool, phaseCount: number, kind: PhaseKind, mix?: 'remix') =>
+    phases.push({ pool: phasePool, count: phaseCount, kind, seed: args.seed + phases.length, ...(mix ? { mix } : {}) })
+  if (!selection && removed.size === 0 && preferred.size === 0) {
+    // With picked scenes, the posts that have them come first (see sceneIdeaPhases).
+    ;(sceneIdeaPhases(pool, args.sceneIdea?.core) ?? [pool]).forEach((phasePool) => add(phasePool, overGenerate, 'scene'))
+    return { phases, pose: null }
+  }
+  const base = removed.size > 0 ? withoutScenes(pool, removed) : pool
+  const inPlay = scenesInPlay(base, args.disabledSituations)
+  /** Preferred scenes first, then the rest; empty groups left out. */
+  const preferredFirst = (scenes: Scene[]): Scene[][] =>
+    [scenes.filter((scene) => preferred.has(scene.postId)), scenes.filter((scene) => !preferred.has(scene.postId))].filter((group) => group.length > 0)
+
+  if (!selection) {
+    const groups = preferredFirst(inPlay)
+    groups.forEach((group, i) => {
+      const view = groups.length > 1 ? restrictPool(base, idsOf(group)) : base
+      // Only the last group may come back with other swaps (Remix with fewer scenes than prompts).
+      const last = i === groups.length - 1
+      ;(sceneIdeaPhases(view, args.sceneIdea?.core) ?? [view]).forEach((phasePool) => add(phasePool, last ? overGenerate : group.length, 'scene'))
+    })
+    return { phases, pose: null }
+  }
+
+  const fit = new Map(inPlay.map((scene) => [scene.postId, poseFit(scene, selection)]))
+  const carriers = inPlay.filter((scene) => fit.get(scene.postId) === 'all')
+  const carried = (scene: Scene) => posesOf(scene, selection).length
+  const imposable = inPlay.filter((scene) => fit.get(scene.postId) === 'imposable').sort((a, b) => carried(b) - carried(a))
+  const inPool = idsOf(base.scenes)
+  const elsewhere = (pool.allScenes ?? []).filter(
+    (scene) => !inPool.has(scene.postId) && !removed.has(scene.postId) && poseFit(scene, selection) === 'all'
+  ).length
+
+  const ordered: Scene[] = []
+  preferredFirst(carriers).forEach((group) => {
+    add(restrictPool(base, idsOf(group)), group.length, 'pose')
+    ordered.push(...group)
+  })
+  if (carriers.length > 0) add(restrictPool(base, idsOf(carriers)), 0, 'reuse', 'remix')
+  const levels = Array.from(new Set(imposable.map(carried)))
+  levels.forEach((level) => {
+    preferredFirst(imposable.filter((scene) => carried(scene) === level)).forEach((group) => add(restrictPool(base, idsOf(group)), group.length, 'imposed'))
+  })
+  return { phases, pose: { selection, carriers: ordered, imposable, elsewhere } }
+}
+
+/**
+ * Composed scenes for a pack, phase by phase, one at a time: only as many are composed as the pack
+ * takes. A reuse phase works on the scenes of `used` (those that made a prompt so far).
+ */
+function* composeForPack(args: ScenePackArgs, phases: readonly Phase[], used?: ReadonlySet<number>): Generator<{ prompt: ScenePrompt; kind: PhaseKind }> {
+  for (const phase of phases) {
+    const phasePool = phase.kind === 'reuse' ? restrictPool(phase.pool, used ?? new Set()) : phase.pool
+    const reusable = phase.kind === 'reuse' ? phasePool.situations.reduce((sum, situation) => sum + situation.sceneIds.length, 0) : 0
+    if (phase.kind === 'reuse' && reusable === 0) continue
+    const options = composeOptions(args, phase.kind === 'reuse' ? reusable * REUSES_PER_SCENE : phase.count, phase.seed, args.disabledSituations)
+    for (const prompt of composePackPrompts(phasePool, phase.mix ? { ...options, mix: phase.mix } : options)) yield { prompt, kind: phase.kind }
   }
 }
 
@@ -899,14 +1192,17 @@ function* composeForPack(pool: ScenePool, args: ScenePackArgs, count: number): G
 export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePackResult {
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
-  const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)))
+  const plan = packPlan(pool, args, count)
+  const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)), plan.pose)
   const prompts: PackPrompt[] = []
-  for (const composed of composeForPack(pool, args, count)) {
+  for (const item of composeForPack(args, plan.phases, f.pose?.used)) {
     if (prompts.length >= count) break
-    const prompt = finishOne(f, composed)
-    if (prompt) prompts.push(prompt)
+    const prompt = finishOne(f, item.prompt)
+    if (!prompt) continue
+    prompts.push(prompt)
+    tallyPose(f, item.kind, item.prompt)
   }
-  return { prompts, shortBy: count - prompts.length, issues: packIssues(f) }
+  return { prompts, shortBy: count - prompts.length, issues: packIssues(f, prompts.length, count) }
 }
 
 export interface AsyncControl {
@@ -932,8 +1228,9 @@ export async function generateScenePackAsync(
   const slice = control.slice ?? 12
   await control.pause()
   if (control.cancelled()) return null
-  const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)))
-  const composed = composeForPack(pool, args, count)
+  const plan = packPlan(pool, args, count)
+  const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)), plan.pose)
+  const composed = composeForPack(args, plan.phases, f.pose?.used)
   const prompts: PackPrompt[] = []
   let started = Date.now()
   // Composing a scene is the costly part, so the pause comes before pulling the next one.
@@ -945,10 +1242,70 @@ export async function generateScenePackAsync(
     }
     const next = composed.next()
     if (next.done) break
-    const prompt = finishOne(f, next.value)
-    if (prompt) prompts.push(prompt)
+    const prompt = finishOne(f, next.value.prompt)
+    if (!prompt) continue
+    prompts.push(prompt)
+    tallyPose(f, next.value.kind, next.value.prompt)
   }
-  return { prompts, shortBy: count - prompts.length, issues: packIssues(f) }
+  return { prompts, shortBy: count - prompts.length, issues: packIssues(f, prompts.length, count) }
+}
+
+/** A scene a pack can be made from, for the interface's sheet of scenes (sceneCandidates). */
+export interface SceneCandidate {
+  postId: number
+  /** Thumbnail of the post. */
+  preview?: string
+  /** Who is in it; null for an open count. */
+  people: PackPeople | null
+  /** It has every selected pose (or a qualified form); true when no pose is selected. False: a plain posture would be imposed on it. */
+  hasPose: boolean
+  /** It comes from one of `ScenePackArgs.preferredPosts`. */
+  preferred: boolean
+  situation?: string
+  invented?: boolean
+}
+
+/**
+ * The scenes a pack would be made from, in the order it first uses them, given the same pool and
+ * args as generateScenePack: the scenes with the selected poses (preferred posts first), then, for
+ * a plain posture, the ones it would be imposed on. Only the scenes that really make a prompt
+ * (it runs the pack in Faithful with no limit and lists the different base scenes), so its length
+ * is how many different scenes generateScenePack can show ("41 scenes fit"); prompts that reuse a
+ * scene don't add to it.
+ * Scenes in `args.removedScenes` are left out. Pure, but it composes every scene of the pool once
+ * (a few milliseconds each): call it when the pool or the args change, not on every render.
+ */
+export function sceneCandidates(pool: ScenePool, args: ScenePackArgs): SceneCandidate[] {
+  // Enough to take every phase to its end: the composer never makes more than MAX_PACK_OVERGENERATE per phase.
+  const count = Math.max(pool.scenes.length, MAX_PACK_OVERGENERATE)
+  const faithful: ScenePackArgs = { ...args, settings: { ...args.settings, mix: 'faithful' }, count }
+  const plan = packPlan(pool, faithful, count)
+  const f = finisher(pool, faithful, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(faithful)), plan.pose)
+  const order: number[] = []
+  const seen = new Set<number>()
+  for (const item of composeForPack(faithful, plan.phases, f.pose?.used)) {
+    if (!finishOne(f, item.prompt)) continue
+    tallyPose(f, item.kind, item.prompt)
+    const id = item.prompt.sources.skeleton
+    if (seen.has(id)) continue
+    seen.add(id)
+    order.push(id)
+  }
+  const preferred = new Set(args.preferredPosts ?? [])
+  const selection = plan.pose?.selection ?? null
+  return order.flatMap((id) => {
+    const scene = f.sceneById.get(id)
+    if (!scene) return []
+    return [{
+      postId: id,
+      preview: scene.preview,
+      people: scene.people ? { girls: scene.people.girls, boys: scene.people.boys } : null,
+      hasPose: !selection || poseFit(scene, selection) === 'all',
+      preferred: preferred.has(id),
+      situation: f.situationOf.get(id),
+      ...(scene.invented ? { invented: true } : {}),
+    }]
+  })
 }
 
 /** `pool` with each situation reduced to the scenes in `allowed`. */
@@ -975,14 +1332,23 @@ export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[
   const enabled = pool.situations.filter((situation) => !disabled.has(situation.id))
   const used = new Set(prompts.flatMap((p) => (p.scene ? [p.scene.postId] : [])))
   const situation = enabled.find((s) => s.id === current.scene?.situation)
-  const unused = (ids: number[]) => ids.filter((id) => !used.has(id))
+  // Never a removed scene; with selected poses, only a scene that has them or can take them.
+  const removed = new Set(args.removedScenes ?? [])
+  const selection = args.requests ? poseSelection(args) : null
+  const byId = new Map(pool.scenes.map((scene) => [scene.postId, scene]))
+  const serves = (id: number) => {
+    if (removed.has(id)) return false
+    const scene = byId.get(id)
+    return !selection || (!!scene && poseFit(scene, selection) !== 'none')
+  }
+  const unused = (ids: number[]) => ids.filter((id) => !used.has(id) && serves(id))
 
   const attempts: Array<{ scenes: number[]; situations: string[] }> = []
   if (situation) attempts.push({ scenes: unused(situation.sceneIds), situations: [situation.id] })
   attempts.push({ scenes: enabled.flatMap((s) => unused(s.sceneIds)), situations: enabled.map((s) => s.id) })
   if (args.settings.mix === 'remix') {
     const reuse = situation ? [situation] : enabled
-    attempts.push({ scenes: reuse.flatMap((s) => s.sceneIds), situations: reuse.map((s) => s.id) })
+    attempts.push({ scenes: reuse.flatMap((s) => s.sceneIds.filter(serves)), situations: reuse.map((s) => s.id) })
   }
 
   const others = prompts.filter((_, i) => i !== index).map((p) => p.prompt)
