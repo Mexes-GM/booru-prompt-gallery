@@ -33,7 +33,7 @@ export const BriefSummary = memo(function BriefSummary({ parts, onExpand, expand
     >
       <span className="sr-only">Edit pack: </span>
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-        {parts.length === 0 ? <span className="text-faint-foreground">{line}</span> : line}
+        {parts.length === 0 ? <span className="text-muted-foreground">{line}</span> : line}
       </span>
       <ChevronDown
         className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out-strong motion-reduce:transition-none", expanded && "rotate-180")}

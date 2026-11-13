@@ -7,9 +7,12 @@
  * - `never`: in no prompt. Marked with a ban icon, not only by colour.
  * - `trait`: part of a character's usual look. Removing it strikes it through and
  *   keeps it on the card, so it can be put back.
- * - `offered`: something the card suggests. The whole chip is one button that adds it.
+ * - `offered`: something the card suggests. The whole chip is one button that adds it;
+ *   its detail wraps to a second line rather than being cut.
  *
  * Any chip can carry a conflict note: a warning icon, with the note as its name and tooltip.
+ * Remove and Restore carry `data-chip-action`, so the row can move focus to a
+ * neighbour when a chip goes away.
  */
 import { memo } from "react"
 import { AlertTriangle, Ban, Plus, RotateCcw, X } from "lucide-react"
@@ -41,11 +44,10 @@ export interface RequestChipProps {
 const BASE =
   "inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border text-[13px] leading-none h-7 pointer-coarse:h-11"
 
-const SURFACE: Record<RequestChipVariant, string> = {
+const SURFACE: Record<Exclude<RequestChipVariant, "offered">, string> = {
   request: "border-transparent bg-secondary text-foreground",
   never: "border-destructive-border bg-destructive-soft text-destructive-text",
   trait: "border-border text-muted-foreground",
-  offered: "border-dashed border-border text-muted-foreground",
 }
 
 const ICON_BUTTON =
@@ -71,7 +73,30 @@ function ConflictMark({ note }: { note: string }) {
   )
 }
 
-export const RequestChip = memo(function RequestChip({
+function OfferedChip({ label, detail, onAccept, className }: Pick<RequestChipProps, "label" | "detail" | "onAccept" | "className">) {
+  return (
+    <button
+      type="button"
+      data-chip-offer=""
+      onClick={onAccept}
+      className={cn(
+        "inline-flex min-h-7 max-w-full items-start gap-1 rounded-md border border-dashed border-border px-2 py-1.5 text-left text-[13px] leading-tight text-muted-foreground pointer-coarse:min-h-11 pointer-coarse:items-center",
+        "transition-[color,background-color,border-color] duration-150 ease-out-strong",
+        "hover:border-foreground/30 hover:bg-secondary/60 hover:text-foreground",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        className,
+      )}
+    >
+      <Plus className="mt-px size-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0 text-pretty">
+        <span className="font-medium">{label}</span>
+        {detail && <span className="font-normal"> · {detail}</span>}
+      </span>
+    </button>
+  )
+}
+
+function RequestChipInner({
   label,
   variant = "request",
   removed = false,
@@ -84,67 +109,43 @@ export const RequestChip = memo(function RequestChip({
   strong = false,
   className,
 }: RequestChipProps) {
-
-  if (variant === "offered") {
-    return (
-      <button
-        type="button"
-        onClick={onAccept}
-        className={cn(
-          BASE,
-          SURFACE.offered,
-          "px-2 font-medium",
-          "transition-[color,background-color,border-color] duration-150 ease-out-strong",
-          "hover:border-foreground/30 hover:bg-secondary/60 hover:text-foreground",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          className,
-        )}
-      >
-        <Plus className="size-3.5 shrink-0" aria-hidden />
-        <span className="truncate">{label}</span>
-        {detail && <span className="truncate font-normal text-faint-foreground">{detail}</span>}
-      </button>
-    )
-  }
+  if (variant === "offered") return <OfferedChip label={label} detail={detail} onAccept={onAccept} className={className} />
 
   const struck = variant === "trait" && removed
+  const action = struck ? onRestore : onRemove
   return (
     <span
       className={cn(
         BASE,
         SURFACE[variant],
         "pl-2",
-        onRemove || onRestore ? "pr-0.5" : "pr-2",
+        action ? "pr-0.5" : "pr-2",
         conflict && "border-warning-border",
-        struck && "border-dashed text-faint-foreground",
+        struck && "border-dashed",
         selected && "ring-2 ring-ring ring-offset-1 ring-offset-background",
         className,
       )}
     >
       {variant === "never" && <Ban className="size-3.5 shrink-0" aria-hidden />}
-      <span
-        className={cn(
-          "truncate py-1",
-          strong ? "font-semibold" : "font-medium",
-          struck && "line-through decoration-faint-foreground",
-        )}
-      >
+      <span className={cn("truncate py-1", strong ? "font-semibold" : "font-medium", struck && "line-through")}>
         {variant === "never" && <span className="sr-only">Never: </span>}
         {label}
         {struck && <span className="sr-only"> (removed)</span>}
       </span>
       {conflict && <ConflictMark note={conflict} />}
-      {struck
-        ? onRestore && (
-            <button type="button" onClick={onRestore} aria-label={`Restore ${label}`} className={ICON_BUTTON}>
-              <RotateCcw className="size-3.5" aria-hidden />
-            </button>
-          )
-        : onRemove && (
-            <button type="button" onClick={onRemove} aria-label={`Remove ${label}`} className={ICON_BUTTON}>
-              <X className="size-3.5" aria-hidden />
-            </button>
-          )}
+      {action && (
+        <button
+          type="button"
+          data-chip-action=""
+          onClick={action}
+          aria-label={`${struck ? "Restore" : "Remove"} ${label}`}
+          className={ICON_BUTTON}
+        >
+          {struck ? <RotateCcw className="size-3.5" aria-hidden /> : <X className="size-3.5" aria-hidden />}
+        </button>
+      )}
     </span>
   )
-})
+}
+
+export const RequestChip = memo(RequestChipInner)

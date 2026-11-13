@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { OUTFIT_KIND_LABEL as KIND_LABEL, outfitFromKey as fromKey, outfitKey as keyOf, outfitSourceLabel, type OutfitSource } from "./pack-text"
+import { OUTFIT_KIND_LABEL as KIND_LABEL, outfitFromKey as fromKey, outfitKey as keyOf, outfitSourceValue, type OutfitSource } from "./pack-text"
 
 export interface WearingSourceMenuProps {
   value: OutfitSource
@@ -40,16 +40,16 @@ export const WearingSourceMenu = memo(function WearingSourceMenu({
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger
         className={cn(
-          "inline-flex h-7 max-w-full items-center gap-1 rounded-md px-2 text-xs text-muted-foreground pointer-coarse:h-11",
-          "transition-[color,background-color] duration-150 ease-out-strong",
-          "hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground",
+          "inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-border bg-background px-2 text-xs pointer-coarse:h-11",
+          "transition-[border-color,background-color] duration-150 ease-out-strong",
+          "hover:border-foreground/30 data-[state=open]:border-foreground/30",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           className,
         )}
       >
-        <span className="sr-only">Outfit when this row is empty: </span>
-        <span className="truncate">{outfitSourceLabel(value)}</span>
-        <ChevronDown className="size-3.5 shrink-0" aria-hidden />
+        <span className="shrink-0 text-muted-foreground">Outfit:</span>
+        <span className="truncate font-medium text-foreground">{outfitSourceValue(value)}</span>
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">When nothing is written here</DropdownMenuLabel>

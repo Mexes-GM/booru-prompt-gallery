@@ -20,6 +20,8 @@ export interface SlotMeta {
   emptyText: string
   /** Shown in the field once the slot has something. */
   moreText: string
+  /** Shown under the row while it is empty, in full (a placeholder would be cut off). */
+  help?: string
 }
 
 export const SLOTS: Record<SlotId, SlotMeta> = {
@@ -60,8 +62,9 @@ export const SLOTS: Record<SlotId, SlotMeta> = {
     label: "Also",
     icon: Plus,
     iconClass: "text-muted-foreground",
-    emptyText: "Expression, camera, objects, LoRA triggers",
+    emptyText: "Add tags",
     moreText: "Add more",
+    help: "Expression, camera, objects, LoRA triggers",
   },
   never: {
     id: "never",
@@ -87,11 +90,21 @@ export interface TagSuggestion {
 /** Where tags come from while a field is being typed in. */
 export type SuggestionStatus = "idle" | "loading" | "error"
 
-/** "tifa lockhart" -> "Tifa Lockhart"; keeps a series in brackets as typed. */
-export function characterName(tag: string): string {
-  return tag
-    .replace(/_/g, " ")
-    .replace(/(^|\s)([a-z])/g, (_m, space: string, letter: string) => space + letter.toUpperCase())
+export interface CharacterInfo {
+  /** Display name; defaults to the tag, title-cased, without its series in brackets. */
+  name?: string
+  /** The character's usual look (hair, eyes, body), as tags. */
+  usualLook: readonly string[]
+}
+
+/**
+ * The one name a character shows everywhere (Who, the summary):
+ * "tifa lockhart" -> "Tifa Lockhart", "makima (chainsaw man)" -> "Makima".
+ */
+export function characterName(tag: string, info?: Pick<CharacterInfo, "name">): string {
+  if (info?.name) return info.name
+  const bare = tag.replace(/_/g, " ").replace(/\s*\([^)]*\)\s*$/, "").trim() || tag
+  return bare.replace(/(^|[\s-])([a-z])/g, (_m, before: string, letter: string) => before + letter.toUpperCase())
 }
 
 /** A tag as the card shows it: spaces, not underscores. */
@@ -129,10 +142,15 @@ export function slotTags(brief: PackBrief, slot: RequestRole): string[] {
 
 /**
  * The card in one line: "Tifa Lockhart · bikini · princess carry · with 1 boy".
- * `peopleLabel` is the chosen People option, if any.
+ * `peopleLabel` is the chosen People option, if any; `characterInfo` is the same
+ * record the card gets, so names match.
  */
-export function briefSummaryParts(brief: PackBrief, peopleLabel?: string | null): string[] {
-  const names = brief.who.flatMap((c) => (c.tag ? [characterName(c.tag)] : []))
+export function briefSummaryParts(
+  brief: PackBrief,
+  peopleLabel?: string | null,
+  characterInfo?: Readonly<Record<string, Pick<CharacterInfo, "name">>>,
+): string[] {
+  const names = brief.who.flatMap((c) => (c.tag ? [characterName(c.tag, characterInfo?.[c.tag])] : []))
   const parts = [
     ...names,
     ...slotTags(brief, "wearing"),

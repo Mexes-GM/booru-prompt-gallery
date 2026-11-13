@@ -110,7 +110,7 @@ function ChoiceGroupInner<T extends string>({
               "transition-[color,background-color,border-color] duration-150 ease-out-strong",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
               "disabled:cursor-not-allowed disabled:opacity-50",
-              size === "sm" ? "h-6 px-2 text-xs pointer-coarse:h-10" : "h-8 px-3 text-sm pointer-coarse:h-11",
+              size === "sm" ? "h-6 px-2 text-xs pointer-coarse:h-11 pointer-coarse:min-w-11" : "h-8 px-3 text-sm pointer-coarse:h-11 pointer-coarse:min-w-11",
               segmented
                 ? cn(
                     "rounded-md",
@@ -139,7 +139,7 @@ function ChoiceGroupInner<T extends string>({
             )}
             <span>{choice.label}</span>
             {choice.count !== undefined && (
-              <span className={cn("tabular-nums", checked ? "text-mode-pack-text" : "text-faint-foreground")}>
+              <span className={cn("tabular-nums", checked ? "text-mode-pack-text" : "text-muted-foreground")}>
                 <span aria-hidden>· </span>
                 {choice.count}
                 <span className="sr-only"> scenes</span>
