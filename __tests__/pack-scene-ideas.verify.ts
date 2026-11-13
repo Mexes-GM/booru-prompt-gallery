@@ -303,7 +303,10 @@ const ideas = parseSceneIdeas(RAW)
 {
   const beach = ideas.find((i) => i.id === "a")!
   const added = activeSceneIdeas([beach], () => undefined, "sfw")
-  assert(sceneIdeasInUse("classic", "scene", added) === added, "Classic: the picked scenes always apply")
+  assert(sceneIdeasInUse("classic", "vary", added) === added && sceneIdeasInUse("classic", "keep", added) === added, "Classic: the picked scenes apply with Scenery on Vary or Keep")
+  const paused = sceneIdeasInUse("classic", "off", activeSceneIdeas([beach], (t) => (t === "sand" ? "removed" : undefined), "sfw"))
+  assert(paused.pinned.length + paused.dashed.length + paused.never.length + paused.core.length === 0, "Classic with Scenery Off: no tag of the scene, pinned, dashed or removed")
+  assert(sceneIdeasInUse("classic", "vary", added).pinned.join() === "beach,ocean", "back to Vary: they apply again")
   assert(sceneIdeasInUse("scenes", "picked", added).pinned.join() === "beach,ocean", "Scenes on Pick a scene: they apply")
   for (const other of ["scene", "vary", "plain"]) {
     const off = sceneIdeasInUse("scenes", other, added)

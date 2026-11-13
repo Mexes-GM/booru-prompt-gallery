@@ -48,7 +48,7 @@ import { contextKeysFor } from '@/lib/pack/pack-learning'
 import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
 import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
 import { addedTraitCategory, classicKeptTags, dashedAddedByCategory, pinnedConflicts, withoutNeverTags } from '@/lib/pack/classic-chips'
-import { activeSceneIdeas, sceneIdeaOwnTags, type ActiveSceneIdeas, type SceneIdea, type SceneIdeaChipState } from '@/lib/pack/scene-ideas'
+import { activeSceneIdeas, sceneIdeaOwnTags, sceneIdeasInUse, type ActiveSceneIdeas, type SceneIdea, type SceneIdeaChipState } from '@/lib/pack/scene-ideas'
 import type { ChipState, ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isCompositionPattern } from '@/lib/pack/scene/permanence'
 import { isQualifiedVariant } from '@/lib/pack/character-identity'
@@ -699,6 +699,12 @@ export function usePackMode(
     () => activeSceneIdeas(appliedIdeas, (tag) => ideaStates.get(tag), contentRating),
     [appliedIdeas, ideaStates, contentRating]
   )
+  // Classic uses them unless its Scenery category is Off (Off: no count; Keep: locked).
+  const classicSceneryOff = !lockedCategories.has('scenery') && (axisMinCounts.scenery ?? 1) === 0
+  const classicIdeas = useMemo(
+    () => sceneIdeasInUse('classic', classicSceneryOff ? 'off' : 'on', activeIdeas),
+    [classicSceneryOff, activeIdeas]
+  )
 
   const togglePackMode = useCallback(() => setIsPackMode((prev) => !prev), [])
   const enablePackMode = useCallback(() => setIsPackMode(true), [])
@@ -1006,9 +1012,9 @@ export function usePackMode(
       kept.push(...splitCommaSeparatedTags(customBaseText).map(normalizeTagForPack))
     }
     // The added scenes' pinned tags, after the character's.
-    kept.push(...activeIdeas.pinned)
+    kept.push(...classicIdeas.pinned)
     return Array.from(new Set(kept.filter(Boolean)))
-  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance, identityParts, excludedBaseTags, mutedSlots, axisMinCounts, focusCharacter, chipChoices, addedTraits, activeIdeas])
+  }, [keptBaseClassified, baseCard, lockedCategories, lockedSlots, effectiveOverrides, customBaseText, focusAppearance, identityParts, excludedBaseTags, mutedSlots, axisMinCounts, focusCharacter, chipChoices, addedTraits, classicIdeas])
 
   /** "Always add" tags as typed — finalizePackPrompt puts them first, underscores intact. */
   const alwaysAddTags = useMemo(() => parseAlwaysAddTags(customBaseText), [customBaseText])
@@ -1086,9 +1092,9 @@ export function usePackMode(
    */
   const classicNeverTags = useMemo(() => {
     const always = new Set(alwaysAddTags.map(normalizeTagForPack))
-    return Array.from(new Set([...excludedBaseTags, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack), ...activeIdeas.never]))
+    return Array.from(new Set([...excludedBaseTags, ...splitCommaSeparatedTags(neverIncludeText).map(normalizeTagForPack), ...classicIdeas.never]))
       .filter((tag) => tag && !always.has(tag))
-  }, [excludedBaseTags, neverIncludeText, alwaysAddTags, activeIdeas])
+  }, [excludedBaseTags, neverIncludeText, alwaysAddTags, classicIdeas])
   const isNeverTag = useCallback(
     (tag: string) => {
       const t = normalizeTagForPack(tag)
@@ -1306,13 +1312,13 @@ export function usePackMode(
       (tag) => chipChoices.get(`${own}\u0000${tag}`),
       categoryOf
     )
-    activeIdeas.dashed.forEach((tag) => {
+    classicIdeas.dashed.forEach((tag) => {
       const cat = categoryOf(tag)
       if (cat === 'clothing' && clothingFromLibrary) return
       ;(byCategory[cat] ??= []).push(tag)
     })
     return byCategory
-  }, [focusCharacter, addedTraits, excludedBaseTags, chipChoices, effectiveOverrides, addedHome, activeIdeas, clothingFromLibrary])
+  }, [focusCharacter, addedTraits, excludedBaseTags, chipChoices, effectiveOverrides, addedHome, classicIdeas, clothingFromLibrary])
   const buildPools = useCallback(
     (state: { lockedSlots: ReadonlySet<string>; mutedSlots: ReadonlySet<string> }) => {
       const merged: Partial<Record<TagCategory, string[]>> = {}

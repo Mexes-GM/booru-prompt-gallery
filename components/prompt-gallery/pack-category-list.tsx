@@ -388,8 +388,9 @@ const CategoryRow = memo(function CategoryRow({
           <span className="min-w-0 flex-1">
             <span className={`block text-sm font-semibold leading-tight ${state === "off" ? "text-muted-foreground" : ""}`}>{label}</span>
             <span className={`block text-xs truncate ${state === "keep" && kept.length > 0 ? "font-mono text-foreground/80" : "text-muted-foreground"}`}>
-              {pickedScenes && <span className="font-sans">Scene: {pickedScenes} · </span>}
+              {pickedScenes && state !== "off" && <span className="font-sans">Scene: {pickedScenes} · </span>}
               {summary}
+              {pickedScenes && state === "off" && <span className="font-sans"> · Scene paused</span>}
               {summaryExtra && <span className="font-sans text-mode-pack-text">{summaryExtra}</span>}
             </span>
           </span>

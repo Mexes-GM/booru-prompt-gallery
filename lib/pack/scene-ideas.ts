@@ -261,12 +261,15 @@ export function activeSceneIdeas(
 }
 
 /**
- * The added scenes a method uses. Classic: always (the control lives in its Scenery
- * row). Scenes: only while Scenery is on "Pick a scene" ('picked'); on any other
- * Scenery option they stay added but put nothing in the prompts.
+ * The added scenes a method uses. `scenery` is the Scenery setting of that method:
+ * Scenes' option ('picked' is "Pick a scene"), Classic's category state ('keep',
+ * 'vary', 'off'). Scenes uses them only on Pick a scene; Classic unless its Scenery
+ * category is Off. Otherwise they stay added but put nothing in the prompts (no
+ * pinned, dashed or removed tag), and apply again when the setting comes back.
  */
 export function sceneIdeasInUse(engine: 'scenes' | 'classic', scenery: string | undefined, active: ActiveSceneIdeas): ActiveSceneIdeas {
-  return engine === 'classic' || scenery === 'picked' ? active : NO_ACTIVE_SCENE_IDEAS
+  const on = engine === 'classic' ? scenery !== 'off' : scenery === 'picked'
+  return on ? active : NO_ACTIVE_SCENE_IDEAS
 }
 
 /** Tags whose chip state can be forgotten when a scene goes: those no other added scene has. */
