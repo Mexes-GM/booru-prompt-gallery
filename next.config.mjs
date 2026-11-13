@@ -13,11 +13,16 @@ const RELEASE =
 // script could do.
 const SCRIPT_EVAL = process.env.NODE_ENV === 'development' ? "'unsafe-eval' " : ''
 
+// Pack Mode's scene model runs on onnxruntime-web, which compiles WebAssembly.
+// 'wasm-unsafe-eval' allows compiling WebAssembly only, not eval() of JavaScript.
+// The page's CSP also covers the model's worker (a /_next/static script).
+const SCRIPT_WASM = "'wasm-unsafe-eval' "
+
 /** @param {string} [frameAncestors] */
 function contentSecurityPolicy(frameAncestors = '') {
   return `
  default-src 'self';
- script-src 'self' ${SCRIPT_EVAL}'unsafe-inline' https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com https://*.workers.dev;
+ script-src 'self' ${SCRIPT_EVAL}${SCRIPT_WASM}'unsafe-inline' https://vercel.live https://netlify-cdp.netlify.app https://challenges.cloudflare.com https://*.workers.dev;
  style-src 'self' 'unsafe-inline';
  img-src 'self' blob: data: https://www.google.com https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://danbooru.donmai.us https://cdn.donmai.us https://aibooru.online https://*.aibooru.online https://cdn.aibooru.download https://*.aibooru.download https://api.rule34.xxx https://rule34.xxx https://*.rule34.xxx https://e621.net https://*.e621.net https://e6ai.net https://*.e6ai.net https://*.donmai.us https://*.buymeacoffee.com https://gelbooru.com https://*.gelbooru.com https://*.workers.dev https://*.cloudfront.net;
  font-src 'self';
