@@ -56,7 +56,7 @@ import { isQualifiedVariant } from '@/lib/pack/character-identity'
 import { castAddition, castFromNames, castMemberLook, castMemberRole, cleanProfileLook, roleFromProfile, roleFromSubject, type CastLookSource, type CastRole } from '@/lib/pack/scene/cast'
 import { ConflictChecker } from '@/lib/tag-conflicts'
 import { ALL_EXCLUSIONS, excludes, loadedTagRelations } from '@/lib/tag-relations'
-import { fetchPostsPage } from '@/lib/api-client'
+import { collectPostTags, fetchSoloPosts } from '@/hooks/use-character-looks'
 import { packRatingToFilters } from '@/hooks/use-pack-seed-search'
 import { varietyPreset, presetCounts, presetModes, DEFAULT_VARIETY_LEVEL, type VarietyLevel, type VarietySetting } from '@/lib/pack/variety-presets'
 import { estimateTagsPerPrompt, raiseCountsForMinTotal, type AxisBudget } from '@/lib/pack/min-tags'
@@ -108,21 +108,6 @@ export type PackSlotState = 'base' | 'vary' | 'off'
 /** Number of comma-separated tags in a prompt string. */
 function countPromptTags(prompt: string): number {
   return prompt.split(',').filter((t) => t.trim()).length
-}
-
-/** General + character tags of the given posts, display-normalized and deduped. */
-function collectPostTags(posts: BooruPost[]): string[] {
-  const out = new Set<string>()
-  for (const post of posts) {
-    for (const raw of [post.tag_string, post.tag_string_character]) {
-      if (!raw) continue
-      for (const tag of splitTags(raw)) {
-        const norm = normalizeTagForPack(tag)
-        if (norm) out.add(norm)
-      }
-    }
-  }
-  return Array.from(out)
 }
 
 type AxisSample = { values: string[]; counts: Record<string, number>; aspects: Record<string, number> }
@@ -470,9 +455,6 @@ export interface UsePackModeResult {
  * settings as every other prompt in the app, instead of a parallel, simpler
  * path that skipped optimizeTags/exclude/find&replace/tagAppendRules.
  */
-/** Waits before asking a second time for a cast member's solo posts. */
-const SOLO_RETRY_MS = 4000
-
 const omit = <T,>(record: Record<string, T>, key: string): Record<string, T> => {
   if (!(key in record)) return record
   const next = { ...record }
@@ -1157,18 +1139,9 @@ export function usePackMode(
       if (typicalLooks[character]?.look.length || soloRequestedRef.current.has(key)) continue
       soloRequestedRef.current.add(key)
       setSoloLookStatus((prev) => ({ ...prev, [character]: 'loading' }))
-      const fetchOnce = () => fetchPostsPage({
-        tags: characterSearchTags(character, booruProvider),
-        ratingFilter,
-        order: 'popular',
-        provider: booruProvider,
-        hasPrompt: false,
-        scoreTier: 'off',
-      })
       // A failed request is tried once more after a pause (three characters' requests can
       // meet the booru's rate limit); after that the cleaned profile stands in.
-      void fetchOnce()
-        .catch(() => new Promise<BooruPost[]>((resolve, reject) => setTimeout(() => fetchOnce().then(resolve, reject), SOLO_RETRY_MS)))
+      void fetchSoloPosts({ tags: characterSearchTags(character, booruProvider), ratingFilter, provider: booruProvider })
         .then(async (posts) => {
           const [, vocabulary] = await Promise.all([enrichOverrides(collectPostTags(posts)), loadPackVocabulary()])
           const overrides = currentOverrides()
