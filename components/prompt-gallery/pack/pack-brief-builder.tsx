@@ -65,6 +65,7 @@ import {
   peopleFromCountTags,
   pickedPeopleNote,
   predictFit,
+  mergeFitNotes,
   withPromptPeople,
   withSearchProgress,
   preferredPostIds,
@@ -210,7 +211,8 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
       return
     }
     const back = returnRef.current
-    if (back instanceof HTMLElement && back.isConnected) back.focus()
+    if (back instanceof HTMLElement && back.isConnected && back !== document.body) back.focus()
+    else document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="Mode"] [data-mode="pack"]')?.focus()
   }, [open])
 
   return (
@@ -218,6 +220,13 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
       <section
         aria-label={BUILDER_TEXT.title}
         inert={!open}
+        onKeyDown={(e) => {
+          // Lists, menus, a marked chip and the scene picker close first (they stop the key or own it).
+          if (e.key !== "Escape" || e.defaultPrevented || e.isPropagationStopped()) return
+          const target = e.target instanceof Element ? e.target : null
+          if (target?.closest("[role='menu'], [role='listbox'], [role='dialog'], [data-radix-popper-content-wrapper]")) return
+          onExit()
+        }}
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-clip",
           "rounded-t-2xl border border-border bg-background shadow-2xl sm:bottom-4 sm:w-[calc(100%-2rem)] sm:rounded-2xl",
@@ -256,7 +265,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
             </Button>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 pt-2">
+        <div data-pack-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-2">
           <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
         </div>
       </section>
@@ -283,7 +292,7 @@ const RatingMenu = memo(function RatingMenu({ value, onChange }: { value: PackRa
         <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">{BUILDER_TEXT.ratingMenu}</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={value} onValueChange={(v) => onChange(v as PackRatingMode)}>
           {RATING_OPTIONS.map((o) => (
-            <DropdownMenuRadioItem key={o.value} value={o.value}>
+            <DropdownMenuRadioItem key={o.value} value={o.value} className="pointer-coarse:min-h-11">
               {o.label}
             </DropdownMenuRadioItem>
           ))}
@@ -320,6 +329,9 @@ const FORMATS: Choice<PromptFormat>[] = PROMPT_FORMATS.map((f) => ({ value: f, l
 const NO_POSTS: never[] = []
 const NO_IDS: string[] = []
 const UNDO_MS = 6000
+
+/** A sentence that ends with its stop, once. */
+const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`)
 
 /** A tag of a prompt as the brief spells it: no weight, no brackets. */
 const bareToken = (token: string) => token.replace(/^\(+/, "").replace(/(:[\d.]+)?\)+$/, "").trim()
@@ -463,7 +475,10 @@ function BriefWorkspace({
       nothingNew: manual?.nothingNew ? { exhausted: !!source?.noMoreResults } : null,
     }
     if (loadError) return []
-    if (!result) return withSearchProgress([...lead, ...predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused, axis: axisNote })], progress)
+    const predicted = () => predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused, axis: axisNote })
+    if (!result) return mergeFitNotes(withSearchProgress([...lead, ...predicted()], progress))
+    // Out of date: the last pack's notes are about another brief; the line speaks of the brief as it is.
+    if (stale) return mergeFitNotes(withSearchProgress([{ kind: "stale" }, ...lead, ...predicted()], progress))
     const after = issuesFit({
       issues: result.issues,
       count: result.count,
@@ -474,7 +489,7 @@ function BriefWorkspace({
       paused,
       axis: oneAxis(result.brief),
     })
-    return withSearchProgress(stale ? [{ kind: "stale" }, ...lead, ...after] : [...lead, ...after], progress)
+    return mergeFitNotes(withSearchProgress([...lead, ...after], progress))
   }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, brief.people, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
   const { setIncludeSensitive } = pack
   const includeSensitive = useCallback(() => setIncludeSensitive(true), [setIncludeSensitive])
@@ -483,7 +498,7 @@ function BriefWorkspace({
       n.kind === "few-rated"
         ? { kind: "few-rated", onInclude: includeSensitive }
         : n.kind === "paused"
-          ? { kind: "paused", onLoadMore: loadOnePage, waiting: !!source?.scrollLimited }
+          ? { kind: "paused", onLoadMore: loadOnePage, waiting: !!source?.scrollLimited, nothingNew: n.nothingNew }
           : n),
     [notes, includeSensitive, loadOnePage, source?.scrollLimited]
   )
@@ -515,7 +530,11 @@ function BriefWorkspace({
   const resultsRef = useRef<HTMLDivElement>(null)
   const wasGeneratingRef = useRef(false)
   useEffect(() => {
-    if (wasGeneratingRef.current && !isGenerating) resultsRef.current?.focus()
+    if (wasGeneratingRef.current && !isGenerating) {
+      // The brief is folded by now: the top of the panel is the summary, the fit line and the results.
+      resultsRef.current?.closest("[data-pack-scroll]")?.scrollTo({ top: 0 })
+      resultsRef.current?.focus({ preventScroll: true })
+    }
     wasGeneratingRef.current = isGenerating
   }, [isGenerating])
 
@@ -868,7 +887,7 @@ function BriefWorkspace({
 
       {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
       <p className="sr-only" role="status" aria-live="polite">
-        {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => fitText(st).spoken).join(". ")}
+        {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => sentence(fitText(st).spoken)).join(" ")}
       </p>
       <div className="space-y-1">
         {fitStates.map((state, i) => (
@@ -877,6 +896,7 @@ function BriefWorkspace({
             key={`${state.kind}:${"tag" in state ? state.tag : i}`}
             announce={false}
             state={state}
+            onIncludeSensitive={includeSensitive}
             hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
           />
         ))}
@@ -899,13 +919,6 @@ function BriefWorkspace({
         />
       )}
 
-      {correction?.status === "done" && correction.message ? (
-        <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
-      ) : correcting ? (
-        <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
-      ) : showUndo && pack.lastChange && (
-        <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
-      )}
 
       {resultsTip && <PackTip text={TIP_TEXT.results} onDismiss={() => closeTip("results")} />}
       {result && result.prompts.length > 0 && (
@@ -928,7 +941,17 @@ function BriefWorkspace({
       )}
 
       {/* Generate stays at the bottom edge of the panel, above the home indicator, whatever is scrolled. */}
-      <div className="sticky bottom-0 z-10 -mx-3 -mb-3 border-t border-border/60 bg-background px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="sticky bottom-0 z-10 -mx-3 border-t border-border/60 bg-background px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {/* Notices with Undo sit with Generate: always in view, whatever the brief or the list shows. */}
+        <div className="mb-2 empty:hidden">
+          {correction?.status === "done" && correction.message ? (
+            <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
+          ) : correcting ? (
+            <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
+          ) : showUndo && pack.lastChange ? (
+            <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
+          ) : null}
+        </div>
         <GenerateBar
           count={count}
           onCountChange={pack.setPromptCount}

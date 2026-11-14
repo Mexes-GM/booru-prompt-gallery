@@ -21,7 +21,9 @@ import {
   generateLayout,
   oneAxis,
   placeGenerated,
-  preferredForAgain,
+  leftOutPosts,
+  rotationAfter,
+  rotationPlan,
   opAfterEnd,
   placeRows,
   peopleLineState,
@@ -115,6 +117,8 @@ export interface PackMade {
   preferredPosts: readonly number[]
   /** Scenes of the rows locked at Generate: never used again. */
   lockedScenes: readonly number[]
+  /** Scenes this run left aside because the last runs of the same brief used them (another set). */
+  skipScenes?: readonly number[]
   /** The row each prompt of the engine went to. */
   slots: readonly number[]
   /** One-part pack: the scene that repeats (part of how it was made, for Undo and corrections). */
@@ -450,12 +454,13 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     () => peopleLineState({
       poses: requests.select,
       needsCompany: (tag) => poseNeedsScene(tag, overrides, relations),
-      compositions: poses,
+      // Only the make-ups with room for the characters: "2 boys" is no option for one girl.
+      compositions: poses.filter((c) => holdsCast(c.people, castPeopleMemo)),
       current: people,
       picked: brief.people,
       available: available ?? undefined,
     }),
-    [requests.select, overrides, relations, poses, people, brief.people, available]
+    [requests.select, overrides, relations, poses, castPeopleMemo, people, brief.people, available]
   )
 
   // ── Clothes ───────────────────────────────────────────────────────────────────
@@ -573,6 +578,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   // re-roll is replayed with its own seed. One operation runs at a time: each has an id,
   // only the newest is applied, and every one clears its own indicator in `finally`.
   const [op, setOp] = useState<{ id: number; kind: "generate" | "correct" } | null>(null)
+  // The scenes used by the runs of one brief (another set each time; see generate).
+  const rotationRef = useRef<{ brief: PackBrief; used: number[] } | null>(null)
   const opRef = useRef(0)
   const startOp = useCallback((kind: "generate" | "correct") => {
     const id = ++opRef.current
@@ -599,7 +606,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     return {
       ...base,
       preferredPosts: made.preferredPosts,
-      removedScenes: [...(base.removedScenes ?? []), ...made.lockedScenes],
+      removedScenes: [...(base.removedScenes ?? []), ...made.lockedScenes, ...(made.skipScenes ?? [])],
     }
   }, [argsFor])
 
@@ -648,18 +655,24 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       const own = ownScene(previous[i])
       return own !== undefined ? [own] : []
     })
-    // Generate again draws another set, without changing what the source puts first.
-    const used = new Set(previous.flatMap((p) => {
-      const own = ownScene(p)
-      return own !== undefined ? [own] : []
-    }))
-    const preferred = preferredForAgain(preferredPosts, used, pool.scenes.map((sc) => sc.postId), slots.length)
+    // Generate again draws another set: for the same brief, the scenes the last runs used
+    // stay aside while the rest are enough, then the cycle starts again. The source's own
+    // posts still go first; in a one-part pack the variants turn, never the scene that repeats.
+    const listed = candidateState?.pool === pool && (candidateState.axis ?? null) === (axis ?? null) ? candidateState.list : null
+    const leftOutIds = new Set(leftOutPosts(brief))
+    const lockedSet = new Set(lockedScenes)
+    const available = (listed ? (axis ? listed.slice(1) : listed).map((c) => c.postId) : pool.scenes.map((sc) => sc.postId))
+      .filter((pid) => !leftOutIds.has(pid) && !lockedSet.has(pid))
+    const cycle = rotationRef.current?.brief === brief ? rotationRef.current.used : []
+    const turn = rotationPlan({ available, used: cycle, needed: slots.length, own: preferredPosts })
+    const preferred = turn.preferred
     const made: PackMade = {
       pool,
       seed: Math.floor(Math.random() * 1e9),
       genCount: slots.length,
       preferredPosts: preferred,
       lockedScenes,
+      skipScenes: turn.exclude,
       slots,
       // With locked rows, the scene they repeat is the pack's; otherwise the one the sheet marks.
       baseScene: axis ? (locked.size > 0 ? before?.made.baseScene : undefined) ?? brief.baseScene ?? fixedBase : undefined,
@@ -671,6 +684,13 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       try {
         const out = await generateScenePackAsync(pool, runArgs(brief, made), control(id))
         if (opRef.current !== id || !out) return
+        rotationRef.current = {
+          brief,
+          used: rotationAfter(turn, cycle, out.prompts.flatMap((p) => {
+            const own = ownScene(p)
+            return own !== undefined ? [own] : []
+          })),
+        }
         // Applied on the pack as it is now: a row locked meanwhile keeps its prompt.
         setResult((prev) => {
           const now = new Set(prev?.locked ?? [])
@@ -690,7 +710,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         endOp(id)
       }
     })()
-  }, [pool, missingRoles, startOp, endOp, promptCount, axis, preferredPosts, brief, fixedBase, sourceKey, outfit, runArgs, control])
+  }, [pool, missingRoles, startOp, endOp, promptCount, axis, preferredPosts, brief, fixedBase, sourceKey, outfit, runArgs, control, candidateState])
 
   /**
    * Remakes the pack for the brief as it is now: same seed, same pool (unless the brief

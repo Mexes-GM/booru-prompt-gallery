@@ -18,14 +18,14 @@ import {
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
   keptRows, opAfterEnd, correctionAfterBriefChange, lookOwner, briefFromCardPost,
-  generateLayout, placeGenerated, preferredForAgain,
+  generateLayout, placeGenerated, preferredForAgain, rotationPlan, rotationAfter, mergeFitNotes,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
 import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/scene-pack"
 import type { Permanence } from "../lib/pack/scene/permanence"
 import { poseNeedsScene } from "../lib/pack/scene-pack"
-import { copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
+import { CORRECTION_TEXT, copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -678,6 +678,75 @@ check("R2: Generate again keeps the source's own posts first", () => {
   assert.deepEqual(preferredForAgain(own, new Set([1, 2, 3, 4]), pool, 3), own)
   // A source with no posts of its own: the scenes the last pack didn't use.
   assert.deepEqual(preferredForAgain([], new Set([10, 11]), [10, 11, 12], 2), [12])
+})
+
+// ── Another set each Generate (INT-3 browser pass, B) ───────────────────────────
+
+check("rotation: 23 scenes, 10 prompts: two runs share nothing, the third only what it must", () => {
+  const scenes = Array.from({ length: 23 }, (_, i) => 100 + i)
+  // Stand-in for the engine: it always takes the same scenes first (preferred ones before the others).
+  const pick = (exclude: readonly number[], preferred: readonly number[]) => {
+    const pool = scenes.filter((id) => !exclude.includes(id))
+    return [...pool.filter((id) => preferred.includes(id)), ...pool.filter((id) => !preferred.includes(id))].slice(0, 10)
+  }
+  let used: number[] = []
+  const runs: number[][] = []
+  for (let i = 0; i < 3; i++) {
+    const turn = rotationPlan({ available: scenes, used, needed: 10, own: [] })
+    const got = pick(turn.exclude, turn.preferred)
+    used = rotationAfter(turn, used, got)
+    runs.push(got)
+  }
+  const shared = (a: number[], b: number[]) => a.filter((id) => b.includes(id)).length
+  assert.equal(shared(runs[0], runs[1]), 0)
+  // 3 scenes are left after two runs: the third takes them and only 7 already used.
+  assert.equal(runs[2].filter((id) => !runs[0].includes(id) && !runs[1].includes(id)).length, 3)
+  assert.equal(shared(runs[2], [...runs[0], ...runs[1]]), 7)
+})
+
+check("rotation: the source's own posts still go first, and a new brief starts over", () => {
+  const turn = rotationPlan({ available: [1, 2, 3, 4, 5, 6], used: [1, 2], needed: 2, own: [2, 3] })
+  assert.deepEqual(turn.exclude, [1, 2])
+  assert.deepEqual(turn.preferred, [3])
+  assert.equal(turn.reset, false)
+  assert.deepEqual(rotationPlan({ available: [1, 2, 3], used: [], needed: 2, own: [3] }), { exclude: [], preferred: [3], reset: false })
+  const restart = rotationPlan({ available: [1, 2, 3], used: [1, 2], needed: 2, own: [] })
+  assert.deepEqual(restart, { exclude: [], preferred: [3], reset: true })
+  assert.deepEqual(rotationAfter(restart, [1, 2], [3, 1]), [3, 1])
+})
+
+check("Always from the results takes the same path as Never: its own brief change, then a notice with Undo", () => {
+  const before = briefFromCharacters(["tifa lockhart"])
+  const after = addTag(before, "smile", OVERRIDES, "also")
+  assert.notEqual(JSON.stringify(after), JSON.stringify(before), "Always changes the brief")
+  const lifecycle = correctionAfterBriefChange({ briefBefore: before, briefAfter: null as unknown }, after)
+  assert.equal(lifecycle.own, true)
+  assert.equal(CORRECTION_TEXT.always("smile", 7), "Added smile to 7 prompts")
+  assert.equal(CORRECTION_TEXT.never("smile", 1), "Removed smile from 1 prompt")
+})
+
+// ── One fact, one sentence (INT-3 browser pass, D) ──────────────────────────────
+
+check("mergeFitNotes: the five notes of bikini + Only the outfit become two lines", () => {
+  const five: FitNote[] = [
+    { kind: "few-rated" },
+    { kind: "few-variations", axis: "outfit", variations: 2, made: 2, asked: 10 },
+    { kind: "kept-on-axis", axis: "outfit", tags: ["bikini"] },
+    { kind: "no-new", exhausted: false },
+    { kind: "paused" },
+  ]
+  const merged = mergeFitNotes(five)
+  assert.deepEqual(merged, [
+    { kind: "few-variations", axis: "outfit", variations: 2, made: 2, asked: 10, offerSensitive: true, kept: ["bikini"] },
+    { kind: "paused", nothingNew: true },
+  ])
+  assert.equal(fitText(merged[0] as never).text, "2 of 10: only 2 outfits with bikini fit this scene")
+  assert.equal(fitText({ kind: "paused", onLoadMore: () => {}, waiting: false, nothingNew: true }).text, "No new scenes on that page. Search again for more.")
+  // Nothing to merge: as they were.
+  const plain: FitNote[] = [{ kind: "fit", scenes: 12 }, { kind: "kept-on-axis", axis: "place", tags: ["beach"] }]
+  assert.deepEqual(mergeFitNotes(plain), plain)
+  // The source has nothing more: that note stays alone.
+  assert.deepEqual(mergeFitNotes([{ kind: "no-new", exhausted: true }]), [{ kind: "no-new", exhausted: true }])
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

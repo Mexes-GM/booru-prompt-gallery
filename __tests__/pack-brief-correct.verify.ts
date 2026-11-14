@@ -15,7 +15,7 @@ import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import { DEFAULT_SCENE_SETTINGS, generateScenePack, generateScenePackAsync, sceneCandidates, tagKindsFromPosts, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { addTag, routeTag, toSceneRequests } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
-import { BRIEF_EXAMPLES, briefAsksNothing, briefIdentity, briefPackArgs, briefWithExample, issuesFit, predictFit } from "../lib/pack/brief-pack"
+import { BRIEF_EXAMPLES, rotationAfter, rotationPlan, briefAsksNothing, briefIdentity, briefPackArgs, briefWithExample, issuesFit, predictFit } from "../lib/pack/brief-pack"
 import type { SceneRequests } from "../lib/pack/brief"
 import { makePost } from "./fixtures/pack-scene-data"
 import { placeRows } from "../lib/pack/brief-pack"
@@ -132,6 +132,24 @@ check("the engine picks almost the same scenes whatever the seed: Generate again
 })
 
 // ── A pose the scenes don't have (INT-6) ────────────────────────────────────────
+
+// ── Another set each Generate, on the engine (INT-3 browser pass, B) ────────────
+
+check("with the scenes the last run used set aside, the engine draws a disjoint set", () => {
+  const ids = pool.scenes.map((sc) => sc.postId)
+  let used: number[] = []
+  const runs: number[][] = []
+  for (const seed of [1, 2, 3]) {
+    const turn = rotationPlan({ available: ids, used, needed: 4, own: [] })
+    const got = sceneOrder(generateScenePack(pool, args({ count: 4, seed, removedScenes: turn.exclude, preferredPosts: turn.preferred })).prompts) as number[]
+    used = rotationAfter(turn, used, got)
+    runs.push(got)
+  }
+  assert.equal(runs[0].filter((id) => runs[1].includes(id)).length, 0, `${runs[0]} / ${runs[1]}`)
+  // 9 scenes: after 8 used, the one left comes first in the third run.
+  const left = ids.filter((id) => !runs[0].includes(id) && !runs[1].includes(id))
+  assert.ok(left.every((id) => runs[2].includes(id)), `${left} in ${runs[2]}`)
+})
 
 // ── Examples of the empty brief (HELP) ──────────────────────────────────────────
 

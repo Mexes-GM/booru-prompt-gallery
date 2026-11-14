@@ -273,7 +273,7 @@ export type FitNote =
   | { kind: 'reuse'; scenes: number; reused: number; done?: boolean }
   | { kind: 'similar'; tag: string }
   /** `what` names the poses ("this pose"); without it the pack is short of scenes of any kind. */
-  | { kind: 'short'; made: number; asked: number; scenes: number; what?: string }
+  | { kind: 'short'; made: number; asked: number; scenes: number; what?: string; offerSensitive?: boolean }
   | { kind: 'imposed'; tag: string; prompts: number; done?: boolean }
   /** The chosen people have no scene with the pose; `scenes` with other people do. */
   | { kind: 'no-pose-here'; people: PackPeople; cast: PackPeople; scenes: number; what: string }
@@ -284,7 +284,7 @@ export type FitNote =
   /** The people the user asked for ("2girls") aren't in any scene; `using` are. */
   | { kind: 'people-missing'; asked: PackPeople; using: PackPeople | null; cast: PackPeople }
   /** Fetching stopped at the pace limit while the source still has posts; one more page can be asked for. */
-  | { kind: 'paused' }
+  | { kind: 'paused'; nothingNew?: boolean }
   /** One-part pack: how many values of the part go with the scene that repeats. */
   | { kind: 'axis-fit'; axis: OneAxis; variations: number }
   /** One-part pack: the variants are being worked out. */
@@ -296,7 +296,12 @@ export type FitNote =
   /** One-part pack: what was asked for on that part stays in every prompt; the rest of the part changes. */
   | { kind: 'kept-on-axis'; axis: Exclude<ChangesAxis, 'scene'>; tags: string[] }
   /** One-part pack that came out short: only `variations` values of the part go with the base scene. */
-  | { kind: 'few-variations'; axis: Exclude<ChangesAxis, 'scene'>; variations: number; made: number; asked: number }
+  | {
+      kind: 'few-variations'; axis: Exclude<ChangesAxis, 'scene'>; variations: number; made: number; asked: number
+      /** What was asked for on that part ("bikini"): the variants have it. */
+      kept?: string[]
+      offerSensitive?: boolean
+    }
 
 export const poseWords = (poses: number) => (poses === 1 ? 'this pose' : 'these poses')
 
@@ -410,6 +415,74 @@ function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive, axis
   if (notes.every((n) => n.kind === 'kept-on-axis') && made >= count) return [fit, ...notes]
   return canOfferSensitive && lacking ? [{ kind: 'few-rated' }, ...notes] : notes
 }
+
+/**
+ * One fact, one sentence: notes that say the same thing with other words become one,
+ * the most concrete. The offer of sensitive pictures joins the line that says the pack is
+ * short; what stays on the changing part joins the line that counts its variants; a page
+ * that brought nothing joins the offer to search again.
+ */
+export function mergeFitNotes(notes: readonly FitNote[]): FitNote[] {
+  let out = [...notes]
+  const shortAt = out.findIndex((n) => n.kind === 'short' || n.kind === 'few-variations')
+  if (shortAt >= 0 && out.some((n) => n.kind === 'few-rated')) {
+    out[shortAt] = { ...(out[shortAt] as Extract<FitNote, { kind: 'short' | 'few-variations' }>), offerSensitive: true }
+    out = out.filter((n) => n.kind !== 'few-rated')
+  }
+  const fewAt = out.findIndex((n) => n.kind === 'few-variations')
+  const kept = out.find((n): n is Extract<FitNote, { kind: 'kept-on-axis' }> => n.kind === 'kept-on-axis')
+  if (fewAt >= 0 && kept && (out[fewAt] as Extract<FitNote, { kind: 'few-variations' }>).axis === kept.axis) {
+    out[fewAt] = { ...(out[fewAt] as Extract<FitNote, { kind: 'few-variations' }>), kept: [...kept.tags] }
+    out = out.filter((n) => n.kind !== 'kept-on-axis')
+  }
+  const pausedAt = out.findIndex((n) => n.kind === 'paused')
+  if (pausedAt >= 0 && out.some((n) => n.kind === 'no-new' && !n.exhausted)) {
+    out[pausedAt] = { kind: 'paused', nothingNew: true }
+    out = out.filter((n) => n.kind !== 'no-new')
+  }
+  return out
+}
+
+// ── Another set of prompts ────────────────────────────────────────────────────
+
+export interface RotationPlan {
+  /** Scenes this run doesn't use (the ones the last runs of this cycle used). */
+  exclude: number[]
+  /** Scenes this run uses first. */
+  preferred: number[]
+  /** The cycle starts again: too few scenes are left. */
+  reset: boolean
+}
+
+/**
+ * Where the next Generate takes its scenes from, for the same brief: away from the scenes
+ * the runs of this cycle already used, while the rest are enough for the prompts asked;
+ * then the cycle starts again, with the scenes left over first. The source's own posts
+ * (the character's) still go first. `available`: the scenes that fit (in a one-part pack,
+ * the variants, never the scene that repeats).
+ */
+export function rotationPlan({ available, used, needed, own }: {
+  available: readonly number[]
+  used: readonly number[]
+  needed: number
+  own: readonly number[]
+}): RotationPlan {
+  const usedSet = new Set(used)
+  const remaining = available.filter((id) => !usedSet.has(id))
+  if (used.length > 0 && remaining.length >= needed) {
+    const left = new Set(remaining)
+    return { exclude: available.filter((id) => usedSet.has(id)), preferred: own.filter((id) => left.has(id)), reset: false }
+  }
+  if (used.length === 0) return { exclude: [], preferred: [...own], reset: false }
+  // Starting again: what is left goes first, the source's own posts among them first.
+  const left = new Set(remaining)
+  const ownLeft = own.filter((id) => left.has(id))
+  return { exclude: [], preferred: ownLeft.length > 0 ? ownLeft : remaining, reset: true }
+}
+
+/** The scenes a cycle has used after a run. */
+export const rotationAfter = (plan: RotationPlan, before: readonly number[], usedNow: readonly number[]): number[] =>
+  Array.from(new Set([...(plan.reset ? [] : before), ...usedNow]))
 
 export interface SearchProgress {
   /** A page is on its way, asked for by the builder or by the user. */

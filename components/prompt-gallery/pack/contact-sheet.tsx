@@ -228,6 +228,12 @@ export const ContactSheet = memo(function ContactSheet({
   const tabStop = Math.min(current, Math.max(0, (collapsed ? Math.min(shown.length, foldedVisible) : shown.length) - 1))
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape" && fixed?.picking) {
+      e.preventDefault()
+      e.stopPropagation()
+      fixed.onCancelPick()
+      return
+    }
     const grid = gridRef.current
     const from = (e.target as HTMLElement).closest<HTMLElement>("[data-tile]")
     if (!grid || !from) return

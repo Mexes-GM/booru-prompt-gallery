@@ -54,17 +54,17 @@ export const WearingSourceMenu = memo(function WearingSourceMenu({
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">When nothing is written here</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={keyOf(value)} onValueChange={(key) => onChange(fromKey(key))}>
-          <DropdownMenuRadioItem value="scene">{KIND_LABEL.scene}</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="usual" disabled={noCharacter}>
+          <DropdownMenuRadioItem value="scene" className="pointer-coarse:min-h-11">{KIND_LABEL.scene}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="usual" disabled={noCharacter} className="pointer-coarse:min-h-11">
             {KIND_LABEL.usual}
           </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="library">{KIND_LABEL.library}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="library" className="pointer-coarse:min-h-11">{KIND_LABEL.library}</DropdownMenuRadioItem>
           {officialOutfits.length > 0 && !noCharacter && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Official outfits</DropdownMenuLabel>
               {officialOutfits.map((name) => (
-                <DropdownMenuRadioItem key={name} value={`official:${name}`}>
+                <DropdownMenuRadioItem key={name} value={`official:${name}`} className="pointer-coarse:min-h-11">
                   {name}
                 </DropdownMenuRadioItem>
               ))}
