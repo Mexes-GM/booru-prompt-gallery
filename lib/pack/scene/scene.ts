@@ -225,6 +225,12 @@ function unitOfCategory(category: TagCategory): UnitName | null {
 
 /** `other:*` slots that are names, meta, style or layout: never part of a scene. */
 const NON_SCENE_OTHER = new Set(['character', 'copyright', 'artist', 'meta', 'style', 'layout'])
+/**
+ * A decade on its own ("00s", "90s", "1990s"): the era the picture is drawn in. The taxonomy files
+ * it as style under another spelling ("2000s (style)"), and Gelbooru types it as a general tag, so
+ * neither the slot nor the booru's type keeps it out.
+ */
+const DECADE_RE = /^(\d0|\d{3}0)s$/
 
 // ── Anchors ───────────────────────────────────────────────────────────────────
 
@@ -337,6 +343,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     const info = getTagSlotFromOverrides(tag, ctx.overrides)
     const slot = info?.slot
     if (info?.category === 'other' && slot && NON_SCENE_OTHER.has(slot.slice('other:'.length))) continue
+    if (!slot && DECADE_RE.test(tag)) continue
     if (!kind && !slot && ctx.looksLikeName?.(tag)) continue
     // A general tag qualified by a work or a character is a name tied to it ("... (project moon)").
     if (!slot && isQualifiedName(tag, ctx.tagKind)) continue
