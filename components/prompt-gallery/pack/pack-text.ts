@@ -181,6 +181,13 @@ export const CHANGES_OPTIONS: ReadonlyArray<{ value: ChangesAxis; label: string;
 
 export const peopleKey = (p: PackPeople) => `${p.girls}g${p.boys}b`
 
+/** People with several make-ups marked. */
+export const PEOPLE_TEXT = {
+  noRoom: "No room for the characters",
+  lastOne: "A pack needs at least one",
+  axis: "The scene that repeats sets who's in the picture",
+} as const
+
 /** The line under People when the requested pose needs company: "This pose needs 2 people". */
 export const poseNeedsText = (people: number) => `This pose needs ${people} people`
 

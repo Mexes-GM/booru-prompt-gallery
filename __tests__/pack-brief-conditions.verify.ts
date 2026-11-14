@@ -17,7 +17,7 @@ import { createPermanence, type PermanenceData } from "../lib/pack/scene/permane
 import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import { parseTagRelations, setTagRelations, type TagRelationsFile } from "../lib/tag-relations"
 import { generateScenePack, tagKindsFromPosts, type ScenePackIssue } from "../lib/pack/scene-pack"
-import { addOutfitStyle, addTag, addTagExactly, briefConditions, setRequestExact, type PackBrief } from "../lib/pack/brief"
+import { addOutfitStyle, addTag, addTagExactly, briefCompositions, briefConditions, chooseChanges, setPeople, setRequestExact, toggleComposition, type PackBrief } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
 import { briefIdentity, briefPackArgs, issuesFit } from "../lib/pack/brief-pack"
 import { makePost } from "./fixtures/pack-scene-data"
@@ -168,6 +168,34 @@ check("exact: the same tag in every prompt, as before; Always on a garment of a 
   assert.deepEqual(addTagExactly(tifa, "red bikini", overrides, "also").requests, [{ tag: "red bikini", role: "wearing", exact: true }])
   // A time of day typed in Where stays exact, with no switch.
   assert.deepEqual(briefConditions(addTag(tifa, "night", overrides), overrides), [])
+})
+
+check("People: one or several make-ups; the last one stays; a one-part pack never mixes", () => {
+  const one = { girls: 1, boys: 0 }
+  const pair = { girls: 1, boys: 1 }
+  const trio = { girls: 1, boys: 2 }
+  // Nothing set: the first mark takes the pack's own make-up with it.
+  let brief = toggleComposition(tifa, pair, one)
+  assert.deepEqual(briefCompositions(brief), [one, pair])
+  brief = toggleComposition(brief, trio, one)
+  assert.deepEqual(briefCompositions(brief), [one, pair, trio])
+  // Unmarking the first: the next one leads.
+  brief = toggleComposition(brief, one, one)
+  assert.deepEqual(briefCompositions(brief), [pair, trio])
+  brief = toggleComposition(brief, trio, null)
+  assert.deepEqual(briefCompositions(brief), [pair])
+  assert.equal(brief.peopleMix, undefined)
+  // The last one marked stays.
+  assert.equal(toggleComposition(brief, pair, null), brief)
+  // Choosing one again (a typed count) drops the mix.
+  assert.equal(setPeople(toggleComposition(brief, trio, null), one).peopleMix, undefined)
+  // To the engine: two or more mix; one is `people` as before; a one-part pack never mixes.
+  const mixed = toggleComposition(tifa, pair, one)
+  const who = briefIdentity({ brief: mixed, looks: {}, permanence, overrides })
+  const env = { overrides, permanence, count: 4, seed: 3, people: one, outfit: { kind: "scene" } as const, clean }
+  assert.deepEqual(briefPackArgs(mixed, who, { ...env, compositions: briefCompositions(mixed) }).compositions, [one, pair])
+  assert.equal(briefPackArgs(mixed, who, { ...env, compositions: [one] }).compositions, undefined)
+  assert.equal(briefPackArgs(chooseChanges(mixed, "outfit"), who, { ...env, compositions: briefCompositions(mixed) }).compositions, undefined)
 })
 
 console.log(`pack-brief-conditions: ${passed} checks passed`)

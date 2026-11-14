@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, addOutfitStyle, removeOutfitStyle, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
+  addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, toggleComposition, addOutfitStyle, removeOutfitStyle, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
   removeTag, restoreLook, restoreScene, setCharacterRole, setPeople, toSceneRequests,
   type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
@@ -50,6 +50,8 @@ export interface UsePackBriefResult {
   addExactly: (tag: string, into?: RequestRole) => void
   /** Wearing and Where: this exact tag in every prompt, or any form of it (the default). */
   setExact: (tag: string, exact: boolean) => void
+  /** People: marks or unmarks a make-up to mix (`current`: the one the pack uses while none is set). */
+  toggleComposition: (option: PackPeople, current: PackPeople | null) => void
   /** Wearing: a style of the outfit library (every prompt wears a whole outfit of one). */
   addStyle: (style: string, label: string) => void
   removeStyle: (style: string, label: string) => void
@@ -158,6 +160,9 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
   }, [change])
   const setExact = useCallback((tag: string, exact: boolean) => {
     change(exact ? BRIEF_LABELS.exact(tag) : BRIEF_LABELS.anyForm(tag), (b) => setRequestExact(b, tag, exact))
+  }, [change])
+  const toggleCompositionAction = useCallback((option: PackPeople, current: PackPeople | null) => {
+    change(BRIEF_LABELS.setPeople, (b) => toggleComposition(b, option, current))
   }, [change])
   const addStyle = useCallback((style: string, label: string) => {
     change(BRIEF_LABELS.add(label), (b) => addOutfitStyle(b, style))
@@ -276,7 +281,7 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
 
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
-    add, addOther: addOtherAction, addExactly, setExact, addStyle, removeStyle, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
+    add, addOther: addOtherAction, addExactly, setExact, addStyle, removeStyle, toggleComposition: toggleCompositionAction, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
     addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,

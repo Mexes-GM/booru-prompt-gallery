@@ -233,6 +233,8 @@ export interface BriefPackEnv {
   outfitLibrary?: readonly LibraryOutfit[]
   /** Other names of each condition (auto_suggest_tags.aliases). */
   conditionAliases?: Readonly<Record<string, readonly string[]>>
+  /** The make-ups the pack mixes (ScenePackArgs.compositions), only those with room for the characters; one or none: `people`. */
+  compositions?: readonly PackPeople[]
 }
 
 /** The scene ids the brief left out, as the engine counts them (post ids). */
@@ -294,6 +296,7 @@ export function briefPackArgs(brief: PackBrief, who: BriefIdentity, env: BriefPa
     ...(env.donorPosts?.length ? { donorPosts: env.donorPosts } : {}),
     ...((conditions || styles) && env.outfitLibrary?.length ? { outfitLibrary: env.outfitLibrary } : {}),
     ...(conditions && env.conditionAliases && Object.keys(env.conditionAliases).length > 0 ? { conditionAliases: env.conditionAliases } : {}),
+    ...(!axis && (env.compositions?.length ?? 0) >= 2 ? { compositions: env.compositions } : {}),
   }
 }
 

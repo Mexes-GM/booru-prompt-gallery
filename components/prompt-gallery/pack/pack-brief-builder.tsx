@@ -39,6 +39,7 @@ import {
   addOther as addOtherInBrief,
   addTagExactly,
   canBeCondition,
+  briefCompositions,
   briefFromPrompt,
   routeTag,
   typedRole,
@@ -47,6 +48,7 @@ import {
 } from "@/lib/pack/brief"
 import { briefFromCharacters } from "@/lib/pack/brief-history"
 import type { CastRole } from "@/lib/pack/scene/cast"
+import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { splitTags } from "@/lib/utils/tag-utils"
@@ -101,7 +103,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, STYLE_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -905,8 +907,21 @@ function BriefWorkspace({
   }, [brief.who, identity.members])
   const { setChanges } = pack
   const changesControl = useMemo(() => ({ value: brief.changes, onChange: setChanges }), [brief.changes, setChanges])
+  // Several make-ups can be marked; a one-part pack keeps one (its scene that repeats sets it).
+  const { toggleComposition } = pack
+  const enginePeople = engine.people
+  const onTogglePeople = useCallback((option: PackPeople) => toggleComposition(option, enginePeople), [toggleComposition, enginePeople])
   const people = engine.peopleLine
-    ? { options: engine.peopleLine.options, value: engine.peopleLine.value, onChange: setPeople, cast: identity.cast, poseNeeds: engine.peopleLine.poseNeeds }
+    ? {
+        options: engine.peopleLine.options,
+        value: engine.peopleLine.value,
+        onChange: setPeople,
+        cast: identity.cast,
+        poseNeeds: engine.peopleLine.poseNeeds,
+        ...(axis
+          ? { note: PEOPLE_TEXT.axis }
+          : { selected: engine.peopleSelected, onToggle: onTogglePeople, blocked: engine.peopleBlocked }),
+      }
     : null
   // ── Wearing and Where as conditions ─────────────────────────────────────────────
   // Every garment, and a place, is met with a different form per prompt unless made exact.
@@ -946,7 +961,8 @@ function BriefWorkspace({
   const othersApply = composition ? composition.girls + composition.boys > identity.cast.girls + identity.cast.boys : null
   const othersRow = useMemo(() => ({ applies: othersApply }), [othersApply])
   const summary = useMemo(() => {
-    const label = brief.people ? companionsLabel(brief.people, identity.cast) : null
+    // Several make-ups: "with 2 boys or with 3 boys".
+    const label = brief.people ? briefCompositions(brief).map((p) => companionsLabel(p, identity.cast)).join(" or ") : null
     const parts = briefSummaryParts(brief, label, characterInfo)
     // The folded line says when only one part changes.
     const changes = CHANGES_OPTIONS.find((o) => o.value === brief.changes)

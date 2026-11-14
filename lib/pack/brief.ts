@@ -55,6 +55,8 @@ export interface PackBrief {
   leftOutVariants?: string[]
   /** Wearing: styles of the outfit library ("swimwear"): every prompt wears a whole outfit of one of them. */
   outfitStyles?: string[]
+  /** More make-ups the pack mixes with `people` (ScenePackArgs.compositions); none: `people` alone. */
+  peopleMix?: PackPeople[]
 }
 
 /** The engine's view of a brief. */
@@ -204,6 +206,7 @@ function cloneBrief(brief: PackBrief): PackBrief {
     leftOut: [...brief.leftOut],
     ...(brief.leftOutVariants ? { leftOutVariants: [...brief.leftOutVariants] } : {}),
     ...(brief.outfitStyles ? { outfitStyles: [...brief.outfitStyles] } : {}),
+    ...(brief.peopleMix ? { peopleMix: brief.peopleMix.map((p) => ({ ...p })) } : {}),
   }
 }
 
@@ -348,8 +351,31 @@ export function setCharacterRole(brief: PackBrief, tag: string | null, role: Cas
   return next
 }
 
+/** Sets the one make-up of the pack (the others it mixed in go). */
 export function setPeople(brief: PackBrief, people: PackPeople | null): PackBrief {
-  return { ...cloneBrief(brief), people: people ? { ...people } : null }
+  const next: PackBrief = { ...cloneBrief(brief), people: people ? { ...people } : null }
+  delete next.peopleMix
+  return next
+}
+
+const samePeople = (a: PackPeople, b: PackPeople) => a.girls === b.girls && a.boys === b.boys
+
+/** The make-ups the brief asks for: `people` and the ones mixed in; none while the scenes decide. */
+export const briefCompositions = (brief: Pick<PackBrief, 'people' | 'peopleMix'>): PackPeople[] =>
+  brief.people ? [brief.people, ...(brief.peopleMix ?? [])] : []
+
+/**
+ * Marks or unmarks a make-up on People. `current` is the one the pack uses while the brief sets
+ * none (it becomes the first). The last one marked can't be unmarked: a pack has people.
+ */
+export function toggleComposition(brief: PackBrief, option: PackPeople, current: PackPeople | null): PackBrief {
+  const selected = brief.people ? briefCompositions(brief) : current ? [current] : []
+  const marked = selected.some((p) => samePeople(p, option))
+  if (marked && selected.length <= 1) return brief
+  const list = marked ? selected.filter((p) => !samePeople(p, option)) : [...selected, option]
+  const next = setPeople(brief, list[0] ?? null)
+  if (list.length > 1) next.peopleMix = list.slice(1).map((p) => ({ ...p }))
+  return next
 }
 
 export function setChanges(brief: PackBrief, changes: ChangesAxis): PackBrief {
