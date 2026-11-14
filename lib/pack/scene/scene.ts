@@ -198,7 +198,7 @@ const SKELETON_SLOTS = new Set([
 ])
 
 /** Unit of a state tag that has a known slot, or null when the slot is not an axis. */
-function unitOfSlot(slot: string): UnitName | null {
+export function unitOfSlot(slot: string): UnitName | null {
   if (SKELETON_SLOTS.has(slot)) return 'skeleton'
   if (slot === 'pose:expression' || slot === 'appearance:eyes') return 'face'
   if (slot === 'pose:camera') return 'camera'
