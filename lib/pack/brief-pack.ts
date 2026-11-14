@@ -7,6 +7,9 @@
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { getTagSlotFromOverrides } from '../tag-taxonomy'
+import type { BooruProvider } from '../booru/types'
+import type { PackRatingMode } from '../../hooks/use-pack-seed-search'
+import { planRatings } from './source-plan'
 import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
@@ -923,3 +926,54 @@ export function lockedWithTag(rows: readonly { prompt: string }[], locked: Itera
 /** Tags the prompt shows, split the way the results list shows them. */
 export const promptTokens = (prompt: Pick<PackPrompt, 'prompt'>): string[] =>
   prompt.prompt.split(',').map((t) => t.trim()).filter(Boolean)
+
+// ── Where the scenes come from ────────────────────────────────────────────────
+
+/** A booru the pack can take its scenes from, as the pack's site menu offers it. */
+export interface PackProviderChoice {
+  provider: BooruProvider
+  /** False: shown, not offered, with `reason`. */
+  available: boolean
+  /** Rule34 is adult-only: the gallery asks once before showing it, and the pack does not ask in its place. */
+  reason?: 'adult-consent'
+  /** The rating works there with a difference worth saying: e621 and e6ai have no sensitive tier. */
+  note?: 'no-sensitive'
+}
+
+/**
+ * The boorus a pack can switch to, in the gallery's order. Every pack rating exists on
+ * every booru (planRatings maps them); the safe rating's sensitive pictures do not
+ * exist on e621 and e6ai, so a safe pack there is said to be safe only. Rule34 waits
+ * for the gallery's adult-content confirmation.
+ */
+export function packProviderChoices(
+  providers: readonly BooruProvider[],
+  rating: PackRatingMode,
+  adultAcknowledged: boolean
+): PackProviderChoice[] {
+  return providers.map((provider) => {
+    if (provider === 'rule34' && !adultAcknowledged) return { provider, available: false, reason: 'adult-consent' }
+    if (rating === 'sfw' && planRatings(rating, true, provider).sensitive === 'unavailable') return { provider, available: true, note: 'no-sensitive' }
+    return { provider, available: true }
+  })
+}
+
+/**
+ * What the fit line says of the posts loaded, and whether it offers "Find more scenes":
+ * whenever the site has more for this search and nothing else is loading or waiting
+ * (a pause for the request pace has its own offer). Null while there is nothing to
+ * say: no posts yet, a failed load, or scenes still being found.
+ */
+export function loadedState(s: {
+  posts: number
+  noMoreResults: boolean
+  failed: boolean
+  sessionCapReached: boolean
+  paused: boolean
+  finding: boolean
+  loading: boolean
+}): { posts: number; all: boolean; more: boolean } | null {
+  if (s.posts === 0 || s.failed || s.finding) return null
+  const more = !s.noMoreResults && !s.sessionCapReached && !s.paused && !s.loading
+  return { posts: s.posts, all: s.noMoreResults, more }
+}

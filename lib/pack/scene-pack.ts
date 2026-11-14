@@ -630,6 +630,9 @@ export interface ScenePackArgs {
    *  - `also`: owned like a pinned trait; a posture, an expression or a camera tag
    *    takes the place of the scene's.
    *  - `literal`: first, as typed (like `alwaysAdd`).
+   *  - `others`: how the people besides the named characters look. In every prompt whose picture
+   *    has more people than named characters, right after the characters' identity; never part of
+   *    what the characters own. Left out of a prompt with no one else (see withOthers).
    */
   requests?: SceneRequests
   /** Who the identity's tags are (lib/pack/scene/permanence.ts): decides what `requests.wearing` leaves of the character. */
@@ -1066,6 +1069,97 @@ function outfitOf(prompt: ScenePrompt, library: readonly LibraryOutfit[] | undef
   return best
 }
 
+// ── The other people ──────────────────────────────────────────────────────────
+
+interface OthersPlan {
+  /** `requests.others` as the engine spells them, less what "Never include" rules out. */
+  tags: string[]
+  /** Those left out for "Never include". */
+  dropped: ScenePackIssue[]
+}
+
+const othersPlans = new WeakMap<ScenePackArgs, OthersPlan>()
+
+/** What `args.requests.others` means for this pack, worked out once per args. */
+function othersPlan(args: ScenePackArgs): OthersPlan {
+  const cached = othersPlans.get(args)
+  if (cached) return cached
+  const never = (args.never ?? []).map(normalizeTagForPack).filter(Boolean)
+  const plan: OthersPlan = { tags: [], dropped: [] }
+  for (const raw of args.requests?.others ?? []) {
+    const tag = normalizeTagForPack(raw)
+    if (!tag || plan.tags.includes(tag) || plan.dropped.some((issue) => issue.kind === 'request-dropped' && issue.tag === tag)) continue
+    if (never.some((base) => isQualifiedVariant(tag, base))) plan.dropped.push({ kind: 'request-dropped', tag, role: 'others', reason: 'never' })
+    else plan.tags.push(tag)
+  }
+  othersPlans.set(args, plan)
+  return plan
+}
+
+/** The tags the near-duplicate filter leaves aside: the fixed ones and the other people's look, the same in every prompt. */
+const filterIgnores = (args: ScenePackArgs): string[] => [...fixedTags(args), ...othersPlan(args).tags]
+
+/** Per finisher: prompts with room for the other people, and without. */
+const othersTally = new WeakMap<Finisher, { room: number; none: number }>()
+
+/**
+ * True when the picture of `composed` has more people than the pack's named characters: the
+ * scene's count, else the pack's; with an open count ("multiple boys"), when its header says
+ * there is more than one person and the pack names one character.
+ */
+function hasOthers(f: Finisher, composed: ScenePrompt): boolean {
+  const named = f.args.castSize ?? 1
+  const people = f.sceneById.get(composed.sources.skeleton)?.people ?? f.args.people
+  if (people) return people.girls + people.boys > named
+  const crowd = composed.locked.some((tag) => isCompositionPattern(tag) && !fitsComposition(tag, { girls: 1, boys: 0 }) && !fitsComposition(tag, { girls: 0, boys: 1 }))
+  return crowd && named < 2
+}
+
+/**
+ * `tags` (a composed prompt after the ownership rules, `locked` its fixed tags) with the other
+ * people's look (`requests.others`) as a block of its own right after the header and the named
+ * characters' identity, before the requests and the scene's tags; the scene's own copy of one of
+ * them goes. They join the locked tags, so the cleaner and the last pass keep them, but they never
+ * reach the ownership rule: a companion's look takes nothing of the characters'. A prompt with no
+ * one besides the characters gets none of them (packIssues says so when no prompt had room).
+ */
+function withOthers(f: Finisher, composed: ScenePrompt, tags: readonly string[]): { tags: string[]; locked: string[] } {
+  const others = othersPlan(f.args).tags
+  if (others.length === 0) return { tags: [...tags], locked: composed.locked }
+  const tally = othersTally.get(f) ?? { room: 0, none: 0 }
+  othersTally.set(f, tally)
+  if (!hasOthers(f, composed)) {
+    tally.none++
+    return { tags: [...tags], locked: composed.locked }
+  }
+  tally.room++
+  const plan = requestPlan(f.args)
+  const aside = new Set(plan.setAside)
+  const character = new Set(f.args.identity.filter((tag) => !aside.has(normalizeTagForPack(tag))))
+  const fixed = new Set(fixedTags(f.args))
+  const locked = new Set(composed.locked)
+  const block = new Set(others)
+  const rest = tags.filter((tag) => locked.has(tag) || !block.has(normalizeTagForPack(tag)))
+  // Header (locked, not one of the pack's fixed tags) and the characters' identity come first.
+  let at = 0
+  while (at < rest.length && locked.has(rest[at]) && (character.has(rest[at]) || !fixed.has(rest[at]))) at++
+  const add = others.filter((tag) => !locked.has(tag))
+  const before = composed.locked.filter((tag) => rest.indexOf(tag) < at)
+  // The cleaner writes the locked tags in their order: the block keeps its place there too.
+  return { tags: [...rest.slice(0, at), ...add, ...rest.slice(at)], locked: [...before, ...add, ...composed.locked.slice(before.length)] }
+}
+
+/** The issues of `requests.others`: those in "Never include", and all of them when no prompt had room for anyone else. */
+function othersIssues(f: Finisher): ScenePackIssue[] {
+  const plan = othersPlan(f.args)
+  const tally = othersTally.get(f)
+  const unseen = tally && tally.room === 0 && tally.none > 0
+  return [
+    ...plan.dropped,
+    ...(unseen ? plan.tags.map((tag): ScenePackIssue => ({ kind: 'request-dropped', tag, role: 'others', reason: 'composition' })) : []),
+  ]
+}
+
 /** Shared state while turning composed scenes into pack prompts. */
 interface Finisher {
   pool: ScenePool
@@ -1127,7 +1221,7 @@ function tallyPose(f: Finisher, kind: PhaseKind, composed: ScenePrompt): void {
  */
 function packIssues(f: Finisher, made: number, count: number): ScenePackIssue[] {
   const plan = requestPlan(f.args)
-  const issues = [...plan.dropped]
+  const issues = [...plan.dropped, ...othersIssues(f)]
   f.lonely.forEach((prompts, tag) => issues.push({ kind: 'needs-company', tag, role: plan.roleOf.get(normalizeTagForPack(tag)) ?? 'literal', prompts }))
   issues.push(...conditionIssues(f.cond))
   const tally = f.pose
@@ -1166,7 +1260,8 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   // A selected pose the scene of the prompt's pose lacks is imposed on it: what of that pose contradicts it goes.
   const imposed = args.requests ? imposedOn(f.sceneById.get(composed.sources.pose ?? composed.sources.skeleton), poseSelection(args)) : []
   const displaced = displaceImposedPoses(requested, imposed, composed.locked, args.overrides, people)
-  const cleaned = args.clean(displaced, composed.locked)
+  const company = withOthers(f, composed, displaced)
+  const cleaned = args.clean(company.tags, company.locked)
   if (!cleaned) return null
   // One rule wherever the tags come from (character, base clothing, library, scene): a generic
   // tag next to a qualified form of the same thing gives way to it. A request never does.
@@ -1174,7 +1269,7 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   // The last pass shared with Classic: redundant generics, tags that need company in a
   // one-person prompt, then references to nothing.
   const kept = coherentPromptTags(cleaned.split(',').map((tag) => tag.trim()).filter(Boolean), {
-    keep: composed.locked,
+    keep: company.locked,
     fixed: [...(isCast(args) ? composed.locked : []), ...plan.imposed],
     overrides: args.overrides,
     people: true,
@@ -1744,7 +1839,7 @@ function defaultBase(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count:
   const plain: ScenePackArgs = { ...args, changes: undefined, baseScene: undefined }
   // The same base whatever the pack's size (sceneCandidates asks for every prompt).
   const plan = packPlan(pool, plain, Math.max(count, MAX_PACK_OVERGENERATE))
-  const f = finisher(pool, plain, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(plain)), plan.pose)
+  const f = finisher(pool, plain, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(plain)), plan.pose)
   const requested = new Set(requestPlan(plain).imposed)
   const people = plain.people ? plain.people.girls + plain.people.boys : 1
   const relations = loadedTagRelations()
@@ -1986,7 +2081,7 @@ export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePa
   if (axis) return axisPack(pool, args, axis, count)
   const bases = basesOf(pool, args)
   const plan = packPlan(bases, args, count)
-  const f = finisher(bases, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)), plan.pose, conditionRun(pool, args))
+  const f = finisher(bases, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(args)), plan.pose, conditionRun(pool, args))
   const prompts: PackPrompt[] = []
   const deferred: Deferred[] = []
   for (const item of composeForPack(args, plan.phases, f.pose?.used)) {
@@ -2042,7 +2137,7 @@ export async function generateScenePackAsync(
   }
   const bases = basesOf(pool, args)
   const plan = packPlan(bases, args, count)
-  const f = finisher(bases, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)), plan.pose, conditionRun(pool, args))
+  const f = finisher(bases, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(args)), plan.pose, conditionRun(pool, args))
   const composed = composeForPack(args, plan.phases, f.pose?.used)
   const prompts: PackPrompt[] = []
   const deferred: Deferred[] = []
@@ -2107,7 +2202,7 @@ export function sceneCandidates(pool: ScenePool, args: ScenePackArgs): SceneCand
   const faithful: ScenePackArgs = { ...args, settings: { ...args.settings, mix: 'faithful' }, count }
   const bases = basesOf(pool, faithful)
   const plan = packPlan(bases, faithful, count)
-  const f = finisher(bases, faithful, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(faithful)), plan.pose, conditionRun(pool, faithful))
+  const f = finisher(bases, faithful, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(faithful)), plan.pose, conditionRun(pool, faithful))
   const order: number[] = []
   const seen = new Set<number>()
   for (const item of composeForPack(faithful, plan.phases, f.pose?.used)) {
@@ -2224,7 +2319,7 @@ export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[
     const keep = new Set(attempt.situations)
     const off = bases.situations.filter((s) => !keep.has(s.id)).map((s) => s.id)
     const { prompts: composed } = composePack(view, composeOptions(args, 6, args.seed, off))
-    const filter = new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args))
+    const filter = new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(args))
     others.forEach((prompt) => filter.tryAccept(prompt))
     const cond = conditionRun(full, args)
     // The variants the other prompts already wear (or are at) aren't lent again.

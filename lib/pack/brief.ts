@@ -54,6 +54,7 @@ export interface SceneRequests {
   where: string[]     // imposed; replace the scene's place
   also: string[]      // imposed; pass the same ownership rule
   literal: string[]   // first, as typed
+  others?: string[]   // how the people who are not the characters look; only where the prompt has someone besides them
   /**
    * Tags of `wearing` and `where` the pack meets as conditions: each prompt wears (or is at) the tag
    * or a qualified form of it ("white bikini" for "bikini"), a different one per prompt where the
@@ -69,12 +70,8 @@ export interface SceneRequests {
   outfitStyles?: string[]
 }
 
-/**
- * What toSceneRequests gives the engine: SceneRequests, plus `others` (how the people
- * who are not the characters look) when the brief has any. The engine does not read
- * `others` yet; it arrives as it is.
- */
-export type BriefSceneRequests = SceneRequests & { others?: string[] }
+/** What toSceneRequests gives the engine (kept as a name for the callers that use it). */
+export type BriefSceneRequests = SceneRequests
 
 /** Where a typed tag belongs in the brief. */
 export type BriefRoute =

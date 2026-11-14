@@ -63,6 +63,8 @@ import {
   changedRows,
   oneAxis,
   issuesFit,
+  packProviderChoices,
+  loadedState,
   lockedWithTag,
   peopleFromCountTags,
   pickedPeopleNote,
@@ -84,6 +86,7 @@ import { convertPromptOnce, preloadNaturalPrompt } from "@/lib/prompt/natural-pr
 import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { cn } from "@/lib/utils"
+import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
 import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
@@ -192,8 +195,10 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
   const pack = usePackBrief(overrides, begun.brief)
   // The environment while open; held while closed.
   // The pack keeps the booru and gallery search it was started with, open or closed; only
-  // "New pack" takes the gallery's current ones. Its own controls (rating) stay live.
-  const [startSource] = useState(() => ({ provider: props.provider, gallerySearch: props.gallerySearch }))
+  // "New pack" takes the gallery's current ones. Its own controls (site, rating) stay live:
+  // another site is another source, like another rating.
+  const [startSource, setStartSource] = useState(() => ({ provider: props.provider, gallerySearch: props.gallerySearch }))
+  const onProviderChange = useCallback((provider: BooruProvider) => setStartSource((s) => ({ ...s, provider })), [])
   // While closed, the rest of the environment is held as it was when it closed.
   const [held, setHeld] = useState<PackBriefBuilderProps | null>(null)
   const [wasOpen, setWasOpen] = useState(open)
@@ -201,7 +206,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
     setWasOpen(open)
     setHeld(open ? null : props)
   }
-  const env = { ...(open || !held ? props : held), ...startSource }
+  const env = { ...(open || !held ? props : held), ...startSource, onProviderChange }
 
   // Focus goes into the panel when it opens and back where it was when it closes.
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -253,6 +258,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
             >
               {BUILDER_TEXT.newPack}
             </Button>
+            <ProviderMenu value={startSource.provider} rating={rating} onChange={onProviderChange} />
             <RatingMenu value={rating} onChange={onRatingChange} />
             <Button
               type="button"
@@ -275,18 +281,65 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
   )
 }
 
+const MENU_TRIGGER = cn(
+  "inline-flex h-8 max-w-[12rem] items-center gap-1 rounded-md border border-border bg-background px-2 text-xs pointer-coarse:h-11",
+  "transition-[border-color,background-color] duration-150 ease-out-strong hover:border-foreground/30 data-[state=open]:border-foreground/30",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+)
+
+/** The site the scenes come from, as the gallery's menu lists them; changing it is another source for the pack. */
+const ProviderMenu = memo(function ProviderMenu({
+  value,
+  rating,
+  onChange,
+}: {
+  value: BooruProvider
+  rating: PackRatingMode
+  onChange: (provider: BooruProvider) => void
+}) {
+  // Whether the gallery's adult-content confirmation was given, read when the menu opens.
+  const [adultAcknowledged, setAdultAcknowledged] = useState(false)
+  const choices = useMemo(() => packProviderChoices(PROVIDERS, rating, adultAcknowledged), [rating, adultAcknowledged])
+  const label = PROVIDER_LABELS[value]
+  return (
+    <DropdownMenu
+      modal={false}
+      onOpenChange={(isOpen) => {
+        if (isOpen) setAdultAcknowledged(userPreferences.getRule34Acknowledged())
+      }}
+    >
+      <DropdownMenuTrigger aria-label={`${BUILDER_TEXT.providerMenu}: ${label}`} className={MENU_TRIGGER}>
+        <span className="truncate font-medium text-foreground">{label}</span>
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">{BUILDER_TEXT.providerMenu}</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={value} onValueChange={(v) => onChange(v as BooruProvider)}>
+          {choices.map((c) => {
+            const detail = c.reason === "adult-consent" ? BUILDER_TEXT.providerNeedsConsent : c.note === "no-sensitive" ? BUILDER_TEXT.providerNoSensitive : null
+            return (
+              <DropdownMenuRadioItem
+                key={c.provider}
+                value={c.provider}
+                disabled={!c.available}
+                className="flex-col items-start gap-0.5 pointer-coarse:min-h-11"
+              >
+                <span>{PROVIDER_LABELS[c.provider]}</span>
+                {detail && <span className="text-xs text-muted-foreground">{detail}</span>}
+              </DropdownMenuRadioItem>
+            )
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+})
+
 const RatingMenu = memo(function RatingMenu({ value, onChange }: { value: PackRatingMode; onChange: (rating: PackRatingMode) => void }) {
   const label = RATING_OPTIONS.find((o) => o.value === value)?.label ?? RATING_OPTIONS[0].label
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenuTrigger
-        aria-label={`${BUILDER_TEXT.ratingMenu}: ${label}`}
-        className={cn(
-          "inline-flex h-8 max-w-[12rem] items-center gap-1 rounded-md border border-border bg-background px-2 text-xs pointer-coarse:h-11",
-          "transition-[border-color,background-color] duration-150 ease-out-strong hover:border-foreground/30 data-[state=open]:border-foreground/30",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        )}
-      >
+      <DropdownMenuTrigger aria-label={`${BUILDER_TEXT.ratingMenu}: ${label}`} className={MENU_TRIGGER}>
         <span className="truncate font-medium text-foreground">{label}</span>
         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       </DropdownMenuTrigger>
@@ -369,7 +422,8 @@ function BriefWorkspace({
   onCopy,
   open,
   startNote,
-}: PackBriefBuilderProps & { pack: UsePackBriefResult; startNote: StartNote }) {
+  onProviderChange,
+}: PackBriefBuilderProps & { pack: UsePackBriefResult; startNote: StartNote; onProviderChange: (provider: BooruProvider) => void }) {
   const { brief, preferences } = pack
   const count = preferences.promptCount
   const [outfit, setOutfit] = useState<BriefOutfit>({ kind: "scene" })
@@ -467,6 +521,29 @@ function BriefWorkspace({
     // Only a page really asked for shows "searching".
     if (source?.loadMore()) setManual({ before: usableCount, seen: false, nothingNew: false })
   }, [source, usableCount])
+  // What the scenes were found in, and the way to ask the site for more whenever it has more
+  // (the automatic loading stops once there are enough scenes; this goes on by hand).
+  const loadedNow = source
+    ? loadedState({
+        posts: posts.length,
+        noMoreResults: source.noMoreResults,
+        failed: source.failed,
+        sessionCapReached: source.sessionCapReached,
+        paused,
+        finding,
+        loading: sourceLoading || (!!manual && !manual.nothingNew),
+      })
+    : null
+  const loadedPosts = loadedNow?.posts ?? 0
+  const loadedAll = !!loadedNow?.all
+  const loadedMore = !!loadedNow?.more
+  const loaded = useMemo(
+    () =>
+      loadedPosts > 0
+        ? { text: BUILDER_TEXT.loadedFrom(loadedPosts, PROVIDER_LABELS[provider], loadedAll), onFindMore: loadedMore ? loadOnePage : undefined }
+        : null,
+    [loadedPosts, loadedAll, loadedMore, provider, loadOnePage]
+  )
   const axisNote = useMemo(() => (axis ? { axis, requested: axisRequests(brief, axis) } : null), [axis, brief])
   const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
@@ -577,6 +654,7 @@ function BriefWorkspace({
   }, [add, addOther, never, setPeople, overrides, cast, othersTag])
   // Undo: the last change of the brief, for a few seconds.
   const [undoFor, setUndoFor] = useState<object | null>(null)
+  const [providerUndo, setProviderUndo] = useState<{ from: BooruProvider; to: BooruProvider } | null>(null)
   const [seenBrief, setSeenBrief] = useState(brief)
   // A brief that came back through Undo opens no notice: the one before would name an older change.
   const [undoing, setUndoing] = useState(false)
@@ -589,7 +667,29 @@ function BriefWorkspace({
     if (next.correction !== correction) setCorrection(next.correction)
     setUndoFor(pack.canUndo && !undoing && !own ? brief : null)
     if (undoing) setUndoing(false)
+    setProviderUndo(null)
   }
+  // Another site: one notice with Undo, which goes back to the site before (and opens no notice).
+  const [seenProvider, setSeenProvider] = useState(provider)
+  const [undoingProvider, setUndoingProvider] = useState(false)
+  if (seenProvider !== provider) {
+    setSeenProvider(provider)
+    setProviderUndo(undoingProvider ? null : { from: seenProvider, to: provider })
+    if (undoingProvider) setUndoingProvider(false)
+    setUndoFor(null)
+  }
+  if (!open && providerUndo) setProviderUndo(null)
+  useEffect(() => {
+    if (!providerUndo) return
+    const timer = setTimeout(() => setProviderUndo(null), UNDO_MS)
+    return () => clearTimeout(timer)
+  }, [providerUndo])
+  const onUndoProvider = useCallback(() => {
+    if (!providerUndo) return
+    setUndoingProvider(true)
+    setProviderUndo(null)
+    onProviderChange(providerUndo.from)
+  }, [providerUndo, onProviderChange])
   // Closed: no notices and no timers.
   if (!open && (undoFor || correction)) {
     setUndoFor(null)
@@ -919,6 +1019,7 @@ function BriefWorkspace({
             state={state}
             onIncludeSensitive={includeSensitive}
             hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
+            loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
           />
         ))}
       </div>
@@ -971,6 +1072,8 @@ function BriefWorkspace({
             <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
           ) : showUndo && pack.lastChange ? (
             <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
+          ) : providerUndo ? (
+            <UndoNotice message={BUILDER_TEXT.providerChanged(PROVIDER_LABELS[providerUndo.to])} onUndo={onUndoProvider} onDismiss={() => setProviderUndo(null)} />
           ) : null}
         </div>
         <GenerateBar
