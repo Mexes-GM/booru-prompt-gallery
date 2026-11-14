@@ -47,7 +47,7 @@ export async function searchTags(query: string): Promise<TagResult[]> {
 /**
  * searchTags, but a failed lookup (timeout, network) throws instead of looking
  * like "no tag matches", for callers that need to tell the two apart. `limit`
- caps the results (of the 20 the lookup returns), best matches first.
+ * caps the results (of the 20 the lookup returns), best matches first.
  */
 export async function searchTagsOrThrow(query: string, limit = 5): Promise<TagResult[]> {
   if (!query || query.trim().length < 2) {

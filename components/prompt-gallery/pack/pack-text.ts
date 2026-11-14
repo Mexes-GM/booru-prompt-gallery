@@ -31,13 +31,29 @@ export const BLOCKED = {
 export const BUILDER_TEXT = {
   title: "Pack",
   exit: "Exit Pack Mode",
+  close: "Close pack",
+  closeHint: "Close. Your pack stays here until you start a new one.",
+  newPack: "New pack",
+  newPackHint: "Start another pack from a card, a prompt or a character",
+  cardOutfit: "Use this card's outfit",
+  cardPose: "Poses like this card",
   ratingMenu: "Content rating",
-  loadFailed: "Couldn't load the pack data. Check your connection and try again.",
+  loadFailed: "Couldn't load the scenes. Check your connection and try again.",
   retry: "Try again",
   sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
+} as const
+
+/** What each way into a pack says it brought (shown until the first change). */
+export const START_TEXT = {
+  cardNamed: "From the card: who's in it.",
+  cardUnnamed: "This card has no character tag, so Who has only its look.",
+  cardOffers: "Its outfit and pose are offered under Wearing and Doing.",
+  prompt: "Your prompt is split across the rows. Tags we don't recognize are under Also.",
+  search: "Started from your search.",
+  searchSkipped: (tags: readonly string[]) => `Search filters left out: ${tags.join(", ")}.`,
 } as const
 
 /** The pack's content ratings, as the rating menu names them. */
@@ -127,7 +143,7 @@ function fitSentence(state: FitState): string {
     case "finding":
       return `Finding scenes… ${state.found} so far`
     case "fit":
-      return `${plural(state.scenes, "scene")} fit`
+      return `${plural(state.scenes, "scene")} ${state.scenes === 1 ? "fits" : "fit"}`
     case "few-rated":
       return "Few general-rated pictures. Include sensitive ones?"
     case "reuse":
@@ -164,6 +180,8 @@ function fitSentence(state: FitState): string {
     }
     case "few-variations":
       return `${state.made} of ${state.asked}: only ${plural(state.variations, state.axis)} ${state.variations === 1 ? "fits" : "fit"} this scene`
+    case "no-new":
+      return state.exhausted ? "No new scenes found. There's nothing more to search." : "No new scenes found on that page."
     case "paused":
       return state.waiting
         ? "Paused to avoid too many requests. You can search again in a few seconds."

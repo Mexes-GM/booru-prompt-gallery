@@ -7,10 +7,11 @@
  */
 import assert from "node:assert/strict"
 import { addLook, addNever, addTag, leaveOutScene, removeLook, setCharacterRole } from "../lib/pack/brief"
+import { briefFromPrompt, toSceneRequests } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
-  preferredPostIds, resolveLook, slotSuggestions,
+  preferredPostIds, resolveLook, slotSuggestions, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
@@ -358,6 +359,63 @@ check("fit line wording for the one-part notes", () => {
   assert.equal(fitText({ kind: "kept-on-axis", axis: "place", tags: ["beach", "night"] }).text, "beach, night stay in every prompt. The rest of the place changes.")
   assert.equal(fitText({ kind: "few-variations", axis: "outfit", variations: 6, made: 6, asked: 10 }).text, "6 of 10: only 6 outfits fit this scene")
   assert.equal(fitText({ kind: "few-variations", axis: "expression", variations: 1, made: 1, asked: 10 }).text, "1 of 10: only 1 expression fits this scene")
+})
+
+// ── Search progress (browser pass, INT-1) ──────────────────────────────────────
+
+check("withSearchProgress: searching while a page is on its way, then whether it brought anything", () => {
+  const short: FitNote[] = [{ kind: "short", made: 6, asked: 10, scenes: 6 }, { kind: "paused" }]
+  assert.deepEqual(withSearchProgress(short, { loading: true, found: 6 }), [
+    { kind: "finding", found: 6 },
+    { kind: "short", made: 6, asked: 10, scenes: 6 },
+  ])
+  assert.deepEqual(withSearchProgress(short, { loading: false, found: 6 }), short)
+  assert.deepEqual(withSearchProgress(short, { loading: false, found: 6, nothingNew: { exhausted: false } }), [
+    { kind: "short", made: 6, asked: 10, scenes: 6 },
+    { kind: "no-new", exhausted: false },
+    { kind: "paused" },
+  ])
+  // Nothing more to search: the offer goes.
+  assert.deepEqual(withSearchProgress(short, { loading: false, found: 6, nothingNew: { exhausted: true } }), [
+    { kind: "short", made: 6, asked: 10, scenes: 6 },
+    { kind: "no-new", exhausted: true },
+  ])
+})
+
+check("fit line wording: singular and plural", () => {
+  assert.equal(fitText({ kind: "fit", scenes: 1 }).text, "1 scene fits")
+  assert.equal(fitText({ kind: "fit", scenes: 13 }).text, "13 scenes fit")
+  assert.equal(fitText({ kind: "short", made: 1, asked: 10, scenes: 1, what: "this pose" }).text, "1 of 10: only 1 scene has this pose")
+  assert.equal(fitText({ kind: "reuse", scenes: 1, reused: 1 }).text, "Only 1 scene: 1 prompt will reuse a scene")
+  assert.equal(fitText({ kind: "no-new", exhausted: false }).text, "No new scenes found on that page.")
+  assert.equal(fitText({ kind: "no-new", exhausted: true }).text, "No new scenes found. There's nothing more to search.")
+})
+
+// ── Entries (INT-3) ──────────────────────────────────────────────────────────────
+
+check("a pasted prompt: tags to their rows, unknown ones to literals, counts to People", () => {
+  const { brief, peopleTags } = briefFromPrompt("1girl, 1boy, tifa lockhart, bikini, beach, sitting, my lora trigger", OVERRIDES)
+  const started = withPromptPeople(brief, peopleTags)
+  assert.equal(started.who[0].tag, "tifa lockhart")
+  assert.deepEqual(toSceneRequests(started), { select: ["sitting"], wearing: ["bikini"], where: ["beach"], also: [], literal: ["my lora trigger"] })
+  assert.deepEqual(started.people, { girls: 1, boys: 1 })
+  // "solo" alone says no number: People stays open.
+  const solo = briefFromPrompt("tifa lockhart, solo", OVERRIDES)
+  assert.equal(withPromptPeople(solo.brief, solo.peopleTags).people, null)
+})
+
+check("a gallery search: its tags, the character, exclusions to Never, filters reported", () => {
+  const { brief, skipped } = briefFromSearch("tifa lockhart, beach, -smile, rating:general, order:score", OVERRIDES, "tifa lockhart")
+  assert.equal(brief.who.length, 1)
+  assert.equal(brief.who[0].tag, "tifa lockhart")
+  assert.deepEqual(toSceneRequests(brief).where, ["beach"])
+  assert.deepEqual(brief.never, ["smile"])
+  assert.deepEqual(skipped, ["rating:general", "order:score"])
+  // The results' character joins Who when the search doesn't name it.
+  const themed = briefFromSearch("beach, bikini", OVERRIDES, "tifa lockhart")
+  assert.equal(themed.brief.who[0].tag, "tifa lockhart")
+  assert.deepEqual(toSceneRequests(themed.brief).wearing, ["bikini"])
+  assert.deepEqual(themed.skipped, [])
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

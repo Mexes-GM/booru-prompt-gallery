@@ -6,7 +6,7 @@
  */
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
-import { toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
+import { addCharacter, addNever, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
@@ -266,6 +266,8 @@ export type FitNote =
   | { kind: 'people-missing'; asked: PackPeople; using: PackPeople | null; cast: PackPeople }
   /** Fetching stopped at the pace limit while the source still has posts; one more page can be asked for. */
   | { kind: 'paused' }
+  /** The page the user asked for brought no new scene; `exhausted`: the source has nothing more. */
+  | { kind: 'no-new'; exhausted: boolean }
   /** One-part pack: what was asked for on that part stays in every prompt; the rest of the part changes. */
   | { kind: 'kept-on-axis'; axis: Exclude<ChangesAxis, 'scene'>; tags: string[] }
   /** One-part pack that came out short: only `variations` values of the part go with the base scene. */
@@ -366,6 +368,34 @@ function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive }: Is
   return canOfferSensitive && lacking ? [{ kind: 'few-rated' }, ...notes] : notes
 }
 
+export interface SearchProgress {
+  /** A page is on its way, asked for by the builder or by the user. */
+  loading: boolean
+  /** Scenes that fit so far. */
+  found: number
+  /** The page the user asked for came back without a new scene. */
+  nothingNew?: { exhausted: boolean } | null
+}
+
+/**
+ * The fit line with the source's progress on top: while a page is on its way it says
+ * it is searching (the offer of another page goes until it lands); a page asked for
+ * by hand that brought nothing new says so, and when the source has nothing more the
+ * offer goes for good.
+ */
+export function withSearchProgress(notes: readonly FitNote[], progress: SearchProgress): FitNote[] {
+  if (progress.loading) {
+    const rest = notes.filter((n) => n.kind !== 'finding' && n.kind !== 'paused' && n.kind !== 'fit')
+    return [{ kind: 'finding', found: progress.found }, ...rest]
+  }
+  if (!progress.nothingNew) return [...notes]
+  const { exhausted } = progress.nothingNew
+  const rest = exhausted ? notes.filter((n) => n.kind !== 'paused') : [...notes]
+  const at = rest.findIndex((n) => n.kind === 'paused')
+  const note: FitNote = { kind: 'no-new', exhausted }
+  return at < 0 ? [...rest, note] : [...rest.slice(0, at), note, ...rest.slice(at)]
+}
+
 // ── People ────────────────────────────────────────────────────────────────────
 
 export interface PeopleLineInput {
@@ -439,6 +469,39 @@ export function peopleFromCountTags(tags: readonly string[], cast: PackPeople): 
   }
   if (girls === null && boys === null) return solo ? { ...cast } : null
   return { girls: Math.max(girls ?? cast.girls, cast.girls), boys: Math.max(boys ?? cast.boys, cast.boys) }
+}
+
+// ── Starts from a prompt or a search ──────────────────────────────────────────
+
+/**
+ * A pasted prompt's brief with its people counts applied: "1girl, 1boy" sets People to
+ * one of each. Counts say everyone in the picture, so they don't add to the cast.
+ */
+export function withPromptPeople(brief: PackBrief, peopleTags: readonly string[]): PackBrief {
+  const people = peopleFromCountTags(peopleTags, { girls: 0, boys: 0 })
+  return people && people.girls + people.boys > 0 ? setPeople(brief, people) : brief
+}
+
+/**
+ * The brief a gallery search starts: its tags go where a pasted prompt's would, a
+ * "-tag" goes to Never, the character the results are about is in Who, and search
+ * filters ("rating:general", "order:score") stay out and come back in `skipped`.
+ */
+export function briefFromSearch(
+  search: string,
+  overrides: Record<string, string>,
+  character: string | null
+): { brief: PackBrief; skipped: string[] } {
+  const tokens = search.split(',').map((t) => t.trim()).filter(Boolean)
+  const skipped = tokens.filter((t) => t.includes(':') && !t.startsWith('-'))
+  const excluded = tokens.filter((t) => t.startsWith('-')).map((t) => t.slice(1).trim())
+  const kept = tokens.filter((t) => !t.includes(':') && !t.startsWith('-'))
+  skipped.push(...excluded.filter((t) => t.includes(':')).map((t) => `-${t}`))
+  const parsed = briefFromPrompt(kept.join(', '), overrides)
+  let brief = withPromptPeople(parsed.brief, parsed.peopleTags)
+  if (character) brief = addCharacter(brief, character)
+  for (const tag of excluded) if (!tag.includes(':')) brief = addNever(brief, tag)
+  return { brief, skipped }
 }
 
 // ── Suggestions ───────────────────────────────────────────────────────────────
