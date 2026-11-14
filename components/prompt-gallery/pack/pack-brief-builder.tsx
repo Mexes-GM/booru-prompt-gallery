@@ -558,9 +558,13 @@ function BriefWorkspace({
   const loaded = useMemo(
     () =>
       loadedPosts > 0
-        ? { text: BUILDER_TEXT.loadedFrom(loadedPosts, PROVIDER_LABELS[provider], loadedAll), onFindMore: loadedMore ? loadOnePage : undefined }
+        ? {
+            // The posts that give scenes, and the donors' apart: the same numbers How it searches adds up.
+            text: BUILDER_TEXT.loadedFrom(loadedPosts - donorPosts.length, PROVIDER_LABELS[provider], loadedAll, donorPosts.length),
+            onFindMore: loadedMore ? loadOnePage : undefined,
+          }
         : null,
-    [loadedPosts, loadedAll, loadedMore, provider, loadOnePage]
+    [loadedPosts, loadedAll, loadedMore, provider, loadOnePage, donorPosts.length]
   )
   // What the pack searches, folded under the fit line until asked for.
   const searchesId = useId()

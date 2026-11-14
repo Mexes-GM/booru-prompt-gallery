@@ -15,6 +15,9 @@ import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeop
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
+import type { Scene } from './scene/scene'
+import { garmentPieces, garmentRegion, layersOver, meetsAll, regionTags, valueKey } from './scene/scene-conditions'
+import { loadedTagRelations, requiredBy } from '../tag-relations'
 import {
   DEFAULT_SCENE_SETTINGS,
   REUSES_PER_SCENE,
@@ -340,8 +343,8 @@ export type FitNote =
   | { kind: 'variety'; role: 'wearing' | 'where'; what: string; styles: boolean; variants: number; prompts: number }
   /** In `prompts` prompts no form of the condition was found: the tags went in as typed (`partial`: some of them). */
   | { kind: 'as-written'; role: 'wearing' | 'where'; what: string; prompts: number; partial: boolean; styles?: boolean }
-  /** Before generating: only `pictures` loaded pictures have the condition, for `asked` prompts. */
-  | { kind: 'condition-supply'; role: 'wearing' | 'where'; what: string; pictures: number; asked: number }
+  /** Before generating: only `variants` different forms of the condition are loaded, for `asked` prompts. */
+  | { kind: 'condition-supply'; role: 'wearing' | 'where'; what: string; styles: boolean; variants: number; asked: number }
   /** One-part pack: how many values of the part go with the scene that repeats. */
   | { kind: 'axis-fit'; axis: OneAxis; variations: number }
   /** One-part pack: the variants are being worked out. */
@@ -376,49 +379,102 @@ export interface PredictInput {
   paused?: boolean
   /** One-part pack: the part that changes and what was asked for on it. */
   axis?: { axis: OneAxis; requested: readonly string[] } | null
-  /** Wearing and Where met as conditions, with the loaded pictures that have them (conditionSupply). */
+  /** Wearing and Where met as conditions, with the different forms loaded (conditionSupply). */
   conditions?: readonly ConditionSupply[]
 }
 
-/** A condition of the brief and how many loaded pictures meet it. */
+/** A condition of the brief (garments or places, or library styles) and the different forms of it the pack has loaded. */
 export interface ConditionSupply {
   role: 'wearing' | 'where'
   tags: readonly string[]
-  pictures: number
+  /** Library styles asked for (Wearing); with them the forms are the library's outfits. */
+  styles?: readonly string[]
+  /** Different forms available: what condition-variety will count as variants, at most. */
+  variants: number
 }
 
 /**
- * The pictures among `posts` that meet a role's conditions: every tag, or a qualified form of it
- * ("white bikini" for "bikini"), with `aliases` (other names of a tag) counting as the tag.
- * The fit line's forecast before generating; the pack itself is the engine's word.
+ * The different forms of a role's conditions the pack has to offer, counted the way the engine
+ * counts its variants (condition-variety): a form is the tags a scene would lend, compared as a
+ * set (valueKey). Garments: the part of each scene's outfit in the garments' region, from scenes
+ * that wear them all with no other whole garment over them (layersOver); library outfits that wear
+ * them too. Places: each scene's place that has them all. Styles: the library outfits of those
+ * styles (meeting the garments, if any). `scenes` are every scene loaded, the donors' included;
+ * `library` the outfits allowed at the rating. A forecast: the engine also skips donors of another
+ * make-up and donors that clash with a scene, so it can come out lower, never higher.
  */
-export function conditionSupply(
-  posts: readonly { tag_string?: string }[],
-  role: 'wearing' | 'where',
-  tags: readonly string[],
-  aliases: Readonly<Record<string, readonly string[]>> = {}
-): ConditionSupply {
-  const wanted = tags.map((tag) => {
-    const name = normalizeTagForPack(tag)
-    const others = (aliases[name] ?? aliases[name.replace(/ /g, '_')] ?? []).map(normalizeTagForPack)
-    return [name, ...others]
-  })
-  const meets = (have: readonly string[]) =>
-    wanted.every((names) => names.some((n) => have.some((t) => t === n || t.endsWith(` ${n}`))))
-  const pictures = posts.filter((p) => meets((p.tag_string ?? '').split(/\s+/).map(normalizeTagForPack).filter(Boolean))).length
-  return { role, tags: [...tags], pictures }
+export function conditionSupply({ role, tags, styles = [], scenes, library = [], overrides, aliases = {} }: {
+  role: 'wearing' | 'where'
+  tags: readonly string[]
+  styles?: readonly string[]
+  scenes: readonly Pick<Scene, 'units'>[]
+  library?: readonly LibraryOutfit[]
+  overrides: Record<string, string>
+  /** Other names of each condition (auto_suggest_tags.aliases): written as the condition, as the engine does. */
+  aliases?: Readonly<Record<string, readonly string[]>>
+}): ConditionSupply {
+  const wanted = tags.map(normalizeTagForPack).filter(Boolean)
+  const renames: Array<[string, string]> = Object.entries(aliases).flatMap(([cond, names]) =>
+    names.map((name) => [normalizeTagForPack(name), normalizeTagForPack(cond)] as [string, string]))
+  const named = (list: readonly string[]) => (renames.length === 0 ? list : list.map((tag) => {
+    for (const [name, cond] of renames) {
+      if (tag === name) return cond
+      if (tag.endsWith(` ${name}`)) return `${tag.slice(0, -name.length)}${cond}`
+    }
+    return tag
+  }))
+  const keys = new Set<string>()
+  if (role === 'where') {
+    for (const scene of scenes) {
+      const place = named(scene.units.place)
+      if (wanted.length > 0 && meetsAll(place, wanted)) keys.add(valueKey(place))
+    }
+    return { role, tags: [...tags], variants: keys.size }
+  }
+  // As the engine: a library style lends the whole outfit; garments, their region.
+  const region = wanted.length > 0 && styles.length === 0 ? garmentRegion(wanted, overrides) : null
+  const lent = (outfit: readonly string[]) => (region ? regionTags(outfit, region, overrides) : [...outfit])
+  // Another whole garment over the one asked for is a layer, unless the measured relations require
+  // it ("swimsuit" for "bikini") or it is a piece of the costume, measured on the loaded scenes.
+  const relations = loadedTagRelations()
+  const outfits = scenes.map((scene) => named(scene.units.outfit))
+  const pieces = new Map(wanted.map((garment) => [garment, garmentPieces(garment, outfits, overrides)]))
+  const noPieces: ReadonlySet<string> = new Set()
+  const layered = (outfit: readonly string[]) =>
+    layersOver(outfit, wanted, overrides, relations ? (garment) => requiredBy(relations, garment) : undefined, (garment) => pieces.get(garment) ?? noPieces).length > 0
+  const fits = (outfit: readonly string[]) => wanted.length === 0 || (meetsAll(outfit, wanted) && !layered(outfit))
+  if (styles.length > 0) {
+    for (const o of library) {
+      const outfit = o.tags.map(normalizeTagForPack)
+      if (o.style && styles.includes(o.style) && fits(outfit)) keys.add(valueKey(lent(outfit)))
+    }
+    return { role, tags: [...tags], styles: [...styles], variants: keys.size }
+  }
+  for (const scene of scenes) {
+    const outfit = named(scene.units.outfit)
+    if (fits(outfit)) keys.add(valueKey(lent(outfit)))
+  }
+  for (const o of library) {
+    const outfit = o.tags.map(normalizeTagForPack)
+    if (fits(outfit)) keys.add(valueKey(lent(outfit)))
+  }
+  return { role, tags: [...tags], variants: keys.size }
 }
 
 /** "bikini and thighhighs". */
 const andList = (tags: readonly string[]) =>
   tags.length <= 1 ? tags.join('') : `${tags.slice(0, -1).join(', ')} and ${tags[tags.length - 1]}`
 
-/** Before generating: a condition fewer loaded pictures meet than prompts are asked for (none said while scenes are still coming). */
+/** Before generating: a condition with fewer different forms loaded than prompts asked for (none said while scenes are still coming). */
 function supplyNotes(conditions: readonly ConditionSupply[] | undefined, count: number, finding: boolean): FitNote[] {
   if (!conditions || finding) return []
   return conditions
-    .filter((c) => c.tags.length > 0 && c.pictures < count)
-    .map((c) => ({ kind: 'condition-supply', role: c.role, what: andList(c.tags.map((t) => t.replace(/_/g, ' '))), pictures: c.pictures, asked: count }))
+    .filter((c) => (c.tags.length > 0 || (c.styles?.length ?? 0) > 0) && c.variants < count)
+    .map((c) => {
+      const styles = c.tags.length === 0 && (c.styles?.length ?? 0) > 0
+      const what = styles ? andList(c.styles ?? []) : andList(c.tags.map((t) => t.replace(/_/g, ' ')))
+      return { kind: 'condition-supply', role: c.role, what, styles, variants: c.variants, asked: count }
+    })
 }
 
 /**

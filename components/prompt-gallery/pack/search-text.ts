@@ -77,9 +77,15 @@ export function leftOutSentence(leftOut: SourcePlan["leftOut"], site: string, li
   return `${tags} didn't fit in the searches: ${site} searches at most ${plural(limit, "tag", "tags")} at a time.`
 }
 
-/** The posts a search has brought, and whether it has more: "95 posts, all there are", "240 posts". */
-export const searchCount = (posts: number, ended: boolean): string =>
-  `${plural(posts, "post", "posts")}${ended && posts > 0 ? ", all there are" : ""}`
+/**
+ * The posts a search adds to the pack, and whether it has more: "95 posts, all there are",
+ * "240 posts", "12 new of 95 posts" (the rest were already in a search above). The first numbers
+ * of the rows add up to the loaded line's.
+ */
+export const searchCount = (adds: number, posts: number, ended: boolean): string => {
+  const count = posts > adds ? `${adds} new of ${plural(posts, "post", "posts")}` : plural(adds, "post", "posts")
+  return `${count}${ended && posts > 0 ? ", all there are" : ""}`
+}
 
 /** A donor search in plain words: "Anyone wearing bikini", "Any picture at a beach". */
 export function donorDescription(kind: "wearing" | "where", conditions: readonly string[]): string {

@@ -43,11 +43,16 @@ export const BUILDER_TEXT = {
   providerNeedsConsent: "Choose it in the gallery first to confirm adult content",
   providerNoSensitive: "Safe only: no sensitive rating there",
   providerChanged: (site: string) => `Now searching ${site}`,
-  /** After the fit line: the posts the scenes come from; `all` once the site has no more for this search. */
-  loadedFrom: (posts: number, site: string, all: boolean) =>
-    all
-      ? `from all ${posts} matching ${posts === 1 ? "post" : "posts"} on ${site}`
-      : `from ${posts} ${posts === 1 ? "post" : "posts"} on ${site} so far`,
+  /**
+   * After the fit line: the posts the scenes come from, and the ones that only lend clothes or a
+   * place (the donor searches'); `all` once the site has no more for these searches.
+   */
+  loadedFrom: (posts: number, site: string, all: boolean, lend = 0) => {
+    const lending = lend > 0 ? `, plus ${lend} that only lend clothes or places` : ""
+    return all
+      ? `from all ${posts} matching ${posts === 1 ? "post" : "posts"} on ${site}${lending}`
+      : `from ${posts} ${posts === 1 ? "post" : "posts"} on ${site}${lending} so far`
+  },
   loadFailed: "Couldn't load the scenes. Check your connection and try again.",
   retry: "Try again",
   sheetHint: "Select a scene to leave it out",
@@ -318,9 +323,14 @@ function fitSentence(state: FitState): string {
         ? `${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "has" : "have"} only part of ${state.what} from another picture; the rest is as typed`
         : `${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "has" : "have"} ${state.what} as typed: no other kind was found`
     case "condition-supply":
-      return state.pictures === 0
+      if (state.styles) {
+        return state.variants === 0
+          ? `The library has no ${state.what} outfit for this pack`
+          : `Only ${plural(state.variants, `${state.what} outfit`)} for ${plural(state.asked, "prompt")}`
+      }
+      return state.variants === 0
         ? `No loaded picture has ${state.what} yet, so it would go as typed`
-        : `Only ${plural(state.pictures, "loaded picture")} ${state.pictures === 1 ? "has" : "have"} ${state.what} for ${plural(state.asked, "prompt")}`
+        : `Only ${plural(state.variants, "kind")} of ${state.what} so far for ${plural(state.asked, "prompt")}`
     case "no-new":
       return state.exhausted ? "No new scenes found. There's nothing more to search." : "No new scenes found on that page."
     case "paused":

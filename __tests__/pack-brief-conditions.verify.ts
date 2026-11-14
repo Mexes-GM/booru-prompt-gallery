@@ -19,7 +19,7 @@ import { parseTagRelations, setTagRelations, type TagRelationsFile } from "../li
 import { generateScenePack, tagKindsFromPosts, type ScenePackIssue } from "../lib/pack/scene-pack"
 import { addOutfitStyle, addTag, addTagExactly, briefCompositions, briefConditions, chooseChanges, setPeople, setRequestExact, toggleComposition, type PackBrief } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
-import { briefIdentity, briefPackArgs, issuesFit } from "../lib/pack/brief-pack"
+import { briefIdentity, briefPackArgs, conditionSupply, issuesFit, predictFit } from "../lib/pack/brief-pack"
 import { makePost } from "./fixtures/pack-scene-data"
 
 const root = path.join(__dirname, "..")
@@ -196,6 +196,37 @@ check("People: one or several make-ups; the last one stays; a one-part pack neve
   assert.deepEqual(briefPackArgs(mixed, who, { ...env, compositions: briefCompositions(mixed) }).compositions, [one, pair])
   assert.equal(briefPackArgs(mixed, who, { ...env, compositions: [one] }).compositions, undefined)
   assert.equal(briefPackArgs(chooseChanges(mixed, "outfit"), who, { ...env, compositions: briefCompositions(mixed) }).compositions, undefined)
+})
+
+check("forecast before generating: the different forms loaded, the same the pack then counts", () => {
+  const scenes = pool.allScenes ?? pool.scenes
+  const forecast = (brief: PackBrief) => {
+    const wearing = brief.requests.filter((r) => r.role === "wearing" && !r.exact).map((r) => r.tag)
+    return conditionSupply({ role: "wearing", tags: wearing, styles: brief.outfitStyles ?? [], scenes, library: LIBRARY, overrides })
+  }
+  const lineBefore = (brief: PackBrief) => predictFit({ candidates: Array.from({ length: 6 }, () => ({ hasPose: true })), count: 4, poses: [], finding: false, canOfferSensitive: false, conditions: [forecast(brief)] })
+  const lineAfter = (brief: PackBrief) => {
+    const { result } = pack(brief)
+    return { issue: variety(result.issues, "wearing")!, notes: issuesFit({ issues: result.issues, count: 4, made: result.prompts.length, cast: { girls: 1, boys: 0 }, scenes: 4, canOfferSensitive: false }) }
+  }
+  // Three swimwear outfits for four prompts: both say three.
+  const styled = addOutfitStyle(tifa, "swimwear")
+  assert.equal(forecast(styled).variants, 3)
+  assert.deepEqual(lineBefore(styled).filter((n) => n.kind === "condition-supply"), [{ kind: "condition-supply", role: "wearing", what: "swimwear", styles: true, variants: 3, asked: 4 }])
+  const styledAfter = lineAfter(styled)
+  assert.equal(styledAfter.issue.variants, 3)
+  // Bikinis to spare: no warning before, a different one in each prompt after.
+  const bikini = addTag(tifa, "bikini", overrides)
+  assert.ok(forecast(bikini).variants >= 4, JSON.stringify(forecast(bikini)))
+  assert.deepEqual(lineBefore(bikini).filter((n) => n.kind === "condition-supply"), [])
+  const bikiniAfter = lineAfter(bikini)
+  assert.equal(bikiniAfter.issue.variants, 4, JSON.stringify(bikiniAfter.issue))
+  assert.ok(bikiniAfter.notes.some((n) => n.kind === "variety" && n.variants >= n.prompts), JSON.stringify(bikiniAfter.notes))
+  // A garment no picture has: nothing to lend, said before.
+  const none = conditionSupply({ role: "wearing", tags: ["kimono"], scenes, library: LIBRARY, overrides })
+  assert.equal(none.variants, 0)
+  // Places: each scene's place that has it.
+  assert.ok(conditionSupply({ role: "where", tags: ["classroom"], scenes, overrides }).variants >= 2)
 })
 
 console.log(`pack-brief-conditions: ${passed} checks passed`)

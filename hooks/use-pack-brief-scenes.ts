@@ -46,7 +46,7 @@ import { planSources, type AppearanceSearch, type SourcePlan } from "@/lib/pack/
 import { holdsCast, roleFromProfile, roleFromSubject, type CastRole } from "@/lib/pack/scene/cast"
 import { createPermanence, type PermanenceData } from "@/lib/pack/scene/permanence"
 import type { TagKind } from "@/lib/pack/scene/scene"
-import { buildScenePool, compositionOfIdentity, type PackPeople, type ScenePool } from "@/lib/pack/scene/scene-pool"
+import { buildScenePool, compositionOfIdentity, compositionsOf, type PackPeople, type ScenePool } from "@/lib/pack/scene/scene-pool"
 import {
   castComposition,
   defaultComposition,
@@ -464,19 +464,26 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const poses = useMemo(() => (basePool ? poseCompositions(basePool, poseArgs) : NO_POSES), [basePool, poseArgs])
 
   const firstCandidates = identity.members[0]?.candidates ?? NO_NAMES
+  // The make-ups of the scenes that can be a prompt's scene: the donors' posts only lend, so
+  // they count in none (the pool's own stats count every scene).
+  const sceneCompositions = useMemo(() => {
+    if (!basePool) return null
+    if (!donorPosts?.length) return basePool.stats.compositions
+    const donors = new Set(donorPosts)
+    return compositionsOf((basePool.allScenes ?? basePool.scenes).filter((scene) => !donors.has(scene.postId)))
+  }, [basePool, donorPosts])
   // Every composition of the pool the characters fit in; null until the pool is built.
   const available = useMemo(() => {
-    if (!basePool) return null
-    const all = basePool.stats.compositions
-    return isCast ? all.filter((c) => holdsCast(c.people, castPeopleMemo)) : all
-  }, [basePool, isCast, castPeopleMemo])
+    if (!sceneCompositions) return null
+    return isCast ? sceneCompositions.filter((c) => holdsCast(c.people, castPeopleMemo)) : sceneCompositions
+  }, [sceneCompositions, isCast, castPeopleMemo])
   const peopleKey = useMemo(() => {
-    if (!basePool || missingRoles.length > 0) return ""
-    const all = basePool.stats.compositions
+    if (!basePool || !sceneCompositions || missingRoles.length > 0) return ""
+    const all = sceneCompositions
     if (isCast) return peopleKeyOf(castComposition(all.filter((c) => holdsCast(c.people, castPeopleMemo)), castPeopleMemo, brief.people, poses))
     const declared = compositionOfIdentity(firstCandidates)
     return peopleKeyOf(defaultComposition(all, subject, brief.people, { declared, character: !!base }, poses))
-  }, [basePool, missingRoles, isCast, castPeopleMemo, brief.people, poses, firstCandidates, subject, base])
+  }, [basePool, sceneCompositions, missingRoles, isCast, castPeopleMemo, brief.people, poses, firstCandidates, subject, base])
   const people = useMemo(() => fromPeopleKey(peopleKey), [peopleKey])
 
   const pool = useMemo(() => {
@@ -506,9 +513,9 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     return marked.length > 0 ? marked : people ? [people] : []
   }, [mixKey, castPeopleMemo, people])
   const peopleBlocked = useMemo(() => {
-    const all = requests.select.length > 0 ? poses : basePool?.stats.compositions ?? []
+    const all = requests.select.length > 0 ? poses : sceneCompositions ?? []
     return all.filter((c) => !holdsCast(c.people, castPeopleMemo))
-  }, [requests.select, poses, basePool, castPeopleMemo])
+  }, [requests.select, poses, sceneCompositions, castPeopleMemo])
 
   // ── Clothes ───────────────────────────────────────────────────────────────────
   const [outfitData, setOutfitData] = useState<ReadonlyMap<string, CharacterOutfits | null>>(() => new Map())
@@ -577,15 +584,20 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     () => (aliases.key === conditionsKey ? aliases.names : knownAliases(conditions)),
     [aliases, conditionsKey, conditions]
   )
-  // What the loaded pictures offer each kind of condition, for the fit line before generating.
+  // The different forms of each condition the loaded scenes and the library offer, for the fit
+  // line before generating: what condition-variety will count, at most.
   const supply = useMemo(() => {
+    if (!basePool) return []
+    const scenes = basePool.allScenes ?? basePool.scenes
     const wearing = requests.wearing.filter((t) => conditions.includes(t))
     const where = requests.where.filter((t) => conditions.includes(t))
+    const styles = (coreBrief.outfitStyles ?? []).filter((style) => allowedStyles.includes(style as OutfitStyle))
+    const base = { scenes, library: conditionLibrary, overrides, aliases: conditionAliases }
     return [
-      ...(wearing.length > 0 ? [conditionSupply(rated, "wearing", wearing, conditionAliases)] : []),
-      ...(where.length > 0 ? [conditionSupply(rated, "where", where, conditionAliases)] : []),
+      ...(wearing.length > 0 || styles.length > 0 ? [conditionSupply({ ...base, role: "wearing", tags: wearing, styles })] : []),
+      ...(where.length > 0 ? [conditionSupply({ ...base, role: "where", tags: where })] : []),
     ]
-  }, [requests, conditions, rated, conditionAliases])
+  }, [basePool, requests, conditions, coreBrief.outfitStyles, allowedStyles, conditionLibrary, overrides, conditionAliases])
   const libraryStyles = useMemo(
     () => (rating === "sfw" ? outfitOptions.styles.filter((s) => !ADULT_OUTFIT_STYLES.includes(s)) : outfitOptions.styles),
     [rating, outfitOptions.styles]

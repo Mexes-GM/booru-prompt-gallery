@@ -33,7 +33,7 @@ export const SearchDetails = memo(function SearchDetails({ id, plan, progress, c
           const p = progress.find((x) => x.id === search.id)
           const posts = p?.posts ?? 0
           const none = !!p && posts === 0 && p.exhausted && !p.loading && !p.failed
-          const count = !p || (p.loading && posts === 0) ? "Searching…" : searchCount(posts, p.exhausted)
+          const count = !p || (p.loading && posts === 0) ? "Searching…" : searchCount(p.adds, posts, p.exhausted)
           return (
             <li key={search.id} className="min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
@@ -49,7 +49,7 @@ export const SearchDetails = memo(function SearchDetails({ id, plan, progress, c
           const p = progress.find((x) => x.id === search.id)
           const posts = p?.posts ?? 0
           const none = !!p && posts === 0 && p.exhausted && !p.loading && !p.failed
-          const count = !p || (p.loading && posts === 0) ? "Searching…" : searchCount(posts, p.exhausted)
+          const count = !p || (p.loading && posts === 0) ? "Searching…" : searchCount(p.adds, posts, p.exhausted)
           return (
             <li key={search.id} className="min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
