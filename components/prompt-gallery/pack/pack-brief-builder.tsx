@@ -97,6 +97,7 @@ import { cn } from "@/lib/utils"
 import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
 import { getProviderTagLimit } from "@/lib/booru/tag-limits"
 import { SearchDetails } from "./search-details"
+import { BUILDER_SWITCH_TEXT } from "./builder-switch"
 import type { EntryOption } from "./tag-entry"
 import { AUTO_PAGE_CAP } from "@/lib/pack/source-paging"
 import { BriefSummary } from "./brief-summary"
@@ -171,6 +172,8 @@ export interface PackBriefBuilderProps {
   /** Copies text in a format; resolves true when it worked. */
   onCopy: (text: string, format: PromptFormat) => Promise<boolean>
   onExit: () => void
+  /** Opens the pack's card or character in the classic builder. */
+  onOpenClassic?: () => void
 }
 
 /** The brief a start makes, and what to say about it. Pure: nothing is written while rendering. */
@@ -202,7 +205,7 @@ function begin(start: PackBriefStart, overrides: Record<string, string>): { brie
  * it was when it closed, so nothing is fetched, timed or worked out until it opens again.
  */
 export function PackBriefBuilder(props: PackBriefBuilderProps) {
-  const { start, open, overrides, rating, onRatingChange, onExit, onNewPack } = props
+  const { start, open, overrides, rating, onRatingChange, onExit, onNewPack, onOpenClassic } = props
   const [begun] = useState(() => begin(start, overrides))
   const pack = usePackBrief(overrides, begun.brief)
   // The environment while open; held while closed.
@@ -270,6 +273,20 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
             >
               {BUILDER_TEXT.newPack}
             </Button>
+            {onOpenClassic && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onOpenClassic}
+                title={BUILDER_SWITCH_TEXT.classicHint}
+                aria-label={BUILDER_SWITCH_TEXT.classic}
+                className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground pointer-coarse:h-11"
+              >
+                <span className="sm:hidden">{BUILDER_SWITCH_TEXT.classicShort}</span>
+                <span className="max-sm:hidden">{BUILDER_SWITCH_TEXT.classic}</span>
+              </Button>
+            )}
             <ProviderMenu value={startSource.provider} rating={rating} onChange={onProviderChange} />
             <RatingMenu value={rating} onChange={onRatingChange} />
             <Button
