@@ -350,6 +350,66 @@ export function poolForCompositions(pool: ScenePool, args: Pick<ScenePackArgs, '
   return { ...pool, scenes, situations, stats: { ...pool.stats, scenes: scenes.length, situations: situations.length } }
 }
 
+// ── Pairing by act ────────────────────────────────────────────────────────────
+
+/** The pairing tags that say who is with whom by gender (fitsComposition reads them). */
+const GENDER_PAIRING = ['hetero', 'yuri', 'yaoi'] as const
+
+/** The pairing of a picture of `people`: a girl and a boy, two girls or more, two boys or more. */
+function pairingOfPeople(people: PackPeople): string[] {
+  if (people.girls >= 1 && people.boys >= 1) return ['hetero']
+  if (people.girls >= 2) return ['yuri']
+  if (people.boys >= 2) return ['yaoi']
+  return []
+}
+
+/**
+ * `scene` with its pairing ("hetero", "yuri", "yaoi") worked out from what happens in it and who is
+ * there, not copied from its post (boorus tag it on some posts of an act and not on others): an act
+ * between people (isCompanyAct on the scene's tags, or a selected pose) in an adult picture (the scene is rated
+ * questionable or explicit), or one the measured relations say requires a pairing, gives the pairing
+ * of the scene's people (pairingOfPeople), plus any the act requires that fits them. Without such an
+ * act, none. Two scenes of the same people with an act get the same one. A pairing in "Never
+ * include" never comes; one the user asked for (in the identity) is the header's own and none is
+ * added. The rest of the post's pairing (solo, open counts) stays.
+ */
+function withActPairing(scene: Scene, args: ScenePackArgs, relations: TagRelations | null, asked: boolean, never: ReadonlySet<string>, selected: readonly string[]): Scene {
+  const kept = scene.pairing.filter((tag) => !(GENDER_PAIRING as readonly string[]).includes(tag))
+  let added: string[] = []
+  if (!asked && scene.people) {
+    // The act may be anywhere in the scene (an unclassified tag the pool vouches for) or asked for.
+    const acts = Array.from(new Set([...sceneTags(scene), ...selected])).filter((tag) => isCompanyAct(tag, args.overrides, relations))
+    const required = relations ? acts.flatMap((act) => requiredBy(relations, act)).filter((tag) => (GENDER_PAIRING as readonly string[]).includes(tag)) : []
+    const adult = scene.rating === 'q' || scene.rating === 'e'
+    if (acts.length > 0 && (adult || required.length > 0)) {
+      const people = scene.people
+      added = Array.from(new Set([...pairingOfPeople(people), ...required])).filter((tag) => fitsComposition(tag, people) && !never.has(tag))
+    }
+  }
+  // The pairing by gender first, as the boorus list it.
+  const pairing = [...added, ...kept]
+  return pairing.length === scene.pairing.length && pairing.every((tag, i) => tag === scene.pairing[i]) ? scene : { ...scene, pairing }
+}
+
+/**
+ * The scenes a pack is made from: the compositions it mixes (poolForCompositions), each with its
+ * pairing by act (withActPairing).
+ */
+function packScenes(pool: ScenePool, args: ScenePackArgs): ScenePool {
+  const mixed = poolForCompositions(pool, args)
+  const relations = loadedTagRelations()
+  const plan = requestPlan(args)
+  const asked = plan.identity.some((tag) => (GENDER_PAIRING as readonly string[]).includes(normalizeTagForPack(tag)))
+  const never = new Set((args.never ?? []).map(normalizeTagForPack))
+  const cache = new Map<number, Scene>()
+  const paired = (scene: Scene) => {
+    let out = cache.get(scene.postId)
+    if (!out) cache.set(scene.postId, (out = withActPairing(scene, args, relations, asked, never, plan.select)))
+    return out
+  }
+  return { ...mixed, scenes: mixed.scenes.map(paired), ...(mixed.allScenes ? { allScenes: mixed.allScenes.map(paired) } : {}) }
+}
+
 /** How many people a prompt made from `scene` has: its own count in a mixed pack, else the pack's (or one). */
 function headcountFor(args: ScenePackArgs, scene: Scene | undefined): number {
   if (mixedCompositions(args)) return Math.max(1, scene ? headcount(scene) : 1)
@@ -2210,7 +2270,7 @@ function rerollAxisPrompt(pool: ScenePool, prompts: readonly PackPrompt[], index
 export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePackResult {
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
-  pool = poolForCompositions(pool, args)
+  pool = packScenes(pool, args)
   const axis = oneAxis(args)
   if (axis) return axisPack(pool, args, axis, count)
   const bases = basesOf(pool, args)
@@ -2250,7 +2310,7 @@ export async function generateScenePackAsync(
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
   const slice = control.slice ?? 12
-  pool = poolForCompositions(pool, args)
+  pool = packScenes(pool, args)
   await control.pause()
   if (control.cancelled()) return null
   const axis = oneAxis(args)
@@ -2330,7 +2390,7 @@ export interface SceneCandidate {
  * the order the pack uses them (`'donor'`); its length is the most prompts that pack can make.
  */
 export function sceneCandidates(pool: ScenePool, args: ScenePackArgs): SceneCandidate[] {
-  pool = poolForCompositions(pool, args)
+  pool = packScenes(pool, args)
   // Enough to take every phase to its end: the composer never makes more than MAX_PACK_OVERGENERATE per phase.
   const count = Math.max(pool.scenes.length, MAX_PACK_OVERGENERATE)
   const axis = oneAxis(args)
@@ -2418,7 +2478,7 @@ function restrictPool(pool: ScenePool, allowed: ReadonlySet<number>): ScenePool 
  * when none is left.
  */
 export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[], index: number, args: ScenePackArgs): PackPrompt | null {
-  pool = poolForCompositions(pool, args)
+  pool = packScenes(pool, args)
   const current = prompts[index]
   if (!current) return null
   // One-axis pack: the same base with another donor the pack doesn't use yet (the base's own row too).
