@@ -39,10 +39,13 @@ export interface FitLineProps {
   hint?: string
   /** False when the page has one live region for every line (see fitText's `spoken`). */
   announce?: boolean
+  /** For a short pack that more pictures could fill: the offer of sensitive pictures on its line. */
+  onIncludeSensitive?: () => void
   className?: string
 }
 
-export const FitLine = memo(function FitLine({ state, hint, announce = true, className }: FitLineProps) {
+export const FitLine = memo(function FitLine({ state, hint, announce = true, onIncludeSensitive, className }: FitLineProps) {
+  const offer = (state.kind === "short" || state.kind === "few-variations") && state.offerSensitive ? onIncludeSensitive : undefined
   const { text, spoken } = fitText(state)
   const { icon: Icon, className: tone } = TONE[state.kind]
   return (
@@ -54,6 +57,11 @@ export const FitLine = memo(function FitLine({ state, hint, announce = true, cla
       </span>
       {state.kind === "few-rated" && (
         <Button type="button" variant="outline" size="sm" onClick={state.onInclude} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
+          Include sensitive
+        </Button>
+      )}
+      {offer && (
+        <Button type="button" variant="outline" size="sm" onClick={offer} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
           Include sensitive
         </Button>
       )}

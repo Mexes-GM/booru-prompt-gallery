@@ -454,12 +454,13 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     () => peopleLineState({
       poses: requests.select,
       needsCompany: (tag) => poseNeedsScene(tag, overrides, relations),
-      compositions: poses,
+      // Only the make-ups with room for the characters: "2 boys" is no option for one girl.
+      compositions: poses.filter((c) => holdsCast(c.people, castPeopleMemo)),
       current: people,
       picked: brief.people,
       available: available ?? undefined,
     }),
-    [requests.select, overrides, relations, poses, people, brief.people, available]
+    [requests.select, overrides, relations, poses, castPeopleMemo, people, brief.people, available]
   )
 
   // ── Clothes ───────────────────────────────────────────────────────────────────

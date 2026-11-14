@@ -65,6 +65,7 @@ import {
   peopleFromCountTags,
   pickedPeopleNote,
   predictFit,
+  mergeFitNotes,
   withPromptPeople,
   withSearchProgress,
   preferredPostIds,
@@ -329,6 +330,9 @@ const NO_POSTS: never[] = []
 const NO_IDS: string[] = []
 const UNDO_MS = 6000
 
+/** A sentence that ends with its stop, once. */
+const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`)
+
 /** A tag of a prompt as the brief spells it: no weight, no brackets. */
 const bareToken = (token: string) => token.replace(/^\(+/, "").replace(/(:[\d.]+)?\)+$/, "").trim()
 
@@ -471,7 +475,10 @@ function BriefWorkspace({
       nothingNew: manual?.nothingNew ? { exhausted: !!source?.noMoreResults } : null,
     }
     if (loadError) return []
-    if (!result) return withSearchProgress([...lead, ...predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused, axis: axisNote })], progress)
+    const predicted = () => predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused, axis: axisNote })
+    if (!result) return mergeFitNotes(withSearchProgress([...lead, ...predicted()], progress))
+    // Out of date: the last pack's notes are about another brief; the line speaks of the brief as it is.
+    if (stale) return mergeFitNotes(withSearchProgress([{ kind: "stale" }, ...lead, ...predicted()], progress))
     const after = issuesFit({
       issues: result.issues,
       count: result.count,
@@ -482,7 +489,7 @@ function BriefWorkspace({
       paused,
       axis: oneAxis(result.brief),
     })
-    return withSearchProgress(stale ? [{ kind: "stale" }, ...lead, ...after] : [...lead, ...after], progress)
+    return mergeFitNotes(withSearchProgress([...lead, ...after], progress))
   }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, brief.people, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
   const { setIncludeSensitive } = pack
   const includeSensitive = useCallback(() => setIncludeSensitive(true), [setIncludeSensitive])
@@ -491,7 +498,7 @@ function BriefWorkspace({
       n.kind === "few-rated"
         ? { kind: "few-rated", onInclude: includeSensitive }
         : n.kind === "paused"
-          ? { kind: "paused", onLoadMore: loadOnePage, waiting: !!source?.scrollLimited }
+          ? { kind: "paused", onLoadMore: loadOnePage, waiting: !!source?.scrollLimited, nothingNew: n.nothingNew }
           : n),
     [notes, includeSensitive, loadOnePage, source?.scrollLimited]
   )
@@ -880,7 +887,7 @@ function BriefWorkspace({
 
       {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
       <p className="sr-only" role="status" aria-live="polite">
-        {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => fitText(st).spoken).join(". ")}
+        {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => sentence(fitText(st).spoken)).join(" ")}
       </p>
       <div className="space-y-1">
         {fitStates.map((state, i) => (
@@ -889,6 +896,7 @@ function BriefWorkspace({
             key={`${state.kind}:${"tag" in state ? state.tag : i}`}
             announce={false}
             state={state}
+            onIncludeSensitive={includeSensitive}
             hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
           />
         ))}

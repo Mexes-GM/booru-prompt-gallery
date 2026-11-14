@@ -18,7 +18,7 @@ import {
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
   keptRows, opAfterEnd, correctionAfterBriefChange, lookOwner, briefFromCardPost,
-  generateLayout, placeGenerated, preferredForAgain, rotationPlan, rotationAfter,
+  generateLayout, placeGenerated, preferredForAgain, rotationPlan, rotationAfter, mergeFitNotes,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
@@ -723,6 +723,30 @@ check("Always from the results takes the same path as Never: its own brief chang
   assert.equal(lifecycle.own, true)
   assert.equal(CORRECTION_TEXT.always("smile", 7), "Added smile to 7 prompts")
   assert.equal(CORRECTION_TEXT.never("smile", 1), "Removed smile from 1 prompt")
+})
+
+// ── One fact, one sentence (INT-3 browser pass, D) ──────────────────────────────
+
+check("mergeFitNotes: the five notes of bikini + Only the outfit become two lines", () => {
+  const five: FitNote[] = [
+    { kind: "few-rated" },
+    { kind: "few-variations", axis: "outfit", variations: 2, made: 2, asked: 10 },
+    { kind: "kept-on-axis", axis: "outfit", tags: ["bikini"] },
+    { kind: "no-new", exhausted: false },
+    { kind: "paused" },
+  ]
+  const merged = mergeFitNotes(five)
+  assert.deepEqual(merged, [
+    { kind: "few-variations", axis: "outfit", variations: 2, made: 2, asked: 10, offerSensitive: true, kept: ["bikini"] },
+    { kind: "paused", nothingNew: true },
+  ])
+  assert.equal(fitText(merged[0] as never).text, "2 of 10: only 2 outfits with bikini fit this scene")
+  assert.equal(fitText({ kind: "paused", onLoadMore: () => {}, waiting: false, nothingNew: true }).text, "No new scenes on that page. Search again for more.")
+  // Nothing to merge: as they were.
+  const plain: FitNote[] = [{ kind: "fit", scenes: 12 }, { kind: "kept-on-axis", axis: "place", tags: ["beach"] }]
+  assert.deepEqual(mergeFitNotes(plain), plain)
+  // The source has nothing more: that note stays alone.
+  assert.deepEqual(mergeFitNotes([{ kind: "no-new", exhausted: true }]), [{ kind: "no-new", exhausted: true }])
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)
