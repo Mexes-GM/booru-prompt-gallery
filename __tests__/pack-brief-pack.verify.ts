@@ -10,7 +10,7 @@ import { addLook, addNever, addTag, leaveOutScene, removeLook, setCharacterRole 
 import { briefFromCharacters } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
-  preferredPostIds, resolveLook, slotSuggestions,
+  preferredPostIds, resolveLook, slotSuggestions, withSearchProgress, type FitNote,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
@@ -358,6 +358,36 @@ check("fit line wording for the one-part notes", () => {
   assert.equal(fitText({ kind: "kept-on-axis", axis: "place", tags: ["beach", "night"] }).text, "beach, night stay in every prompt. The rest of the place changes.")
   assert.equal(fitText({ kind: "few-variations", axis: "outfit", variations: 6, made: 6, asked: 10 }).text, "6 of 10: only 6 outfits fit this scene")
   assert.equal(fitText({ kind: "few-variations", axis: "expression", variations: 1, made: 1, asked: 10 }).text, "1 of 10: only 1 expression fits this scene")
+})
+
+// ── Search progress (browser pass, INT-1) ──────────────────────────────────────
+
+check("withSearchProgress: searching while a page is on its way, then whether it brought anything", () => {
+  const short: FitNote[] = [{ kind: "short", made: 6, asked: 10, scenes: 6 }, { kind: "paused" }]
+  assert.deepEqual(withSearchProgress(short, { loading: true, found: 6 }), [
+    { kind: "finding", found: 6 },
+    { kind: "short", made: 6, asked: 10, scenes: 6 },
+  ])
+  assert.deepEqual(withSearchProgress(short, { loading: false, found: 6 }), short)
+  assert.deepEqual(withSearchProgress(short, { loading: false, found: 6, nothingNew: { exhausted: false } }), [
+    { kind: "short", made: 6, asked: 10, scenes: 6 },
+    { kind: "no-new", exhausted: false },
+    { kind: "paused" },
+  ])
+  // Nothing more to search: the offer goes.
+  assert.deepEqual(withSearchProgress(short, { loading: false, found: 6, nothingNew: { exhausted: true } }), [
+    { kind: "short", made: 6, asked: 10, scenes: 6 },
+    { kind: "no-new", exhausted: true },
+  ])
+})
+
+check("fit line wording: singular and plural", () => {
+  assert.equal(fitText({ kind: "fit", scenes: 1 }).text, "1 scene fits")
+  assert.equal(fitText({ kind: "fit", scenes: 13 }).text, "13 scenes fit")
+  assert.equal(fitText({ kind: "short", made: 1, asked: 10, scenes: 1, what: "this pose" }).text, "1 of 10: only 1 scene has this pose")
+  assert.equal(fitText({ kind: "reuse", scenes: 1, reused: 1 }).text, "Only 1 scene: 1 prompt will reuse a scene")
+  assert.equal(fitText({ kind: "no-new", exhausted: false }).text, "No new scenes found on that page.")
+  assert.equal(fitText({ kind: "no-new", exhausted: true }).text, "No new scenes found. There's nothing more to search.")
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

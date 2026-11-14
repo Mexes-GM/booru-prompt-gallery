@@ -32,7 +32,7 @@ export const BUILDER_TEXT = {
   title: "Pack",
   exit: "Exit Pack Mode",
   ratingMenu: "Content rating",
-  loadFailed: "Couldn't load the pack data. Check your connection and try again.",
+  loadFailed: "Couldn't load the scenes. Check your connection and try again.",
   retry: "Try again",
   sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
@@ -127,7 +127,7 @@ function fitSentence(state: FitState): string {
     case "finding":
       return `Finding scenes… ${state.found} so far`
     case "fit":
-      return `${plural(state.scenes, "scene")} fit`
+      return `${plural(state.scenes, "scene")} ${state.scenes === 1 ? "fits" : "fit"}`
     case "few-rated":
       return "Few general-rated pictures. Include sensitive ones?"
     case "reuse":
@@ -164,6 +164,8 @@ function fitSentence(state: FitState): string {
     }
     case "few-variations":
       return `${state.made} of ${state.asked}: only ${plural(state.variations, state.axis)} ${state.variations === 1 ? "fits" : "fit"} this scene`
+    case "no-new":
+      return state.exhausted ? "No new scenes found. There's nothing more to search." : "No new scenes found on that page."
     case "paused":
       return state.waiting
         ? "Paused to avoid too many requests. You can search again in a few seconds."

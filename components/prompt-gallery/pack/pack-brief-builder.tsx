@@ -38,6 +38,7 @@ import {
   peopleFromCountTags,
   pickedPeopleNote,
   predictFit,
+  withSearchProgress,
   preferredPostIds,
   promptTokens,
   type BriefOutfit,
@@ -279,18 +280,48 @@ function BriefWorkspace({
     if (needMore && canLoad && source && !source.isLoadingMore) source.loadMore()
   }, [needMore, canLoad, source])
   const loadingPosts = !!source?.isLoadingMore || (searching && !source)
-  const finding = loadingPosts || (needMore && canLoad) || (!candidates && searching && !noPosts && !source?.failed && !engine.loadFailed)
+  // One state for any failed load (the pack data or a page of posts): one line, one retry.
+  const loadError = engine.loadFailed || !!source?.failed
+  const finding = !loadError && (loadingPosts || (needMore && canLoad) || (!candidates && searching && !noPosts))
   const canOfferSensitive = rating === "sfw" && plan.sensitive === "excluded" && !finding
   // The pace limit stopped the fetching and the source has more: one click asks for one page.
   const paused = !!source && (limited || source.scrollLimited) && !source.isLoadingMore &&
     !source.noMoreResults && !source.failed && !source.sessionCapReached
-  const loadOnePage = useCallback(() => source?.loadMore(), [source])
+  // A page asked for by hand: searching while it is on its way, then whether it brought
+  // new scenes. `seen` once the request is in flight; `before` the scenes there were.
+  const [manual, setManual] = useState<{ before: number; seen: boolean; nothingNew: boolean } | null>(null)
+  const sourceLoading = !!source?.isLoadingMore
+  const usableCount = usable?.length ?? 0
+  if (manual && !manual.nothingNew) {
+    if (sourceLoading && !manual.seen) setManual({ ...manual, seen: true })
+    // The pace limit refused the page: nothing is on its way, the offer comes back.
+    else if (!manual.seen && (source?.scrollLimited || source?.failed)) setManual(null)
+    else if (manual.seen && !sourceLoading && !candidatesPending) {
+      setManual(usableCount > manual.before ? null : { ...manual, nothingNew: true })
+    }
+  }
+  const [manualPlan, setManualPlan] = useState(plan.sceneKey)
+  if (manualPlan !== plan.sceneKey) {
+    setManualPlan(plan.sceneKey)
+    setManual(null)
+  }
+  const loadOnePage = useCallback(() => {
+    if (!source) return
+    setManual({ before: usableCount, seen: false, nothingNew: false })
+    source.loadMore()
+  }, [source, usableCount])
   const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
   const stale = !!result && (result.brief !== brief || result.count !== count || result.outfit !== outfit)
   const notes: FitNote[] = useMemo(() => {
     const lead = peopleNote ? [peopleNote] : []
-    if (!result) return [...lead, ...predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused })]
+    const progress = {
+      loading: (sourceLoading || (!!manual && !manual.nothingNew)) && !loadError,
+      found: have,
+      nothingNew: manual?.nothingNew ? { exhausted: !!source?.noMoreResults } : null,
+    }
+    if (loadError) return []
+    if (!result) return withSearchProgress([...lead, ...predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused })], progress)
     const after = issuesFit({
       issues: result.issues,
       count: result.count,
@@ -300,8 +331,8 @@ function BriefWorkspace({
       canOfferSensitive,
       paused,
     })
-    return stale ? [{ kind: "stale" }, ...lead, ...after] : [...lead, ...after]
-  }, [result, usable, count, poses, finding, canOfferSensitive, paused, peopleNote, identity.cast, have, stale])
+    return withSearchProgress(stale ? [{ kind: "stale" }, ...lead, ...after] : [...lead, ...after], progress)
+  }, [result, usable, count, poses, finding, canOfferSensitive, paused, peopleNote, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
   const { setIncludeSensitive } = pack
   const includeSensitive = useCallback(() => setIncludeSensitive(true), [setIncludeSensitive])
   const fitStates = useMemo<FitState[]>(
@@ -369,9 +400,12 @@ function BriefWorkspace({
   // Undo: the last change of the brief, for a few seconds.
   const [undoFor, setUndoFor] = useState<object | null>(null)
   const [seenBrief, setSeenBrief] = useState(brief)
+  // A brief that came back through Undo opens no notice: the one before would name an older change.
+  const [undoing, setUndoing] = useState(false)
   if (seenBrief !== brief) {
     setSeenBrief(brief)
-    setUndoFor(pack.canUndo ? brief : null)
+    setUndoFor(pack.canUndo && !undoing ? brief : null)
+    if (undoing) setUndoing(false)
   }
   useEffect(() => {
     if (!undoFor) return
@@ -380,7 +414,7 @@ function BriefWorkspace({
   }, [undoFor])
   const showUndo = undoFor === brief && !!pack.lastChange
   const onUndo = useCallback(() => {
-    undo()
+    if (undo() !== null) setUndoing(true)
     setUndoFor(null)
   }, [undo])
 
@@ -403,15 +437,14 @@ function BriefWorkspace({
     () => (candidates ?? []).map((c) => ({ id: String(c.postId), postId: c.postId, src: c.preview ? getPostThumbnailUrl(c.preview) : undefined })),
     [candidates]
   )
-  const sheetStatus: ContactSheetStatus = engine.loadFailed || (source?.failed && thumbs.length === 0)
-    ? "error"
-    : !candidates && (finding || !engine.ready)
-      ? "loading"
-      : "ready"
-  const retrySheet = useCallback(() => {
-    if (engine.loadFailed) engine.retryLoad()
-    else source?.retry()
-  }, [engine, source])
+  // The sheet never shows its own error: the builder's one line above covers every failed load.
+  const sheetStatus: ContactSheetStatus = !candidates && !loadError && (finding || !engine.ready) ? "loading" : "ready"
+  const { loadFailed: dataFailed, retryLoad } = engine
+  // Retries everything that failed, data and pages; each clears its error as it starts again.
+  const retryAll = useCallback(() => {
+    if (dataFailed) retryLoad()
+    if (source?.failed) source.retry()
+  }, [dataFailed, retryLoad, source])
 
   // ── Generate ────────────────────────────────────────────────────────────────────
   const named = brief.who.some((c) => c.tag)
@@ -429,11 +462,11 @@ function BriefWorkspace({
 
   return (
     <div className="space-y-3">
-      {engine.loadFailed && (
+      {loadError && (
         <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive-text">
           <AlertTriangle className="size-4 shrink-0" aria-hidden />
           {BUILDER_TEXT.loadFailed}
-          <Button type="button" variant="outline" size="sm" onClick={engine.retryLoad} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
+          <Button type="button" variant="outline" size="sm" onClick={retryAll} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
             {BUILDER_TEXT.retry}
           </Button>
         </p>
@@ -469,14 +502,13 @@ function BriefWorkspace({
           <FitLine key={`${state.kind}-${i}`} state={state} hint={i === 0 && !folded && thumbs.length > 0 && !result ? BUILDER_TEXT.sheetHint : undefined} />
         ))}
       </div>
-      {!folded && (
+      {!folded && !(loadError && thumbs.length === 0) && (
         <ContactSheet
           scenes={thumbs}
           leftOut={brief.leftOut}
           onToggle={onToggleScene}
           status={sheetStatus}
           expected={count}
-          onRetry={retrySheet}
         />
       )}
 

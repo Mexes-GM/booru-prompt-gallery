@@ -266,6 +266,8 @@ export type FitNote =
   | { kind: 'people-missing'; asked: PackPeople; using: PackPeople | null; cast: PackPeople }
   /** Fetching stopped at the pace limit while the source still has posts; one more page can be asked for. */
   | { kind: 'paused' }
+  /** The page the user asked for brought no new scene; `exhausted`: the source has nothing more. */
+  | { kind: 'no-new'; exhausted: boolean }
   /** One-part pack: what was asked for on that part stays in every prompt; the rest of the part changes. */
   | { kind: 'kept-on-axis'; axis: Exclude<ChangesAxis, 'scene'>; tags: string[] }
   /** One-part pack that came out short: only `variations` values of the part go with the base scene. */
@@ -364,6 +366,34 @@ function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive }: Is
   // Only information: with nothing else to say, the pack still fits.
   if (notes.every((n) => n.kind === 'kept-on-axis') && made >= count) return [{ kind: 'fit', scenes: scenes ?? made }, ...notes]
   return canOfferSensitive && lacking ? [{ kind: 'few-rated' }, ...notes] : notes
+}
+
+export interface SearchProgress {
+  /** A page is on its way, asked for by the builder or by the user. */
+  loading: boolean
+  /** Scenes that fit so far. */
+  found: number
+  /** The page the user asked for came back without a new scene. */
+  nothingNew?: { exhausted: boolean } | null
+}
+
+/**
+ * The fit line with the source's progress on top: while a page is on its way it says
+ * it is searching (the offer of another page goes until it lands); a page asked for
+ * by hand that brought nothing new says so, and when the source has nothing more the
+ * offer goes for good.
+ */
+export function withSearchProgress(notes: readonly FitNote[], progress: SearchProgress): FitNote[] {
+  if (progress.loading) {
+    const rest = notes.filter((n) => n.kind !== 'finding' && n.kind !== 'paused' && n.kind !== 'fit')
+    return [{ kind: 'finding', found: progress.found }, ...rest]
+  }
+  if (!progress.nothingNew) return [...notes]
+  const { exhausted } = progress.nothingNew
+  const rest = exhausted ? notes.filter((n) => n.kind !== 'paused') : [...notes]
+  const at = rest.findIndex((n) => n.kind === 'paused')
+  const note: FitNote = { kind: 'no-new', exhausted }
+  return at < 0 ? [...rest, note] : [...rest.slice(0, at), note, ...rest.slice(at)]
 }
 
 // ── People ────────────────────────────────────────────────────────────────────

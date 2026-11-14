@@ -142,7 +142,7 @@ function ChoiceGroupInner<T extends string>({
               <span className={cn("tabular-nums", checked ? "text-mode-pack-text" : "text-muted-foreground")}>
                 <span aria-hidden>· </span>
                 {choice.count}
-                <span className="sr-only"> scenes</span>
+                <span className="sr-only">{choice.count === 1 ? " scene" : " scenes"}</span>
               </span>
             )}
           </button>
