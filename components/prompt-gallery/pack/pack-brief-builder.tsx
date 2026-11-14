@@ -210,7 +210,8 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
       return
     }
     const back = returnRef.current
-    if (back instanceof HTMLElement && back.isConnected) back.focus()
+    if (back instanceof HTMLElement && back.isConnected && back !== document.body) back.focus()
+    else document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="Mode"] [data-mode="pack"]')?.focus()
   }, [open])
 
   return (
@@ -218,6 +219,13 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
       <section
         aria-label={BUILDER_TEXT.title}
         inert={!open}
+        onKeyDown={(e) => {
+          // Lists, menus, a marked chip and the scene picker close first (they stop the key or own it).
+          if (e.key !== "Escape" || e.defaultPrevented || e.isPropagationStopped()) return
+          const target = e.target instanceof Element ? e.target : null
+          if (target?.closest("[role='menu'], [role='listbox'], [role='dialog'], [data-radix-popper-content-wrapper]")) return
+          onExit()
+        }}
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-clip",
           "rounded-t-2xl border border-border bg-background shadow-2xl sm:bottom-4 sm:w-[calc(100%-2rem)] sm:rounded-2xl",
@@ -903,13 +911,6 @@ function BriefWorkspace({
         />
       )}
 
-      {correction?.status === "done" && correction.message ? (
-        <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
-      ) : correcting ? (
-        <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
-      ) : showUndo && pack.lastChange && (
-        <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
-      )}
 
       {resultsTip && <PackTip text={TIP_TEXT.results} onDismiss={() => closeTip("results")} />}
       {result && result.prompts.length > 0 && (
@@ -933,6 +934,16 @@ function BriefWorkspace({
 
       {/* Generate stays at the bottom edge of the panel, above the home indicator, whatever is scrolled. */}
       <div className="sticky bottom-0 z-10 -mx-3 border-t border-border/60 bg-background px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {/* Notices with Undo sit with Generate: always in view, whatever the brief or the list shows. */}
+        <div className="mb-2 empty:hidden">
+          {correction?.status === "done" && correction.message ? (
+            <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
+          ) : correcting ? (
+            <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
+          ) : showUndo && pack.lastChange ? (
+            <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
+          ) : null}
+        </div>
         <GenerateBar
           count={count}
           onCountChange={pack.setPromptCount}

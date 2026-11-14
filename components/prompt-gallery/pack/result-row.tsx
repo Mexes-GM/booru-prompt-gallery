@@ -12,7 +12,7 @@
  * Memoized: keep the callbacks stable and pass `tokens` already split. Only the tag
  * that was clicked mounts a menu, so a hundred rows stay light.
  */
-import { memo, useRef, useState, type KeyboardEvent } from "react"
+import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { AlertTriangle, Check, Copy, Dices, Lock, LockOpen } from "lucide-react"
 import {
   DropdownMenu,
@@ -85,6 +85,15 @@ function TokenMenu({
   onAlways: (tag: string) => void
   onNever: (tag: string) => void
 }) {
+  // The first choice takes focus once the menu is open, so Down goes to the second and
+  // Enter or Space applies the one in focus (Home, End and Escape are the menu's own).
+  const contentRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      contentRef.current?.querySelector<HTMLElement>("[role='menuitem']:not([data-disabled])")?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [])
   return (
     <DropdownMenu defaultOpen modal={false} onOpenChange={(open) => !open && onClose()}>
       <DropdownMenuTrigger data-token={index} tabIndex={0} className={TOKEN}>
@@ -92,7 +101,9 @@ function TokenMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
+        loop
         collisionPadding={8}
+        ref={contentRef}
         className="w-56 max-w-[calc(100vw-1rem)]"
         onCloseAutoFocus={(e) => {
           // The trigger is swapped back for a plain button on close; focus that one instead.
@@ -247,6 +258,7 @@ export const ResultRow = memo(function ResultRow({
                       data-token={i}
                       tabIndex={i === tabStop ? 0 : -1}
                       className={TOKEN}
+                      title={busy && busyReason ? busyReason : undefined}
                       aria-haspopup="menu"
                       onFocus={() => setStop(i)}
                       onClick={() => setMenuAt(i)}

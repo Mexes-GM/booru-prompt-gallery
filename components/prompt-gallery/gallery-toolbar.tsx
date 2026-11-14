@@ -131,6 +131,7 @@ export function GalleryToolbar({
                 key={m.id}
                 type="button"
                 role="radio"
+                data-mode={m.id}
                 aria-checked={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => selectMode(m.id)}

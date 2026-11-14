@@ -25,7 +25,7 @@ import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/char
 import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/scene-pack"
 import type { Permanence } from "../lib/pack/scene/permanence"
 import { poseNeedsScene } from "../lib/pack/scene-pack"
-import { copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
+import { CORRECTION_TEXT, copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -713,6 +713,16 @@ check("rotation: the source's own posts still go first, and a new brief starts o
   const restart = rotationPlan({ available: [1, 2, 3], used: [1, 2], needed: 2, own: [] })
   assert.deepEqual(restart, { exclude: [], preferred: [3], reset: true })
   assert.deepEqual(rotationAfter(restart, [1, 2], [3, 1]), [3, 1])
+})
+
+check("Always from the results takes the same path as Never: its own brief change, then a notice with Undo", () => {
+  const before = briefFromCharacters(["tifa lockhart"])
+  const after = addTag(before, "smile", OVERRIDES, "also")
+  assert.notEqual(JSON.stringify(after), JSON.stringify(before), "Always changes the brief")
+  const lifecycle = correctionAfterBriefChange({ briefBefore: before, briefAfter: null as unknown }, after)
+  assert.equal(lifecycle.own, true)
+  assert.equal(CORRECTION_TEXT.always("smile", 7), "Added smile to 7 prompts")
+  assert.equal(CORRECTION_TEXT.never("smile", 1), "Removed smile from 1 prompt")
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)
