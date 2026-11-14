@@ -102,20 +102,20 @@ female focus | scene | - | composition | People | pairing |
 siblings | scene | - | composition | People | pairing |
 shirt lift | character | state | garment-state | Doing | outfit | shirt:moved
 panties aside | character | state | garment-state | Doing | outfit | panties:moved
-open jacket | character | state | garment-state | Wearing | outfit | jacket:worn
+open jacket | character | state | garment-state | Also | outfit | jacket:worn
 clothes lift | character | state | garment-state | Doing | outfit | *:moved
 clothes pull | character | state | garment-state | Doing | outfit | *:moved
 skirt lift | character | state | garment-state | Doing | outfit | skirt:moved
-no panties | character | state | garment-state | Doing | outfit | panties:off
-torn clothes | character | state | garment-state | Doing | outfit | *:worn
-open clothes | character | state | garment-state | Doing | outfit | *:worn
+no panties | character | state | garment-state | Also | outfit | panties:off
+torn clothes | character | state | garment-state | Also | outfit | *:worn
+open clothes | character | state | garment-state | Also | outfit | *:worn
 bra pull | character | state | garment-state | Doing | outfit | bra:moved
 dress lift | character | state | garment-state | Doing | outfit | dress:moved
 hood down | character | state | garment-state | Doing | outfit | hood:moved
-unworn hat | character | state | garment-state | Doing | outfit | hat:off
-open shirt | character | state | garment-state | Wearing | outfit | shirt:worn
-no bra | character | state | garment-state | Doing | outfit | bra:off
-jacket partially removed | character | state | garment-state | Doing | outfit | jacket:off
+unworn hat | character | state | garment-state | Also | outfit | hat:off
+open shirt | character | state | garment-state | Also | outfit | shirt:worn
+no bra | character | state | garment-state | Also | outfit | bra:off
+jacket partially removed | character | state | garment-state | Also | outfit | jacket:off
 panties around one leg | character | state | garment-state | Doing | outfit | panties:moved
 fingerless gloves | character | state | garment | Wearing | outfit |
 bikini | character | state | garment | Wearing | outfit |
@@ -135,14 +135,14 @@ choker | character | state | garment | Wearing | outfit |
 gloves | character | state | garment | Wearing | outfit |
 earrings | character | state | garment | Wearing | outfit |
 alternate costume | character | state | garment | Wearing | - |
-hat | character | permanent | garment | Who | outfit |
-glasses | character | permanent | garment | Who | outfit |
-hair ornament | character | permanent | garment | Who | outfit |
-hair ribbon | character | permanent | garment | Who | outfit |
-bow | character | permanent | garment | Who | outfit |
-hairband | character | permanent | garment | Who | outfit |
-witch hat | character | permanent | garment | Who | outfit |
-eyepatch | character | permanent | garment | Who | outfit |
+hat | character | permanent | garment | Wearing | outfit |
+glasses | character | permanent | garment | Wearing | outfit |
+hair ornament | character | permanent | garment | Wearing | outfit |
+hair ribbon | character | permanent | garment | Wearing | outfit |
+bow | character | permanent | garment | Wearing | outfit |
+hairband | character | permanent | garment | Wearing | outfit |
+witch hat | character | permanent | garment | Wearing | outfit |
+eyepatch | character | permanent | garment | Wearing | outfit |
 reading | character | state | action | Doing | skeleton |
 carrying | character | state | action | Doing | skeleton |
 holding sword | character | state | action | Doing | skeleton | sword

@@ -649,9 +649,11 @@ export function briefRouteOf(role: TagRole): BriefRow {
   if (role.owner === 'others') return 'Others'
   switch (role.kind) {
     case 'aspect': return role.duration === 'permanent' ? 'Who' : 'Also'
-    case 'garment': return role.duration === 'permanent' ? 'Who' : 'Wearing'
-    // A garment worn in some state is a garment asked for; a movement or an absence is what happens.
-    case 'garment-state': return role.how === 'worn' && role.garment !== '*' ? 'Wearing' : 'Doing'
+    // Any garment, a signature one ("hat", "glasses") too: written in Wearing, it is worn.
+    case 'garment': return 'Wearing'
+    // Not a garment: what is done to one. Moving it is something the body does ("shirt lift"); a garment
+    // worn open, torn or left off is how the picture shows it ("open jacket", "no panties"). Never Wearing.
+    case 'garment-state': return role.how === 'moved' ? 'Doing' : 'Also'
     case 'action': return 'Doing'
     case 'expression': return 'Also'
     case 'object': return role.fixture ? 'Where' : 'Also'
