@@ -6,7 +6,7 @@
  */
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
-import { toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
+import { addCharacter, addNever, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
@@ -469,6 +469,39 @@ export function peopleFromCountTags(tags: readonly string[], cast: PackPeople): 
   }
   if (girls === null && boys === null) return solo ? { ...cast } : null
   return { girls: Math.max(girls ?? cast.girls, cast.girls), boys: Math.max(boys ?? cast.boys, cast.boys) }
+}
+
+// ── Starts from a prompt or a search ──────────────────────────────────────────
+
+/**
+ * A pasted prompt's brief with its people counts applied: "1girl, 1boy" sets People to
+ * one of each. Counts say everyone in the picture, so they don't add to the cast.
+ */
+export function withPromptPeople(brief: PackBrief, peopleTags: readonly string[]): PackBrief {
+  const people = peopleFromCountTags(peopleTags, { girls: 0, boys: 0 })
+  return people && people.girls + people.boys > 0 ? setPeople(brief, people) : brief
+}
+
+/**
+ * The brief a gallery search starts: its tags go where a pasted prompt's would, a
+ * "-tag" goes to Never, the character the results are about is in Who, and search
+ * filters ("rating:general", "order:score") stay out and come back in `skipped`.
+ */
+export function briefFromSearch(
+  search: string,
+  overrides: Record<string, string>,
+  character: string | null
+): { brief: PackBrief; skipped: string[] } {
+  const tokens = search.split(',').map((t) => t.trim()).filter(Boolean)
+  const skipped = tokens.filter((t) => t.includes(':') && !t.startsWith('-'))
+  const excluded = tokens.filter((t) => t.startsWith('-')).map((t) => t.slice(1).trim())
+  const kept = tokens.filter((t) => !t.includes(':') && !t.startsWith('-'))
+  skipped.push(...excluded.filter((t) => t.includes(':')).map((t) => `-${t}`))
+  const parsed = briefFromPrompt(kept.join(', '), overrides)
+  let brief = withPromptPeople(parsed.brief, parsed.peopleTags)
+  if (character) brief = addCharacter(brief, character)
+  for (const tag of excluded) if (!tag.includes(':')) brief = addNever(brief, tag)
+  return { brief, skipped }
 }
 
 // ── Suggestions ───────────────────────────────────────────────────────────────

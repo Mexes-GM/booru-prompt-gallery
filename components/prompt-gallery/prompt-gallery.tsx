@@ -173,6 +173,7 @@ const PackEntryModal = dynamic(() => loadPackEntryModal().then(m => m.PackEntryM
 const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSourceModal), { ssr: false, loading: () => null })
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBriefBuilder), { ssr: false, loading: () => null })
+import type { PackBriefStart } from "./pack/pack-brief-builder"
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, Package, PenLine, SlidersHorizontal } from "lucide-react"
 import { ControlSection } from "@/components/prompt-gallery/control-section"
@@ -804,12 +805,14 @@ export function PromptGallery() {
 
   // Extract stable packMode pieces to avoid dependency churn
   const packModeIsPackMode = packMode.isPackMode
-  // The brief builder (components/prompt-gallery/pack/pack-brief-builder.tsx), open with
-  // the characters it started from. It lives inside Pack Mode: leaving Pack Mode closes it.
-  // While it is open the old builder is neither shown nor fed.
-  const [packBriefCast, setPackBriefCast] = useState<string[] | null>(null)
-  if (packBriefCast && !packModeIsPackMode) setPackBriefCast(null)
-  const packBriefOpen = packBriefCast !== null
+  // The pack builder (components/prompt-gallery/pack/pack-brief-builder.tsx) and where its
+  // pack started; `key` is new for every start. Every way into Pack Mode starts it. The
+  // pack stays while Pack Mode is off and comes back when it is turned on again; it shows
+  // only in Pack Mode, and steps aside while the user picks a card for a new pack.
+  const [packBrief, setPackBrief] = useState<{ start: PackBriefStart; key: number } | null>(null)
+  const [packPickingCard, setPackPickingCard] = useState(false)
+  if (packPickingCard && !packModeIsPackMode) setPackPickingCard(false)
+  const packBriefOpen = !!packBrief && packModeIsPackMode && !packPickingCard
   // Pack Mode picks and cleans tags with the measured tag relations: load them while it's open.
   useTagRelations(packModeIsPackMode)
   const packModeSetBaseCard = packMode.setBaseCard
@@ -885,7 +888,7 @@ export function PromptGallery() {
   const packEngine = packHasCast ? 'scenes' : packMode.engine
   const packCastNames = useMemo(() => packSceneCast.map((m) => m.character).filter(Boolean), [packSceneCast])
   const packScenes = usePackScenes({
-    enabled: packModeIsPackMode && packMode.hasBase && packEngine === 'scenes' && !packBriefOpen,
+    enabled: packModeIsPackMode && packMode.hasBase && packEngine === 'scenes' && !packBrief,
     // The posts the header counts: the pool always shows what was collected.
     posts: packSeedSnapshot?.posts ?? NO_PACK_POSTS,
     overrides: packMode.effectiveTagOverrides,
@@ -948,8 +951,19 @@ export function PromptGallery() {
   // there is kept aside (its bar shows) until a card replaces it, or it is reopened.
   const handlePackEntryChooseCard = useCallback(() => {
     setPackEntryOpen(false)
+    setPackPickingCard(true)
     if (packModeHasBaseForEntry) setPackBuilderHidden(true)
   }, [packModeHasBaseForEntry])
+
+  // Every entry ends here: a new pack in the builder, Pack Mode on, the dialog closed.
+  const packModeEnablePackMode = packMode.enablePackMode
+  const startPackBrief = useCallback((start: PackBriefStart) => {
+    packModeEnablePackMode()
+    setPackBrief((prev) => ({ start, key: (prev?.key ?? 0) + 1 }))
+    setPackPickingCard(false)
+    setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
+  }, [packModeEnablePackMode])
 
   // What the pack is built on, to tell a base picked again from a new one.
   const packCurrentBaseKey = useMemo<PackBaseKey | null>(() => {
@@ -1107,35 +1121,32 @@ export function PromptGallery() {
   // default source; the header chip changes it. Editing an existing prompt
   // base keeps the source as it is.
   const packModeSetFocusCharacter = packMode.setFocusCharacter
+  // A card starts the pack builder with the card's character, and offers its outfit and pose.
+  // The same card again brings back the pack it started.
   const setAsPackBaseNow = useCallback((post: BooruPost) => {
-    if (reopenIfSamePackBase({ kind: 'card', id: post.id })) return
-    const source = defaultPackSource()
-    packModeSetBaseCard(post)
-    // A multi-character post keeps the character the search is about, if any;
-    // otherwise the builder asks which one to keep.
-    packModeSetFocusCharacter(searchedCharacterOf(post, source.searchTags))
-    applyPackSource(source)
-    setPackBriefCast(null)
-    setPackEntryOpen(false)
-    setPackEntryStartInPrompt(false)
-    setPackBuilderHidden(false)
-  }, [reopenIfSamePackBase, packModeSetBaseCard, packModeSetFocusCharacter, applyPackSource, defaultPackSource])
+    const current = packBrief?.start
+    if (current?.kind === 'card' && current.post.id === post.id) {
+      setPackPickingCard(false)
+      setPackEntryOpen(false)
+      return
+    }
+    startPackBrief({ kind: 'card', post })
+  }, [packBrief, startPackBrief])
   // Cards keep the first handler they get (MasonryItem's arePropsEqual skips callbacks),
   // so theirs is stable and always runs the latest one: a stale one saw an old pack.
   const setAsPackBaseRef = useRef(setAsPackBaseNow)
   useLayoutEffect(() => { setAsPackBaseRef.current = setAsPackBaseNow }, [setAsPackBaseNow])
   const handleSetAsPackBase = useCallback((post: BooruPost) => setAsPackBaseRef.current(post), [])
 
-  const packModeSetBasePrompt = packMode.setBasePrompt
+  // "From my prompt": the prompt's tags go to the rows of the pack builder.
   const handleSubmitPackPrompt = useCallback((text: string) => {
-    if (reopenIfSamePackBase({ kind: 'prompt', text })) return
-    packModeSetBasePrompt(text)
-    if (packEntryStartInPrompt) rebasePackSeeding()
-    else applyPackSource(defaultPackSource())
-    setPackEntryOpen(false)
-    setPackEntryStartInPrompt(false)
-    setPackBuilderHidden(false)
-  }, [reopenIfSamePackBase, packModeSetBasePrompt, rebasePackSeeding, applyPackSource, defaultPackSource, packEntryStartInPrompt])
+    try {
+      userPreferences.setLastPackBasePrompt(text)
+    } catch {
+      // Non-fatal: the dialog just won't remember it.
+    }
+    startPackBrief({ kind: 'prompt', text })
+  }, [startPackBrief])
 
   // "From my search": the one character the gallery's search is about, from
   // its results. That character becomes the base with no card, and the
@@ -1144,32 +1155,27 @@ export function PromptGallery() {
     () => (packEntryOpen ? searchedCharacterIn(search.allPosts ?? [], search.debouncedSearchTags) : null),
     [packEntryOpen, search.allPosts, search.debouncedSearchTags]
   )
-  const packModeSetBaseFromCharacter = packMode.setBaseFromCharacter
+  // "From my search": the search's tags and the character its results are about.
   const handleStartFromSearch = useCallback(() => {
-    if (!packSearchCharacter) return
-    if (reopenIfSamePackBase({ kind: 'character', names: [packSearchCharacter] })) return
-    packModeSetBaseFromCharacter(packSearchCharacter)
-    applyPackSource(defaultPackSource())
-    setPackEntryOpen(false)
-    setPackEntryStartInPrompt(false)
-    setPackBuilderHidden(false)
-  }, [reopenIfSamePackBase, packSearchCharacter, packModeSetBaseFromCharacter, applyPackSource, defaultPackSource])
+    startPackBrief({ kind: 'search', search: search.searchTags, character: packSearchCharacter })
+  }, [startPackBrief, search.searchTags, packSearchCharacter])
 
-  // "From a character": opens the brief builder with those characters. It finds its
-  // own posts; the old builder's base and source stay as they were.
-  const packModeEnablePackMode = packMode.enablePackMode
+  // "From a character": the characters go to Who; the pack finds their own posts.
   const handleStartFromCharacters = useCallback((characters: readonly string[]) => {
     if (!characters[0]) return
-    packModeEnablePackMode()
-    setPackBriefCast([...characters])
-    setPackEntryOpen(false)
-    setPackEntryStartInPrompt(false)
-  }, [packModeEnablePackMode])
+    startPackBrief({ kind: 'characters', names: [...characters] })
+  }, [startPackBrief])
   const packModeDisablePackMode = packMode.disablePackMode
+  // Closing leaves Pack Mode; the pack stays and comes back with it.
   const handleExitPackBrief = useCallback(() => {
-    setPackBriefCast(null)
+    setPackPickingCard(false)
     packModeDisablePackMode()
   }, [packModeDisablePackMode])
+  // "New pack" in the builder: the entry dialog over it. Cancel goes back to this pack.
+  const handleNewPackBrief = useCallback(() => {
+    setPackEntryStartInPrompt(false)
+    setPackEntryOpen(true)
+  }, [])
   const handlePackBriefRating = useCallback((ratingMode: PackRatingMode) => {
     const next = { ...packSourceAnswers, ratingMode }
     setPackSourceAnswers(next)
@@ -2071,7 +2077,8 @@ export function PromptGallery() {
                       setIsAiConvertMode(false)
                       if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
                       packMode.enablePackMode()
-                      if (!packMode.hasBase) {
+                      // A pack already made comes back as it was; otherwise, the entry dialog.
+                      if (!packBrief && !packMode.hasBase) {
                         setPackEntryStartInPrompt(false)
                         setPackEntryOpen(true)
                       }
@@ -2608,9 +2615,12 @@ export function PromptGallery() {
           </Button>
         </div>
       )}
-      {packBriefCast && (
+      {packBrief && (
         <PackBriefBuilder
-          characters={packBriefCast}
+          key={packBrief.key}
+          start={packBrief.start}
+          open={packBriefOpen}
+          onNewPack={handleNewPackBrief}
           overrides={packMode.effectiveTagOverrides}
           enrichTagSlots={packMode.enrichTagSlots}
           provider={search.booruProvider}

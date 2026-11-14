@@ -31,6 +31,12 @@ export const BLOCKED = {
 export const BUILDER_TEXT = {
   title: "Pack",
   exit: "Exit Pack Mode",
+  close: "Close pack",
+  closeHint: "Close. Your pack stays here until you start a new one.",
+  newPack: "New pack",
+  newPackHint: "Start another pack from a card, a prompt or a character",
+  cardOutfit: "Use this card's outfit",
+  cardPose: "Poses like this card",
   ratingMenu: "Content rating",
   loadFailed: "Couldn't load the scenes. Check your connection and try again.",
   retry: "Try again",
@@ -38,6 +44,16 @@ export const BUILDER_TEXT = {
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
+} as const
+
+/** What each way into a pack says it brought (shown until the first change). */
+export const START_TEXT = {
+  cardNamed: "From the card: who's in it.",
+  cardUnnamed: "This card has no character tag, so Who has only its look.",
+  cardOffers: "Its outfit and pose are offered under Wearing and Doing.",
+  prompt: "Your prompt is split across the rows. Tags we don't recognize are under Also.",
+  search: "Started from your search.",
+  searchSkipped: (tags: readonly string[]) => `Search filters left out: ${tags.join(", ")}.`,
 } as const
 
 /** The pack's content ratings, as the rating menu names them. */

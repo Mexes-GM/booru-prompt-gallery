@@ -41,6 +41,8 @@ export interface UsePackBriefResult {
   undo: () => string | null
 
   add: (tag: string, into?: RequestRole) => void
+  /** Adds several tags as one change (one Undo). */
+  addTags: (tags: readonly string[], into?: RequestRole) => void
   remove: (tag: string) => void
   never: (tag: string) => void
   unnever: (tag: string) => void
@@ -62,6 +64,8 @@ export interface UsePackBriefResult {
   startEmpty: () => void
   startFromCharacters: (names: string[]) => void
   startFromPrompt: (text: string) => { peopleTags: string[] }
+  /** Starts from a brief built elsewhere (a gallery search). */
+  startWith: (brief: PackBrief) => void
   startFromCard: (tags: readonly string[]) => {
     offered: { outfit: string[]; pose: string[] }
     peopleTags: string[]
@@ -130,6 +134,11 @@ export function usePackBrief(overrides: Record<string, string>): UsePackBriefRes
   const add = useCallback((tag: string, into?: RequestRole) => {
     change(BRIEF_LABELS.add(tag.trim()), (b) => addTag(b, tag, overridesRef.current, into))
   }, [change])
+  const addTags = useCallback((tags: readonly string[], into?: RequestRole) => {
+    const names = tags.map((t) => t.trim()).filter(Boolean)
+    if (names.length === 0) return
+    change(BRIEF_LABELS.add(names.join(', ')), (b) => names.reduce((next, tag) => addTag(next, tag, overridesRef.current, into), b))
+  }, [change])
   const remove = useCallback((tag: string) => change(BRIEF_LABELS.remove(tag), (b) => removeTag(b, tag)), [change])
   const never = useCallback((tag: string) => change(BRIEF_LABELS.never(tag), (b) => addNever(b, tag)), [change])
   const unnever = useCallback((tag: string) => change(BRIEF_LABELS.unnever(tag), (b) => removeNever(b, tag)), [change])
@@ -176,6 +185,7 @@ export function usePackBrief(overrides: Record<string, string>): UsePackBriefRes
   )
 
   const startEmpty = useCallback(() => start(emptyBrief()), [start])
+  const startWith = useCallback((brief: PackBrief) => start(brief), [start])
   const startFromCharacters = useCallback((names: string[]) => start(briefFromCharacters(names)), [start])
   const startFromPrompt = useCallback((text: string) => {
     const { brief, peopleTags } = briefFromPrompt(text, overridesRef.current)
@@ -219,11 +229,11 @@ export function usePackBrief(overrides: Record<string, string>): UsePackBriefRes
 
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
-    add, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
+    add, addTags, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
     addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
-    startEmpty, startFromCharacters, startFromPrompt, startFromCard,
+    startEmpty, startWith, startFromCharacters, startFromPrompt, startFromCard,
     preferences, setPromptCount, setIncludeSensitive, addNeverDefault, removeNeverDefault,
   }
 }

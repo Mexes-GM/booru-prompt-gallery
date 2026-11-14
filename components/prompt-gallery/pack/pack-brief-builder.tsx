@@ -13,7 +13,7 @@
  * brief folded into one line that opens it again.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react"
-import { AlertTriangle, ChevronDown, Package, X } from "lucide-react"
+import { AlertTriangle, ChevronDown, Info, Package, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -31,13 +31,17 @@ import { usePackSources, type UsePackSourcesResult } from "@/hooks/use-pack-sour
 import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
-import type { BooruProvider } from "@/lib/booru/types"
-import { routeTag, type RequestRole } from "@/lib/pack/brief"
+import type { BooruPost, BooruProvider } from "@/lib/booru/types"
+import { briefFromPrompt, routeTag, type RequestRole } from "@/lib/pack/brief"
+import { normalizeTagForPack } from "@/lib/pack/pack-generator"
+import { splitTags } from "@/lib/utils/tag-utils"
 import {
+  briefFromSearch,
   issuesFit,
   peopleFromCountTags,
   pickedPeopleNote,
   predictFit,
+  withPromptPeople,
   withSearchProgress,
   preferredPostIds,
   promptTokens,
@@ -59,14 +63,33 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, RATING_OPTIONS, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, RATING_OPTIONS, START_TEXT, type FitState, type OutfitSource } from "./pack-text"
+import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
-import { briefSummaryParts, companionsLabel, type CharacterInfo, type SlotId } from "./slots"
+import { briefSummaryParts, companionsLabel, showTag, type CharacterInfo, type SlotId } from "./slots"
 import { UndoNotice } from "./undo-notice"
 
+/** Where a pack starts from: each way into Pack Mode. */
+export type PackBriefStart =
+  | { kind: "characters"; names: readonly string[] }
+  | { kind: "card"; post: BooruPost }
+  | { kind: "prompt"; text: string }
+  | { kind: "search"; search: string; character: string | null }
+
+/** What a start brought to the brief, for the note under the header. */
+type StartNote =
+  | { kind: "characters" }
+  | { kind: "card"; named: boolean; outfit: string[]; pose: string[] }
+  | { kind: "prompt" }
+  | { kind: "search"; skipped: string[] }
+
 export interface PackBriefBuilderProps {
-  /** The characters the pack starts with (the entry dialog's pick). */
-  characters: readonly string[]
+  /** Where the pack starts. A new start needs a new `key` on the builder. */
+  start: PackBriefStart
+  /** Shown; while hidden the pack stays as it is. */
+  open: boolean
+  /** Opens the entry dialog for another pack; this one stays if the user cancels. */
+  onNewPack: () => void
   /** Tag slots in use, growing as tags are looked up. */
   overrides: Record<string, string>
   /** Looks up the slots of tags the overrides don't cover yet. */
@@ -89,22 +112,47 @@ export interface PackBriefBuilderProps {
   onExit: () => void
 }
 
-/** Shell: the panel and its header. The work starts once the brief holds the characters. */
-export function PackBriefBuilder(props: PackBriefBuilderProps) {
-  const { characters, overrides, rating, onRatingChange, onExit } = props
-  const pack = usePackBrief(overrides)
-  // The pack starts once, with the characters it opened with, before anything is fetched.
-  const [started, setStarted] = useState(false)
-  if (!started) {
-    setStarted(true)
-    pack.startFromCharacters([...characters])
+/** The brief a start makes, and what to say about it. */
+function begin(pack: UsePackBriefResult, start: PackBriefStart, overrides: Record<string, string>): StartNote {
+  switch (start.kind) {
+    case "characters":
+      pack.startFromCharacters([...start.names])
+      return { kind: "characters" }
+    case "card": {
+      const tags = splitTags(`${start.post.tag_string ?? ""} ${start.post.tag_string_character ?? ""}`)
+      const { offered } = pack.startFromCard(tags)
+      const named = splitTags(start.post.tag_string_character ?? "").length > 0
+      return { kind: "card", named, outfit: offered.outfit, pose: offered.pose }
+    }
+    case "prompt": {
+      const { brief, peopleTags } = briefFromPrompt(start.text, overrides)
+      pack.startWith(withPromptPeople(brief, peopleTags))
+      return { kind: "prompt" }
+    }
+    case "search": {
+      const { brief, skipped } = briefFromSearch(start.search, overrides, start.character)
+      pack.startWith(brief)
+      return { kind: "search", skipped }
+    }
   }
+}
+
+/** Shell: the panel and its header. The work starts once the brief holds the start. */
+export function PackBriefBuilder(props: PackBriefBuilderProps) {
+  const { start, open, overrides, rating, onRatingChange, onExit, onNewPack } = props
+  const pack = usePackBrief(overrides)
+  // The pack starts once, before anything is fetched.
+  const [note, setNote] = useState<StartNote | null>(null)
+  if (!note) setNote(begin(pack, start, overrides))
 
   return (
     <TooltipProvider delayDuration={300}>
       <section
         aria-label={BUILDER_TEXT.title}
+        aria-hidden={!open || undefined}
         className={cn(
+          // Hidden, not unmounted: the pack waits here until Pack Mode comes back.
+          !open && "hidden",
           "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-hidden",
           "rounded-t-2xl border border-border bg-background shadow-2xl sm:bottom-4 sm:w-[calc(100%-2rem)] sm:rounded-2xl",
           "animate-in fade-in-0 slide-in-from-bottom-4 duration-200 ease-out-strong motion-reduce:animate-none",
@@ -114,14 +162,24 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
           <Package className="size-5 shrink-0 text-mode-pack-text" aria-hidden />
           <h2 className="text-base font-semibold leading-tight text-foreground">{BUILDER_TEXT.title}</h2>
           <div className="ml-auto flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onNewPack}
+              title={BUILDER_TEXT.newPackHint}
+              className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground pointer-coarse:h-11"
+            >
+              {BUILDER_TEXT.newPack}
+            </Button>
             <RatingMenu value={rating} onChange={onRatingChange} />
             <Button
               type="button"
               variant="ghost"
               size="icon"
               onClick={onExit}
-              aria-label={BUILDER_TEXT.exit}
-              title={BUILDER_TEXT.exit}
+              aria-label={BUILDER_TEXT.close}
+              title={BUILDER_TEXT.closeHint}
               className="size-9 text-muted-foreground hover:text-foreground pointer-coarse:size-11"
             >
               <X className="size-4" aria-hidden />
@@ -129,7 +187,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 pt-2">
-          {started && <BriefWorkspace {...props} pack={pack} />}
+          {note && <BriefWorkspace {...props} pack={pack} startNote={note} />}
         </div>
       </section>
     </TooltipProvider>
@@ -217,7 +275,9 @@ function BriefWorkspace({
   isGlobalWeightsEnabled,
   outfitOptions,
   onCopy,
-}: PackBriefBuilderProps & { pack: UsePackBriefResult }) {
+  open,
+  startNote,
+}: PackBriefBuilderProps & { pack: UsePackBriefResult; startNote: StartNote }) {
   const { brief, preferences } = pack
   const count = preferences.promptCount
   const [outfit, setOutfit] = useState<BriefOutfit>({ kind: "scene" })
@@ -277,8 +337,8 @@ function BriefWorkspace({
   // Short of scenes: fetch more pages, one at a time, until there are enough, the source
   // runs out or the pace limit stops it (then the fit line says what there is).
   useEffect(() => {
-    if (needMore && canLoad && source && !source.isLoadingMore) source.loadMore()
-  }, [needMore, canLoad, source])
+    if (open && needMore && canLoad && source && !source.isLoadingMore) source.loadMore()
+  }, [open, needMore, canLoad, source])
   const loadingPosts = !!source?.isLoadingMore || (searching && !source)
   // One state for any failed load (the pack data or a page of posts): one line, one retry.
   const loadError = engine.loadFailed || !!source?.failed
@@ -418,6 +478,26 @@ function BriefWorkspace({
     setUndoFor(null)
   }, [undo])
 
+  // ── What the start brought ──────────────────────────────────────────────────────
+  // The card's outfit and pose are offered, never copied: a request is a condition.
+  const { addTags } = pack
+  const has = useCallback((tag: string) => brief.requests.some((r) => r.tag === normalizeTagForPack(tag)), [brief.requests])
+  const offers = useMemo<BriefOffer[]>(() => {
+    if (startNote.kind !== "card") return []
+    const out: BriefOffer[] = []
+    const outfit = startNote.outfit.filter((t) => !has(t))
+    const pose = startNote.pose.filter((t) => !has(t))
+    if (outfit.length > 0) {
+      out.push({ id: "card-outfit", slot: "wearing", label: BUILDER_TEXT.cardOutfit, detail: outfit.map(showTag).join(", "), onAccept: () => addTags(outfit, "wearing") })
+    }
+    if (pose.length > 0) {
+      out.push({ id: "card-pose", slot: "doing", label: BUILDER_TEXT.cardPose, detail: pose.map(showTag).join(", "), onAccept: () => addTags(pose, "doing") })
+    }
+    return out
+  }, [startNote, has, addTags])
+  // Said until the first change: what the start put in, and what it left out.
+  const startText = pack.canUndo ? null : startNoteText(startNote)
+
   // ── What the brief shows of each character ──────────────────────────────────────
   const characterInfo = useMemo(() => {
     const out: Record<string, CharacterInfo> = {}
@@ -472,6 +552,12 @@ function BriefWorkspace({
         </p>
       )}
 
+      {startText && !folded && (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground text-pretty">
+          <Info className="mt-px size-3.5 shrink-0 text-info-text" aria-hidden />
+          {startText}
+        </p>
+      )}
       {folded ? (
         <BriefSummary parts={summary} onExpand={expand} />
       ) : (
@@ -491,6 +577,7 @@ function BriefWorkspace({
           onOutfitSourceChange={setOutfit}
           officialOutfits={engine.officialOutfits}
           people={people}
+          offers={offers}
           suggestions={suggestions.suggestions}
           suggestionStatus={suggestions.status}
           onQueryChange={suggestions.onQueryChange}
@@ -541,6 +628,21 @@ function BriefWorkspace({
       )}
     </div>
   )
+}
+
+function startNoteText(note: StartNote): string | null {
+  switch (note.kind) {
+    case "characters":
+      return null
+    case "card": {
+      const who = note.named ? START_TEXT.cardNamed : START_TEXT.cardUnnamed
+      return note.outfit.length + note.pose.length > 0 ? `${who} ${START_TEXT.cardOffers}` : who
+    }
+    case "prompt":
+      return START_TEXT.prompt
+    case "search":
+      return note.skipped.length > 0 ? `${START_TEXT.search} ${START_TEXT.searchSkipped(note.skipped)}` : START_TEXT.search
+  }
 }
 
 // ── Results ──────────────────────────────────────────────────────────────────────

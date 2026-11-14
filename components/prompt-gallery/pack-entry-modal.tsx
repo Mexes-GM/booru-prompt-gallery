@@ -78,7 +78,11 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onCancel() }}>
-      <DialogContent className="max-w-md" onEscapeKeyDown={(e) => {
+      <DialogContent
+        className="max-w-md"
+        // A click outside must not throw away what was typed: X, Cancel and Escape close it.
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => {
         // The first Escape closes the character suggestions; the dialog stays.
         if (view === "character" && suggestionsOpen) { e.preventDefault(); return }
         onCancel()
