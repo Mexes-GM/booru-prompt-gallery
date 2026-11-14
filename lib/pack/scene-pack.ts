@@ -1410,7 +1410,7 @@ interface ConditionRun {
 }
 
 /** Most donors tried for one prompt before the condition's tag goes in as typed. */
-export const MAX_CONDITION_TRIES = 8
+export const MAX_CONDITION_TRIES = 16
 /** Most places tried with each outfit. */
 const MAX_PLACE_TRIES = 3
 
@@ -1553,13 +1553,17 @@ function* conditionScenes(f: Finisher, base: Scene): Generator<{ scene: Scene; o
   const people = args.people ? args.people.girls + args.people.boys : Math.max(1, headcount(base))
   const relations = loadedTagRelations()
   const fixed = fixedTags(args)
+  const fixedSet = new Set(fixed)
   for (const outfit of outfitOptions(run, base, args)) {
-    const dressed = outfit.donor && run.region ? lendOutfitPart(base, outfit.donor, run.region, args.overrides) : base
+    const dressed = outfit.donor && run.region
+      ? lendOutfitPart(base, outfit.donor, run.region, args.overrides)
+      : outfit.source === 'imposed' && run.region ? withoutOutfitPart(base, run.region, args.overrides) : base
     let places = 0
     for (const place of placeOptions(run, dressed)) {
       if (place.donor && ++places > MAX_PLACE_TRIES) continue
       const scene = place.donor ? lentScene(dressed, place.donor, ['place']) : dressed
-      const lent = [...(outfit.donor ? outfit.value : []), ...(place.donor ? place.value : [])]
+      // What the identity already says (the requested tag itself) is not lent: it is checked as what stays.
+      const lent = [...(outfit.donor ? outfit.value : []), ...(place.donor ? place.value : [])].filter((tag) => !fixedSet.has(tag))
       if (lent.length > 0) {
         const lentSet = new Set(lent)
         const rest = [...fixed, ...sceneTags(scene).filter((tag) => !lentSet.has(tag))]
@@ -1568,6 +1572,17 @@ function* conditionScenes(f: Finisher, base: Scene): Generator<{ scene: Scene; o
       yield { scene, outfit, place }
     }
   }
+}
+
+/**
+ * `base` without its part of the outfit for `region` (and its exposure, for the torso): the tag as typed
+ * then takes it. A scene whose own variant has a layer over the garment gives up that part too,
+ * instead of keeping it as a scene that already wears the garment would.
+ */
+function withoutOutfitPart(base: Scene, region: GarmentRegion, overrides: Record<string, string>): Scene {
+  const outfit = base.units.outfit.filter((tag) => !regionTags([tag], region, overrides).length)
+  if (outfit.length === base.units.outfit.length) return base
+  return { ...base, units: { ...base.units, outfit, exposure: region.torso ? [] : base.units.exposure } }
 }
 
 /** Notes the variant a prompt used. */
