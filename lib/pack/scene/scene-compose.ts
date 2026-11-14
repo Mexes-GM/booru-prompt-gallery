@@ -550,9 +550,11 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     // With conditions, the garments the outfit already has (or a form of them) own nothing.
     const wears = options.conditions === true ? wearing.filter((garment) => units.outfit.some((tag) => isQualifiedVariant(tag, garment))) : []
     if (wearing.length > 0 && !sceneWears) {
-      if (options.conditions === true) {
-        // Each missing garment takes only its part of the outfit.
-        const region = garmentRegion(wearing.filter((garment) => !wears.includes(garment)), overrides)
+      // Each missing garment takes only its part of the outfit; a whole outfit (an outfit-slot
+      // garment) takes all of it, and without conditions it goes with whatever it was shown with.
+      const region = garmentRegion(wearing.filter((garment) => !wears.includes(garment)), overrides)
+      const whole = region.slots.has('clothing:outfit')
+      if (options.conditions === true || !whole) {
         units.outfit = units.outfit.filter((tag) => !inRegion(tag, region, overrides))
         if (region.torso) units.exposure = []
       } else {
