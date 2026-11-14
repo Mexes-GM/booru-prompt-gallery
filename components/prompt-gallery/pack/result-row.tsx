@@ -61,7 +61,7 @@ const ACTION =
 // A prompt is text: its tags are targets inside a line of reading, not 44 px buttons
 // (the menu they open has 44 px items on touch screens).
 const TOKEN =
-  "rounded-[3px] text-left " +
+  "rounded-[3px] text-left whitespace-normal " +
   "transition-[color,background-color] duration-150 ease-out-strong " +
   "hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
   "data-[state=open]:bg-muted data-[state=open]:text-foreground"
@@ -240,33 +240,37 @@ export const ResultRow = memo(function ResultRow({
             >
               {tokens.map((tag, i) => (
                 // By position: when a correction changes the prompt, the tag in focus keeps its place.
+                // The comma stays on the tag's line (no break between them); the space after it is where lines break.
                 <span key={i}>
-                  {menuAt === i ? (
-                    <TokenMenu
-                      busy={busy}
-                      busyReason={busyReason}
-                      tag={tag}
-                      index={i}
-                      onClose={() => setMenuAt(null)}
-                      onReturnFocus={returnFocus(i)}
-                      onAlways={onAlways}
-                      onNever={onNever}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      data-token={i}
-                      tabIndex={i === tabStop ? 0 : -1}
-                      className={TOKEN}
-                      title={busy && busyReason ? busyReason : undefined}
-                      aria-haspopup="menu"
-                      onFocus={() => setStop(i)}
-                      onClick={() => setMenuAt(i)}
-                    >
-                      {tag}
-                    </button>
-                  )}
-                  {i < tokens.length - 1 && <span className="text-muted-foreground">, </span>}
+                  <span className="whitespace-nowrap">
+                    {menuAt === i ? (
+                      <TokenMenu
+                        busy={busy}
+                        busyReason={busyReason}
+                        tag={tag}
+                        index={i}
+                        onClose={() => setMenuAt(null)}
+                        onReturnFocus={returnFocus(i)}
+                        onAlways={onAlways}
+                        onNever={onNever}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        data-token={i}
+                        tabIndex={i === tabStop ? 0 : -1}
+                        className={TOKEN}
+                        title={busy && busyReason ? busyReason : undefined}
+                        aria-haspopup="menu"
+                        onFocus={() => setStop(i)}
+                        onClick={() => setMenuAt(i)}
+                      >
+                        {tag}
+                      </button>
+                    )}
+                    {i < tokens.length - 1 && <span className="text-muted-foreground">,</span>}
+                  </span>
+                  {i < tokens.length - 1 && " "}
                 </span>
               ))}
             </div>
@@ -312,7 +316,7 @@ export const ResultRow = memo(function ResultRow({
             type="button"
             onClick={() => onToggleLock(index)}
             aria-pressed={locked}
-            aria-label={`Lock prompt ${n}`}
+            aria-label={`${locked ? "Unlock" : "Lock"} prompt ${n}`}
             title={locked ? "Unlock" : "Lock: this prompt stays when you generate again"}
             className={cn(ACTION, locked && "text-foreground")}
           >
