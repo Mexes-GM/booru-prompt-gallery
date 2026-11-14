@@ -6,7 +6,7 @@
  */
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
-import { addCharacter, addNever, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
+import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
@@ -573,6 +573,37 @@ export function briefFromSearch(
   for (const tag of excluded) if (!tag.includes(':')) brief = addNever(brief, tag)
   return { brief, skipped }
 }
+
+// ── Examples for an empty brief ───────────────────────────────────────────────
+
+/** A ready-made request the empty brief offers: tags to add (by row), or what changes. */
+export interface BriefExample {
+  id: string
+  tags: ReadonlyArray<{ tag: string; role: 'wearing' | 'doing' | 'where' }>
+  changes?: Exclude<ChangesAxis, 'scene'>
+}
+
+/**
+ * The examples the empty brief offers, all with tags of the taxonomy and safe for any
+ * content rating. Picking one fills the brief for the character already in Who.
+ */
+export const BRIEF_EXAMPLES: readonly BriefExample[] = [
+  { id: 'beach-day', tags: [{ tag: 'sundress', role: 'wearing' }, { tag: 'beach', role: 'where' }] },
+  { id: 'library', tags: [{ tag: 'sitting', role: 'doing' }, { tag: 'library', role: 'where' }] },
+  { id: 'school', tags: [{ tag: 'school uniform', role: 'wearing' }, { tag: 'classroom', role: 'where' }] },
+  { id: 'outfits', tags: [], changes: 'outfit' },
+]
+
+/** The brief with an example's requests (and what changes) added. */
+export function briefWithExample(brief: PackBrief, example: BriefExample, overrides: Record<string, string>): PackBrief {
+  let next = example.tags.reduce((b, { tag, role }) => addTag(b, tag, overrides, role), brief)
+  if (example.changes) next = { ...next, changes: example.changes }
+  return next
+}
+
+/** True when the brief asks for nothing yet (only who): the time to offer examples. */
+export const briefAsksNothing = (brief: PackBrief): boolean =>
+  brief.requests.length === 0 && brief.literal.length === 0 && brief.changes === 'scene'
 
 // ── Suggestions ───────────────────────────────────────────────────────────────
 

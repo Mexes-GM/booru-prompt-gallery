@@ -15,16 +15,24 @@ export interface ExampleBrief {
 
 export interface PackEmptyStateProps {
   examples: readonly ExampleBrief[]
+  /** The line above the examples. */
+  heading?: string
   onPick: (id: string) => void
   /** The character search, placed under the heading. */
   children?: ReactNode
   className?: string
 }
 
-export const PackEmptyState = memo(function PackEmptyState({ examples, onPick, children, className }: PackEmptyStateProps) {
+export const PackEmptyState = memo(function PackEmptyState({
+  examples,
+  heading = "Pick a character to start, or try one of these",
+  onPick,
+  children,
+  className,
+}: PackEmptyStateProps) {
   return (
     <div className={cn("@container space-y-3", className)}>
-      <p className="text-sm font-medium text-foreground text-balance">Pick a character to start, or try one of these</p>
+      <p className="text-sm font-medium text-foreground text-balance">{heading}</p>
       {children}
       {examples.length > 0 && (
         <ul className="grid gap-1.5 @md:grid-cols-2">

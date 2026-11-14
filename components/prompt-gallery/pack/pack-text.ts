@@ -90,6 +90,24 @@ export function copyNoteText({ missing, stale }: { missing: number; stale: boole
 /** "4 prompts missing" beside the results, when the pack came out short. */
 export const missingText = (missing: number) => `${missing} ${missing === 1 ? "prompt" : "prompts"} missing`
 
+/** The empty brief's examples (lib/pack/brief-pack.ts BRIEF_EXAMPLES), as the user reads them. */
+export const EXAMPLE_TEXT: Readonly<Record<string, { title: string; detail: string }>> = {
+  "beach-day": { title: "A day at the beach", detail: "sundress · beach" },
+  library: { title: "Sitting in a library", detail: "sitting · library" },
+  school: { title: "At school", detail: "school uniform · classroom" },
+  outfits: { title: "Same picture, new outfits", detail: "Only the outfit changes" },
+}
+export const EXAMPLES_HEADING = "Not sure where to start? Try one of these"
+
+/** One-time tips, shown the first time each one is useful. */
+export const TIP_TEXT = {
+  sheet: "These are the scenes the pack will use. Select one to leave it out; select it again to put it back.",
+  results: "Select a tag in a prompt to put it in every prompt (Always) or keep it out of all of them (Never).",
+  axis: (axis: string) =>
+    `One scene repeats in every prompt, marked Repeats. Only its ${axis} changes, taken from the other scenes. Select the marked scene to choose another.`,
+  dismiss: "Dismiss tip",
+} as const
+
 /** What each way into a pack says it brought (shown until the first change). */
 export const START_TEXT = {
   cardNamed: "From the card: who's in it.",

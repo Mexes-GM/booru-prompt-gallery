@@ -42,6 +42,8 @@ export interface UsePackBriefResult {
   undo: () => string | null
 
   add: (tag: string, into?: RequestRole) => void
+  /** Replaces the brief with one made from it (an example picked), as one change. */
+  changeTo: (next: PackBrief, label: string) => void
   /** Adds several tags as one change (one Undo). */
   addTags: (tags: readonly string[], into?: RequestRole) => void
   remove: (tag: string) => void
@@ -145,6 +147,7 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
     if (names.length === 0) return
     change(BRIEF_LABELS.add(names.join(', ')), (b) => names.reduce((next, tag) => addTag(next, tag, overridesRef.current, into), b))
   }, [change])
+  const changeTo = useCallback((next: PackBrief, label: string) => change(label, () => next), [change])
   const remove = useCallback((tag: string) => change(BRIEF_LABELS.remove(tag), (b) => removeTag(b, tag)), [change])
   const never = useCallback((tag: string) => change(BRIEF_LABELS.never(tag), (b) => addNever(b, tag)), [change])
   const unnever = useCallback((tag: string) => change(BRIEF_LABELS.unnever(tag), (b) => removeNever(b, tag)), [change])
@@ -247,7 +250,7 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
 
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
-    add, addTags, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
+    add, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
     addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,

@@ -49,6 +49,9 @@ import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { splitTags } from "@/lib/utils/tag-utils"
 import {
   axisRequests,
+  BRIEF_EXAMPLES,
+  briefAsksNothing,
+  briefWithExample,
   briefFromCardPost,
   correctionAfterBriefChange,
   briefFromSearch,
@@ -84,12 +87,15 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
 import { briefSummaryParts, companionsLabel, showTag, type CharacterInfo, type SlotId } from "./slots"
 import { UndoNotice } from "./undo-notice"
+import { PackEmptyState, type ExampleBrief } from "./pack-empty-state"
+import { PackTip } from "./pack-tip"
+import { userPreferences } from "@/lib/storage"
 
 /** Where a pack starts from: each way into Pack Mode. */
 export type PackBriefStart =
@@ -738,6 +744,42 @@ function BriefWorkspace({
     if (source?.failed) source.retry()
   }, [dataFailed, retryLoad, source])
 
+  // ── Help: examples for an empty brief, and tips shown once ──────────────────────
+  const { changeTo } = pack
+  const showExamples = showBrief && !result && briefAsksNothing(brief)
+  const examples = useMemo<ExampleBrief[]>(
+    () => BRIEF_EXAMPLES.map((ex) => ({ id: ex.id, parts: [EXAMPLE_TEXT[ex.id]?.title ?? ex.id, EXAMPLE_TEXT[ex.id]?.detail ?? ""] })),
+    []
+  )
+  const pickExample = useCallback((id: string) => {
+    const ex = BRIEF_EXAMPLES.find((e) => e.id === id)
+    if (!ex) return
+    const label = ex.tags.length > 0 ? `Added ${ex.tags.map((t) => t.tag).join(", ")}` : "Changed what varies"
+    changeTo(briefWithExample(brief, ex, overrides), label)
+  }, [brief, overrides, changeTo])
+  // Each tip shows the first time it is useful, and never again (marked as seen when shown).
+  const [tipsSeen] = useState<ReadonlySet<string>>(() => {
+    try {
+      return new Set(userPreferences.getPackTipsSeen())
+    } catch {
+      return new Set()
+    }
+  })
+  const [tipsClosed, setTipsClosed] = useState<ReadonlySet<string>>(() => new Set())
+  const tipOn = (id: string, when: boolean) => open && when && !tipsSeen.has(id) && !tipsClosed.has(id)
+  const sheetTip = tipOn("sheet", showBrief && !axis && thumbs.length > 0)
+  const axisTip = tipOn("axis", showBrief && !!axis && !!fixedId)
+  const resultsTip = tipOn("results", !!result && result.prompts.length > 0)
+  useEffect(() => {
+    const shown = [sheetTip && "sheet", axisTip && "axis", resultsTip && "results"].filter((id): id is string => !!id)
+    try {
+      shown.forEach((id) => userPreferences.markPackTipSeen(id))
+    } catch {
+      // Storage unavailable: the tip may show again next time.
+    }
+  }, [sheetTip, axisTip, resultsTip])
+  const closeTip = useCallback((id: string) => setTipsClosed((prev) => new Set(prev).add(id)), [])
+
   // ── Generate ────────────────────────────────────────────────────────────────────
   const named = brief.who.some((c) => c.tag)
   const blockedReason = !named
@@ -816,6 +858,11 @@ function BriefWorkspace({
           />
         ))}
       </div>
+      {showExamples && (
+        <PackEmptyState heading={EXAMPLES_HEADING} examples={examples} onPick={pickExample} />
+      )}
+      {sheetTip && <PackTip text={TIP_TEXT.sheet} onDismiss={() => closeTip("sheet")} />}
+      {axisTip && axis && <PackTip text={TIP_TEXT.axis(axis)} onDismiss={() => closeTip("axis")} />}
       {showBrief && !(loadError && thumbs.length === 0) && (
         <ContactSheet
           scenes={thumbs}
@@ -837,6 +884,7 @@ function BriefWorkspace({
         <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
       )}
 
+      {resultsTip && <PackTip text={TIP_TEXT.results} onDismiss={() => closeTip("results")} />}
       {result && result.prompts.length > 0 && (
         <Results
           containerRef={resultsRef}
