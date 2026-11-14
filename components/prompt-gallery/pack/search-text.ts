@@ -77,5 +77,9 @@ export function leftOutSentence(leftOut: SourcePlan["leftOut"], site: string, li
   return `${tags} didn't fit in the searches: ${site} searches at most ${plural(limit, "tag", "tags")} at a time.`
 }
 
+/** The posts a search has brought, and whether it has more: "95 posts, all there are", "240 posts". */
+export const searchCount = (posts: number, ended: boolean): string =>
+  `${plural(posts, "post", "posts")}${ended && posts > 0 ? ", all there are" : ""}`
+
 /** The tags of a search as the site gets them: "sui-feng double_penetration". */
 export const searchTagsText = (search: Pick<SceneSearch, "tags">) => search.tags.join(" ")

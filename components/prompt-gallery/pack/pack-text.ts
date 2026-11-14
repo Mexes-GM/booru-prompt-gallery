@@ -267,6 +267,8 @@ function fitSentence(state: FitState): string {
       const what = state.kept?.length ? `${plural(state.variations, state.axis)} with ${state.kept.join(", ")}` : plural(state.variations, state.axis)
       return `${state.made} of ${state.asked}: only ${what} ${state.variations === 1 ? "fits" : "fit"} this scene`
     }
+    case "waiting":
+      return "Waiting a few seconds to keep searching"
     case "no-new":
       return state.exhausted ? "No new scenes found. There's nothing more to search." : "No new scenes found on that page."
     case "paused":

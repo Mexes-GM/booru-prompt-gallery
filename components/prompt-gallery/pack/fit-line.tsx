@@ -6,7 +6,7 @@
  * changes, not on every count while scenes are still coming in.
  */
 import { memo } from "react"
-import { AlertTriangle, Check, ChevronDown, Info, Pause, Repeat2, RotateCcw, Search, Shuffle } from "lucide-react"
+import { AlertTriangle, Check, ChevronDown, Hourglass, Info, Pause, Repeat2, RotateCcw, Search, Shuffle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { BUILDER_TEXT, fitText, type FitState } from "./pack-text"
@@ -25,6 +25,7 @@ const TONE: Record<FitState["kind"], { icon: typeof Check; className: string }> 
   stale: { icon: RotateCcw, className: "text-muted-foreground" },
   "people-missing": { icon: AlertTriangle, className: "text-warning-text" },
   paused: { icon: Pause, className: "text-muted-foreground" },
+  waiting: { icon: Hourglass, className: "text-muted-foreground" },
   "no-new": { icon: Info, className: "text-muted-foreground" },
   "axis-fit": { icon: Check, className: "text-success-text" },
   "finding-variants": { icon: Search, className: "text-muted-foreground" },

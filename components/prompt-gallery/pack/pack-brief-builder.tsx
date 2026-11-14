@@ -64,6 +64,7 @@ import {
   oneAxis,
   issuesFit,
   packProviderChoices,
+  withWaiting,
   loadedState,
   lockedWithTag,
   peopleFromCountTags,
@@ -89,6 +90,7 @@ import { cn } from "@/lib/utils"
 import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
 import { getProviderTagLimit } from "@/lib/booru/tag-limits"
 import { SearchDetails } from "./search-details"
+import { AUTO_PAGE_CAP } from "@/lib/pack/source-paging"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
 import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
@@ -368,13 +370,11 @@ const RatingMenu = memo(function RatingMenu({ value, onChange }: { value: PackRa
 function BriefSource({
   plan,
   onResult,
-  onLimited,
 }: {
   plan: SourcePlan
   onResult: (result: UsePackSourcesResult | null) => void
-  onLimited: () => void
 }) {
-  const result = usePackSources({ plan, onSessionCapReached: onLimited, onScrollLimited: onLimited })
+  const result = usePackSources({ plan })
   useEffect(() => onResult(result), [result, onResult])
   useEffect(() => () => onResult(null), [onResult])
   return null
@@ -433,9 +433,6 @@ function BriefWorkspace({
 
   // ── Source ──────────────────────────────────────────────────────────────────────
   const [source, setSource] = useState<UsePackSourcesResult | null>(null)
-  const [limitedKey, setLimitedKey] = useState<string | null>(null)
-  const planKeyRef = useRef("")
-  const onLimited = useCallback(() => setLimitedKey(planKeyRef.current), [])
 
   const posts = source?.allPosts ?? NO_POSTS
   const [ownKey, setOwnKey] = useState("")
@@ -467,9 +464,7 @@ function BriefWorkspace({
   // from the plan of the previous render (the plan needs the posts to settle).
   const planOwnKey = plan.scenes.filter((s) => s.kind === "own").map((s) => s.id).join("||")
   if (planOwnKey !== ownKey) setOwnKey(planOwnKey)
-  useEffect(() => { planKeyRef.current = plan.sceneKey }, [plan.sceneKey])
   const searching = plan.scenes.some((s) => s.tags.length > 0)
-  const limited = limitedKey === plan.sceneKey
 
   // ── What fits ───────────────────────────────────────────────────────────────────
   // One-part packs ("Only the outfit"…) leave out variants, a list of their own: back on
@@ -485,12 +480,15 @@ function BriefWorkspace({
   )
   const poses = pack.requests.select
   const have = usable ? (poses.length > 0 && !axis ? usable.filter((c) => c.hasPose).length : usable.length) : 0
-  const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && !source.scrollLimited && !limited
+  // Pages go one at a time to the search that can bring most; one the pace limit doesn't
+  // allow yet waits and goes by itself (usePackSources). By itself the pack stops at
+  // AUTO_PAGE_CAP pages; "Find more scenes" goes on from there.
+  const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && source.pages < AUTO_PAGE_CAP
   const needMore = !!usable && !candidatesPending && have < count
-  // Short of scenes: fetch more pages, one at a time, until there are enough, the source
-  // runs out or the pace limit stops it (then the fit line says what there is).
+  // Short of scenes: fetch more pages until there are enough, every search has run out or
+  // the cap is reached (then the fit line says what there is).
   useEffect(() => {
-    if (open && needMore && canLoad && source && !source.isLoadingMore) source.loadMore()
+    if (open && needMore && canLoad && source && !source.isLoadingMore && !source.waiting) source.loadMore()
   }, [open, needMore, canLoad, source])
   const loadingPosts = !!source?.isLoadingMore || (searching && !source)
   // One state for any failed load (the pack data or a page of posts): one line, one retry.
@@ -499,9 +497,10 @@ function BriefWorkspace({
   const rolesMissing = identity.missingRoles.length > 0
   const finding = !loadError && !rolesMissing && (loadingPosts || (needMore && canLoad) || (!candidates && searching && !noPosts))
   const canOfferSensitive = rating === "sfw" && plan.sensitive === "excluded" && !finding
-  // The pace limit stopped the fetching and the source has more: one click asks for one page.
-  const paused = !!source && (limited || source.scrollLimited) && !source.isLoadingMore &&
-    !source.noMoreResults && !source.failed && !source.sessionCapReached
+  // Nothing stops the loading for good any more: a page waits for the pace limit and goes
+  // by itself, and past the cap "Find more scenes" is on the loaded line.
+  const paused = false
+  const waiting = !!source?.waiting && !loadError
   // A page asked for by hand: searching while it is on its way, then whether it brought
   // new scenes. `seen` once the request is in flight; `before` the scenes there were.
   const [manual, setManual] = useState<{ before: number; seen: boolean; nothingNew: boolean } | null>(null)
@@ -509,8 +508,8 @@ function BriefWorkspace({
   const usableCount = usable?.length ?? 0
   if (manual && !manual.nothingNew) {
     if (sourceLoading && !manual.seen) setManual({ ...manual, seen: true })
-    // The pace limit refused the page: nothing is on its way, the offer comes back.
-    else if (!manual.seen && (source?.scrollLimited || source?.failed)) setManual(null)
+    // The page failed: nothing is on its way, the offer comes back.
+    else if (!manual.seen && source?.failed) setManual(null)
     else if (manual.seen && !sourceLoading && !candidatesPending) {
       setManual(usableCount > manual.before ? null : { ...manual, nothingNew: true })
     }
@@ -532,7 +531,7 @@ function BriefWorkspace({
         noMoreResults: source.noMoreResults,
         failed: source.failed,
         sessionCapReached: source.sessionCapReached,
-        paused,
+        paused: waiting,
         finding,
         loading: sourceLoading || (!!manual && !manual.nothingNew),
       })
@@ -590,16 +589,18 @@ function BriefWorkspace({
     })
     return mergeFitNotes(withSearchProgress([...lead, ...after], progress))
   }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, brief.people, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
+  // A page waiting for the pace limit: said in place of "Finding scenes…", gone once it goes.
+  const lineNotes = useMemo(() => withWaiting(notes, waiting), [notes, waiting])
   const { setIncludeSensitive } = pack
   const includeSensitive = useCallback(() => setIncludeSensitive(true), [setIncludeSensitive])
   const fitStates = useMemo<FitState[]>(
-    () => notes.map((n): FitState =>
+    () => lineNotes.map((n): FitState =>
       n.kind === "few-rated"
         ? { kind: "few-rated", onInclude: includeSensitive }
         : n.kind === "paused"
           ? { kind: "paused", onLoadMore: loadOnePage, waiting: !!source?.scrollLimited, nothingNew: n.nothingNew }
           : n),
-    [notes, includeSensitive, loadOnePage, source?.scrollLimited]
+    [lineNotes, includeSensitive, loadOnePage, source?.scrollLimited]
   )
 
   // ── Folding ─────────────────────────────────────────────────────────────────────
@@ -1112,7 +1113,7 @@ function BriefWorkspace({
       </div>
 
       {searching && (
-        <BriefSource plan={plan} onResult={setSource} onLimited={onLimited} />
+        <BriefSource plan={plan} onResult={setSource} />
       )}
     </div>
   )

@@ -128,7 +128,10 @@ export function useSingleRatingFeed(tags: string, ratingFilter: string, provider
   const failed = !!error && !isValidating
   const retry = useCallback(() => { void mutate() }, [mutate])
 
-  return { allPosts, isLoadingMore, noMoreResults, size, setSize, failed, retry }
+  // Pages that have arrived (size counts the ones asked for, before they come).
+  const loadedPages = pages?.length ?? 0
+
+  return { allPosts, isLoadingMore, noMoreResults, size, loadedPages, setSize, failed, retry }
 }
 
 /**

@@ -14,6 +14,11 @@
  * quiet. A search's random seed is fixed for the hook's life, so a search that
  * comes back after an edit finds its cached pages.
  *
+ * Each search pages on its own (lib/pack/source-paging.ts): it runs out when the site
+ * says so or when a page brings it nothing new, and the next page goes to the search
+ * that can bring most. A page the pace limit doesn't allow yet waits for it and goes
+ * by itself (`waiting`); nothing is refused.
+ *
  * Mount timing is the same as usePackSeedSearch's: this hook fetches page 1 of
  * every search on mount and has no "enabled" flag; mount the component that calls
  * it only when the pack should fetch.
@@ -22,7 +27,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { BooruPost } from "@/lib/api-client"
 import { assignFeedSlots, planFeeds, type FeedSlot, type SceneSearchKind, type SourcePlan } from "@/lib/pack/source-plan"
 import { useSingleRatingFeed, type UsePackSeedSearchResult } from "./use-pack-seed-search"
-import { useScrollRateLimiter } from "./use-scroll-rate-limiter"
+import { useScrollRateLimiter, MAX_SESSION_PAGE_LOADS } from "./use-scroll-rate-limiter"
+import { NO_PAGING, nextSearch, recordPage, searchEnded, type SearchPaging } from "@/lib/pack/source-paging"
 
 export interface PackSourceProgress {
   /** The scene search's id (SceneSearch.id). */
@@ -30,10 +36,12 @@ export interface PackSourceProgress {
   kind: SceneSearchKind
   /** Posts this search has brought, without repeats (some may also be in a preferred search). */
   posts: number
-  /** Pages fetched so far (per rating). */
+  /** Posts it brought that no search before it in the plan had. */
+  adds: number
+  /** Pages that have arrived (per rating). */
   pages: number
   loading: boolean
-  /** Every rating of this search has run out of posts. */
+  /** The search has run out: the site said so, or a page brought it nothing new. */
   exhausted: boolean
   failed: boolean
 }
@@ -51,8 +59,12 @@ export interface UsePackSourcesResult extends UsePackSeedSearchResult {
   originOf: ReadonlyMap<number, string>
   /** One per scene search, in the plan's order. */
   searches: PackSourceProgress[]
-  /** Asks for the next page; true when one was asked for. */
+  /** Asks for the next page; true when one was asked for (it may wait for the pace limit first). */
   loadMore: () => boolean
+  /** A page is waiting for the pace limit and goes by itself. */
+  waiting: boolean
+  /** Pages that have arrived, all searches together (each rating's page once). */
+  pages: number
 }
 
 type Feed = ReturnType<typeof useSingleRatingFeed>
@@ -116,49 +128,82 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ), [sceneKey, slots])
 
-  const { allPosts, originOf, postsPerSearch } = useMemo(() => {
+  const { allPosts, originOf, postsPerSearch, addsPerSearch } = useMemo(() => {
     const postLists = [feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts]
     const all: BooruPost[] = []
     const origin = new Map<number, string>()
     const perSearch: number[] = []
+    const adds: number[] = []
     plan.scenes.forEach((search, s) => {
       const own = new Set<number>()
+      let added = 0
       for (const post of interleave(slotsBySearch[s].map((i) => postLists[i]))) {
         if (!post || own.has(post.id)) continue
         own.add(post.id)
         if (origin.has(post.id)) continue
         origin.set(post.id, search.id)
         all.push(post)
+        added++
       }
       perSearch.push(own.size)
+      adds.push(added)
     })
-    return { allPosts: all, originOf: origin as ReadonlyMap<number, string>, postsPerSearch: perSearch }
+    return { allPosts: all, originOf: origin as ReadonlyMap<number, string>, postsPerSearch: perSearch, addsPerSearch: adds }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneKey, slotsBySearch, feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts])
 
-  // Primitive per-feed state, so the progress below changes only when one of them does.
-  const feedState = feeds.map((f) => `${f.size}:${f.isLoadingMore ? 1 : 0}:${f.noMoreResults ? 1 : 0}:${f.failed ? 1 : 0}`).join("|")
-  const searches = useMemo<PackSourceProgress[]>(() => plan.scenes.map((search, s) => {
+  // Each search's paging, by search id (a search the next plan keeps keeps its record).
+  // Recorded while rendering once a page has arrived for every rating of the search.
+  const [paging, setPaging] = useState<Readonly<Record<string, SearchPaging>>>({})
+  const arrived = plan.scenes.map((search, s) => {
     const own = slotsBySearch[s].map((i) => feeds[i])
+    const pages = own.length > 0 ? Math.min(...own.map((f) => f.loadedPages)) : 0
+    return {
+      id: search.id,
+      loading: own.some((f) => f.isLoadingMore),
+      failed: own.some((f) => f.failed),
+      pages,
+      siteEnded: own.length > 0 && own.every((f) => f.noMoreResults),
+    }
+  })
+  let nextPaging: Record<string, SearchPaging> | null = null
+  arrived.forEach((a, s) => {
+    if (a.loading || a.failed) return
+    const prev = paging[a.id] ?? NO_PAGING
+    const rec = recordPage(prev, { pages: a.pages, posts: postsPerSearch[s] ?? 0, adds: addsPerSearch[s] ?? 0 })
+    if (rec !== prev) nextPaging = { ...(nextPaging ?? paging), [a.id]: rec }
+  })
+  if (nextPaging) setPaging(nextPaging)
+  const pagingNow: Readonly<Record<string, SearchPaging>> = nextPaging ?? paging
+
+  // Primitive per-search state, so the progress below changes only when one of them does.
+  const searchState = arrived.map((a, s) => {
+    const p = pagingNow[a.id] ?? NO_PAGING
+    return [a.id, a.loading, a.failed, a.siteEnded, p.pages, p.dry, p.lastAdds, postsPerSearch[s] ?? 0, addsPerSearch[s] ?? 0].join(":")
+  }).join("|")
+  const searches = useMemo<PackSourceProgress[]>(() => plan.scenes.map((search, s) => {
+    const a = arrived[s]
+    const p = pagingNow[search.id] ?? NO_PAGING
     return {
       id: search.id,
       kind: search.kind,
       posts: postsPerSearch[s] ?? 0,
-      pages: Math.max(0, ...own.map((f) => f.size)),
-      loading: own.some((f) => f.isLoadingMore),
-      exhausted: own.length > 0 && own.every((f) => f.noMoreResults),
-      failed: own.some((f) => f.failed),
+      adds: addsPerSearch[s] ?? 0,
+      pages: p.pages,
+      loading: a.loading,
+      exhausted: searchEnded(p, a.siteEnded),
+      failed: a.failed,
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [sceneKey, slotsBySearch, postsPerSearch, feedState])
+  }), [sceneKey, searchState])
 
   const isLoadingMore = searches.some((s) => s.loading)
   const noMoreResults = searches.every((s) => s.exhausted)
   const failed = searches.some((s) => s.failed)
   // One budget for every search: the pages fetched across all of them.
   const totalPages = searches.reduce((sum, s) => sum + s.pages, 0)
-  // More pages come from the most preferred search that still has some.
-  const target = searches.findIndex((s) => !s.exhausted && !s.failed)
+  // The next page goes to the search that can bring most (lib/pack/source-paging.ts).
+  const target = nextSearch(searches.map((s) => ({ paging: pagingNow[s.id] ?? NO_PAGING, ended: s.exhausted, failed: s.failed })))
   const targetKey = target >= 0 ? slotsBySearch[target].join(",") : ""
 
   const loadMoreGuardRef = useRef(false)
@@ -177,9 +222,9 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   const { setSize: setSize3 } = feed3
   const { setSize: setSize4 } = feed4
   const { setSize: setSize5 } = feed5
-  const { canLoadMore } = rateLimiter
-  // True when a page was asked for (false: one is already on its way, nothing is left, or the pace limit said no).
-  const loadMore = useCallback((): boolean => {
+  const { canLoadMore, msUntilAllowed } = rateLimiter
+  // Fetches the target search's next page now; false when the guards say no.
+  const startPage = useCallback((): boolean => {
     if (loadMoreGuardRef.current || isLoadingMoreRef.current) return false
     if (!targetKey) return false
     if (!canLoadMore(totalPages)) return false
@@ -188,6 +233,34 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
     for (const i of targetKey.split(",").map(Number)) void setSizes[i]((size) => size + 1)
     return true
   }, [canLoadMore, totalPages, targetKey, setSize0, setSize1, setSize2, setSize3, setSize4, setSize5])
+  // A page that waits for the pace limit starts with the latest target when its turn comes.
+  const startRef = useRef(startPage)
+  useEffect(() => { startRef.current = startPage }, [startPage])
+  const [waiting, setWaiting] = useState(false)
+  const waitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearWait = useCallback(() => {
+    if (waitTimerRef.current) clearTimeout(waitTimerRef.current)
+    waitTimerRef.current = null
+    setWaiting(false)
+  }, [])
+  // Another plan, or unmounting: a waiting page is not for it.
+  useEffect(() => clearWait, [sceneKey, clearWait])
+  // True when a page was asked for, now or once the pace limit allows it (false: one is
+  // already on its way or waiting, nothing is left, or the session's page cap is reached).
+  const loadMore = useCallback((): boolean => {
+    if (waitTimerRef.current || loadMoreGuardRef.current || isLoadingMoreRef.current) return false
+    if (!targetKey) return false
+    if (totalPages >= MAX_SESSION_PAGE_LOADS) return canLoadMore(totalPages)
+    const wait = msUntilAllowed()
+    if (wait <= 0) return startPage()
+    setWaiting(true)
+    waitTimerRef.current = setTimeout(() => {
+      waitTimerRef.current = null
+      setWaiting(false)
+      startRef.current()
+    }, wait + 50)
+    return true
+  }, [targetKey, totalPages, canLoadMore, msUntilAllowed, startPage])
 
   const { retry: retry0 } = feed0
   const { retry: retry1 } = feed1
@@ -210,9 +283,11 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
     sessionCapReached: rateLimiter.sessionCapReached,
     scrollLimited: rateLimiter.scrollLimited,
     loadMore,
+    waiting,
+    pages: totalPages,
     failed,
     retry,
     originOf,
     searches,
-  }), [allPosts, isLoadingMore, noMoreResults, rateLimiter.sessionCapReached, rateLimiter.scrollLimited, loadMore, failed, retry, originOf, searches])
+  }), [allPosts, isLoadingMore, noMoreResults, rateLimiter.sessionCapReached, rateLimiter.scrollLimited, loadMore, waiting, totalPages, failed, retry, originOf, searches])
 }

@@ -9,7 +9,7 @@ import { memo } from "react"
 import type { PackSourceProgress } from "@/hooks/use-pack-sources"
 import type { SourcePlan } from "@/lib/pack/source-plan"
 import { cn } from "@/lib/utils"
-import { SEARCH_RULE, leftOutSentence, noPostsSentence, ratingsSentence, searchDescription, searchTagsText } from "./search-text"
+import { SEARCH_RULE, leftOutSentence, noPostsSentence, ratingsSentence, searchCount, searchDescription, searchTagsText } from "./search-text"
 
 export interface SearchDetailsProps {
   id: string
@@ -24,8 +24,6 @@ export interface SearchDetailsProps {
   className?: string
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
-
 export const SearchDetails = memo(function SearchDetails({ id, plan, progress, character, site, limit, className }: SearchDetailsProps) {
   const leftOut = leftOutSentence(plan.leftOut, site, limit)
   return (
@@ -35,7 +33,7 @@ export const SearchDetails = memo(function SearchDetails({ id, plan, progress, c
           const p = progress.find((x) => x.id === search.id)
           const posts = p?.posts ?? 0
           const none = !!p && posts === 0 && p.exhausted && !p.loading && !p.failed
-          const count = !p || (p.loading && posts === 0) ? "Searching…" : plural(posts, "post", "posts")
+          const count = !p || (p.loading && posts === 0) ? "Searching…" : searchCount(posts, p.exhausted)
           return (
             <li key={search.id} className="min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">

@@ -306,6 +306,8 @@ export type FitNote =
   | { kind: 'people-missing'; asked: PackPeople; using: PackPeople | null; cast: PackPeople }
   /** Fetching stopped at the pace limit while the source still has posts; one more page can be asked for. */
   | { kind: 'paused'; nothingNew?: boolean }
+  /** A page waits for the site's pace limit and goes by itself. */
+  | { kind: 'waiting' }
   /** One-part pack: how many values of the part go with the scene that repeats. */
   | { kind: 'axis-fit'; axis: OneAxis; variations: number }
   /** One-part pack: the variants are being worked out. */
@@ -531,6 +533,16 @@ export function withSearchProgress(notes: readonly FitNote[], progress: SearchPr
   const at = rest.findIndex((n) => n.kind === 'paused')
   const note: FitNote = { kind: 'no-new', exhausted }
   return at < 0 ? [...rest, note] : [...rest.slice(0, at), note, ...rest.slice(at)]
+}
+
+/**
+ * The fit line while a page waits for the site's pace limit: "waiting" in place of
+ * "Finding scenes…" (and of a pause, which can't be: the page goes by itself), first;
+ * the line as it was once the page goes.
+ */
+export function withWaiting(notes: readonly FitNote[], waiting: boolean): FitNote[] {
+  if (!waiting) return [...notes]
+  return [{ kind: 'waiting' }, ...notes.filter((n) => n.kind !== 'finding' && n.kind !== 'paused' && n.kind !== 'waiting')]
 }
 
 // ── People ────────────────────────────────────────────────────────────────────
