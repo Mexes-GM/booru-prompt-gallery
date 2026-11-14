@@ -166,8 +166,11 @@ check("exact: the same tag in every prompt, as before; Always on a garment of a 
   assert.deepEqual(briefConditions(setRequestExact(brief, "bikini", false), overrides), ["bikini"])
   // Always on "red bikini" from a prompt asks for that tag.
   assert.deepEqual(addTagExactly(tifa, "red bikini", overrides, "also").requests, [{ tag: "red bikini", role: "wearing", exact: true }])
-  // A time of day typed in Where stays exact, with no switch.
-  assert.deepEqual(briefConditions(addTag(tifa, "night", overrides), overrides), [])
+  // A time of day typed in Where is a condition like a place (Any); exact, it is no condition.
+  assert.deepEqual(briefConditions(addTag(tifa, "night", overrides), overrides), ["night"])
+  assert.deepEqual(briefConditions(setRequestExact(addTag(tifa, "night", overrides), "night", true), overrides), [])
+  // A thing in a place stays exact.
+  assert.deepEqual(briefConditions(addTag(tifa, "bench", overrides), overrides), [])
 })
 
 check("People: one or several make-ups; the last one stays; a one-part pack never mixes", () => {

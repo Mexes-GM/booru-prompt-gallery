@@ -34,7 +34,7 @@ export interface RequestChipProps {
   /** For `trait`: clothing the garments in Wearing replace. Struck through, with no action. */
   replaced?: boolean
   /** Wearing and Where: any kind of the tag (a condition) or exactly it; the switch is on the chip. */
-  mode?: { exact: boolean; onToggle: () => void }
+  mode?: { exact: boolean; onToggle: () => void; ambience?: boolean }
   /** Doesn't apply now: struck through, with the reason for screen readers and as a tooltip. */
   inactive?: string
   /** Remove (request, never, trait) or put back (a removed trait). */
@@ -110,6 +110,18 @@ function OfferedChip({ label, detail, onAccept, className }: Pick<RequestChipPro
   )
 }
 
+/** What Any and Exactly mean on a chip, said as its tooltip. */
+const MODE_HINT = {
+  kind: {
+    any: "Each prompt has a different kind. Select to use this exact tag",
+    exact: "Every prompt has this exact tag. Select for a different kind in each prompt",
+  },
+  ambience: {
+    any: "Each prompt gets a place that has it. Select to add it to whatever scene each prompt has",
+    exact: "Added to whatever scene each prompt has. Select to get places that have it",
+  },
+} as const
+
 function RequestChipInner({
   label,
   variant = "request",
@@ -152,7 +164,7 @@ function RequestChipInner({
           onClick={mode.onToggle}
           aria-pressed={mode.exact}
           aria-label={`Exactly ${label}`}
-          title={mode.exact ? "Every prompt has this exact tag. Select for a different kind in each prompt" : "Each prompt has a different kind. Select to use this exact tag"}
+          title={MODE_HINT[mode.ambience ? "ambience" : "kind"][mode.exact ? "exact" : "any"]}
           className={cn(
             "relative h-6 shrink-0 rounded-[6px] px-1.5 text-[11px] font-medium",
             "pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5 pointer-coarse:after:content-['']",
