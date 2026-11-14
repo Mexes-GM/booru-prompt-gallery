@@ -81,5 +81,18 @@ export function leftOutSentence(leftOut: SourcePlan["leftOut"], site: string, li
 export const searchCount = (posts: number, ended: boolean): string =>
   `${plural(posts, "post", "posts")}${ended && posts > 0 ? ", all there are" : ""}`
 
+/** A donor search in plain words: "Anyone wearing bikini", "Any picture at a beach". */
+export function donorDescription(kind: "wearing" | "where", conditions: readonly string[]): string {
+  if (kind === "wearing") return `Anyone wearing ${listWords(conditions)}`
+  const first = showTag(conditions[0] ?? "")
+  return `Any picture at ${/^[aeiou]/i.test(first) ? "an" : "a"} ${listWords(conditions)}`
+}
+
+/** What a donor search's posts are for. */
+export const DONOR_ROLE: Record<"wearing" | "where", string> = {
+  wearing: "Only lends clothes to the scenes found.",
+  where: "Only lends a place to the scenes found.",
+}
+
 /** The tags of a search as the site gets them: "sui-feng double_penetration". */
 export const searchTagsText = (search: Pick<SceneSearch, "tags">) => search.tags.join(" ")

@@ -2,8 +2,8 @@
 
 /**
  * Where the clothes come from when the Wearing row is left empty: each scene's own
- * outfit, the character's usual one, one of their official outfits, or the outfit
- * library.
+ * outfit, the character's usual one, or one of their official outfits. The outfit
+ * library is chosen in Wearing itself, by style.
  */
 import { memo } from "react"
 import { ChevronDown } from "lucide-react"
@@ -58,7 +58,6 @@ export const WearingSourceMenu = memo(function WearingSourceMenu({
           <DropdownMenuRadioItem value="usual" disabled={noCharacter} className="pointer-coarse:min-h-11">
             {KIND_LABEL.usual}
           </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="library" className="pointer-coarse:min-h-11">{KIND_LABEL.library}</DropdownMenuRadioItem>
           {officialOutfits.length > 0 && !noCharacter && (
             <>
               <DropdownMenuSeparator />

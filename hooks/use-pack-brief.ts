@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addCharacter, addLook, addNever, addOther, addTag, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
+  addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, addOutfitStyle, removeOutfitStyle, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
   removeTag, restoreLook, restoreScene, setCharacterRole, setPeople, toSceneRequests,
   type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
@@ -18,6 +18,8 @@ import { userPreferences, type PackPreferences } from '@/lib/storage'
 export const BRIEF_LABELS = {
   add: (tag: string) => `Added ${tag}`,
   remove: (tag: string) => `Removed ${tag}`,
+  exact: (tag: string) => `${tag}: exactly this`,
+  anyForm: (tag: string) => `${tag}: any kind`,
   never: (tag: string) => `Never: ${tag}`,
   unnever: (tag: string) => `Allowed ${tag} again`,
   removeCharacter: (name: string) => `Removed ${name}`,
@@ -44,6 +46,13 @@ export interface UsePackBriefResult {
   add: (tag: string, into?: RequestRole) => void
   /** Adds a tag to how the people who are not the characters look. */
   addOther: (tag: string) => void
+  /** Adds a tag; a garment or place it adds is exact (the same tag in every prompt). */
+  addExactly: (tag: string, into?: RequestRole) => void
+  /** Wearing and Where: this exact tag in every prompt, or any form of it (the default). */
+  setExact: (tag: string, exact: boolean) => void
+  /** Wearing: a style of the outfit library (every prompt wears a whole outfit of one). */
+  addStyle: (style: string, label: string) => void
+  removeStyle: (style: string, label: string) => void
   /** Replaces the brief with one made from it (an example picked), as one change. */
   changeTo: (next: PackBrief, label: string) => void
   /** Adds several tags as one change (one Undo). */
@@ -143,6 +152,18 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
 
   const add = useCallback((tag: string, into?: RequestRole) => {
     change(BRIEF_LABELS.add(tag.trim()), (b) => addTag(b, tag, overridesRef.current, into))
+  }, [change])
+  const addExactly = useCallback((tag: string, into?: RequestRole) => {
+    change(BRIEF_LABELS.add(tag.trim()), (b) => addTagExactly(b, tag, overridesRef.current, into))
+  }, [change])
+  const setExact = useCallback((tag: string, exact: boolean) => {
+    change(exact ? BRIEF_LABELS.exact(tag) : BRIEF_LABELS.anyForm(tag), (b) => setRequestExact(b, tag, exact))
+  }, [change])
+  const addStyle = useCallback((style: string, label: string) => {
+    change(BRIEF_LABELS.add(label), (b) => addOutfitStyle(b, style))
+  }, [change])
+  const removeStyle = useCallback((style: string, label: string) => {
+    change(BRIEF_LABELS.remove(label), (b) => removeOutfitStyle(b, style))
   }, [change])
   const addOtherAction = useCallback((tag: string) => {
     change(BRIEF_LABELS.add(tag.trim()), (b) => addOther(b, tag))
@@ -255,7 +276,7 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
 
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
-    add, addOther: addOtherAction, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
+    add, addOther: addOtherAction, addExactly, setExact, addStyle, removeStyle, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
     addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,

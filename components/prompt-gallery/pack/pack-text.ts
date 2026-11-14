@@ -111,6 +111,16 @@ export const SIZE_TEXT = {
   unsized: (n: number) => `${n} ${n === 1 ? "prompt has" : "prompts have"} no size and ${n === 1 ? "was" : "were"} copied without one.`,
 } as const
 
+/** The outfit library's styles as Wearing offers them (not tags: a whole outfit of the style per prompt). */
+export const STYLE_TEXT = {
+  name: (style: string) => style.charAt(0).toUpperCase() + style.slice(1),
+  count: (n: number) => `${n} ${n === 1 ? "outfit" : "outfits"}`,
+  chip: (style: string) => `${style.charAt(0).toUpperCase() + style.slice(1)} outfits`,
+  notAtRating: "Not used at the Safe rating",
+  unused: (styles: readonly string[]) =>
+    `${styles.map((s) => `${s.charAt(0).toUpperCase() + s.slice(1)} outfits`).join(" and ")} ${styles.length === 1 ? "isn't" : "aren't"} used at the Safe rating.`,
+} as const
+
 /** "4 prompts missing" beside the results, when the pack came out short. */
 export const missingText = (missing: number) => `${missing} ${missing === 1 ? "prompt" : "prompts"} missing`
 
@@ -279,6 +289,24 @@ function fitSentence(state: FitState): string {
     }
     case "waiting":
       return "Waiting a few seconds to keep searching"
+    case "variety": {
+      const kind = state.styles ? `${state.what} outfit` : state.what
+      if (state.variants >= state.prompts) {
+        return state.role === "where" ? `Each prompt is at a different ${kind}` : `Each prompt wears a different ${kind}`
+      }
+      return state.styles
+        ? `${plural(state.variants, `${state.what} outfit`)} across ${plural(state.prompts, "prompt")}`
+        : `${plural(state.variants, "kind")} of ${state.what} across ${plural(state.prompts, "prompt")}`
+    }
+    case "as-written":
+      if (state.styles) return `${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "has" : "have"} no ${state.what} outfit: the library has no other one`
+      return state.partial
+        ? `${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "has" : "have"} only part of ${state.what} from another picture; the rest is as typed`
+        : `${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "has" : "have"} ${state.what} as typed: no other kind was found`
+    case "condition-supply":
+      return state.pictures === 0
+        ? `No loaded picture has ${state.what} yet, so it would go as typed`
+        : `Only ${plural(state.pictures, "loaded picture")} ${state.pictures === 1 ? "has" : "have"} ${state.what} for ${plural(state.asked, "prompt")}`
     case "no-new":
       return state.exhausted ? "No new scenes found. There's nothing more to search." : "No new scenes found on that page."
     case "paused":

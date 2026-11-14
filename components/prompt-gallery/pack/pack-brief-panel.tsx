@@ -18,6 +18,7 @@ import { ChangesSelect } from "./changes-select"
 import { ChoiceGroup, type Choice } from "./choice-group"
 import { PeopleLine, type PeopleLineProps } from "./people-line"
 import { RequestChip } from "./request-chip"
+import type { EntryOption } from "./tag-entry"
 import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { WearingSourceMenu } from "./wearing-source-menu"
 import { OTHERS_UNUSED } from "./pack-text"
@@ -67,6 +68,18 @@ export interface PackBriefPanelProps {
   /** Opens the named-scene picker. Without it the Where row has no picker button. */
   onOpenScenePicker?: () => void
 
+  /**
+   * Wearing and Where tags that can be met as conditions, keyed by tag: true when the user made
+   * it exact. A tag missing here has no Any / Exactly switch (a time of day, a thing in a place).
+   */
+  exactness?: Readonly<Record<string, boolean>>
+  onSetExact?: (tag: string, exact: boolean) => void
+  /** Wearing: the outfit library's styles, offered in the field (not tags), and the ones chosen as chips. */
+  styleOptions?: readonly EntryOption[]
+  styleChips?: readonly { style: string; label: string; inactive?: string; onRemove: () => void }[]
+  /** Under Wearing when a chosen style doesn't apply at the pack's rating. */
+  styleNote?: string
+
   /** Shown only when given (and when PeopleLine decides it applies). */
   people?: PeopleLineProps | null
   /**
@@ -94,6 +107,9 @@ export interface PackBriefPanelProps {
 
   className?: string
 }
+
+const NO_EXACTNESS: Readonly<Record<string, boolean>> = {}
+const NO_STYLE_CHIPS: NonNullable<PackBriefPanelProps["styleChips"]> = []
 
 const ROLE_CHOICES: Choice<CastRole>[] = [
   { value: "girl", label: "Girl" },
@@ -130,6 +146,11 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     people,
     others,
     changes,
+    exactness = NO_EXACTNESS,
+    onSetExact,
+    styleOptions,
+    styleChips = NO_STYLE_CHIPS,
+    styleNote,
     suggestions,
     suggestionStatus,
     onQueryChange,
@@ -164,8 +185,9 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
       lastChipLabel: last?.label,
       onPickLast: (on) => setPicked(on ? slot : null),
       onRemoveLast: last?.remove,
+      ...(slot === "wearing" && styleOptions ? { options: styleOptions } : {}),
     }),
-    [onAddTags, onQueryChange, querySlot, suggestions, suggestionStatus],
+    [onAddTags, onQueryChange, querySlot, suggestions, suggestionStatus, styleOptions],
   )
 
   const offersIn = (slot: SlotId) =>
@@ -184,7 +206,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   }
 
   /** A request row: chips for its tags, the last one removable from the keyboard. */
-  const requestRow = (slot: RequestRole | "style" | "others", extra?: { actions?: ReactNode; notes?: ReactNode }) => {
+  const requestRow = (slot: RequestRole | "style" | "others", extra?: { actions?: ReactNode; notes?: ReactNode; leading?: ReactNode; filled?: boolean }) => {
     const tags = slotTags(brief, slot)
     const lastTag = tags[tags.length - 1]
     const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveTag(lastTag) } : null
@@ -201,21 +223,26 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
       <BriefSlot
         key={slot}
         slot={slot}
-        filled={tags.length > 0}
+        filled={tags.length > 0 || !!extra?.filled}
         entry={entryFor(slot, last)}
         actions={extra?.actions}
         notes={notes}
         flashKey={flashFor(slot)}
       >
-        {tags.map((tag, i) => (
-          <RequestChip
-            key={tag}
-            label={showTag(tag)}
-            conflict={conflicts[tag]}
-            selected={picked === slot && i === tags.length - 1}
-            onRemove={() => onRemoveTag(tag)}
-          />
-        ))}
+        {extra?.leading}
+        {tags.map((tag, i) => {
+          const exact = exactness[tag]
+          return (
+            <RequestChip
+              key={tag}
+              label={showTag(tag)}
+              conflict={conflicts[tag]}
+              selected={picked === slot && i === tags.length - 1}
+              onRemove={() => onRemoveTag(tag)}
+              mode={exact !== undefined && onSetExact ? { exact, onToggle: () => onSetExact(tag, !exact) } : undefined}
+            />
+          )
+        })}
         {offered}
       </BriefSlot>
     )
@@ -225,6 +252,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   const hasNamed = named.length > 0
   const wearing = slotTags(brief, "wearing")
   const othersShown = !!others && (others.applies === true || brief.others.length > 0)
+  const wearingNote = outfitNote && wearing.length === 0 ? outfitNote : wearing.length > 0 && hasNamed ? "Replaces the usual outfit" : null
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -245,8 +273,12 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           flashKey={flashFor("who")}
         />
         {requestRow("wearing", {
+          filled: styleChips.length > 0,
+          leading: styleChips.map((c) => (
+            <RequestChip key={`style:${c.style}`} label={c.label} inactive={c.inactive} onRemove={c.onRemove} />
+          )),
           actions:
-            wearing.length === 0 && !outfitNote ? (
+            wearing.length === 0 && styleChips.length === 0 && !outfitNote ? (
               <WearingSourceMenu
                 value={outfitSource}
                 onChange={onOutfitSourceChange}
@@ -254,9 +286,12 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
                 noCharacter={!hasNamed}
               />
             ) : undefined,
-          notes: outfitNote && wearing.length === 0
-            ? <SlotNote>{outfitNote}</SlotNote>
-            : wearing.length > 0 && hasNamed ? <SlotNote>Replaces the usual outfit</SlotNote> : undefined,
+          notes: wearingNote || styleNote ? (
+            <>
+              {wearingNote && <SlotNote>{wearingNote}</SlotNote>}
+              {styleNote && <SlotNote>{styleNote}</SlotNote>}
+            </>
+          ) : undefined,
         })}
         {requestRow("doing")}
         {requestRow("where", {

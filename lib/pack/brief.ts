@@ -15,7 +15,15 @@ import type { PackPeople } from './scene/scene-pool'
 /** What a requested tag is about. Decides how the engine treats it. */
 export type RequestRole = 'wearing' | 'doing' | 'where' | 'also'
 
-export interface PackRequest { tag: string; role: RequestRole }
+export interface PackRequest {
+  tag: string
+  role: RequestRole
+  /**
+   * Wearing and Where: true when this exact tag goes in every prompt. Otherwise (the default) the tag
+   * is a condition: each prompt meets it with a different form of it (briefConditions).
+   */
+  exact?: true
+}
 
 /** What differs from one prompt to the next. */
 export type ChangesAxis = 'scene' | 'outfit' | 'pose' | 'place' | 'expression'
@@ -45,6 +53,8 @@ export interface PackBrief {
   baseScene?: number
   /** With `changes` on one part: ids of the scenes whose part the user left out. Kept apart from `leftOut`. */
   leftOutVariants?: string[]
+  /** Wearing: styles of the outfit library ("swimwear"): every prompt wears a whole outfit of one of them. */
+  outfitStyles?: string[]
 }
 
 /** The engine's view of a brief. */
@@ -193,6 +203,7 @@ function cloneBrief(brief: PackBrief): PackBrief {
     people: brief.people ? { ...brief.people } : null,
     leftOut: [...brief.leftOut],
     ...(brief.leftOutVariants ? { leftOutVariants: [...brief.leftOutVariants] } : {}),
+    ...(brief.outfitStyles ? { outfitStyles: [...brief.outfitStyles] } : {}),
   }
 }
 
@@ -456,4 +467,63 @@ export function briefTags(brief: PackBrief): string[] {
     seen.add(key)
     return true
   })
+}
+
+// ── Wearing and Where as conditions ─────────────────────────────────────────────
+
+/** Places a condition can vary; the time of day, the weather and the things in a place ("night", "bed") stay exact. */
+const CONDITION_PLACE_SLOTS = new Set(['scenery:setting'])
+
+/**
+ * True when a request can be met as a condition (with a different form per prompt): any garment of
+ * Wearing, and a place of Where. Atmosphere and props of Where stay as typed, as before.
+ */
+export function canBeCondition(request: Pick<PackRequest, 'tag' | 'role'>, overrides: Record<string, string>): boolean {
+  if (request.role === 'wearing') return true
+  if (request.role !== 'where') return false
+  const found = getTagSlotFromOverrides(normalizeTagForPack(request.tag), overrides)
+  return !found?.slot || CONDITION_PLACE_SLOTS.has(found.slot)
+}
+
+/** The brief's Wearing and Where tags met as conditions (SceneRequests.conditions): those not marked exact. */
+export function briefConditions(brief: Pick<PackBrief, 'requests'>, overrides: Record<string, string>): string[] {
+  return brief.requests.filter((r) => !r.exact && canBeCondition(r, overrides)).map((r) => r.tag)
+}
+
+/** Marks a Wearing or Where tag exact (the same tag in every prompt) or back to a condition. */
+export function setRequestExact(brief: PackBrief, tag: string, exact: boolean): PackBrief {
+  if (!brief.requests.some((r) => same(r.tag, tag))) return brief
+  const next = cloneBrief(brief)
+  next.requests = next.requests.map((r) => {
+    if (!same(r.tag, tag)) return r
+    const { exact: _drop, ...rest } = r
+    void _drop
+    return exact ? { ...rest, exact: true } : rest
+  })
+  return next
+}
+
+/** Adds a style of the outfit library to Wearing. */
+export function addOutfitStyle(brief: PackBrief, style: string): PackBrief {
+  if (brief.outfitStyles?.includes(style)) return brief
+  return { ...cloneBrief(brief), outfitStyles: [...(brief.outfitStyles ?? []), style] }
+}
+
+export function removeOutfitStyle(brief: PackBrief, style: string): PackBrief {
+  if (!brief.outfitStyles?.includes(style)) return brief
+  const next = cloneBrief(brief)
+  const rest = (brief.outfitStyles ?? []).filter((s) => s !== style)
+  if (rest.length > 0) next.outfitStyles = rest
+  else delete next.outfitStyles
+  return next
+}
+
+/**
+ * addTag, and a garment or place it adds is exact: this tag in every prompt (Always on a tag of a
+ * prompt asks for that tag, not for any form of it).
+ */
+export function addTagExactly(brief: PackBrief, tag: string, overrides: Record<string, string>, into?: RequestRole): PackBrief {
+  const next = addTag(brief, tag, overrides, into)
+  const added = next.requests.find((r) => same(r.tag, tag))
+  return added && (added.role === 'wearing' || added.role === 'where') ? setRequestExact(next, tag, true) : next
 }

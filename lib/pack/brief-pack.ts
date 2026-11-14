@@ -221,6 +221,18 @@ export interface BriefPackEnv {
   resolution?: ScenePackArgs['resolution']
   /** One-part pack: the scene that repeats when the brief doesn't choose one (the one a pack was made with). */
   baseScene?: number
+  /**
+   * Wearing and Where met as conditions (briefConditions) and the library styles asked for. Missing:
+   * every request exact, as before.
+   */
+  conditions?: readonly string[]
+  outfitStyles?: readonly string[]
+  /** Posts that only lend clothes or a place (the donor searches'); they must be in the pool. */
+  donorPosts?: readonly number[]
+  /** The library outfits allowed at the pack's rating, for the conditions and the styles. */
+  outfitLibrary?: readonly LibraryOutfit[]
+  /** Other names of each condition (auto_suggest_tags.aliases). */
+  conditionAliases?: Readonly<Record<string, readonly string[]>>
 }
 
 /** The scene ids the brief left out, as the engine counts them (post ids). */
@@ -239,7 +251,13 @@ export function axisRequests(brief: PackBrief, axis: OneAxis): string[] {
 
 /** Everything generateScenePack needs for a brief. The settings the brief doesn't show keep their defaults. */
 export function briefPackArgs(brief: PackBrief, who: BriefIdentity, env: BriefPackEnv): ScenePackArgs {
-  const requests = toSceneRequests(brief)
+  const conditions = env.conditions?.length ? [...env.conditions] : null
+  const styles = env.outfitStyles?.length ? [...env.outfitStyles] : null
+  const requests = {
+    ...toSceneRequests(brief),
+    ...(conditions ? { conditions } : {}),
+    ...(styles ? { outfitStyles: styles } : {}),
+  }
   const outfits = env.characterOutfits
   const hasOutfits = !!outfits && who.blocks.some((b) => (outfits.get(b.character)?.length ?? 0) > 0)
   const axis = oneAxis(brief)
@@ -273,6 +291,9 @@ export function briefPackArgs(brief: PackBrief, who: BriefIdentity, env: BriefPa
     preferredPosts: env.preferredPosts ?? [],
     removedScenes: leftOutPosts(brief),
     ...(axis ? { changes: axis, ...(brief.baseScene !== undefined || env.baseScene !== undefined ? { baseScene: brief.baseScene ?? env.baseScene } : {}) } : {}),
+    ...(env.donorPosts?.length ? { donorPosts: env.donorPosts } : {}),
+    ...((conditions || styles) && env.outfitLibrary?.length ? { outfitLibrary: env.outfitLibrary } : {}),
+    ...(conditions && env.conditionAliases && Object.keys(env.conditionAliases).length > 0 ? { conditionAliases: env.conditionAliases } : {}),
   }
 }
 
@@ -309,6 +330,15 @@ export type FitNote =
   | { kind: 'paused'; nothingNew?: boolean }
   /** A page waits for the site's pace limit and goes by itself. */
   | { kind: 'waiting' }
+  /**
+   * Wearing or Where met as conditions: `variants` different forms across `prompts` prompts.
+   * `what` names the tags ("bikini and thighhighs"), or the library styles ("swimwear").
+   */
+  | { kind: 'variety'; role: 'wearing' | 'where'; what: string; styles: boolean; variants: number; prompts: number }
+  /** In `prompts` prompts no form of the condition was found: the tags went in as typed (`partial`: some of them). */
+  | { kind: 'as-written'; role: 'wearing' | 'where'; what: string; prompts: number; partial: boolean; styles?: boolean }
+  /** Before generating: only `pictures` loaded pictures have the condition, for `asked` prompts. */
+  | { kind: 'condition-supply'; role: 'wearing' | 'where'; what: string; pictures: number; asked: number }
   /** One-part pack: how many values of the part go with the scene that repeats. */
   | { kind: 'axis-fit'; axis: OneAxis; variations: number }
   /** One-part pack: the variants are being worked out. */
@@ -343,6 +373,49 @@ export interface PredictInput {
   paused?: boolean
   /** One-part pack: the part that changes and what was asked for on it. */
   axis?: { axis: OneAxis; requested: readonly string[] } | null
+  /** Wearing and Where met as conditions, with the loaded pictures that have them (conditionSupply). */
+  conditions?: readonly ConditionSupply[]
+}
+
+/** A condition of the brief and how many loaded pictures meet it. */
+export interface ConditionSupply {
+  role: 'wearing' | 'where'
+  tags: readonly string[]
+  pictures: number
+}
+
+/**
+ * The pictures among `posts` that meet a role's conditions: every tag, or a qualified form of it
+ * ("white bikini" for "bikini"), with `aliases` (other names of a tag) counting as the tag.
+ * The fit line's forecast before generating; the pack itself is the engine's word.
+ */
+export function conditionSupply(
+  posts: readonly { tag_string?: string }[],
+  role: 'wearing' | 'where',
+  tags: readonly string[],
+  aliases: Readonly<Record<string, readonly string[]>> = {}
+): ConditionSupply {
+  const wanted = tags.map((tag) => {
+    const name = normalizeTagForPack(tag)
+    const others = (aliases[name] ?? aliases[name.replace(/ /g, '_')] ?? []).map(normalizeTagForPack)
+    return [name, ...others]
+  })
+  const meets = (have: readonly string[]) =>
+    wanted.every((names) => names.some((n) => have.some((t) => t === n || t.endsWith(` ${n}`))))
+  const pictures = posts.filter((p) => meets((p.tag_string ?? '').split(/\s+/).map(normalizeTagForPack).filter(Boolean))).length
+  return { role, tags: [...tags], pictures }
+}
+
+/** "bikini and thighhighs". */
+const andList = (tags: readonly string[]) =>
+  tags.length <= 1 ? tags.join('') : `${tags.slice(0, -1).join(', ')} and ${tags[tags.length - 1]}`
+
+/** Before generating: a condition fewer loaded pictures meet than prompts are asked for (none said while scenes are still coming). */
+function supplyNotes(conditions: readonly ConditionSupply[] | undefined, count: number, finding: boolean): FitNote[] {
+  if (!conditions || finding) return []
+  return conditions
+    .filter((c) => c.tags.length > 0 && c.pictures < count)
+    .map((c) => ({ kind: 'condition-supply', role: c.role, what: andList(c.tags.map((t) => t.replace(/_/g, ' '))), pictures: c.pictures, asked: count }))
 }
 
 /**
@@ -352,7 +425,7 @@ export interface PredictInput {
  * on the scenes that can take it; the rest is missing.
  */
 export function predictFit(input: PredictInput): FitNote[] {
-  const notes = predictNotes(input)
+  const notes = [...predictNotes(input), ...supplyNotes(input.conditions, input.count, input.finding)]
   return input.paused && notes.some((n) => n.kind !== 'fit' && n.kind !== 'finding') ? [...notes, { kind: 'paused' }] : notes
 }
 
@@ -412,10 +485,11 @@ export function issuesFit(input: IssuesInput): FitNote[] {
 function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive, axis }: IssuesInput): FitNote[] {
   const order: Record<ScenePackIssue['kind'], number> = {
     'few-scenes': 0, 'few-variations': 0, 'composition-without-pose': 1, 'scenes-reused': 2, 'pose-imposed': 3, 'needs-company': 4,
-    'request-dropped': 5, 'axis-requested': 6,
+    'request-dropped': 5, 'axis-requested': 6, 'condition-variety': 7,
   }
-  const notes = [...issues].sort((a, b) => order[a.kind] - order[b.kind]).map((issue): FitNote => {
-    switch (issue.kind) {
+  const notes = [...issues].sort((a, b) => order[a.kind] - order[b.kind]).flatMap((issue): FitNote[] => {
+    if (issue.kind === 'condition-variety') return varietyNotes(issue)
+    return [((): FitNote => { switch (issue.kind) {
       case 'few-scenes': return { kind: 'short', made: issue.prompts, asked: count, scenes: issue.scenes, what: poseWords(issue.tags.length) }
       case 'composition-without-pose': return { kind: 'no-pose-here', people: issue.people, cast, scenes: issue.scenes, what: poseWords(issue.tags.length) }
       case 'scenes-reused': return { kind: 'reuse', scenes: issue.scenes, reused: issue.prompts, done: true }
@@ -424,7 +498,7 @@ function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive, axis
       case 'request-dropped': return { kind: 'dropped', tag: issue.tag, reason: issue.reason }
       case 'axis-requested': return { kind: 'kept-on-axis', axis: issue.axis, tags: [...issue.tags] }
       case 'few-variations': return { kind: 'few-variations', axis: issue.axis, variations: issue.variations, made: issue.prompts, asked: count }
-    }
+    } })()]
   })
   const shortNoted = notes.some((n) => n.kind === 'short' || n.kind === 'few-variations')
   if (made < count && !shortNoted) {
@@ -434,10 +508,27 @@ function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive, axis
   }
   const fit: FitNote = axis ? { kind: 'axis-fit', axis, variations: scenes ?? made } : { kind: 'fit', scenes: scenes ?? made }
   if (notes.length === 0) return [fit]
+  // Only how varied the conditions came out: the pack still fits, and the line says both.
+  if (notes.every((n) => n.kind === 'variety') && made >= count) return [fit, ...notes]
   const lacking = made < count || notes.some((n) => n.kind === 'reuse' || n.kind === 'imposed')
   // Only information: with nothing else to say, the pack still fits.
   if (notes.every((n) => n.kind === 'kept-on-axis') && made >= count) return [fit, ...notes]
   return canOfferSensitive && lacking ? [{ kind: 'few-rated' }, ...notes] : notes
+}
+
+/**
+ * A `condition-variety` issue as the fit line says it: how many different forms there were, and
+ * the prompts that got the tags as typed (a whole lack, or a donor that met only some tags).
+ */
+function varietyNotes(issue: Extract<ScenePackIssue, { kind: 'condition-variety' }>): FitNote[] {
+  const prompts = issue.fromScene + issue.fromDonors + issue.fromLibrary + issue.imposed
+  if (prompts === 0) return []
+  const styles = issue.tags.length === 0 && issue.styles.length > 0
+  const what = styles ? andList(issue.styles) : andList(issue.tags)
+  const notes: FitNote[] = [{ kind: 'variety', role: issue.role, what, styles, variants: issue.variants, prompts }]
+  if (issue.imposed > 0) notes.push({ kind: 'as-written', role: issue.role, what, prompts: issue.imposed, partial: false, ...(styles ? { styles } : {}) })
+  if (issue.partial > 0) notes.push({ kind: 'as-written', role: issue.role, what, prompts: issue.partial, partial: true })
+  return notes
 }
 
 /**

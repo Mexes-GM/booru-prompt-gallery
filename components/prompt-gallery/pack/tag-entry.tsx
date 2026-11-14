@@ -32,10 +32,25 @@ export interface TagEntryProps {
   disabled?: boolean
   /** Marks the field as the one for this card row, so focus can be sent back to it. */
   slotId?: string
+  /**
+   * Choices that aren't tags (Wearing's outfit styles): listed first, all of them while the field
+   * is empty and those whose label matches while typing.
+   */
+  options?: readonly EntryOption[]
   className?: string
 }
 
+/** A choice of the field that isn't a tag. */
+export interface EntryOption {
+  id: string
+  label: string
+  /** Quiet, after the label ("52 outfits"). */
+  detail?: string
+  onPick: () => void
+}
+
 const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
+const NO_OPTIONS: readonly EntryOption[] = []
 
 export const TagEntry = memo(function TagEntry({
   labelledBy,
@@ -50,6 +65,7 @@ export const TagEntry = memo(function TagEntry({
   onRemoveLast,
   disabled = false,
   slotId,
+  options = NO_OPTIONS,
   className,
 }: TagEntryProps) {
   const listId = useId()
@@ -59,9 +75,16 @@ export const TagEntry = memo(function TagEntry({
   const [armed, setArmed] = useState(false)
 
   const query = draft.trim()
+  const lower = query.toLowerCase()
+  const shownOptions = query ? options.filter((o) => o.label.toLowerCase().includes(lower)) : options
+  // One list for the keyboard: the options first, then the tags.
+  const items: Array<{ key: string; label: string; kind?: string; count?: number; detail?: string; pick: () => void }> = [
+    ...shownOptions.map((o) => ({ key: `option:${o.id}`, label: o.label, detail: o.detail, pick: () => { o.onPick(); setQuery(""); setOpen(false) } })),
+    ...suggestions.map((sg) => ({ key: sg.name, label: showTag(sg.name), kind: sg.kind, count: sg.count, pick: () => commit([sg.name]) })),
+  ]
   const hasList = suggestions.length > 0
-  const showList = open && query.length > 0 && (hasList || suggestionStatus !== "idle")
-  const activeId = showList && active >= 0 && active < suggestions.length ? `${listId}-${active}` : undefined
+  const showList = open && ((query.length > 0 && (hasList || suggestionStatus !== "idle")) || shownOptions.length > 0)
+  const activeId = showList && active >= 0 && active < items.length ? `${listId}-${active}` : undefined
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Dialogs and drawers listen for Escape on the document in the capture phase, before the
@@ -139,18 +162,18 @@ export const TagEntry = memo(function TagEntry({
     }
     disarm()
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      if (!hasList) return
+      if (items.length === 0) return
       e.preventDefault()
       setOpen(true)
       const step = e.key === "ArrowDown" ? 1 : -1
-      // Cycles through -1 (back in the field, nothing highlighted) and every suggestion.
-      const n = suggestions.length
+      // Cycles through -1 (back in the field, nothing highlighted) and every item.
+      const n = items.length
       setActive((i) => ((i + 1 + step + n + 1) % (n + 1)) - 1)
       return
     }
     if (e.key === "Enter") {
       e.preventDefault()
-      if (activeId) commit([suggestions[active].name])
+      if (activeId) items[active].pick()
       else commit(splitTyped(draft))
       return
     }
@@ -223,22 +246,23 @@ export const TagEntry = memo(function TagEntry({
           "min-w-[12rem]",
         )}
       >
-        {suggestions.map((s, i) => (
+        {items.map((s, i) => (
           <li
-            key={s.name}
+            key={s.key}
             id={`${listId}-${i}`}
             role="option"
             aria-selected={i === active}
             // Keeps focus in the field, so the click lands before the blur closes the list.
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => commit([s.name])}
+            onClick={s.pick}
             onMouseMove={() => i !== active && setActive(i)}
             className={cn(
               "flex cursor-pointer items-baseline gap-2 rounded-sm px-2 py-1.5 text-[13px] pointer-coarse:py-3",
               i === active ? "bg-accent text-accent-foreground" : "text-foreground",
             )}
           >
-            <span className="min-w-0 flex-1 truncate">{showTag(s.name)}</span>
+            <span className="min-w-0 flex-1 truncate">{s.label}</span>
+            {s.detail && <span className="shrink-0 text-xs text-muted-foreground">{s.detail}</span>}
             {s.kind && <span className="shrink-0 text-xs text-muted-foreground">{s.kind}</span>}
             {s.count !== undefined && (
               <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{compact.format(s.count)}</span>
