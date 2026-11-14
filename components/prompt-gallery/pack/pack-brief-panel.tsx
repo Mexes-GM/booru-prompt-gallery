@@ -21,7 +21,7 @@ import { RequestChip } from "./request-chip"
 import type { EntryOption } from "./tag-entry"
 import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { WearingSourceMenu } from "./wearing-source-menu"
-import { OTHERS_UNUSED } from "./pack-text"
+import { OTHERS_UNUSED, WEARING_TEXT } from "./pack-text"
 import type { OutfitSource } from "./pack-text"
 
 export type { CharacterInfo }
@@ -252,7 +252,15 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   const hasNamed = named.length > 0
   const wearing = slotTags(brief, "wearing")
   const othersShown = !!others && (others.applies === true || brief.others.length > 0)
-  const wearingNote = outfitNote && wearing.length === 0 ? outfitNote : wearing.length > 0 && hasNamed ? "Replaces the usual outfit" : null
+  // What Wearing does to the character's own clothes: a kind per prompt, or the same tags in all.
+  const anyKind = wearing.some((t) => exactness[t] === false)
+  const wearingNote = outfitNote && wearing.length === 0
+    ? outfitNote
+    : wearing.length > 0 && hasNamed
+      ? (anyKind ? WEARING_TEXT.anyKind : WEARING_TEXT.exact)
+      : wearing.length === 0 && styleChips.some((c) => !c.inactive)
+        ? WEARING_TEXT.styles
+        : null
 
   return (
     <TooltipProvider delayDuration={300}>

@@ -111,6 +111,13 @@ export const SIZE_TEXT = {
   unsized: (n: number) => `${n} ${n === 1 ? "prompt has" : "prompts have"} no size and ${n === 1 ? "was" : "were"} copied without one.`,
 } as const
 
+/** Under Wearing: what it does to the character's own clothes. */
+export const WEARING_TEXT = {
+  anyKind: "Each prompt gets its own kind of it, in place of the usual outfit",
+  exact: "Replaces the usual outfit",
+  styles: "Each prompt wears a different outfit from the library",
+} as const
+
 /** The outfit library's styles as Wearing offers them (not tags: a whole outfit of the style per prompt). */
 export const STYLE_TEXT = {
   name: (style: string) => style.charAt(0).toUpperCase() + style.slice(1),

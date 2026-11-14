@@ -61,7 +61,7 @@ export function ratingsSentence(ratings: readonly string[]): string {
 
 /** The rule behind the searches, said once under them. */
 export const SEARCH_RULE =
-  "Only what's in Doing decides which posts are searched. Wearing, Where and the rest are applied afterwards to the scenes found."
+  "What's in Doing decides which scenes are searched. Clothes and places set to Any get searches of their own that only lend them; the rest is applied to the scenes found."
 
 /** A search that ran out without a single post; the character's own search says the name may be spelled another way. */
 export function noPostsSentence(kind: SceneSearch["kind"], site: string): string {
