@@ -6,7 +6,7 @@
  */
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
-import { toSceneRequests, type PackBrief } from './brief'
+import { toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
@@ -266,6 +266,10 @@ export type FitNote =
   | { kind: 'people-missing'; asked: PackPeople; using: PackPeople | null; cast: PackPeople }
   /** Fetching stopped at the pace limit while the source still has posts; one more page can be asked for. */
   | { kind: 'paused' }
+  /** One-part pack: what was asked for on that part stays in every prompt; the rest of the part changes. */
+  | { kind: 'kept-on-axis'; axis: Exclude<ChangesAxis, 'scene'>; tags: string[] }
+  /** One-part pack that came out short: only `variations` values of the part go with the base scene. */
+  | { kind: 'few-variations'; axis: Exclude<ChangesAxis, 'scene'>; variations: number; made: number; asked: number }
 
 export const poseWords = (poses: number) => (poses === 1 ? 'this pose' : 'these poses')
 
@@ -338,7 +342,8 @@ export function issuesFit(input: IssuesInput): FitNote[] {
 
 function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive }: IssuesInput): FitNote[] {
   const order: Record<ScenePackIssue['kind'], number> = {
-    'few-scenes': 0, 'composition-without-pose': 1, 'scenes-reused': 2, 'pose-imposed': 3, 'needs-company': 4, 'request-dropped': 5,
+    'few-scenes': 0, 'few-variations': 0, 'composition-without-pose': 1, 'scenes-reused': 2, 'pose-imposed': 3, 'needs-company': 4,
+    'request-dropped': 5, 'axis-requested': 6,
   }
   const notes = [...issues].sort((a, b) => order[a.kind] - order[b.kind]).map((issue): FitNote => {
     switch (issue.kind) {
@@ -348,12 +353,16 @@ function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive }: Is
       case 'pose-imposed': return { kind: 'imposed', tag: issue.tag, prompts: issue.prompts, done: true }
       case 'needs-company': return { kind: 'needs-company', tag: issue.tag, prompts: issue.prompts }
       case 'request-dropped': return { kind: 'dropped', tag: issue.tag, reason: issue.reason }
+      case 'axis-requested': return { kind: 'kept-on-axis', axis: issue.axis, tags: [...issue.tags] }
+      case 'few-variations': return { kind: 'few-variations', axis: issue.axis, variations: issue.variations, made: issue.prompts, asked: count }
     }
   })
-  const shortNoted = notes.some((n) => n.kind === 'short')
+  const shortNoted = notes.some((n) => n.kind === 'short' || n.kind === 'few-variations')
   if (made < count && !shortNoted) notes.unshift({ kind: 'short', made, asked: count, scenes: made })
   if (notes.length === 0) return [{ kind: 'fit', scenes: scenes ?? made }]
   const lacking = made < count || notes.some((n) => n.kind === 'reuse' || n.kind === 'imposed')
+  // Only information: with nothing else to say, the pack still fits.
+  if (notes.every((n) => n.kind === 'kept-on-axis') && made >= count) return [{ kind: 'fit', scenes: scenes ?? made }, ...notes]
   return canOfferSensitive && lacking ? [{ kind: 'few-rated' }, ...notes] : notes
 }
 

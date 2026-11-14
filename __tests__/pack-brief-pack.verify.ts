@@ -16,6 +16,7 @@ import {
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
 import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/scene-pack"
 import type { Permanence } from "../lib/pack/scene/permanence"
+import { fitText } from "../components/prompt-gallery/pack/pack-text"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -331,6 +332,32 @@ check("slotSuggestions: characters in Who, general tags elsewhere", () => {
   assert.equal(slotSuggestions(found, "who")[0].kind, "Character")
   assert.deepEqual(slotSuggestions(found, "other"), [{ name: "tied_hair", count: 50000 }])
   assert.deepEqual(slotSuggestions(found, "who", 1).length, 1)
+})
+
+// ── One-part packs (changes) ────────────────────────────────────────────────────
+
+check("axis-requested and few-variations become their own sentences", () => {
+  assert.deepEqual(after([{ kind: "axis-requested", axis: "outfit", tags: ["bikini"] }]), [
+    { kind: "fit", scenes: 41 },
+    { kind: "kept-on-axis", axis: "outfit", tags: ["bikini"] },
+  ])
+  assert.deepEqual(after([{ kind: "few-variations", axis: "place", variations: 6, prompts: 6 }], 6), [
+    { kind: "few-variations", axis: "place", variations: 6, made: 6, asked: 10 },
+  ])
+  assert.deepEqual(after([
+    { kind: "axis-requested", axis: "pose", tags: ["sitting"] },
+    { kind: "few-variations", axis: "pose", variations: 4, prompts: 4 },
+  ], 4), [
+    { kind: "few-variations", axis: "pose", variations: 4, made: 4, asked: 10 },
+    { kind: "kept-on-axis", axis: "pose", tags: ["sitting"] },
+  ])
+})
+
+check("fit line wording for the one-part notes", () => {
+  assert.equal(fitText({ kind: "kept-on-axis", axis: "outfit", tags: ["bikini"] }).text, "bikini stays in every prompt. The rest of the outfit changes.")
+  assert.equal(fitText({ kind: "kept-on-axis", axis: "place", tags: ["beach", "night"] }).text, "beach, night stay in every prompt. The rest of the place changes.")
+  assert.equal(fitText({ kind: "few-variations", axis: "outfit", variations: 6, made: 6, asked: 10 }).text, "6 of 10: only 6 outfits fit this scene")
+  assert.equal(fitText({ kind: "few-variations", axis: "expression", variations: 1, made: 1, asked: 10 }).text, "1 of 10: only 1 expression fits this scene")
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

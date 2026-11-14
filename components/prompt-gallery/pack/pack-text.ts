@@ -158,6 +158,12 @@ function fitSentence(state: FitState): string {
       const instead = state.using ? ` Using “${companionsLabel(state.using, state.cast)}” instead.` : ""
       return `No scenes for “${asked}”.${instead}`
     }
+    case "kept-on-axis": {
+      const tags = state.tags.join(", ")
+      return `${tags} ${state.tags.length === 1 ? "stays" : "stay"} in every prompt. The rest of the ${state.axis} changes.`
+    }
+    case "few-variations":
+      return `${state.made} of ${state.asked}: only ${plural(state.variations, state.axis)} ${state.variations === 1 ? "fits" : "fit"} this scene`
     case "paused":
       return state.waiting
         ? "Paused to avoid too many requests. You can search again in a few seconds."

@@ -25,6 +25,8 @@ const TONE: Record<FitState["kind"], { icon: typeof Check; className: string }> 
   stale: { icon: RotateCcw, className: "text-muted-foreground" },
   "people-missing": { icon: AlertTriangle, className: "text-warning-text" },
   paused: { icon: Pause, className: "text-muted-foreground" },
+  "kept-on-axis": { icon: Info, className: "text-info-text" },
+  "few-variations": { icon: AlertTriangle, className: "text-warning-text" },
 }
 
 export interface FitLineProps {
