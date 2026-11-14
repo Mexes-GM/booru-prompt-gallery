@@ -110,6 +110,8 @@ export function layersOver(tags: readonly string[], garments: readonly string[],
   return tags.filter((tag) => {
     const slot = getTagSlotFromOverrides(tag, overrides)?.slot
     if (!slot || isGarmentDetail(tag)) return false
+    // Another of the requested garments (or a form of it) is asked for, not worn over them.
+    if (garments.some((garment) => isQualifiedVariant(tag, garment))) return false
     return worn.some((garment) => {
       if (!slotsTakenBy(garment, overrides).includes(slot)) return false
       if (isQualifiedVariant(tag, garment) || isQualifiedVariant(garment, tag) || isPieceOf(tag, garment)) return false
