@@ -57,7 +57,7 @@ export const SLOTS: Record<SlotId, SlotMeta> = {
     iconClass: "text-cat-scenery-text",
     emptyText: "Anything",
     moreText: "Add a place",
-    help: "A place, or the time of day, weather and light",
+    help: "A place, or the time of day, weather and light. Any finds places that have it; Exactly adds it to each scene",
   },
   also: {
     id: "also",

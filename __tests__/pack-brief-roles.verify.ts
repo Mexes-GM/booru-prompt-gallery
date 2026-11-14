@@ -3,7 +3,8 @@
  * way in: real taxonomy, permanence data and measured relations, a cast of one girl. Covers the
  * classes of the tag-role audit (looks of the moment, objects and actions, the picture, the others,
  * composition, garment states, signature garments, ambience) and the plain cases, plus the owner's
- * own tags. Then: asking for "night" keeps the scene's place, which asking it as a place loses.
+ * own tags. Then the ambience of Where: Any (a condition: places that have it, the donors' too),
+ * Exactly (added to each scene, which keeps its place).
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-brief-roles.verify.ts
  */
@@ -13,7 +14,7 @@ import assert from "node:assert/strict"
 import { createPermanence, type PermanenceData } from "../lib/pack/scene/permanence"
 import { parseTagRelations, setTagRelations, type TagRelationsFile } from "../lib/tag-relations"
 import {
-  addTag, briefFromPrompt, emptyBrief, isAmbienceTag, isOthersTag, routeTag, setRoutePermanence, toSceneRequests, typedRole,
+  addTag, briefConditions, briefFromPrompt, emptyBrief, setRequestExact, isAmbienceTag, isOthersTag, routeTag, setRoutePermanence, toSceneRequests, typedRole,
 } from "../lib/pack/brief"
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
@@ -130,7 +131,7 @@ check("a tag nothing knows: from a suggestion, by what it said; typed, stays in 
   assert.equal(typedRole("hat", "doing", overrides), "wearing")
 })
 
-check("the same rule for a pasted prompt: composition apart, never lost; ambience asked as Also", () => {
+check("the same rule for a pasted prompt: composition apart, never lost; ambience a place condition, exact as Also", () => {
   const { brief, peopleTags } = briefFromPrompt("1girl, hetero, navel, hat, night, beach, shirt lift, realistic", overrides)
   assert.deepEqual(peopleTags, ["1girl", "hetero"])
   assert.deepEqual(brief.requests.map((r) => [r.tag, r.role, !!r.ambience]), [
@@ -138,8 +139,11 @@ check("the same rule for a pasted prompt: composition apart, never lost; ambienc
   ])
   assert.deepEqual(brief.literal, ["realistic"])
   const asked = toSceneRequests(brief)
-  assert.deepEqual(asked.where, ["beach"])
-  assert.deepEqual(asked.also, ["navel", "night"])
+  assert.deepEqual(asked.where, ["night", "beach"])
+  assert.deepEqual(asked.also, ["navel"])
+  const exact = toSceneRequests(setRequestExact(brief, "night", true))
+  assert.deepEqual(exact.where, ["beach"])
+  assert.deepEqual(exact.also, ["navel", "night"])
   // A pairing typed or added is no tag of the brief.
   assert.deepEqual(addTag(emptyBrief(), "hetero", overrides).requests, [])
 })
@@ -164,8 +168,8 @@ const args = (requests: SceneRequests): ScenePackArgs => ({
 const PLACES = ["beach", "classroom", "bedroom"]
 const placesOf = (prompt: string) => prompt.split(",").map((t) => t.trim()).filter((t) => PLACES.includes(t))
 
-check("night asked as the brief asks it (Also) keeps each scene's place; asked as a place, it loses it", () => {
-  const brief = addTag(emptyBrief(), "night", overrides)
+check("night, Exactly: added to each scene (Also), which keeps its place; imposed as a place, it loses it", () => {
+  const brief = setRequestExact(addTag(emptyBrief(), "night", overrides), "night", true)
   const requests = toSceneRequests(brief)
   assert.deepEqual(requests.also, ["night"])
   assert.deepEqual(requests.where, [])
@@ -178,5 +182,47 @@ check("night asked as the brief asks it (Also) keeps each scene's place; asked a
   const lost = generateScenePack(pool, args({ select: [], wearing: [], where: ["night"], also: [], literal: [] })).prompts
   assert.ok(lost.every((p) => placesOf(p.prompt).length === 0), lost.map((p) => p.prompt).join("\n"))
 })
+
+// ── Any: a place that has it ─────────────────────────────────────────────────
+const OWN = [
+  makePost(811, "1girl solo standing smile white_shirt skirt simple_background white_background looking_at_viewer"),
+  makePost(812, "1girl solo sitting blush sweater bedroom indoors bed pillow"),
+  makePost(813, "1girl solo standing open_mouth jacket street outdoors day building"),
+  makePost(814, "1girl solo sitting smile coat park outdoors bench tree day"),
+]
+const DONORS = [
+  makePost(851, "1girl solo standing smile coat snow outdoors winter tree forest snowing"),
+  makePost(852, "1girl solo sitting blush scarf snow outdoors mountain winter sky"),
+  makePost(853, "1girl solo standing open_mouth jacket snow street outdoors night city lights"),
+  makePost(854, "1girl solo standing smile sweater night outdoors city cityscape building"),
+  makePost(855, "1girl solo sitting blush yukata night outdoors festival lantern"),
+  makePost(856, "1girl solo standing smile dress night beach ocean moon sky"),
+]
+const ANY_POSTS = [...OWN, ...DONORS]
+const anyKinds = tagKindsFromPosts(ANY_POSTS)
+const anyPool = buildScenePool(ANY_POSTS, { overrides, permanence, subject: "girl", tagKind: (tag: string) => anyKinds.get(tag) })
+const PLAIN = ["white background", "simple background"]
+
+for (const ambience of ["snow", "night"]) {
+  check(`${ambience}, Any: a place condition met in every prompt, places of the donors, never on a plain background`, () => {
+    const brief = addTag(emptyBrief(), ambience, overrides)
+    assert.deepEqual(briefConditions(brief, overrides), [ambience])
+    const requests = { ...toSceneRequests(brief), conditions: briefConditions(brief, overrides) }
+    assert.deepEqual(requests.where, [ambience])
+    assert.deepEqual(requests.also, [])
+    const result = generateScenePack(anyPool, { ...args(requests), donorPosts: DONORS.map((p) => p.id) })
+    assert.equal(result.prompts.length, 4, JSON.stringify(result.issues))
+    const places = new Set<string>()
+    for (const p of result.prompts) {
+      const tags = p.prompt.split(",").map((t) => t.trim())
+      assert.ok(tags.includes(ambience), p.prompt)
+      assert.ok(!tags.some((t) => PLAIN.includes(t)), `no plain background with ${ambience}: ${p.prompt}`)
+      places.add(tags.filter((t) => overrides[t]?.startsWith("scenery:setting")).sort().join("|"))
+    }
+    assert.ok(places.size >= 2, `more than one place: ${[...places].join(" / ")}`)
+    const variety = result.issues.find((i) => i.kind === "condition-variety" && i.role === "where")
+    assert.ok(variety && variety.kind === "condition-variety" && variety.variants >= 2, JSON.stringify(result.issues))
+  })
+}
 
 console.log(`pack-brief-roles: ${passed} checks passed`)
