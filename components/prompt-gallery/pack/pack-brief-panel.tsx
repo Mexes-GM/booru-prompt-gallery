@@ -232,6 +232,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           onSetRole={onSetRole}
           onRemoveTrait={onRemoveTrait}
           onRestoreTrait={onRestoreTrait}
+          assumedRoles={assumedRoles}
           flashKey={flashFor("who")}
         />
         {requestRow("wearing", {
@@ -330,6 +331,7 @@ interface WhoRowProps {
   onSetRole: (tag: string | null, role: CastRole) => void
   onRemoveTrait: (character: string | null, tag: string) => void
   onRestoreTrait: (character: string | null, tag: string) => void
+  assumedRoles?: Readonly<Record<string, CastRole | null | undefined>>
   flashKey?: number
 }
 
@@ -346,6 +348,7 @@ function WhoRow({
   onSetRole,
   onRemoveTrait,
   onRestoreTrait,
+  assumedRoles = {},
   flashKey,
 }: WhoRowProps) {
   const named = who.filter((c) => c.tag !== null)
@@ -405,13 +408,15 @@ function WhoRow({
               <ChoiceGroup
                 size="sm"
                 choices={ROLE_CHOICES}
-                value={c.role ?? null}
+                value={c.role ?? (c.tag ? assumedRoles[c.tag] ?? null : null)}
                 onChange={(role) => onSetRole(c.tag, role)}
                 label={`${name} is a`}
               />
             )}
             {name && showRoles && !c.role && (
-              <span className="text-xs text-muted-foreground">Pick one so the pack knows who is who</span>
+              <span className="text-xs text-muted-foreground">
+                {c.tag && assumedRoles[c.tag] ? "Guessed from their pictures" : "Pick one so the pack knows who is who"}
+              </span>
             )}
             {usual.map((t) => {
               const off = removed.has(t.toLowerCase())

@@ -33,11 +33,13 @@ import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import { addNever, addTag, briefFromPrompt, routeTag, type RequestRole } from "@/lib/pack/brief"
+import type { CastRole } from "@/lib/pack/scene/cast"
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { splitTags } from "@/lib/utils/tag-utils"
 import {
   axisRequests,
   briefFromSearch,
+  castPeopleNote,
   changedRows,
   oneAxis,
   issuesFit,
@@ -399,7 +401,8 @@ function BriefWorkspace({
   const correcting = !!correction && !correction.done
   const stale = !!result && !correcting && (result.brief !== brief || result.count !== count || result.outfit !== outfit)
   const notes: FitNote[] = useMemo(() => {
-    const lead = peopleNote ? [peopleNote] : []
+    const castNote = castPeopleNote(brief.people, identity.cast)
+    const lead = [peopleNote, castNote].filter((n): n is FitNote => !!n)
     const progress = {
       loading: (sourceLoading || (!!manual && !manual.nothingNew)) && !loadError,
       found: have,
@@ -417,7 +420,7 @@ function BriefWorkspace({
       paused,
     })
     return withSearchProgress(stale ? [{ kind: "stale" }, ...lead, ...after] : [...lead, ...after], progress)
-  }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
+  }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, brief.people, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
   const { setIncludeSensitive } = pack
   const includeSensitive = useCallback(() => setIncludeSensitive(true), [setIncludeSensitive])
   const fitStates = useMemo<FitState[]>(
@@ -590,6 +593,12 @@ function BriefWorkspace({
     for (const c of brief.who) if (c.tag) out[c.tag] = { usualLook: engine.looks[c.tag]?.look ?? [] }
     return out
   }, [brief.who, engine.looks])
+  // With several characters, the role the pack assumes for each one (the user corrects it in Who).
+  const assumedRoles = useMemo(() => {
+    const out: Record<string, CastRole | null> = {}
+    brief.who.forEach((c, i) => { if (c.tag) out[c.tag] = identity.members[i]?.role ?? null })
+    return out
+  }, [brief.who, identity.members])
   const { setChanges } = pack
   const changesControl = useMemo(() => ({ value: brief.changes, onChange: setChanges }), [brief.changes, setChanges])
   const people = engine.peopleLine
@@ -665,6 +674,7 @@ function BriefWorkspace({
           onOutfitSourceChange={setOutfit}
           officialOutfits={engine.officialOutfits}
           outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}
+          assumedRoles={assumedRoles}
           changes={changesControl}
           people={people}
           offers={offers}

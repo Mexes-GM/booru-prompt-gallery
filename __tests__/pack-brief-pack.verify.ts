@@ -15,12 +15,13 @@ import {
   preferredPostIds, resolveLook, slotSuggestions, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
 } from "../lib/pack/brief-pack"
 import {
-  placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis,
+  placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
 import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/scene-pack"
 import type { Permanence } from "../lib/pack/scene/permanence"
+import { poseNeedsScene } from "../lib/pack/scene-pack"
 import { fitText } from "../components/prompt-gallery/pack/pack-text"
 
 let passed = 0
@@ -506,6 +507,42 @@ check("predictFit for a one-part pack: variants that fit, short, kept, finding",
   assert.equal(oneAxis(b), "place")
   assert.equal(fitText({ kind: "axis-fit", axis: "outfit", variations: 14 }).text, "14 outfits fit this scene")
   assert.equal(fitText({ kind: "finding-variants", axis: "pose" }).text, "Finding poses that fit this scene…")
+})
+
+// ── Cast and roles (INT-5) ──────────────────────────────────────────────────────
+
+check("one character + bikini + a pose that needs company: the brief leads to People", () => {
+  let b = briefFromCharacters(["tifa lockhart"])
+  b = addTag(b, "bikini", OVERRIDES)
+  b = addTag(b, "princess carry", OVERRIDES)
+  const r = toSceneRequests(b)
+  assert.deepEqual(r.wearing, ["bikini"])
+  assert.deepEqual(r.select, ["princess carry"])
+  const line = peopleLineState({
+    poses: r.select,
+    needsCompany: (tag) => poseNeedsScene(tag, OVERRIDES, null),
+    compositions: [{ people: { girls: 1, boys: 1 }, scenes: 41 }, { people: { girls: 2, boys: 0 }, scenes: 27 }],
+    current: { girls: 1, boys: 1 },
+  })
+  assert.equal(line?.poseNeeds, 2)
+  assert.equal(line?.options.length, 2)
+  assert.equal(b.people, null, "no count typed")
+})
+
+check("castPeopleNote: People with less room than the characters", () => {
+  assert.equal(castPeopleNote(null, { girls: 2, boys: 0 }), null)
+  assert.equal(castPeopleNote({ girls: 2, boys: 1 }, { girls: 2, boys: 0 }), null)
+  assert.deepEqual(castPeopleNote({ girls: 1, boys: 1 }, { girls: 2, boys: 0 }), { kind: "people-short-of-cast" })
+})
+
+check("roles in a cast: assumed from the subject, set by the user", () => {
+  const b = briefFromCharacters(["tifa lockhart", "cloud strife"])
+  const looks = { "tifa lockhart": TIFA, "cloud strife": { look: [], subject: ["1boy"], source: "solo" as const } }
+  const who = briefIdentity({ brief: b, looks, permanence, overrides: OVERRIDES })
+  assert.deepEqual(who.members.map((m) => m.role), ["girl", "boy"])
+  assert.deepEqual(who.cast, { girls: 1, boys: 1 })
+  const fixed = briefIdentity({ brief: setCharacterRole(b, "cloud strife", "girl"), looks, permanence, overrides: OVERRIDES })
+  assert.deepEqual(fixed.cast, { girls: 2, boys: 0 })
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)
