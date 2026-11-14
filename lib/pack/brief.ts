@@ -39,6 +39,10 @@ export interface PackBrief {
   people: PackPeople | null    // null: decided from the scenes
   changes: ChangesAxis         // default 'scene'
   leftOut: string[]            // ids of scenes the user removed
+  /** With `changes` on one part: the post id of the scene that repeats, when the user chose one. */
+  baseScene?: number
+  /** With `changes` on one part: ids of the scenes whose part the user left out. Kept apart from `leftOut`. */
+  leftOutVariants?: string[]
 }
 
 /** The engine's view of a brief. */
@@ -103,6 +107,7 @@ function cloneBrief(brief: PackBrief): PackBrief {
     literal: [...brief.literal],
     people: brief.people ? { ...brief.people } : null,
     leftOut: [...brief.leftOut],
+    ...(brief.leftOutVariants ? { leftOutVariants: [...brief.leftOutVariants] } : {}),
   }
 }
 
@@ -252,6 +257,43 @@ export function setPeople(brief: PackBrief, people: PackPeople | null): PackBrie
 
 export function setChanges(brief: PackBrief, changes: ChangesAxis): PackBrief {
   return { ...cloneBrief(brief), changes }
+}
+
+/**
+ * Chooses what changes. Another part starts its own choices again (the scene that
+ * repeats, the variants left out); the scenes left out of a whole-scene pack stay.
+ */
+export function chooseChanges(brief: PackBrief, changes: ChangesAxis): PackBrief {
+  const next = { ...cloneBrief(brief), changes }
+  if (changes === brief.changes) return next
+  delete next.baseScene
+  delete next.leftOutVariants
+  return next
+}
+
+/** The scene that repeats in a one-part pack (undefined: the pack's own choice). */
+export function setBaseScene(brief: PackBrief, postId: number | undefined): PackBrief {
+  const next = cloneBrief(brief)
+  if (postId === undefined) delete next.baseScene
+  else {
+    next.baseScene = postId
+    // The scene that repeats can't be left out.
+    if (next.leftOutVariants) next.leftOutVariants = next.leftOutVariants.filter((x) => x !== String(postId))
+  }
+  return next
+}
+
+export function leaveOutVariant(brief: PackBrief, id: string): PackBrief {
+  const next = cloneBrief(brief)
+  const list = next.leftOutVariants ?? []
+  next.leftOutVariants = list.includes(id) ? list : [...list, id]
+  return next
+}
+
+export function restoreVariant(brief: PackBrief, id: string): PackBrief {
+  const next = cloneBrief(brief)
+  next.leftOutVariants = (next.leftOutVariants ?? []).filter((x) => x !== id)
+  return next
 }
 
 export function leaveOutScene(brief: PackBrief, id: string): PackBrief {

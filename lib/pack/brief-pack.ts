@@ -168,9 +168,9 @@ export type BriefOutfit =
 export function outfitSetting(
   outfit: BriefOutfit,
   wearingAsked: boolean,
-  has: { characterOutfits: boolean; library: boolean }
+  has: { characterOutfits: boolean; library: boolean; outfitChanges?: boolean }
 ): ScenePackSettings['clothing'] {
-  if (wearingAsked) return 'scene'
+  if (wearingAsked || has.outfitChanges) return 'scene'
   switch (outfit.kind) {
     case 'scene': return 'scene'
     case 'usual':
@@ -197,18 +197,36 @@ export interface BriefPackEnv {
   library?: readonly LibraryOutfit[]
   clean: ScenePackArgs['clean']
   resolution?: ScenePackArgs['resolution']
+  /** One-part pack: the scene that repeats when the brief doesn't choose one (the one a pack was made with). */
+  baseScene?: number
 }
 
 /** The scene ids the brief left out, as the engine counts them (post ids). */
 export const leftOutPosts = (brief: PackBrief): number[] =>
-  brief.leftOut.map(Number).filter((id) => Number.isInteger(id) && id > 0)
+  [...brief.leftOut, ...(oneAxis(brief) ? brief.leftOutVariants ?? [] : [])].map(Number).filter((id) => Number.isInteger(id) && id > 0)
+
+/** The part that changes in a one-part pack, or null for a whole-scene pack. */
+export const oneAxis = (brief: Pick<PackBrief, 'changes'>): OneAxis | null => (brief.changes && brief.changes !== 'scene' ? brief.changes : null)
+export type OneAxis = Exclude<ChangesAxis, 'scene'>
+
+/** Requests on the part that changes: they stay in every prompt (the engine's `axis-requested`). */
+export function axisRequests(brief: PackBrief, axis: OneAxis): string[] {
+  const r = toSceneRequests(brief)
+  return axis === 'outfit' ? r.wearing : axis === 'place' ? r.where : axis === 'pose' ? r.select : []
+}
 
 /** Everything generateScenePack needs for a brief. The settings the brief doesn't show keep their defaults. */
 export function briefPackArgs(brief: PackBrief, who: BriefIdentity, env: BriefPackEnv): ScenePackArgs {
   const requests = toSceneRequests(brief)
   const outfits = env.characterOutfits
   const hasOutfits = !!outfits && who.blocks.some((b) => (outfits.get(b.character)?.length ?? 0) > 0)
-  const clothing = outfitSetting(env.outfit, requests.wearing.length > 0, { characterOutfits: hasOutfits, library: (env.library?.length ?? 0) > 0 })
+  const axis = oneAxis(brief)
+  // "Only the outfit" takes every outfit from the scenes: no outfit of the character's own.
+  const clothing = outfitSetting(env.outfit, requests.wearing.length > 0, {
+    characterOutfits: hasOutfits,
+    library: (env.library?.length ?? 0) > 0,
+    outfitChanges: axis === 'outfit',
+  })
   const worn = clothing === 'character' && outfits
     ? who.blocks.map((b) => ({ pinned: b.pinned, outfit: outfits.get(b.character) ?? [] }))
     : null
@@ -232,6 +250,7 @@ export function briefPackArgs(brief: PackBrief, who: BriefIdentity, env: BriefPa
     permanence: env.permanence,
     preferredPosts: env.preferredPosts ?? [],
     removedScenes: leftOutPosts(brief),
+    ...(axis ? { changes: axis, ...(brief.baseScene !== undefined || env.baseScene !== undefined ? { baseScene: brief.baseScene ?? env.baseScene } : {}) } : {}),
   }
 }
 
@@ -266,6 +285,12 @@ export type FitNote =
   | { kind: 'people-missing'; asked: PackPeople; using: PackPeople | null; cast: PackPeople }
   /** Fetching stopped at the pace limit while the source still has posts; one more page can be asked for. */
   | { kind: 'paused' }
+  /** One-part pack: how many values of the part go with the scene that repeats. */
+  | { kind: 'axis-fit'; axis: OneAxis; variations: number }
+  /** One-part pack: the variants are being worked out. */
+  | { kind: 'finding-variants'; axis: OneAxis }
+  /** The People option chosen has no room for every character. */
+  | { kind: 'people-short-of-cast' }
   /** The page the user asked for brought no new scene; `exhausted`: the source has nothing more. */
   | { kind: 'no-new'; exhausted: boolean }
   /** One-part pack: what was asked for on that part stays in every prompt; the rest of the part changes. */
@@ -287,6 +312,8 @@ export interface PredictInput {
   canOfferSensitive: boolean
   /** Fetching stopped at the pace limit and the source has more: the line offers another page. */
   paused?: boolean
+  /** One-part pack: the part that changes and what was asked for on it. */
+  axis?: { axis: OneAxis; requested: readonly string[] } | null
 }
 
 /**
@@ -300,7 +327,16 @@ export function predictFit(input: PredictInput): FitNote[] {
   return input.paused && notes.some((n) => n.kind !== 'fit' && n.kind !== 'finding') ? [...notes, { kind: 'paused' }] : notes
 }
 
-function predictNotes({ candidates, count, poses, finding, canOfferSensitive }: PredictInput): FitNote[] {
+function predictNotes({ candidates, count, poses, finding, canOfferSensitive, axis }: PredictInput): FitNote[] {
+  if (axis) {
+    // One scene repeats: the variants are the scenes that lend it the part (the first is the scene itself).
+    if (!candidates) return [{ kind: 'finding-variants', axis: axis.axis }]
+    const variations = candidates.length
+    const kept: FitNote[] = axis.requested.length > 0 ? [{ kind: 'kept-on-axis', axis: axis.axis, tags: [...axis.requested] }] : []
+    if (variations >= count) return [{ kind: 'axis-fit', axis: axis.axis, variations }, ...kept]
+    if (finding) return [{ kind: 'finding', found: variations }, ...kept]
+    return [{ kind: 'few-variations', axis: axis.axis, variations, made: variations, asked: count }, ...kept]
+  }
   if (!candidates) return [{ kind: 'finding', found: 0 }]
   const total = candidates.length
   if (poses.length === 0) {
@@ -434,6 +470,11 @@ export function peopleLineState({ poses, needsCompany, compositions, current, pi
   const options = [...available]
   if (!options.some((o) => samePeople(o.people, picked))) options.push({ people: { ...picked }, scenes: 0 })
   return { options, value: current }
+}
+
+/** The fit line's word when the People option chosen has no room for every character. */
+export function castPeopleNote(picked: PackPeople | null, cast: PackPeople): FitNote | null {
+  return picked && (picked.girls < cast.girls || picked.boys < cast.boys) ? { kind: 'people-short-of-cast' } : null
 }
 
 /** The fit line's word on the people the user set, when the pool has no scene of them. */

@@ -26,6 +26,9 @@ const TONE: Record<FitState["kind"], { icon: typeof Check; className: string }> 
   "people-missing": { icon: AlertTriangle, className: "text-warning-text" },
   paused: { icon: Pause, className: "text-muted-foreground" },
   "no-new": { icon: Info, className: "text-muted-foreground" },
+  "axis-fit": { icon: Check, className: "text-success-text" },
+  "finding-variants": { icon: Search, className: "text-muted-foreground" },
+  "people-short-of-cast": { icon: AlertTriangle, className: "text-warning-text" },
   "kept-on-axis": { icon: Info, className: "text-info-text" },
   "few-variations": { icon: AlertTriangle, className: "text-warning-text" },
 }

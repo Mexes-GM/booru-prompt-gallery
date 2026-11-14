@@ -8,19 +8,21 @@
 import assert from "node:assert/strict"
 import { addLook, addNever, addTag, leaveOutScene, removeLook, setCharacterRole } from "../lib/pack/brief"
 import { briefFromPrompt, toSceneRequests } from "../lib/pack/brief"
+import { chooseChanges, leaveOutVariant, restoreVariant, setBaseScene } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
   preferredPostIds, resolveLook, slotSuggestions, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
 } from "../lib/pack/brief-pack"
 import {
-  placeRows, changedRows, lockedWithTag, usableSearchTags,
+  placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
 import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/scene-pack"
 import type { Permanence } from "../lib/pack/scene/permanence"
-import { fitText } from "../components/prompt-gallery/pack/pack-text"
+import { poseNeedsScene } from "../lib/pack/scene-pack"
+import { copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -446,6 +448,110 @@ check("usableSearchTags: filters out, exclusions in", () => {
   assert.deepEqual(usableSearchTags("beach, -smile, rating:general, order:score"), ["beach", "-smile"])
   assert.deepEqual(usableSearchTags("rating:general"), [])
   assert.deepEqual(usableSearchTags(""), [])
+})
+
+// ── Changes: one part changes (INT-5) ──────────────────────────────────────────
+
+check("chooseChanges / setBaseScene / variants: a one-part pack keeps its choices apart", () => {
+  let b = leaveOutScene(briefFromCharacters(["tifa lockhart"]), "101")
+  b = chooseChanges(b, "outfit")
+  b = leaveOutVariant(b, "202")
+  b = setBaseScene(b, 303)
+  assert.equal(b.changes, "outfit")
+  assert.equal(b.baseScene, 303)
+  assert.deepEqual(b.leftOutVariants, ["202"])
+  assert.deepEqual(leftOutPosts(b), [101, 202])
+  // The scene that repeats can't be left out.
+  assert.deepEqual(setBaseScene(b, 202).leftOutVariants, [])
+  assert.deepEqual(restoreVariant(b, "202").leftOutVariants, [])
+  // Another part starts over; back on Whole scene the scenes left out before are as they were.
+  const pose = chooseChanges(b, "pose")
+  assert.equal(pose.baseScene, undefined)
+  assert.equal(pose.leftOutVariants, undefined)
+  const whole = chooseChanges(b, "scene")
+  assert.deepEqual(whole.leftOut, ["101"])
+  assert.deepEqual(leftOutPosts(whole), [101])
+})
+
+check("briefPackArgs: changes and the scene that repeats; Only the outfit ignores the outfit menu", () => {
+  let b = chooseChanges(briefFromCharacters(["tifa lockhart"]), "outfit")
+  const env = {
+    overrides: OVERRIDES, permanence, count: 10, seed: 1, people: null, outfit: { kind: "usual" as const },
+    characterOutfits: new Map([["tifa lockhart", ["white tank top"]]]), clean: (t: string[]) => t.join(", "), baseScene: 77,
+  }
+  let args = briefPackArgs(b, identityOf(b), env)
+  assert.equal(args.changes, "outfit")
+  assert.equal(args.baseScene, 77)
+  assert.equal(args.settings.clothing, "scene")
+  assert.ok(!args.identity.includes("white tank top"))
+  b = setBaseScene(b, 88)
+  args = briefPackArgs(b, identityOf(b), env)
+  assert.equal(args.baseScene, 88)
+  const whole = chooseChanges(b, "scene")
+  args = briefPackArgs(whole, identityOf(whole), env)
+  assert.equal(args.changes, undefined)
+  assert.equal(args.baseScene, undefined)
+  assert.equal(args.settings.clothing, "character")
+})
+
+check("predictFit for a one-part pack: variants that fit, short, kept, finding", () => {
+  const axis = { axis: "outfit" as const, requested: [] as string[] }
+  assert.deepEqual(predictFit({ ...base, candidates: null, poses: [], axis }), [{ kind: "finding-variants", axis: "outfit" }])
+  assert.deepEqual(predictFit({ ...base, candidates: scenes(14), poses: [], axis }), [{ kind: "axis-fit", axis: "outfit", variations: 14 }])
+  assert.deepEqual(predictFit({ ...base, candidates: scenes(6), poses: [], axis: { axis: "outfit", requested: ["bikini"] } }), [
+    { kind: "few-variations", axis: "outfit", variations: 6, made: 6, asked: 10 },
+    { kind: "kept-on-axis", axis: "outfit", tags: ["bikini"] },
+  ])
+  const b = addTag(chooseChanges(briefFromCharacters(["tifa lockhart"]), "place"), "beach", OVERRIDES)
+  assert.deepEqual(axisRequests(b, "place"), ["beach"])
+  assert.equal(oneAxis(b), "place")
+  assert.equal(fitText({ kind: "axis-fit", axis: "outfit", variations: 14 }).text, "14 outfits fit this scene")
+  assert.equal(fitText({ kind: "finding-variants", axis: "pose" }).text, "Finding poses that fit this scene…")
+})
+
+// ── Cast and roles (INT-5) ──────────────────────────────────────────────────────
+
+check("one character + bikini + a pose that needs company: the brief leads to People", () => {
+  let b = briefFromCharacters(["tifa lockhart"])
+  b = addTag(b, "bikini", OVERRIDES)
+  b = addTag(b, "princess carry", OVERRIDES)
+  const r = toSceneRequests(b)
+  assert.deepEqual(r.wearing, ["bikini"])
+  assert.deepEqual(r.select, ["princess carry"])
+  const line = peopleLineState({
+    poses: r.select,
+    needsCompany: (tag) => poseNeedsScene(tag, OVERRIDES, null),
+    compositions: [{ people: { girls: 1, boys: 1 }, scenes: 41 }, { people: { girls: 2, boys: 0 }, scenes: 27 }],
+    current: { girls: 1, boys: 1 },
+  })
+  assert.equal(line?.poseNeeds, 2)
+  assert.equal(line?.options.length, 2)
+  assert.equal(b.people, null, "no count typed")
+})
+
+check("castPeopleNote: People with less room than the characters", () => {
+  assert.equal(castPeopleNote(null, { girls: 2, boys: 0 }), null)
+  assert.equal(castPeopleNote({ girls: 2, boys: 1 }, { girls: 2, boys: 0 }), null)
+  assert.deepEqual(castPeopleNote({ girls: 1, boys: 1 }, { girls: 2, boys: 0 }), { kind: "people-short-of-cast" })
+})
+
+check("roles in a cast: assumed from the subject, set by the user", () => {
+  const b = briefFromCharacters(["tifa lockhart", "cloud strife"])
+  const looks = { "tifa lockhart": TIFA, "cloud strife": { look: [], subject: ["1boy"], source: "solo" as const } }
+  const who = briefIdentity({ brief: b, looks, permanence, overrides: OVERRIDES })
+  assert.deepEqual(who.members.map((m) => m.role), ["girl", "boy"])
+  assert.deepEqual(who.cast, { girls: 1, boys: 1 })
+  const fixed = briefIdentity({ brief: setCharacterRole(b, "cloud strife", "girl"), looks, permanence, overrides: OVERRIDES })
+  assert.deepEqual(fixed.cast, { girls: 2, boys: 0 })
+})
+
+// ── Copy (INT-5) ────────────────────────────────────────────────────────────────
+
+check("copyNoteText: says what Copy all left out or what changed", () => {
+  assert.equal(copyNoteText({ missing: 0, stale: false }), undefined)
+  assert.equal(copyNoteText({ missing: 1, stale: false }), "1 prompt is missing.")
+  assert.equal(copyNoteText({ missing: 4, stale: true }), "4 prompts are missing. These were made before your last changes to the pack.")
+  assert.equal(copyNoteText({ missing: 0, stale: true }), "These were made before your last changes to the pack.")
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

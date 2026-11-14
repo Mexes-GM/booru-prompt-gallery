@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addCharacter, addLook, addNever, addTag, briefFromCard, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
-  removeTag, restoreLook, restoreScene, setChanges, setCharacterRole, setPeople, toSceneRequests,
+  addCharacter, addLook, addNever, addTag, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
+  removeTag, restoreLook, restoreScene, setCharacterRole, setPeople, toSceneRequests,
   type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
 import {
@@ -29,6 +29,7 @@ export const BRIEF_LABELS = {
   setPeople: "Changed who's in the picture",
   setChanges: 'Changed what varies',
   leaveOutScene: 'Left a scene out',
+  setBaseScene: 'Changed the scene that repeats',
   restoreScene: 'Put a scene back',
 }
 
@@ -59,6 +60,10 @@ export interface UsePackBriefResult {
   setChanges: (axis: ChangesAxis) => void
   leaveOutScene: (id: string) => void
   restoreScene: (id: string) => void
+  /** One-part packs: the scene that repeats, and the variants left out. */
+  setBaseScene: (postId: number | undefined) => void
+  leaveOutVariant: (id: string) => void
+  restoreVariant: (id: string) => void
 
   /** Starts of a pack: they replace the whole brief, clear the history and seed "never" with the defaults. */
   startEmpty: () => void
@@ -172,7 +177,7 @@ export function usePackBrief(overrides: Record<string, string>): UsePackBriefRes
     [change]
   )
   const setChangesAction = useCallback(
-    (axis: ChangesAxis) => change(BRIEF_LABELS.setChanges, (b) => setChanges(b, axis)),
+    (axis: ChangesAxis) => change(BRIEF_LABELS.setChanges, (b) => chooseChanges(b, axis)),
     [change]
   )
   const leaveOutSceneAction = useCallback(
@@ -184,6 +189,18 @@ export function usePackBrief(overrides: Record<string, string>): UsePackBriefRes
     [change]
   )
 
+  const setBaseSceneAction = useCallback(
+    (postId: number | undefined) => change(BRIEF_LABELS.setBaseScene, (b) => setBaseScene(b, postId)),
+    [change]
+  )
+  const leaveOutVariantAction = useCallback(
+    (id: string) => change(BRIEF_LABELS.leaveOutScene, (b) => leaveOutVariant(b, id)),
+    [change]
+  )
+  const restoreVariantAction = useCallback(
+    (id: string) => change(BRIEF_LABELS.restoreScene, (b) => restoreVariant(b, id)),
+    [change]
+  )
   const startEmpty = useCallback(() => start(emptyBrief()), [start])
   const startWith = useCallback((brief: PackBrief) => start(brief), [start])
   const startFromCharacters = useCallback((names: string[]) => start(briefFromCharacters(names)), [start])
@@ -233,6 +250,7 @@ export function usePackBrief(overrides: Record<string, string>): UsePackBriefRes
     addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
+    setBaseScene: setBaseSceneAction, leaveOutVariant: leaveOutVariantAction, restoreVariant: restoreVariantAction,
     startEmpty, startWith, startFromCharacters, startFromPrompt, startFromCard,
     preferences, setPromptCount, setIncludeSensitive, addNeverDefault, removeNeverDefault,
   }

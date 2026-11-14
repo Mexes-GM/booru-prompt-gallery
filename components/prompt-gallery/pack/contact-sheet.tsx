@@ -12,10 +12,11 @@
  * six keeps each tile at least 44 px wide in a 343 px column)
  * and a "Show all" button. Keep `onToggle` stable: tiles are memoized.
  */
-import { memo, useId, useMemo, useRef, useState, type KeyboardEvent } from "react"
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { AlertTriangle, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { SHEET_TEXT } from "./pack-text"
 
 export interface SceneThumb {
   id: string
@@ -37,6 +38,17 @@ export interface ContactSheetProps {
   /** Shown when there are no scenes. */
   emptyTitle?: string
   emptyHint?: string
+  /**
+   * One-part pack: the first tile is the scene that repeats. Selecting it starts choosing
+   * another; while choosing, selecting a tile makes it the one that repeats.
+   */
+  fixed?: {
+    id: string
+    picking: boolean
+    onStartPick: () => void
+    onPick: (id: string) => void
+    onCancelPick: () => void
+  }
   className?: string
 }
 
@@ -51,28 +63,45 @@ const Tile = memo(function Tile({
   out,
   tabbable,
   onToggle,
+  fixed = false,
+  picking = false,
 }: {
   scene: SceneThumb
   index: number
   out: boolean
   tabbable: boolean
   onToggle: (id: string) => void
+  /** The scene that repeats in every prompt (one-part packs): marked, never left out. */
+  fixed?: boolean
+  /** Choosing the scene that repeats: a select picks this one. */
+  picking?: boolean
 }) {
+  const label = fixed
+    ? `${SHEET_TEXT.fixedBadge} in every prompt, post ${scene.postId}. ${picking ? SHEET_TEXT.keepFixed : SHEET_TEXT.changeFixed}`
+    : picking
+      ? `${SHEET_TEXT.pickThis}, post ${scene.postId}`
+      : `Leave this scene out, post ${scene.postId}`
   return (
     <button
       type="button"
       data-tile={index}
       tabIndex={tabbable ? 0 : -1}
-      aria-pressed={out}
-      aria-label={`Leave this scene out, post ${scene.postId}`}
-      title={out ? "Put this scene back" : "Leave this scene out"}
+      aria-pressed={fixed || picking ? undefined : out}
+      aria-label={label}
+      title={fixed ? SHEET_TEXT.changeFixed : picking ? SHEET_TEXT.pickThis : out ? "Put this scene back" : "Leave this scene out"}
       onClick={() => onToggle(scene.id)}
       className={cn(
         "group/tile relative block aspect-[3/4] w-full overflow-hidden rounded-[6px] border",
         "transition-[border-color,background-color] duration-150 ease-out-strong",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         "animate-in fade-in-0 motion-reduce:animate-none",
-        out ? "border-dashed border-muted-foreground bg-muted/30" : "border-transparent bg-muted hover:border-foreground/40",
+        fixed
+          ? "border-2 border-mode-pack bg-muted"
+          : out
+            ? "border-dashed border-muted-foreground bg-muted/30"
+            : picking
+              ? "border-mode-pack-border bg-muted hover:border-mode-pack"
+              : "border-transparent bg-muted hover:border-foreground/40",
       )}
     >
       {scene.src ? (
@@ -91,7 +120,12 @@ const Tile = memo(function Tile({
           {scene.postId}
         </span>
       )}
-      {out && (
+      {fixed && (
+        <span className="absolute inset-x-0 bottom-0 bg-mode-pack px-1 py-0.5 text-center text-[10px] font-medium leading-tight text-mode-pack-foreground">
+          {SHEET_TEXT.fixedBadge}
+        </span>
+      )}
+      {out && !fixed && (
         <span className="absolute inset-0 grid place-items-center">
           <span className="grid size-6 place-items-center rounded-full bg-overlay/80 text-overlay-foreground">
             <EyeOff className="size-3.5" aria-hidden />
@@ -120,6 +154,7 @@ export const ContactSheet = memo(function ContactSheet({
   onRetry,
   emptyTitle = "No scenes fit this pack",
   emptyHint = "Try taking out a pose or a place.",
+  fixed,
   className,
 }: ContactSheetProps) {
   const [expanded, setExpanded] = useState(false)
@@ -128,6 +163,16 @@ export const ContactSheet = memo(function ContactSheet({
   const helpId = useId()
   const out = useMemo(() => new Set(leftOut), [leftOut])
   const loading = status === "loading"
+  // One handler for every tile, so the tiles stay memoized.
+  const fixedRef = useRef(fixed)
+  useEffect(() => { fixedRef.current = fixed }, [fixed])
+  const onTile = useCallback((id: string) => {
+    const f = fixedRef.current
+    if (!f) return onToggle(id)
+    if (id === f.id) return f.picking ? f.onCancelPick() : f.onStartPick()
+    if (f.picking) return f.onPick(id)
+    onToggle(id)
+  }, [onToggle])
 
   if (status === "error") {
     return (
@@ -188,8 +233,16 @@ export const ContactSheet = memo(function ContactSheet({
   return (
     <div className={cn("@container", className)}>
       <p id={helpId} className="sr-only">
-        Use the arrow keys to move between scenes. Space leaves a scene out or puts it back.
+        {fixed ? SHEET_TEXT.helpFixed : "Use the arrow keys to move between scenes. Space leaves a scene out or puts it back."}
       </p>
+      {fixed?.picking && (
+        <div role="status" className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-foreground">
+          <span>{SHEET_TEXT.picking}</span>
+          <Button type="button" variant="ghost" size="sm" onClick={fixed.onCancelPick} className="h-7 px-2 text-xs pointer-coarse:h-11">
+            Cancel
+          </Button>
+        </div>
+      )}
       <div
         ref={gridRef}
         role="group"
@@ -204,7 +257,16 @@ export const ContactSheet = memo(function ContactSheet({
         className={cn("grid grid-cols-6 gap-1 @md:grid-cols-9 @xl:grid-cols-12", collapsed && COLLAPSE_CLASSES)}
       >
         {shown.map((scene, i) => (
-          <Tile key={scene.id} scene={scene} index={i} out={out.has(scene.id)} tabbable={i === tabStop} onToggle={onToggle} />
+          <Tile
+            key={scene.id}
+            scene={scene}
+            index={i}
+            out={out.has(scene.id)}
+            tabbable={i === tabStop}
+            onToggle={onTile}
+            fixed={fixed?.id === scene.id}
+            picking={!!fixed?.picking}
+          />
         ))}
         {Array.from({ length: placeholders }, (_, i) => (
           <span

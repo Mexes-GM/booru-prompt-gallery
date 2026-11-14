@@ -52,6 +52,13 @@ export interface PackBriefPanelProps {
   outfitSource: OutfitSource
   onOutfitSourceChange: (source: OutfitSource) => void
   officialOutfits?: readonly string[]
+  /**
+   * Said instead of the outfit menu when the pack takes no notice of it ("Only the outfit"
+   * takes every outfit from the scenes).
+   */
+  outfitNote?: string
+  /** With several characters: the role the pack assumes for each one, when the brief doesn't set it. */
+  assumedRoles?: Readonly<Record<string, CastRole | null | undefined>>
 
   offers?: readonly BriefOffer[]
   /** A note per tag that clashes with something else on the card. */
@@ -108,6 +115,8 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     outfitSource,
     onOutfitSourceChange,
     officialOutfits,
+    outfitNote,
+    assumedRoles,
     offers = [],
     conflicts = {},
     onOpenScenePicker,
@@ -223,11 +232,12 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           onSetRole={onSetRole}
           onRemoveTrait={onRemoveTrait}
           onRestoreTrait={onRestoreTrait}
+          assumedRoles={assumedRoles}
           flashKey={flashFor("who")}
         />
         {requestRow("wearing", {
           actions:
-            wearing.length === 0 ? (
+            wearing.length === 0 && !outfitNote ? (
               <WearingSourceMenu
                 value={outfitSource}
                 onChange={onOutfitSourceChange}
@@ -235,7 +245,9 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
                 noCharacter={!hasNamed}
               />
             ) : undefined,
-          notes: wearing.length > 0 && hasNamed ? <SlotNote>Replaces the usual outfit</SlotNote> : undefined,
+          notes: outfitNote && wearing.length === 0
+            ? <SlotNote>{outfitNote}</SlotNote>
+            : wearing.length > 0 && hasNamed ? <SlotNote>Replaces the usual outfit</SlotNote> : undefined,
         })}
         {requestRow("doing")}
         {requestRow("where", {
@@ -319,6 +331,7 @@ interface WhoRowProps {
   onSetRole: (tag: string | null, role: CastRole) => void
   onRemoveTrait: (character: string | null, tag: string) => void
   onRestoreTrait: (character: string | null, tag: string) => void
+  assumedRoles?: Readonly<Record<string, CastRole | null | undefined>>
   flashKey?: number
 }
 
@@ -335,6 +348,7 @@ function WhoRow({
   onSetRole,
   onRemoveTrait,
   onRestoreTrait,
+  assumedRoles = {},
   flashKey,
 }: WhoRowProps) {
   const named = who.filter((c) => c.tag !== null)
@@ -394,13 +408,15 @@ function WhoRow({
               <ChoiceGroup
                 size="sm"
                 choices={ROLE_CHOICES}
-                value={c.role ?? null}
+                value={c.role ?? (c.tag ? assumedRoles[c.tag] ?? null : null)}
                 onChange={(role) => onSetRole(c.tag, role)}
                 label={`${name} is a`}
               />
             )}
             {name && showRoles && !c.role && (
-              <span className="text-xs text-muted-foreground">Pick one so the pack knows who is who</span>
+              <span className="text-xs text-muted-foreground">
+                {c.tag && assumedRoles[c.tag] ? "Guessed from their pictures" : "Pick one so the pack knows who is who"}
+              </span>
             )}
             {usual.map((t) => {
               const off = removed.has(t.toLowerCase())
