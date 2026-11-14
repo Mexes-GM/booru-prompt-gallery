@@ -12,6 +12,8 @@
  *   W. Where as a condition: different places at the place.
  *   X. Exact (not in `conditions`): as before; an exact garment next to a condition stays.
  *   A. One-axis outfit pack with a condition: the donor posts and the library widen it.
+ *   K. A costume is its pieces, measured on the pool (a dress with a maid outfit), not a layer; a coat over it is.
+ *   N. Other names of a condition (conditionAliases): a post tagged "qipao" meets "china dress".
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/pack-scene-conditions.verify.ts
  */
@@ -173,6 +175,59 @@ const isBikiniForm = (t: string) => /\S bikini$/.test(t)
   assert(new Set(cond.prompts.map((p) => p.scene!.postId)).size === 1, "A1: one base")
   assert(cond.prompts.some((p) => p.outfitId === 20), "A1: the library outfit is a donor too")
   assert(cond.prompts.every((p) => !tagsOf(p.prompt).includes("tied shirt")), "A1: no layered donor")
+}
+
+// ── K. A costume is its pieces (measured), a layer over it is not ────────────
+{
+  const DRESSES = ["black_dress", "blue_dress", "white_dress", "frilled_dress", "long_dress", "red_dress"]
+  const POSES = ["standing", "sitting", "standing", "sitting", "standing", "sitting"]
+  // Twelve maid outfits from other posts: a dress with it in every one (a piece of the outfit by the data).
+  const FACES = ["smile", "blush", "open_mouth", "closed_eyes", "grin", "frown", "smile", "blush", "open_mouth", "closed_eyes", "grin", "frown"]
+  const PLACES = ["kitchen indoors", "bedroom indoors", "classroom indoors", "library indoors", "bathroom indoors", "street outdoors", "park outdoors", "beach outdoors", "forest outdoors", "city outdoors", "rooftop outdoors", "shrine outdoors"]
+  const CAMERAS = ["looking_at_viewer", "from_side", "upper_body", "full_body", "cowboy_shot", "from_above", "from_below", "looking_away", "profile", "portrait", "close-up", "wide_shot"]
+  const MAIDS = Array.from({ length: 12 }, (_, i) =>
+    makePost(1000 + i, `1girl solo ${POSES[i % 6]} ${FACES[i]} maid ${DRESSES[i % 6]} maid_headdress ${PLACES[i]} ${CAMERAS[i]}`))
+  // One with a coat over it: a layer, whatever the data says about dresses.
+  const COATED = makePost(1100, "1girl solo standing smile maid black_dress winter_coat street outdoors looking_at_viewer")
+  const posts = [...OWN, ...MAIDS, COATED]
+  const kinds = tagKindsFromPosts(posts)
+  const pool = buildScenePool(posts, { overrides, permanence, subject: "girl", tagKind: (tag: string) => kinds.get(tag) })
+  const donors = [...MAIDS, COATED].map((p) => p.id)
+  const result = generateScenePack(pool, condArgs({ donorPosts: donors, requests: requests({ wearing: ["maid"], conditions: ["maid"] }) }))
+  const lists = result.prompts.map((p) => tagsOf(p.prompt))
+  assert(lists.every((tags) => tags.includes("maid")), "K1: the condition in every prompt")
+  const dresses = lists.map((tags) => tags.find((t) => / dress$/.test(t)) ?? "")
+  assert(dresses.filter(Boolean).length === 4 && new Set(dresses).size === 4, `K1: four prompts, four maid outfits with their dress (${dresses.join(" / ")})`)
+  assert(lists.every((tags) => !tags.includes("winter coat")), "K1: the outfit with a coat over it is never lent")
+  const issue = issueOf(result, "wearing")
+  assert(!!issue && issue.fromDonors === 4 && issue.imposed === 0, `K1: four donors, none as typed (${JSON.stringify(issue)})`)
+  // With too few outfits to measure, a dress next to the maid outfit is still a layer.
+  const few = [...OWN, ...MAIDS.slice(0, 5)]
+  const fewKinds = tagKindsFromPosts(few)
+  const fewPool = buildScenePool(few, { overrides, permanence, subject: "girl", tagKind: (tag: string) => fewKinds.get(tag) })
+  const strict = generateScenePack(fewPool, condArgs({ donorPosts: MAIDS.slice(0, 5).map((p) => p.id), requests: requests({ wearing: ["maid"], conditions: ["maid"] }) }))
+  assert(strict.prompts.every((p) => !tagsOf(p.prompt).some((t) => / dress$/.test(t))), "K2: under MIN_PIECE_SUPPORT outfits, no piece is measured")
+}
+
+// ── N. Other names of a condition (conditionAliases) ─────────────────────────
+{
+  const QIPAO = [
+    makePost(1200, "1girl solo standing smile qipao red_qipao chinese_clothes street outdoors looking_at_viewer day"),
+    makePost(1201, "1girl solo sitting blush qipao red_qipao chinese_clothes bedroom indoors bed looking_at_viewer"),
+    makePost(1202, "1girl solo standing open_mouth qipao blue_qipao chinese_clothes city outdoors day cloud"),
+    makePost(1203, "1girl solo sitting grin qipao blue_qipao chinese_clothes park outdoors from_side"),
+  ]
+  const posts = [...OWN, ...QIPAO]
+  const kinds = tagKindsFromPosts(posts)
+  const pool = buildScenePool(posts, { overrides, permanence, subject: "girl", tagKind: (tag: string) => kinds.get(tag) })
+  const ask = requests({ wearing: ["china dress"], conditions: ["china dress"] })
+  const without = generateScenePack(pool, condArgs({ donorPosts: QIPAO.map((p) => p.id), requests: ask }))
+  assert(issueOf(without, "wearing")?.variants === 0, "N1: without the aliases, posts tagged with another name don't meet it")
+  const withAliases = generateScenePack(pool, condArgs({ donorPosts: QIPAO.map((p) => p.id), requests: ask, conditionAliases: { "china dress": ["qipao", "cheongsam"] } }))
+  const lists = withAliases.prompts.map((p) => tagsOf(p.prompt))
+  assert((issueOf(withAliases, "wearing")?.variants ?? 0) >= 2, `N2: with them, the qipao posts lend their variants (${JSON.stringify(issueOf(withAliases, "wearing"))})`)
+  assert(lists.some((tags) => tags.includes("red china dress") || tags.includes("blue china dress")), "N2: the prompt says the condition's own name, qualified forms too")
+  assert(lists.every((tags) => !tags.some((t) => /qipao/.test(t))), "N2: the other name doesn't reach the prompt")
 }
 
 done()

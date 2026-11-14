@@ -97,14 +97,59 @@ export function isPieceOf(tag: string, garment: string): boolean {
   return tag.split(' ').some((word) => stem(word) === head)
 }
 
+/** The head word of a garment tag, as garments are compared: "white apron" -> "apron", "pleated skirts" -> "skirt". */
+export const garmentHead = (tag: string): string => stem(tag.slice(tag.lastIndexOf(' ') + 1))
+
+/**
+ * Share of the outfits wearing a garment of the outfit slot (a uniform, a maid outfit) that must carry
+ * a piece (by head word) for it to be one of the garment's own pieces rather than a layer over it.
+ * Measured on the theme posts of 26 garments (ENG-7): every core piece of a costume is at 30 % or more
+ * (school uniform's serafuku 30, police uniform's skirt 42, santa costume's dress 50, maid's apron 71,
+ * playboy bunny's leotard 83), and every layer seen over a swimsuit or a dress is below it (a jacket
+ * over a bikini 15, a shirt over a one-piece swimsuit 28).
+ */
+export const PIECE_SHARE = 0.3
+/** Outfits that must wear the garment before its pieces are measured: with fewer, it has none. */
+export const MIN_PIECE_SUPPORT = 10
+
+/**
+ * The pieces of a garment of the outfit slot, measured on `outfits` (the outfit units of the scenes a
+ * pack has, its donors included): the head words of the outfit, top and bottom garments that at least
+ * PIECE_SHARE of the outfits wearing it (or a form of it) carry. A costume is its pieces: a maid
+ * outfit's apron and dress, a school uniform's shirt and skirt. Empty for a garment of another slot,
+ * or with fewer than MIN_PIECE_SUPPORT outfits wearing it.
+ */
+export function garmentPieces(garment: string, outfits: ReadonlyArray<readonly string[]>, overrides: Record<string, string>): Set<string> {
+  if (getTagSlotFromOverrides(garment, overrides)?.slot !== 'clothing:outfit') return new Set()
+  const wearing = outfits.filter((outfit) => outfit.some((tag) => isQualifiedVariant(tag, garment)))
+  if (wearing.length < MIN_PIECE_SUPPORT) return new Set()
+  const counts = new Map<string, number>()
+  for (const outfit of wearing) {
+    const heads = new Set(outfit.filter((tag) => {
+      const slot = getTagSlotFromOverrides(tag, overrides)?.slot
+      return !!slot && TORSO_SLOTS.has(slot) && !isQualifiedVariant(tag, garment) && !isGarmentDetail(tag)
+    }).map(garmentHead))
+    heads.forEach((head) => counts.set(head, (counts.get(head) ?? 0) + 1))
+  }
+  return new Set(Array.from(counts).filter(([, n]) => n / wearing.length >= PIECE_SHARE).map(([head]) => head))
+}
+
 /**
  * The tags of an outfit (`tags`) worn over or instead of a requested garment it has: whole garments
  * of a body slot the garment takes ("tied shirt", "sarong" with a "bikini"), other than the garment's
  * forms and pieces, what the measured relations say it requires ("swimsuit" for "bikini"), and
  * details or cuts. The taxonomy says one piece holds those slots, so such an outfit contradicts the
- * request: the condition takes it from no scene and no donor.
+ * request: the condition takes it from no scene and no donor. A piece of a costume (`pieces`) is not
+ * a layer: an apron with a maid outfit is the outfit.
  */
-export function layersOver(tags: readonly string[], garments: readonly string[], overrides: Record<string, string>, requires: (garment: string) => readonly string[] = () => []): string[] {
+export function layersOver(
+  tags: readonly string[],
+  garments: readonly string[],
+  overrides: Record<string, string>,
+  requires: (garment: string) => readonly string[] = () => [],
+  /** A garment's own pieces (garmentPieces), by head word: never layers over it. */
+  pieces: (garment: string) => ReadonlySet<string> = () => new Set(),
+): string[] {
   const worn = garments.filter((garment) => tags.some((tag) => isQualifiedVariant(tag, garment)))
   if (worn.length === 0) return []
   return tags.filter((tag) => {
@@ -115,6 +160,7 @@ export function layersOver(tags: readonly string[], garments: readonly string[],
     return worn.some((garment) => {
       if (!slotsTakenBy(garment, overrides).includes(slot)) return false
       if (isQualifiedVariant(tag, garment) || isQualifiedVariant(garment, tag) || isPieceOf(tag, garment)) return false
+      if (pieces(garment).has(garmentHead(tag))) return false
       // The wider kind itself, not another form of it: "white dress" next to "sundress" names a second dress.
       return !requires(garment).includes(tag)
     })

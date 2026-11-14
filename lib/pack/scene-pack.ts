@@ -13,11 +13,11 @@ import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, createSeededRng, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
 import { HAND_SLOTS, composeLent, composePack, composePackPrompts, lentScene, outfitWears, placeFits, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
-import { CLOTHING_SLOTS, ConditionQueue, garmentRegion, isLibraryDonor, layersOver, libraryDonor, metCount, regionTags, lendOutfitPart, slotsTakenBy, valueKey, type GarmentRegion } from './scene/scene-conditions'
+import { CLOTHING_SLOTS, ConditionQueue, garmentPieces, garmentRegion, isLibraryDonor, layersOver, libraryDonor, metCount, regionTags, lendOutfitPart, slotsTakenBy, valueKey, type GarmentRegion } from './scene/scene-conditions'
 import { AXIS_SOURCE, AXIS_UNITS, DonorQueue, axisKey, axisOfTag, axisTags, canLend, lendingClashes, showsFace, type OneAxis } from './scene/scene-axis'
 import { coherentPromptTags, dropRedundantTags, isCompanyAct, loneCompanyTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
-import { normalizeRating, sceneTags, unitOfSlot, type Scene, type SceneRating, type TagKind, type UnitName } from './scene/scene'
+import { UNIT_ORDER, normalizeRating, sceneTags, unitOfSlot, type Scene, type SceneRating, type TagKind, type UnitName } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
 import { compositionsOf, type PackPeople, type ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
@@ -672,6 +672,12 @@ export interface ScenePackArgs {
    * rating, with each outfit's style), whatever the Clothing option. Without it, `library` stands in.
    */
   outfitLibrary?: readonly LibraryOutfit[]
+  /**
+   * Other names of the conditions, by condition (brief spelling): the aliases of the tag in the tag
+   * database (auto_suggest_tags.aliases: "qipao", "cheongsam" for "china dress"). A post that carries
+   * one of them meets the condition, and the prompt says it with the condition's own name.
+   */
+  conditionAliases?: Readonly<Record<string, readonly string[]>>
 }
 
 /** A request's role for the engine (keys of SceneRequests); not brief.ts's RequestRole, which names the brief's slots. */
@@ -1480,6 +1486,8 @@ interface ConditionRun {
   placeTally: ConditionTally
   /** Every scene by post id (the pool's own and the donors'), for the swaps a composed prompt records. */
   byId: Map<number, Scene>
+  /** The pieces of each garment of the outfit slot asked for (garmentPieces), measured on those scenes. */
+  pieces: Map<string, Set<string>>
   /** The variants of the last prompt finishWithConditions made, until the pack keeps it (commitVariant). */
   last: { outfit: VariantOption; place: VariantOption } | null
 }
@@ -1493,9 +1501,10 @@ const MAX_PLACE_TRIES = 3
 const ALL_CLOTHING: GarmentRegion = { garments: [], slots: CLOTHING_SLOTS, torso: true }
 
 /** The garments' layers in an outfit part (layersOver, with the measured relations). */
-function layered(value: readonly string[], garments: readonly string[], overrides: Record<string, string>): boolean {
+function layered(value: readonly string[], garments: readonly string[], overrides: Record<string, string>, pieces?: ReadonlyMap<string, ReadonlySet<string>>): boolean {
   const relations = loadedTagRelations()
-  return layersOver(value, garments, overrides, relations ? (garment) => requiredBy(relations, garment) : undefined).length > 0
+  const none: ReadonlySet<string> = new Set()
+  return layersOver(value, garments, overrides, relations ? (garment) => requiredBy(relations, garment) : undefined, (garment) => pieces?.get(garment) ?? none).length > 0
 }
 
 /** The pool a pack takes its scenes from: without the posts that only lend (`donorPosts`). */
@@ -1504,18 +1513,68 @@ function basesOf(pool: ScenePool, args: ScenePackArgs): ScenePool {
   return donors.length > 0 ? withoutScenes(pool, new Set(donors)) : pool
 }
 
+/**
+ * `scene` with every other name of a condition (ScenePackArgs.conditionAliases) written as the
+ * condition, in its outfit (a garment) or place (a place) whatever unit the unknown name fell in, qualified forms too ("red qipao" -> "red china dress"): a post
+ * the booru tagged with another name of the garment or place meets it like one tagged with its own.
+ * The same scene when it has none.
+ */
+function conditionNames(args: ScenePackArgs, wearing: readonly string[], where: readonly string[]): (scene: Scene) => Scene {
+  const canonical = new Map<string, string>()
+  for (const [tag, names] of Object.entries(args.conditionAliases ?? {})) {
+    const condition = normalizeTagForPack(tag)
+    if (!wearing.includes(condition) && !where.includes(condition)) continue
+    for (const name of names) {
+      const alias = normalizeTagForPack(name)
+      if (alias && alias !== condition) canonical.set(alias, condition)
+    }
+  }
+  if (canonical.size === 0) return (scene) => scene
+  /** The tag with the condition's own name, and the condition it names; null when it names none. */
+  const rename = (tag: string): { tag: string; condition: string } | null => {
+    const exact = canonical.get(tag)
+    if (exact) return { tag: exact, condition: exact }
+    for (const [alias, condition] of canonical) if (tag.endsWith(` ${alias}`)) return { tag: `${tag.slice(0, -alias.length)}${condition}`, condition }
+    return null
+  }
+  return (scene) => {
+    let changed = false
+    const units = { ...scene.units }
+    const moved: { outfit: string[]; place: string[] } = { outfit: [], place: [] }
+    for (const unit of UNIT_ORDER) {
+      units[unit] = units[unit].filter((tag) => {
+        const named = rename(tag)
+        if (!named) return true
+        changed = true
+        // Another name of a garment is a garment, of a place a place, whatever unit an unknown tag fell in.
+        moved[wearing.includes(named.condition) ? 'outfit' : 'place'].push(named.tag)
+        return false
+      })
+    }
+    if (!changed) return scene
+    units.outfit = Array.from(new Set([...units.outfit, ...moved.outfit]))
+    units.place = Array.from(new Set([...units.place, ...moved.place]))
+    return { ...scene, units }
+  }
+}
+
 /** The conditions of `args` with their donors from `pool` (the whole pool: donor posts and every composition), or null. */
 function conditionRun(pool: ScenePool, args: ScenePackArgs): ConditionRun | null {
   if (!hasConditions(args)) return null
   const { wearing, where, styles } = requestPlan(args).conditions
   const removed = new Set(args.removedScenes ?? [])
   const byId = new Map<number, Scene>()
-  for (const scene of [...pool.scenes, ...(pool.allScenes ?? [])]) if (!removed.has(scene.postId) && !byId.has(scene.postId)) byId.set(scene.postId, scene)
+  const named = conditionNames(args, wearing, where)
+  for (const scene of [...pool.scenes, ...(pool.allScenes ?? [])]) {
+    if (!removed.has(scene.postId) && !byId.has(scene.postId)) byId.set(scene.postId, named(scene))
+  }
   const scenes = Array.from(byId.values())
   const own = new Set(basesOf(pool, args).scenes.map((scene) => scene.postId))
   const group = (scene: Scene) => (own.has(scene.postId) ? 0 : 1)
   const rng = createSeededRng(args.seed + 7919)
 
+  const outfitsOfScenes = scenes.map((scene) => scene.units.outfit)
+  const pieces = new Map(wearing.map((garment) => [garment, garmentPieces(garment, outfitsOfScenes, args.overrides)]))
   let region: GarmentRegion | null = null
   let outfits: ConditionQueue | null = null
   if (wearing.length > 0 || styles.length > 0) {
@@ -1529,7 +1588,7 @@ function conditionRun(pool: ScenePool, args: ScenePackArgs): ConditionRun | null
     const candidates = sources.flatMap((scene) => {
       const value = regionTags(scene.units.outfit, taken, args.overrides)
       const met = metCount(value, wearing)
-      if (value.length === 0 || (wearing.length > 0 && met === 0) || layered(value, wearing, args.overrides)) return []
+      if (value.length === 0 || (wearing.length > 0 && met === 0) || layered(value, wearing, args.overrides, pieces)) return []
       const kind = isLibraryDonor(scene) ? 2 : group(scene)
       return [{ scene, value, group: (wearing.length - met) * 10 + kind }]
     })
@@ -1543,7 +1602,7 @@ function conditionRun(pool: ScenePool, args: ScenePackArgs): ConditionRun | null
     })
     places = new ConditionQueue(candidates, rng)
   }
-  return { wearing, where, styles, region, outfits, places, outfitTally: newTally(), placeTally: newTally(), byId, last: null }
+  return { wearing, where, styles, region, outfits, places, outfitTally: newTally(), placeTally: newTally(), byId, pieces, last: null }
 }
 
 const peopleKeyOf = (scene: Scene) => (scene.people ? `${scene.people.girls}g${scene.people.boys}b` : 'open')
@@ -1586,7 +1645,7 @@ const AS_IT_IS: VariantOption = { donor: null, value: [], source: 'scene', parti
 function outfitOptions(run: ConditionRun, base: Scene, args: ScenePackArgs): VariantOption[] {
   if (!run.outfits || !run.region) return [AS_IT_IS]
   const own = regionTags(base.units.outfit, run.region, args.overrides)
-  const ownMeets = run.styles.length === 0 && own.length > 0 && metCount(own, run.wearing) === run.wearing.length && !layered(own, run.wearing, args.overrides)
+  const ownMeets = run.styles.length === 0 && own.length > 0 && metCount(own, run.wearing) === run.wearing.length && !layered(own, run.wearing, args.overrides, run.pieces)
   const options: VariantOption[] = []
   if (ownMeets && !run.outfits.isUsed(own)) options.push({ donor: null, value: own, source: 'scene', partial: false })
   const donors = run.outfits.ordered((donor) => donor.postId !== base.postId && outfitFitsPeople(donor, base, args.subject))
@@ -1970,7 +2029,7 @@ function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: num
       if (axis === 'place' && plan.where.length > 0 && !plan.where.every((tag) => donor.units.place.some((at) => isQualifiedVariant(at, tag)))) return false
       if (onAxisCond && axis === 'outfit') {
         // A condition's outfit: no layer over the garment (layersOver); a style, only the library's.
-        if (layered(donor.units.outfit, cond!.wearing, a.overrides)) return false
+        if (layered(donor.units.outfit, cond!.wearing, a.overrides, cond!.pieces)) return false
         if (cond!.styles.length > 0 && !(isLibraryDonor(donor) && !!donor.style && cond!.styles.includes(donor.style))) return false
         if (isLibraryDonor(donor)) return true
       }
@@ -1978,7 +2037,8 @@ function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: num
     }
     // With a condition on the axis, the donors are every scene that can meet it (the donor posts and
     // other compositions too: canLend decides) and, for an outfit, the library's outfits.
-    const inPlay = scenesInPlay(pool, a.disabledSituations)
+    // With conditions, the scenes as the conditions read them (their other names written as the condition).
+    const inPlay = scenesInPlay(pool, a.disabledSituations).map((s) => (onAxisCond ? cond!.byId.get(s.postId) ?? s : s))
     const playing = new Set(inPlay.map((s) => s.postId))
     const extra = onAxisCond
       ? [
