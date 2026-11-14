@@ -6,6 +6,7 @@
  */
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
+import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
@@ -15,6 +16,7 @@ import {
   REUSES_PER_SCENE,
   castChips,
   identityWithOutfits,
+  isWornByCharacter,
   subjectOfTags,
   type CastChipsBlock,
   type LibraryOutfit,
@@ -156,6 +158,22 @@ export function briefIdentity({ brief, looks, profileRoles = {}, permanence, ove
 }
 
 // ── Clothes ───────────────────────────────────────────────────────────────────
+
+/**
+ * The tags of a character's look the garments in Wearing replace: what the character
+ * wears ("earrings", "fingerless gloves"), not what they are (hair, body) or their
+ * signature accessories ("glasses"). The engine leaves these out of every prompt while
+ * Wearing has something (isWornByCharacter); empty while Wearing is empty.
+ */
+export function lookReplacedByWearing(
+  brief: PackBrief,
+  look: readonly string[],
+  overrides: Record<string, string>,
+  permanence: (tag: string) => Permanence
+): string[] {
+  if (!brief.requests.some((r) => r.role === 'wearing')) return []
+  return look.filter((tag) => isWornByCharacter(tag, overrides, permanence))
+}
 
 /** Where the clothes come from while Wearing is empty (the brief's outfit menu). */
 export type BriefOutfit =
@@ -683,17 +701,37 @@ export const briefAsksNothing = (brief: PackBrief): boolean =>
 /** A tag the lookup returned (lib/supabase/client-queries.ts's TagResult). */
 export interface FoundTag { name: string; postCount: number; category: number }
 
-/** Danbooru tag categories: 0 general, 4 character. */
+/** Danbooru tag categories, and the word Style shows for the ones that are not general. */
 const GENERAL = 0
 const CHARACTER = 4
+const STYLE_KINDS: Readonly<Record<number, string | undefined>> = { 0: undefined, 1: 'Artist', 3: 'Series', 5: 'Meta' }
 
-/** What a slot of the brief offers while typing: characters in Who, general tags elsewhere. */
-export function slotSuggestions(found: readonly FoundTag[], slot: 'who' | 'other', limit = 8): Array<{ name: string; count: number; kind?: string }> {
-  const wanted = slot === 'who' ? CHARACTER : GENERAL
+/**
+ * What a slot of the brief offers while typing: characters in Who; general tags,
+ * artists, series and meta tags in Style; general tags the taxonomy files as appearance
+ * in Others (`overrides` says which); general tags elsewhere.
+ */
+export function slotSuggestions(
+  found: readonly FoundTag[],
+  slot: 'who' | 'style' | 'look' | 'other',
+  limit = 8,
+  overrides: Record<string, string> = {}
+): Array<{ name: string; count: number; kind?: string }> {
+  const kindOf = (category: number): string | undefined =>
+    slot === 'who' ? 'Character' : slot === 'style' ? STYLE_KINDS[category] : undefined
+  const looks = (name: string) => getTagSlotFromOverrides(normalizeTagForPack(name), overrides)?.category === 'appearance'
+  const wanted = (t: FoundTag) =>
+    slot === 'who' ? t.category === CHARACTER
+      : slot === 'style' ? t.category in STYLE_KINDS
+      : slot === 'look' ? t.category === GENERAL && looks(t.name)
+      : t.category === GENERAL
   return found
-    .filter((t) => t.category === wanted)
+    .filter(wanted)
     .slice(0, limit)
-    .map((t) => ({ name: t.name, count: t.postCount, ...(slot === 'who' ? { kind: 'Character' } : {}) }))
+    .map((t) => {
+      const kind = kindOf(t.category)
+      return { name: t.name, count: t.postCount, ...(kind ? { kind } : {}) }
+    })
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────

@@ -111,12 +111,15 @@ export const TIP_TEXT = {
   dismiss: "Dismiss tip",
 } as const
 
+/** Under Others when the make-up has no one besides the characters: the tags stay. */
+export const OTHERS_UNUSED = "No one else is in the picture, so these aren't used."
+
 /** What each way into a pack says it brought (shown until the first change). */
 export const START_TEXT = {
   cardNamed: "From the card: who's in it.",
   cardUnnamed: "This card has no character tag, so Who has only its look.",
   cardOffers: "Its outfit and pose are offered under Wearing and Doing.",
-  prompt: "Your prompt is split across the rows. Tags we don't recognize are under Also.",
+  prompt: "Your prompt is split across the rows. Tags we don't recognize are under Style.",
   search: "Started from your search.",
   searchSkipped: (tags: readonly string[]) => `Search filters left out: ${tags.join(", ")}.`,
 } as const

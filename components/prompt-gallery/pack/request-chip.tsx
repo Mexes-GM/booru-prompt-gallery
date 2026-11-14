@@ -6,7 +6,8 @@
  * - `request`: in every prompt. Remove takes it off.
  * - `never`: in no prompt. Marked with a ban icon, not only by colour.
  * - `trait`: part of a character's usual look. Removing it strikes it through and
- *   keeps it on the card, so it can be put back.
+ *   keeps it on the card, so it can be put back. A trait Wearing replaces is struck
+ *   through too, with no action: it comes back when Wearing is empty again.
  * - `offered`: something the card suggests. The whole chip is one button that adds it;
  *   its detail wraps to a second line rather than being cut.
  *
@@ -26,6 +27,8 @@ export interface RequestChipProps {
   variant?: RequestChipVariant
   /** For `trait`: taken off the character's look, shown struck through. */
   removed?: boolean
+  /** For `trait`: clothing the garments in Wearing replace. Struck through, with no action. */
+  replaced?: boolean
   /** Remove (request, never, trait) or put back (a removed trait). */
   onRemove?: () => void
   onRestore?: () => void
@@ -103,6 +106,7 @@ function RequestChipInner({
   label,
   variant = "request",
   removed = false,
+  replaced = false,
   onRemove,
   onRestore,
   onAccept,
@@ -114,8 +118,8 @@ function RequestChipInner({
 }: RequestChipProps) {
   if (variant === "offered") return <OfferedChip label={label} detail={detail} onAccept={onAccept} className={className} />
 
-  const struck = variant === "trait" && removed
-  const action = struck ? onRestore : onRemove
+  const struck = variant === "trait" && (removed || replaced)
+  const action = replaced && !removed ? undefined : struck ? onRestore : onRemove
   return (
     <span
       className={cn(
@@ -133,7 +137,7 @@ function RequestChipInner({
       <span className={cn("truncate py-1", strong ? "font-semibold" : "font-medium", struck && "line-through")}>
         {variant === "never" && <span className="sr-only">Never: </span>}
         {label}
-        {struck && <span className="sr-only"> (removed)</span>}
+        {struck && <span className="sr-only">{removed ? " (removed)" : " (replaced by Wearing)"}</span>}
       </span>
       {conflict && <ConflictMark note={conflict} />}
       {action && (

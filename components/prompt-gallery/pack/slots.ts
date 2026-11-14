@@ -3,12 +3,12 @@
  * category, and the words it shows when it is empty. Class strings are written out
  * whole so Tailwind sees them.
  */
-import { Ban, Plus, UserRound, type LucideIcon } from "lucide-react"
+import { Ban, Palette, Plus, UserRound, UsersRound, type LucideIcon } from "lucide-react"
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
 import type { PackBrief, RequestRole } from "@/lib/pack/brief"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 
-export type SlotId = "who" | RequestRole | "never"
+export type SlotId = "who" | RequestRole | "style" | "never" | "others"
 
 export interface SlotMeta {
   id: SlotId
@@ -64,7 +64,16 @@ export const SLOTS: Record<SlotId, SlotMeta> = {
     iconClass: "text-muted-foreground",
     emptyText: "Add tags",
     moreText: "Add more",
-    help: "Expression, camera, objects, LoRA triggers",
+    help: "Expression, camera, objects",
+  },
+  style: {
+    id: "style",
+    label: "Style",
+    icon: Palette,
+    iconClass: "text-muted-foreground",
+    emptyText: "Add style tags",
+    moreText: "Add more",
+    help: "Artists, quality tags, LoRA triggers. Every prompt starts with these, as typed.",
   },
   never: {
     id: "never",
@@ -74,9 +83,18 @@ export const SLOTS: Record<SlotId, SlotMeta> = {
     emptyText: "Tags no prompt should have",
     moreText: "Add a tag",
   },
+  others: {
+    id: "others",
+    label: "Others",
+    icon: UsersRound,
+    iconClass: "text-cat-appearance-text",
+    emptyText: "Anything",
+    moreText: "Add a look tag",
+    help: "How the other people look, like dark-skinned male, faceless male or muscular male",
+  },
 }
 
-export const SLOT_ORDER: readonly SlotId[] = ["who", "wearing", "doing", "where", "also", "never"]
+export const SLOT_ORDER: readonly SlotId[] = ["who", "wearing", "doing", "where", "also", "style", "never", "others"]
 
 /** A tag the autocomplete offers. */
 export interface TagSuggestion {
@@ -95,6 +113,8 @@ export interface CharacterInfo {
   name?: string
   /** The character's usual look (hair, eyes, body), as tags. */
   usualLook: readonly string[]
+  /** Tags of the usual look the garments in Wearing replace: kept on the card, not in the prompts. */
+  replacedLook?: readonly string[]
 }
 
 /**
@@ -134,10 +154,11 @@ export function companionsLabel(people: PackPeople, cast: PackPeople): string {
   return parts.length === 0 ? "Alone" : `With ${parts.join(" and ")}`
 }
 
-/** The tags the card asks for in one slot, in the order they were added. */
-export function slotTags(brief: PackBrief, slot: RequestRole): string[] {
-  const tags = brief.requests.filter((r) => r.role === slot).map((r) => r.tag)
-  return slot === "also" ? [...brief.literal, ...tags] : tags
+/** The tags the card asks for in one slot, in the order they were added. Style is `literal`. */
+export function slotTags(brief: PackBrief, slot: RequestRole | "style" | "others"): string[] {
+  if (slot === "style") return [...brief.literal]
+  if (slot === "others") return [...brief.others]
+  return brief.requests.filter((r) => r.role === slot).map((r) => r.tag)
 }
 
 /**
@@ -157,7 +178,9 @@ export function briefSummaryParts(
     ...slotTags(brief, "doing"),
     ...slotTags(brief, "where"),
     ...slotTags(brief, "also"),
+    ...slotTags(brief, "style"),
   ].map(showTag)
   if (peopleLabel) parts.push(peopleLabel.charAt(0).toLowerCase() + peopleLabel.slice(1))
+  parts.push(...brief.others.map(showTag))
   return parts
 }

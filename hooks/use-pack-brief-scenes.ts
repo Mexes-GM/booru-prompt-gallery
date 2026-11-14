@@ -14,9 +14,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import type { PackBrief } from "@/lib/pack/brief"
-import { toSceneRequests } from "@/lib/pack/brief"
+import { isOthersTag, toSceneRequests } from "@/lib/pack/brief"
 import {
   briefIdentity,
+  lookReplacedByWearing,
   briefPackArgs,
   generateLayout,
   oneAxis,
@@ -156,6 +157,10 @@ export interface UsePackBriefScenesResult {
   /** Each named character's look as read (before the user's edits), keyed by brief tag. */
   looks: Readonly<Record<string, ResolvedLook>>
   identity: ReturnType<typeof briefIdentity>
+  /** Per character, the tags of their look the garments in Wearing replace (lookReplacedByWearing). */
+  replacedLook: Readonly<Record<string, string[]>>
+  /** True for a look tag about the people who are not the characters (isOthersTag), wherever it is typed. */
+  othersTag: (tag: string) => boolean
   /** The first character's official outfits, by name. */
   officialOutfits: string[]
   /** The permanence data has loaded. */
@@ -364,7 +369,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   // A one-part pack keeps the whole-scene choices (they rule out scenes) and shows its
   // variants left out on the sheet; the scene that repeats is part of it.
   const axis = oneAxis(brief)
-  const coreKey = JSON.stringify([brief.who, brief.requests, brief.never, brief.literal, brief.people, brief.changes, brief.baseScene, axis ? brief.leftOut : null])
+  const coreKey = JSON.stringify([brief.who, brief.requests, brief.never, brief.literal, brief.others, brief.people, brief.changes, brief.baseScene, axis ? brief.leftOut : null])
   const coreBrief = useMemo<PackBrief>(
     () => ({ ...brief, leftOut: axis ? brief.leftOut : [], leftOutVariants: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -373,6 +378,18 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const identity = useMemo(
     () => briefIdentity({ brief: coreBrief, looks, profileRoles, permanence: permanence ?? (() => "identity"), overrides }),
     [coreBrief, looks, profileRoles, permanence, overrides]
+  )
+  const replacedLook = useMemo(() => {
+    const out: Record<string, string[]> = {}
+    for (const c of coreBrief.who) {
+      if (c.tag) out[c.tag] = lookReplacedByWearing(coreBrief, looks[c.tag]?.look ?? [], overrides, permanence ?? (() => "identity"))
+    }
+    return out
+  }, [coreBrief, looks, overrides, permanence])
+  const castRoles = useMemo(() => identity.members.map((m) => m.role), [identity.members])
+  const othersTag = useCallback(
+    (tag: string) => !!permanence && isOthersTag(tag, castRoles, overrides, permanence),
+    [castRoles, overrides, permanence]
   )
   const { subject, cast, castSize, missingRoles } = identity
   const castKey = peopleKeyOf(cast)
@@ -811,6 +828,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     plan,
     looks,
     identity,
+    replacedLook,
+    othersTag,
     officialOutfits,
     ready: !!permanence,
     loadFailed: loadFailed && !permanence,
@@ -836,7 +855,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     reroll,
     naturalSourceOf,
   }), [
-    plan, looks, identity, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState, axis, candidateArgs,
+    plan, looks, identity, replacedLook, othersTag, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState, axis, candidateArgs,
     candidatesPending, result, op, sourceKey, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
   ])
 }

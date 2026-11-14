@@ -13,9 +13,9 @@ import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence, type PermanenceData } from "../lib/pack/scene/permanence"
 import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import { DEFAULT_SCENE_SETTINGS, generateScenePack, generateScenePackAsync, sceneCandidates, tagKindsFromPosts, type ScenePackArgs } from "../lib/pack/scene-pack"
-import { addTag, routeTag, toSceneRequests } from "../lib/pack/brief"
+import { addOther, addTag, briefFromPrompt, briefTags, emptyBrief, isOthersTag, removeTag, routeTag, toSceneRequests, typedRole, type TypedRow } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
-import { BRIEF_EXAMPLES, rotationAfter, rotationPlan, briefAsksNothing, briefIdentity, briefPackArgs, briefWithExample, issuesFit, predictFit } from "../lib/pack/brief-pack"
+import { BRIEF_EXAMPLES, lookReplacedByWearing, rotationAfter, rotationPlan, briefAsksNothing, briefIdentity, briefPackArgs, briefWithExample, issuesFit, predictFit } from "../lib/pack/brief-pack"
 import type { SceneRequests } from "../lib/pack/brief"
 import { makePost } from "./fixtures/pack-scene-data"
 import { placeRows } from "../lib/pack/brief-pack"
@@ -198,6 +198,89 @@ async function readingPath() {
   assert.ok(!bookOut.issues.some((i) => i.kind === "pose-imposed"), JSON.stringify(bookOut.issues))
   passed++
 }
+
+check("Style: style tags and unknown tags go to literal in typing order; unknown in Wearing stays", () => {
+  const typed: Array<[string, TypedRow]> = [
+    ["@angeltights", "style"],
+    ["@radblackai", "also"],
+    ["no lineart", "wearing"],
+    ["realistic", "doing"],
+    ["glowing_stitches_xyz", "wearing"],
+  ]
+  let brief = emptyBrief()
+  for (const [tag, row] of typed) brief = addTag(brief, tag, overrides, typedRole(tag, row, overrides))
+  const want = ["@angeltights", "@radblackai", "no lineart", "realistic"]
+  assert.deepEqual(brief.literal, want)
+  assert.deepEqual(brief.requests, [{ tag: "glowing stitches xyz", role: "wearing" }])
+  const requests = toSceneRequests(brief)
+  assert.deepEqual(requests.literal, want)
+  assert.deepEqual(requests.wearing, ["glowing stitches xyz"])
+  assert.deepEqual(requests.also, [])
+  // A known tag typed in Style still goes to its row.
+  assert.equal(typedRole("bikini", "style", overrides), "wearing")
+  // A pasted prompt keeps the same order in literal.
+  assert.deepEqual(briefFromPrompt(`1girl, ${want.join(", ")}, bikini`, overrides).brief.literal, want)
+})
+
+check("Who: Wearing replaces what the character wears; the look shown active is what reaches the prompts", () => {
+  const look = ["long hair", "black hair", "red eyes", "jewelry", "earrings", "fingerless gloves", "suspenders", "elbow gloves", "glasses"]
+  const looks = { "tifa lockhart": { look, subject: ["1girl"], source: "profile" as const } }
+  const plain = briefFromCharacters(["tifa lockhart"])
+  assert.deepEqual(lookReplacedByWearing(plain, look, overrides, permanence), [], "nothing replaced while Wearing is empty")
+  const brief = addTag(plain, "bikini", overrides)
+  const replaced = lookReplacedByWearing(brief, look, overrides, permanence)
+  assert.deepEqual(replaced, ["jewelry", "earrings", "fingerless gloves", "suspenders", "elbow gloves"])
+  const who = briefIdentity({ brief, looks, permanence, overrides })
+  const packArgs = briefPackArgs(brief, who, { overrides, permanence, count: 6, seed: 3, people: null, outfit: { kind: "scene" }, clean })
+  const out = generateScenePack(pool, packArgs).prompts
+  assert.ok(out.length > 0)
+  for (const p of out) {
+    const t = tags(p.prompt)
+    for (const tag of replaced) assert.ok(!t.includes(tag), `${tag} replaced: ${p.prompt}`)
+    for (const tag of ["long hair", "black hair", "red eyes", "glasses", "bikini"]) assert.ok(t.includes(tag), `${tag} kept: ${p.prompt}`)
+  }
+})
+
+check("Others: a look tag about someone of another gender, or comparing the group, goes to Others", () => {
+  const TAGS = ["dark-skinned male", "muscular male", "faceless male", "old man", "bald", "interracial"]
+  const others = (cast: Array<"girl" | "boy" | null>) => TAGS.filter((t) => isOthersTag(t, cast, overrides, permanence))
+  // Only girls on the card: every tag naming a man, and the group's comparison; "bald" stays where typed.
+  assert.deepEqual(others(["girl"]), ["dark-skinned male", "muscular male", "faceless male", "old man", "interracial"])
+  assert.deepEqual(others(["girl", "girl"]), ["dark-skinned male", "muscular male", "faceless male", "old man", "interracial"])
+  // Only boys: the "male" tags are theirs; the comparison still describes the group.
+  assert.deepEqual(others(["boy"]), ["interracial"])
+  // Both genders on the card: nobody can tell, every tag stays where it was typed.
+  assert.deepEqual(others(["girl", "boy"]), [])
+  // No known gender: same.
+  assert.deepEqual(others([null]), [])
+  // The reverse with a boy: a tag naming a woman is the others'.
+  assert.equal(isOthersTag("dark-skinned female", ["boy"], overrides, permanence), true)
+  // Counts and pairings are the composition, not anyone's look; clothing is never a look.
+  assert.equal(isOthersTag("male focus", ["girl"], overrides, permanence), false)
+  assert.equal(isOthersTag("hetero", ["girl"], overrides, permanence), false)
+  assert.equal(isOthersTag("1boy", ["girl"], overrides, permanence), false)
+})
+
+check("Others: kept in the brief, out of the identity, and handed to the engine as requests.others", () => {
+  let brief = briefFromCharacters(["tifa lockhart"])
+  brief = addOther(addOther(brief, "dark-skinned male"), "bald")
+  assert.deepEqual(brief.others, ["dark-skinned male", "bald"])
+  assert.deepEqual(brief.who[0].addedLook, [], "not the character's look")
+  assert.deepEqual(addOther(brief, "Dark-skinned_male").others, brief.others, "no repeats")
+  assert.ok(briefTags(brief).includes("dark-skinned male"))
+  assert.deepEqual(removeTag(brief, "bald").others, ["dark-skinned male"])
+  const requests = toSceneRequests(brief)
+  assert.deepEqual(requests.others, ["dark-skinned male", "bald"])
+  assert.deepEqual(requests.also, [])
+  assert.deepEqual(requests.literal, [])
+  // Arrives in the engine's arguments as it is (the engine does not read it yet).
+  const who = briefIdentity({ brief, looks: {}, permanence, overrides })
+  assert.ok(!who.identity.includes("dark-skinned male"))
+  const packArgs = briefPackArgs(brief, who, { overrides, permanence, count: 6, seed: 3, people: { girls: 1, boys: 2 }, outfit: { kind: "scene" }, clean })
+  assert.deepEqual((packArgs.requests as { others?: string[] }).others, ["dark-skinned male", "bald"])
+  // A brief without others gives the engine the same requests as before.
+  assert.equal("others" in toSceneRequests(briefFromCharacters(["tifa lockhart"])), false)
+})
 
 void readingPath().then(() => console.log(`pack-brief-correct: ${passed} checks passed`)).catch((err) => {
   console.error("FAIL: reading path")
