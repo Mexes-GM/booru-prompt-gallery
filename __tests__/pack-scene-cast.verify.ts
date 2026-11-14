@@ -174,8 +174,8 @@ function args(over: Partial<ScenePackArgs> = {}): ScenePackArgs {
   assert(prompts.length === 4, "four prompts")
   for (const p of prompts) {
     const tags = p.prompt.split(", ")
-    assert(tags.slice(0, 3).join() === "1girl,1boy,hetero", "the header first: " + p.prompt)
-    assert(tags.slice(3, 9).join() === [...ALICE, ...BOB].join(), "then each character's block, in cast order, name first: " + p.prompt)
+    assert(tags.slice(0, 2).join() === "1girl,1boy", "the header first: " + p.prompt)
+    assert(tags.slice(2, 8).join() === [...ALICE, ...BOB].join(), "then each character's block, in cast order, name first: " + p.prompt)
     assert(!tags.includes("solo"), "never solo with two people")
     assert(!tags.includes("beard") && !tags.includes("muscular male"), "with everyone named, no donor trait travels")
   }
