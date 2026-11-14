@@ -54,7 +54,7 @@ export function useTagSuggestions(): UseTagSuggestionsResult {
       searchTagsOrThrow(text, LOOKUP_LIMIT)
         .then((found) => {
           if (id !== requestId.current) return
-          const suggestions = slotSuggestions(found, slot === "who" ? "who" : "other")
+          const suggestions = slotSuggestions(found, slot === "who" || slot === "style" ? slot : "other")
           setState({ slot, suggestions, status: suggestions.length > 0 ? "idle" : "empty" })
         })
         .catch(() => {

@@ -22,12 +22,12 @@ import {
   restoreLook,
   restoreScene,
   routeTag,
+  typedRole,
   setChanges,
   setCharacterRole,
   setPeople,
   type ChangesAxis,
   type PackBrief,
-  type RequestRole,
 } from "@/lib/pack/brief"
 import { castPeople } from "@/lib/pack/scene/cast"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
@@ -171,9 +171,9 @@ function place(b: PackBrief, tag: string, typedIn: SlotId): { brief: PackBrief; 
   if (route.kind === "look") return { brief: addLook(b, b.who[0]?.tag ?? null, tag), dest: "who" }
   if (route.kind === "request") return { brief: addTag(b, tag, OVERRIDES), dest: route.role }
   if (route.kind === "people") return { brief: b, dest: typedIn }
-  // Unknown to the taxonomy: stays where it was typed (Who sends it to Also).
-  const into: RequestRole = typedIn === "who" ? "also" : typedIn
-  return { brief: addTag(b, tag, OVERRIDES, into), dest: into }
+  // Style tags go to Style; one the taxonomy does not know stays in Wearing, Doing or Where.
+  const into = typedRole(tag, typedIn, OVERRIDES)
+  return { brief: addTag(b, tag, OVERRIDES, into), dest: into ?? "style" }
 }
 
 interface UndoEntry {

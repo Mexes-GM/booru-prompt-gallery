@@ -683,17 +683,27 @@ export const briefAsksNothing = (brief: PackBrief): boolean =>
 /** A tag the lookup returned (lib/supabase/client-queries.ts's TagResult). */
 export interface FoundTag { name: string; postCount: number; category: number }
 
-/** Danbooru tag categories: 0 general, 4 character. */
+/** Danbooru tag categories, and the word Style shows for the ones that are not general. */
 const GENERAL = 0
 const CHARACTER = 4
+const STYLE_KINDS: Readonly<Record<number, string | undefined>> = { 0: undefined, 1: 'Artist', 3: 'Series', 5: 'Meta' }
 
-/** What a slot of the brief offers while typing: characters in Who, general tags elsewhere. */
-export function slotSuggestions(found: readonly FoundTag[], slot: 'who' | 'other', limit = 8): Array<{ name: string; count: number; kind?: string }> {
-  const wanted = slot === 'who' ? CHARACTER : GENERAL
+/**
+ * What a slot of the brief offers while typing: characters in Who; general tags,
+ * artists, series and meta tags in Style; general tags elsewhere.
+ */
+export function slotSuggestions(found: readonly FoundTag[], slot: 'who' | 'style' | 'other', limit = 8): Array<{ name: string; count: number; kind?: string }> {
+  const kindOf = (category: number): string | undefined =>
+    slot === 'who' ? 'Character' : slot === 'style' ? STYLE_KINDS[category] : undefined
+  const wanted = (category: number) =>
+    slot === 'who' ? category === CHARACTER : slot === 'style' ? category in STYLE_KINDS : category === GENERAL
   return found
-    .filter((t) => t.category === wanted)
+    .filter((t) => wanted(t.category))
     .slice(0, limit)
-    .map((t) => ({ name: t.name, count: t.postCount, ...(slot === 'who' ? { kind: 'Character' } : {}) }))
+    .map((t) => {
+      const kind = kindOf(t.category)
+      return { name: t.name, count: t.postCount, ...(kind ? { kind } : {}) }
+    })
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────

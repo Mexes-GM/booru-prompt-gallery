@@ -343,6 +343,22 @@ check("slotSuggestions: characters in Who, general tags elsewhere", () => {
   assert.deepEqual(slotSuggestions(found, "who", 1).length, 1)
 })
 
+check("slotSuggestions: Style offers general, artist, series and meta tags, never characters", () => {
+  const found = [
+    { name: "tifa_lockhart", postCount: 9000, category: 4 },
+    { name: "realistic", postCount: 50000, category: 0 },
+    { name: "wlop", postCount: 2000, category: 1 },
+    { name: "final_fantasy_vii", postCount: 40000, category: 3 },
+    { name: "highres", postCount: 900000, category: 5 },
+  ]
+  assert.deepEqual(slotSuggestions(found, "style"), [
+    { name: "realistic", count: 50000 },
+    { name: "wlop", count: 2000, kind: "Artist" },
+    { name: "final_fantasy_vii", count: 40000, kind: "Series" },
+    { name: "highres", count: 900000, kind: "Meta" },
+  ])
+})
+
 // ── One-part packs (changes) ────────────────────────────────────────────────────
 
 check("axis-requested and few-variations become their own sentences", () => {

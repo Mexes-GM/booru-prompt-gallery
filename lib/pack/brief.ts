@@ -34,7 +34,7 @@ export interface PackBrief {
   who: BriefCharacter[]        // 1 to MAX_CAST
   requests: PackRequest[]      // in every prompt
   never: string[]              // in none
-  /** Tags the taxonomy doesn't know (LoRA triggers, quality tags): first in every prompt, as typed. */
+  /** The Style row: style, meta, artist and copyright tags, and tags the taxonomy doesn't know (LoRA triggers). First in every prompt, as typed. */
   literal: string[]
   people: PackPeople | null    // null: decided from the scenes
   changes: ChangesAxis         // default 'scene'
@@ -96,6 +96,24 @@ export function routeTag(tag: string, overrides: Record<string, string>): BriefR
   if (LOOK_SLOTS.has(slot)) return { kind: 'look' }
   if (slot === 'other:character') return { kind: 'character' }
   return { kind: 'literal' }
+}
+
+/** A row of the brief a tag can be typed in. `style` is the row of `literal`. */
+export type TypedRow = 'who' | RequestRole | 'style'
+
+/**
+ * The request role for `addTag` when a tag is typed in a row; undefined puts a
+ * literal tag in `literal` (the style row). A tag the taxonomy files as style, meta,
+ * artist or copyright goes to `literal` wherever it is typed. A tag the taxonomy does
+ * not know stays in Wearing, Doing or Where when typed there; typed anywhere else it
+ * goes to `literal`, which the prompt carries first and as typed.
+ */
+export function typedRole(tag: string, typedIn: TypedRow, overrides: Record<string, string>): RequestRole | undefined {
+  const route = routeTag(tag, overrides)
+  if (route.kind === 'request') return route.role
+  if (route.kind !== 'literal') return undefined
+  if (getTagSlotFromOverrides(normalizeTagForPack(tag), overrides)) return undefined
+  return typedIn === 'wearing' || typedIn === 'doing' || typedIn === 'where' ? typedIn : undefined
 }
 
 function cloneBrief(brief: PackBrief): PackBrief {

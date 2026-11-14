@@ -176,7 +176,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   }
 
   /** A request row: chips for its tags, the last one removable from the keyboard. */
-  const requestRow = (slot: RequestRole, extra?: { actions?: ReactNode; notes?: ReactNode }) => {
+  const requestRow = (slot: RequestRole | "style", extra?: { actions?: ReactNode; notes?: ReactNode }) => {
     const tags = slotTags(brief, slot)
     const lastTag = tags[tags.length - 1]
     const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveTag(lastTag) } : null
@@ -267,6 +267,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           ) : undefined,
         })}
         {requestRow("also")}
+        {requestRow("style")}
         <NeverRow
           tags={brief.never}
           picked={picked === "never"}

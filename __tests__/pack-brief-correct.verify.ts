@@ -13,7 +13,7 @@ import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence, type PermanenceData } from "../lib/pack/scene/permanence"
 import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import { DEFAULT_SCENE_SETTINGS, generateScenePack, generateScenePackAsync, sceneCandidates, tagKindsFromPosts, type ScenePackArgs } from "../lib/pack/scene-pack"
-import { addTag, routeTag, toSceneRequests } from "../lib/pack/brief"
+import { addTag, briefFromPrompt, emptyBrief, routeTag, toSceneRequests, typedRole, type TypedRow } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
 import { BRIEF_EXAMPLES, rotationAfter, rotationPlan, briefAsksNothing, briefIdentity, briefPackArgs, briefWithExample, issuesFit, predictFit } from "../lib/pack/brief-pack"
 import type { SceneRequests } from "../lib/pack/brief"
@@ -198,6 +198,29 @@ async function readingPath() {
   assert.ok(!bookOut.issues.some((i) => i.kind === "pose-imposed"), JSON.stringify(bookOut.issues))
   passed++
 }
+
+check("Style: style tags and unknown tags go to literal in typing order; unknown in Wearing stays", () => {
+  const typed: Array<[string, TypedRow]> = [
+    ["@angeltights", "style"],
+    ["@radblackai", "also"],
+    ["no lineart", "wearing"],
+    ["realistic", "doing"],
+    ["glowing_stitches_xyz", "wearing"],
+  ]
+  let brief = emptyBrief()
+  for (const [tag, row] of typed) brief = addTag(brief, tag, overrides, typedRole(tag, row, overrides))
+  const want = ["@angeltights", "@radblackai", "no lineart", "realistic"]
+  assert.deepEqual(brief.literal, want)
+  assert.deepEqual(brief.requests, [{ tag: "glowing stitches xyz", role: "wearing" }])
+  const requests = toSceneRequests(brief)
+  assert.deepEqual(requests.literal, want)
+  assert.deepEqual(requests.wearing, ["glowing stitches xyz"])
+  assert.deepEqual(requests.also, [])
+  // A known tag typed in Style still goes to its row.
+  assert.equal(typedRole("bikini", "style", overrides), "wearing")
+  // A pasted prompt keeps the same order in literal.
+  assert.deepEqual(briefFromPrompt(`1girl, ${want.join(", ")}, bikini`, overrides).brief.literal, want)
+})
 
 void readingPath().then(() => console.log(`pack-brief-correct: ${passed} checks passed`)).catch((err) => {
   console.error("FAIL: reading path")

@@ -39,9 +39,9 @@ import {
   addTag,
   briefFromPrompt,
   routeTag,
+  typedRole,
   setPeople as setPeopleInBrief,
   type PackBrief,
-  type RequestRole,
 } from "@/lib/pack/brief"
 import { briefFromCharacters } from "@/lib/pack/brief-history"
 import type { CastRole } from "@/lib/pack/scene/cast"
@@ -343,7 +343,7 @@ function landsIn(tag: string, typedIn: SlotId, overrides: Record<string, string>
   if (typedIn === "never") return "never"
   if (route.kind === "character" || route.kind === "look") return "who"
   if (route.kind === "request") return route.role
-  return typedIn === "who" ? "also" : typedIn
+  return typedRole(tag, typedIn, overrides) ?? "style"
 }
 
 function BriefWorkspace({
@@ -555,7 +555,7 @@ function BriefWorkspace({
         continue
       }
       if (slot === "never") never(tag)
-      else add(tag, slot === "who" ? undefined : (slot as RequestRole))
+      else add(tag, typedRole(tag, slot, overrides))
       if (dest !== slot) elsewhere = dest
     }
     const people = peopleFromCountTags(counts, cast)
@@ -628,8 +628,10 @@ function BriefWorkspace({
       next = addLookInBrief(brief, ownerTag, tag)
       apply = () => addLook(ownerTag, tag)
     } else {
-      next = addTag(brief, tag, overrides, "also")
-      apply = () => add(tag, "also")
+      // Like a tag typed in Also: one the taxonomy does not know goes to Style.
+      const role = typedRole(tag, "also", overrides)
+      next = addTag(brief, tag, overrides, role)
+      apply = () => add(tag, role)
     }
     if (JSON.stringify(next) === JSON.stringify(brief)) return
     setCorrection({
