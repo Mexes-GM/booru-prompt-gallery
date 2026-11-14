@@ -65,6 +65,13 @@ export interface ComposeOptions {
    * default: the imposed place replaces the scene's whatever it is.
    */
   whereKeepsPlace?: boolean
+  /**
+   * The exposure tags of `scene` that belong to an act the user asked for, among those `clothes`
+   * (the fixed tags and the outfit in use) don't rule out. They stay whatever clothes the prompt
+   * ends up with: what the act shows of the bodies is part of the act, not of the clothes it was
+   * shown with. Without it, or for a scene it returns nothing for, the exposure goes with its clothes.
+   */
+  actBody?: (scene: Scene, clothes: readonly string[]) => string[]
 }
 
 /** True when the scene already has one of the picked scenes' own tags. */
@@ -529,6 +536,12 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     if (wearing.length > 0 && !sceneWears) {
       units.outfit = []
       units.exposure = []
+    }
+    // What an asked-for act shows of the bodies stays with the act, whatever clothes replaced the scene's.
+    if (options.actBody) {
+      const shown = new Set(units.exposure)
+      const act = options.actBody(scene, [...fixed, ...units.outfit]).filter((tag) => !shown.has(tag))
+      if (act.length > 0) units.exposure = [...units.exposure, ...act]
     }
 
     // The identity wins over anything the scene says about the same thing.

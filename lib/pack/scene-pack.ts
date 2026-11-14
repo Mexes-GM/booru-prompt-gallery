@@ -935,9 +935,33 @@ function fixedTags(args: ScenePackArgs): string[] {
   return [...identity, ...args.baseClothing!.filter((tag) => !own.has(tag))]
 }
 
+/**
+ * The exposure of `scene` that stays with an act the user asked for, whatever clothes the prompt
+ * wears (ComposeOptions.actBody). Only for a scene that has a selected pose only a scene can give
+ * (poseNeedsScene: an act between people, "princess carry"): what that act shows of the bodies is
+ * part of it. A pose that can be imposed on any scene ("sitting") doesn't depend on the scene's
+ * body, and an imposed pose brings nothing of a scene that lacks it. What the clothes `clothes` rule
+ * out goes ("nude" with a "bikini"), judged on one person: the clothes are worn by a character of the
+ * pack, and in a picture of several people the resolver lets anyone be nude next to anyone's bikini.
+ * The exposure unit holds picture state only (permanent traits never enter it), so no look of
+ * another person comes in.
+ */
+function actBody(scene: Scene, clothes: readonly string[], selection: PoseSelection, overrides: Record<string, string>): string[] {
+  if (!posesOf(scene, selection).some((pose) => selection.needed.has(pose))) return []
+  const worn = clothes.map(normalizeTagForPack).filter((tag) => getTagSlotFromOverrides(tag, overrides)?.category === 'clothing')
+  if (worn.length === 0) return scene.units.exposure.slice()
+  const relations = loadedTagRelations()
+  const clashes = (garment: string, tag: string) =>
+    relations
+      ? cannotGoWith(garment, tag, 1, relations)
+      : resolveTagConflicts([garment], [tag]).conflictingTags.length > 0 || resolveTagConflicts([tag], [garment]).conflictingTags.length > 0
+  return scene.units.exposure.filter((tag) => !worn.some((garment) => clashes(garment, normalizeTagForPack(tag))))
+}
+
 function composeOptions(args: ScenePackArgs, count: number, seed: number, disabled: readonly string[] | undefined): ComposeOptions {
   const { settings } = args
   const plan = requestPlan(args)
+  const selection = args.requests ? poseSelection(args) : null
   const library = !isCast(args) && settings.clothing === 'library' && args.library && args.library.length > 0 && plan.wearing.length === 0
   return {
     identity: fixedTags(args),
@@ -954,6 +978,9 @@ function composeOptions(args: ScenePackArgs, count: number, seed: number, disabl
     sceneIdeaTags: args.sceneIdea?.core.length ? args.sceneIdea.core : undefined,
     ...(plan.wearing.length > 0 ? { wearing: plan.wearing } : {}),
     ...(plan.where.length > 0 ? { where: plan.where } : {}),
+    ...(selection && selection.needed.size > 0
+      ? { actBody: (scene: Scene, clothes: readonly string[]) => actBody(scene, clothes, selection, args.overrides) }
+      : {}),
   }
 }
 
