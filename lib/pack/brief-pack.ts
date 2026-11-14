@@ -15,6 +15,7 @@ import {
   REUSES_PER_SCENE,
   castChips,
   identityWithOutfits,
+  isWornByCharacter,
   subjectOfTags,
   type CastChipsBlock,
   type LibraryOutfit,
@@ -156,6 +157,22 @@ export function briefIdentity({ brief, looks, profileRoles = {}, permanence, ove
 }
 
 // ── Clothes ───────────────────────────────────────────────────────────────────
+
+/**
+ * The tags of a character's look the garments in Wearing replace: what the character
+ * wears ("earrings", "fingerless gloves"), not what they are (hair, body) or their
+ * signature accessories ("glasses"). The engine leaves these out of every prompt while
+ * Wearing has something (isWornByCharacter); empty while Wearing is empty.
+ */
+export function lookReplacedByWearing(
+  brief: PackBrief,
+  look: readonly string[],
+  overrides: Record<string, string>,
+  permanence: (tag: string) => Permanence
+): string[] {
+  if (!brief.requests.some((r) => r.role === 'wearing')) return []
+  return look.filter((tag) => isWornByCharacter(tag, overrides, permanence))
+}
 
 /** Where the clothes come from while Wearing is empty (the brief's outfit menu). */
 export type BriefOutfit =

@@ -751,9 +751,9 @@ function BriefWorkspace({
   // ── What the brief shows of each character ──────────────────────────────────────
   const characterInfo = useMemo(() => {
     const out: Record<string, CharacterInfo> = {}
-    for (const c of brief.who) if (c.tag) out[c.tag] = { usualLook: engine.looks[c.tag]?.look ?? [] }
+    for (const c of brief.who) if (c.tag) out[c.tag] = { usualLook: engine.looks[c.tag]?.look ?? [], replacedLook: engine.replacedLook[c.tag] }
     return out
-  }, [brief.who, engine.looks])
+  }, [brief.who, engine.looks, engine.replacedLook])
   // With several characters, the role the pack assumes for each one (the user corrects it in Who).
   const assumedRoles = useMemo(() => {
     const out: Record<string, CastRole | null> = {}

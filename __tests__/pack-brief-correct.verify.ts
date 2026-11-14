@@ -15,7 +15,7 @@ import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import { DEFAULT_SCENE_SETTINGS, generateScenePack, generateScenePackAsync, sceneCandidates, tagKindsFromPosts, type ScenePackArgs } from "../lib/pack/scene-pack"
 import { addTag, briefFromPrompt, emptyBrief, routeTag, toSceneRequests, typedRole, type TypedRow } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
-import { BRIEF_EXAMPLES, rotationAfter, rotationPlan, briefAsksNothing, briefIdentity, briefPackArgs, briefWithExample, issuesFit, predictFit } from "../lib/pack/brief-pack"
+import { BRIEF_EXAMPLES, lookReplacedByWearing, rotationAfter, rotationPlan, briefAsksNothing, briefIdentity, briefPackArgs, briefWithExample, issuesFit, predictFit } from "../lib/pack/brief-pack"
 import type { SceneRequests } from "../lib/pack/brief"
 import { makePost } from "./fixtures/pack-scene-data"
 import { placeRows } from "../lib/pack/brief-pack"
@@ -220,6 +220,25 @@ check("Style: style tags and unknown tags go to literal in typing order; unknown
   assert.equal(typedRole("bikini", "style", overrides), "wearing")
   // A pasted prompt keeps the same order in literal.
   assert.deepEqual(briefFromPrompt(`1girl, ${want.join(", ")}, bikini`, overrides).brief.literal, want)
+})
+
+check("Who: Wearing replaces what the character wears; the look shown active is what reaches the prompts", () => {
+  const look = ["long hair", "black hair", "red eyes", "jewelry", "earrings", "fingerless gloves", "suspenders", "elbow gloves", "glasses"]
+  const looks = { "tifa lockhart": { look, subject: ["1girl"], source: "profile" as const } }
+  const plain = briefFromCharacters(["tifa lockhart"])
+  assert.deepEqual(lookReplacedByWearing(plain, look, overrides, permanence), [], "nothing replaced while Wearing is empty")
+  const brief = addTag(plain, "bikini", overrides)
+  const replaced = lookReplacedByWearing(brief, look, overrides, permanence)
+  assert.deepEqual(replaced, ["jewelry", "earrings", "fingerless gloves", "suspenders", "elbow gloves"])
+  const who = briefIdentity({ brief, looks, permanence, overrides })
+  const packArgs = briefPackArgs(brief, who, { overrides, permanence, count: 6, seed: 3, people: null, outfit: { kind: "scene" }, clean })
+  const out = generateScenePack(pool, packArgs).prompts
+  assert.ok(out.length > 0)
+  for (const p of out) {
+    const t = tags(p.prompt)
+    for (const tag of replaced) assert.ok(!t.includes(tag), `${tag} replaced: ${p.prompt}`)
+    for (const tag of ["long hair", "black hair", "red eyes", "glasses", "bikini"]) assert.ok(t.includes(tag), `${tag} kept: ${p.prompt}`)
+  }
 })
 
 void readingPath().then(() => console.log(`pack-brief-correct: ${passed} checks passed`)).catch((err) => {

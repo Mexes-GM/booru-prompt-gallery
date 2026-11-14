@@ -104,6 +104,8 @@ export interface CharacterInfo {
   name?: string
   /** The character's usual look (hair, eyes, body), as tags. */
   usualLook: readonly string[]
+  /** Tags of the usual look the garments in Wearing replace: kept on the card, not in the prompts. */
+  replacedLook?: readonly string[]
 }
 
 /**

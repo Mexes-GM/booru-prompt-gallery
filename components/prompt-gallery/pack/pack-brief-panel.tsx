@@ -364,7 +364,8 @@ function WhoRow({
         // Added look tags that are already part of the usual look show once, as the trait.
         const added = c.addedLook.filter((t) => !usual.some((u) => same(u, t)))
         const removed = new Set(c.removedLook.map((t) => t.toLowerCase()))
-        return { c, name: c.tag ? characterName(c.tag, info) : null, usual, added, removed }
+        const replaced = new Set((info?.replacedLook ?? []).map((t) => t.toLowerCase()))
+        return { c, name: c.tag ? characterName(c.tag, info) : null, usual, added, removed, replaced }
       }),
     [who, characterInfo],
   )
@@ -375,7 +376,7 @@ function WhoRow({
   let lastKey: string | null = null
   if (lastLine) {
     const lastAdded = lastLine.added[lastLine.added.length - 1]
-    const lastTrait = [...lastLine.usual].reverse().find((t) => !lastLine.removed.has(t.toLowerCase()))
+    const lastTrait = [...lastLine.usual].reverse().find((t) => !lastLine.removed.has(t.toLowerCase()) && !lastLine.replaced.has(t.toLowerCase()))
     if (lastAdded) {
       last = { label: showTag(lastAdded), remove: () => onRemoveTag(lastAdded) }
       lastKey = `added:${lastAdded}`
@@ -396,7 +397,7 @@ function WhoRow({
       notes={full ? <SlotNote>A pack can have up to {maxCharacters} characters.</SlotNote> : undefined}
       flashKey={flashKey}
     >
-      {lines.map(({ c, name, usual, added, removed }, i) => {
+      {lines.map(({ c, name, usual, added, removed, replaced }, i) => {
         const isLast = i === lines.length - 1
         const empty = !name && usual.length === 0 && added.length === 0
         if (empty) return null
@@ -427,6 +428,7 @@ function WhoRow({
                   variant="trait"
                   label={showTag(t)}
                   removed={off}
+                  replaced={replaced.has(t.toLowerCase())}
                   selected={picked && isLast && lastKey === `trait:${t}`}
                   onRemove={() => onRemoveTrait(c.tag, t)}
                   onRestore={() => onRestoreTrait(c.tag, t)}

@@ -17,6 +17,7 @@ import type { PackBrief } from "@/lib/pack/brief"
 import { toSceneRequests } from "@/lib/pack/brief"
 import {
   briefIdentity,
+  lookReplacedByWearing,
   briefPackArgs,
   generateLayout,
   oneAxis,
@@ -156,6 +157,8 @@ export interface UsePackBriefScenesResult {
   /** Each named character's look as read (before the user's edits), keyed by brief tag. */
   looks: Readonly<Record<string, ResolvedLook>>
   identity: ReturnType<typeof briefIdentity>
+  /** Per character, the tags of their look the garments in Wearing replace (lookReplacedByWearing). */
+  replacedLook: Readonly<Record<string, string[]>>
   /** The first character's official outfits, by name. */
   officialOutfits: string[]
   /** The permanence data has loaded. */
@@ -374,6 +377,13 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     () => briefIdentity({ brief: coreBrief, looks, profileRoles, permanence: permanence ?? (() => "identity"), overrides }),
     [coreBrief, looks, profileRoles, permanence, overrides]
   )
+  const replacedLook = useMemo(() => {
+    const out: Record<string, string[]> = {}
+    for (const c of coreBrief.who) {
+      if (c.tag) out[c.tag] = lookReplacedByWearing(coreBrief, looks[c.tag]?.look ?? [], overrides, permanence ?? (() => "identity"))
+    }
+    return out
+  }, [coreBrief, looks, overrides, permanence])
   const { subject, cast, castSize, missingRoles } = identity
   const castKey = peopleKeyOf(cast)
   const isCast = castSize >= 2
@@ -811,6 +821,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     plan,
     looks,
     identity,
+    replacedLook,
     officialOutfits,
     ready: !!permanence,
     loadFailed: loadFailed && !permanence,
@@ -836,7 +847,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     reroll,
     naturalSourceOf,
   }), [
-    plan, looks, identity, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState, axis, candidateArgs,
+    plan, looks, identity, replacedLook, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState, axis, candidateArgs,
     candidatesPending, result, op, sourceKey, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
   ])
 }
