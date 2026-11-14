@@ -12,7 +12,7 @@
  * shows the brief, the sheet, the fit line and Generate; after, the prompts, with the
  * brief folded into one line that opens it again.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react"
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react"
 import { AlertTriangle, ChevronDown, Info, Package, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -87,6 +87,8 @@ import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/pro
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { cn } from "@/lib/utils"
 import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
+import { getProviderTagLimit } from "@/lib/booru/tag-limits"
+import { SearchDetails } from "./search-details"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
 import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
@@ -97,7 +99,7 @@ import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, 
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
-import { briefSummaryParts, companionsLabel, showTag, type CharacterInfo, type SlotId } from "./slots"
+import { briefSummaryParts, characterName, companionsLabel, showTag, type CharacterInfo, type SlotId } from "./slots"
 import { UndoNotice } from "./undo-notice"
 import { PackEmptyState, type ExampleBrief } from "./pack-empty-state"
 import { PackTip } from "./pack-tip"
@@ -383,6 +385,7 @@ function BriefSource({
 const FORMATS: Choice<PromptFormat>[] = PROMPT_FORMATS.map((f) => ({ value: f, label: PROMPT_FORMAT_INFO[f].label }))
 const NO_POSTS: never[] = []
 const NO_IDS: string[] = []
+const NO_PROGRESS: never[] = []
 const UNDO_MS = 6000
 
 /** A sentence that ends with its stop, once. */
@@ -544,6 +547,16 @@ function BriefWorkspace({
         : null,
     [loadedPosts, loadedAll, loadedMore, provider, loadOnePage]
   )
+  // What the pack searches, folded under the fit line until asked for.
+  const searchesId = useId()
+  const [searchesOpen, setSearchesOpen] = useState(false)
+  const toggleSearches = useCallback(() => setSearchesOpen((v) => !v), [])
+  const searchesToggle = useMemo(
+    () => (searching && !loadError ? { open: searchesOpen, onToggle: toggleSearches, controls: searchesId } : null),
+    [searching, loadError, searchesOpen, toggleSearches, searchesId]
+  )
+  const firstTag = brief.who[0]?.tag ?? null
+  const firstName = firstTag ? characterName(firstTag) : null
   const axisNote = useMemo(() => (axis ? { axis, requested: axisRequests(brief, axis) } : null), [axis, brief])
   const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
@@ -1020,9 +1033,21 @@ function BriefWorkspace({
             onIncludeSensitive={includeSensitive}
             hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
             loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
+            searches={i === fitStates.length - 1 && searchesToggle ? searchesToggle : undefined}
           />
         ))}
       </div>
+      {searchesToggle?.open && (
+        <SearchDetails
+          id={searchesId}
+          className="mt-1"
+          plan={plan}
+          progress={source?.searches ?? NO_PROGRESS}
+          character={firstName}
+          site={PROVIDER_LABELS[provider]}
+          limit={getProviderTagLimit(provider)}
+        />
+      )}
       {showExamples && (
         <PackEmptyState heading={EXAMPLES_HEADING} examples={examples} onPick={pickExample} />
       )}

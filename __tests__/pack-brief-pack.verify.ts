@@ -26,6 +26,8 @@ import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/sc
 import type { Permanence } from "../lib/pack/scene/permanence"
 import { poseNeedsScene } from "../lib/pack/scene-pack"
 import { CORRECTION_TEXT, copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
+import { leftOutSentence, noPostsSentence, ratingsSentence, searchDescription, searchTagsText } from "../components/prompt-gallery/pack/search-text"
+import { planSources } from "../lib/pack/source-plan"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -394,6 +396,35 @@ check("loadedState: says the posts loaded; Find more whenever the site has more 
   assert.equal(loadedState({ ...base, finding: true }), null, "the progress line speaks while scenes are found")
   assert.equal(loadedState({ ...base, failed: true }), null)
   assert.equal(loadedState({ ...base, posts: 0 }), null)
+})
+
+check("search-text: each search of the plan in plain words, with the tags as the site gets them", () => {
+  // A character with two poses on Rule34 (no tag limit): their own posts with the first,
+  // anyone with both, and the first alone.
+  let brief = addTag(addTag(briefFromCharacters(["sui-feng"]), "double penetration", OVERRIDES, "doing"), "sitting", OVERRIDES)
+  const plan = planSources(brief, { provider: "rule34", rating: "both", includeSensitive: false })
+  const words = plan.scenes.map((s) => searchDescription(s, "Sui-Feng", plan.people))
+  assert.deepEqual(plan.scenes.map((s) => s.kind), ["own", "theme", "anchor"])
+  assert.deepEqual(words, ["Sui-Feng doing double penetration", "Anyone doing double penetration and sitting", "Anyone doing double penetration"])
+  assert.equal(searchTagsText(plan.scenes[0]), "sui-feng double_penetration")
+  assert.equal(ratingsSentence(plan.ratings), "Each search runs for Questionable and Explicit pictures.")
+  // No pose: the character alone; a head count: pictures with those people.
+  assert.equal(searchDescription({ kind: "own", poses: [] }, "Sui-Feng", null), "Sui-Feng alone")
+  assert.equal(searchDescription({ kind: "group", poses: [] }, null, { girls: 2, boys: 1 }), "Pictures with 2 girls and 1 boy")
+  assert.equal(searchDescription({ kind: "theme", poses: ["sitting"] }, null, { girls: 1, boys: 1 }), "Anyone doing sitting, with 1 girl and 1 boy")
+  assert.equal(searchDescription({ kind: "gallery", poses: [] }, null, null), "Your gallery search")
+  assert.equal(ratingsSentence(["rating:general", "rating:sensitive"]), "Each search runs for Safe and Sensitive pictures.")
+  // Nothing found, and a pose the limit left out.
+  assert.equal(noPostsSentence("own", "Rule34"), "No posts on Rule34 for this search. The site may spell the character's name differently.")
+  assert.equal(noPostsSentence("theme", "Rule34"), "No posts on Rule34 for these tags.")
+  brief = addTag(brief, "squatting", OVERRIDES, "doing")
+  const danbooru = planSources(brief, { provider: "danbooru", rating: "sfw", includeSensitive: false })
+  assert.ok(danbooru.leftOut.length > 0, JSON.stringify(danbooru.leftOut))
+  assert.equal(
+    leftOutSentence(danbooru.leftOut, "Danbooru", 2),
+    `${danbooru.leftOut.map((l) => l.tag).join(" and ")} didn't fit in the searches: Danbooru searches at most 2 tags at a time.`
+  )
+  assert.equal(leftOutSentence([], "Danbooru", 2), null)
 })
 
 // ── One-part packs (changes) ────────────────────────────────────────────────────

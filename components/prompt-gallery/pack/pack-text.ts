@@ -53,6 +53,7 @@ export const BUILDER_TEXT = {
   sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
+  howItSearches: "How it searches",
   generatingSpoken: "Making the prompts",
   busySource: "Generate again first: the pack was made with another site or rating",
   busyRunning: "Wait for the prompts to update",
