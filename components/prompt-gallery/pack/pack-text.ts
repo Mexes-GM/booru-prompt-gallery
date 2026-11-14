@@ -38,13 +38,21 @@ export const BUILDER_TEXT = {
   cardOutfit: "Use this card's outfit",
   cardPose: "Poses like this card",
   ratingMenu: "Content rating",
+  /** The site menu, worded as the gallery's own. */
+  providerMenu: "Search posts from",
+  providerNeedsConsent: "Choose it in the gallery first to confirm adult content",
+  providerNoSensitive: "Safe only: no sensitive rating there",
+  providerChanged: (site: string) => `Now searching ${site}`,
+  /** After the fit line: what the scenes were found in. */
+  loadedFrom: (posts: number, site: string, all: boolean) =>
+    `from ${all ? "all " : ""}${posts} ${posts === 1 ? "post" : "posts"} on ${site}${all ? ", nothing more to find" : ""}`,
   loadFailed: "Couldn't load the scenes. Check your connection and try again.",
   retry: "Try again",
   sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
   generatingSpoken: "Making the prompts",
-  busySource: "Generate again first: the pack was made with another source or rating",
+  busySource: "Generate again first: the pack was made with another site or rating",
   busyRunning: "Wait for the prompts to update",
   resultsLabel: "Prompts",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
