@@ -13,7 +13,7 @@ import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, createSeededRng, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
 import { HAND_SLOTS, composeLent, composePack, composePackPrompts, lentScene, outfitWears, placeFits, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
-import { CLOTHING_SLOTS, ConditionQueue, garmentPieces, garmentRegion, isLibraryDonor, layersOver, libraryDonor, metCount, regionTags, lendOutfitPart, slotsTakenBy, valueKey, type GarmentRegion } from './scene/scene-conditions'
+import { CLOTHING_SLOTS, ConditionQueue, garmentPieces, garmentRegion, inRegion, isLibraryDonor, layersOver, libraryDonor, metCount, regionTags, lendOutfitPart, slotsTakenBy, valueKey, type GarmentRegion } from './scene/scene-conditions'
 import { AXIS_SOURCE, AXIS_UNITS, DonorQueue, axisKey, axisOfTag, axisTags, canLend, lendingClashes, showsFace, type OneAxis } from './scene/scene-axis'
 import { coherentPromptTags, dropRedundantTags, isCompanyAct, loneCompanyTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
@@ -802,8 +802,15 @@ const isCast = (args: ScenePackArgs) => (args.castSize ?? 1) >= 2
 /** The base's clothing is used: the option is on, there is some, the pack has one character, and no garment was asked for. */
 const wearsBaseClothing = (args: ScenePackArgs) =>
   !isCast(args) && args.settings.clothing === 'base' && (args.baseClothing?.length ?? 0) > 0 && !asksOutfit(args)
-/** A garment or a library style was asked for: the clothing options give way to it. */
-const asksOutfit = (args: ScenePackArgs) => requestPlan(args).wearing.length > 0 || requestPlan(args).conditions.styles.length > 0
+/**
+ * A whole outfit (a garment of the outfit slot) or a library style was asked for: the clothing
+ * options give way to it. A garment that takes only part of the outfit (a hat, glasses, boots, a
+ * top) leaves them as they are and replaces only that part.
+ */
+const asksOutfit = (args: ScenePackArgs) => {
+  const plan = requestPlan(args)
+  return plan.conditions.styles.length > 0 || garmentRegion(plan.wearing, args.overrides).slots.has('clothing:outfit')
+}
 /** Some requests are met as conditions (a variant per prompt). */
 const hasConditions = (args: ScenePackArgs) => {
   const { wearing, where, styles } = requestPlan(args).conditions
@@ -899,7 +906,12 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
   )
   const asCondition = new Set((requests.conditions ?? []).map(normalizeTagForPack).filter(Boolean))
   // What the character wears gives way to the garment asked for (or a library style); what they are stays.
-  const setAside = wearing.length > 0 || (requests.outfitStyles ?? []).some((style) => style.trim()) ? args.identity.filter((tag) => isWornByCharacter(tag, args.overrides, args.permanence)) : []
+  // Only what the garments take: a whole outfit (or a library style) all of it, a hat the character's hat.
+  const styled = (requests.outfitStyles ?? []).some((style) => style.trim())
+  const taken = styled ? null : garmentRegion(wearing, args.overrides)
+  const setAside = wearing.length > 0 || styled
+    ? args.identity.filter((tag) => isWornByCharacter(tag, args.overrides, args.permanence) && (!taken || inRegion(normalizeTagForPack(tag), taken, args.overrides)))
+    : []
   const aside = new Set(setAside)
   const character = args.identity.filter((tag) => !aside.has(tag))
   const have = new Set(character.map(normalizeTagForPack))
@@ -1797,8 +1809,15 @@ function finishWithConditions(f: Finisher, composed: ScenePrompt): PackPrompt | 
   const base = sceneOfPrompt(run, composed)
   if (!base) return finishOne(f, composed)
   const options = composeOptions(f.args, 1, f.args.seed, undefined)
-  for (const { scene, outfit, place } of conditionScenes(f, base)) {
-    const lent = composeLent(f.pool, scene, null, [], 'outfit', options)
+  // The characters wear their own clothes (Usual outfit, own, base clothing): the garment's part is
+  // the only clothing that comes from a donor; the rest is theirs, in the identity.
+  const ownClothes = options.clothing === 'own' && !!run.outfits && !!run.region
+  const scenic: ComposeOptions = ownClothes ? { ...options, clothing: 'scene' } : options
+  for (const { scene: dressed, outfit, place } of conditionScenes(f, base)) {
+    const scene = ownClothes
+      ? { ...dressed, units: { ...dressed.units, outfit: outfit.donor ? regionTags(outfit.donor.units.outfit, run.region!, f.args.overrides) : [], exposure: outfit.donor && run.region!.torso ? outfit.donor.units.exposure.slice() : [] } }
+      : dressed
+    const lent = composeLent(f.pool, scene, null, [], 'outfit', scenic)
     if (!lent) continue
     const sources: ScenePrompt['sources'] = { ...composed.sources }
     if (run.outfits) delete sources.outfit
