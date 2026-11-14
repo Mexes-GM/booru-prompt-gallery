@@ -6,7 +6,7 @@
  */
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
-import { addCharacter, addNever, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
+import { addCharacter, addNever, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
@@ -370,6 +370,8 @@ export interface IssuesInput {
   canOfferSensitive: boolean
   /** As in PredictInput. */
   paused?: boolean
+  /** One-part pack: the part that changes (the line counts its variants, not scenes). */
+  axis?: OneAxis | null
 }
 
 /** What the fit line says after generating: one sentence for every issue the engine reported, none dropped. */
@@ -378,7 +380,7 @@ export function issuesFit(input: IssuesInput): FitNote[] {
   return input.paused && notes.some((n) => n.kind !== 'fit') ? [...notes, { kind: 'paused' }] : notes
 }
 
-function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive }: IssuesInput): FitNote[] {
+function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive, axis }: IssuesInput): FitNote[] {
   const order: Record<ScenePackIssue['kind'], number> = {
     'few-scenes': 0, 'few-variations': 0, 'composition-without-pose': 1, 'scenes-reused': 2, 'pose-imposed': 3, 'needs-company': 4,
     'request-dropped': 5, 'axis-requested': 6,
@@ -396,11 +398,16 @@ function issueNotes({ issues, count, made, cast, scenes, canOfferSensitive }: Is
     }
   })
   const shortNoted = notes.some((n) => n.kind === 'short' || n.kind === 'few-variations')
-  if (made < count && !shortNoted) notes.unshift({ kind: 'short', made, asked: count, scenes: made })
-  if (notes.length === 0) return [{ kind: 'fit', scenes: scenes ?? made }]
+  if (made < count && !shortNoted) {
+    notes.unshift(axis
+      ? { kind: 'few-variations', axis, variations: made, made, asked: count }
+      : { kind: 'short', made, asked: count, scenes: made })
+  }
+  const fit: FitNote = axis ? { kind: 'axis-fit', axis, variations: scenes ?? made } : { kind: 'fit', scenes: scenes ?? made }
+  if (notes.length === 0) return [fit]
   const lacking = made < count || notes.some((n) => n.kind === 'reuse' || n.kind === 'imposed')
   // Only information: with nothing else to say, the pack still fits.
-  if (notes.every((n) => n.kind === 'kept-on-axis') && made >= count) return [{ kind: 'fit', scenes: scenes ?? made }, ...notes]
+  if (notes.every((n) => n.kind === 'kept-on-axis') && made >= count) return [fit, ...notes]
   return canOfferSensitive && lacking ? [{ kind: 'few-rated' }, ...notes] : notes
 }
 
@@ -524,6 +531,20 @@ export function withPromptPeople(brief: PackBrief, peopleTags: readonly string[]
 }
 
 /**
+ * A gallery card's brief: its characters from the post's own character field (a name the
+ * taxonomy doesn't know yet is still a character), its look, and its outfit and pose
+ * offered apart (briefFromCard).
+ */
+export function briefFromCardPost(
+  tags: readonly string[],
+  characters: readonly string[],
+  overrides: Record<string, string>
+): { brief: PackBrief; offered: { outfit: string[]; pose: string[] } } {
+  const { brief, offered } = briefFromCard(tags, overrides)
+  return { brief: characters.reduce((b, name) => addCharacter(b, name), brief), offered }
+}
+
+/**
  * The tags of a gallery search a pack can use: everything but search filters
  * ("rating:general", "order:score"); a "-tag" counts (it goes to Never).
  */
@@ -587,9 +608,12 @@ export function placeRows<T>(
   fresh: readonly T[]
 ): { rows: T[]; locked: number[]; slots: number[] } {
   const length = Math.max(previous.length, ...slots.map((s) => s + 1), 0)
+  // A row stays as it is when it is locked, or when no slot remakes it (it was locked when
+  // the pack was made and unlocked since): it is never dropped for being outside the slots.
   const cells: Array<{ row: T; slot: number | null } | null> = Array.from({ length }, (_, i) =>
-    locked.has(i) && i < previous.length ? { row: previous[i], slot: null } : null
+    i < previous.length && (locked.has(i) || !slots.includes(i)) ? { row: previous[i], slot: null } : null
   )
+
   slots.forEach((slot, k) => {
     if (k >= fresh.length) return
     if (cells[slot]) cells[slot]!.slot = k
@@ -611,11 +635,59 @@ export function placeRows<T>(
   return { rows, locked: lockedOut, slots: slotOf.slice(0, fresh.length) }
 }
 
+// ── Operations on a pack ────────────────────────────────────────────────────────
+
+/**
+ * The running operation after the one with `id` ends (applied, replaced, failed or never
+ * started): it clears only itself. One that replaced it keeps the indicator.
+ */
+export function opAfterEnd<T extends { id: number }>(current: T | null, id: number): T | null {
+  return current && current.id === id ? null : current
+}
+
+/**
+ * A correction's notice when the brief changes: the first change after it is its own (it
+ * keeps the notice and learns the brief it made); any other retires it, and from then on
+ * the brief's own undo applies.
+ */
+export function correctionAfterBriefChange<C extends { briefBefore: unknown; briefAfter: unknown | null }>(
+  correction: C | null,
+  brief: unknown
+): { correction: C | null; own: boolean } {
+  if (!correction) return { correction: null, own: false }
+  if (correction.briefAfter === null && brief !== correction.briefBefore) return { correction: { ...correction, briefAfter: brief }, own: true }
+  if (brief === correction.briefAfter) return { correction, own: true }
+  return { correction: null, own: false }
+}
+
 /** Rows whose text differs at the same position (a row added or gone counts too). */
 export function changedRows(before: readonly { prompt: string }[], after: readonly { prompt: string }[]): number {
   let changed = Math.abs(before.length - after.length)
   for (let i = 0; i < Math.min(before.length, after.length); i++) if (before[i].prompt !== after[i].prompt) changed++
   return changed
+}
+
+/** Rows a remake leaves as they are: locked now, or not remade by any slot. */
+export function keptRows(length: number, locked: ReadonlySet<number>, slots: readonly number[]): { locked: number[]; older: number[] } {
+  const remade = new Set(slots)
+  const out = { locked: [] as number[], older: [] as number[] }
+  for (let i = 0; i < length; i++) {
+    if (locked.has(i)) out.locked.push(i)
+    else if (!remade.has(i)) out.older.push(i)
+  }
+  return out
+}
+
+/**
+ * The character a look tag of a prompt belongs to: the one whose identity block has it.
+ * Null when no block or more than one has it (the scene's own hair, a shared trait): then
+ * nobody gets it without asking.
+ */
+export function lookOwner(tag: string, blocks: ReadonlyArray<{ character: string; pinned: readonly string[] }>): string | null {
+  const name = normalizeTagForPack(tag)
+  const owners = blocks.filter((b) => b.character && b.pinned.some((t) => normalizeTagForPack(t) === name))
+  if (blocks.filter((b) => b.character).length <= 1) return blocks.find((b) => b.character)?.character ?? null
+  return owners.length === 1 ? owners[0].character : null
 }
 
 /** Locked rows that still have `tag` (or a weighted form of it). */

@@ -66,6 +66,10 @@ export const CORRECTION_TEXT = {
   always: (tag: string, changed: number) =>
     changed === 0 ? `${tag} was already in every prompt` : `Added ${tag} to ${changed} ${changed === 1 ? "prompt" : "prompts"}`,
   lockedKeep: (n: number) => `${n} locked ${n === 1 ? "prompt still has" : "prompts still have"} it`,
+  /** Rows locked when the pack was made and unlocked since: a correction doesn't remake them. */
+  olderKeep: (n: number) => `${n} earlier ${n === 1 ? "prompt still has" : "prompts still have"} it. Generate again to update ${n === 1 ? "it" : "them"}`,
+  /** A look tag of a pack with several characters whose owner the prompt doesn't say. */
+  lookWhose: (tag: string) => `${tag} belongs to one character. Add it under Who, next to that character.`,
   working: "Updating the prompts…",
 } as const
 

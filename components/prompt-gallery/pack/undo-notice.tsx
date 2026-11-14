@@ -20,9 +20,8 @@ export interface UndoNoticeProps {
 export const UndoNotice = memo(function UndoNotice({ message, onUndo, onDismiss, className }: UndoNoticeProps) {
   const lowMotion = useLowMotion()
   return (
+    // The message is the live region; the buttons stay outside it.
     <div
-      role="status"
-      aria-live="polite"
       onKeyDown={(e) => {
         if (e.key === "Escape" && onDismiss) {
           e.stopPropagation()
@@ -35,7 +34,7 @@ export const UndoNotice = memo(function UndoNotice({ message, onUndo, onDismiss,
         className,
       )}
     >
-      <span className="min-w-0 flex-1 text-pretty tabular-nums">{message}</span>
+      <span role="status" aria-live="polite" className="min-w-0 flex-1 text-pretty tabular-nums">{message}</span>
       <button
         type="button"
         onClick={onUndo}
