@@ -297,6 +297,21 @@ check("People shows for a count the user set, with a composition the pool lacks 
   assert.deepEqual(missing?.options[2], { people: { girls: 3, boys: 0 }, scenes: 0 })
 })
 
+check("People shows whenever the scenes come in more than one make-up (whenSeveral), marking the one in use", () => {
+  const none = () => false
+  // Measured on Rule34 with double penetration in Doing: the pose doesn't "need company", yet
+  // the pack takes one make-up and leaves the others out.
+  const withPose = [{ people: { girls: 1, boys: 2 }, scenes: 113 }, { people: { girls: 1, boys: 0 }, scenes: 85 }, { people: { girls: 1, boys: 3 }, scenes: 40 }]
+  const current = { girls: 1, boys: 2 }
+  const line = peopleLineState({ poses: ["double penetration"], needsCompany: none, compositions: withPose, current, whenSeveral: true })
+  assert.deepEqual(line, { options: withPose, value: current })
+  // One make-up only: nothing to choose, no line.
+  assert.equal(peopleLineState({ poses: ["double penetration"], needsCompany: none, compositions: withPose.slice(0, 1), current, whenSeveral: true }), null)
+  // No pose: every make-up of the pool.
+  const available = [{ people: { girls: 1, boys: 0 }, scenes: 80 }, { people: { girls: 1, boys: 1 }, scenes: 12 }]
+  assert.deepEqual(peopleLineState({ poses: [], needsCompany: none, compositions: [], current: { girls: 1, boys: 0 }, available, whenSeveral: true })?.options, available)
+})
+
 check("pickedPeopleNote: says so only when the pool has no scene of those people", () => {
   const available = [{ people: { girls: 1, boys: 0 } }]
   const cast = { girls: 1, boys: 0 }

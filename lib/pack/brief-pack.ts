@@ -560,6 +560,12 @@ export interface PeopleLineInput {
   picked?: PackPeople | null
   /** Every composition of the pool (with room for the cast): the options when no pose asks for company. */
   available?: readonly PoseComposition[]
+  /**
+   * Also shown whenever the scenes come in more than one make-up (the pack uses one and
+   * leaves the others out): those with the requested poses when there are poses, else
+   * every one of the pool, each with its count.
+   */
+  whenSeveral?: boolean
 }
 
 const samePeople = (a: PackPeople | null | undefined, b: PackPeople | null | undefined) =>
@@ -567,10 +573,11 @@ const samePeople = (a: PackPeople | null | undefined, b: PackPeople | null | und
 
 /**
  * The People line: shown when a requested pose needs more than one person and some
- * scene has it, or when the user set who is in the picture (then a composition the
- * pool lacks is listed too, with no scenes).
+ * scene has it, when the user set who is in the picture (then a composition the
+ * pool lacks is listed too, with no scenes), or, with `whenSeveral`, when the scenes
+ * come in more than one make-up.
  */
-export function peopleLineState({ poses, needsCompany, compositions, current, picked, available = [] }: PeopleLineInput): {
+export function peopleLineState({ poses, needsCompany, compositions, current, picked, available = [], whenSeveral = false }: PeopleLineInput): {
   options: PoseComposition[]
   value: PackPeople | null
   poseNeeds?: number
@@ -579,7 +586,8 @@ export function peopleLineState({ poses, needsCompany, compositions, current, pi
     const sizes = compositions.map((c) => c.people.girls + c.people.boys).filter((n) => n >= 2)
     return { options: [...compositions], value: current, poseNeeds: sizes.length > 0 ? Math.min(...sizes) : 2 }
   }
-  if (!picked) return null
+  const several = poses.length > 0 ? compositions : available
+  if (!picked) return whenSeveral && several.length >= 2 ? { options: [...several], value: current } : null
   const options = [...available]
   if (!options.some((o) => samePeople(o.people, picked))) options.push({ people: { ...picked }, scenes: 0 })
   return { options, value: current }
