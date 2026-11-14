@@ -26,9 +26,10 @@ import { userPreferences } from "@/lib/storage"
 import { shouldConfirmProvider, ADULT_ONLY_PROVIDER } from "@/lib/nsfw-consent"
 import { cn } from "@/lib/utils"
 
-const PROVIDERS = ['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621', 'e6ai'] as const
+/** The boorus the gallery searches, in the order its menu lists them. */
+export const PROVIDERS = ['danbooru', 'gelbooru', 'aibooru', 'rule34', 'e621', 'e6ai'] as const
 
-const PROVIDER_LABELS: Record<typeof PROVIDERS[number], string> = {
+export const PROVIDER_LABELS: Record<typeof PROVIDERS[number], string> = {
   danbooru: 'Danbooru',
   gelbooru: 'Gelbooru',
   aibooru: 'Aibooru',
