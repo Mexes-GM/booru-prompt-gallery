@@ -13,7 +13,7 @@ import { briefFromCharacters } from "../lib/pack/brief-history"
 import { seedNever } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
-  preferredPostIds, resolveLook, slotSuggestions, packProviderChoices, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
+  preferredPostIds, resolveLook, slotSuggestions, packProviderChoices, loadedState, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
 } from "../lib/pack/brief-pack"
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
@@ -382,6 +382,18 @@ check("packProviderChoices: every site in the gallery's order; Rule34 waits for 
   // Other ratings exist everywhere; with the confirmation given, Rule34 is offered.
   const explicit = packProviderChoices(sites, "explicit", true)
   assert.ok(explicit.every((c) => c.available && !c.note), JSON.stringify(explicit))
+})
+
+check("loadedState: says the posts loaded; Find more whenever the site has more and nothing else is going on", () => {
+  const base = { posts: 240, noMoreResults: false, failed: false, sessionCapReached: false, paused: false, finding: false, loading: false }
+  assert.deepEqual(loadedState(base), { posts: 240, all: false, more: true }, "enough scenes, the site has more: offered")
+  assert.deepEqual(loadedState({ ...base, noMoreResults: true }), { posts: 240, all: true, more: false }, "nothing more: said, not offered")
+  assert.equal(loadedState({ ...base, paused: true })?.more, false, "the pause has its own offer")
+  assert.equal(loadedState({ ...base, loading: true })?.more, false, "a page on its way")
+  assert.equal(loadedState({ ...base, sessionCapReached: true })?.more, false)
+  assert.equal(loadedState({ ...base, finding: true }), null, "the progress line speaks while scenes are found")
+  assert.equal(loadedState({ ...base, failed: true }), null)
+  assert.equal(loadedState({ ...base, posts: 0 }), null)
 })
 
 // ── One-part packs (changes) ────────────────────────────────────────────────────

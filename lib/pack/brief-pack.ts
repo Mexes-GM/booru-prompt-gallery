@@ -957,3 +957,23 @@ export function packProviderChoices(
     return { provider, available: true }
   })
 }
+
+/**
+ * What the fit line says of the posts loaded, and whether it offers "Find more scenes":
+ * whenever the site has more for this search and nothing else is loading or waiting
+ * (a pause for the request pace has its own offer). Null while there is nothing to
+ * say: no posts yet, a failed load, or scenes still being found.
+ */
+export function loadedState(s: {
+  posts: number
+  noMoreResults: boolean
+  failed: boolean
+  sessionCapReached: boolean
+  paused: boolean
+  finding: boolean
+  loading: boolean
+}): { posts: number; all: boolean; more: boolean } | null {
+  if (s.posts === 0 || s.failed || s.finding) return null
+  const more = !s.noMoreResults && !s.sessionCapReached && !s.paused && !s.loading
+  return { posts: s.posts, all: s.noMoreResults, more }
+}

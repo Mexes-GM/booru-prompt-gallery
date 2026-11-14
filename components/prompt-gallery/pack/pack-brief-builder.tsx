@@ -64,6 +64,7 @@ import {
   oneAxis,
   issuesFit,
   packProviderChoices,
+  loadedState,
   lockedWithTag,
   peopleFromCountTags,
   pickedPeopleNote,
@@ -520,6 +521,29 @@ function BriefWorkspace({
     // Only a page really asked for shows "searching".
     if (source?.loadMore()) setManual({ before: usableCount, seen: false, nothingNew: false })
   }, [source, usableCount])
+  // What the scenes were found in, and the way to ask the site for more whenever it has more
+  // (the automatic loading stops once there are enough scenes; this goes on by hand).
+  const loadedNow = source
+    ? loadedState({
+        posts: posts.length,
+        noMoreResults: source.noMoreResults,
+        failed: source.failed,
+        sessionCapReached: source.sessionCapReached,
+        paused,
+        finding,
+        loading: sourceLoading || (!!manual && !manual.nothingNew),
+      })
+    : null
+  const loadedPosts = loadedNow?.posts ?? 0
+  const loadedAll = !!loadedNow?.all
+  const loadedMore = !!loadedNow?.more
+  const loaded = useMemo(
+    () =>
+      loadedPosts > 0
+        ? { text: BUILDER_TEXT.loadedFrom(loadedPosts, PROVIDER_LABELS[provider], loadedAll), onFindMore: loadedMore ? loadOnePage : undefined }
+        : null,
+    [loadedPosts, loadedAll, loadedMore, provider, loadOnePage]
+  )
   const axisNote = useMemo(() => (axis ? { axis, requested: axisRequests(brief, axis) } : null), [axis, brief])
   const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
@@ -995,6 +1019,7 @@ function BriefWorkspace({
             state={state}
             onIncludeSensitive={includeSensitive}
             hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
+            loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
           />
         ))}
       </div>

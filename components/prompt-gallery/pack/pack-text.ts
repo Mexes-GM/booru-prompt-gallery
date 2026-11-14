@@ -43,9 +43,11 @@ export const BUILDER_TEXT = {
   providerNeedsConsent: "Choose it in the gallery first to confirm adult content",
   providerNoSensitive: "Safe only: no sensitive rating there",
   providerChanged: (site: string) => `Now searching ${site}`,
-  /** After the fit line: what the scenes were found in. */
+  /** After the fit line: the posts the scenes come from; `all` once the site has no more for this search. */
   loadedFrom: (posts: number, site: string, all: boolean) =>
-    `from ${all ? "all " : ""}${posts} ${posts === 1 ? "post" : "posts"} on ${site}${all ? ", nothing more to find" : ""}`,
+    all
+      ? `from all ${posts} matching ${posts === 1 ? "post" : "posts"} on ${site}`
+      : `from ${posts} ${posts === 1 ? "post" : "posts"} on ${site} so far`,
   loadFailed: "Couldn't load the scenes. Check your connection and try again.",
   retry: "Try again",
   sheetHint: "Select a scene to leave it out",
