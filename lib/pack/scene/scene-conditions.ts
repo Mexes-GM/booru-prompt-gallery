@@ -115,7 +115,8 @@ export function layersOver(tags: readonly string[], garments: readonly string[],
     return worn.some((garment) => {
       if (!slotsTakenBy(garment, overrides).includes(slot)) return false
       if (isQualifiedVariant(tag, garment) || isQualifiedVariant(garment, tag) || isPieceOf(tag, garment)) return false
-      return !requires(garment).some((needed) => isQualifiedVariant(tag, needed))
+      // The wider kind itself, not another form of it: "white dress" next to "sundress" names a second dress.
+      return !requires(garment).includes(tag)
     })
   })
 }
