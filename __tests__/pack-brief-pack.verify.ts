@@ -9,12 +9,14 @@ import assert from "node:assert/strict"
 import { addLook, addNever, addTag, leaveOutScene, removeLook, setCharacterRole } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
 import {
-  briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleLineState, predictFit, preferredPostIds, resolveLook,
+  briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
+  preferredPostIds, resolveLook, slotSuggestions,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
 import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/scene-pack"
 import type { Permanence } from "../lib/pack/scene/permanence"
+import { fitText } from "../components/prompt-gallery/pack/pack-text"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -256,6 +258,106 @@ check("People shows only when a requested pose needs company and a scene has it"
   assert.deepEqual(peopleLineState({ poses: ["sitting", "princess carry"], needsCompany, compositions, current }), {
     options: compositions, value: current, poseNeeds: 2,
   })
+})
+
+// ── A typed count sets People ───────────────────────────────────────────────────
+
+check("peopleFromCountTags: counts keep the cast and fill the gender they don't name", () => {
+  const one = { girls: 1, boys: 0 }
+  assert.deepEqual(peopleFromCountTags(["2girls"], one), { girls: 2, boys: 0 })
+  assert.deepEqual(peopleFromCountTags(["1boy"], one), { girls: 1, boys: 1 })
+  assert.deepEqual(peopleFromCountTags(["1girl", "1boy"], one), { girls: 1, boys: 1 })
+  assert.deepEqual(peopleFromCountTags(["6+girls"], one), { girls: 6, boys: 0 })
+  assert.deepEqual(peopleFromCountTags(["2_boys"], { girls: 1, boys: 1 }), { girls: 1, boys: 2 })
+  assert.deepEqual(peopleFromCountTags(["solo"], one), one)
+  // Never fewer people than the characters themselves.
+  assert.deepEqual(peopleFromCountTags(["1girl"], { girls: 2, boys: 0 }), { girls: 2, boys: 0 })
+  assert.equal(peopleFromCountTags(["bikini"], one), null)
+  assert.equal(peopleFromCountTags([], one), null)
+})
+
+check("People shows for a count the user set, with a composition the pool lacks listed empty", () => {
+  const available = [{ people: { girls: 1, boys: 0 }, scenes: 80 }, { people: { girls: 1, boys: 1 }, scenes: 12 }]
+  const none = () => false
+  assert.equal(peopleLineState({ poses: [], needsCompany: none, compositions: [], current: { girls: 1, boys: 0 }, available }), null)
+  const kept = peopleLineState({ poses: [], needsCompany: none, compositions: [], current: { girls: 1, boys: 1 }, picked: { girls: 1, boys: 1 }, available })
+  assert.deepEqual(kept, { options: available, value: { girls: 1, boys: 1 } })
+  const missing = peopleLineState({ poses: [], needsCompany: none, compositions: [], current: { girls: 1, boys: 0 }, picked: { girls: 3, boys: 0 }, available })
+  assert.deepEqual(missing?.options[2], { people: { girls: 3, boys: 0 }, scenes: 0 })
+})
+
+check("pickedPeopleNote: says so only when the pool has no scene of those people", () => {
+  const available = [{ people: { girls: 1, boys: 0 } }]
+  const cast = { girls: 1, boys: 0 }
+  assert.equal(pickedPeopleNote({ picked: null, available, using: cast, cast }), null)
+  assert.equal(pickedPeopleNote({ picked: { girls: 1, boys: 0 }, available, using: cast, cast }), null)
+  // Not built yet: nothing to say.
+  assert.equal(pickedPeopleNote({ picked: { girls: 2, boys: 0 }, available: null, using: null, cast }), null)
+  assert.deepEqual(pickedPeopleNote({ picked: { girls: 2, boys: 0 }, available, using: cast, cast }), {
+    kind: "people-missing", asked: { girls: 2, boys: 0 }, using: cast, cast,
+  })
+})
+
+// ── More scenes by hand once the pace limit stopped the fetching ────────────────
+
+check("paused: offered when short and the source can still load, not when the pack fits", () => {
+  assert.deepEqual(predictFit({ ...base, candidates: scenes(6), poses: [], paused: true }), [
+    { kind: "short", made: 6, asked: 10, scenes: 6 },
+    { kind: "paused" },
+  ])
+  assert.deepEqual(predictFit({ ...base, candidates: scenes(8), poses: ["princess carry"], paused: true }), [
+    { kind: "reuse", scenes: 8, reused: 2 },
+    { kind: "paused" },
+  ])
+  assert.deepEqual(predictFit({ ...base, candidates: scenes(20), poses: [], paused: true }), [{ kind: "fit", scenes: 20 }])
+  assert.deepEqual(issuesFit({ issues: [], count: 10, made: 6, cast, scenes: 6, canOfferSensitive: false, paused: true }), [
+    { kind: "short", made: 6, asked: 10, scenes: 6 },
+    { kind: "paused" },
+  ])
+  assert.deepEqual(issuesFit({ issues: [], count: 10, made: 10, cast, scenes: 41, canOfferSensitive: false, paused: true }), [
+    { kind: "fit", scenes: 41 },
+  ])
+})
+
+// ── Suggestions ─────────────────────────────────────────────────────────────────
+
+check("slotSuggestions: characters in Who, general tags elsewhere", () => {
+  const found = [
+    { name: "tifa_lockhart", postCount: 9000, category: 4 },
+    { name: "tifa_lockhart_(refined)", postCount: 300, category: 4 },
+    { name: "tied_hair", postCount: 50000, category: 0 },
+    { name: "final_fantasy_vii", postCount: 40000, category: 3 },
+  ]
+  assert.deepEqual(slotSuggestions(found, "who").map((s) => s.name), ["tifa_lockhart", "tifa_lockhart_(refined)"])
+  assert.equal(slotSuggestions(found, "who")[0].kind, "Character")
+  assert.deepEqual(slotSuggestions(found, "other"), [{ name: "tied_hair", count: 50000 }])
+  assert.deepEqual(slotSuggestions(found, "who", 1).length, 1)
+})
+
+// ── One-part packs (changes) ────────────────────────────────────────────────────
+
+check("axis-requested and few-variations become their own sentences", () => {
+  assert.deepEqual(after([{ kind: "axis-requested", axis: "outfit", tags: ["bikini"] }]), [
+    { kind: "fit", scenes: 41 },
+    { kind: "kept-on-axis", axis: "outfit", tags: ["bikini"] },
+  ])
+  assert.deepEqual(after([{ kind: "few-variations", axis: "place", variations: 6, prompts: 6 }], 6), [
+    { kind: "few-variations", axis: "place", variations: 6, made: 6, asked: 10 },
+  ])
+  assert.deepEqual(after([
+    { kind: "axis-requested", axis: "pose", tags: ["sitting"] },
+    { kind: "few-variations", axis: "pose", variations: 4, prompts: 4 },
+  ], 4), [
+    { kind: "few-variations", axis: "pose", variations: 4, made: 4, asked: 10 },
+    { kind: "kept-on-axis", axis: "pose", tags: ["sitting"] },
+  ])
+})
+
+check("fit line wording for the one-part notes", () => {
+  assert.equal(fitText({ kind: "kept-on-axis", axis: "outfit", tags: ["bikini"] }).text, "bikini stays in every prompt. The rest of the outfit changes.")
+  assert.equal(fitText({ kind: "kept-on-axis", axis: "place", tags: ["beach", "night"] }).text, "beach, night stay in every prompt. The rest of the place changes.")
+  assert.equal(fitText({ kind: "few-variations", axis: "outfit", variations: 6, made: 6, asked: 10 }).text, "6 of 10: only 6 outfits fit this scene")
+  assert.equal(fitText({ kind: "few-variations", axis: "expression", variations: 1, made: 1, asked: 10 }).text, "1 of 10: only 1 expression fits this scene")
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

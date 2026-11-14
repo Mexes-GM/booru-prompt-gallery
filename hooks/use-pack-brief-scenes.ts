@@ -127,6 +127,8 @@ export interface UsePackBriefScenesResult {
   poses: PoseComposition[]
   /** The composition in use. */
   people: PackPeople | null
+  /** Every composition of the pool the characters fit in; null until the pool is built. */
+  available: PoseComposition[] | null
   peopleLine: ReturnType<typeof peopleLineState>
   /** Scenes that fit (left-out ones included, so they stay on the sheet); null until worked out once. */
   candidates: SceneCandidate[] | null
@@ -368,6 +370,12 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const poses = useMemo(() => (basePool ? poseCompositions(basePool, poseArgs) : NO_POSES), [basePool, poseArgs])
 
   const firstCandidates = identity.members[0]?.candidates ?? NO_NAMES
+  // Every composition of the pool the characters fit in; null until the pool is built.
+  const available = useMemo(() => {
+    if (!basePool) return null
+    const all = basePool.stats.compositions
+    return isCast ? all.filter((c) => holdsCast(c.people, castPeopleMemo)) : all
+  }, [basePool, isCast, castPeopleMemo])
   const peopleKey = useMemo(() => {
     if (!basePool || missingRoles.length > 0) return ""
     const all = basePool.stats.compositions
@@ -389,8 +397,10 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       needsCompany: (tag) => poseNeedsScene(tag, overrides, relations),
       compositions: poses,
       current: people,
+      picked: brief.people,
+      available: available ?? undefined,
     }),
-    [requests.select, overrides, relations, poses, people]
+    [requests.select, overrides, relations, poses, people, brief.people, available]
   )
 
   // ── Clothes ───────────────────────────────────────────────────────────────────
@@ -561,6 +571,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     pool,
     poses,
     people,
+    available,
     peopleLine,
     candidates: candidateState?.list ?? null,
     candidatesPending,
@@ -570,7 +581,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     reroll,
     naturalSourceOf,
   }), [
-    plan, looks, identity, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, peopleLine, candidateState,
+    plan, looks, identity, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState,
     candidatesPending, result, isGenerating, generate, reroll, naturalSourceOf,
   ])
 }

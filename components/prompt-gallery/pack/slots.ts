@@ -88,7 +88,7 @@ export interface TagSuggestion {
 }
 
 /** Where tags come from while a field is being typed in. */
-export type SuggestionStatus = "idle" | "loading" | "error"
+export type SuggestionStatus = "idle" | "loading" | "empty" | "error"
 
 export interface CharacterInfo {
   /** Display name; defaults to the tag, title-cased, without its series in brackets. */

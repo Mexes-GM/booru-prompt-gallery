@@ -28,11 +28,21 @@ import { toast } from "@/hooks/use-toast"
 import { usePackBrief, type UsePackBriefResult } from "@/hooks/use-pack-brief"
 import { usePackBriefScenes } from "@/hooks/use-pack-brief-scenes"
 import { usePackSources, type UsePackSourcesResult } from "@/hooks/use-pack-sources"
+import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruProvider } from "@/lib/booru/types"
 import { routeTag, type RequestRole } from "@/lib/pack/brief"
-import { issuesFit, predictFit, preferredPostIds, promptTokens, type BriefOutfit, type FitNote } from "@/lib/pack/brief-pack"
+import {
+  issuesFit,
+  peopleFromCountTags,
+  pickedPeopleNote,
+  predictFit,
+  preferredPostIds,
+  promptTokens,
+  type BriefOutfit,
+  type FitNote,
+} from "@/lib/pack/brief-pack"
 import type { BulkSendCleanOptions } from "@/lib/pack/bulk-send"
 import type { PackPrompt } from "@/lib/pack/pack-generator"
 import type { SourcePlan } from "@/lib/pack/source-plan"
@@ -184,13 +194,13 @@ const UNDO_MS = 6000
 /** A tag of a prompt as the brief spells it: no weight, no brackets. */
 const bareToken = (token: string) => token.replace(/^\(+/, "").replace(/(:[\d.]+)?\)+$/, "").trim()
 
-/** The slot of the brief a typed tag lands in. */
+/** The slot of the brief a typed tag lands in; null for a people count (it sets People). */
 function landsIn(tag: string, typedIn: SlotId, overrides: Record<string, string>): SlotId | null {
-  if (typedIn === "never") return "never"
   const route = routeTag(tag, overrides)
+  if (route.kind === "people") return null
+  if (typedIn === "never") return "never"
   if (route.kind === "character" || route.kind === "look") return "who"
   if (route.kind === "request") return route.role
-  if (route.kind === "people") return null
   return typedIn === "who" ? "also" : typedIn
 }
 
@@ -271,10 +281,16 @@ function BriefWorkspace({
   const loadingPosts = !!source?.isLoadingMore || (searching && !source)
   const finding = loadingPosts || (needMore && canLoad) || (!candidates && searching && !noPosts && !source?.failed && !engine.loadFailed)
   const canOfferSensitive = rating === "sfw" && plan.sensitive === "excluded" && !finding
+  // The pace limit stopped the fetching and the source has more: one click asks for one page.
+  const paused = !!source && (limited || source.scrollLimited) && !source.isLoadingMore &&
+    !source.noMoreResults && !source.failed && !source.sessionCapReached
+  const loadOnePage = useCallback(() => source?.loadMore(), [source])
+  const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
   const stale = !!result && (result.brief !== brief || result.count !== count || result.outfit !== outfit)
   const notes: FitNote[] = useMemo(() => {
-    if (!result) return predictFit({ candidates: usable, count, poses, finding, canOfferSensitive })
+    const lead = peopleNote ? [peopleNote] : []
+    if (!result) return [...lead, ...predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused })]
     const after = issuesFit({
       issues: result.issues,
       count: result.count,
@@ -282,14 +298,20 @@ function BriefWorkspace({
       cast: identity.cast,
       scenes: usable ? have : null,
       canOfferSensitive,
+      paused,
     })
-    return stale ? [{ kind: "stale" }, ...after] : after
-  }, [result, usable, count, poses, finding, canOfferSensitive, identity.cast, have, stale])
+    return stale ? [{ kind: "stale" }, ...lead, ...after] : [...lead, ...after]
+  }, [result, usable, count, poses, finding, canOfferSensitive, paused, peopleNote, identity.cast, have, stale])
   const { setIncludeSensitive } = pack
   const includeSensitive = useCallback(() => setIncludeSensitive(true), [setIncludeSensitive])
   const fitStates = useMemo<FitState[]>(
-    () => notes.map((n) => (n.kind === "few-rated" ? { kind: "few-rated", onInclude: includeSensitive } : n)),
-    [notes, includeSensitive]
+    () => notes.map((n): FitState =>
+      n.kind === "few-rated"
+        ? { kind: "few-rated", onInclude: includeSensitive }
+        : n.kind === "paused"
+          ? { kind: "paused", onLoadMore: loadOnePage, waiting: !!source?.scrollLimited }
+          : n),
+    [notes, includeSensitive, loadOnePage, source?.scrollLimited]
   )
 
   // ── Folding ─────────────────────────────────────────────────────────────────────
@@ -310,18 +332,31 @@ function BriefWorkspace({
   }, [])
 
   // ── Brief edits ─────────────────────────────────────────────────────────────────
-  const [routed, setRouted] = useState<{ slot: SlotId; key: number } | null>(null)
+  const [routed, setRouted] = useState<{ slot: SlotId | "people"; key: number } | null>(null)
+  const suggestions = useTagSuggestions()
   const { add, never, remove, unnever, removeCharacter, setRole, removeLook, restoreLook, leaveOutScene, restoreScene, setPeople, undo } = pack
+  const cast = identity.cast
   const onAddTags = useCallback((tags: string[], slot: SlotId) => {
-    let elsewhere: SlotId | null = null
+    let elsewhere: SlotId | "people" | null = null
+    const counts: string[] = []
     for (const tag of tags) {
+      const dest = landsIn(tag, slot, overrides)
+      // A typed count ("2girls", "1boy", "solo") sets who is in the picture.
+      if (dest === null) {
+        counts.push(tag)
+        continue
+      }
       if (slot === "never") never(tag)
       else add(tag, slot === "who" ? undefined : (slot as RequestRole))
-      const dest = landsIn(tag, slot, overrides)
-      if (dest && dest !== slot) elsewhere = dest
+      if (dest !== slot) elsewhere = dest
+    }
+    const people = peopleFromCountTags(counts, cast)
+    if (people) {
+      setPeople(people)
+      elsewhere = "people"
     }
     if (elsewhere) setRouted({ slot: elsewhere, key: Date.now() })
-  }, [add, never, overrides])
+  }, [add, never, setPeople, overrides, cast])
   // The tag menu of a result writes on the brief; the prompts already made stay as they are.
   const onAlways = useCallback((tag: string) => add(bareToken(tag), "also"), [add])
   const onNever = useCallback((tag: string) => never(bareToken(tag)), [never])
@@ -423,6 +458,9 @@ function BriefWorkspace({
           onOutfitSourceChange={setOutfit}
           officialOutfits={engine.officialOutfits}
           people={people}
+          suggestions={suggestions.suggestions}
+          suggestionStatus={suggestions.status}
+          onQueryChange={suggestions.onQueryChange}
         />
       )}
 

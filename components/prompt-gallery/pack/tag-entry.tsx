@@ -243,6 +243,11 @@ export const TagEntry = memo(function TagEntry({
             Looking up tags…
           </li>
         )}
+        {!hasList && suggestionStatus === "empty" && (
+          <li role="presentation" className="px-2 py-1.5 text-xs text-muted-foreground">
+            No matching tags. Press Enter to add it as typed.
+          </li>
+        )}
         {!hasList && suggestionStatus === "error" && (
           <li role="presentation" className="px-2 py-1.5 text-xs text-muted-foreground">
             Couldn&apos;t load suggestions. Press Enter to add it as typed.

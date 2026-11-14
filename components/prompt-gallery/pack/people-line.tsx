@@ -27,9 +27,11 @@ export interface PeopleLineProps {
   cast: PackPeople
   /** How many people the requested pose needs, when it needs company (2 for a princess carry). */
   poseNeeds?: number
+  /** A new value lights the line up once (a count typed in another row landed here). */
+  flashKey?: number
 }
 
-export const PeopleLine = memo(function PeopleLine({ options, value, onChange, cast, poseNeeds }: PeopleLineProps) {
+export const PeopleLine = memo(function PeopleLine({ options, value, onChange, cast, poseNeeds, flashKey }: PeopleLineProps) {
   const labelId = useId()
   const reasonId = useId()
   const choices = useMemo<Choice<string>[]>(
@@ -48,7 +50,14 @@ export const PeopleLine = memo(function PeopleLine({ options, value, onChange, c
 
   const byKey = (key: string) => options.find((o) => peopleKey(o.people) === key)?.people
   return (
-    <div className={`${SLOT_ROW} py-1`}>
+    <div className={`${SLOT_ROW} relative py-1`}>
+      {flashKey ? (
+        <span
+          key={flashKey}
+          aria-hidden
+          className="pointer-events-none absolute -inset-x-1.5 inset-y-0 rounded-md bg-mode-pack-soft animate-out fade-out-0 fill-mode-forwards duration-1000 ease-out-strong motion-reduce:hidden"
+        />
+      ) : null}
       <SlotLabel id={labelId} label="People" icon={<Users className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />} />
       <div className="min-w-0 space-y-1">
         <ChoiceGroup
