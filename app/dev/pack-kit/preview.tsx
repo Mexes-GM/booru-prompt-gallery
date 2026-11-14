@@ -172,7 +172,7 @@ function place(b: PackBrief, tag: string, typedIn: SlotId): { brief: PackBrief; 
   if (route.kind === "character") return { brief: addCharacter(b, tag), dest: "who" }
   if (route.kind === "look") return { brief: addLook(b, b.who[0]?.tag ?? null, tag), dest: "who" }
   if (route.kind === "request") return { brief: addTag(b, tag, OVERRIDES), dest: route.role }
-  if (route.kind === "people") return { brief: b, dest: typedIn }
+  if (route.kind === "people" || route.kind === "composition") return { brief: b, dest: typedIn }
   // Style tags go to Style; one the taxonomy does not know stays in Wearing, Doing or Where.
   const into = typedRole(tag, typedIn, OVERRIDES)
   return { brief: addTag(b, tag, OVERRIDES, into), dest: into ?? "style" }

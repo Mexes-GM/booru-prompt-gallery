@@ -28,6 +28,7 @@ import { poseNeedsScene } from "../lib/pack/scene-pack"
 import { CORRECTION_TEXT, copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
 import { leftOutSentence, noPostsSentence, ratingsSentence, searchDescription, searchTagsText } from "../components/prompt-gallery/pack/search-text"
 import { planSources } from "../lib/pack/source-plan"
+import { sameBriefStart } from "../components/prompt-gallery/pack/builder-switch"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -455,6 +456,16 @@ check("sizes: a row shows its suggested size; Copy all puts [WIDTHxHEIGHT] in fr
     text: "[832x1216] 1girl, beach\n1girl, library\n[1216x832] A woman sits on a bench.",
     unsized: 1,
   })
+})
+
+check("sameBriefStart: the same card, prompt or characters; switching builders reopens a pack only on the same base", () => {
+  const post = { id: 7 } as unknown as import("../lib/booru/types").BooruPost
+  assert.equal(sameBriefStart({ kind: "card", post }, { kind: "card", post }), true)
+  assert.equal(sameBriefStart({ kind: "card", post }, { kind: "card", post: { ...post, id: 8 } }), false)
+  assert.equal(sameBriefStart({ kind: "prompt", text: "1girl, beach " }, { kind: "prompt", text: "1girl, beach" }), true)
+  assert.equal(sameBriefStart({ kind: "characters", names: ["Tifa_Lockhart"] }, { kind: "search", search: "x", character: "tifa lockhart" }), true)
+  assert.equal(sameBriefStart({ kind: "characters", names: ["tifa lockhart"] }, { kind: "prompt", text: "tifa lockhart" }), false)
+  assert.equal(sameBriefStart({ kind: "search", search: "beach", character: null }, { kind: "search", search: "beach", character: null }), false)
 })
 
 // ── One-part packs (changes) ────────────────────────────────────────────────────

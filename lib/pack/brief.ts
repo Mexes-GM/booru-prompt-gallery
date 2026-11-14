@@ -7,9 +7,10 @@
 import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import { splitCommaSeparatedTags } from '../utils/tag-utils'
 import { normalizeTagForPack } from './pack-generator'
-import { COUNT_TAG_RE, isCanonRelativeTag, type Permanence } from './scene/permanence'
+import { COUNT_TAG_RE, createPermanence, type Permanence } from './scene/permanence'
+import { briefRouteOf, tagRole, type TagRole, type TagRoleContext } from './tag-role'
+import { loadedTagRelations, type TagRelations } from '../tag-relations'
 import { MAX_CAST, type CastRole } from './scene/cast'
-import { isVerbTag } from './scene/scene-compose'
 import type { PackPeople } from './scene/scene-pool'
 
 /** What a requested tag is about. Decides how the engine treats it. */
@@ -23,6 +24,8 @@ export interface PackRequest {
    * is a condition: each prompt meets it with a different form of it (briefConditions).
    */
   exact?: true
+  /** Where: the time of day, the weather, the light ("night"). Shown with the places, asked of the engine as Also. */
+  ambience?: true
 }
 
 /** What differs from one prompt to the next. */
@@ -89,16 +92,10 @@ export type BriefSceneRequests = SceneRequests
 export type BriefRoute =
   | { kind: 'request'; role: RequestRole }
   | { kind: 'character' }   // a character-name tag
-  | { kind: 'look' }        // hair, eyes, body
+  | { kind: 'look' }        // a lasting trait: hair, eyes, body
   | { kind: 'people' }      // a people-count tag, or "solo"
-  | { kind: 'literal' }     // unknown to the taxonomy, or style/meta/artist/copyright
-
-const DOING_SLOTS = new Set([
-  'pose:posture', 'pose:gesture', 'pose:kinetic', 'pose:combat', 'pose:interaction', 'pose:physiological',
-])
-const ALSO_SLOTS = new Set(['pose:expression', 'pose:camera'])
-const WHERE_SLOTS = new Set(['scenery:setting', 'scenery:props', 'scenery:atmosphere'])
-const LOOK_SLOTS = new Set(['appearance:hair', 'appearance:eyes', 'appearance:anatomy', 'appearance:demographics'])
+  | { kind: 'composition' } // who is in the picture and how they pair up ("hetero", "male focus"): set by People, never a tag
+  | { kind: 'literal' }     // how the picture is made (style, meta), a name of an artist or a work, or unknown
 
 const same = (a: string, b: string) => normalizeTagForPack(a) === normalizeTagForPack(b)
 const without = (list: readonly string[], tag: string) => list.filter((t) => !same(t, tag))
@@ -109,63 +106,129 @@ function isPeopleTag(normalized: string): boolean {
   return normalized === 'solo' || COUNT_TAG_RE.test(normalized)
 }
 
-/** Decides where a typed tag goes, from its taxonomy slot. The count check comes first. */
+// ── The role of a tag (lib/pack/tag-role.ts) ──────────────────────────────────
+
+/**
+ * What the brief reads a tag's role with besides the taxonomy: the permanence data (what lasts
+ * and what belongs to the picture) once the app has loaded it. Until then the slots' defaults
+ * apply. The measured relations are read where the app keeps them (loadedTagRelations).
+ */
+let routePermanence: ((tag: string) => Permanence) | undefined
+export function setRoutePermanence(permanence: ((tag: string) => Permanence) | undefined): void {
+  routePermanence = permanence
+}
+
+// One context per set of data: tagRole caches its answers per context object.
+let lastContext: { overrides: Record<string, string>; permanence?: (tag: string) => Permanence; relations: TagRelations | null; ctx: TagRoleContext } | null = null
+const castContexts = new WeakMap<TagRoleContext, Map<string, TagRoleContext>>()
+function routeContext(overrides: Record<string, string>): TagRoleContext {
+  const relations = loadedTagRelations()
+  if (lastContext && lastContext.overrides === overrides && lastContext.permanence === routePermanence && lastContext.relations === relations) {
+    return lastContext.ctx
+  }
+  const ctx: TagRoleContext = { overrides, permanence: routePermanence ?? lookStaysPermanence(overrides), relations }
+  lastContext = { overrides, permanence: routePermanence, relations, ctx }
+  return ctx
+}
+
+/**
+ * Until the permanence data loads: the slots' defaults, except that a look tag (hair, eyes, body,
+ * demographics) is a trait, as before. Which looks belong to the picture ("navel") only the data says.
+ */
+const fallbackPermanences = new WeakMap<Record<string, string>, (tag: string) => Permanence>()
+function lookStaysPermanence(overrides: Record<string, string>): (tag: string) => Permanence {
+  let lookup = fallbackPermanences.get(overrides)
+  if (lookup) return lookup
+  const byDefault = createPermanence({}, overrides)
+  lookup = (tag: string) => {
+    const kind = byDefault(tag)
+    return kind === 'state' && getTagSlotFromOverrides(normalizeTagForPack(tag), overrides)?.category === 'appearance' ? 'identity' : kind
+  }
+  fallbackPermanences.set(overrides, lookup)
+  return lookup
+}
+function castContext(base: TagRoleContext, cast: readonly CastRole[]): TagRoleContext {
+  const key = [...cast].sort().join('+')
+  let byCast = castContexts.get(base)
+  if (!byCast) castContexts.set(base, (byCast = new Map()))
+  let ctx = byCast.get(key)
+  if (!ctx) byCast.set(key, (ctx = { ...base, cast: [...cast] }))
+  return ctx
+}
+
+/** The role of a tag as the brief reads it (taxonomy, permanence, relations). */
+export const briefRole = (tag: string, overrides: Record<string, string>): TagRole => tagRole(tag, routeContext(overrides))
+
+/**
+ * Decides where a tag goes from its role (lib/pack/tag-role.ts briefRouteOf), one rule for every
+ * way in: a lasting trait of the character to Who; how the character looks in this picture
+ * ("navel", "closed eyes") to Also; a garment, a signature accessory ("hat") included, to Wearing;
+ * what is done with a garment to Doing ("shirt lift") or Also ("open jacket"); an action, one with
+ * an object ("holding sword", "reading") included, to Doing; a place, and the time, weather and
+ * light, to Where; who is in the picture to People; how the picture is made, artists and works,
+ * and what nothing knows, to Style. People counts come first.
+ */
 export function routeTag(tag: string, overrides: Record<string, string>): BriefRoute {
   const normalized = normalizeTagForPack(tag)
   if (isPeopleTag(normalized)) return { kind: 'people' }
-  const found = getTagSlotFromOverrides(normalized, overrides)
-  if (!found) return { kind: 'literal' }
-  const { category, slot } = found
-  if (category === 'clothing') return { kind: 'request', role: 'wearing' }
-  // An action the taxonomy files with the things it is done with ("reading", "carrying") is what
-  // the body does, like a posture; the thing itself ("book", "holding sword") is not.
-  if (category === 'equipment' || category === 'creature') return { kind: 'request', role: isVerbTag(normalized) ? 'doing' : 'also' }
-  if (!slot) return { kind: 'literal' }
-  if (DOING_SLOTS.has(slot)) return { kind: 'request', role: 'doing' }
-  if (ALSO_SLOTS.has(slot)) return { kind: 'request', role: 'also' }
-  if (WHERE_SLOTS.has(slot)) return { kind: 'request', role: 'where' }
-  if (LOOK_SLOTS.has(slot)) return { kind: 'look' }
-  if (slot === 'other:character') return { kind: 'character' }
-  return { kind: 'literal' }
+  return routeOfRole(briefRole(normalized, overrides))
 }
+
+/** "holding sword", "carrying under arm": a hand verb with what it holds. */
+const GRIP_PHRASE = /^(holding|carrying|wielding|riding)\s/
+
+function routeOfRole(role: TagRole): BriefRoute {
+  // "holding sword" stays Also for now: the engine's own test fixes it there (an object asked for,
+  // not a pose that picks scenes). An action filed with the objects ("reading", "carrying") is Doing.
+  if (role.kind === 'action' && GRIP_PHRASE.test(role.tag) && !role.slot?.startsWith('pose:')) return { kind: 'request', role: 'also' }
+  switch (briefRouteOf(role)) {
+    case 'Who': return role.kind === 'name' ? { kind: 'character' } : { kind: 'look' }
+    // Without a cast nobody is "the others": isOthersTag decides it with the cast.
+    case 'Others': return role.kind === 'aspect' && role.duration === 'state' ? { kind: 'request', role: 'also' } : { kind: 'look' }
+    case 'Wearing': return { kind: 'request', role: 'wearing' }
+    case 'Doing': return { kind: 'request', role: 'doing' }
+    case 'Where':
+    case 'Ambience': return { kind: 'request', role: 'where' }
+    case 'Also': return { kind: 'request', role: 'also' }
+    case 'People': return { kind: 'composition' }
+    case 'Style': return { kind: 'literal' }
+  }
+}
+
+/** True for the time of day, the weather, the light and effects ("night", "rain"): shown in Where, asked of the engine as Also. */
+export const isAmbienceTag = (tag: string, overrides: Record<string, string>): boolean => briefRole(tag, overrides).kind === 'ambience'
 
 /** A row of the brief a tag can be typed in. `style` is the row of `literal`. */
 export type TypedRow = 'who' | RequestRole | 'style'
 
+/** What a suggestion of the autocomplete said a tag is: a general tag, or an artist, a work, a meta tag. */
+export type SuggestedKind = 'general' | 'artist' | 'copyright' | 'meta'
+
 /**
- * The request role for `addTag` when a tag is typed in a row; undefined puts a
- * literal tag in `literal` (the style row). A tag the taxonomy files as style, meta,
- * artist or copyright goes to `literal` wherever it is typed. A tag the taxonomy does
- * not know stays in Wearing, Doing or Where when typed there; typed anywhere else it
- * goes to `literal`, which the prompt carries first and as typed.
+ * The request role for `addTag` when a tag is typed in a row; undefined puts a literal tag in
+ * `literal` (the Style row). A tag with a role goes where its role says, wherever it is typed. A
+ * tag nothing knows: "@name" goes to Style; one picked from a suggestion follows what the
+ * suggestion said (a general tag to Also; an artist, a work or a meta tag to Style); typed in
+ * Wearing, Doing or Where it stays there; typed anywhere else it goes to Style, which the prompt
+ * carries first and as typed.
  */
-export function typedRole(tag: string, typedIn: TypedRow, overrides: Record<string, string>): RequestRole | undefined {
+export function typedRole(tag: string, typedIn: TypedRow, overrides: Record<string, string>, suggested?: SuggestedKind): RequestRole | undefined {
   const route = routeTag(tag, overrides)
   if (route.kind === 'request') return route.role
   if (route.kind !== 'literal') return undefined
-  if (getTagSlotFromOverrides(normalizeTagForPack(tag), overrides)) return undefined
+  if (briefRole(tag, overrides).kind !== 'unknown') return undefined
+  if (tag.trim().startsWith('@')) return undefined
+  if (suggested) return suggested === 'general' ? 'also' : undefined
   return typedIn === 'wearing' || typedIn === 'doing' || typedIn === 'where' ? typedIn : undefined
 }
 
-// The words a tag names a person's gender with ("dark-skinned male", "old man", "cat girl").
-const GENDER_WORDS: Readonly<Record<string, CastRole>> = {
-  male: 'boy', males: 'boy', man: 'boy', men: 'boy', boy: 'boy', boys: 'boy',
-  female: 'girl', females: 'girl', woman: 'girl', women: 'girl', girl: 'girl', girls: 'girl',
-}
-
-/** The genders a tag names ("clothed male nude female" names both). */
-function gendersNamed(tag: string): Set<CastRole> {
-  const words = normalizeTagForPack(tag).split(/[\s()-]+/)
-  return new Set(words.flatMap((w) => (GENDER_WORDS[w] ? [GENDER_WORDS[w]] : [])))
-}
-
 /**
- * True for a look tag about the people of the pack who are not its characters: it names
- * a person of a gender none of the characters has ("dark-skinned male" next to a girl),
- * or it compares the people of the picture ("interracial", "age difference"). Decided
- * only when the characters are all of one gender: with both, a "male" tag may be one of
- * them, and the tag stays where it was typed. Counts and pairings ("male focus",
- * "hetero") are about the composition, not anyone's look.
+ * True for a tag about the people of the pack who are not its characters (tag-role owner
+ * `others`): a tag that names a person of a gender none of the characters has ("dark-skinned
+ * male" next to a girl), what the gender data gives to the other gender ("penis"), or a comparison
+ * of the people of the picture ("interracial"). Decided only when the characters are all of one
+ * gender: with both, a "male" tag may be one of them, and the tag stays where it was typed. Counts
+ * and pairings ("male focus", "hetero") are the composition, not anyone's look.
  */
 export function isOthersTag(
   tag: string,
@@ -173,14 +236,27 @@ export function isOthersTag(
   overrides: Record<string, string>,
   permanence: (tag: string) => Permanence
 ): boolean {
-  if (routeTag(tag, overrides).kind !== 'look') return false
-  const cast = new Set(castRoles.filter((r): r is CastRole => !!r))
-  if (cast.size !== 1) return false
-  const kind = permanence(tag)
-  if (kind === 'composition') return false
-  const named = gendersNamed(tag)
-  if (named.size > 0) return [...named].some((g) => !cast.has(g))
-  return kind === 'relative' && !isCanonRelativeTag(tag)
+  const cast = Array.from(new Set(castRoles.filter((r): r is CastRole => !!r)))
+  if (cast.length !== 1) return false
+  if (isPeopleTag(normalizeTagForPack(tag))) return false
+  const base: TagRoleContext = permanence === routePermanence ? routeContext(overrides) : othersContext(overrides, permanence)
+  const role = tagRole(tag, castContext(base, cast))
+  if (role.owner === 'others') return role.kind !== 'composition'
+  // The genitals of the other sex are another person's, a lasting trait too ("huge penis" next to a girl).
+  if (role.kind !== 'aspect') return false
+  const other = cast[0] === 'girl' ? MALE_GENITALS : FEMALE_GENITALS
+  return other.test(normalizeTagForPack(tag))
+}
+const MALE_GENITALS = /\b(penis(es)?|testicles|scrotum|foreskin)\b/
+const FEMALE_GENITALS = /\b(pussy|vulva|vagina|clitoris|labia)\b/
+const othersContexts = new WeakMap<(tag: string) => Permanence, TagRoleContext>()
+function othersContext(overrides: Record<string, string>, permanence: (tag: string) => Permanence): TagRoleContext {
+  const relations = loadedTagRelations()
+  const found = othersContexts.get(permanence)
+  if (found && found.overrides === overrides && found.relations === relations) return found
+  const ctx: TagRoleContext = { overrides, permanence, relations }
+  othersContexts.set(permanence, ctx)
+  return ctx
 }
 
 /** Adds a tag to the others' look (and takes it off Never and the characters' added look). */
@@ -229,7 +305,8 @@ export function addTag(brief: PackBrief, tag: string, overrides: Record<string, 
   const name = normalizeTagForPack(typed)
   if (!name) return brief
   const route = routeTag(name, overrides)
-  if (route.kind === 'people') return brief
+  // A count sets People; a pairing ("hetero") or a focus is who is in the picture: neither is a tag of the brief.
+  if (route.kind === 'people' || route.kind === 'composition') return brief
 
   const next = cloneBrief(brief)
   // Asking for a tag undoes a "never" for it.
@@ -241,7 +318,9 @@ export function addTag(brief: PackBrief, tag: string, overrides: Record<string, 
 
   const role: RequestRole | null = route.kind === 'request' ? route.role : into ?? null
   if (role) {
-    if (!next.requests.some((r) => same(r.tag, name))) next.requests.push({ tag: name, role })
+    // The time, the weather or the light shows in Where and goes to the engine as Also: it never replaces the scene's place.
+    const ambience = role === 'where' && isAmbienceTag(name, overrides)
+    if (!next.requests.some((r) => same(r.tag, name))) next.requests.push(ambience ? { tag: name, role, ambience: true } : { tag: name, role })
   } else if (!has(next.literal, name)) {
     next.literal.push(typed)
   }
@@ -438,7 +517,9 @@ export function briefFromPrompt(text: string, overrides: Record<string, string>)
   for (const tag of splitCommaSeparatedTags(text)) {
     const name = normalizeTagForPack(tag)
     if (!name) continue
-    if (routeTag(name, overrides).kind === 'people') {
+    // Counts set People; a pairing or focus ("hetero") is who is in the picture too: kept apart, never lost.
+    const kind = routeTag(name, overrides).kind
+    if (kind === 'people' || kind === 'composition') {
       if (!peopleTags.includes(name)) peopleTags.push(name)
     } else {
       brief = addTag(brief, tag, overrides)
@@ -463,7 +544,7 @@ export function briefFromCard(
     const name = normalizeTagForPack(tag)
     if (!name) continue
     const route = routeTag(name, overrides)
-    if (route.kind === 'people') offer(peopleTags, name)
+    if (route.kind === 'people' || route.kind === 'composition') offer(peopleTags, name)
     else if (route.kind === 'character' || route.kind === 'look') brief = addTag(brief, name, overrides)
     else if (route.kind === 'request' && route.role === 'wearing') offer(offered.outfit, name)
     else if (route.kind === 'request' && route.role === 'doing') offer(offered.pose, name)
@@ -472,8 +553,10 @@ export function briefFromCard(
 }
 
 export function toSceneRequests(brief: PackBrief): BriefSceneRequests {
-  const of = (role: RequestRole) => brief.requests.filter((r) => r.role === role).map((r) => r.tag)
-  const requests = { select: of('doing'), wearing: of('wearing'), where: of('where'), also: of('also'), literal: [...brief.literal] }
+  const of = (role: RequestRole) => brief.requests.filter((r) => r.role === role && !r.ambience).map((r) => r.tag)
+  // The ambience of Where is asked as Also, after Also's own tags.
+  const ambience = brief.requests.filter((r) => r.ambience).map((r) => r.tag)
+  const requests = { select: of('doing'), wearing: of('wearing'), where: of('where'), also: [...of('also'), ...ambience], literal: [...brief.literal] }
   return brief.others.length > 0 ? { ...requests, others: [...brief.others] } : requests
 }
 
@@ -504,9 +587,9 @@ const CONDITION_PLACE_SLOTS = new Set(['scenery:setting'])
  * True when a request can be met as a condition (with a different form per prompt): any garment of
  * Wearing, and a place of Where. Atmosphere and props of Where stay as typed, as before.
  */
-export function canBeCondition(request: Pick<PackRequest, 'tag' | 'role'>, overrides: Record<string, string>): boolean {
+export function canBeCondition(request: Pick<PackRequest, 'tag' | 'role' | 'ambience'>, overrides: Record<string, string>): boolean {
   if (request.role === 'wearing') return true
-  if (request.role !== 'where') return false
+  if (request.role !== 'where' || request.ambience) return false
   const found = getTagSlotFromOverrides(normalizeTagForPack(request.tag), overrides)
   return !found?.slot || CONDITION_PLACE_SLOTS.has(found.slot)
 }

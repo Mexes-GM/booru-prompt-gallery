@@ -43,6 +43,8 @@ import {
   briefFromPrompt,
   routeTag,
   typedRole,
+  briefRole,
+  type SuggestedKind,
   setPeople as setPeopleInBrief,
   type PackBrief,
 } from "@/lib/pack/brief"
@@ -95,6 +97,7 @@ import { cn } from "@/lib/utils"
 import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
 import { getProviderTagLimit } from "@/lib/booru/tag-limits"
 import { SearchDetails } from "./search-details"
+import { BUILDER_SWITCH_TEXT } from "./builder-switch"
 import type { EntryOption } from "./tag-entry"
 import { AUTO_PAGE_CAP } from "@/lib/pack/source-paging"
 import { BriefSummary } from "./brief-summary"
@@ -103,11 +106,11 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
-import { briefSummaryParts, characterName, companionsLabel, showTag, type CharacterInfo, type SlotId } from "./slots"
+import { briefSummaryParts, characterName, companionsLabel, showTag, type CharacterInfo, type SlotId, type TagSuggestion } from "./slots"
 import { UndoNotice } from "./undo-notice"
 import { PackEmptyState, type ExampleBrief } from "./pack-empty-state"
 import { PackTip } from "./pack-tip"
@@ -169,6 +172,8 @@ export interface PackBriefBuilderProps {
   /** Copies text in a format; resolves true when it worked. */
   onCopy: (text: string, format: PromptFormat) => Promise<boolean>
   onExit: () => void
+  /** Opens the pack's card or character in the classic builder. */
+  onOpenClassic?: () => void
 }
 
 /** The brief a start makes, and what to say about it. Pure: nothing is written while rendering. */
@@ -200,7 +205,7 @@ function begin(start: PackBriefStart, overrides: Record<string, string>): { brie
  * it was when it closed, so nothing is fetched, timed or worked out until it opens again.
  */
 export function PackBriefBuilder(props: PackBriefBuilderProps) {
-  const { start, open, overrides, rating, onRatingChange, onExit, onNewPack } = props
+  const { start, open, overrides, rating, onRatingChange, onExit, onNewPack, onOpenClassic } = props
   const [begun] = useState(() => begin(start, overrides))
   const pack = usePackBrief(overrides, begun.brief)
   // The environment while open; held while closed.
@@ -268,6 +273,20 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
             >
               {BUILDER_TEXT.newPack}
             </Button>
+            {onOpenClassic && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onOpenClassic}
+                title={BUILDER_SWITCH_TEXT.classicHint}
+                aria-label={BUILDER_SWITCH_TEXT.classic}
+                className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground pointer-coarse:h-11"
+              >
+                <span className="sm:hidden">{BUILDER_SWITCH_TEXT.classicShort}</span>
+                <span className="max-sm:hidden">{BUILDER_SWITCH_TEXT.classic}</span>
+              </Button>
+            )}
             <ProviderMenu value={startSource.provider} rating={rating} onChange={onProviderChange} />
             <RatingMenu value={rating} onChange={onRatingChange} />
             <Button
@@ -402,20 +421,38 @@ const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`)
 const bareToken = (token: string) => token.replace(/^\(+/, "").replace(/(:[\d.]+)?\)+$/, "").trim()
 
 /**
- * The slot of the brief a typed tag lands in; null for a people count (it sets People).
- * A look tag about the people who are not the characters (`othersTag`) goes to Others
- * wherever it is typed; typed in Others, any look tag, and a tag the taxonomy does not
- * know, stays there.
+ * The slot of the brief a typed tag lands in, by its role (routeTag); null for a people count
+ * (it sets People) and "people" for a pairing or focus ("hetero": People sets it, never a tag).
+ * A tag about the people who are not the characters (`othersTag`) goes to Others wherever it is
+ * typed; typed in Others, a look of anyone and a tag nothing knows stay there.
  */
-function landsIn(tag: string, typedIn: SlotId, overrides: Record<string, string>, othersTag: (tag: string) => boolean): SlotId | null {
+function landsIn(
+  tag: string,
+  typedIn: SlotId,
+  overrides: Record<string, string>,
+  othersTag: (tag: string) => boolean,
+  suggested?: SuggestedKind,
+): SlotId | "people" | null {
   const route = routeTag(tag, overrides)
   if (route.kind === "people") return null
+  if (route.kind === "composition") return "people"
   if (typedIn === "never") return "never"
-  if (route.kind === "look") return typedIn === "others" || othersTag(tag) ? "others" : "who"
   if (route.kind === "character") return "who"
+  if (othersTag(tag)) return "others"
+  if (typedIn === "others" && (route.kind === "look" || briefRole(tag, overrides).kind === "aspect")) return "others"
+  if (route.kind === "look") return "who"
   if (route.kind === "request") return route.role
-  if (typedIn === "others") return getTagSlotFromOverrides(normalizeTagForPack(tag), overrides) ? "style" : "others"
-  return typedRole(tag, typedIn, overrides) ?? "style"
+  if (typedIn === "others") return briefRole(tag, overrides).kind === "unknown" ? "others" : "style"
+  return typedRole(tag, typedIn, overrides, suggested) ?? "style"
+}
+
+/** What an autocomplete suggestion said a tag is (slotSuggestions' kind); none for a typed tag. */
+function suggestedKind(picked?: TagSuggestion): SuggestedKind | undefined {
+  if (!picked) return undefined
+  if (picked.kind === "Artist") return "artist"
+  if (picked.kind === "Series") return "copyright"
+  if (picked.kind === "Meta") return "meta"
+  return picked.kind ? undefined : "general"
 }
 
 function BriefWorkspace({
@@ -664,19 +701,26 @@ function BriefWorkspace({
   const { add, addOther, never, remove, unnever, removeCharacter, setRole, removeLook, restoreLook, leaveOutScene, restoreScene, setPeople, undo } = pack
   const { leaveOutVariant, restoreVariant, setBaseScene } = pack
   const cast = identity.cast
-  const onAddTags = useCallback((tags: string[], slot: SlotId) => {
+  const onAddTags = useCallback((tags: string[], slot: SlotId, picked?: TagSuggestion) => {
     let elsewhere: SlotId | "people" | null = null
     const counts: string[] = []
+    const kind = suggestedKind(picked)
     for (const tag of tags) {
-      const dest = landsIn(tag, slot, overrides, othersTag)
+      const dest = landsIn(tag, slot, overrides, othersTag, kind)
       // A typed count ("2girls", "1boy", "solo") sets who is in the picture.
       if (dest === null) {
         counts.push(tag)
         continue
       }
+      // A pairing or a focus ("hetero") is who is in the picture: People sets it, the pack says so.
+      if (dest === "people") {
+        toast({ description: COMPOSITION_TEXT.setByPeople(showTag(tag)), duration: 5000 })
+        elsewhere = "people"
+        continue
+      }
       if (slot === "never") never(tag)
       else if (dest === "others") addOther(tag)
-      else add(tag, typedRole(tag, slot === "others" ? "style" : slot, overrides))
+      else add(tag, typedRole(tag, slot === "others" ? "style" : slot, overrides, kind))
       if (dest !== slot) elsewhere = dest
     }
     const people = peopleFromCountTags(counts, cast)
@@ -755,13 +799,17 @@ function BriefWorkspace({
     if (kind === "never") {
       next = addNever(brief, tag)
       apply = () => never(tag)
+    } else if (route.kind === "composition") {
+      // A pairing or a focus is who is in the picture: People sets it.
+      toast({ description: COMPOSITION_TEXT.setByPeople(showTag(tag)), duration: 5000 })
+      return
     } else if (route.kind === "people") {
       // A count says who is in the picture: it goes to People, as when typed.
       const people = peopleFromCountTags([tag], cast)
       if (!people) return
       next = setPeopleInBrief(brief, people)
       apply = () => setPeople(people)
-    } else if (route.kind === "look" && othersTag(tag)) {
+    } else if (othersTag(tag)) {
       // "dark-skinned male" next to girls is how the others look, as when typed.
       next = addOtherInBrief(brief, tag)
       apply = () => addOther(tag)
