@@ -125,6 +125,13 @@ export interface SourcePlanEnv {
    * as SceneRequests.conditions. Each kind gets a donor search. Missing or empty: none.
    */
   conditions?: readonly string[]
+  /**
+   * The compositions a pack mixes (ScenePackArgs.compositions), when two or more: no search asks
+   * for a head count (one count would leave the others out). The scene searches are those of a
+   * single character: its own posts by name (without "solo") with no pose, the pose without any
+   * count with one. One or missing: the plan as before.
+   */
+  compositions?: ReadonlyArray<PackPeople>
 }
 
 /** Most scene searches a plan has (own, theme, anchor). */
@@ -253,7 +260,11 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
 
   const named = brief.who.filter((c): c is typeof c & { tag: string } => !!c.tag)
   const roles = named.map((c, i) => env.roles?.[i] ?? c.role ?? null)
-  const { people, rolesPending } = groupPeople(brief, roles)
+  const mixed = (env.compositions?.length ?? 0) >= 2
+  const group = groupPeople(brief, roles)
+  // A mixed pack asks for no head count: every search reaches all its compositions.
+  const people = mixed ? null : group.people
+  const rolesPending = mixed ? false : group.rolesPending
 
   const seen = new Set<string>()
   const poses = toSceneRequests(brief).select.filter((tag) => {
@@ -272,7 +283,7 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     if (people) {
       scenes.push(sceneSearch(provider, 'group', groupLead(people, provider, rating, null), []))
     } else if (base) {
-      scenes.push(sceneSearch(provider, 'own', ownSoloTags(base, limit), []))
+      scenes.push(sceneSearch(provider, 'own', mixed ? [toBooru(base)] : ownSoloTags(base, limit), []))
     } else {
       const { tags, rest } = gallerySearchTags(env.gallerySearch ?? '', limit)
       scenes.push(sceneSearch(provider, 'gallery', tags, []))

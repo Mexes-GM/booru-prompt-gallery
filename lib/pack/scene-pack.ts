@@ -19,7 +19,7 @@ import { coherentPromptTags, dropRedundantTags, isCompanyAct, loneCompanyTags } 
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
 import { UNIT_ORDER, normalizeRating, sceneTags, unitOfSlot, type Scene, type SceneRating, type TagKind, type UnitName } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
-import { compositionsOf, type PackPeople, type ScenePool } from './scene/scene-pool'
+import { compositionsOf, groupSituations, type PackPeople, type ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
 import { garmentPrefix, lastQualifier } from './scene/franchise'
 import type { ChangesAxis, SceneRequests } from './brief'
@@ -322,6 +322,52 @@ export function identityWithOutfits(
 /** Same composition. */
 export const samePeople = (a: PackPeople | null | undefined, b: PackPeople | null | undefined): boolean =>
   !!a && !!b && a.girls === b.girls && a.boys === b.boys
+
+/**
+ * The compositions a pack mixes (ScenePackArgs.compositions): two or more different ones that can
+ * hold the pack's named characters (as many people as `castSize`, the subject's gender among them).
+ * Null for a pack of one composition, which runs exactly as before.
+ */
+export function mixedCompositions(args: Pick<ScenePackArgs, 'compositions' | 'castSize' | 'subject'>): PackPeople[] | null {
+  const named = args.castSize ?? 1
+  const out: PackPeople[] = []
+  for (const people of args.compositions ?? []) {
+    const fits = people.girls + people.boys >= named && (args.subject === 'girl' ? people.girls : people.boys) >= 1
+    if (fits && !out.some((have) => samePeople(have, people))) out.push({ girls: people.girls, boys: people.boys })
+  }
+  return out.length >= 2 ? out : null
+}
+
+/**
+ * `pool` with the scenes of every composition of a mixed pack: those of `allScenes` whose people are
+ * one of them, grouped into situations again as one pool. The same pool for a pack of one composition.
+ */
+export function poolForCompositions(pool: ScenePool, args: Pick<ScenePackArgs, 'compositions' | 'castSize' | 'subject' | 'overrides'>): ScenePool {
+  const mixed = mixedCompositions(args)
+  if (!mixed) return pool
+  const scenes = (pool.allScenes ?? pool.scenes).filter((scene) => mixed.some((people) => samePeople(scene.people, people)))
+  const situations = groupSituations(scenes, args.overrides)
+  return { ...pool, scenes, situations, stats: { ...pool.stats, scenes: scenes.length, situations: situations.length } }
+}
+
+/** How many people a prompt made from `scene` has: its own count in a mixed pack, else the pack's (or one). */
+function headcountFor(args: ScenePackArgs, scene: Scene | undefined): number {
+  if (mixedCompositions(args)) return Math.max(1, scene ? headcount(scene) : 1)
+  return args.people ? args.people.girls + args.people.boys : 1
+}
+
+/** The composition a prompt made from `scene` is held to: its own in a mixed pack, else the pack's. */
+function peopleFor(args: ScenePackArgs, scene: Scene | undefined): PackPeople | null {
+  if (mixedCompositions(args)) return scene?.people ?? null
+  return args.people ?? null
+}
+
+/** True when a people-count or pairing tag fits the pack: every composition of a mixed one, else the pack's. */
+function fitsPack(tag: string, args: ScenePackArgs): boolean {
+  const mixed = mixedCompositions(args)
+  if (mixed) return mixed.every((people) => fitsComposition(tag, people))
+  return !args.people || fitsComposition(tag, args.people)
+}
 
 /** What the base says about who is in the picture. */
 export interface BaseComposition {
@@ -678,6 +724,14 @@ export interface ScenePackArgs {
    * one of them meets the condition, and the prompt says it with the condition's own name.
    */
   conditionAliases?: Readonly<Record<string, readonly string[]>>
+  /**
+   * Two or more compositions the pack mixes (the user's choice; each must hold the named
+   * characters, castComposition / holdsCast). The scenes come from any of them (the pool's
+   * `allScenes`), each prompt keeps the composition of its base scene (its header, pairing, pose
+   * and what depends on how many people there are), and only what doesn't depend on it (clothes,
+   * place, face, framing) is lent across them. Missing or one: `people` alone, exactly as before.
+   */
+  compositions?: readonly PackPeople[]
 }
 
 /** A request's role for the engine (keys of SceneRequests); not brief.ts's RequestRole, which names the brief's slots. */
@@ -827,7 +881,7 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
         dropped.push({ kind: 'request-dropped', tag, role, reason: 'never' })
         return []
       }
-      if (args.people && isCompositionPattern(tag) && !fitsComposition(tag, args.people)) {
+      if (isCompositionPattern(tag) && !fitsPack(tag, args)) {
         dropped.push({ kind: 'request-dropped', tag, role, reason: 'composition' })
         return []
       }
@@ -840,7 +894,7 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
   const imposed = [...wearing, ...where, ...owning]
   const literal = requests.literal.filter((tag) => tag.trim())
   literal.forEach((tag) => roleOf.set(normalizeTagForPack(tag), roleOf.get(normalizeTagForPack(tag)) ?? 'literal'))
-  alwaysAddOmitted(literal, args.people ?? null).forEach((tag) =>
+  ;(mixedCompositions(args) ? literal.filter((tag) => isCompositionPattern(tag) && !mixedCompositions(args)!.some((people) => fitsComposition(tag, people))) : alwaysAddOmitted(literal, args.people ?? null)).forEach((tag) =>
     dropped.push({ kind: 'request-dropped', tag, role: 'literal', reason: 'composition' })
   )
   const asCondition = new Set((requests.conditions ?? []).map(normalizeTagForPack).filter(Boolean))
@@ -1261,7 +1315,8 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const owner = wearing.size > 0 ? composed.locked.filter((tag) => !wearing.has(tag)) : composed.locked
   const owned = new Set(applySceneOwnership(tags, owner, [...(args.never ?? []), ...plan.setAside], args.overrides, !isCast(args)))
   const ownedTags = tags.filter((tag) => locked.has(tag) || owned.has(tag))
-  const people = args.people ? args.people.girls + args.people.boys : 1
+  const baseScene = f.sceneById.get(composed.sources.skeleton)
+  const people = headcountFor(args, baseScene)
   const requested = displaceRequestedSlots(ownedTags, plan.owning, composed.locked, args.overrides, people)
   // A selected pose the scene of the prompt's pose lacks is imposed on it: what of that pose contradicts it goes.
   const imposed = args.requests ? imposedOn(f.sceneById.get(composed.sources.pose ?? composed.sources.skeleton), poseSelection(args)) : []
@@ -1281,7 +1336,7 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
     people: true,
   })
   const front = Array.from(new Set([...plan.literal, ...args.alwaysAdd]))
-  const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(front, composed.locked, args.people))
+  const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(front, composed.locked, peopleFor(args, baseScene)))
   if (!prompt || f.seen.has(prompt) || !f.filter.tryAccept(prompt)) return null
   f.seen.add(prompt)
   // A request that needs company stays in a one-person prompt; the pack says so.
@@ -1425,10 +1480,10 @@ function packPlan(pool: ScenePool, args: ScenePackArgs, count: number): PackPlan
   })
   if (carriers.length > 0) add(restrictPool(base, idsOf(carriers)), 0, 'reuse', 'remix')
   // Among the scenes a pose is imposed on, those whose own pose has nothing that contradicts it come first.
-  const people = args.people ? args.people.girls + args.people.boys : 1
   const relations = loadedTagRelations()
   const clashes = (scene: Scene) => {
     const imposed = imposedOn(scene, selection)
+    const people = headcountFor(args, scene)
     return scene.units.skeleton.some((tag) => contradictsImposedPose(tag, imposed, args.overrides, people, relations))
   }
   const levels = Array.from(new Set(imposable.map(carried)))
@@ -1684,7 +1739,7 @@ function placeOptions(run: ConditionRun, base: Scene): VariantOption[] {
 function* conditionScenes(f: Finisher, base: Scene): Generator<{ scene: Scene; outfit: VariantOption; place: VariantOption }> {
   const run = f.cond!
   const { args } = f
-  const people = args.people ? args.people.girls + args.people.boys : Math.max(1, headcount(base))
+  const people = mixedCompositions(args) ? headcountFor(args, base) : args.people ? args.people.girls + args.people.boys : Math.max(1, headcount(base))
   const relations = loadedTagRelations()
   const fixed = fixedTags(args)
   const fixedSet = new Set(fixed)
@@ -1900,7 +1955,6 @@ function defaultBase(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count:
   const plan = packPlan(pool, plain, Math.max(count, MAX_PACK_OVERGENERATE))
   const f = finisher(pool, plain, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(plain)), plan.pose)
   const requested = new Set(requestPlan(plain).imposed)
-  const people = plain.people ? plain.people.girls + plain.people.boys : 1
   const relations = loadedTagRelations()
   let first: AxisBase | null = null
   for (const item of composeForPack(plain, plan.phases, f.pose?.used)) {
@@ -1913,7 +1967,7 @@ function defaultBase(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count:
     const face = new Set(scene.units.face)
     if (axis === 'expression' && !showsFace(tags.filter((tag) => !face.has(tag)))) continue
     const asked = tags.filter((tag) => requested.has(tag))
-    if (asked.length === 0 || !lendingClashes(asked, tags.filter((tag) => !requested.has(tag)), people, plain.overrides, relations)) return { base, issues: [] }
+    if (asked.length === 0 || !lendingClashes(asked, tags.filter((tag) => !requested.has(tag)), headcountFor(plain, scene), plain.overrides, relations)) return { base, issues: [] }
   }
   return first ? { base: first, issues: [] } : { base: null, issues: packIssues(f, 0, count) }
 }
@@ -2055,7 +2109,7 @@ function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: num
       new Set(a.preferredPosts ?? []),
       createSeededRng(a.seed)
     )
-    const people = a.people ? a.people.girls + a.people.boys : Math.max(1, headcount(scene))
+    const people = mixedCompositions(a) ? headcountFor(a, scene) : a.people ? a.people.girls + a.people.boys : Math.max(1, headcount(scene))
     const relations = loadedTagRelations()
     const lentValues = new Set([axisKey(baseValue)])
     for (let donor = queue.next(); donor; donor = queue.next()) {
@@ -2137,6 +2191,7 @@ function rerollAxisPrompt(pool: ScenePool, prompts: readonly PackPrompt[], index
 export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePackResult {
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
+  pool = poolForCompositions(pool, args)
   const axis = oneAxis(args)
   if (axis) return axisPack(pool, args, axis, count)
   const bases = basesOf(pool, args)
@@ -2176,6 +2231,7 @@ export async function generateScenePackAsync(
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
   const slice = control.slice ?? 12
+  pool = poolForCompositions(pool, args)
   await control.pause()
   if (control.cancelled()) return null
   const axis = oneAxis(args)
@@ -2255,6 +2311,7 @@ export interface SceneCandidate {
  * the order the pack uses them (`'donor'`); its length is the most prompts that pack can make.
  */
 export function sceneCandidates(pool: ScenePool, args: ScenePackArgs): SceneCandidate[] {
+  pool = poolForCompositions(pool, args)
   // Enough to take every phase to its end: the composer never makes more than MAX_PACK_OVERGENERATE per phase.
   const count = Math.max(pool.scenes.length, MAX_PACK_OVERGENERATE)
   const axis = oneAxis(args)
@@ -2342,6 +2399,7 @@ function restrictPool(pool: ScenePool, allowed: ReadonlySet<number>): ScenePool 
  * when none is left.
  */
 export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[], index: number, args: ScenePackArgs): PackPrompt | null {
+  pool = poolForCompositions(pool, args)
   const current = prompts[index]
   if (!current) return null
   // One-axis pack: the same base with another donor the pack doesn't use yet (the base's own row too).

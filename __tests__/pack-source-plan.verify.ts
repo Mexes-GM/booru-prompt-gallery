@@ -259,3 +259,23 @@ check(() => {
 })
 
 console.log(`pack-source-plan (conditions): done`)
+
+// ── Mixed compositions (ENG-10) ──────────────────────────────────────────────
+check(() => {
+  const mix = [{ girls: 1, boys: 2 }, { girls: 1, boys: 3 }]
+  // A head count the user set: one composition asks for it; several don't.
+  const set = setPeople(withTags(tifa(), "hug"), { girls: 1, boys: 2 })
+  const one = planSources(set, env({ provider: "gelbooru" }))
+  assert(one.scenes.some((s) => s.tags.includes("2boys")), "one composition: the theme search asks for its count")
+  const many = planSources(set, env({ provider: "gelbooru", compositions: mix }))
+  assert(many.scenes.every((s) => !s.tags.some((t) => /^\d+(girl|boy)s?$/.test(t) || /^-/.test(t))), "two compositions: no search asks for a count")
+  assert(many.scenes.some((s) => s.kind === "theme" && s.tags.includes("hug")), "the pose is still searched")
+  assert.equal(many.people, null)
+  invariants(many, set, "mixed with a pose")
+  // No pose: the character's own posts by name, not only those alone.
+  const plain = planSources(tifa(), env({ compositions: mix }))
+  assert.deepEqual(plain.scenes.map((s) => s.tags), [["tifa_lockhart"]], "no pose: the name alone")
+  assert.deepEqual(planSources(tifa(), env({ compositions: [mix[0]] })), planSources(tifa(), env()), "one composition in the list: the plan as before")
+})
+
+console.log(`pack-source-plan (compositions): done`)
