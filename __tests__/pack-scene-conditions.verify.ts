@@ -22,6 +22,7 @@ import {
   generateScenePack,
   tagKindsFromPosts,
   type ScenePackArgs,
+  type ScenePackIssue,
 } from "../lib/pack/scene-pack"
 import { makeAssert, makePost } from "./fixtures/pack-scene-data"
 
@@ -107,6 +108,119 @@ function baseArgs(over: Partial<ScenePackArgs> = {}): ScenePackArgs {
   const before = generateScenePack(pool, baseArgs({ people, requests: requests({}) }))
   const empty = generateScenePack(pool, baseArgs({ people, requests: requests({ others: [] }) }))
   assert(before.prompts.map((p) => p.prompt).join("\n") === empty.prompts.map((p) => p.prompt).join("\n"), "O4: an empty `others` changes nothing")
+}
+
+// ── Conditions ───────────────────────────────────────────────────────────────
+const OWN = [
+  makePost(901, "1girl solo standing smile crop_top black_skirt street outdoors looking_at_viewer day"),
+  makePost(902, "1girl solo sitting blush white_shirt pleated_skirt bedroom indoors bed looking_at_viewer"),
+  makePost(903, "1girl solo standing open_mouth tank_top denim_shorts sneakers city outdoors day"),
+  makePost(904, "1girl solo sitting smile jacket black_skirt street outdoors looking_at_viewer cloud"),
+]
+const DONORS = [
+  makePost(951, "1girl solo standing smile white_bikini swimsuit navel cleavage beach ocean day sky"),
+  makePost(952, "1girl solo sitting blush striped_bikini swimsuit navel stomach poolside pool water"),
+  makePost(953, "1girl solo standing open_mouth red_bikini swimsuit collarbone navel beach sand palm_tree"),
+  // A layer over the garment: a shirt on the bikini.
+  makePost(954, "1girl solo standing smile black_bikini tied_shirt shorts navel beach shore day"),
+  makePost(955, "1girl solo sitting smile white_thighhighs pleated_skirt white_shirt classroom indoors looking_at_viewer"),
+  makePost(956, "1girl solo standing blush striped_thighhighs crop_top shorts street outdoors day"),
+]
+const ALL = [...OWN, ...DONORS]
+const allKinds = tagKindsFromPosts(ALL)
+const condPool = buildScenePool(ALL, { overrides, permanence, subject: "girl", tagKind: (tag: string) => allKinds.get(tag) })
+const DONOR_IDS = DONORS.map((p) => p.id)
+const SOLO = { girls: 1, boys: 0 }
+const condArgs = (over: Partial<ScenePackArgs>) => baseArgs({ people: SOLO, count: 4, donorPosts: DONOR_IDS, ...over })
+type VarietyIssue = Extract<ScenePackIssue, { kind: "condition-variety" }>
+const issueOf = (result: ReturnType<typeof generateScenePack>, role: string): VarietyIssue | undefined =>
+  result.issues.find((i): i is VarietyIssue => i.kind === "condition-variety" && i.role === role)
+const isBikiniForm = (t: string) => /\S bikini$/.test(t)
+{
+  const result = generateScenePack(condPool, condArgs({ requests: requests({ wearing: ["bikini"], conditions: ["bikini"] }) }))
+  const lists = result.prompts.map((p) => tagsOf(p.prompt))
+  assert(result.prompts.length === 4, "C1: four prompts")
+  assert(result.prompts.every((p) => !DONOR_IDS.includes(p.scene!.postId)), "C1: a donor post is never the scene of a prompt")
+  const forms = lists.map((tags) => tags.find(isBikiniForm) ?? "").filter(Boolean)
+  assert(forms.length === 3 && new Set(forms).size === 3, `C1: three donors, three different bikinis (${forms.join(" / ")})`)
+  assert(lists.every((tags) => tags.includes("bikini")), "C1: the condition's own tag stays in every prompt")
+  assert(lists.every((tags) => !tags.includes("tied shirt") && !tags.includes("black bikini")), "C1: the donor with a shirt over the bikini is never used")
+  assert(lists.every((tags) => !tags.includes("crop top") && !tags.includes("jacket") && !tags.includes("tank top")), "C1: the scene's own top gives way to the whole outfit")
+  assert(lists.filter((tags) => tags.some(isBikiniForm)).every((tags) => tags.includes("navel")), "C1: the donor's exposure comes with the outfit")
+  const issue = issueOf(result, "wearing")
+  assert(!!issue && issue.variants === 3 && issue.fromDonors === 3 && issue.imposed === 1 && issue.fromScene === 0, `C1: condition-variety says 3 variants from donors, 1 as typed (${JSON.stringify(issue)})`)
+  assert(result.prompts.every((p) => (p.scene?.donors ?? []).every((id) => id > 0)), "C1: donors are posts")
+  const lent = result.prompts.filter((p) => (p.scene?.donors ?? []).some((id) => DONOR_IDS.includes(id)))
+  assert(lent.length === 3, "C1: the prompts record their donor")
+}
+{
+  // P: a legwear condition keeps the rest of each scene's clothes.
+  const result = generateScenePack(condPool, condArgs({ requests: requests({ wearing: ["thighhighs"], conditions: ["thighhighs"] }) }))
+  const lists = result.prompts.map((p) => tagsOf(p.prompt))
+  const bySource = new Map(OWN.map((p) => [p.id, p.tag_string]))
+  assert(lists.every((tags) => tags.includes("thighhighs")), "P1: the condition in every prompt")
+  const variants = lists.map((tags) => tags.find((t) => /\S thighhighs$/.test(t))).filter(Boolean)
+  assert(new Set(variants).size === 2, `P1: two donors, two different thighhighs (${variants.join(" / ")})`)
+  result.prompts.forEach((p, i) => {
+    const own = (bySource.get(p.scene!.postId) ?? "").split(" ").map((t) => t.replace(/_/g, " "))
+    const top = own.find((t) => ["crop top", "white shirt", "tank top", "jacket"].includes(t))
+    assert(!top || lists[i].includes(top), `P1: prompt ${i + 1} keeps its scene's top (${top})`)
+    const bottom = own.find((t) => ["black skirt", "pleated skirt", "denim shorts"].includes(t))
+    assert(!bottom || lists[i].includes(bottom), `P1: prompt ${i + 1} keeps its scene's bottom (${bottom})`)
+  })
+}
+{
+  // L: the library; and a style alone.
+  const library = [
+    { outfitId: 10, tags: ["red bikini", "sandals"], style: "swimwear" },
+    { outfitId: 11, tags: ["frilled bikini", "sun hat"], style: "swimwear" },
+    { outfitId: 12, tags: ["sundress", "sun hat", "sandals"], style: "summer" },
+    { outfitId: 13, tags: ["white shirt", "denim shorts", "sneakers"], style: "summer" },
+  ]
+  const onlyLibrary = generateScenePack(condPool, condArgs({ count: 4, outfitLibrary: library, requests: requests({ wearing: ["bikini"], conditions: ["bikini"] }) }))
+  assert(onlyLibrary.prompts.every((p) => tagsOf(p.prompt).includes("bikini")), "L1: the condition in every prompt")
+  const fromLibrary = onlyLibrary.prompts.filter((p) => p.outfitId !== undefined)
+  assert(fromLibrary.length >= 1 && fromLibrary.every((p) => p.outfitId === 10 || p.outfitId === 11), `L1: once the posts run out, a library outfit that meets it (${onlyLibrary.prompts.map((p) => p.outfitId).join(",")})`)
+  const styles = generateScenePack(condPool, condArgs({ outfitLibrary: library, requests: requests({ outfitStyles: ["summer"] }) }))
+  const ids = styles.prompts.map((p) => p.outfitId)
+  assert(ids.filter((id) => id === 12).length === 1 && ids.filter((id) => id === 13).length === 1, `L2: a different summer outfit per prompt while there are (${ids.join(",")})`)
+  styles.prompts.filter((p) => p.outfitId === 12).forEach((p) =>
+    assert(["sundress", "sun hat", "sandals"].every((t) => tagsOf(p.prompt).includes(t)) && !tagsOf(p.prompt).includes("crop top"), "L2: the whole library outfit replaces the scene's"))
+  const st = issueOf(styles, "wearing")
+  assert(!!st && st.fromLibrary === 2 && st.styles.join() === "summer" && st.variants === 2, `L2: the issue counts the library (${JSON.stringify(st)})`)
+}
+{
+  // W: a place condition.
+  const result = generateScenePack(condPool, condArgs({ requests: requests({ where: ["beach"], conditions: ["beach"] }) }))
+  const lists = result.prompts.map((p) => tagsOf(p.prompt))
+  assert(lists.every((tags) => tags.includes("beach")), "W1: the place in every prompt")
+  const places = lists.map((tags) => ["ocean", "sand", "palm tree", "shore", "sky"].filter((t) => tags.includes(t)).join("+"))
+  assert(new Set(places.filter(Boolean)).size >= 2, `W1: different places at the beach (${places.join(" / ")})`)
+  assert(lists.every((tags) => !tags.includes("street") && !tags.includes("bedroom")), "W1: the scene's own place gives way")
+  const issue = issueOf(result, "where")
+  assert(!!issue && issue.variants >= 2, `W1: condition-variety for the place (${JSON.stringify(issue)})`)
+}
+{
+  // X: exact (not in conditions) is the engine as before.
+  const exact = generateScenePack(condPool, baseArgs({ people: SOLO, count: 4, requests: requests({ wearing: ["bikini"], conditions: [] }) }))
+  const before = generateScenePack(condPool, baseArgs({ people: SOLO, count: 4, requests: requests({ wearing: ["bikini"] }) }))
+  assert(exact.prompts.map((p) => p.prompt).join("\n") === before.prompts.map((p) => p.prompt).join("\n"), "X1: no conditions: the same pack")
+  assert(!exact.issues.some((i) => i.kind === "condition-variety"), "X1: no condition-variety without conditions")
+  const mixed = generateScenePack(condPool, condArgs({ requests: requests({ wearing: ["bikini", "sandals"], conditions: ["bikini"] }) }))
+  assert(mixed.prompts.every((p) => tagsOf(p.prompt).includes("sandals") && tagsOf(p.prompt).includes("bikini")), "X2: an exact garment next to a condition stays in every prompt")
+}
+{
+  // A: one-axis outfit pack with a condition: before, only the pool's scenes that wear it lent.
+  // Before: the pool had the character's posts only (no search for the garment).
+  const ownKinds = tagKindsFromPosts(OWN)
+  const ownPool = buildScenePool(OWN, { overrides, permanence, subject: "girl", tagKind: (tag: string) => ownKinds.get(tag) })
+  const exact = generateScenePack(ownPool, baseArgs({ people: SOLO, count: 6, changes: "outfit", requests: requests({ wearing: ["bikini"] }) }))
+  const cond = generateScenePack(condPool, condArgs({ count: 6, changes: "outfit", requests: requests({ wearing: ["bikini"], conditions: ["bikini"] }), outfitLibrary: [{ outfitId: 20, tags: ["red bikini", "sandals"], style: "swimwear" }] }))
+  assert(cond.prompts.length > exact.prompts.length, `A1: more outfits with the condition's donors (${exact.prompts.length} -> ${cond.prompts.length})`)
+  assert(cond.prompts.every((p) => tagsOf(p.prompt).includes("bikini")), "A1: the condition in every prompt")
+  assert(new Set(cond.prompts.map((p) => p.scene!.postId)).size === 1, "A1: one base")
+  assert(cond.prompts.some((p) => p.outfitId === 20), "A1: the library outfit is a donor too")
+  assert(cond.prompts.every((p) => !tagsOf(p.prompt).includes("tied shirt")), "A1: no layered donor")
 }
 
 done()

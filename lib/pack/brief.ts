@@ -60,6 +60,19 @@ export interface SceneRequests {
    * empty: nothing.
    */
   others?: string[]
+  /**
+   * Tags of `wearing` and `where` the pack meets as conditions: each prompt wears (or is at) the tag
+   * or a qualified form of it ("white bikini" for "bikini"), a different one per prompt where the
+   * scenes, the donor posts (ScenePackArgs.donorPosts) and the outfit library offer them. A tag of
+   * `wearing` / `where` not listed here is exact: imposed as typed, as when this field is missing.
+   */
+  conditions?: string[]
+  /**
+   * Styles of the outfit library (lib/outfit-swap.ts OutfitStyle: "summer", "swimwear"...): every
+   * prompt wears a whole library outfit of one of them, a different one per prompt
+   * (ScenePackArgs.outfitLibrary). With `wearing` conditions too, only outfits that meet them.
+   */
+  outfitStyles?: string[]
 }
 
 /** What toSceneRequests gives the engine (kept as a name: `others` is part of SceneRequests now). */
