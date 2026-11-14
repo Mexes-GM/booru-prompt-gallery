@@ -10,6 +10,7 @@ import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import type { BooruProvider } from '../booru/types'
 import type { PackRatingMode } from '../../hooks/use-pack-seed-search'
 import { planRatings } from './source-plan'
+import { withResolutionPrefix } from './prompt-resolution'
 import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
@@ -306,6 +307,8 @@ export type FitNote =
   | { kind: 'people-missing'; asked: PackPeople; using: PackPeople | null; cast: PackPeople }
   /** Fetching stopped at the pace limit while the source still has posts; one more page can be asked for. */
   | { kind: 'paused'; nothingNew?: boolean }
+  /** A page waits for the site's pace limit and goes by itself. */
+  | { kind: 'waiting' }
   /** One-part pack: how many values of the part go with the scene that repeats. */
   | { kind: 'axis-fit'; axis: OneAxis; variations: number }
   /** One-part pack: the variants are being worked out. */
@@ -533,6 +536,16 @@ export function withSearchProgress(notes: readonly FitNote[], progress: SearchPr
   return at < 0 ? [...rest, note] : [...rest.slice(0, at), note, ...rest.slice(at)]
 }
 
+/**
+ * The fit line while a page waits for the site's pace limit: "waiting" in place of
+ * "Finding scenes…" (and of a pause, which can't be: the page goes by itself), first;
+ * the line as it was once the page goes.
+ */
+export function withWaiting(notes: readonly FitNote[], waiting: boolean): FitNote[] {
+  if (!waiting) return [...notes]
+  return [{ kind: 'waiting' }, ...notes.filter((n) => n.kind !== 'finding' && n.kind !== 'paused' && n.kind !== 'waiting')]
+}
+
 // ── People ────────────────────────────────────────────────────────────────────
 
 export interface PeopleLineInput {
@@ -548,6 +561,12 @@ export interface PeopleLineInput {
   picked?: PackPeople | null
   /** Every composition of the pool (with room for the cast): the options when no pose asks for company. */
   available?: readonly PoseComposition[]
+  /**
+   * Also shown whenever the scenes come in more than one make-up (the pack uses one and
+   * leaves the others out): those with the requested poses when there are poses, else
+   * every one of the pool, each with its count.
+   */
+  whenSeveral?: boolean
 }
 
 const samePeople = (a: PackPeople | null | undefined, b: PackPeople | null | undefined) =>
@@ -555,10 +574,11 @@ const samePeople = (a: PackPeople | null | undefined, b: PackPeople | null | und
 
 /**
  * The People line: shown when a requested pose needs more than one person and some
- * scene has it, or when the user set who is in the picture (then a composition the
- * pool lacks is listed too, with no scenes).
+ * scene has it, when the user set who is in the picture (then a composition the
+ * pool lacks is listed too, with no scenes), or, with `whenSeveral`, when the scenes
+ * come in more than one make-up.
  */
-export function peopleLineState({ poses, needsCompany, compositions, current, picked, available = [] }: PeopleLineInput): {
+export function peopleLineState({ poses, needsCompany, compositions, current, picked, available = [], whenSeveral = false }: PeopleLineInput): {
   options: PoseComposition[]
   value: PackPeople | null
   poseNeeds?: number
@@ -567,7 +587,8 @@ export function peopleLineState({ poses, needsCompany, compositions, current, pi
     const sizes = compositions.map((c) => c.people.girls + c.people.boys).filter((n) => n >= 2)
     return { options: [...compositions], value: current, poseNeeds: sizes.length > 0 ? Math.min(...sizes) : 2 }
   }
-  if (!picked) return null
+  const several = poses.length > 0 ? compositions : available
+  if (!picked) return whenSeveral && several.length >= 2 ? { options: [...several], value: current } : null
   const options = [...available]
   if (!options.some((o) => samePeople(o.people, picked))) options.push({ people: { ...picked }, scenes: 0 })
   return { options, value: current }
@@ -976,4 +997,26 @@ export function loadedState(s: {
   if (s.posts === 0 || s.failed || s.finding) return null
   const more = !s.noMoreResults && !s.sessionCapReached && !s.paused && !s.loading
   return { posts: s.posts, all: s.noMoreResults, more }
+}
+
+// ── Sizes ─────────────────────────────────────────────────────────────────────
+
+/** A prompt's suggested size as a row shows it ("832×1216"), or null when its scene had no size. */
+export const promptSize = (p: Pick<PackPrompt, 'width' | 'height'>): string | null =>
+  p.width && p.height ? `${p.width}×${p.height}` : null
+
+/**
+ * The text a copy puts on the clipboard: one prompt per line, each with its suggested
+ * size in front as "[WIDTHxHEIGHT] " when `withSize` (the form the extension's Import List
+ * reads, withResolutionPrefix); a prompt without a size goes without one. `bodies` are
+ * the prompts in the chosen format. `unsized` counts the prompts that went without.
+ */
+export function packCopyText(
+  prompts: readonly Pick<PackPrompt, 'width' | 'height'>[],
+  bodies: readonly string[],
+  withSize: boolean
+): { text: string; unsized: number } {
+  const lines = bodies.map((body, i) => (withSize ? withResolutionPrefix(body, prompts[i] ?? {}) : body))
+  const unsized = withSize ? prompts.filter((p) => !promptSize(p)).length : 0
+  return { text: lines.join('\n'), unsized }
 }

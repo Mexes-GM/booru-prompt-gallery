@@ -12,7 +12,7 @@
  * shows the brief, the sheet, the fit line and Generate; after, the prompts, with the
  * brief folded into one line that opens it again.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react"
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react"
 import { AlertTriangle, ChevronDown, Info, Package, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -64,6 +64,9 @@ import {
   oneAxis,
   issuesFit,
   packProviderChoices,
+  packCopyText,
+  promptSize,
+  withWaiting,
   loadedState,
   lockedWithTag,
   peopleFromCountTags,
@@ -87,17 +90,20 @@ import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/pro
 import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { cn } from "@/lib/utils"
 import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
+import { getProviderTagLimit } from "@/lib/booru/tag-limits"
+import { SearchDetails } from "./search-details"
+import { AUTO_PAGE_CAP } from "@/lib/pack/source-paging"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
 import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
-import { briefSummaryParts, companionsLabel, showTag, type CharacterInfo, type SlotId } from "./slots"
+import { briefSummaryParts, characterName, companionsLabel, showTag, type CharacterInfo, type SlotId } from "./slots"
 import { UndoNotice } from "./undo-notice"
 import { PackEmptyState, type ExampleBrief } from "./pack-empty-state"
 import { PackTip } from "./pack-tip"
@@ -366,13 +372,11 @@ const RatingMenu = memo(function RatingMenu({ value, onChange }: { value: PackRa
 function BriefSource({
   plan,
   onResult,
-  onLimited,
 }: {
   plan: SourcePlan
   onResult: (result: UsePackSourcesResult | null) => void
-  onLimited: () => void
 }) {
-  const result = usePackSources({ plan, onSessionCapReached: onLimited, onScrollLimited: onLimited })
+  const result = usePackSources({ plan })
   useEffect(() => onResult(result), [result, onResult])
   useEffect(() => () => onResult(null), [onResult])
   return null
@@ -383,6 +387,7 @@ function BriefSource({
 const FORMATS: Choice<PromptFormat>[] = PROMPT_FORMATS.map((f) => ({ value: f, label: PROMPT_FORMAT_INFO[f].label }))
 const NO_POSTS: never[] = []
 const NO_IDS: string[] = []
+const NO_PROGRESS: never[] = []
 const UNDO_MS = 6000
 
 /** A sentence that ends with its stop, once. */
@@ -430,9 +435,6 @@ function BriefWorkspace({
 
   // ── Source ──────────────────────────────────────────────────────────────────────
   const [source, setSource] = useState<UsePackSourcesResult | null>(null)
-  const [limitedKey, setLimitedKey] = useState<string | null>(null)
-  const planKeyRef = useRef("")
-  const onLimited = useCallback(() => setLimitedKey(planKeyRef.current), [])
 
   const posts = source?.allPosts ?? NO_POSTS
   const [ownKey, setOwnKey] = useState("")
@@ -464,9 +466,7 @@ function BriefWorkspace({
   // from the plan of the previous render (the plan needs the posts to settle).
   const planOwnKey = plan.scenes.filter((s) => s.kind === "own").map((s) => s.id).join("||")
   if (planOwnKey !== ownKey) setOwnKey(planOwnKey)
-  useEffect(() => { planKeyRef.current = plan.sceneKey }, [plan.sceneKey])
   const searching = plan.scenes.some((s) => s.tags.length > 0)
-  const limited = limitedKey === plan.sceneKey
 
   // ── What fits ───────────────────────────────────────────────────────────────────
   // One-part packs ("Only the outfit"…) leave out variants, a list of their own: back on
@@ -482,12 +482,15 @@ function BriefWorkspace({
   )
   const poses = pack.requests.select
   const have = usable ? (poses.length > 0 && !axis ? usable.filter((c) => c.hasPose).length : usable.length) : 0
-  const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && !source.scrollLimited && !limited
+  // Pages go one at a time to the search that can bring most; one the pace limit doesn't
+  // allow yet waits and goes by itself (usePackSources). By itself the pack stops at
+  // AUTO_PAGE_CAP pages; "Find more scenes" goes on from there.
+  const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && source.pages < AUTO_PAGE_CAP
   const needMore = !!usable && !candidatesPending && have < count
-  // Short of scenes: fetch more pages, one at a time, until there are enough, the source
-  // runs out or the pace limit stops it (then the fit line says what there is).
+  // Short of scenes: fetch more pages until there are enough, every search has run out or
+  // the cap is reached (then the fit line says what there is).
   useEffect(() => {
-    if (open && needMore && canLoad && source && !source.isLoadingMore) source.loadMore()
+    if (open && needMore && canLoad && source && !source.isLoadingMore && !source.waiting) source.loadMore()
   }, [open, needMore, canLoad, source])
   const loadingPosts = !!source?.isLoadingMore || (searching && !source)
   // One state for any failed load (the pack data or a page of posts): one line, one retry.
@@ -496,9 +499,10 @@ function BriefWorkspace({
   const rolesMissing = identity.missingRoles.length > 0
   const finding = !loadError && !rolesMissing && (loadingPosts || (needMore && canLoad) || (!candidates && searching && !noPosts))
   const canOfferSensitive = rating === "sfw" && plan.sensitive === "excluded" && !finding
-  // The pace limit stopped the fetching and the source has more: one click asks for one page.
-  const paused = !!source && (limited || source.scrollLimited) && !source.isLoadingMore &&
-    !source.noMoreResults && !source.failed && !source.sessionCapReached
+  // Nothing stops the loading for good any more: a page waits for the pace limit and goes
+  // by itself, and past the cap "Find more scenes" is on the loaded line.
+  const paused = false
+  const waiting = !!source?.waiting && !loadError
   // A page asked for by hand: searching while it is on its way, then whether it brought
   // new scenes. `seen` once the request is in flight; `before` the scenes there were.
   const [manual, setManual] = useState<{ before: number; seen: boolean; nothingNew: boolean } | null>(null)
@@ -506,8 +510,8 @@ function BriefWorkspace({
   const usableCount = usable?.length ?? 0
   if (manual && !manual.nothingNew) {
     if (sourceLoading && !manual.seen) setManual({ ...manual, seen: true })
-    // The pace limit refused the page: nothing is on its way, the offer comes back.
-    else if (!manual.seen && (source?.scrollLimited || source?.failed)) setManual(null)
+    // The page failed: nothing is on its way, the offer comes back.
+    else if (!manual.seen && source?.failed) setManual(null)
     else if (manual.seen && !sourceLoading && !candidatesPending) {
       setManual(usableCount > manual.before ? null : { ...manual, nothingNew: true })
     }
@@ -529,7 +533,7 @@ function BriefWorkspace({
         noMoreResults: source.noMoreResults,
         failed: source.failed,
         sessionCapReached: source.sessionCapReached,
-        paused,
+        paused: waiting,
         finding,
         loading: sourceLoading || (!!manual && !manual.nothingNew),
       })
@@ -544,6 +548,16 @@ function BriefWorkspace({
         : null,
     [loadedPosts, loadedAll, loadedMore, provider, loadOnePage]
   )
+  // What the pack searches, folded under the fit line until asked for.
+  const searchesId = useId()
+  const [searchesOpen, setSearchesOpen] = useState(false)
+  const toggleSearches = useCallback(() => setSearchesOpen((v) => !v), [])
+  const searchesToggle = useMemo(
+    () => (searching && !loadError ? { open: searchesOpen, onToggle: toggleSearches, controls: searchesId } : null),
+    [searching, loadError, searchesOpen, toggleSearches, searchesId]
+  )
+  const firstTag = brief.who[0]?.tag ?? null
+  const firstName = firstTag ? characterName(firstTag) : null
   const axisNote = useMemo(() => (axis ? { axis, requested: axisRequests(brief, axis) } : null), [axis, brief])
   const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
@@ -577,16 +591,18 @@ function BriefWorkspace({
     })
     return mergeFitNotes(withSearchProgress([...lead, ...after], progress))
   }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, brief.people, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
+  // A page waiting for the pace limit: said in place of "Finding scenes…", gone once it goes.
+  const lineNotes = useMemo(() => withWaiting(notes, waiting), [notes, waiting])
   const { setIncludeSensitive } = pack
   const includeSensitive = useCallback(() => setIncludeSensitive(true), [setIncludeSensitive])
   const fitStates = useMemo<FitState[]>(
-    () => notes.map((n): FitState =>
+    () => lineNotes.map((n): FitState =>
       n.kind === "few-rated"
         ? { kind: "few-rated", onInclude: includeSensitive }
         : n.kind === "paused"
           ? { kind: "paused", onLoadMore: loadOnePage, waiting: !!source?.scrollLimited, nothingNew: n.nothingNew }
           : n),
-    [notes, includeSensitive, loadOnePage, source?.scrollLimited]
+    [lineNotes, includeSensitive, loadOnePage, source?.scrollLimited]
   )
 
   // ── Folding ─────────────────────────────────────────────────────────────────────
@@ -1020,9 +1036,21 @@ function BriefWorkspace({
             onIncludeSensitive={includeSensitive}
             hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
             loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
+            searches={i === fitStates.length - 1 && searchesToggle ? searchesToggle : undefined}
           />
         ))}
       </div>
+      {searchesToggle?.open && (
+        <SearchDetails
+          id={searchesId}
+          className="mt-1"
+          plan={plan}
+          progress={source?.searches ?? NO_PROGRESS}
+          character={firstName}
+          site={PROVIDER_LABELS[provider]}
+          limit={getProviderTagLimit(provider)}
+        />
+      )}
       {showExamples && (
         <PackEmptyState heading={EXAMPLES_HEADING} examples={examples} onPick={pickExample} />
       )}
@@ -1087,7 +1115,7 @@ function BriefWorkspace({
       </div>
 
       {searching && (
-        <BriefSource plan={plan} onResult={setSource} onLimited={onLimited} />
+        <BriefSource plan={plan} onResult={setSource} />
       )}
     </div>
   )
@@ -1162,6 +1190,24 @@ function Results({
     }
   }, [format, fullDetail, naturalSourceOf, overrides])
 
+  // "Add size as [WIDTHxHEIGHT]": the old builder's preference (pack-add-resolution), kept.
+  const [withSize, setWithSize] = useState(() => {
+    try {
+      return userPreferences.getPackAddResolution()
+    } catch {
+      return false
+    }
+  })
+  const changeWithSize = useCallback((next: boolean) => {
+    setWithSize(next)
+    try {
+      userPreferences.setPackAddResolution(next)
+    } catch {
+      // Storage unavailable: the choice lasts this session.
+    }
+  }, [])
+  const sizeOption = useMemo(() => ({ value: withSize, onChange: changeWithSize }), [withSize, changeWithSize])
+
   // One live region for every row's copy.
   const [copySaid, setCopySaid] = useState("")
   const copyOne = useCallback(async (index: number) => {
@@ -1169,17 +1215,22 @@ function Results({
     if (!p) return false
     const body = await bodyOf(p, shownRef.current.get(index))
     if (body.failed) warnTagsCopied()
-    const ok = await onCopy(body.text, body.failed ? "tags" : format)
-    setCopySaid(ok ? `Prompt ${index + 1} copied` : COPY_FAILED)
+    const { text, unsized } = packCopyText([p], [body.text], withSize)
+    const ok = await onCopy(text, body.failed ? "tags" : format)
+    setCopySaid(ok ? `Prompt ${index + 1} copied${withSize && unsized === 0 ? " with its size" : ""}` : COPY_FAILED)
     return ok
-  }, [prompts, bodyOf, onCopy, format])
+  }, [prompts, bodyOf, onCopy, format, withSize])
 
+  const [unsizedCopied, setUnsizedCopied] = useState(0)
   const copyAll = useCallback(async () => {
     const bodies = await Promise.all(prompts.map((p, i) => bodyOf(p, shownRef.current.get(i))))
     const failed = bodies.some((b) => b.failed)
     if (failed) warnTagsCopied()
-    return onCopy(bodies.map((b) => b.text).join("\n"), failed ? "tags" : format)
-  }, [prompts, bodyOf, onCopy, format])
+    const { text, unsized } = packCopyText(prompts, bodies.map((b) => b.text), withSize)
+    setUnsizedCopied(unsized)
+    return onCopy(text, failed ? "tags" : format)
+  }, [prompts, bodyOf, onCopy, format, withSize])
+  const allCopyNote = [copyNote, unsizedCopied > 0 ? SIZE_TEXT.unsized(unsizedCopied) : null].filter(Boolean).join(" ") || undefined
 
   const reroll = useCallback((index: number) => {
     if (!onReroll(index)) toast({ description: BUILDER_TEXT.rerollFailed, duration: 3000 })
@@ -1193,7 +1244,15 @@ function Results({
   return (
     <div ref={containerRef} tabIndex={-1} aria-label={BUILDER_TEXT.resultsLabel} className="space-y-2 focus-visible:outline-none">
       <p className="sr-only" role="status" aria-live="polite">{copySaid}</p>
-      <ResultsToolbar formats={FORMATS} format={format} onFormatChange={onFormatChange} count={prompts.length} onCopyAll={copyAll} copyNote={copyNote}>
+      <ResultsToolbar
+        formats={FORMATS}
+        format={format}
+        onFormatChange={onFormatChange}
+        count={prompts.length}
+        onCopyAll={copyAll}
+        copyNote={allCopyNote}
+        withSize={sizeOption}
+      >
         {missing > 0 && <span className="text-xs tabular-nums text-warning-text">{missingText(missing)}</span>}
       </ResultsToolbar>
       <div className="space-y-1.5">
@@ -1273,6 +1332,7 @@ const BriefResultRow = memo(function BriefResultRow({
       text={text}
       postId={prompt.scene?.postId}
       thumbSrc={prompt.scene?.preview ? getPostThumbnailUrl(prompt.scene.preview) : undefined}
+      size={promptSize(prompt)}
       pending={format !== "tags" && natural.status === "loading"}
       locked={locked}
       busy={busy}

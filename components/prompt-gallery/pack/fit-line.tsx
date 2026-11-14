@@ -6,7 +6,7 @@
  * changes, not on every count while scenes are still coming in.
  */
 import { memo } from "react"
-import { AlertTriangle, Check, Info, Pause, Repeat2, RotateCcw, Search, Shuffle } from "lucide-react"
+import { AlertTriangle, Check, ChevronDown, Hourglass, Info, Pause, Repeat2, RotateCcw, Search, Shuffle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { BUILDER_TEXT, fitText, type FitState } from "./pack-text"
@@ -25,6 +25,7 @@ const TONE: Record<FitState["kind"], { icon: typeof Check; className: string }> 
   stale: { icon: RotateCcw, className: "text-muted-foreground" },
   "people-missing": { icon: AlertTriangle, className: "text-warning-text" },
   paused: { icon: Pause, className: "text-muted-foreground" },
+  waiting: { icon: Hourglass, className: "text-muted-foreground" },
   "no-new": { icon: Info, className: "text-muted-foreground" },
   "axis-fit": { icon: Check, className: "text-success-text" },
   "finding-variants": { icon: Search, className: "text-muted-foreground" },
@@ -46,10 +47,12 @@ export interface FitLineProps {
    * with "Find more scenes" while the site has more. Read in place, not announced.
    */
   loaded?: { text: string; onFindMore?: () => void }
+  /** The toggle that shows what the pack searches (the panel is the caller's, `controls` its id). */
+  searches?: { open: boolean; onToggle: () => void; controls: string }
   className?: string
 }
 
-export const FitLine = memo(function FitLine({ state, hint, announce = true, onIncludeSensitive, loaded, className }: FitLineProps) {
+export const FitLine = memo(function FitLine({ state, hint, announce = true, onIncludeSensitive, loaded, searches, className }: FitLineProps) {
   const offer = (state.kind === "short" || state.kind === "few-variations") && state.offerSensitive ? onIncludeSensitive : undefined
   const { text, spoken } = fitText(state)
   const { icon: Icon, className: tone } = TONE[state.kind]
@@ -62,6 +65,23 @@ export const FitLine = memo(function FitLine({ state, hint, announce = true, onI
         {loaded && <span className="text-muted-foreground"> {/[.!?…]$/.test(text) ? `${loaded.text.charAt(0).toUpperCase()}${loaded.text.slice(1)}.` : loaded.text}</span>}
         {hint && <span aria-hidden className="text-muted-foreground"> · {hint}</span>}
       </span>
+      {searches && (
+        <button
+          type="button"
+          onClick={searches.onToggle}
+          aria-expanded={searches.open}
+          aria-controls={searches.controls}
+          className={cn(
+            "relative inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground",
+            "pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']",
+            "transition-[color,background-color] duration-150 ease-out-strong hover:bg-muted hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          {BUILDER_TEXT.howItSearches}
+          <ChevronDown className={cn("size-3.5 transition-transform duration-150", searches.open && "rotate-180")} aria-hidden />
+        </button>
+      )}
       {loaded?.onFindMore && (
         <Button type="button" variant="outline" size="sm" onClick={loaded.onFindMore} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
           {BUILDER_TEXT.findMore}

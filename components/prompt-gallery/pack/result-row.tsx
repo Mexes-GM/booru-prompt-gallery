@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { COPY_FAILED } from "./pack-text"
+import { COPY_FAILED, SIZE_TEXT } from "./pack-text"
 import { useCopyResult } from "./use-copy-result"
 
 export interface ResultRowProps {
@@ -48,6 +48,8 @@ export interface ResultRowProps {
   busy?: boolean
   /** Without it the row has no lock. */
   onToggleLock?: (index: number) => void
+  /** The suggested size ("832×1216"), shown beside the actions; none when the scene had no size. */
+  size?: string | null
   onAlways: (tag: string) => void
   onNever: (tag: string) => void
 }
@@ -134,6 +136,7 @@ export const ResultRow = memo(function ResultRow({
   onCopy,
   onReroll,
   onToggleLock,
+  size,
   onAlways,
   onNever,
 }: ResultRowProps) {
@@ -283,7 +286,13 @@ export const ResultRow = memo(function ResultRow({
           )}
         </div>
 
-        <div className="col-start-2 -mr-1 flex flex-row justify-end gap-0.5 @md:col-start-3 @md:row-start-1 @md:mr-0">
+        <div className="col-start-2 -mr-1 flex flex-row items-center justify-end gap-0.5 @md:col-start-3 @md:row-start-1 @md:mr-0">
+          {size && (
+            <span className="mr-1 font-mono text-[11px] tabular-nums text-muted-foreground">
+              <span className="sr-only">{SIZE_TEXT.rowLabel}: </span>
+              {size}
+            </span>
+          )}
           <button
             type="button"
             onClick={copyPrompt}

@@ -6,11 +6,12 @@
  * Copy all, which confirms the copy where it happened.
  */
 import { memo, useId, useState, type ReactNode } from "react"
-import { AlertTriangle, Check, Copy, Info, Minus, Plus } from "lucide-react"
+import { AlertTriangle, Check, ChevronDown, Copy, Info, Minus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { ChoiceGroup, type Choice } from "./choice-group"
-import { COPY_FAILED, MAX_PROMPTS, MIN_PROMPTS, generateLabel } from "./pack-text"
+import { COPY_FAILED, MAX_PROMPTS, MIN_PROMPTS, SIZE_TEXT, generateLabel } from "./pack-text"
 import { useCopyResult } from "./use-copy-result"
 
 const clamp = (n: number) => Math.min(MAX_PROMPTS, Math.max(MIN_PROMPTS, Math.round(n)))
@@ -177,6 +178,8 @@ export interface ResultsToolbarProps<F extends string> {
   onCopyAll: () => Promise<boolean> | boolean
   /** Said after a copy that worked, when what was copied isn't the whole, current pack. */
   copyNote?: string
+  /** "Add size as [WIDTHxHEIGHT]": a menu beside Copy all; Copy all says when the size goes with the prompts. */
+  withSize?: { value: boolean; onChange: (value: boolean) => void }
   /** Extra controls on the right. */
   children?: ReactNode
   className?: string
@@ -189,6 +192,7 @@ function ResultsToolbarInner<F extends string>({
   count,
   onCopyAll,
   copyNote,
+  withSize,
   children,
   className,
 }: ResultsToolbarProps<F>) {
@@ -209,23 +213,60 @@ function ResultsToolbarInner<F extends string>({
       <ChoiceGroup size="sm" choices={formats} value={format} onChange={onFormatChange} label="Prompt format" />
       <div className="flex items-center gap-1.5">
         {children}
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={copy}
-          disabled={count === 0}
-          className={cn(
-            "h-8 gap-1.5 tabular-nums pointer-coarse:h-11",
-            copied && "bg-primary text-primary-foreground hover:bg-primary",
-            failed && "text-destructive-text",
+        <div className="flex items-center">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={copy}
+            disabled={count === 0}
+            className={cn(
+              "h-8 gap-1.5 tabular-nums pointer-coarse:h-11",
+              withSize && "rounded-r-none",
+              copied && "bg-primary text-primary-foreground hover:bg-primary",
+              failed && "text-destructive-text",
+            )}
+          >
+            {copied ? <Check aria-hidden /> : failed ? <AlertTriangle aria-hidden /> : <Copy aria-hidden />}
+            {copied
+              ? `Copied ${count}${withSize?.value ? " with size" : ""}`
+              : failed
+                ? "Couldn't copy"
+                : withSize?.value ? SIZE_TEXT.copyAll : "Copy all"}
+          </Button>
+          {withSize && (
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  aria-label={SIZE_TEXT.menu}
+                  className="h-8 w-7 rounded-l-none border-l border-border/60 px-0 pointer-coarse:h-11 pointer-coarse:w-11"
+                >
+                  <ChevronDown className="size-3.5" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuCheckboxItem
+                  checked={withSize.value}
+                  onCheckedChange={(v) => withSize.onChange(v === true)}
+                  onSelect={(e) => e.preventDefault()}
+                  className="items-start pointer-coarse:min-h-11"
+                >
+                  <span className="flex flex-col gap-0.5">
+                    <span>{SIZE_TEXT.option}</span>
+                    <span className="text-xs text-muted-foreground">{SIZE_TEXT.optionDetail}</span>
+                  </span>
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-        >
-          {copied ? <Check aria-hidden /> : failed ? <AlertTriangle aria-hidden /> : <Copy aria-hidden />}
-          {copied ? `Copied ${count}` : failed ? "Couldn't copy" : "Copy all"}
-        </Button>
+        </div>
         <span className="sr-only" role="status" aria-live="polite">
-          {copied ? `Copied ${count} ${count === 1 ? "prompt" : "prompts"}${copyNote ? `. ${copyNote}` : ""}` : failed ? COPY_FAILED : ""}
+          {copied
+            ? `Copied ${count} ${count === 1 ? "prompt" : "prompts"}${withSize?.value ? ` with ${count === 1 ? "its" : "their"} size` : ""}${copyNote ? `. ${copyNote}` : ""}`
+            : failed ? COPY_FAILED : ""}
         </span>
       </div>
       {copied && copyNote && (

@@ -42,6 +42,11 @@ export interface UseScrollRateLimiterResult {
    * false if the caller should refuse and not call setSize/loadMore.
    */
   canLoadMore: (size: number) => boolean
+  /**
+   * How long until a load would be allowed by the burst window, without recording or
+   * refusing anything: 0 when one may go now. Lets a caller wait instead of being refused.
+   */
+  msUntilAllowed: () => number
   /** Reset both guards — call whenever the underlying search/session resets
    *  (new tags, provider, filters, etc.), mirroring useBooruSearch's own
    *  "Reset pagination" effect. */
@@ -56,6 +61,8 @@ export function useScrollRateLimiter(options: UseScrollRateLimiterOptions = {}):
   const scrollLimitedRef = useRef(false)
   const loadTimestampsRef = useRef<number[]>([])
   const throttleRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** When a tripped cooldown ends. */
+  const cooldownUntilRef = useRef(0)
 
   useEffect(() => {
     return () => {
@@ -82,6 +89,7 @@ export function useScrollRateLimiter(options: UseScrollRateLimiterOptions = {}):
       if (!wasAlreadyLimited) onScrollLimited?.()
 
       if (throttleRetryRef.current) clearTimeout(throttleRetryRef.current)
+      cooldownUntilRef.current = now + SCROLL_COOLDOWN_MS
       throttleRetryRef.current = setTimeout(() => {
         throttleRetryRef.current = null
         scrollLimitedRef.current = false
@@ -97,6 +105,14 @@ export function useScrollRateLimiter(options: UseScrollRateLimiterOptions = {}):
     return true
   }, [onSessionCapReached, onScrollLimited])
 
+  const msUntilAllowed = useCallback((): number => {
+    const now = Date.now()
+    if (scrollLimitedRef.current) return Math.max(0, cooldownUntilRef.current - now)
+    const recent = loadTimestampsRef.current.filter((t) => now - t < WINDOW_MS)
+    if (recent.length < MAX_LOADS_PER_WINDOW) return 0
+    return Math.max(0, Math.min(...recent) + WINDOW_MS - now)
+  }, [])
+
   const reset = useCallback(() => {
     setSessionCapReached(false)
     setScrollLimited(false)
@@ -108,5 +124,5 @@ export function useScrollRateLimiter(options: UseScrollRateLimiterOptions = {}):
     }
   }, [])
 
-  return { scrollLimited, sessionCapReached, canLoadMore, reset }
+  return { scrollLimited, sessionCapReached, canLoadMore, msUntilAllowed, reset }
 }

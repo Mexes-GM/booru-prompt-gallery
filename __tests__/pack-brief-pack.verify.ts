@@ -13,7 +13,7 @@ import { briefFromCharacters } from "../lib/pack/brief-history"
 import { seedNever } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
-  preferredPostIds, resolveLook, slotSuggestions, packProviderChoices, loadedState, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
+  preferredPostIds, resolveLook, slotSuggestions, packProviderChoices, loadedState, packCopyText, promptSize, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
 } from "../lib/pack/brief-pack"
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
@@ -26,6 +26,8 @@ import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/sc
 import type { Permanence } from "../lib/pack/scene/permanence"
 import { poseNeedsScene } from "../lib/pack/scene-pack"
 import { CORRECTION_TEXT, copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
+import { leftOutSentence, noPostsSentence, ratingsSentence, searchDescription, searchTagsText } from "../components/prompt-gallery/pack/search-text"
+import { planSources } from "../lib/pack/source-plan"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -295,6 +297,21 @@ check("People shows for a count the user set, with a composition the pool lacks 
   assert.deepEqual(missing?.options[2], { people: { girls: 3, boys: 0 }, scenes: 0 })
 })
 
+check("People shows whenever the scenes come in more than one make-up (whenSeveral), marking the one in use", () => {
+  const none = () => false
+  // Measured on Rule34 with double penetration in Doing: the pose doesn't "need company", yet
+  // the pack takes one make-up and leaves the others out.
+  const withPose = [{ people: { girls: 1, boys: 2 }, scenes: 113 }, { people: { girls: 1, boys: 0 }, scenes: 85 }, { people: { girls: 1, boys: 3 }, scenes: 40 }]
+  const current = { girls: 1, boys: 2 }
+  const line = peopleLineState({ poses: ["double penetration"], needsCompany: none, compositions: withPose, current, whenSeveral: true })
+  assert.deepEqual(line, { options: withPose, value: current })
+  // One make-up only: nothing to choose, no line.
+  assert.equal(peopleLineState({ poses: ["double penetration"], needsCompany: none, compositions: withPose.slice(0, 1), current, whenSeveral: true }), null)
+  // No pose: every make-up of the pool.
+  const available = [{ people: { girls: 1, boys: 0 }, scenes: 80 }, { people: { girls: 1, boys: 1 }, scenes: 12 }]
+  assert.deepEqual(peopleLineState({ poses: [], needsCompany: none, compositions: [], current: { girls: 1, boys: 0 }, available, whenSeveral: true })?.options, available)
+})
+
 check("pickedPeopleNote: says so only when the pool has no scene of those people", () => {
   const available = [{ people: { girls: 1, boys: 0 } }]
   const cast = { girls: 1, boys: 0 }
@@ -394,6 +411,50 @@ check("loadedState: says the posts loaded; Find more whenever the site has more 
   assert.equal(loadedState({ ...base, finding: true }), null, "the progress line speaks while scenes are found")
   assert.equal(loadedState({ ...base, failed: true }), null)
   assert.equal(loadedState({ ...base, posts: 0 }), null)
+})
+
+check("search-text: each search of the plan in plain words, with the tags as the site gets them", () => {
+  // A character with two poses on Rule34 (no tag limit): their own posts with the first,
+  // anyone with both, and the first alone.
+  let brief = addTag(addTag(briefFromCharacters(["sui-feng"]), "double penetration", OVERRIDES, "doing"), "sitting", OVERRIDES)
+  const plan = planSources(brief, { provider: "rule34", rating: "both", includeSensitive: false })
+  const words = plan.scenes.map((s) => searchDescription(s, "Sui-Feng", plan.people))
+  assert.deepEqual(plan.scenes.map((s) => s.kind), ["own", "theme", "anchor"])
+  assert.deepEqual(words, ["Sui-Feng doing double penetration", "Anyone doing double penetration and sitting", "Anyone doing double penetration"])
+  assert.equal(searchTagsText(plan.scenes[0]), "sui-feng double_penetration")
+  assert.equal(ratingsSentence(plan.ratings), "Each search runs for Questionable and Explicit pictures.")
+  // No pose: the character alone; a head count: pictures with those people.
+  assert.equal(searchDescription({ kind: "own", poses: [] }, "Sui-Feng", null), "Sui-Feng alone")
+  assert.equal(searchDescription({ kind: "group", poses: [] }, null, { girls: 2, boys: 1 }), "Pictures with 2 girls and 1 boy")
+  assert.equal(searchDescription({ kind: "theme", poses: ["sitting"] }, null, { girls: 1, boys: 1 }), "Anyone doing sitting, with 1 girl and 1 boy")
+  assert.equal(searchDescription({ kind: "gallery", poses: [] }, null, null), "Your gallery search")
+  assert.equal(ratingsSentence(["rating:general", "rating:sensitive"]), "Each search runs for Safe and Sensitive pictures.")
+  // Nothing found, and a pose the limit left out.
+  assert.equal(noPostsSentence("own", "Rule34"), "No posts on Rule34 for this search. The site may spell the character's name differently.")
+  assert.equal(noPostsSentence("theme", "Rule34"), "No posts on Rule34 for these tags.")
+  brief = addTag(brief, "squatting", OVERRIDES, "doing")
+  const danbooru = planSources(brief, { provider: "danbooru", rating: "sfw", includeSensitive: false })
+  assert.ok(danbooru.leftOut.length > 0, JSON.stringify(danbooru.leftOut))
+  assert.equal(
+    leftOutSentence(danbooru.leftOut, "Danbooru", 2),
+    `${danbooru.leftOut.map((l) => l.tag).join(" and ")} didn't fit in the searches: Danbooru searches at most 2 tags at a time.`
+  )
+  assert.equal(leftOutSentence([], "Danbooru", 2), null)
+})
+
+check("sizes: a row shows its suggested size; Copy all puts [WIDTHxHEIGHT] in front of each prompt that has one", () => {
+  const sized = { width: 832, height: 1216 }
+  const unsized = {}
+  assert.equal(promptSize(sized), "832×1216")
+  assert.equal(promptSize(unsized), null)
+  const prompts = [sized, unsized, { width: 1216, height: 832 }]
+  const bodies = ["1girl, beach", "1girl, library", "A woman sits on a bench."]
+  assert.deepEqual(packCopyText(prompts, bodies, false), { text: bodies.join("\n"), unsized: 0 })
+  // The extension's Import List form, in any format; the prompt without a size goes without one.
+  assert.deepEqual(packCopyText(prompts, bodies, true), {
+    text: "[832x1216] 1girl, beach\n1girl, library\n[1216x832] A woman sits on a bench.",
+    unsized: 1,
+  })
 })
 
 // ── One-part packs (changes) ────────────────────────────────────────────────────

@@ -476,6 +476,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       current: people,
       picked: brief.people,
       available: available ?? undefined,
+      // The pack uses one make-up: whenever the scenes have several, the line shows them.
+      whenSeveral: true,
     }),
     [requests.select, overrides, relations, poses, castPeopleMemo, people, brief.people, available]
   )

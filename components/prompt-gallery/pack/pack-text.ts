@@ -53,6 +53,7 @@ export const BUILDER_TEXT = {
   sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
+  howItSearches: "How it searches",
   generatingSpoken: "Making the prompts",
   busySource: "Generate again first: the pack was made with another site or rating",
   busyRunning: "Wait for the prompts to update",
@@ -99,6 +100,16 @@ export function copyNoteText({ missing, stale }: { missing: number; stale: boole
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(" ") : undefined
 }
+
+/** The size option of Copy all, worded as the old builder's (pack-add-resolution). */
+export const SIZE_TEXT = {
+  option: "Add size as [WIDTHxHEIGHT]",
+  optionDetail: "For the extension's Import List. Taken from the post each prompt's scene came from.",
+  copyAll: "Copy all with size",
+  menu: "Copy options",
+  rowLabel: "Suggested size",
+  unsized: (n: number) => `${n} ${n === 1 ? "prompt has" : "prompts have"} no size and ${n === 1 ? "was" : "were"} copied without one.`,
+} as const
 
 /** "4 prompts missing" beside the results, when the pack came out short. */
 export const missingText = (missing: number) => `${missing} ${missing === 1 ? "prompt" : "prompts"} missing`
@@ -266,6 +277,8 @@ function fitSentence(state: FitState): string {
       const what = state.kept?.length ? `${plural(state.variations, state.axis)} with ${state.kept.join(", ")}` : plural(state.variations, state.axis)
       return `${state.made} of ${state.asked}: only ${what} ${state.variations === 1 ? "fits" : "fit"} this scene`
     }
+    case "waiting":
+      return "Waiting a few seconds to keep searching"
     case "no-new":
       return state.exhausted ? "No new scenes found. There's nothing more to search." : "No new scenes found on that page."
     case "paused":
