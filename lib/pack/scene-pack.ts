@@ -1558,16 +1558,18 @@ function* conditionScenes(f: Finisher, base: Scene): Generator<{ scene: Scene; o
     const dressed = outfit.donor && run.region
       ? lendOutfitPart(base, outfit.donor, run.region, args.overrides)
       : outfit.source === 'imposed' && run.region ? withoutOutfitPart(base, run.region, args.overrides) : base
+    // With an outfit condition too, a few places per outfit; with a place condition alone, as many as outfits.
+    const placeTries = run.outfits ? MAX_PLACE_TRIES : MAX_CONDITION_TRIES
     let places = 0
     for (const place of placeOptions(run, dressed)) {
-      if (place.donor && ++places > MAX_PLACE_TRIES) continue
+      if (place.donor && ++places > placeTries) continue
       const scene = place.donor ? lentScene(dressed, place.donor, ['place']) : dressed
       // What the identity already says (the requested tag itself) is not lent: it is checked as what stays.
       const lent = [...(outfit.donor ? outfit.value : []), ...(place.donor ? place.value : [])].filter((tag) => !fixedSet.has(tag))
       if (lent.length > 0) {
         const lentSet = new Set(lent)
         const rest = [...fixed, ...sceneTags(scene).filter((tag) => !lentSet.has(tag))]
-        if (lendingClashes(lent, rest, people, args.overrides, relations)) continue
+        if (lendingClashes(lent, rest, people, args.overrides, relations, true)) continue
       }
       yield { scene, outfit, place }
     }

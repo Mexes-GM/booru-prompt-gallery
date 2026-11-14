@@ -101,13 +101,22 @@ export function lendingClashes(
   rest: readonly string[],
   people: number,
   overrides: Record<string, string>,
-  relations: TagRelations | null
+  relations: TagRelations | null,
+  /**
+   * Only what the lent tags bring counts: a conflict the rest already has without them (a real
+   * post tagged "cowboy shot" and "full body") isn't the donor's. Off by default.
+   */
+  ownConflictsAside = false
 ): boolean {
   if (lent.length === 0) return false
   const header = rest.filter(isCompositionPattern)
   const others = rest.filter((tag) => !isCompositionPattern(tag))
   if (resolveTagConflicts([...rest], [...lent]).conflictingTags.length > 0) return true
-  if (resolveTagConflicts([...header, ...lent], others).conflictingTags.length > 0) return true
+  const against = resolveTagConflicts([...header, ...lent], others).conflictingTags
+  if (ownConflictsAside) {
+    const own = new Set(resolveTagConflicts([...header], others).conflictingTags.map((c) => c.tag))
+    if (against.some((c) => !own.has(c.tag))) return true
+  } else if (against.length > 0) return true
   if (lent.some((tag) => conflictsWithBackground(tag, rest, overrides))) return true
   if (relations && lent.some((a) => others.some((b) => excludes(relations, a, b, { people })))) return true
   return showsOnePerson(header) && lent.some((tag) => isCompanyAct(tag, overrides, relations))
