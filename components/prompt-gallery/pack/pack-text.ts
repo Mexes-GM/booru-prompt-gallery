@@ -43,6 +43,10 @@ export const BUILDER_TEXT = {
   sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
+  generatingSpoken: "Making the prompts",
+  busySource: "Generate again first: the pack was made with another source or rating",
+  busyRunning: "Wait for the prompts to update",
+  resultsLabel: "Prompts",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
 } as const
 
@@ -57,6 +61,7 @@ export const SHEET_TEXT = {
     "Use the arrow keys to move between scenes. The first scene repeats in every prompt; select it to choose another. Space on any other scene leaves its part out or puts it back.",
   hint: (axis: string) => `The first scene repeats; the others lend their ${axis}. Select one to leave it out`,
   outfitChanges: "Each prompt takes its outfit from another scene",
+  fixedLocked: "Unlock the locked prompts to choose another scene to repeat",
 } as const
 
 /** What a correction from the results did, for the notice with Undo. */
@@ -87,6 +92,24 @@ export function copyNoteText({ missing, stale }: { missing: number; stale: boole
 
 /** "4 prompts missing" beside the results, when the pack came out short. */
 export const missingText = (missing: number) => `${missing} ${missing === 1 ? "prompt" : "prompts"} missing`
+
+/** The empty brief's examples (lib/pack/brief-pack.ts BRIEF_EXAMPLES), as the user reads them. */
+export const EXAMPLE_TEXT: Readonly<Record<string, { title: string; detail: string }>> = {
+  "beach-day": { title: "A day at the beach", detail: "sundress · beach" },
+  library: { title: "Sitting in a library", detail: "sitting · library" },
+  school: { title: "At school", detail: "school uniform · classroom" },
+  outfits: { title: "Same picture, new outfits", detail: "Only the outfit changes" },
+}
+export const EXAMPLES_HEADING = "Not sure where to start? Try one of these"
+
+/** One-time tips, shown the first time each one is useful. */
+export const TIP_TEXT = {
+  sheet: "These are the scenes the pack will use. Select one to leave it out; select it again to put it back.",
+  results: "Select a tag in a prompt to put it in every prompt (Always) or keep it out of all of them (Never).",
+  axis: (axis: string) =>
+    `One scene repeats in every prompt, marked Repeats. Only its ${axis} changes, taken from the other scenes. Select the marked scene to choose another.`,
+  dismiss: "Dismiss tip",
+} as const
 
 /** What each way into a pack says it brought (shown until the first change). */
 export const START_TEXT = {

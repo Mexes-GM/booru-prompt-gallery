@@ -13,9 +13,9 @@ import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence, type PermanenceData } from "../lib/pack/scene/permanence"
 import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
 import { DEFAULT_SCENE_SETTINGS, generateScenePack, generateScenePackAsync, sceneCandidates, tagKindsFromPosts, type ScenePackArgs } from "../lib/pack/scene-pack"
-import { addTag, toSceneRequests } from "../lib/pack/brief"
+import { addTag, routeTag, toSceneRequests } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
-import { briefIdentity, briefPackArgs, issuesFit, predictFit } from "../lib/pack/brief-pack"
+import { BRIEF_EXAMPLES, briefAsksNothing, briefIdentity, briefPackArgs, briefWithExample, issuesFit, predictFit } from "../lib/pack/brief-pack"
 import type { SceneRequests } from "../lib/pack/brief"
 import { makePost } from "./fixtures/pack-scene-data"
 import { placeRows } from "../lib/pack/brief-pack"
@@ -132,6 +132,26 @@ check("the engine picks almost the same scenes whatever the seed: Generate again
 })
 
 // ── A pose the scenes don't have (INT-6) ────────────────────────────────────────
+
+// ── Examples of the empty brief (HELP) ──────────────────────────────────────────
+
+check("the empty brief's examples use real tags that land in the rows they promise", () => {
+  for (const ex of BRIEF_EXAMPLES) {
+    for (const { tag, role } of ex.tags) {
+      const slot = overrides[tag]
+      assert.ok(slot, `${tag} is in the taxonomy`)
+      assert.ok(!/nsfw|sex|nude|naked|lingerie/i.test(tag + slot), `${tag} is neutral`)
+      assert.deepEqual(routeTag(tag, overrides), { kind: "request", role: role === "doing" ? "doing" : role }, tag)
+    }
+    const filled = briefWithExample(briefFromCharacters(["tifa lockhart"]), ex, overrides)
+    assert.equal(filled.who[0].tag, "tifa lockhart", "the character in Who stays")
+    const asked = toSceneRequests(filled)
+    for (const { tag, role } of ex.tags) assert.ok((role === "doing" ? asked.select : asked[role]).includes(tag), `${ex.id}: ${tag}`)
+    if (ex.changes) assert.equal(filled.changes, ex.changes)
+    assert.equal(briefAsksNothing(filled), false)
+  }
+  assert.equal(briefAsksNothing(briefFromCharacters(["tifa lockhart"])), true)
+})
 
 /** reading: the hook's path (briefPackArgs → generateScenePackAsync → issuesFit) says it was added. */
 async function readingPath() {

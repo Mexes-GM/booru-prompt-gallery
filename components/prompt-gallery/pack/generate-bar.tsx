@@ -53,7 +53,7 @@ export const CountStepper = memo(function CountStepper({ value, onChange, label 
       </label>
       <div
         className={cn(
-          "flex h-8 items-center overflow-hidden rounded-md border border-border bg-background pointer-coarse:h-11",
+          "flex h-8 items-center overflow-hidden rounded-md border border-border bg-background pointer-coarse:h-[46px]",
           "focus-within:ring-2 focus-within:ring-ring/40",
           disabled && "opacity-50",
         )}

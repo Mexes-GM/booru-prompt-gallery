@@ -37,10 +37,12 @@ export interface FitLineProps {
   state: FitState
   /** A quiet second half, e.g. how to leave a scene out. */
   hint?: string
+  /** False when the page has one live region for every line (see fitText's `spoken`). */
+  announce?: boolean
   className?: string
 }
 
-export const FitLine = memo(function FitLine({ state, hint, className }: FitLineProps) {
+export const FitLine = memo(function FitLine({ state, hint, announce = true, className }: FitLineProps) {
   const { text, spoken } = fitText(state)
   const { icon: Icon, className: tone } = TONE[state.kind]
   return (
@@ -67,9 +69,11 @@ export const FitLine = memo(function FitLine({ state, hint, className }: FitLine
           {BUILDER_TEXT.findMore}
         </Button>
       )}
-      <span className="sr-only" role="status" aria-live="polite">
-        {spoken}
-      </span>
+      {announce && (
+        <span className="sr-only" role="status" aria-live="polite">
+          {spoken}
+        </span>
+      )}
     </div>
   )
 })

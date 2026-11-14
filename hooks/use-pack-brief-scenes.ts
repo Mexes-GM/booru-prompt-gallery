@@ -18,7 +18,10 @@ import { toSceneRequests } from "@/lib/pack/brief"
 import {
   briefIdentity,
   briefPackArgs,
+  generateLayout,
   oneAxis,
+  placeGenerated,
+  preferredForAgain,
   opAfterEnd,
   placeRows,
   peopleLineState,
@@ -532,11 +535,18 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     [useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, identity, overrides, permanence, people, preferredPosts, outfit, characterOutfits, clean]
   )
 
+  // The pack made last (see "Generating and correcting" below).
+  const [result, setResult] = useState<BriefPackResult | null>(null)
+  const resultRef = useRef(result)
+  useEffect(() => { resultRef.current = result }, [result])
+
   // ── The scenes that fit (deferred: up to a second and a half of work) ─────────
+  // A one-part pack with locked rows keeps repeating the scene those rows repeat.
+  const keptBase = axis && result && result.locked.length > 0 ? result.made.baseScene : undefined
   const [candidateState, setCandidateState] = useState<{ pool: ScenePool; args: unknown; axis: string | null; list: SceneCandidate[] } | null>(null)
   const candidateArgs = useMemo(
-    () => (pool && missingRoles.length === 0 ? argsFor(coreBrief, 1, 1) : null),
-    [pool, missingRoles, argsFor, coreBrief]
+    () => (pool && missingRoles.length === 0 ? argsFor(coreBrief, 1, 1, keptBase) : null),
+    [pool, missingRoles, argsFor, coreBrief, keptBase]
   )
   useEffect(() => {
     if (!pool || !candidateArgs) return
@@ -562,9 +572,6 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   // seed; a correction remakes the free rows with the same seed, pool and scene order; a
   // re-roll is replayed with its own seed. One operation runs at a time: each has an id,
   // only the newest is applied, and every one clears its own indicator in `finally`.
-  const [result, setResult] = useState<BriefPackResult | null>(null)
-  const resultRef = useRef(result)
-  useEffect(() => { resultRef.current = result }, [result])
   const [op, setOp] = useState<{ id: number; kind: "generate" | "correct" } | null>(null)
   const opRef = useRef(0)
   const startOp = useCallback((kind: "generate" | "correct") => {
@@ -617,17 +624,20 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       issue.kind === "few-scenes" || issue.kind === "few-variations" ? { ...issue, prompts: issue.prompts + kept } : issue)
 
   // The scene the sheet marks as the one that repeats is the one Generate repeats.
-  const fixedBase = axis && candidateState?.pool === pool && candidateState?.list[0]?.axisRole === "base" ? candidateState.list[0].postId : undefined
+  // Only from the list made for this pool, part and arguments (not one still being replaced).
+  const fixedBase = axis && candidateState?.pool === pool && candidateState.axis === axis && candidateState.args === candidateArgs &&
+    candidateState.list[0]?.axisRole === "base" ? candidateState.list[0].postId : undefined
 
   const generate = useCallback(() => {
     if (!pool || missingRoles.length > 0) return
     const id = startOp("generate")
-    // Locked rows stay where they are; the others are made again, never from a locked row's scene.
+    // Generate replaces the pack: locked rows stay in their place, every other row is new,
+    // and none is made from a locked row's scene.
     const before = resultRef.current
     const previous = before?.prompts ?? []
     const locked = new Set((before?.locked ?? []).filter((i) => i < previous.length))
-    const length = Math.max(promptCount, ...Array.from(locked, (i) => i + 1))
-    const slots = Array.from({ length }, (_, i) => i).filter((i) => !locked.has(i))
+    const layout = generateLayout(locked, promptCount)
+    const slots = layout.slots
     // A one-part pack repeats one scene: what a row holds of its own is its donor.
     const ownScene = (p: PackPrompt | undefined) => {
       const scene = p?.scene
@@ -638,14 +648,12 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       const own = ownScene(previous[i])
       return own !== undefined ? [own] : []
     })
-    // Generate again draws another set: the scenes the last pack used come after the others.
+    // Generate again draws another set, without changing what the source puts first.
     const used = new Set(previous.flatMap((p) => {
       const own = ownScene(p)
       return own !== undefined ? [own] : []
     }))
-    const unusedOwn = preferredPosts.filter((pid) => !used.has(pid))
-    const unusedRest = pool.scenes.map((sc) => sc.postId).filter((pid) => !used.has(pid) && !preferredPosts.includes(pid))
-    const preferred = used.size > 0 && unusedOwn.length + unusedRest.length > 0 ? [...unusedOwn, ...unusedRest] : [...preferredPosts]
+    const preferred = preferredForAgain(preferredPosts, used, pool.scenes.map((sc) => sc.postId), slots.length)
     const made: PackMade = {
       pool,
       seed: Math.floor(Math.random() * 1e9),
@@ -653,7 +661,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       preferredPosts: preferred,
       lockedScenes,
       slots,
-      baseScene: axis ? brief.baseScene ?? fixedBase : undefined,
+      // With locked rows, the scene they repeat is the pack's; otherwise the one the sheet marks.
+      baseScene: axis ? (locked.size > 0 ? before?.made.baseScene : undefined) ?? brief.baseScene ?? fixedBase : undefined,
       rerolls: [],
       sourceKey,
     }
@@ -665,7 +674,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         // Applied on the pack as it is now: a row locked meanwhile keeps its prompt.
         setResult((prev) => {
           const now = new Set(prev?.locked ?? [])
-          const placed = placeRows(prev?.prompts ?? previous, now, slots, out.prompts)
+          const placed = placeGenerated(prev?.prompts ?? previous, layout, out.prompts, now)
           return {
             prompts: placed.rows,
             locked: placed.locked,

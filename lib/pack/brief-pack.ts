@@ -6,7 +6,7 @@
  */
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
-import { addCharacter, addNever, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
+import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
@@ -574,6 +574,37 @@ export function briefFromSearch(
   return { brief, skipped }
 }
 
+// ── Examples for an empty brief ───────────────────────────────────────────────
+
+/** A ready-made request the empty brief offers: tags to add (by row), or what changes. */
+export interface BriefExample {
+  id: string
+  tags: ReadonlyArray<{ tag: string; role: 'wearing' | 'doing' | 'where' }>
+  changes?: Exclude<ChangesAxis, 'scene'>
+}
+
+/**
+ * The examples the empty brief offers, all with tags of the taxonomy and safe for any
+ * content rating. Picking one fills the brief for the character already in Who.
+ */
+export const BRIEF_EXAMPLES: readonly BriefExample[] = [
+  { id: 'beach-day', tags: [{ tag: 'sundress', role: 'wearing' }, { tag: 'beach', role: 'where' }] },
+  { id: 'library', tags: [{ tag: 'sitting', role: 'doing' }, { tag: 'library', role: 'where' }] },
+  { id: 'school', tags: [{ tag: 'school uniform', role: 'wearing' }, { tag: 'classroom', role: 'where' }] },
+  { id: 'outfits', tags: [], changes: 'outfit' },
+]
+
+/** The brief with an example's requests (and what changes) added. */
+export function briefWithExample(brief: PackBrief, example: BriefExample, overrides: Record<string, string>): PackBrief {
+  let next = example.tags.reduce((b, { tag, role }) => addTag(b, tag, overrides, role), brief)
+  if (example.changes) next = { ...next, changes: example.changes }
+  return next
+}
+
+/** True when the brief asks for nothing yet (only who): the time to offer examples. */
+export const briefAsksNothing = (brief: PackBrief): boolean =>
+  brief.requests.length === 0 && brief.literal.length === 0 && brief.changes === 'scene'
+
 // ── Suggestions ───────────────────────────────────────────────────────────────
 
 /** A tag the lookup returned (lib/supabase/client-queries.ts's TagResult). */
@@ -665,6 +696,83 @@ export function changedRows(before: readonly { prompt: string }[], after: readon
   let changed = Math.abs(before.length - after.length)
   for (let i = 0; i < Math.min(before.length, after.length); i++) if (before[i].prompt !== after[i].prompt) changed++
   return changed
+}
+
+/**
+ * Where a Generate puts its rows: it replaces the pack, so only locked rows stay. The pack
+ * has `count` rows (or as many as there are locked rows); a locked row keeps its place, and
+ * one past the new end takes the last free place, in order. `at` maps a new row to the old
+ * row it keeps; `slots` are the rows the engine fills, in order.
+ */
+export function generateLayout(locked: Iterable<number>, count: number): { length: number; at: Map<number, number>; slots: number[] } {
+  const sorted = Array.from(new Set(locked)).sort((a, b) => a - b)
+  const length = Math.max(count, sorted.length)
+  const at = new Map<number, number>()
+  const overflow: number[] = []
+  for (const i of sorted) {
+    if (i < length) at.set(i, i)
+    else overflow.push(i)
+  }
+  let pos = length - 1
+  for (const i of overflow.reverse()) {
+    while (at.has(pos)) pos--
+    at.set(pos, i)
+  }
+  return { length, at, slots: Array.from({ length }, (_, i) => i).filter((i) => !at.has(i)) }
+}
+
+/**
+ * The rows of a Generate: the locked rows where `generateLayout` put them, and the fresh
+ * prompts in the free slots (fewer prompts: the free rows left over go). A row locked while
+ * the run was going keeps its prompt. Nothing else of the old pack survives.
+ */
+export function placeGenerated<T>(
+  previous: readonly T[],
+  layout: { length: number; at: ReadonlyMap<number, number>; slots: readonly number[] },
+  fresh: readonly T[],
+  lockedNow: ReadonlySet<number> = new Set()
+): { rows: T[]; locked: number[]; slots: number[] } {
+  const slotAt = new Map(layout.slots.map((row, k) => [row, k]))
+  const rows: T[] = []
+  const locked: number[] = []
+  const slotOf: number[] = []
+  for (let i = 0; i < layout.length; i++) {
+    const old = layout.at.get(i)
+    if (old !== undefined) {
+      if (old < previous.length) {
+        locked.push(rows.length)
+        rows.push(previous[old])
+      }
+      continue
+    }
+    const k = slotAt.get(i)!
+    if (lockedNow.has(i) && i < previous.length) {
+      // Locked while the run was going: it keeps its prompt.
+      locked.push(rows.length)
+      slotOf[k] = rows.length
+      rows.push(previous[i])
+    } else if (k < fresh.length) {
+      slotOf[k] = rows.length
+      rows.push(fresh[k])
+    }
+  }
+  return { rows, locked, slots: slotOf.slice(0, fresh.length).filter((x) => x !== undefined) }
+}
+
+/**
+ * The posts the next Generate prefers: the source's own ones (the character's posts) the
+ * last pack didn't use, while there are enough for the prompts asked; otherwise the source's
+ * own ones as they are, so "another set" never changes what the source puts first. A source
+ * without posts of its own prefers the scenes the last pack didn't use.
+ */
+export function preferredForAgain(own: readonly number[], used: ReadonlySet<number>, poolScenes: readonly number[], needed: number): number[] {
+  if (used.size === 0) return [...own]
+  if (own.length === 0) {
+    const unused = poolScenes.filter((id) => !used.has(id))
+    return unused.length > 0 ? unused : []
+  }
+  const unusedOwn = own.filter((id) => !used.has(id))
+  return unusedOwn.length >= needed ? unusedOwn : [...own]
 }
 
 /** Rows a remake leaves as they are: locked now, or not remade by any slot. */

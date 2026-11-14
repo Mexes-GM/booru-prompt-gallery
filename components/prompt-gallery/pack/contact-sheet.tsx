@@ -45,6 +45,8 @@ export interface ContactSheetProps {
   fixed?: {
     id: string
     picking: boolean
+    /** Choosing another is not possible now, and why. */
+    blockedReason?: string
     onStartPick: () => void
     onPick: (id: string) => void
     onCancelPick: () => void
@@ -65,7 +67,10 @@ const Tile = memo(function Tile({
   onToggle,
   fixed = false,
   picking = false,
+  fixedNote,
 }: {
+  /** For the scene that repeats: why another can't be chosen now. */
+  fixedNote?: string
   scene: SceneThumb
   index: number
   out: boolean
@@ -77,7 +82,7 @@ const Tile = memo(function Tile({
   picking?: boolean
 }) {
   const label = fixed
-    ? `${SHEET_TEXT.fixedBadge} in every prompt, post ${scene.postId}. ${picking ? SHEET_TEXT.keepFixed : SHEET_TEXT.changeFixed}`
+    ? `${SHEET_TEXT.fixedBadge} in every prompt, post ${scene.postId}. ${fixedNote ?? (picking ? SHEET_TEXT.keepFixed : SHEET_TEXT.changeFixed)}`
     : picking
       ? `${SHEET_TEXT.pickThis}, post ${scene.postId}`
       : `Leave this scene out, post ${scene.postId}`
@@ -88,7 +93,7 @@ const Tile = memo(function Tile({
       tabIndex={tabbable ? 0 : -1}
       aria-pressed={fixed || picking ? undefined : out}
       aria-label={label}
-      title={fixed ? SHEET_TEXT.changeFixed : picking ? SHEET_TEXT.pickThis : out ? "Put this scene back" : "Leave this scene out"}
+      title={fixed ? fixedNote ?? SHEET_TEXT.changeFixed : picking ? SHEET_TEXT.pickThis : out ? "Put this scene back" : "Leave this scene out"}
       onClick={() => onToggle(scene.id)}
       className={cn(
         "group/tile relative block aspect-[3/4] w-full overflow-hidden rounded-[6px] border",
@@ -112,7 +117,11 @@ const Tile = memo(function Tile({
           alt=""
           loading="lazy"
           decoding="async"
-          className={cn("absolute inset-0 size-full object-cover transition-opacity duration-150 ease-out-strong", out && "opacity-25 grayscale")}
+          className={cn(
+            "absolute inset-x-0 top-0 w-full object-cover transition-opacity duration-150 ease-out-strong",
+            fixed ? "bottom-4 h-[calc(100%-1rem)]" : "bottom-0 h-full",
+            out && "opacity-25 grayscale",
+          )}
         />
       ) : (
         // The number stays readable when the scene is out; only the well behind it fades.
@@ -121,7 +130,7 @@ const Tile = memo(function Tile({
         </span>
       )}
       {fixed && (
-        <span className="absolute inset-x-0 bottom-0 bg-mode-pack px-1 py-0.5 text-center text-[10px] font-medium leading-tight text-mode-pack-foreground">
+        <span className="absolute inset-x-0 bottom-0 grid h-4 place-items-center bg-mode-pack px-1 text-center text-[10px] font-medium leading-none text-mode-pack-foreground">
           {SHEET_TEXT.fixedBadge}
         </span>
       )}
@@ -159,6 +168,8 @@ export const ContactSheet = memo(function ContactSheet({
 }: ContactSheetProps) {
   const [expanded, setExpanded] = useState(false)
   const [current, setCurrent] = useState(0)
+  // Tiles a folded sheet shows at its width (three rows of 6, 9 or 12 columns).
+  const [foldedVisible, setFoldedVisible] = useState(COLLAPSED.narrow)
   const gridRef = useRef<HTMLDivElement>(null)
   const helpId = useId()
   const out = useMemo(() => new Set(leftOut), [leftOut])
@@ -173,6 +184,16 @@ export const ContactSheet = memo(function ContactSheet({
     if (f.picking) return f.onPick(id)
     onToggle(id)
   }, [onToggle])
+
+  // Measured while the grid is on screen; it comes and goes with the empty and error states.
+  const hasGrid = status !== "error" && (loading || scenes.length > 0)
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!hasGrid || !grid || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => setFoldedVisible(columnsOf(grid) * 3))
+    observer.observe(grid)
+    return () => observer.disconnect()
+  }, [hasGrid])
 
   if (status === "error") {
     return (
@@ -204,7 +225,7 @@ export const ContactSheet = memo(function ContactSheet({
   // "Show all" only where some tiles are actually hidden at that width.
   const toggleClass = cn(total <= COLLAPSED.mid && "@md:hidden", total <= COLLAPSED.wide && "@xl:hidden")
   // The tab stop must be a tile that is on screen; the first rows always are.
-  const tabStop = Math.min(current, Math.max(0, (collapsed ? Math.min(shown.length, COLLAPSED.narrow) : shown.length) - 1))
+  const tabStop = Math.min(current, Math.max(0, (collapsed ? Math.min(shown.length, foldedVisible) : shown.length) - 1))
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const grid = gridRef.current
@@ -235,6 +256,7 @@ export const ContactSheet = memo(function ContactSheet({
       <p id={helpId} className="sr-only">
         {fixed ? SHEET_TEXT.helpFixed : "Use the arrow keys to move between scenes. Space leaves a scene out or puts it back."}
       </p>
+      {fixed?.blockedReason && <p className="mb-1.5 text-xs text-muted-foreground">{fixed.blockedReason}</p>}
       {fixed?.picking && (
         <div role="status" className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-foreground">
           <span>{SHEET_TEXT.picking}</span>
@@ -259,6 +281,7 @@ export const ContactSheet = memo(function ContactSheet({
         {shown.map((scene, i) => (
           <Tile
             key={scene.id}
+            fixedNote={fixed?.blockedReason}
             scene={scene}
             index={i}
             out={out.has(scene.id)}

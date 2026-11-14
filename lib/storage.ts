@@ -172,6 +172,9 @@ export const STORAGE_KEYS = {
   SUPPORT_COPY_COUNT: 'support-copy-count',
   SUPPORT_ACTIVE_DAYS: 'support-active-days',
   SUPPORT_MODAL_SEEN: 'support-modal-seen',
+
+  // The pack builder's one-time tips already shown (ids), so none comes back.
+  PACK_TIPS_SEEN: 'pack-tips-seen',
 } as const
 
 export interface HistoryItem {
@@ -737,6 +740,16 @@ export const userPreferences = {
 
   setPackPreferences: (prefs: PackPreferences) =>
     storage.set(STORAGE_KEYS.PACK_PREFERENCES, prefs),
+
+  getPackTipsSeen: (): string[] => {
+    const stored = storage.get<unknown>(STORAGE_KEYS.PACK_TIPS_SEEN, [])
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : []
+  },
+
+  markPackTipSeen: (id: string) => {
+    const seen = userPreferences.getPackTipsSeen()
+    if (!seen.includes(id)) storage.set(STORAGE_KEYS.PACK_TIPS_SEEN, [...seen, id])
+  },
 
   getPackAddResolution: (): boolean =>
     storage.get(STORAGE_KEYS.PACK_ADD_RESOLUTION, false),

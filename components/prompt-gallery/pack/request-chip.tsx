@@ -42,7 +42,7 @@ export interface RequestChipProps {
 }
 
 const BASE =
-  "inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border text-[13px] leading-none h-7 pointer-coarse:h-11"
+  "inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border text-[13px] leading-none h-7 pointer-coarse:h-9"
 
 const SURFACE: Record<Exclude<RequestChipVariant, "offered">, string> = {
   request: "border-transparent bg-secondary text-foreground",
@@ -50,8 +50,11 @@ const SURFACE: Record<Exclude<RequestChipVariant, "offered">, string> = {
   trait: "border-border text-muted-foreground",
 }
 
+// Small to look at, 44 px to touch: the touch area grows past the chip (pointer-coarse),
+// so chips keep flowing several to a line on a phone.
 const ICON_BUTTON =
-  "relative grid size-6 shrink-0 place-items-center rounded-[6px] pointer-coarse:size-11 " +
+  "relative grid size-6 shrink-0 place-items-center rounded-[6px] " +
+  "pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5 pointer-coarse:after:content-[''] " +
   "transition-[color,background-color] duration-150 ease-out-strong " +
   "hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
