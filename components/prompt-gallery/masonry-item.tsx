@@ -927,10 +927,10 @@ export const MasonryItem = memo(function MasonryItem({
                                 onClick={() => onSetAsPackBase?.(post)}
                                 className={`flex-1 focus-ring h-auto rounded-r-none border-r-0 border-mode-pack text-mode-pack-text ${isPackBase ? "" : "hover:bg-mode-pack-soft"}`}
                                 variant={isPackBase ? "secondary" : "outline"}
-                                aria-label={isPackBase ? "Pack Mode base card" : "Use as base for Pack Mode"}
+                                aria-label={isPackBase ? "This card started the pack" : "Use as base for Pack Mode"}
                             >
                                 <Package className={`${getIconClass()} mr-1.5`} />
-                                {isPackBase ? "Base ✓" : "Use as base"}
+                                {isPackBase ? "In pack ✓" : "Use as base"}
                             </Button>
                         ) : isNaturalLanguageMode ? (
                             <Button

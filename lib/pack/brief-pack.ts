@@ -483,6 +483,14 @@ export function withPromptPeople(brief: PackBrief, peopleTags: readonly string[]
 }
 
 /**
+ * The tags of a gallery search a pack can use: everything but search filters
+ * ("rating:general", "order:score"); a "-tag" counts (it goes to Never).
+ */
+export function usableSearchTags(search: string): string[] {
+  return search.split(',').map((t) => t.trim()).filter((t) => t && t !== '-' && !t.includes(':'))
+}
+
+/**
  * The brief a gallery search starts: its tags go where a pasted prompt's would, a
  * "-tag" goes to Never, the character the results are about is in Who, and search
  * filters ("rating:general", "order:score") stay out and come back in `skipped`.
@@ -523,6 +531,62 @@ export function slotSuggestions(found: readonly FoundTag[], slot: 'who' | 'other
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────
+
+/**
+ * A pack's rows after the engine made (or remade) the free ones. `slots[k]` is the row
+ * the k-th prompt the engine makes goes to; a locked row keeps what it has. With fewer
+ * prompts than slots, the rows left without one go and the rest close up (locked rows
+ * keep their order); with more, the extra ones go at the end. Returns the rows, which
+ * of them are locked, and the slots for the next remake.
+ */
+export function placeRows<T>(
+  previous: readonly T[],
+  locked: ReadonlySet<number>,
+  slots: readonly number[],
+  fresh: readonly T[]
+): { rows: T[]; locked: number[]; slots: number[] } {
+  const length = Math.max(previous.length, ...slots.map((s) => s + 1), 0)
+  const cells: Array<{ row: T; slot: number | null } | null> = Array.from({ length }, (_, i) =>
+    locked.has(i) && i < previous.length ? { row: previous[i], slot: null } : null
+  )
+  slots.forEach((slot, k) => {
+    if (k >= fresh.length) return
+    if (cells[slot]) cells[slot]!.slot = k
+    else cells[slot] = { row: fresh[k], slot: k }
+  })
+  const rows: T[] = []
+  const lockedOut: number[] = []
+  const slotOf: number[] = []
+  cells.forEach((cell, i) => {
+    if (!cell) return
+    if (locked.has(i) && i < previous.length) lockedOut.push(rows.length)
+    if (cell.slot !== null) slotOf[cell.slot] = rows.length
+    rows.push(cell.row)
+  })
+  for (let k = slots.length; k < fresh.length; k++) {
+    slotOf[k] = rows.length
+    rows.push(fresh[k])
+  }
+  return { rows, locked: lockedOut, slots: slotOf.slice(0, fresh.length) }
+}
+
+/** Rows whose text differs at the same position (a row added or gone counts too). */
+export function changedRows(before: readonly { prompt: string }[], after: readonly { prompt: string }[]): number {
+  let changed = Math.abs(before.length - after.length)
+  for (let i = 0; i < Math.min(before.length, after.length); i++) if (before[i].prompt !== after[i].prompt) changed++
+  return changed
+}
+
+/** Locked rows that still have `tag` (or a weighted form of it). */
+export function lockedWithTag(rows: readonly { prompt: string }[], locked: Iterable<number>, tag: string): number {
+  const name = normalizeTagForPack(tag)
+  let n = 0
+  for (const i of locked) {
+    const row = rows[i]
+    if (row && promptTokens(row).some((t) => normalizeTagForPack(t.replace(/^\(+/, '').replace(/(:[\d.]+)?\)+$/, '')) === name)) n++
+  }
+  return n
+}
 
 /** Tags the prompt shows, split the way the results list shows them. */
 export const promptTokens = (prompt: Pick<PackPrompt, 'prompt'>): string[] =>

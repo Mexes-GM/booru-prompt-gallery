@@ -12,6 +12,9 @@ import { briefFromCharacters } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
   preferredPostIds, resolveLook, slotSuggestions, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
+} from "../lib/pack/brief-pack"
+import {
+  placeRows, changedRows, lockedWithTag, usableSearchTags,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
@@ -416,6 +419,33 @@ check("a gallery search: its tags, the character, exclusions to Never, filters r
   assert.equal(themed.brief.who[0].tag, "tifa lockhart")
   assert.deepEqual(toSceneRequests(themed.brief).wearing, ["bikini"])
   assert.deepEqual(themed.skipped, [])
+})
+
+// ── Correcting from the results (INT-4) ───────────────────────────────────────────
+
+check("placeRows: locked rows keep their place; fresh prompts fill their slots", () => {
+  const prev = ["a", "b", "c", "d"]
+  // Row 1 locked after the pack was made: the remake doesn't touch it.
+  assert.deepEqual(placeRows(prev, new Set([1]), [0, 1, 2, 3], ["A", "B", "C", "D"]), { rows: ["A", "b", "C", "D"], locked: [1], slots: [0, 1, 2, 3] })
+  // Fewer prompts than slots: the free rows left over go, the locked one closes up.
+  assert.deepEqual(placeRows(prev, new Set([3]), [0, 1, 2], ["A"]), { rows: ["A", "d"], locked: [1], slots: [0] })
+  // More than slots: the extra ones go at the end.
+  assert.deepEqual(placeRows(["a"], new Set([0]), [], ["X", "Y"]), { rows: ["a", "X", "Y"], locked: [0], slots: [1, 2] })
+})
+
+check("changedRows and lockedWithTag", () => {
+  const row = (prompt: string) => ({ prompt })
+  assert.equal(changedRows([row("a, b"), row("c")], [row("a, b"), row("d")]), 1)
+  assert.equal(changedRows([row("a")], [row("a"), row("b")]), 1)
+  const rows = [row("1girl, smile"), row("1girl, (smile:1.2)"), row("1girl, grin")]
+  assert.equal(lockedWithTag(rows, [0, 1, 2], "smile"), 2)
+  assert.equal(lockedWithTag(rows, [2], "smile"), 0)
+})
+
+check("usableSearchTags: filters out, exclusions in", () => {
+  assert.deepEqual(usableSearchTags("beach, -smile, rating:general, order:score"), ["beach", "-smile"])
+  assert.deepEqual(usableSearchTags("rating:general"), [])
+  assert.deepEqual(usableSearchTags(""), [])
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)
