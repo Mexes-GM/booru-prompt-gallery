@@ -12,11 +12,11 @@ import { splitTags } from '../utils/tag-utils'
 import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, createSeededRng, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
-import { composeLent, composePack, composePackPrompts, outfitWears, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { HAND_SLOTS, composeLent, composePack, composePackPrompts, outfitWears, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
 import { AXIS_SOURCE, AXIS_UNITS, DonorQueue, axisKey, axisOfTag, axisTags, canLend, lendingClashes, showsFace, type OneAxis } from './scene/scene-axis'
 import { coherentPromptTags, dropRedundantTags, isCompanyAct, loneCompanyTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
-import { normalizeRating, sceneTags, type Scene, type SceneRating, type TagKind } from './scene/scene'
+import { normalizeRating, sceneTags, unitOfSlot, type Scene, type SceneRating, type TagKind } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
 import { compositionsOf, type PackPeople, type ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
@@ -860,6 +860,66 @@ export function displaceRequestedSlots(
   })
 }
 
+/** Slots of an action of the whole body (moving, fighting): what the body is doing, one at a time. */
+const ACTION_SLOTS = new Set(['pose:kinetic', 'pose:combat'])
+/** What an action done with something in the hand ("reading") is, for the relations and the resolver: holding it. */
+const HOLD_PROBE = 'holding'
+
+/**
+ * True when `tag`, a tag of a scene's pose (its skeleton unit), contradicts a selected pose imposed
+ * on that scene (`imposed`: the selected poses the scene doesn't have). The scene's pose was
+ * another one, so what its body was doing gives way to what was asked:
+ *  - a tag the measured relations or the conflict resolver set against an imposed pose, whatever
+ *    its slot ("standing" for "sitting");
+ *  - an action of the whole body, moving or fighting ("fighting stance", "walking", "stretching"),
+ *    unless it is a form of the imposed pose or the other way round: the body now does what was asked;
+ *  - when an imposed pose is filed with the things carried in the hand ("reading"), the hands are
+ *    busy with it: a hand gesture ("clenched hands", "hand on own hip"), and what the relations or
+ *    the resolver set against holding something (HOLD_PROBE: "arms behind back", "hands in pockets").
+ * Postures and gestures that can go with it stay ("arms up" with "sitting"; "standing" with "reading").
+ */
+export function contradictsImposedPose(
+  tag: string,
+  imposed: readonly string[],
+  overrides: Record<string, string>,
+  people = 1,
+  relations: TagRelations | null = loadedTagRelations()
+): boolean {
+  if (imposed.length === 0) return false
+  const key = normalizeTagForPack(tag)
+  const slot = getTagSlotFromOverrides(key, overrides)?.slot
+  if (!slot || unitOfSlot(slot) !== 'skeleton') return false
+  const asked = imposed.filter((pose) => !isQualifiedVariant(key, pose) && !isQualifiedVariant(pose, key))
+  if (asked.length < imposed.length) return false
+  if (ACTION_SLOTS.has(slot)) return true
+  const inHand = asked.some((pose) => HAND_SLOTS.has(getTagSlotFromOverrides(pose, overrides)?.slot ?? ''))
+  if (inHand && slot === 'pose:gesture') return true
+  const against = inHand ? [...asked, HOLD_PROBE] : asked
+  if (relations) return against.some((pose) => cannotGoWith(pose, key, people, relations))
+  return against.some((pose) => resolveTagConflicts([pose], [key]).conflictingTags.length > 0 || resolveTagConflicts([key], [pose]).conflictingTags.length > 0)
+}
+
+/** `tags` without those of the scene's pose that contradict the poses imposed on it (contradictsImposedPose). `locked` tags stay. */
+export function displaceImposedPoses(
+  tags: readonly string[],
+  imposed: readonly string[],
+  locked: readonly string[],
+  overrides: Record<string, string>,
+  people = 1,
+  relations: TagRelations | null = loadedTagRelations()
+): string[] {
+  if (imposed.length === 0) return [...tags]
+  const kept = new Set(locked)
+  return tags.filter((tag) => kept.has(tag) || !contradictsImposedPose(tag, imposed, overrides, people, relations))
+}
+
+/** The selected poses `scene` lacks, which a prompt made from its pose has imposed on it. */
+function imposedOn(scene: Scene | undefined, selection: PoseSelection | null): string[] {
+  if (!selection || !scene) return []
+  const has = new Set(posesOf(scene, selection))
+  return selection.tags.filter((pose) => !has.has(pose))
+}
+
 /** True when `a` and `b` can't be in one picture: the measured relations or the conflict resolver say so, either way round. */
 function cannotGoWith(a: string, b: string, people: number, relations: TagRelations): boolean {
   if (excludes(relations, a, b, { people })) return true
@@ -1036,7 +1096,10 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const owned = new Set(applySceneOwnership(tags, owner, [...(args.never ?? []), ...plan.setAside], args.overrides, !isCast(args)))
   const ownedTags = tags.filter((tag) => locked.has(tag) || owned.has(tag))
   const people = args.people ? args.people.girls + args.people.boys : 1
-  const displaced = displaceRequestedSlots(ownedTags, plan.owning, composed.locked, args.overrides, people)
+  const requested = displaceRequestedSlots(ownedTags, plan.owning, composed.locked, args.overrides, people)
+  // A selected pose the scene of the prompt's pose lacks is imposed on it: what of that pose contradicts it goes.
+  const imposed = args.requests ? imposedOn(f.sceneById.get(composed.sources.pose ?? composed.sources.skeleton), poseSelection(args)) : []
+  const displaced = displaceImposedPoses(requested, imposed, composed.locked, args.overrides, people)
   const cleaned = args.clean(displaced, composed.locked)
   if (!cleaned) return null
   // One rule wherever the tags come from (character, base clothing, library, scene): a generic
@@ -1193,9 +1256,20 @@ function packPlan(pool: ScenePool, args: ScenePackArgs, count: number): PackPlan
     ordered.push(...group)
   })
   if (carriers.length > 0) add(restrictPool(base, idsOf(carriers)), 0, 'reuse', 'remix')
+  // Among the scenes a pose is imposed on, those whose own pose has nothing that contradicts it come first.
+  const people = args.people ? args.people.girls + args.people.boys : 1
+  const relations = loadedTagRelations()
+  const clashes = (scene: Scene) => {
+    const imposed = imposedOn(scene, selection)
+    return scene.units.skeleton.some((tag) => contradictsImposedPose(tag, imposed, args.overrides, people, relations))
+  }
   const levels = Array.from(new Set(imposable.map(carried)))
   levels.forEach((level) => {
-    preferredFirst(imposable.filter((scene) => carried(scene) === level)).forEach((group) => add(restrictPool(base, idsOf(group)), group.length, 'imposed'))
+    const atLevel = imposable.filter((scene) => carried(scene) === level)
+    const clashing = new Set(atLevel.filter(clashes).map((scene) => scene.postId))
+    ;[atLevel.filter((scene) => !clashing.has(scene.postId)), atLevel.filter((scene) => clashing.has(scene.postId))].forEach((hosts) =>
+      preferredFirst(hosts).forEach((group) => add(restrictPool(base, idsOf(group)), group.length, 'imposed'))
+    )
   })
   return { phases, pose: { selection, carriers: ordered, imposable, elsewhere } }
 }
