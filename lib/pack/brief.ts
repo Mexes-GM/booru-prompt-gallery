@@ -7,7 +7,7 @@
 import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import { splitCommaSeparatedTags } from '../utils/tag-utils'
 import { normalizeTagForPack } from './pack-generator'
-import { COUNT_TAG_RE } from './scene/permanence'
+import { COUNT_TAG_RE, isCanonRelativeTag, type Permanence } from './scene/permanence'
 import { MAX_CAST, type CastRole } from './scene/cast'
 import { isVerbTag } from './scene/scene-compose'
 import type { PackPeople } from './scene/scene-pool'
@@ -36,6 +36,8 @@ export interface PackBrief {
   never: string[]              // in none
   /** The Style row: style, meta, artist and copyright tags, and tags the taxonomy doesn't know (LoRA triggers). First in every prompt, as typed. */
   literal: string[]
+  /** How the people of the pack who are not its characters look ("dark-skinned male"). */
+  others: string[]
   people: PackPeople | null    // null: decided from the scenes
   changes: ChangesAxis         // default 'scene'
   leftOut: string[]            // ids of scenes the user removed
@@ -53,6 +55,13 @@ export interface SceneRequests {
   also: string[]      // imposed; pass the same ownership rule
   literal: string[]   // first, as typed
 }
+
+/**
+ * What toSceneRequests gives the engine: SceneRequests, plus `others` (how the people
+ * who are not the characters look) when the brief has any. The engine does not read
+ * `others` yet; it arrives as it is.
+ */
+export type BriefSceneRequests = SceneRequests & { others?: string[] }
 
 /** Where a typed tag belongs in the brief. */
 export type BriefRoute =
@@ -116,6 +125,53 @@ export function typedRole(tag: string, typedIn: TypedRow, overrides: Record<stri
   return typedIn === 'wearing' || typedIn === 'doing' || typedIn === 'where' ? typedIn : undefined
 }
 
+// The words a tag names a person's gender with ("dark-skinned male", "old man", "cat girl").
+const GENDER_WORDS: Readonly<Record<string, CastRole>> = {
+  male: 'boy', males: 'boy', man: 'boy', men: 'boy', boy: 'boy', boys: 'boy',
+  female: 'girl', females: 'girl', woman: 'girl', women: 'girl', girl: 'girl', girls: 'girl',
+}
+
+/** The genders a tag names ("clothed male nude female" names both). */
+function gendersNamed(tag: string): Set<CastRole> {
+  const words = normalizeTagForPack(tag).split(/[\s()-]+/)
+  return new Set(words.flatMap((w) => (GENDER_WORDS[w] ? [GENDER_WORDS[w]] : [])))
+}
+
+/**
+ * True for a look tag about the people of the pack who are not its characters: it names
+ * a person of a gender none of the characters has ("dark-skinned male" next to a girl),
+ * or it compares the people of the picture ("interracial", "age difference"). Decided
+ * only when the characters are all of one gender: with both, a "male" tag may be one of
+ * them, and the tag stays where it was typed. Counts and pairings ("male focus",
+ * "hetero") are about the composition, not anyone's look.
+ */
+export function isOthersTag(
+  tag: string,
+  castRoles: ReadonlyArray<CastRole | null | undefined>,
+  overrides: Record<string, string>,
+  permanence: (tag: string) => Permanence
+): boolean {
+  if (routeTag(tag, overrides).kind !== 'look') return false
+  const cast = new Set(castRoles.filter((r): r is CastRole => !!r))
+  if (cast.size !== 1) return false
+  const kind = permanence(tag)
+  if (kind === 'composition') return false
+  const named = gendersNamed(tag)
+  if (named.size > 0) return [...named].some((g) => !cast.has(g))
+  return kind === 'relative' && !isCanonRelativeTag(tag)
+}
+
+/** Adds a tag to the others' look (and takes it off Never and the characters' added look). */
+export function addOther(brief: PackBrief, tag: string): PackBrief {
+  const name = normalizeTagForPack(tag)
+  if (!name) return brief
+  const next = cloneBrief(brief)
+  next.never = without(next.never, name)
+  next.who.forEach((c) => { c.addedLook = without(c.addedLook, name) })
+  if (!has(next.others, name)) next.others.push(name)
+  return next
+}
+
 function cloneBrief(brief: PackBrief): PackBrief {
   return {
     ...brief,
@@ -123,6 +179,7 @@ function cloneBrief(brief: PackBrief): PackBrief {
     requests: brief.requests.map((r) => ({ ...r })),
     never: [...brief.never],
     literal: [...brief.literal],
+    others: [...brief.others],
     people: brief.people ? { ...brief.people } : null,
     leftOut: [...brief.leftOut],
     ...(brief.leftOutVariants ? { leftOutVariants: [...brief.leftOutVariants] } : {}),
@@ -132,7 +189,7 @@ function cloneBrief(brief: PackBrief): PackBrief {
 const unnamedCharacter = (): BriefCharacter => ({ tag: null, addedLook: [], removedLook: [] })
 
 export function emptyBrief(): PackBrief {
-  return { who: [unnamedCharacter()], requests: [], never: [], literal: [], people: null, changes: 'scene', leftOut: [] }
+  return { who: [unnamedCharacter()], requests: [], never: [], literal: [], others: [], people: null, changes: 'scene', leftOut: [] }
 }
 
 /**
@@ -225,11 +282,12 @@ export function restoreLook(brief: PackBrief, character: string | null, tag: str
   return next
 }
 
-/** Takes a tag off the requests, the literals and every character's added look. */
+/** Takes a tag off the requests, the literals, the others' look and every character's added look. */
 export function removeTag(brief: PackBrief, tag: string): PackBrief {
   const next = cloneBrief(brief)
   next.requests = next.requests.filter((r) => !same(r.tag, tag))
   next.literal = without(next.literal, tag)
+  next.others = without(next.others, tag)
   next.who.forEach((c) => { c.addedLook = without(c.addedLook, tag) })
   return next
 }
@@ -366,9 +424,10 @@ export function briefFromCard(
   return { brief, offered, peopleTags }
 }
 
-export function toSceneRequests(brief: PackBrief): SceneRequests {
+export function toSceneRequests(brief: PackBrief): BriefSceneRequests {
   const of = (role: RequestRole) => brief.requests.filter((r) => r.role === role).map((r) => r.tag)
-  return { select: of('doing'), wearing: of('wearing'), where: of('where'), also: of('also'), literal: [...brief.literal] }
+  const requests = { select: of('doing'), wearing: of('wearing'), where: of('where'), also: of('also'), literal: [...brief.literal] }
+  return brief.others.length > 0 ? { ...requests, others: [...brief.others] } : requests
 }
 
 /** Every tag the brief puts in the prompts (never excluded), without repeats. */
@@ -378,6 +437,7 @@ export function briefTags(brief: PackBrief): string[] {
     ...brief.who.flatMap((c) => c.addedLook),
     ...brief.requests.map((r) => r.tag),
     ...brief.literal,
+    ...brief.others,
   ]
   const seen = new Set<string>()
   return all.filter((t) => {

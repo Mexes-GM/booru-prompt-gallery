@@ -24,8 +24,12 @@ export interface UseTagSuggestionsResult {
 }
 
 const NONE: TagSuggestion[] = []
+const NO_OVERRIDES: Record<string, string> = {}
 
-export function useTagSuggestions(): UseTagSuggestionsResult {
+/** `overrides` (the taxonomy) tells which tags are about how someone looks, for Others. */
+export function useTagSuggestions(overrides: Record<string, string> = NO_OVERRIDES): UseTagSuggestionsResult {
+  const overridesRef = useRef(overrides)
+  useEffect(() => { overridesRef.current = overrides }, [overrides])
   const [state, setState] = useState<{ slot: SlotId | null; suggestions: TagSuggestion[]; status: SuggestionStatus }>({
     slot: null,
     suggestions: NONE,
@@ -54,7 +58,12 @@ export function useTagSuggestions(): UseTagSuggestionsResult {
       searchTagsOrThrow(text, LOOKUP_LIMIT)
         .then((found) => {
           if (id !== requestId.current) return
-          const suggestions = slotSuggestions(found, slot === "who" || slot === "style" ? slot : "other")
+          const suggestions = slotSuggestions(
+            found,
+            slot === "who" || slot === "style" ? slot : slot === "others" ? "look" : "other",
+            undefined,
+            overridesRef.current,
+          )
           setState({ slot, suggestions, status: suggestions.length > 0 ? "idle" : "empty" })
         })
         .catch(() => {

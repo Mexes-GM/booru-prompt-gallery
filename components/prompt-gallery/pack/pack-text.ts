@@ -111,6 +111,9 @@ export const TIP_TEXT = {
   dismiss: "Dismiss tip",
 } as const
 
+/** Under Others when the make-up has no one besides the characters: the tags stay. */
+export const OTHERS_UNUSED = "No one else is in the picture, so these aren't used."
+
 /** What each way into a pack says it brought (shown until the first change). */
 export const START_TEXT = {
   cardNamed: "From the card: who's in it.",

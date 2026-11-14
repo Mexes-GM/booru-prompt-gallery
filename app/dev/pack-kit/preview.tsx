@@ -23,6 +23,7 @@ import {
   restoreScene,
   routeTag,
   typedRole,
+  addOther,
   setChanges,
   setCharacterRole,
   setPeople,
@@ -166,6 +167,7 @@ const nameOf = (tag: string) => characterName(tag, CHARACTER_INFO[tag])
 /** Adds one typed tag where it belongs and says which row got it. */
 function place(b: PackBrief, tag: string, typedIn: SlotId): { brief: PackBrief; dest: SlotId } {
   if (typedIn === "never") return { brief: addNever(b, tag), dest: "never" }
+  if (typedIn === "others") return { brief: addOther(b, tag), dest: "others" }
   const route = routeTag(tag, OVERRIDES)
   if (route.kind === "character") return { brief: addCharacter(b, tag), dest: "who" }
   if (route.kind === "look") return { brief: addLook(b, b.who[0]?.tag ?? null, tag), dest: "who" }

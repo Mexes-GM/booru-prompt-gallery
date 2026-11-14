@@ -20,6 +20,7 @@ import { PeopleLine, type PeopleLineProps } from "./people-line"
 import { RequestChip } from "./request-chip"
 import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { WearingSourceMenu } from "./wearing-source-menu"
+import { OTHERS_UNUSED } from "./pack-text"
 import type { OutfitSource } from "./pack-text"
 
 export type { CharacterInfo }
@@ -68,6 +69,12 @@ export interface PackBriefPanelProps {
 
   /** Shown only when given (and when PeopleLine decides it applies). */
   people?: PeopleLineProps | null
+  /**
+   * Others (how the people who are not the characters look), under People: shown when
+   * the make-up has someone besides the characters (`applies`), or while it has tags.
+   * With tags and `applies` false, they stay and the row says they aren't used.
+   */
+  others?: { applies: boolean | null } | null
   /** Shown only when given. */
   changes?: { value: ChangesAxis; onChange: (value: ChangesAxis) => void; unavailable?: readonly ChangesAxis[] } | null
 
@@ -121,6 +128,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     conflicts = {},
     onOpenScenePicker,
     people,
+    others,
     changes,
     suggestions,
     suggestionStatus,
@@ -176,7 +184,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   }
 
   /** A request row: chips for its tags, the last one removable from the keyboard. */
-  const requestRow = (slot: RequestRole | "style", extra?: { actions?: ReactNode; notes?: ReactNode }) => {
+  const requestRow = (slot: RequestRole | "style" | "others", extra?: { actions?: ReactNode; notes?: ReactNode }) => {
     const tags = slotTags(brief, slot)
     const lastTag = tags[tags.length - 1]
     const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveTag(lastTag) } : null
@@ -216,6 +224,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   const named = brief.who.filter((c) => c.tag !== null)
   const hasNamed = named.length > 0
   const wearing = slotTags(brief, "wearing")
+  const othersShown = !!others && (others.applies === true || brief.others.length > 0)
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -276,9 +285,13 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           flashKey={flashFor("never")}
         />
 
-        {(people || changes) && (
+        {(people || changes || othersShown) && (
           <div className="mt-1 border-t border-border/60 pt-1">
             {people && <PeopleLine {...people} flashKey={flashFor("people")} />}
+            {othersShown &&
+              requestRow("others", {
+                notes: others?.applies === false && brief.others.length > 0 ? <SlotNote>{OTHERS_UNUSED}</SlotNote> : undefined,
+              })}
             {changes && <ChangesSelect value={changes.value} onChange={changes.onChange} unavailable={changes.unavailable} />}
           </div>
         )}

@@ -3,12 +3,12 @@
  * category, and the words it shows when it is empty. Class strings are written out
  * whole so Tailwind sees them.
  */
-import { Ban, Palette, Plus, UserRound, type LucideIcon } from "lucide-react"
+import { Ban, Palette, Plus, UserRound, UsersRound, type LucideIcon } from "lucide-react"
 import { TAG_CATEGORY_ICONS } from "@/components/tag-category-icon"
 import type { PackBrief, RequestRole } from "@/lib/pack/brief"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 
-export type SlotId = "who" | RequestRole | "style" | "never"
+export type SlotId = "who" | RequestRole | "style" | "never" | "others"
 
 export interface SlotMeta {
   id: SlotId
@@ -83,9 +83,18 @@ export const SLOTS: Record<SlotId, SlotMeta> = {
     emptyText: "Tags no prompt should have",
     moreText: "Add a tag",
   },
+  others: {
+    id: "others",
+    label: "Others",
+    icon: UsersRound,
+    iconClass: "text-cat-appearance-text",
+    emptyText: "Anything",
+    moreText: "Add a look tag",
+    help: "How the other people look, like dark-skinned male, faceless male or muscular male",
+  },
 }
 
-export const SLOT_ORDER: readonly SlotId[] = ["who", "wearing", "doing", "where", "also", "style", "never"]
+export const SLOT_ORDER: readonly SlotId[] = ["who", "wearing", "doing", "where", "also", "style", "never", "others"]
 
 /** A tag the autocomplete offers. */
 export interface TagSuggestion {
@@ -146,8 +155,9 @@ export function companionsLabel(people: PackPeople, cast: PackPeople): string {
 }
 
 /** The tags the card asks for in one slot, in the order they were added. Style is `literal`. */
-export function slotTags(brief: PackBrief, slot: RequestRole | "style"): string[] {
+export function slotTags(brief: PackBrief, slot: RequestRole | "style" | "others"): string[] {
   if (slot === "style") return [...brief.literal]
+  if (slot === "others") return [...brief.others]
   return brief.requests.filter((r) => r.role === slot).map((r) => r.tag)
 }
 
@@ -171,5 +181,6 @@ export function briefSummaryParts(
     ...slotTags(brief, "style"),
   ].map(showTag)
   if (peopleLabel) parts.push(peopleLabel.charAt(0).toLowerCase() + peopleLabel.slice(1))
+  parts.push(...brief.others.map(showTag))
   return parts
 }

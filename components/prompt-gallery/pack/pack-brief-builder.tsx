@@ -36,6 +36,7 @@ import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import {
   addLook as addLookInBrief,
   addNever,
+  addOther as addOtherInBrief,
   addTag,
   briefFromPrompt,
   routeTag,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/pack/brief"
 import { briefFromCharacters } from "@/lib/pack/brief-history"
 import type { CastRole } from "@/lib/pack/scene/cast"
+import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { splitTags } from "@/lib/utils/tag-utils"
 import {
@@ -336,13 +338,20 @@ const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`)
 /** A tag of a prompt as the brief spells it: no weight, no brackets. */
 const bareToken = (token: string) => token.replace(/^\(+/, "").replace(/(:[\d.]+)?\)+$/, "").trim()
 
-/** The slot of the brief a typed tag lands in; null for a people count (it sets People). */
-function landsIn(tag: string, typedIn: SlotId, overrides: Record<string, string>): SlotId | null {
+/**
+ * The slot of the brief a typed tag lands in; null for a people count (it sets People).
+ * A look tag about the people who are not the characters (`othersTag`) goes to Others
+ * wherever it is typed; typed in Others, any look tag, and a tag the taxonomy does not
+ * know, stays there.
+ */
+function landsIn(tag: string, typedIn: SlotId, overrides: Record<string, string>, othersTag: (tag: string) => boolean): SlotId | null {
   const route = routeTag(tag, overrides)
   if (route.kind === "people") return null
   if (typedIn === "never") return "never"
-  if (route.kind === "character" || route.kind === "look") return "who"
+  if (route.kind === "look") return typedIn === "others" || othersTag(tag) ? "others" : "who"
+  if (route.kind === "character") return "who"
   if (route.kind === "request") return route.role
+  if (typedIn === "others") return getTagSlotFromOverrides(normalizeTagForPack(tag), overrides) ? "style" : "others"
   return typedRole(tag, typedIn, overrides) ?? "style"
 }
 
@@ -396,7 +405,7 @@ function BriefWorkspace({
     isGlobalWeightsEnabled,
     outfitOptions,
   })
-  const { plan, identity, candidates, candidatesPending, result, isGenerating } = engine
+  const { plan, identity, candidates, candidatesPending, result, isGenerating, othersTag } = engine
   // The searches of the character's own posts: their posts' scenes go first. Read
   // from the plan of the previous render (the plan needs the posts to settle).
   const planOwnKey = plan.scenes.filter((s) => s.kind === "own").map((s) => s.id).join("||")
@@ -540,22 +549,23 @@ function BriefWorkspace({
 
   // ── Brief edits ─────────────────────────────────────────────────────────────────
   const [routed, setRouted] = useState<{ slot: SlotId | "people"; key: number } | null>(null)
-  const suggestions = useTagSuggestions()
-  const { add, never, remove, unnever, removeCharacter, setRole, removeLook, restoreLook, leaveOutScene, restoreScene, setPeople, undo } = pack
+  const suggestions = useTagSuggestions(overrides)
+  const { add, addOther, never, remove, unnever, removeCharacter, setRole, removeLook, restoreLook, leaveOutScene, restoreScene, setPeople, undo } = pack
   const { leaveOutVariant, restoreVariant, setBaseScene } = pack
   const cast = identity.cast
   const onAddTags = useCallback((tags: string[], slot: SlotId) => {
     let elsewhere: SlotId | "people" | null = null
     const counts: string[] = []
     for (const tag of tags) {
-      const dest = landsIn(tag, slot, overrides)
+      const dest = landsIn(tag, slot, overrides, othersTag)
       // A typed count ("2girls", "1boy", "solo") sets who is in the picture.
       if (dest === null) {
         counts.push(tag)
         continue
       }
       if (slot === "never") never(tag)
-      else add(tag, typedRole(tag, slot, overrides))
+      else if (dest === "others") addOther(tag)
+      else add(tag, typedRole(tag, slot === "others" ? "style" : slot, overrides))
       if (dest !== slot) elsewhere = dest
     }
     const people = peopleFromCountTags(counts, cast)
@@ -564,7 +574,7 @@ function BriefWorkspace({
       elsewhere = "people"
     }
     if (elsewhere) setRouted({ slot: elsewhere, key: Date.now() })
-  }, [add, never, setPeople, overrides, cast])
+  }, [add, addOther, never, setPeople, overrides, cast, othersTag])
   // Undo: the last change of the brief, for a few seconds.
   const [undoFor, setUndoFor] = useState<object | null>(null)
   const [seenBrief, setSeenBrief] = useState(brief)
@@ -617,6 +627,10 @@ function BriefWorkspace({
       if (!people) return
       next = setPeopleInBrief(brief, people)
       apply = () => setPeople(people)
+    } else if (route.kind === "look" && othersTag(tag)) {
+      // "dark-skinned male" next to girls is how the others look, as when typed.
+      next = addOtherInBrief(brief, tag)
+      apply = () => addOther(tag)
     } else if (route.kind === "look" && identity.castSize >= 2) {
       // With several characters a look tag goes to the one it came from, never to a guess.
       const owner = lookOwner(tag, identity.blocks)
@@ -639,7 +653,7 @@ function BriefWorkspace({
       briefBefore: brief, briefAfter: null, status: "waiting", message: null,
     })
     apply()
-  }, [result, engine.busy, engine.sourceChanged, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, add])
+  }, [result, engine.busy, engine.sourceChanged, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, add, othersTag, addOther])
   const onAlways = useCallback((tag: string) => correct("always", tag), [correct])
   const onNever = useCallback((tag: string) => correct("never", tag), [correct])
   // Runs once the brief has the change (the engine's arguments follow it). Every outcome
@@ -765,6 +779,10 @@ function BriefWorkspace({
   const people = engine.peopleLine
     ? { options: engine.peopleLine.options, value: engine.peopleLine.value, onChange: setPeople, cast: identity.cast, poseNeeds: engine.peopleLine.poseNeeds }
     : null
+  // Others shows once the make-up has someone besides the characters (the chosen one, or the one the scenes give).
+  const composition = engine.people ?? brief.people
+  const othersApply = composition ? composition.girls + composition.boys > identity.cast.girls + identity.cast.boys : null
+  const othersRow = useMemo(() => ({ applies: othersApply }), [othersApply])
   const summary = useMemo(() => {
     const label = brief.people ? companionsLabel(brief.people, identity.cast) : null
     const parts = briefSummaryParts(brief, label, characterInfo)
@@ -880,6 +898,7 @@ function BriefWorkspace({
           assumedRoles={assumedRoles}
           changes={changesControl}
           people={people}
+          others={othersRow}
           offers={offers}
           suggestions={suggestions.suggestions}
           suggestionStatus={suggestions.status}

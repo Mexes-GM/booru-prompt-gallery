@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addCharacter, addLook, addNever, addTag, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
+  addCharacter, addLook, addNever, addOther, addTag, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
   removeTag, restoreLook, restoreScene, setCharacterRole, setPeople, toSceneRequests,
   type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
@@ -42,6 +42,8 @@ export interface UsePackBriefResult {
   undo: () => string | null
 
   add: (tag: string, into?: RequestRole) => void
+  /** Adds a tag to how the people who are not the characters look. */
+  addOther: (tag: string) => void
   /** Replaces the brief with one made from it (an example picked), as one change. */
   changeTo: (next: PackBrief, label: string) => void
   /** Adds several tags as one change (one Undo). */
@@ -141,6 +143,9 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
 
   const add = useCallback((tag: string, into?: RequestRole) => {
     change(BRIEF_LABELS.add(tag.trim()), (b) => addTag(b, tag, overridesRef.current, into))
+  }, [change])
+  const addOtherAction = useCallback((tag: string) => {
+    change(BRIEF_LABELS.add(tag.trim()), (b) => addOther(b, tag))
   }, [change])
   const addTags = useCallback((tags: readonly string[], into?: RequestRole) => {
     const names = tags.map((t) => t.trim()).filter(Boolean)
@@ -250,7 +255,7 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
 
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
-    add, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
+    add, addOther: addOtherAction, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
     addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,

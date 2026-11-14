@@ -6,6 +6,7 @@
  */
 import { lookYieldingTo, splitSignature } from './character-identity'
 import { normalizeTagForPack, type PackPrompt } from './pack-generator'
+import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
@@ -707,15 +708,25 @@ const STYLE_KINDS: Readonly<Record<number, string | undefined>> = { 0: undefined
 
 /**
  * What a slot of the brief offers while typing: characters in Who; general tags,
- * artists, series and meta tags in Style; general tags elsewhere.
+ * artists, series and meta tags in Style; general tags the taxonomy files as appearance
+ * in Others (`overrides` says which); general tags elsewhere.
  */
-export function slotSuggestions(found: readonly FoundTag[], slot: 'who' | 'style' | 'other', limit = 8): Array<{ name: string; count: number; kind?: string }> {
+export function slotSuggestions(
+  found: readonly FoundTag[],
+  slot: 'who' | 'style' | 'look' | 'other',
+  limit = 8,
+  overrides: Record<string, string> = {}
+): Array<{ name: string; count: number; kind?: string }> {
   const kindOf = (category: number): string | undefined =>
     slot === 'who' ? 'Character' : slot === 'style' ? STYLE_KINDS[category] : undefined
-  const wanted = (category: number) =>
-    slot === 'who' ? category === CHARACTER : slot === 'style' ? category in STYLE_KINDS : category === GENERAL
+  const looks = (name: string) => getTagSlotFromOverrides(normalizeTagForPack(name), overrides)?.category === 'appearance'
+  const wanted = (t: FoundTag) =>
+    slot === 'who' ? t.category === CHARACTER
+      : slot === 'style' ? t.category in STYLE_KINDS
+      : slot === 'look' ? t.category === GENERAL && looks(t.name)
+      : t.category === GENERAL
   return found
-    .filter((t) => wanted(t.category))
+    .filter(wanted)
     .slice(0, limit)
     .map((t) => {
       const kind = kindOf(t.category)
