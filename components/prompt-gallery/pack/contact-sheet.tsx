@@ -45,6 +45,8 @@ export interface ContactSheetProps {
   fixed?: {
     id: string
     picking: boolean
+    /** Choosing another is not possible now, and why. */
+    blockedReason?: string
     onStartPick: () => void
     onPick: (id: string) => void
     onCancelPick: () => void
@@ -65,7 +67,10 @@ const Tile = memo(function Tile({
   onToggle,
   fixed = false,
   picking = false,
+  fixedNote,
 }: {
+  /** For the scene that repeats: why another can't be chosen now. */
+  fixedNote?: string
   scene: SceneThumb
   index: number
   out: boolean
@@ -77,7 +82,7 @@ const Tile = memo(function Tile({
   picking?: boolean
 }) {
   const label = fixed
-    ? `${SHEET_TEXT.fixedBadge} in every prompt, post ${scene.postId}. ${picking ? SHEET_TEXT.keepFixed : SHEET_TEXT.changeFixed}`
+    ? `${SHEET_TEXT.fixedBadge} in every prompt, post ${scene.postId}. ${fixedNote ?? (picking ? SHEET_TEXT.keepFixed : SHEET_TEXT.changeFixed)}`
     : picking
       ? `${SHEET_TEXT.pickThis}, post ${scene.postId}`
       : `Leave this scene out, post ${scene.postId}`
@@ -88,7 +93,7 @@ const Tile = memo(function Tile({
       tabIndex={tabbable ? 0 : -1}
       aria-pressed={fixed || picking ? undefined : out}
       aria-label={label}
-      title={fixed ? SHEET_TEXT.changeFixed : picking ? SHEET_TEXT.pickThis : out ? "Put this scene back" : "Leave this scene out"}
+      title={fixed ? fixedNote ?? SHEET_TEXT.changeFixed : picking ? SHEET_TEXT.pickThis : out ? "Put this scene back" : "Leave this scene out"}
       onClick={() => onToggle(scene.id)}
       className={cn(
         "group/tile relative block aspect-[3/4] w-full overflow-hidden rounded-[6px] border",
@@ -251,6 +256,7 @@ export const ContactSheet = memo(function ContactSheet({
       <p id={helpId} className="sr-only">
         {fixed ? SHEET_TEXT.helpFixed : "Use the arrow keys to move between scenes. Space leaves a scene out or puts it back."}
       </p>
+      {fixed?.blockedReason && <p className="mb-1.5 text-xs text-muted-foreground">{fixed.blockedReason}</p>}
       {fixed?.picking && (
         <div role="status" className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-foreground">
           <span>{SHEET_TEXT.picking}</span>
@@ -275,6 +281,7 @@ export const ContactSheet = memo(function ContactSheet({
         {shown.map((scene, i) => (
           <Tile
             key={scene.id}
+            fixedNote={fixed?.blockedReason}
             scene={scene}
             index={i}
             out={out.has(scene.id)}

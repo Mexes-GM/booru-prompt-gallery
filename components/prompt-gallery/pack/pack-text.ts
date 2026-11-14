@@ -44,6 +44,8 @@ export const BUILDER_TEXT = {
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
   generatingSpoken: "Making the prompts",
+  busySource: "Generate again first: the pack was made with another source or rating",
+  busyRunning: "Wait for the prompts to update",
   resultsLabel: "Prompts",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
 } as const
@@ -59,6 +61,7 @@ export const SHEET_TEXT = {
     "Use the arrow keys to move between scenes. The first scene repeats in every prompt; select it to choose another. Space on any other scene leaves its part out or puts it back.",
   hint: (axis: string) => `The first scene repeats; the others lend their ${axis}. Select one to leave it out`,
   outfitChanges: "Each prompt takes its outfit from another scene",
+  fixedLocked: "Unlock the locked prompts to choose another scene to repeat",
 } as const
 
 /** What a correction from the results did, for the notice with Undo. */

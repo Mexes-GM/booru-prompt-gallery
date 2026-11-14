@@ -188,9 +188,17 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
   const [begun] = useState(() => begin(start, overrides))
   const pack = usePackBrief(overrides, begun.brief)
   // The environment while open; held while closed.
-  const [held, setHeld] = useState(props)
-  if (open && held !== props) setHeld(props)
-  const env = open ? props : held
+  // The pack keeps the booru and gallery search it was started with, open or closed; only
+  // "New pack" takes the gallery's current ones. Its own controls (rating) stay live.
+  const [startSource] = useState(() => ({ provider: props.provider, gallerySearch: props.gallerySearch }))
+  // While closed, the rest of the environment is held as it was when it closed.
+  const [held, setHeld] = useState<PackBriefBuilderProps | null>(null)
+  const [wasOpen, setWasOpen] = useState(open)
+  if (wasOpen !== open) {
+    setWasOpen(open)
+    setHeld(open ? null : props)
+  }
+  const env = { ...(open || !held ? props : held), ...startSource }
 
   // Focus goes into the panel when it opens and back where it was when it closes.
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -653,6 +661,17 @@ function BriefWorkspace({
     const timer = setTimeout(() => setCorrection((cur) => (cur?.id === correction.id ? null : cur)), UNDO_MS)
     return () => clearTimeout(timer)
   }, [correction])
+  // Locking and re-rolling are changes too: a correction's Undo must not throw them away.
+  const { toggleLock, reroll } = engine
+  const onToggleLock = useCallback((index: number) => {
+    setCorrection(null)
+    toggleLock(index)
+  }, [toggleLock])
+  const onReroll = useCallback((index: number) => {
+    const done = reroll(index)
+    if (done) setCorrection(null)
+    return done
+  }, [reroll])
   // Generate is another operation: a correction's notice goes.
   const { generate } = engine
   const onGenerate = useCallback(() => {
@@ -671,18 +690,21 @@ function BriefWorkspace({
   const [pickingFixed, setPickingFixed] = useState(false)
   const fixedId = axis && candidates?.[0]?.axisRole === "base" ? String(candidates[0].postId) : null
   if (pickingFixed && !fixedId) setPickingFixed(false)
+  // With locked rows the scene that repeats is the pack's: choosing another waits until they're unlocked.
+  const fixedLocked = !!axis && !!result && result.locked.length > 0
   const fixed = useMemo(() => (fixedId
     ? {
         id: fixedId,
-        picking: pickingFixed,
-        onStartPick: () => setPickingFixed(true),
+        picking: pickingFixed && !fixedLocked,
+        blockedReason: fixedLocked ? SHEET_TEXT.fixedLocked : undefined,
+        onStartPick: () => { if (!fixedLocked) setPickingFixed(true) },
         onCancelPick: () => setPickingFixed(false),
         onPick: (id: string) => {
           setPickingFixed(false)
           setBaseScene(Number(id))
         },
       }
-    : undefined), [fixedId, pickingFixed, setBaseScene])
+    : undefined), [fixedId, pickingFixed, fixedLocked, setBaseScene])
 
 
   // ── What the start brought ──────────────────────────────────────────────────────
@@ -851,7 +873,8 @@ function BriefWorkspace({
       <div className="space-y-1">
         {fitStates.map((state, i) => (
           <FitLine
-            key={state.kind}
+            // Several notes of one kind (one per tag) need their own key.
+            key={`${state.kind}:${"tag" in state ? state.tag : i}`}
             announce={false}
             state={state}
             hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
@@ -892,12 +915,13 @@ function BriefWorkspace({
           locked={result.locked}
           missing={result.shortBy}
           copyNote={copyNoteText({ missing: result.shortBy, stale })}
-          onToggleLock={engine.toggleLock}
+          onToggleLock={onToggleLock}
           busy={engine.busy || engine.sourceChanged}
+          busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : BUILDER_TEXT.busyRunning}
           naturalSourceOf={engine.naturalSourceOf}
           overrides={overrides}
           onCopy={onCopy}
-          onReroll={engine.reroll}
+          onReroll={onReroll}
           onAlways={onAlways}
           onNever={onNever}
         />
@@ -945,6 +969,7 @@ function Results({
   containerRef,
   prompts,
   busy,
+  busyReason,
   locked,
   missing,
   copyNote,
@@ -961,6 +986,8 @@ function Results({
   prompts: PackPrompt[]
   /** A run is going on, or the pack is from another source: re-roll and the tag menu wait. */
   busy: boolean
+  /** Said on those controls while they wait. */
+  busyReason: string
   locked: readonly number[]
   /** Prompts asked for and not made. */
   missing: number
@@ -1036,6 +1063,7 @@ function Results({
             shownRef={shownRef}
             locked={lockedSet.has(i)}
             busy={busy}
+            busyReason={busyReason}
             onToggleLock={onToggleLock}
             onCopy={copyOne}
             onReroll={reroll}
@@ -1059,6 +1087,7 @@ const BriefResultRow = memo(function BriefResultRow({
   shownRef,
   locked,
   busy,
+  busyReason,
   onToggleLock,
   onCopy,
   onReroll,
@@ -1067,6 +1096,7 @@ const BriefResultRow = memo(function BriefResultRow({
 }: {
   locked: boolean
   busy: boolean
+  busyReason: string
   onToggleLock: (index: number) => void
   index: number
   prompt: PackPrompt
@@ -1099,6 +1129,7 @@ const BriefResultRow = memo(function BriefResultRow({
       pending={format !== "tags" && natural.status === "loading"}
       locked={locked}
       busy={busy}
+      busyReason={busyReason}
       announce={false}
       onToggleLock={onToggleLock}
       onCopy={onCopy}

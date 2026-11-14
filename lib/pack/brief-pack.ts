@@ -698,6 +698,83 @@ export function changedRows(before: readonly { prompt: string }[], after: readon
   return changed
 }
 
+/**
+ * Where a Generate puts its rows: it replaces the pack, so only locked rows stay. The pack
+ * has `count` rows (or as many as there are locked rows); a locked row keeps its place, and
+ * one past the new end takes the last free place, in order. `at` maps a new row to the old
+ * row it keeps; `slots` are the rows the engine fills, in order.
+ */
+export function generateLayout(locked: Iterable<number>, count: number): { length: number; at: Map<number, number>; slots: number[] } {
+  const sorted = Array.from(new Set(locked)).sort((a, b) => a - b)
+  const length = Math.max(count, sorted.length)
+  const at = new Map<number, number>()
+  const overflow: number[] = []
+  for (const i of sorted) {
+    if (i < length) at.set(i, i)
+    else overflow.push(i)
+  }
+  let pos = length - 1
+  for (const i of overflow.reverse()) {
+    while (at.has(pos)) pos--
+    at.set(pos, i)
+  }
+  return { length, at, slots: Array.from({ length }, (_, i) => i).filter((i) => !at.has(i)) }
+}
+
+/**
+ * The rows of a Generate: the locked rows where `generateLayout` put them, and the fresh
+ * prompts in the free slots (fewer prompts: the free rows left over go). A row locked while
+ * the run was going keeps its prompt. Nothing else of the old pack survives.
+ */
+export function placeGenerated<T>(
+  previous: readonly T[],
+  layout: { length: number; at: ReadonlyMap<number, number>; slots: readonly number[] },
+  fresh: readonly T[],
+  lockedNow: ReadonlySet<number> = new Set()
+): { rows: T[]; locked: number[]; slots: number[] } {
+  const slotAt = new Map(layout.slots.map((row, k) => [row, k]))
+  const rows: T[] = []
+  const locked: number[] = []
+  const slotOf: number[] = []
+  for (let i = 0; i < layout.length; i++) {
+    const old = layout.at.get(i)
+    if (old !== undefined) {
+      if (old < previous.length) {
+        locked.push(rows.length)
+        rows.push(previous[old])
+      }
+      continue
+    }
+    const k = slotAt.get(i)!
+    if (lockedNow.has(i) && i < previous.length) {
+      // Locked while the run was going: it keeps its prompt.
+      locked.push(rows.length)
+      slotOf[k] = rows.length
+      rows.push(previous[i])
+    } else if (k < fresh.length) {
+      slotOf[k] = rows.length
+      rows.push(fresh[k])
+    }
+  }
+  return { rows, locked, slots: slotOf.slice(0, fresh.length).filter((x) => x !== undefined) }
+}
+
+/**
+ * The posts the next Generate prefers: the source's own ones (the character's posts) the
+ * last pack didn't use, while there are enough for the prompts asked; otherwise the source's
+ * own ones as they are, so "another set" never changes what the source puts first. A source
+ * without posts of its own prefers the scenes the last pack didn't use.
+ */
+export function preferredForAgain(own: readonly number[], used: ReadonlySet<number>, poolScenes: readonly number[], needed: number): number[] {
+  if (used.size === 0) return [...own]
+  if (own.length === 0) {
+    const unused = poolScenes.filter((id) => !used.has(id))
+    return unused.length > 0 ? unused : []
+  }
+  const unusedOwn = own.filter((id) => !used.has(id))
+  return unusedOwn.length >= needed ? unusedOwn : [...own]
+}
+
 /** Rows a remake leaves as they are: locked now, or not remade by any slot. */
 export function keptRows(length: number, locked: ReadonlySet<number>, slots: readonly number[]): { locked: number[]; older: number[] } {
   const remade = new Set(slots)

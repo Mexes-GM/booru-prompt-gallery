@@ -18,6 +18,7 @@ import {
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
   keptRows, opAfterEnd, correctionAfterBriefChange, lookOwner, briefFromCardPost,
+  generateLayout, placeGenerated, preferredForAgain,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
@@ -623,6 +624,60 @@ check("after generating a one-part pack, the line counts variants", () => {
   assert.deepEqual(issuesFit({ issues: [], count: 10, made: 4, cast, scenes: 4, canOfferSensitive: false, axis: "pose" }), [
     { kind: "few-variations", axis: "pose", variations: 4, made: 4, asked: 10 },
   ])
+})
+
+// ── Second review round (R1, R2) ────────────────────────────────────────────────
+
+const ten = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+
+check("R1: Generate 10 → 5 replaces the pack; no unlocked row of the old one survives", () => {
+  const layout = generateLayout([], 5)
+  assert.deepEqual(layout.slots, [0, 1, 2, 3, 4])
+  const out = placeGenerated(ten, layout, ["A", "B", "C", "D", "E"])
+  assert.deepEqual(out.rows, ["A", "B", "C", "D", "E"])
+  assert.deepEqual(out.locked, [])
+  assert.deepEqual(out.slots, [0, 1, 2, 3, 4])
+})
+
+check("R1: 10 → 5 with locked rows: they keep their place, the rest is new", () => {
+  const layout = generateLayout([1, 3], 5)
+  assert.deepEqual(layout.slots, [0, 2, 4])
+  const out = placeGenerated(ten, layout, ["A", "C", "E"])
+  assert.deepEqual(out.rows, ["A", "b", "C", "d", "E"])
+  assert.deepEqual(out.locked, [1, 3])
+  // Fewer prompts than free rows: those rows go.
+  assert.deepEqual(placeGenerated(ten, layout, ["A"]).rows, ["A", "b", "d"])
+})
+
+check("R1: 10 → 5 with a row locked at position 8: it takes the last place", () => {
+  const layout = generateLayout([8], 5)
+  assert.deepEqual(layout.slots, [0, 1, 2, 3])
+  assert.equal(layout.at.get(4), 8)
+  const out = placeGenerated(ten, layout, ["A", "B", "C", "D"])
+  assert.deepEqual(out.rows, ["A", "B", "C", "D", "i"])
+  assert.deepEqual(out.locked, [4])
+  // More locked rows than asked: the pack holds them all.
+  assert.deepEqual(generateLayout([0, 8, 9], 2).length, 3)
+})
+
+check("R1: a row locked while Generate ran keeps its prompt", () => {
+  const out = placeGenerated(ten, generateLayout([], 3), ["A", "B", "C"], new Set([1]))
+  assert.deepEqual(out.rows, ["A", "b", "C"])
+  assert.deepEqual(out.locked, [1])
+  assert.deepEqual(out.slots, [0, 1, 2])
+})
+
+check("R2: Generate again keeps the source's own posts first", () => {
+  const own = [1, 2, 3, 4, 5, 6]
+  const pool = [1, 2, 3, 4, 5, 6, 10, 11, 12]
+  // Nothing made yet: the source's own posts as they are.
+  assert.deepEqual(preferredForAgain(own, new Set(), pool, 3), own)
+  // Enough own posts left for the prompts asked: those.
+  assert.deepEqual(preferredForAgain(own, new Set([1, 2, 3]), pool, 3), [4, 5, 6])
+  // Not enough: the own posts as they are (never the others ahead of them).
+  assert.deepEqual(preferredForAgain(own, new Set([1, 2, 3, 4]), pool, 3), own)
+  // A source with no posts of its own: the scenes the last pack didn't use.
+  assert.deepEqual(preferredForAgain([], new Set([10, 11]), [10, 11, 12], 2), [12])
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

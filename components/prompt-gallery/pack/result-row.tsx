@@ -42,6 +42,8 @@ export interface ResultRowProps {
   onReroll: (index: number) => void
   /** False when the list has one live region for every row (copy results are said there). */
   announce?: boolean
+  /** Why they wait, said on the controls. */
+  busyReason?: string
   /** Re-roll and the tag menu wait (a run is going on, or the pack needs Generate first). */
   busy?: boolean
   /** Without it the row has no lock. */
@@ -68,12 +70,14 @@ function TokenMenu({
   tag,
   index,
   busy = false,
+  busyReason,
   onClose,
   onReturnFocus,
   onAlways,
   onNever,
 }: {
   busy?: boolean
+  busyReason?: string
   tag: string
   index: number
   onClose: () => void
@@ -97,6 +101,7 @@ function TokenMenu({
         }}
       >
         <DropdownMenuLabel className="truncate font-mono text-xs font-medium text-muted-foreground">{tag}</DropdownMenuLabel>
+        {busy && busyReason && <p className="px-2 pb-1 text-xs text-muted-foreground">{busyReason}</p>}
         <DropdownMenuItem disabled={busy} className="pointer-coarse:min-h-11" onSelect={() => onAlways(tag)}>Always in every prompt</DropdownMenuItem>
         <DropdownMenuItem disabled={busy} className="pointer-coarse:min-h-11" onSelect={() => onNever(tag)}>Never in this pack</DropdownMenuItem>
       </DropdownMenuContent>
@@ -112,6 +117,7 @@ export const ResultRow = memo(function ResultRow({
   thumbSrc,
   locked = false,
   busy = false,
+  busyReason,
   announce = true,
   pending = false,
   onCopy,
@@ -122,6 +128,12 @@ export const ResultRow = memo(function ResultRow({
 }: ResultRowProps) {
   const [copy, reportCopy] = useCopyResult()
   const [menuAt, setMenuAt] = useState<number | null>(null)
+  // A menu open on a tag closes when the prompt changes under it, never moving to another tag.
+  const [menuTokens, setMenuTokens] = useState(tokens)
+  if (menuTokens !== tokens) {
+    setMenuTokens(tokens)
+    if (menuAt !== null) setMenuAt(null)
+  }
   const [stop, setStop] = useState(0)
   const tagsRef = useRef<HTMLDivElement>(null)
   const n = index + 1
@@ -220,6 +232,7 @@ export const ResultRow = memo(function ResultRow({
                   {menuAt === i ? (
                     <TokenMenu
                       busy={busy}
+                      busyReason={busyReason}
                       tag={tag}
                       index={i}
                       onClose={() => setMenuAt(null)}
@@ -277,7 +290,7 @@ export const ResultRow = memo(function ResultRow({
             onClick={() => onReroll(index)}
             disabled={locked || pending || busy}
             aria-label={`Re-roll prompt ${n}`}
-            title={locked ? "Unlock to re-roll" : "Re-roll this prompt"}
+            title={locked ? "Unlock to re-roll" : busy && busyReason ? busyReason : "Re-roll this prompt"}
             className={ACTION}
           >
             <Dices className="size-4" aria-hidden />
