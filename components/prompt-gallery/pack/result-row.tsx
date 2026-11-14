@@ -58,10 +58,10 @@ const ACTION =
   "hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
   "disabled:pointer-events-none disabled:opacity-40"
 
-// In-line targets: on coarse pointers the padding gives each tag a 28px box and the
-// line height (36px) keeps the boxes of two lines apart.
+// A prompt is text: its tags are targets inside a line of reading, not 44 px buttons
+// (the menu they open has 44 px items on touch screens).
 const TOKEN =
-  "rounded-[4px] px-0.5 text-left pointer-coarse:px-1 pointer-coarse:py-1.5 " +
+  "rounded-[3px] text-left " +
   "transition-[color,background-color] duration-150 ease-out-strong " +
   "hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
   "data-[state=open]:bg-muted data-[state=open]:text-foreground"
@@ -180,7 +180,8 @@ export const ResultRow = memo(function ResultRow({
     <div className="@container">
       <div
         className={cn(
-          "group grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-start gap-2.5 rounded-lg border p-2",
+          // Narrow: picture and text, then the row's actions in one line under the text.
+          "group grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1 rounded-lg border p-2 @md:grid-cols-[2.5rem_minmax(0,1fr)_auto]",
           "transition-[border-color,background-color] duration-150 ease-out-strong",
           locked ? "border-foreground/25 bg-muted/40" : "border-border/60 hover:border-border",
         )}
@@ -222,13 +223,13 @@ export const ResultRow = memo(function ResultRow({
               aria-label={`Prompt ${n} tags`}
               onKeyDown={onTagsKeyDown}
               className={cn(
-                "font-mono text-[13px] leading-relaxed [overflow-wrap:anywhere] pointer-coarse:leading-9",
+                "font-mono text-[13px] leading-relaxed [overflow-wrap:anywhere]",
                 pending ? "text-muted-foreground" : "text-foreground",
               )}
             >
               {tokens.map((tag, i) => (
-                // Tags can repeat inside one prompt, so the position is part of the key.
-                <span key={`${i}-${tag}`}>
+                // By position: when a correction changes the prompt, the tag in focus keeps its place.
+                <span key={i}>
                   {menuAt === i ? (
                     <TokenMenu
                       busy={busy}
@@ -266,7 +267,7 @@ export const ResultRow = memo(function ResultRow({
           )}
         </div>
 
-        <div className="flex flex-col gap-0.5 @md:flex-row pointer-coarse:flex-col">
+        <div className="col-start-2 -mr-1 flex flex-row justify-end gap-0.5 @md:col-start-3 @md:row-start-1 @md:mr-0">
           <button
             type="button"
             onClick={copyPrompt}

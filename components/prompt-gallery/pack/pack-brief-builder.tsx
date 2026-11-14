@@ -256,7 +256,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
             </Button>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 pt-2">
+        <div data-pack-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-2">
           <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
         </div>
       </section>
@@ -283,7 +283,7 @@ const RatingMenu = memo(function RatingMenu({ value, onChange }: { value: PackRa
         <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">{BUILDER_TEXT.ratingMenu}</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={value} onValueChange={(v) => onChange(v as PackRatingMode)}>
           {RATING_OPTIONS.map((o) => (
-            <DropdownMenuRadioItem key={o.value} value={o.value}>
+            <DropdownMenuRadioItem key={o.value} value={o.value} className="pointer-coarse:min-h-11">
               {o.label}
             </DropdownMenuRadioItem>
           ))}
@@ -515,7 +515,11 @@ function BriefWorkspace({
   const resultsRef = useRef<HTMLDivElement>(null)
   const wasGeneratingRef = useRef(false)
   useEffect(() => {
-    if (wasGeneratingRef.current && !isGenerating) resultsRef.current?.focus()
+    if (wasGeneratingRef.current && !isGenerating) {
+      // The brief is folded by now: the top of the panel is the summary, the fit line and the results.
+      resultsRef.current?.closest("[data-pack-scroll]")?.scrollTo({ top: 0 })
+      resultsRef.current?.focus({ preventScroll: true })
+    }
     wasGeneratingRef.current = isGenerating
   }, [isGenerating])
 
@@ -928,7 +932,7 @@ function BriefWorkspace({
       )}
 
       {/* Generate stays at the bottom edge of the panel, above the home indicator, whatever is scrolled. */}
-      <div className="sticky bottom-0 z-10 -mx-3 -mb-3 border-t border-border/60 bg-background px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="sticky bottom-0 z-10 -mx-3 border-t border-border/60 bg-background px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <GenerateBar
           count={count}
           onCountChange={pack.setPromptCount}

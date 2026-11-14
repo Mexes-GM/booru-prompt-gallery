@@ -48,7 +48,7 @@ export const ChangesSelect = memo(function ChangesSelect({ value, onChange, unav
           <DropdownMenuContent align="start" className="w-56">
             <DropdownMenuRadioGroup value={value} onValueChange={(v) => onChange(v as ChangesAxis)}>
               {CHANGES_OPTIONS.map((o) => (
-                <DropdownMenuRadioItem key={o.value} value={o.value} disabled={unavailable.includes(o.value)}>
+                <DropdownMenuRadioItem key={o.value} value={o.value} disabled={unavailable.includes(o.value)} className="pointer-coarse:min-h-11">
                   {o.label}
                 </DropdownMenuRadioItem>
               ))}
