@@ -46,6 +46,19 @@ export const BUILDER_TEXT = {
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
 } as const
 
+/** The contact sheet of a one-part pack: one scene repeats, the others lend it a part. */
+export const SHEET_TEXT = {
+  fixedBadge: "Repeats",
+  changeFixed: "Select to choose another scene to repeat.",
+  keepFixed: "Select to keep this one.",
+  pickThis: "Repeat this scene in every prompt",
+  picking: "Select the scene to repeat in every prompt.",
+  helpFixed:
+    "Use the arrow keys to move between scenes. The first scene repeats in every prompt; select it to choose another. Space on any other scene leaves its part out or puts it back.",
+  hint: (axis: string) => `The first scene repeats; the others lend their ${axis}. Select one to leave it out`,
+  outfitChanges: "Each prompt takes its outfit from another scene",
+} as const
+
 /** What a correction from the results did, for the notice with Undo. */
 export const CORRECTION_TEXT = {
   never: (tag: string, changed: number) =>
@@ -187,6 +200,12 @@ function fitSentence(state: FitState): string {
       const instead = state.using ? ` Using “${companionsLabel(state.using, state.cast)}” instead.` : ""
       return `No scenes for “${asked}”.${instead}`
     }
+    case "axis-fit":
+      return `${plural(state.variations, state.axis)} ${state.variations === 1 ? "fits" : "fit"} this scene`
+    case "finding-variants":
+      return `Finding ${state.axis}s that fit this scene…`
+    case "people-short-of-cast":
+      return "The People option chosen has no room for all your characters. Choose another one."
     case "kept-on-axis": {
       const tags = state.tags.join(", ")
       return `${tags} ${state.tags.length === 1 ? "stays" : "stay"} in every prompt. The rest of the ${state.axis} changes.`
@@ -205,6 +224,6 @@ function fitSentence(state: FitState): string {
 /** The visible sentence and the shorter one a screen reader hears. */
 export function fitText(state: FitState): { text: string; spoken: string } {
   const text = fitSentence(state)
-  return { text, spoken: state.kind === "finding" ? "Finding scenes" : text }
+  return { text, spoken: state.kind === "finding" ? "Finding scenes" : state.kind === "finding-variants" ? "Finding variants" : text }
 }
 

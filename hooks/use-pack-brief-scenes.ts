@@ -18,6 +18,7 @@ import { toSceneRequests } from "@/lib/pack/brief"
 import {
   briefIdentity,
   briefPackArgs,
+  oneAxis,
   placeRows,
   peopleLineState,
   resolveLook,
@@ -112,6 +113,8 @@ export interface PackMade {
   lockedScenes: readonly number[]
   /** The row each prompt of the engine went to. */
   slots: readonly number[]
+  /** One-part pack: the scene that repeats (part of how it was made, for Undo and corrections). */
+  baseScene?: number
   /** Rows re-rolled since, in order, each with its seed. */
   rerolls: ReadonlyArray<{ index: number; seed: number }>
 }
@@ -329,9 +332,12 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
 
   // ── Identity ─────────────────────────────────────────────────────────────────
   // Everything but the left-out scenes: leaving a scene out must not rebuild the pool or the sheet.
-  const coreKey = JSON.stringify([brief.who, brief.requests, brief.never, brief.literal, brief.people, brief.changes])
+  // A one-part pack keeps the whole-scene choices (they rule out scenes) and shows its
+  // variants left out on the sheet; the scene that repeats is part of it.
+  const axis = oneAxis(brief)
+  const coreKey = JSON.stringify([brief.who, brief.requests, brief.never, brief.literal, brief.people, brief.changes, brief.baseScene, axis ? brief.leftOut : null])
   const coreBrief = useMemo<PackBrief>(
-    () => ({ ...brief, leftOut: [] }),
+    () => ({ ...brief, leftOut: axis ? brief.leftOut : [], leftOutVariants: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [coreKey]
   )
@@ -480,7 +486,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     [characterTags, cleanOptions, overrides, globalWeights, isGlobalWeightsEnabled]
   )
   const argsFor = useCallback(
-    (forBrief: PackBrief, seed: number, count: number): ScenePackArgs => {
+    (forBrief: PackBrief, seed: number, count: number, baseScene?: number): ScenePackArgs => {
       const library: LibraryOutfit[] | undefined = useLibrary && outfitLibrary.length > 0
         ? outfitPackDraw(outfitLibrary, libraryStyles, outfitOptions.detail, seed, LIBRARY_DRAW_SIZE)
             .map(({ outfit: o, tags }) => ({ outfitId: o.id, tags: tags.map(normalizeTagForPack) }))
@@ -498,13 +504,14 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         library,
         clean,
         resolution: (aspect) => resolutionForAspect(aspect, prefs),
+        baseScene,
       })
     },
     [useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, identity, overrides, permanence, people, preferredPosts, outfit, characterOutfits, clean]
   )
 
   // ── The scenes that fit (deferred: up to a second and a half of work) ─────────
-  const [candidateState, setCandidateState] = useState<{ pool: ScenePool; args: unknown; list: SceneCandidate[] } | null>(null)
+  const [candidateState, setCandidateState] = useState<{ pool: ScenePool; args: unknown; axis: string | null; list: SceneCandidate[] } | null>(null)
   const candidateArgs = useMemo(
     () => (pool && missingRoles.length === 0 ? argsFor(coreBrief, 1, 1) : null),
     [pool, missingRoles, argsFor, coreBrief]
@@ -516,7 +523,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       if (!active) return
       try {
         const list = sceneCandidates(pool, candidateArgs)
-        if (active) setCandidateState({ pool, args: candidateArgs, list })
+        if (active) setCandidateState({ pool, args: candidateArgs, axis: candidateArgs.changes ?? null, list })
       } catch (err) {
         console.error("Working out the pack's scenes failed:", err)
       }
@@ -549,7 +556,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
 
   /** The engine's arguments for a run of `made`. */
   const runArgs = useCallback((forBrief: PackBrief, made: PackMade): ScenePackArgs => {
-    const base = argsFor(forBrief, made.seed, made.genCount)
+    const base = argsFor(forBrief, made.seed, made.genCount, made.baseScene)
     return {
       ...base,
       preferredPosts: made.preferredPosts,
@@ -563,7 +570,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     const kept: Array<{ index: number; seed: number }> = []
     for (const r of made.rerolls) {
       if (r.index >= out.length || locked.has(r.index)) continue
-      const replacement = rerollScenePrompt(made.pool, out, r.index, argsFor(forBrief, r.seed, made.genCount))
+      const replacement = rerollScenePrompt(made.pool, out, r.index, argsFor(forBrief, r.seed, made.genCount, made.baseScene))
       if (!replacement) continue
       out = out.map((p, i) => (i === r.index ? replacement : p))
       kept.push(r)
@@ -587,7 +594,14 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     const locked = new Set((result?.locked ?? []).filter((i) => i < previous.length))
     const length = Math.max(promptCount, ...Array.from(locked, (i) => i + 1))
     const slots = Array.from({ length }, (_, i) => i).filter((i) => !locked.has(i))
-    const lockedScenes = Array.from(locked).flatMap((i) => (previous[i]?.scene ? [previous[i].scene!.postId] : []))
+    // A one-part pack repeats one scene: what a locked row holds is its donor, not that scene.
+    const lockedScenes = Array.from(locked).flatMap((i) => {
+      const scene = previous[i]?.scene
+      if (!scene) return []
+      if (!axis) return [scene.postId]
+      const donor = scene.donors?.find((id) => id !== scene.postId)
+      return donor !== undefined ? [donor] : []
+    })
     const made: PackMade = {
       pool,
       seed: Math.floor(Math.random() * 1e9),
@@ -610,7 +624,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
           locked: placed.locked,
           shortBy: Math.max(0, promptCount - placed.rows.length),
           issues: withKept(out.issues, placed.rows.length - out.prompts.length),
-          made: { ...made, slots: placed.slots },
+          // The scene that repeats, so a correction keeps it even if the pool grows.
+          made: { ...made, slots: placed.slots, baseScene: axis ? out.prompts[0]?.scene?.postId : undefined },
           ...startedWith,
         })
       })
@@ -618,7 +633,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         console.error("Scene pack generation failed:", err)
         if (requestRef.current === id) setIsGenerating(false)
       })
-  }, [pool, missingRoles, result, promptCount, preferredPosts, brief, outfit, runArgs, control])
+  }, [pool, missingRoles, result, promptCount, preferredPosts, brief, outfit, runArgs, control, axis])
 
   /**
    * Remakes the pack for the brief as it is now: same seed, same pool (unless the brief
@@ -677,7 +692,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const reroll = useCallback((index: number): boolean => {
     if (!result || index < 0 || index >= result.prompts.length || result.locked.includes(index)) return false
     const seed = Math.floor(Math.random() * 1e9)
-    const replacement = rerollScenePrompt(result.made.pool, result.prompts, index, argsFor(brief, seed, result.made.genCount))
+    const replacement = rerollScenePrompt(result.made.pool, result.prompts, index, argsFor(brief, seed, result.made.genCount, result.made.baseScene))
     if (!replacement) return false
     setResult((prev) => (prev ? {
       ...prev,
@@ -716,7 +731,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     people,
     available,
     peopleLine,
-    candidates: candidateState?.list ?? null,
+    // Another part (or none) than the one asked for is another list: not shown as this one.
+    candidates: candidateState && candidateState.axis === (axis ?? null) ? candidateState.list : null,
     candidatesPending,
     result,
     isGenerating,
@@ -727,7 +743,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     reroll,
     naturalSourceOf,
   }), [
-    plan, looks, identity, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState,
+    plan, looks, identity, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState, axis,
     candidatesPending, result, isGenerating, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
   ])
 }

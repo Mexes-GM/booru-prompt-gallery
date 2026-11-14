@@ -52,6 +52,13 @@ export interface PackBriefPanelProps {
   outfitSource: OutfitSource
   onOutfitSourceChange: (source: OutfitSource) => void
   officialOutfits?: readonly string[]
+  /**
+   * Said instead of the outfit menu when the pack takes no notice of it ("Only the outfit"
+   * takes every outfit from the scenes).
+   */
+  outfitNote?: string
+  /** With several characters: the role the pack assumes for each one, when the brief doesn't set it. */
+  assumedRoles?: Readonly<Record<string, CastRole | null | undefined>>
 
   offers?: readonly BriefOffer[]
   /** A note per tag that clashes with something else on the card. */
@@ -108,6 +115,8 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     outfitSource,
     onOutfitSourceChange,
     officialOutfits,
+    outfitNote,
+    assumedRoles,
     offers = [],
     conflicts = {},
     onOpenScenePicker,
@@ -227,7 +236,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
         />
         {requestRow("wearing", {
           actions:
-            wearing.length === 0 ? (
+            wearing.length === 0 && !outfitNote ? (
               <WearingSourceMenu
                 value={outfitSource}
                 onChange={onOutfitSourceChange}
@@ -235,7 +244,9 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
                 noCharacter={!hasNamed}
               />
             ) : undefined,
-          notes: wearing.length > 0 && hasNamed ? <SlotNote>Replaces the usual outfit</SlotNote> : undefined,
+          notes: outfitNote && wearing.length === 0
+            ? <SlotNote>{outfitNote}</SlotNote>
+            : wearing.length > 0 && hasNamed ? <SlotNote>Replaces the usual outfit</SlotNote> : undefined,
         })}
         {requestRow("doing")}
         {requestRow("where", {

@@ -8,13 +8,14 @@
 import assert from "node:assert/strict"
 import { addLook, addNever, addTag, leaveOutScene, removeLook, setCharacterRole } from "../lib/pack/brief"
 import { briefFromPrompt, toSceneRequests } from "../lib/pack/brief"
+import { chooseChanges, leaveOutVariant, restoreVariant, setBaseScene } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
   preferredPostIds, resolveLook, slotSuggestions, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
 } from "../lib/pack/brief-pack"
 import {
-  placeRows, changedRows, lockedWithTag, usableSearchTags,
+  placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
@@ -446,6 +447,65 @@ check("usableSearchTags: filters out, exclusions in", () => {
   assert.deepEqual(usableSearchTags("beach, -smile, rating:general, order:score"), ["beach", "-smile"])
   assert.deepEqual(usableSearchTags("rating:general"), [])
   assert.deepEqual(usableSearchTags(""), [])
+})
+
+// ── Changes: one part changes (INT-5) ──────────────────────────────────────────
+
+check("chooseChanges / setBaseScene / variants: a one-part pack keeps its choices apart", () => {
+  let b = leaveOutScene(briefFromCharacters(["tifa lockhart"]), "101")
+  b = chooseChanges(b, "outfit")
+  b = leaveOutVariant(b, "202")
+  b = setBaseScene(b, 303)
+  assert.equal(b.changes, "outfit")
+  assert.equal(b.baseScene, 303)
+  assert.deepEqual(b.leftOutVariants, ["202"])
+  assert.deepEqual(leftOutPosts(b), [101, 202])
+  // The scene that repeats can't be left out.
+  assert.deepEqual(setBaseScene(b, 202).leftOutVariants, [])
+  assert.deepEqual(restoreVariant(b, "202").leftOutVariants, [])
+  // Another part starts over; back on Whole scene the scenes left out before are as they were.
+  const pose = chooseChanges(b, "pose")
+  assert.equal(pose.baseScene, undefined)
+  assert.equal(pose.leftOutVariants, undefined)
+  const whole = chooseChanges(b, "scene")
+  assert.deepEqual(whole.leftOut, ["101"])
+  assert.deepEqual(leftOutPosts(whole), [101])
+})
+
+check("briefPackArgs: changes and the scene that repeats; Only the outfit ignores the outfit menu", () => {
+  let b = chooseChanges(briefFromCharacters(["tifa lockhart"]), "outfit")
+  const env = {
+    overrides: OVERRIDES, permanence, count: 10, seed: 1, people: null, outfit: { kind: "usual" as const },
+    characterOutfits: new Map([["tifa lockhart", ["white tank top"]]]), clean: (t: string[]) => t.join(", "), baseScene: 77,
+  }
+  let args = briefPackArgs(b, identityOf(b), env)
+  assert.equal(args.changes, "outfit")
+  assert.equal(args.baseScene, 77)
+  assert.equal(args.settings.clothing, "scene")
+  assert.ok(!args.identity.includes("white tank top"))
+  b = setBaseScene(b, 88)
+  args = briefPackArgs(b, identityOf(b), env)
+  assert.equal(args.baseScene, 88)
+  const whole = chooseChanges(b, "scene")
+  args = briefPackArgs(whole, identityOf(whole), env)
+  assert.equal(args.changes, undefined)
+  assert.equal(args.baseScene, undefined)
+  assert.equal(args.settings.clothing, "character")
+})
+
+check("predictFit for a one-part pack: variants that fit, short, kept, finding", () => {
+  const axis = { axis: "outfit" as const, requested: [] as string[] }
+  assert.deepEqual(predictFit({ ...base, candidates: null, poses: [], axis }), [{ kind: "finding-variants", axis: "outfit" }])
+  assert.deepEqual(predictFit({ ...base, candidates: scenes(14), poses: [], axis }), [{ kind: "axis-fit", axis: "outfit", variations: 14 }])
+  assert.deepEqual(predictFit({ ...base, candidates: scenes(6), poses: [], axis: { axis: "outfit", requested: ["bikini"] } }), [
+    { kind: "few-variations", axis: "outfit", variations: 6, made: 6, asked: 10 },
+    { kind: "kept-on-axis", axis: "outfit", tags: ["bikini"] },
+  ])
+  const b = addTag(chooseChanges(briefFromCharacters(["tifa lockhart"]), "place"), "beach", OVERRIDES)
+  assert.deepEqual(axisRequests(b, "place"), ["beach"])
+  assert.equal(oneAxis(b), "place")
+  assert.equal(fitText({ kind: "axis-fit", axis: "outfit", variations: 14 }).text, "14 outfits fit this scene")
+  assert.equal(fitText({ kind: "finding-variants", axis: "pose" }).text, "Finding poses that fit this scene…")
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

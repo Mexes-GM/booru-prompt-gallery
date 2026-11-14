@@ -36,8 +36,10 @@ import { addNever, addTag, briefFromPrompt, routeTag, type RequestRole } from "@
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { splitTags } from "@/lib/utils/tag-utils"
 import {
+  axisRequests,
   briefFromSearch,
   changedRows,
+  oneAxis,
   issuesFit,
   lockedWithTag,
   peopleFromCountTags,
@@ -65,7 +67,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CORRECTION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CORRECTION_TEXT, SHEET_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -262,6 +264,7 @@ function BriefSource({
 
 const FORMATS: Choice<PromptFormat>[] = PROMPT_FORMATS.map((f) => ({ value: f, label: PROMPT_FORMAT_INFO[f].label }))
 const NO_POSTS: never[] = []
+const NO_IDS: string[] = []
 const UNDO_MS = 6000
 
 /** A tag of a prompt as the brief spells it: no weight, no brackets. */
@@ -337,7 +340,11 @@ function BriefWorkspace({
   const limited = limitedKey === plan.sceneKey
 
   // ── What fits ───────────────────────────────────────────────────────────────────
-  const leftOut = useMemo(() => new Set(brief.leftOut), [brief.leftOut])
+  // One-part packs ("Only the outfit"…) leave out variants, a list of their own: back on
+  // "Whole scene" the scenes left out before are as they were.
+  const axis = oneAxis(brief)
+  const leftOutList = axis ? brief.leftOutVariants ?? NO_IDS : brief.leftOut
+  const leftOut = useMemo(() => new Set(leftOutList), [leftOutList])
   // The source ran out without a single post: there is nothing to wait for.
   const noPosts = !!source && source.noMoreResults && !source.isLoadingMore && posts.length === 0
   const usable = useMemo(
@@ -345,7 +352,7 @@ function BriefWorkspace({
     [candidates, leftOut, noPosts]
   )
   const poses = pack.requests.select
-  const have = usable ? (poses.length > 0 ? usable.filter((c) => c.hasPose).length : usable.length) : 0
+  const have = usable ? (poses.length > 0 && !axis ? usable.filter((c) => c.hasPose).length : usable.length) : 0
   const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && !source.scrollLimited && !limited
   const needMore = !!usable && !candidatesPending && have < count
   // Short of scenes: fetch more pages, one at a time, until there are enough, the source
@@ -384,6 +391,7 @@ function BriefWorkspace({
     setManual({ before: usableCount, seen: false, nothingNew: false })
     source.loadMore()
   }, [source, usableCount])
+  const axisNote = useMemo(() => (axis ? { axis, requested: axisRequests(brief, axis) } : null), [axis, brief])
   const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
   // A correction from the results remakes the prompts itself: no "generate again" for it.
@@ -398,7 +406,7 @@ function BriefWorkspace({
       nothingNew: manual?.nothingNew ? { exhausted: !!source?.noMoreResults } : null,
     }
     if (loadError) return []
-    if (!result) return withSearchProgress([...lead, ...predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused })], progress)
+    if (!result) return withSearchProgress([...lead, ...predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused, axis: axisNote })], progress)
     const after = issuesFit({
       issues: result.issues,
       count: result.count,
@@ -409,7 +417,7 @@ function BriefWorkspace({
       paused,
     })
     return withSearchProgress(stale ? [{ kind: "stale" }, ...lead, ...after] : [...lead, ...after], progress)
-  }, [result, usable, count, poses, finding, canOfferSensitive, paused, peopleNote, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
+  }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
   const { setIncludeSensitive } = pack
   const includeSensitive = useCallback(() => setIncludeSensitive(true), [setIncludeSensitive])
   const fitStates = useMemo<FitState[]>(
@@ -443,6 +451,7 @@ function BriefWorkspace({
   const [routed, setRouted] = useState<{ slot: SlotId | "people"; key: number } | null>(null)
   const suggestions = useTagSuggestions()
   const { add, never, remove, unnever, removeCharacter, setRole, removeLook, restoreLook, leaveOutScene, restoreScene, setPeople, undo } = pack
+  const { leaveOutVariant, restoreVariant, setBaseScene } = pack
   const cast = identity.cast
   const onAddTags = useCallback((tags: string[], slot: SlotId) => {
     let elsewhere: SlotId | "people" | null = null
@@ -531,9 +540,28 @@ function BriefWorkspace({
   }, [correction])
   const onRemoveCharacter = useCallback((tag: string | null) => { if (tag) removeCharacter(tag) }, [removeCharacter])
   const onToggleScene = useCallback(
-    (id: string) => (leftOut.has(id) ? restoreScene(id) : leaveOutScene(id)),
-    [leftOut, leaveOutScene, restoreScene]
+    (id: string) => {
+      if (axis) return leftOut.has(id) ? restoreVariant(id) : leaveOutVariant(id)
+      return leftOut.has(id) ? restoreScene(id) : leaveOutScene(id)
+    },
+    [axis, leftOut, leaveOutScene, restoreScene, leaveOutVariant, restoreVariant]
   )
+  // One-part packs: the first tile is the scene that repeats; selecting it chooses another.
+  const [pickingFixed, setPickingFixed] = useState(false)
+  const fixedId = axis && candidates?.[0]?.axisRole === "base" ? String(candidates[0].postId) : null
+  if (pickingFixed && !fixedId) setPickingFixed(false)
+  const fixed = useMemo(() => (fixedId
+    ? {
+        id: fixedId,
+        picking: pickingFixed,
+        onStartPick: () => setPickingFixed(true),
+        onCancelPick: () => setPickingFixed(false),
+        onPick: (id: string) => {
+          setPickingFixed(false)
+          setBaseScene(Number(id))
+        },
+      }
+    : undefined), [fixedId, pickingFixed, setBaseScene])
 
 
   // ── What the start brought ──────────────────────────────────────────────────────
@@ -562,6 +590,8 @@ function BriefWorkspace({
     for (const c of brief.who) if (c.tag) out[c.tag] = { usualLook: engine.looks[c.tag]?.look ?? [] }
     return out
   }, [brief.who, engine.looks])
+  const { setChanges } = pack
+  const changesControl = useMemo(() => ({ value: brief.changes, onChange: setChanges }), [brief.changes, setChanges])
   const people = engine.peopleLine
     ? { options: engine.peopleLine.options, value: engine.peopleLine.value, onChange: setPeople, cast: identity.cast, poseNeeds: engine.peopleLine.poseNeeds }
     : null
@@ -634,6 +664,8 @@ function BriefWorkspace({
           outfitSource={outfit as OutfitSource}
           onOutfitSourceChange={setOutfit}
           officialOutfits={engine.officialOutfits}
+          outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}
+          changes={changesControl}
           people={people}
           offers={offers}
           suggestions={suggestions.suggestions}
@@ -644,14 +676,15 @@ function BriefWorkspace({
 
       <div className="space-y-1">
         {fitStates.map((state, i) => (
-          <FitLine key={`${state.kind}-${i}`} state={state} hint={i === 0 && !folded && thumbs.length > 0 && !result ? BUILDER_TEXT.sheetHint : undefined} />
+          <FitLine key={`${state.kind}-${i}`} state={state} hint={i === 0 && !folded && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined} />
         ))}
       </div>
       {!folded && !(loadError && thumbs.length === 0) && (
         <ContactSheet
           scenes={thumbs}
-          leftOut={brief.leftOut}
+          leftOut={leftOutList}
           onToggle={onToggleScene}
+          fixed={fixed}
           status={sheetStatus}
           expected={count}
         />
