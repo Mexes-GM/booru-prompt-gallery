@@ -29,6 +29,7 @@ import { usePackBrief, type UsePackBriefResult } from "@/hooks/use-pack-brief"
 import { usePackBriefScenes } from "@/hooks/use-pack-brief-scenes"
 import { usePackSources, type UsePackSourcesResult } from "@/hooks/use-pack-sources"
 import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
@@ -83,7 +84,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -204,7 +205,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
         aria-label={BUILDER_TEXT.title}
         inert={!open}
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-hidden",
+          "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-clip",
           "rounded-t-2xl border border-border bg-background shadow-2xl sm:bottom-4 sm:w-[calc(100%-2rem)] sm:rounded-2xl",
           "animate-in fade-in-0 slide-in-from-bottom-4 duration-200 ease-out-strong motion-reduce:animate-none",
           // Last, so it wins over "flex": closed is not shown.
@@ -478,10 +479,12 @@ function BriefWorkspace({
   const [openedFromSummary, setOpenedFromSummary] = useState(false)
   // A pack just made folds the brief away, so the prompts come first.
   const [wasGenerating, setWasGenerating] = useState(false)
+  const [briefOpenNarrow, setBriefOpenNarrow] = useState(false)
   if (wasGenerating !== isGenerating) {
     setWasGenerating(isGenerating)
     if (!isGenerating && result) {
       setFolded(true)
+      setBriefOpenNarrow(false)
       setOpenedFromSummary(false)
     }
   }
@@ -489,6 +492,18 @@ function BriefWorkspace({
     setFolded(false)
     setOpenedFromSummary(true)
   }, [])
+  // On a phone the brief is a line that opens and closes in place: what the pack will be,
+  // the fit line, Generate and the prompts come first. Focus stays on the line.
+  const narrow = useIsMobile()
+  const toggleBriefNarrow = useCallback(() => setBriefOpenNarrow((v) => !v), [])
+  const showBrief = narrow ? briefOpenNarrow : !folded
+  // After a pack is made, focus goes to the prompts.
+  const resultsRef = useRef<HTMLDivElement>(null)
+  const wasGeneratingRef = useRef(false)
+  useEffect(() => {
+    if (wasGeneratingRef.current && !isGenerating) resultsRef.current?.focus()
+    wasGeneratingRef.current = isGenerating
+  }, [isGenerating])
 
   // ── Brief edits ─────────────────────────────────────────────────────────────────
   const [routed, setRouted] = useState<{ slot: SlotId | "people"; key: number } | null>(null)
@@ -749,19 +764,22 @@ function BriefWorkspace({
         </p>
       )}
 
-      {startText && !folded && (
+      {startText && showBrief && (
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground text-pretty">
           <Info className="mt-px size-3.5 shrink-0 text-info-text" aria-hidden />
           {startText}
         </p>
       )}
-      {folded ? (
+      {narrow ? (
+        <BriefSummary parts={summary} onExpand={toggleBriefNarrow} expanded={briefOpenNarrow} />
+      ) : folded ? (
         <BriefSummary parts={summary} onExpand={expand} />
-      ) : (
+      ) : null}
+      {showBrief && (
         <PackBriefPanel
           brief={brief}
           characterInfo={characterInfo}
-          autoFocus={openedFromSummary}
+          autoFocus={openedFromSummary && !narrow}
           routed={routed}
           onAddTags={onAddTags}
           onRemoveTag={remove}
@@ -784,12 +802,21 @@ function BriefWorkspace({
         />
       )}
 
+      {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => fitText(st).spoken).join(". ")}
+      </p>
       <div className="space-y-1">
         {fitStates.map((state, i) => (
-          <FitLine key={state.kind} state={state} hint={i === 0 && !folded && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined} />
+          <FitLine
+            key={state.kind}
+            announce={false}
+            state={state}
+            hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
+          />
         ))}
       </div>
-      {!folded && !(loadError && thumbs.length === 0) && (
+      {showBrief && !(loadError && thumbs.length === 0) && (
         <ContactSheet
           scenes={thumbs}
           leftOut={leftOutList}
@@ -802,15 +829,6 @@ function BriefWorkspace({
         />
       )}
 
-      <GenerateBar
-        count={count}
-        onCountChange={pack.setPromptCount}
-        onGenerate={onGenerate}
-        generating={isGenerating}
-        blockedReason={blockedReason}
-        locked={result?.locked.length ?? 0}
-      />
-
       {correction?.status === "done" && correction.message ? (
         <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
       ) : correcting ? (
@@ -821,6 +839,7 @@ function BriefWorkspace({
 
       {result && result.prompts.length > 0 && (
         <Results
+          containerRef={resultsRef}
           prompts={result.prompts}
           locked={result.locked}
           missing={result.shortBy}
@@ -835,6 +854,18 @@ function BriefWorkspace({
           onNever={onNever}
         />
       )}
+
+      {/* Generate stays at the bottom edge of the panel, above the home indicator, whatever is scrolled. */}
+      <div className="sticky bottom-0 z-10 -mx-3 -mb-3 border-t border-border/60 bg-background px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <GenerateBar
+          count={count}
+          onCountChange={pack.setPromptCount}
+          onGenerate={onGenerate}
+          generating={isGenerating}
+          blockedReason={blockedReason}
+          locked={result?.locked.length ?? 0}
+        />
+      </div>
 
       {searching && (
         <BriefSource plan={plan} onResult={setSource} onLimited={onLimited} />
@@ -863,6 +894,7 @@ function startNoteText(note: StartNote): string | null {
 const warnTagsCopied = () => toast({ description: BUILDER_TEXT.convertFailed, variant: "destructive", duration: 3000 })
 
 function Results({
+  containerRef,
   prompts,
   busy,
   locked,
@@ -876,6 +908,8 @@ function Results({
   onAlways,
   onNever,
 }: {
+  /** Where focus goes after a pack is made. */
+  containerRef?: RefObject<HTMLDivElement | null>
   prompts: PackPrompt[]
   /** A run is going on, or the pack is from another source: re-roll and the tag menu wait. */
   busy: boolean
@@ -906,12 +940,16 @@ function Results({
     }
   }, [format, fullDetail, naturalSourceOf, overrides])
 
+  // One live region for every row's copy.
+  const [copySaid, setCopySaid] = useState("")
   const copyOne = useCallback(async (index: number) => {
     const p = prompts[index]
     if (!p) return false
     const body = await bodyOf(p, shownRef.current.get(index))
     if (body.failed) warnTagsCopied()
-    return onCopy(body.text, body.failed ? "tags" : format)
+    const ok = await onCopy(body.text, body.failed ? "tags" : format)
+    setCopySaid(ok ? `Prompt ${index + 1} copied` : COPY_FAILED)
+    return ok
   }, [prompts, bodyOf, onCopy, format])
 
   const copyAll = useCallback(async () => {
@@ -931,7 +969,8 @@ function Results({
   }, [setFormat])
 
   return (
-    <div className="space-y-2">
+    <div ref={containerRef} tabIndex={-1} aria-label={BUILDER_TEXT.resultsLabel} className="space-y-2 focus-visible:outline-none">
+      <p className="sr-only" role="status" aria-live="polite">{copySaid}</p>
       <ResultsToolbar formats={FORMATS} format={format} onFormatChange={onFormatChange} count={prompts.length} onCopyAll={copyAll} copyNote={copyNote}>
         {missing > 0 && <span className="text-xs tabular-nums text-warning-text">{missingText(missing)}</span>}
       </ResultsToolbar>
@@ -1012,6 +1051,7 @@ const BriefResultRow = memo(function BriefResultRow({
       pending={format !== "tags" && natural.status === "loading"}
       locked={locked}
       busy={busy}
+      announce={false}
       onToggleLock={onToggleLock}
       onCopy={onCopy}
       onReroll={onReroll}

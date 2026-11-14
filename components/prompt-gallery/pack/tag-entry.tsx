@@ -193,7 +193,14 @@ export const TagEntry = memo(function TagEntry({
           placeholder={placeholder}
           onChange={onChange}
           onKeyDown={onKeyDown}
-          onFocus={() => setOpen(true)}
+          onFocus={(e) => {
+            setOpen(true)
+            const field = e.currentTarget
+            // After the on-screen keyboard has opened (coarse pointers only).
+            if (window.matchMedia("(pointer: coarse)").matches) {
+              window.setTimeout(() => field.isConnected && field.scrollIntoView({ block: "center", behavior: "smooth" }), 300)
+            }
+          }}
           onBlur={() => {
             setOpen(false)
             setActive(-1)

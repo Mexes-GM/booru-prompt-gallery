@@ -43,6 +43,8 @@ export const BUILDER_TEXT = {
   sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
+  generatingSpoken: "Making the prompts",
+  resultsLabel: "Prompts",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
 } as const
 

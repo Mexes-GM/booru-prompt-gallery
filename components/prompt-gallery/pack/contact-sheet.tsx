@@ -112,7 +112,11 @@ const Tile = memo(function Tile({
           alt=""
           loading="lazy"
           decoding="async"
-          className={cn("absolute inset-0 size-full object-cover transition-opacity duration-150 ease-out-strong", out && "opacity-25 grayscale")}
+          className={cn(
+            "absolute inset-x-0 top-0 w-full object-cover transition-opacity duration-150 ease-out-strong",
+            fixed ? "bottom-4 h-[calc(100%-1rem)]" : "bottom-0 h-full",
+            out && "opacity-25 grayscale",
+          )}
         />
       ) : (
         // The number stays readable when the scene is out; only the well behind it fades.
@@ -121,7 +125,7 @@ const Tile = memo(function Tile({
         </span>
       )}
       {fixed && (
-        <span className="absolute inset-x-0 bottom-0 bg-mode-pack px-1 py-0.5 text-center text-[10px] font-medium leading-tight text-mode-pack-foreground">
+        <span className="absolute inset-x-0 bottom-0 grid h-4 place-items-center bg-mode-pack px-1 text-center text-[10px] font-medium leading-none text-mode-pack-foreground">
           {SHEET_TEXT.fixedBadge}
         </span>
       )}
@@ -159,6 +163,8 @@ export const ContactSheet = memo(function ContactSheet({
 }: ContactSheetProps) {
   const [expanded, setExpanded] = useState(false)
   const [current, setCurrent] = useState(0)
+  // Tiles a folded sheet shows at its width (three rows of 6, 9 or 12 columns).
+  const [foldedVisible, setFoldedVisible] = useState(COLLAPSED.narrow)
   const gridRef = useRef<HTMLDivElement>(null)
   const helpId = useId()
   const out = useMemo(() => new Set(leftOut), [leftOut])
@@ -173,6 +179,16 @@ export const ContactSheet = memo(function ContactSheet({
     if (f.picking) return f.onPick(id)
     onToggle(id)
   }, [onToggle])
+
+  // Measured while the grid is on screen; it comes and goes with the empty and error states.
+  const hasGrid = status !== "error" && (loading || scenes.length > 0)
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!hasGrid || !grid || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => setFoldedVisible(columnsOf(grid) * 3))
+    observer.observe(grid)
+    return () => observer.disconnect()
+  }, [hasGrid])
 
   if (status === "error") {
     return (
@@ -204,7 +220,7 @@ export const ContactSheet = memo(function ContactSheet({
   // "Show all" only where some tiles are actually hidden at that width.
   const toggleClass = cn(total <= COLLAPSED.mid && "@md:hidden", total <= COLLAPSED.wide && "@xl:hidden")
   // The tab stop must be a tile that is on screen; the first rows always are.
-  const tabStop = Math.min(current, Math.max(0, (collapsed ? Math.min(shown.length, COLLAPSED.narrow) : shown.length) - 1))
+  const tabStop = Math.min(current, Math.max(0, (collapsed ? Math.min(shown.length, foldedVisible) : shown.length) - 1))
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const grid = gridRef.current

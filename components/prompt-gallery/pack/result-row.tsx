@@ -40,6 +40,8 @@ export interface ResultRowProps {
   /** Resolves true when the copy worked. */
   onCopy: (index: number) => Promise<boolean> | boolean
   onReroll: (index: number) => void
+  /** False when the list has one live region for every row (copy results are said there). */
+  announce?: boolean
   /** Re-roll and the tag menu wait (a run is going on, or the pack needs Generate first). */
   busy?: boolean
   /** Without it the row has no lock. */
@@ -86,7 +88,8 @@ function TokenMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-56"
+        collisionPadding={8}
+        className="w-56 max-w-[calc(100vw-1rem)]"
         onCloseAutoFocus={(e) => {
           // The trigger is swapped back for a plain button on close; focus that one instead.
           e.preventDefault()
@@ -94,8 +97,8 @@ function TokenMenu({
         }}
       >
         <DropdownMenuLabel className="truncate font-mono text-xs font-medium text-muted-foreground">{tag}</DropdownMenuLabel>
-        <DropdownMenuItem disabled={busy} onSelect={() => onAlways(tag)}>Always in every prompt</DropdownMenuItem>
-        <DropdownMenuItem disabled={busy} onSelect={() => onNever(tag)}>Never in this pack</DropdownMenuItem>
+        <DropdownMenuItem disabled={busy} className="pointer-coarse:min-h-11" onSelect={() => onAlways(tag)}>Always in every prompt</DropdownMenuItem>
+        <DropdownMenuItem disabled={busy} className="pointer-coarse:min-h-11" onSelect={() => onNever(tag)}>Never in this pack</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -109,6 +112,7 @@ export const ResultRow = memo(function ResultRow({
   thumbSrc,
   locked = false,
   busy = false,
+  announce = true,
   pending = false,
   onCopy,
   onReroll,
@@ -290,7 +294,7 @@ export const ResultRow = memo(function ResultRow({
           </button>}
         </div>
       </div>
-      <span className="sr-only" role="status" aria-live="polite">
+      <span className="sr-only" role={announce ? "status" : undefined} aria-live={announce ? "polite" : undefined}>
         {copy === "copied" ? `Prompt ${n} copied` : copy === "failed" ? COPY_FAILED : ""}
       </span>
     </div>
