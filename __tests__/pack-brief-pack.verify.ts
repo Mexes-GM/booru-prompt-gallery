@@ -13,7 +13,7 @@ import { briefFromCharacters } from "../lib/pack/brief-history"
 import { seedNever } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
-  preferredPostIds, resolveLook, slotSuggestions, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
+  preferredPostIds, resolveLook, slotSuggestions, packProviderChoices, loadedState, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
 } from "../lib/pack/brief-pack"
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
@@ -367,6 +367,33 @@ check("slotSuggestions: Others offers general tags the taxonomy files as appeara
   ]
   const taxonomy = { "dark-skinned male": "appearance:anatomy", bikini: "clothing:outfit" }
   assert.deepEqual(slotSuggestions(found, "look", 8, taxonomy), [{ name: "dark-skinned_male", count: 90000 }])
+})
+
+// ── Where the scenes come from ──────────────────────────────────────────────────
+
+check("packProviderChoices: every site in the gallery's order; Rule34 waits for its consent; e621 and e6ai say safe only", () => {
+  const sites = ["danbooru", "gelbooru", "aibooru", "rule34", "e621", "e6ai"] as const
+  const safe = packProviderChoices(sites, "sfw", false)
+  assert.deepEqual(safe.map((c) => c.provider), [...sites])
+  assert.deepEqual(safe.find((c) => c.provider === "rule34"), { provider: "rule34", available: false, reason: "adult-consent" })
+  assert.deepEqual(safe.find((c) => c.provider === "e621"), { provider: "e621", available: true, note: "no-sensitive" })
+  assert.deepEqual(safe.find((c) => c.provider === "e6ai"), { provider: "e6ai", available: true, note: "no-sensitive" })
+  assert.deepEqual(safe.find((c) => c.provider === "danbooru"), { provider: "danbooru", available: true })
+  // Other ratings exist everywhere; with the confirmation given, Rule34 is offered.
+  const explicit = packProviderChoices(sites, "explicit", true)
+  assert.ok(explicit.every((c) => c.available && !c.note), JSON.stringify(explicit))
+})
+
+check("loadedState: says the posts loaded; Find more whenever the site has more and nothing else is going on", () => {
+  const base = { posts: 240, noMoreResults: false, failed: false, sessionCapReached: false, paused: false, finding: false, loading: false }
+  assert.deepEqual(loadedState(base), { posts: 240, all: false, more: true }, "enough scenes, the site has more: offered")
+  assert.deepEqual(loadedState({ ...base, noMoreResults: true }), { posts: 240, all: true, more: false }, "nothing more: said, not offered")
+  assert.equal(loadedState({ ...base, paused: true })?.more, false, "the pause has its own offer")
+  assert.equal(loadedState({ ...base, loading: true })?.more, false, "a page on its way")
+  assert.equal(loadedState({ ...base, sessionCapReached: true })?.more, false)
+  assert.equal(loadedState({ ...base, finding: true }), null, "the progress line speaks while scenes are found")
+  assert.equal(loadedState({ ...base, failed: true }), null)
+  assert.equal(loadedState({ ...base, posts: 0 }), null)
 })
 
 // ── One-part packs (changes) ────────────────────────────────────────────────────

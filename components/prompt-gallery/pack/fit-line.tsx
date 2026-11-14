@@ -41,20 +41,32 @@ export interface FitLineProps {
   announce?: boolean
   /** For a short pack that more pictures could fill: the offer of sensitive pictures on its line. */
   onIncludeSensitive?: () => void
+  /**
+   * What the scenes were found in, after the sentence ("from 240 posts on Danbooru so far"),
+   * with "Find more scenes" while the site has more. Read in place, not announced.
+   */
+  loaded?: { text: string; onFindMore?: () => void }
   className?: string
 }
 
-export const FitLine = memo(function FitLine({ state, hint, announce = true, onIncludeSensitive, className }: FitLineProps) {
+export const FitLine = memo(function FitLine({ state, hint, announce = true, onIncludeSensitive, loaded, className }: FitLineProps) {
   const offer = (state.kind === "short" || state.kind === "few-variations") && state.offerSensitive ? onIncludeSensitive : undefined
   const { text, spoken } = fitText(state)
   const { icon: Icon, className: tone } = TONE[state.kind]
   return (
     <div className={cn("flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1 text-sm", className)}>
       <Icon className={cn("size-4 shrink-0", tone)} aria-hidden />
-      <span aria-hidden className="min-w-0 text-pretty tabular-nums text-foreground">
-        {text}
-        {hint && <span className="text-muted-foreground"> · {hint}</span>}
+      <span className="min-w-0 text-pretty tabular-nums text-foreground">
+        <span aria-hidden>{text}</span>
+        {/* Goes on the sentence ("76 scenes fit from 240 posts…"), or follows it as its own. */}
+        {loaded && <span className="text-muted-foreground"> {/[.!?…]$/.test(text) ? `${loaded.text.charAt(0).toUpperCase()}${loaded.text.slice(1)}.` : loaded.text}</span>}
+        {hint && <span aria-hidden className="text-muted-foreground"> · {hint}</span>}
       </span>
+      {loaded?.onFindMore && (
+        <Button type="button" variant="outline" size="sm" onClick={loaded.onFindMore} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
+          {BUILDER_TEXT.findMore}
+        </Button>
+      )}
       {state.kind === "few-rated" && (
         <Button type="button" variant="outline" size="sm" onClick={state.onInclude} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
           Include sensitive
