@@ -8,7 +8,7 @@
 import assert from "node:assert/strict"
 import { addCharacter, addTag, emptyBrief, setCharacterRole, setPeople, type PackBrief } from "../lib/pack/brief"
 import {
-  assignFeedSlots, feedSeed, MAX_FEEDS, MAX_RATINGS, MAX_SCENE_SEARCHES, planFeeds, planSources,
+  assignFeedSlots, feedSeed, MAX_DONOR_FEEDS, MAX_DONOR_SEARCHES, MAX_FEEDS, MAX_RATINGS, MAX_SCENE_SEARCHES, planDonorFeeds, planFeeds, planSources,
   type FeedSlot, type SourcePlan, type SourcePlanEnv,
 } from "../lib/pack/source-plan"
 import { getProviderTagLimit } from "../lib/booru/tag-limits"
@@ -210,3 +210,52 @@ check(() => {
 })
 
 console.log(`pack-source-plan: ${passed} checks passed`)
+
+// ── Donor searches for conditions (ENG-7) ────────────────────────────────────
+check(() => {
+  const C_OVERRIDES: Record<string, string> = { ...OVERRIDES, thighhighs: "clothing:legwear", "school uniform": "clothing:outfit", classroom: "scenery:setting", boots: "clothing:footwear" }
+  const brief = ["bikini", "thighhighs", "boots", "beach", "classroom", "sitting"].reduce((b, t) => addTag(b, t, C_OVERRIDES), tifa())
+
+  // Without conditions: no donor search, and the plan (its key too) is the one it always was.
+  const plain = planSources(brief, env())
+  assert.deepEqual(plain.donors, [], "no conditions, no donor search")
+  assert.equal(plain.donorKey, "")
+  assert.equal(plain.key, `${plain.sceneKey}##${plain.appearanceKey}`, "the key without donors is the old one")
+  assert.deepEqual(planSources(brief, env({ conditions: [] })), plain, "an empty list is the same as none")
+
+  // Gelbooru (no tag limit): every garment met as a condition in one search, the places in another.
+  const all = planSources(brief, env({ provider: "gelbooru", conditions: ["bikini", "thighhighs", "beach"] }))
+  assert.equal(all.donors.length, 2)
+  assert.equal(all.donors[0].kind, "wearing")
+  assert.deepEqual(all.donors[0].tags, ["bikini", "thighhighs"], "the garments together; boots is exact, not searched")
+  assert.equal(all.donors[0].query, "bikini, thighhighs")
+  assert.equal(all.donors[1].kind, "where")
+  assert.deepEqual(all.donors[1].tags, ["beach"], "classroom is exact, not searched")
+  assert(all.donors.every((d) => d.ratingFilter === all.ratings[0]), "donors at the plan's first rating")
+  assert.deepEqual(all.scenes, planSources(brief, env({ provider: "gelbooru" })).scenes, "the scene searches don't change")
+  assert.notEqual(all.key, planSources(brief, env({ provider: "gelbooru" })).key, "the key changes with the donor searches")
+
+  // Danbooru (2 tags): the first garments written fill the search, the rest are reported.
+  const three = ["bikini", "thighhighs", "boots"].reduce((b, t) => addTag(b, t, C_OVERRIDES), tifa())
+  const limited = planSources(three, env({ provider: "danbooru", conditions: ["bikini", "thighhighs", "boots"] }))
+  assert.deepEqual(limited.donors[0].tags, ["bikini", "thighhighs"])
+  assert(limited.leftOut.some((l) => l.tag === "boots" && l.from === "condition" && l.reason === "tag-limit"), "boots left out and reported")
+  for (const d of limited.donors) assert(counted(d.tags) <= getProviderTagLimit("danbooru"), `donor search "${d.query}" fits`)
+
+  // A safe pack with sensitive posts: two scene ratings, the donors take the first only (one request each).
+  const safe = planSources(brief, env({ provider: "gelbooru", includeSensitive: true, conditions: ["bikini", "beach"] }))
+  assert.deepEqual(safe.ratings, ["rating:general", "rating:sensitive"])
+  const feeds = planDonorFeeds(safe, 7)
+  assert.equal(feeds.length, 2, "one feed per donor search")
+  assert(feeds.length <= MAX_DONOR_FEEDS)
+  assert(feeds.every((f) => f.ratingFilter === "rating:general"))
+  assert.equal(feeds[0].seed, feedSeed(safe.donors[0].id, 7), "seeded like the scene feeds")
+  assert.equal(new Set(feeds.map((f) => f.feedId)).size, 2)
+  assert(MAX_DONOR_SEARCHES === 2)
+
+  // A condition the brief doesn't ask for does nothing; the conditions follow the brief's spelling.
+  const stray = planSources(tifa(), env({ conditions: ["bikini"] }))
+  assert.deepEqual(stray.donors, [])
+})
+
+console.log(`pack-source-plan (conditions): done`)

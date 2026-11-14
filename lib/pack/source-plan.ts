@@ -6,7 +6,9 @@
  *
  * Only what the brief asks the characters to do (`SceneRequests.select`) goes in a
  * scene search: clothes, places and the rest are imposed later by the engine and
- * would only shrink the pool. Every search fits the booru's tag limit, and a
+ * would only shrink the pool. Garments and places met as conditions get searches of
+ * their own (`donors`): posts of anyone that meet them, which only lend that part to
+ * the scenes (ScenePackArgs.donorPosts). Every search fits the booru's tag limit, and a
  * requested tag that doesn't fit is reported in `leftOut`, never dropped quietly.
  *
  * Pure: no React, no requests.
@@ -53,10 +55,24 @@ export interface AppearanceSearch extends PlannedSearch {
   order: 'popular'
 }
 
+/**
+ * A search for the posts that meet a condition (SceneRequests.conditions): every garment met as a
+ * condition together ('wearing'), or every place ('where'), without any name or head count. Its
+ * posts lend that part only: the hook passes the ids of the posts it brought and no scene search
+ * did as ScenePackArgs.donorPosts. Fetched at one rating, the plan's first.
+ */
+export interface DonorSearch extends PlannedSearch {
+  kind: 'wearing' | 'where'
+  /** The conditions it asks for (brief spelling). */
+  conditions: string[]
+  /** The one rating it is fetched at (the plan's first). */
+  ratingFilter: string
+}
+
 export interface LeftOutTag {
   tag: string
-  /** A requested pose, or a tag of the gallery's search (unnamed character). */
-  from: 'pose' | 'gallery-search'
+  /** A requested pose, a tag of the gallery's search (unnamed character), or a condition (garment or place). */
+  from: 'pose' | 'gallery-search' | 'condition'
   reason: 'tag-limit'
 }
 
@@ -74,6 +90,8 @@ export interface SourcePlan {
   scenes: SceneSearch[]
   /** One per named character whose look can't come from the pool. */
   appearance: AppearanceSearch[]
+  /** Searches for the conditions' donors: at most MAX_DONOR_SEARCHES ('wearing' first). Empty without conditions. */
+  donors: DonorSearch[]
   /** Requested tags no scene search could hold. */
   leftOut: LeftOutTag[]
   /** The head count the scene searches ask for, or null (the character's own posts, or any). */
@@ -84,7 +102,9 @@ export interface SourcePlan {
   sceneKey: string
   /** Changes only when the appearance searches do. */
   appearanceKey: string
-  /** Both of the above. */
+  /** Changes only when the donor searches do ('' without them). */
+  donorKey: string
+  /** All of the above (without donor searches, the scene and appearance keys only, as before). */
   key: string
 }
 
@@ -100,6 +120,11 @@ export interface SourcePlanEnv {
   roles?: ReadonlyArray<CastRole | null | undefined>
   /** The gallery's current search: the source an unnamed character starts from. */
   gallerySearch?: string
+  /**
+   * Tags of the brief's Wearing and Where met as conditions: the same list the hook passes the engine
+   * as SceneRequests.conditions. Each kind gets a donor search. Missing or empty: none.
+   */
+  conditions?: readonly string[]
 }
 
 /** Most scene searches a plan has (own, theme, anchor). */
@@ -108,6 +133,10 @@ export const MAX_SCENE_SEARCHES = 3
 export const MAX_RATINGS = 2
 /** Feeds a hook needs to run any plan: one per scene search and rating. */
 export const MAX_FEEDS = MAX_SCENE_SEARCHES * MAX_RATINGS
+/** Most donor searches a plan has (one for the garments, one for the places). */
+export const MAX_DONOR_SEARCHES = 2
+/** Feeds a hook needs for the donor searches: one rating each (planDonorFeeds). */
+export const MAX_DONOR_FEEDS = MAX_DONOR_SEARCHES
 
 /** Booru spelling of a brief tag. */
 const toBooru = (tag: string) => tag.trim().replace(/\s+/g, '_')
@@ -271,8 +300,10 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     .filter((_, i) => !(poolIsOwn && i === 0))
     .map((c) => appearanceSearch(c.tag, provider, ratings[0]))
 
+  const donors = donorSearches(brief, env, ratings[0], limit, leftOut)
   const sceneKey = `${provider}|${ratings.join('+')}|${scenes.map((s) => s.id).join('||')}`
   const appearanceKey = appearance.map((s) => `${s.id}|${normalizeTagForPack(s.character)}`).join('||')
+  const donorKey = donors.map((s) => s.id).join('||')
   return {
     provider,
     rating,
@@ -280,13 +311,60 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     sensitive,
     scenes,
     appearance,
+    donors,
     leftOut,
     people,
     rolesPending,
     sceneKey,
     appearanceKey,
-    key: `${sceneKey}##${appearanceKey}`,
+    donorKey,
+    key: donorKey ? `${sceneKey}##${appearanceKey}##${donorKey}` : `${sceneKey}##${appearanceKey}`,
   }
+}
+
+/**
+ * The donor searches of a brief: the garments of Wearing met as conditions, all in one search (a
+ * donor must meet them together), and the places of Where, in another. The first tags written fill
+ * the limit; the rest go to `leftOut` (from 'condition').
+ */
+function donorSearches(brief: PackBrief, env: SourcePlanEnv, ratingFilter: string, limit: number, leftOut: LeftOutTag[]): DonorSearch[] {
+  const conditions = new Set((env.conditions ?? []).map(normalizeTagForPack).filter(Boolean))
+  if (conditions.size === 0) return []
+  const requests = toSceneRequests(brief)
+  const out: DonorSearch[] = []
+  for (const kind of ['wearing', 'where'] as const) {
+    const seen = new Set<string>()
+    const tags = requests[kind].filter((tag) => {
+      const key = normalizeTagForPack(tag)
+      if (!conditions.has(key) || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    if (tags.length === 0) continue
+    const { tags: query, taken, rest } = fill([], tags, limit)
+    rest.forEach((tag) => leftOut.push({ tag, from: 'condition', reason: 'tag-limit' }))
+    if (taken.length === 0) continue
+    out.push({
+      id: `donor|${env.provider}|${ratingFilter}|${query.join(' ')}`,
+      tags: query,
+      query: query.join(', '),
+      kind,
+      conditions: taken,
+      ratingFilter,
+    })
+  }
+  return out.slice(0, MAX_DONOR_SEARCHES)
+}
+
+/** The feeds of a plan's donor searches, one rating each, garments first. A hook runs them on MAX_DONOR_FEEDS slots of their own. */
+export function planDonorFeeds(plan: Pick<SourcePlan, 'donors'>, sessionSeed: number): FeedSpec[] {
+  return plan.donors.slice(0, MAX_DONOR_SEARCHES).map((search) => ({
+    feedId: `${search.id}|${search.ratingFilter}`,
+    searchId: search.id,
+    query: search.query,
+    ratingFilter: search.ratingFilter,
+    seed: feedSeed(search.id, sessionSeed),
+  }))
 }
 
 /** The tags of a character's own search: their name, and "solo" when the limit allows (characterSearchTags). */
