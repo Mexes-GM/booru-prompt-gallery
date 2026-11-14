@@ -18,7 +18,7 @@ import {
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
   keptRows, opAfterEnd, correctionAfterBriefChange, lookOwner, briefFromCardPost,
-  generateLayout, placeGenerated, preferredForAgain,
+  generateLayout, placeGenerated, preferredForAgain, rotationPlan, rotationAfter,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
@@ -678,6 +678,41 @@ check("R2: Generate again keeps the source's own posts first", () => {
   assert.deepEqual(preferredForAgain(own, new Set([1, 2, 3, 4]), pool, 3), own)
   // A source with no posts of its own: the scenes the last pack didn't use.
   assert.deepEqual(preferredForAgain([], new Set([10, 11]), [10, 11, 12], 2), [12])
+})
+
+// ── Another set each Generate (INT-3 browser pass, B) ───────────────────────────
+
+check("rotation: 23 scenes, 10 prompts: two runs share nothing, the third only what it must", () => {
+  const scenes = Array.from({ length: 23 }, (_, i) => 100 + i)
+  // Stand-in for the engine: it always takes the same scenes first (preferred ones before the others).
+  const pick = (exclude: readonly number[], preferred: readonly number[]) => {
+    const pool = scenes.filter((id) => !exclude.includes(id))
+    return [...pool.filter((id) => preferred.includes(id)), ...pool.filter((id) => !preferred.includes(id))].slice(0, 10)
+  }
+  let used: number[] = []
+  const runs: number[][] = []
+  for (let i = 0; i < 3; i++) {
+    const turn = rotationPlan({ available: scenes, used, needed: 10, own: [] })
+    const got = pick(turn.exclude, turn.preferred)
+    used = rotationAfter(turn, used, got)
+    runs.push(got)
+  }
+  const shared = (a: number[], b: number[]) => a.filter((id) => b.includes(id)).length
+  assert.equal(shared(runs[0], runs[1]), 0)
+  // 3 scenes are left after two runs: the third takes them and only 7 already used.
+  assert.equal(runs[2].filter((id) => !runs[0].includes(id) && !runs[1].includes(id)).length, 3)
+  assert.equal(shared(runs[2], [...runs[0], ...runs[1]]), 7)
+})
+
+check("rotation: the source's own posts still go first, and a new brief starts over", () => {
+  const turn = rotationPlan({ available: [1, 2, 3, 4, 5, 6], used: [1, 2], needed: 2, own: [2, 3] })
+  assert.deepEqual(turn.exclude, [1, 2])
+  assert.deepEqual(turn.preferred, [3])
+  assert.equal(turn.reset, false)
+  assert.deepEqual(rotationPlan({ available: [1, 2, 3], used: [], needed: 2, own: [3] }), { exclude: [], preferred: [3], reset: false })
+  const restart = rotationPlan({ available: [1, 2, 3], used: [1, 2], needed: 2, own: [] })
+  assert.deepEqual(restart, { exclude: [], preferred: [3], reset: true })
+  assert.deepEqual(rotationAfter(restart, [1, 2], [3, 1]), [3, 1])
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

@@ -192,7 +192,7 @@ export type FitState =
   /** Few scenes at the safe content rating; the user can allow the next one. */
   | { kind: "few-rated"; onInclude: () => void }
   /** Fetching stopped at the pace limit; `waiting` while it cools down. */
-  | { kind: "paused"; onLoadMore: () => void; waiting: boolean }
+  | { kind: "paused"; onLoadMore: () => void; waiting: boolean; nothingNew?: boolean }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
@@ -249,11 +249,18 @@ function fitSentence(state: FitState): string {
       const tags = state.tags.join(", ")
       return `${tags} ${state.tags.length === 1 ? "stays" : "stay"} in every prompt. The rest of the ${state.axis} changes.`
     }
-    case "few-variations":
-      return `${state.made} of ${state.asked}: only ${plural(state.variations, state.axis)} ${state.variations === 1 ? "fits" : "fit"} this scene`
+    case "few-variations": {
+      const what = state.kept?.length ? `${plural(state.variations, state.axis)} with ${state.kept.join(", ")}` : plural(state.variations, state.axis)
+      return `${state.made} of ${state.asked}: only ${what} ${state.variations === 1 ? "fits" : "fit"} this scene`
+    }
     case "no-new":
       return state.exhausted ? "No new scenes found. There's nothing more to search." : "No new scenes found on that page."
     case "paused":
+      if (state.nothingNew) {
+        return state.waiting
+          ? "No new scenes on that page. You can search again in a few seconds."
+          : "No new scenes on that page. Search again for more."
+      }
       return state.waiting
         ? "Paused to avoid too many requests. You can search again in a few seconds."
         : "Paused to avoid too many requests. Search again for more scenes."
