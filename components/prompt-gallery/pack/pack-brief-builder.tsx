@@ -32,12 +32,14 @@ import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
-import { briefFromPrompt, routeTag, type RequestRole } from "@/lib/pack/brief"
+import { addNever, addTag, briefFromPrompt, routeTag, type RequestRole } from "@/lib/pack/brief"
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { splitTags } from "@/lib/utils/tag-utils"
 import {
   briefFromSearch,
+  changedRows,
   issuesFit,
+  lockedWithTag,
   peopleFromCountTags,
   pickedPeopleNote,
   predictFit,
@@ -63,7 +65,8 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, RATING_OPTIONS, START_TEXT, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CORRECTION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
 import { briefSummaryParts, companionsLabel, showTag, type CharacterInfo, type SlotId } from "./slots"
@@ -75,6 +78,17 @@ export type PackBriefStart =
   | { kind: "card"; post: BooruPost }
   | { kind: "prompt"; text: string }
   | { kind: "search"; search: string; character: string | null }
+
+/** A correction from the results: what it was, and the pack as it was before, for Undo. */
+interface Correction {
+  kind: "always" | "never"
+  tag: string
+  snapshot: BriefPackResult
+  format: PromptFormat
+  briefBefore: unknown
+  done: boolean
+  message: string | null
+}
 
 /** What a start brought to the brief, for the note under the header. */
 type StartNote =
@@ -372,7 +386,10 @@ function BriefWorkspace({
   }, [source, usableCount])
   const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
-  const stale = !!result && (result.brief !== brief || result.count !== count || result.outfit !== outfit)
+  // A correction from the results remakes the prompts itself: no "generate again" for it.
+  const [correction, setCorrection] = useState<Correction | null>(null)
+  const correcting = !!correction && !correction.done
+  const stale = !!result && !correcting && (result.brief !== brief || result.count !== count || result.outfit !== outfit)
   const notes: FitNote[] = useMemo(() => {
     const lead = peopleNote ? [peopleNote] : []
     const progress = {
@@ -448,15 +465,6 @@ function BriefWorkspace({
     }
     if (elsewhere) setRouted({ slot: elsewhere, key: Date.now() })
   }, [add, never, setPeople, overrides, cast])
-  // The tag menu of a result writes on the brief; the prompts already made stay as they are.
-  const onAlways = useCallback((tag: string) => add(bareToken(tag), "also"), [add])
-  const onNever = useCallback((tag: string) => never(bareToken(tag)), [never])
-  const onRemoveCharacter = useCallback((tag: string | null) => { if (tag) removeCharacter(tag) }, [removeCharacter])
-  const onToggleScene = useCallback(
-    (id: string) => (leftOut.has(id) ? restoreScene(id) : leaveOutScene(id)),
-    [leftOut, leaveOutScene, restoreScene]
-  )
-
   // Undo: the last change of the brief, for a few seconds.
   const [undoFor, setUndoFor] = useState<object | null>(null)
   const [seenBrief, setSeenBrief] = useState(brief)
@@ -464,7 +472,8 @@ function BriefWorkspace({
   const [undoing, setUndoing] = useState(false)
   if (seenBrief !== brief) {
     setSeenBrief(brief)
-    setUndoFor(pack.canUndo && !undoing ? brief : null)
+    // A correction has its own notice.
+    setUndoFor(pack.canUndo && !undoing && !correction ? brief : null)
     if (undoing) setUndoing(false)
   }
   useEffect(() => {
@@ -477,6 +486,55 @@ function BriefWorkspace({
     if (undo() !== null) setUndoing(true)
     setUndoFor(null)
   }, [undo])
+
+  // ── Corrections from the results ────────────────────────────────────────────────
+  // The tag menu changes the brief and the pack is remade at once with the same seed and
+  // scenes; Undo puts brief, prompts, locks and format back as they were.
+  const { format: promptFormat, setFormat } = usePromptFormat()
+  const correct = useCallback((kind: "always" | "never", raw: string) => {
+    const tag = bareToken(raw)
+    const next = kind === "never" ? addNever(brief, tag) : addTag(brief, tag, overrides, "also")
+    if (JSON.stringify(next) === JSON.stringify(brief)) return
+    if (result) setCorrection({ kind, tag, snapshot: result, format: promptFormat, briefBefore: brief, done: false, message: null })
+    if (kind === "never") never(tag)
+    else add(tag, "also")
+  }, [brief, overrides, result, promptFormat, never, add])
+  const onAlways = useCallback((tag: string) => correct("always", tag), [correct])
+  const onNever = useCallback((tag: string) => correct("never", tag), [correct])
+  // Runs once the brief has the change (the engine's arguments follow it).
+  const { recompose, restore } = engine
+  const runningRef = useRef<Correction | null>(null)
+  useEffect(() => {
+    if (!correction || correction.done || brief === correction.briefBefore || runningRef.current === correction) return
+    runningRef.current = correction
+    void recompose().then((out) => {
+      if (!out) return
+      const changed = changedRows(out.before.prompts, out.after.prompts)
+      const locked = correction.kind === "never" ? lockedWithTag(out.after.prompts, out.after.locked, correction.tag) : 0
+      const base = CORRECTION_TEXT[correction.kind](correction.tag, changed)
+      const message = locked > 0 ? `${base}. ${CORRECTION_TEXT.lockedKeep(locked)}` : base
+      setCorrection((cur) => (cur === correction ? { ...cur, done: true, message } : cur))
+    })
+  }, [correction, brief, recompose])
+  const undoCorrection = useCallback(() => {
+    if (!correction) return
+    if (undo() !== null) setUndoing(true)
+    restore(correction.snapshot)
+    setFormat(correction.format)
+    setCorrection(null)
+  }, [correction, undo, restore, setFormat])
+  // A correction notice goes after a while, like the brief's.
+  useEffect(() => {
+    if (!correction?.done) return
+    const timer = setTimeout(() => setCorrection((cur) => (cur === correction ? null : cur)), UNDO_MS)
+    return () => clearTimeout(timer)
+  }, [correction])
+  const onRemoveCharacter = useCallback((tag: string | null) => { if (tag) removeCharacter(tag) }, [removeCharacter])
+  const onToggleScene = useCallback(
+    (id: string) => (leftOut.has(id) ? restoreScene(id) : leaveOutScene(id)),
+    [leftOut, leaveOutScene, restoreScene]
+  )
+
 
   // ── What the start brought ──────────────────────────────────────────────────────
   // The card's outfit and pose are offered, never copied: a request is a condition.
@@ -605,15 +663,25 @@ function BriefWorkspace({
         onGenerate={engine.generate}
         generating={isGenerating}
         blockedReason={blockedReason}
+        locked={result?.locked.length ?? 0}
       />
 
-      {showUndo && pack.lastChange && (
+      {correction ? (
+        <UndoNotice
+          message={correction.message ?? CORRECTION_TEXT.working}
+          onUndo={undoCorrection}
+          onDismiss={() => setCorrection(null)}
+        />
+      ) : showUndo && pack.lastChange && (
         <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
       )}
 
       {result && result.prompts.length > 0 && (
         <Results
           prompts={result.prompts}
+          locked={result.locked}
+          missing={result.shortBy}
+          onToggleLock={engine.toggleLock}
           naturalSourceOf={engine.naturalSourceOf}
           overrides={overrides}
           onCopy={onCopy}
@@ -651,6 +719,9 @@ const warnTagsCopied = () => toast({ description: BUILDER_TEXT.convertFailed, va
 
 function Results({
   prompts,
+  locked,
+  missing,
+  onToggleLock,
   naturalSourceOf,
   overrides,
   onCopy,
@@ -659,6 +730,10 @@ function Results({
   onNever,
 }: {
   prompts: PackPrompt[]
+  locked: readonly number[]
+  /** Prompts asked for and not made. */
+  missing: number
+  onToggleLock: (index: number) => void
   naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
   overrides: Record<string, string>
   onCopy: (text: string, format: PromptFormat) => Promise<boolean>
@@ -667,6 +742,7 @@ function Results({
   onNever: (tag: string) => void
 }) {
   const { format, fullDetail, setFormat } = usePromptFormat()
+  const lockedSet = useMemo(() => new Set(locked), [locked])
   // Text on screen per row, so a copy matches what is shown.
   const shownRef = useRef(new Map<number, string>())
 
@@ -706,7 +782,9 @@ function Results({
 
   return (
     <div className="space-y-2">
-      <ResultsToolbar formats={FORMATS} format={format} onFormatChange={onFormatChange} count={prompts.length} onCopyAll={copyAll} />
+      <ResultsToolbar formats={FORMATS} format={format} onFormatChange={onFormatChange} count={prompts.length} onCopyAll={copyAll}>
+        {missing > 0 && <span className="text-xs tabular-nums text-warning-text">{missingText(missing)}</span>}
+      </ResultsToolbar>
       <div className="space-y-1.5">
         {prompts.map((p, i) => (
           <BriefResultRow
@@ -718,6 +796,8 @@ function Results({
             naturalSourceOf={naturalSourceOf}
             overrides={overrides}
             shownRef={shownRef}
+            locked={lockedSet.has(i)}
+            onToggleLock={onToggleLock}
             onCopy={copyOne}
             onReroll={reroll}
             onAlways={onAlways}
@@ -738,11 +818,15 @@ const BriefResultRow = memo(function BriefResultRow({
   naturalSourceOf,
   overrides,
   shownRef,
+  locked,
+  onToggleLock,
   onCopy,
   onReroll,
   onAlways,
   onNever,
 }: {
+  locked: boolean
+  onToggleLock: (index: number) => void
   index: number
   prompt: PackPrompt
   format: PromptFormat
@@ -772,6 +856,8 @@ const BriefResultRow = memo(function BriefResultRow({
       postId={prompt.scene?.postId}
       thumbSrc={prompt.scene?.preview ? getPostThumbnailUrl(prompt.scene.preview) : undefined}
       pending={format !== "tags" && natural.status === "loading"}
+      locked={locked}
+      onToggleLock={onToggleLock}
       onCopy={onCopy}
       onReroll={onReroll}
       onAlways={onAlways}

@@ -174,6 +174,7 @@ const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSour
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBriefBuilder), { ssr: false, loading: () => null })
 import type { PackBriefStart } from "./pack/pack-brief-builder"
+import { usableSearchTags } from "@/lib/pack/brief-pack"
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, Package, PenLine, SlidersHorizontal } from "lucide-react"
 import { ControlSection } from "@/components/prompt-gallery/control-section"
@@ -813,6 +814,8 @@ export function PromptGallery() {
   const [packPickingCard, setPackPickingCard] = useState(false)
   if (packPickingCard && !packModeIsPackMode) setPackPickingCard(false)
   const packBriefOpen = !!packBrief && packModeIsPackMode && !packPickingCard
+  // The card a pack started from, marked in the gallery.
+  const packBriefCardId = packBrief?.start.kind === 'card' ? packBrief.start.post.id : null
   // Pack Mode picks and cleans tags with the measured tag relations: load them while it's open.
   useTagRelations(packModeIsPackMode)
   const packModeSetBaseCard = packMode.setBaseCard
@@ -1155,6 +1158,7 @@ export function PromptGallery() {
     () => (packEntryOpen ? searchedCharacterIn(search.allPosts ?? [], search.debouncedSearchTags) : null),
     [packEntryOpen, search.allPosts, search.debouncedSearchTags]
   )
+  const packSearchTags = useMemo(() => (packEntryOpen ? usableSearchTags(search.searchTags) : []), [packEntryOpen, search.searchTags])
   // "From my search": the search's tags and the character its results are about.
   const handleStartFromSearch = useCallback(() => {
     startPackBrief({ kind: 'search', search: search.searchTags, character: packSearchCharacter })
@@ -1945,7 +1949,7 @@ export function PromptGallery() {
       onTogglePart={mergeModeTogglePostPart}
       onMergeSelect={() => { }}
       isPackMode={packModeIsPackMode}
-      isPackBase={packMode.baseCard?.id === post.id}
+      isPackBase={packMode.baseCard?.id === post.id || packBriefCardId === post.id}
       onSetAsPackBase={handleSetAsPackBase}
       onMakePack={handleMakePack}
       onSkipAnimation={() => setCopiedId(null)}
@@ -1958,7 +1962,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, cardFillMissingTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, handleSetAsPackBase, handleMakePack])
+  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, cardFillMissingTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, packBriefCardId, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -2586,6 +2590,7 @@ export function PromptGallery() {
         onSubmitPrompt={handleSubmitPackPrompt}
         onCancel={handlePackEntryCancel}
         searchCharacter={packSearchCharacter}
+        searchTags={packSearchTags}
         onChooseSearch={handleStartFromSearch}
         onSubmitCharacters={handleStartFromCharacters}
       />}

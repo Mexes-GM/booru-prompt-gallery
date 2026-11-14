@@ -46,6 +46,19 @@ export const BUILDER_TEXT = {
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
 } as const
 
+/** What a correction from the results did, for the notice with Undo. */
+export const CORRECTION_TEXT = {
+  never: (tag: string, changed: number) =>
+    changed === 0 ? `No prompt had ${tag}` : `Removed ${tag} from ${changed} ${changed === 1 ? "prompt" : "prompts"}`,
+  always: (tag: string, changed: number) =>
+    changed === 0 ? `${tag} was already in every prompt` : `Added ${tag} to ${changed} ${changed === 1 ? "prompt" : "prompts"}`,
+  lockedKeep: (n: number) => `${n} locked ${n === 1 ? "prompt still has" : "prompts still have"} it`,
+  working: "Updating the prompts…",
+} as const
+
+/** "4 prompts missing" beside the results, when the pack came out short. */
+export const missingText = (missing: number) => `${missing} ${missing === 1 ? "prompt" : "prompts"} missing`
+
 /** What each way into a pack says it brought (shown until the first change). */
 export const START_TEXT = {
   cardNamed: "From the card: who's in it.",

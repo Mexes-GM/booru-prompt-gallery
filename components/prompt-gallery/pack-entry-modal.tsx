@@ -30,12 +30,14 @@ export interface PackEntryModalProps {
   onCancel: () => void
   /** The one character the current search is about, if any: offered as a base with no card. */
   searchCharacter?: string | null
+  /** The search's tags a pack can use; the search is offered when there are any, or a character. */
+  searchTags?: readonly string[]
   onChooseSearch?: () => void
   /** "From a character": the typed characters, with spaces ("hatsune miku"); the first is the base, the others its group. */
   onSubmitCharacters: (characters: string[]) => void
 }
 
-export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = false, onChooseCard, onSubmitPrompt, onCancel, searchCharacter, onChooseSearch, onSubmitCharacters }: PackEntryModalProps) {
+export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = false, onChooseCard, onSubmitPrompt, onCancel, searchCharacter, searchTags = [], onChooseSearch, onSubmitCharacters }: PackEntryModalProps) {
   const [view, setView] = useState<"choose" | "prompt" | "character">("choose")
   const [promptText, setPromptText] = useState(initialPrompt)
   const [characters, setCharacters] = useState<string[]>([])
@@ -96,7 +98,7 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
               </DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-2">
-              {searchCharacter && onChooseSearch && (
+              {(searchCharacter || searchTags.length > 0) && onChooseSearch && (
                 <button
                   type="button"
                   onClick={onChooseSearch}
@@ -105,10 +107,12 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
                   <Search className="w-6 h-6 flex-shrink-0 text-mode-pack-text" aria-hidden="true" />
                   <span className="min-w-0">
                     <span className="block text-sm font-medium">
-                      From my search: <span className="font-mono">{searchCharacter}</span>
+                      From my search: <span className="font-mono">{searchCharacter ?? searchTags.slice(0, 3).join(", ")}</span>
                     </span>
                     <span className="block text-xs text-muted-foreground">
-                      No card needed. Their look comes from what most of your results show.
+                      {searchCharacter
+                        ? "No card needed. Their look comes from what most of your results show."
+                        : "No card needed. Your search's tags go to the rows they belong in."}
                     </span>
                   </span>
                 </button>
