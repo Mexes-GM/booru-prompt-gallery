@@ -9,6 +9,7 @@ import { splitCommaSeparatedTags } from '../utils/tag-utils'
 import { normalizeTagForPack } from './pack-generator'
 import { COUNT_TAG_RE } from './scene/permanence'
 import { MAX_CAST, type CastRole } from './scene/cast'
+import { isVerbTag } from './scene/scene-compose'
 import type { PackPeople } from './scene/scene-pool'
 
 /** What a requested tag is about. Decides how the engine treats it. */
@@ -81,7 +82,9 @@ export function routeTag(tag: string, overrides: Record<string, string>): BriefR
   if (!found) return { kind: 'literal' }
   const { category, slot } = found
   if (category === 'clothing') return { kind: 'request', role: 'wearing' }
-  if (category === 'equipment' || category === 'creature') return { kind: 'request', role: 'also' }
+  // An action the taxonomy files with the things it is done with ("reading", "carrying") is what
+  // the body does, like a posture; the thing itself ("book", "holding sword") is not.
+  if (category === 'equipment' || category === 'creature') return { kind: 'request', role: isVerbTag(normalized) ? 'doing' : 'also' }
   if (!slot) return { kind: 'literal' }
   if (DOING_SLOTS.has(slot)) return { kind: 'request', role: 'doing' }
   if (ALSO_SLOTS.has(slot)) return { kind: 'request', role: 'also' }

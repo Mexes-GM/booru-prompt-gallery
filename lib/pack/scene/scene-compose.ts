@@ -226,7 +226,7 @@ const HANDLING_BEFORE_LOAD = new Set(['reverse grip'])
 /** Categories whose tags can be the object of those verbs (a sword, a horse). */
 const OBJECT_CATEGORIES = new Set(['equipment', 'creature'])
 /** Slots of things carried in the hand: what a generic grip verb ("holding") can refer to. */
-const HAND_SLOTS = new Set(['equipment:handheld', 'equipment:weapon'])
+export const HAND_SLOTS: ReadonlySet<string> = new Set(['equipment:handheld', 'equipment:weapon'])
 /** Verbs a creature can be the object of ("riding" a horse, "carrying" a cat). */
 const CREATURE_VERBS = new Set(['riding', 'carrying'])
 
@@ -248,7 +248,7 @@ function canBeHeld(tag: string, verb: string, overrides: Record<string, string>,
 const GERUND = /^[a-z]{3,}ing$/
 
 /** True for a tag that names an action rather than a thing: the grip verbs, and one-word gerunds. */
-function isVerbTag(tag: string): boolean {
+export function isVerbTag(tag: string): boolean {
   return OBJECT_VERBS.has(tag) || GERUND.test(tag)
 }
 
