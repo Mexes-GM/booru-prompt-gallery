@@ -61,7 +61,7 @@ export function ratingsSentence(ratings: readonly string[]): string {
 
 /** The rule behind the searches, said once under them. */
 export const SEARCH_RULE =
-  "Only what's in Doing decides which posts are searched. Wearing, Where and the rest are applied afterwards to the scenes found."
+  "What's in Doing decides which scenes are searched. Clothes and places set to Any get searches of their own that only lend them; the rest is applied to the scenes found."
 
 /** A search that ran out without a single post; the character's own search says the name may be spelled another way. */
 export function noPostsSentence(kind: SceneSearch["kind"], site: string): string {
@@ -77,9 +77,28 @@ export function leftOutSentence(leftOut: SourcePlan["leftOut"], site: string, li
   return `${tags} didn't fit in the searches: ${site} searches at most ${plural(limit, "tag", "tags")} at a time.`
 }
 
-/** The posts a search has brought, and whether it has more: "95 posts, all there are", "240 posts". */
-export const searchCount = (posts: number, ended: boolean): string =>
-  `${plural(posts, "post", "posts")}${ended && posts > 0 ? ", all there are" : ""}`
+/**
+ * The posts a search adds to the pack, and whether it has more: "95 posts, all there are",
+ * "240 posts", "12 new of 95 posts" (the rest were already in a search above). The first numbers
+ * of the rows add up to the loaded line's.
+ */
+export const searchCount = (adds: number, posts: number, ended: boolean): string => {
+  const count = posts > adds ? `${adds} new of ${plural(posts, "post", "posts")}` : plural(adds, "post", "posts")
+  return `${count}${ended && posts > 0 ? ", all there are" : ""}`
+}
+
+/** A donor search in plain words: "Anyone wearing bikini", "Any picture at a beach". */
+export function donorDescription(kind: "wearing" | "where", conditions: readonly string[]): string {
+  if (kind === "wearing") return `Anyone wearing ${listWords(conditions)}`
+  const first = showTag(conditions[0] ?? "")
+  return `Any picture at ${/^[aeiou]/i.test(first) ? "an" : "a"} ${listWords(conditions)}`
+}
+
+/** What a donor search's posts are for. */
+export const DONOR_ROLE: Record<"wearing" | "where", string> = {
+  wearing: "Only lends clothes to the scenes found.",
+  where: "Only lends a place to the scenes found.",
+}
 
 /** The tags of a search as the site gets them: "sui-feng double_penetration". */
 export const searchTagsText = (search: Pick<SceneSearch, "tags">) => search.tags.join(" ")

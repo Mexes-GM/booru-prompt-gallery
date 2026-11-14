@@ -37,7 +37,9 @@ import {
   addLook as addLookInBrief,
   addNever,
   addOther as addOtherInBrief,
-  addTag,
+  addTagExactly,
+  canBeCondition,
+  briefCompositions,
   briefFromPrompt,
   routeTag,
   typedRole,
@@ -46,6 +48,7 @@ import {
 } from "@/lib/pack/brief"
 import { briefFromCharacters } from "@/lib/pack/brief-history"
 import type { CastRole } from "@/lib/pack/scene/cast"
+import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { splitTags } from "@/lib/utils/tag-utils"
@@ -92,6 +95,7 @@ import { cn } from "@/lib/utils"
 import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
 import { getProviderTagLimit } from "@/lib/booru/tag-limits"
 import { SearchDetails } from "./search-details"
+import type { EntryOption } from "./tag-entry"
 import { AUTO_PAGE_CAP } from "@/lib/pack/source-paging"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
@@ -99,7 +103,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -388,6 +392,7 @@ const FORMATS: Choice<PromptFormat>[] = PROMPT_FORMATS.map((f) => ({ value: f, l
 const NO_POSTS: never[] = []
 const NO_IDS: string[] = []
 const NO_PROGRESS: never[] = []
+const NO_DONORS: number[] = []
 const UNDO_MS = 6000
 
 /** A sentence that ends with its stop, once. */
@@ -443,11 +448,18 @@ function BriefWorkspace({
     () => (originOf && ownKey ? preferredPostIds(originOf, new Set(ownKey.split("||"))) : []),
     [originOf, ownKey]
   )
+  // Posts only the donor searches brought: they lend clothes or a place to the scenes.
+  const [donorKey, setDonorKey] = useState("")
+  const donorPosts = useMemo(
+    () => (originOf && donorKey ? preferredPostIds(originOf, new Set(donorKey.split("||"))) : NO_DONORS),
+    [originOf, donorKey]
+  )
 
   const engine = usePackBriefScenes({
     brief,
     posts,
     preferredPosts,
+    donorPosts,
     provider,
     rating,
     includeSensitive: preferences.includeSensitive,
@@ -466,6 +478,8 @@ function BriefWorkspace({
   // from the plan of the previous render (the plan needs the posts to settle).
   const planOwnKey = plan.scenes.filter((s) => s.kind === "own").map((s) => s.id).join("||")
   if (planOwnKey !== ownKey) setOwnKey(planOwnKey)
+  const planDonorKey = plan.donors.map((s) => s.id).join("||")
+  if (planDonorKey !== donorKey) setDonorKey(planDonorKey)
   const searching = plan.scenes.some((s) => s.tags.length > 0)
 
   // ── What fits ───────────────────────────────────────────────────────────────────
@@ -544,9 +558,13 @@ function BriefWorkspace({
   const loaded = useMemo(
     () =>
       loadedPosts > 0
-        ? { text: BUILDER_TEXT.loadedFrom(loadedPosts, PROVIDER_LABELS[provider], loadedAll), onFindMore: loadedMore ? loadOnePage : undefined }
+        ? {
+            // The posts that give scenes, and the donors' apart: the same numbers How it searches adds up.
+            text: BUILDER_TEXT.loadedFrom(loadedPosts - donorPosts.length, PROVIDER_LABELS[provider], loadedAll, donorPosts.length),
+            onFindMore: loadedMore ? loadOnePage : undefined,
+          }
         : null,
-    [loadedPosts, loadedAll, loadedMore, provider, loadOnePage]
+    [loadedPosts, loadedAll, loadedMore, provider, loadOnePage, donorPosts.length]
   )
   // What the pack searches, folded under the fit line until asked for.
   const searchesId = useId()
@@ -575,7 +593,7 @@ function BriefWorkspace({
       nothingNew: manual?.nothingNew ? { exhausted: !!source?.noMoreResults } : null,
     }
     if (loadError) return []
-    const predicted = () => predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused, axis: axisNote })
+    const predicted = () => predictFit({ candidates: usable, count, poses, finding, canOfferSensitive, paused, axis: axisNote, conditions: engine.conditionSupply })
     if (!result) return mergeFitNotes(withSearchProgress([...lead, ...predicted()], progress))
     // Out of date: the last pack's notes are about another brief; the line speaks of the brief as it is.
     if (stale) return mergeFitNotes(withSearchProgress([{ kind: "stale" }, ...lead, ...predicted()], progress))
@@ -590,7 +608,7 @@ function BriefWorkspace({
       axis: oneAxis(result.brief),
     })
     return mergeFitNotes(withSearchProgress([...lead, ...after], progress))
-  }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, brief.people, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
+  }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, brief.people, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults, engine.conditionSupply])
   // A page waiting for the pace limit: said in place of "Finding scenes…", gone once it goes.
   const lineNotes = useMemo(() => withWaiting(notes, waiting), [notes, waiting])
   const { setIncludeSensitive } = pack
@@ -727,7 +745,7 @@ function BriefWorkspace({
   // scenes; Undo puts brief, prompts, locks and format back as they were.
   const { format: promptFormat, setFormat } = usePromptFormat()
   const correctionIdRef = useRef(0)
-  const { addLook } = pack
+  const { addLook, addExactly } = pack
   const correct = useCallback((kind: "always" | "never", raw: string) => {
     if (!result || engine.busy || engine.sourceChanged) return
     const tag = bareToken(raw)
@@ -759,9 +777,10 @@ function BriefWorkspace({
       apply = () => addLook(ownerTag, tag)
     } else {
       // Like a tag typed in Also: one the taxonomy does not know goes to Style.
+      // Always on a garment or a place of a prompt asks for that tag: exact, not any form of it.
       const role = typedRole(tag, "also", overrides)
-      next = addTag(brief, tag, overrides, role)
-      apply = () => add(tag, role)
+      next = addTagExactly(brief, tag, overrides, role)
+      apply = () => addExactly(tag, role)
     }
     if (JSON.stringify(next) === JSON.stringify(brief)) return
     setCorrection({
@@ -769,7 +788,7 @@ function BriefWorkspace({
       briefBefore: brief, briefAfter: null, status: "waiting", message: null,
     })
     apply()
-  }, [result, engine.busy, engine.sourceChanged, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, add, othersTag, addOther])
+  }, [result, engine.busy, engine.sourceChanged, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, addExactly, othersTag, addOther])
   const onAlways = useCallback((tag: string) => correct("always", tag), [correct])
   const onNever = useCallback((tag: string) => correct("never", tag), [correct])
   // Runs once the brief has the change (the engine's arguments follow it). Every outcome
@@ -892,15 +911,62 @@ function BriefWorkspace({
   }, [brief.who, identity.members])
   const { setChanges } = pack
   const changesControl = useMemo(() => ({ value: brief.changes, onChange: setChanges }), [brief.changes, setChanges])
+  // Several make-ups can be marked; a one-part pack keeps one (its scene that repeats sets it).
+  const { toggleComposition } = pack
+  const enginePeople = engine.people
+  const onTogglePeople = useCallback((option: PackPeople) => toggleComposition(option, enginePeople), [toggleComposition, enginePeople])
   const people = engine.peopleLine
-    ? { options: engine.peopleLine.options, value: engine.peopleLine.value, onChange: setPeople, cast: identity.cast, poseNeeds: engine.peopleLine.poseNeeds }
+    ? {
+        options: engine.peopleLine.options,
+        value: engine.peopleLine.value,
+        onChange: setPeople,
+        cast: identity.cast,
+        poseNeeds: engine.peopleLine.poseNeeds,
+        ...(axis
+          ? { note: PEOPLE_TEXT.axis }
+          : { selected: engine.peopleSelected, onToggle: onTogglePeople, blocked: engine.peopleBlocked }),
+      }
     : null
+  // ── Wearing and Where as conditions ─────────────────────────────────────────────
+  // Every garment, and a place, is met with a different form per prompt unless made exact.
+  const exactness = useMemo(() => {
+    const out: Record<string, boolean> = {}
+    for (const r of brief.requests) if (canBeCondition(r, overrides)) out[r.tag] = !!r.exact
+    return out
+  }, [brief.requests, overrides])
+  // The library's styles: offered in the Wearing field, chosen as chips.
+  const { addStyle, removeStyle } = pack
+  const chosenStyles = brief.outfitStyles ?? NO_IDS
+  const styleOptions = useMemo<EntryOption[]>(
+    () => engine.allowedStyles
+      .filter((style) => !chosenStyles.includes(style) && (engine.styleCounts[style] ?? 0) > 0)
+      .map((style) => ({
+        id: style,
+        label: STYLE_TEXT.name(style),
+        detail: STYLE_TEXT.count(engine.styleCounts[style] ?? 0),
+        onPick: () => addStyle(style, STYLE_TEXT.chip(style)),
+      })),
+    [engine.allowedStyles, engine.styleCounts, chosenStyles, addStyle]
+  )
+  const styleChips = useMemo(
+    () => chosenStyles.map((style) => ({
+      style,
+      label: STYLE_TEXT.chip(style),
+      inactive: engine.allowedStyles.includes(style as OutfitStyle) ? undefined : STYLE_TEXT.notAtRating,
+      onRemove: () => removeStyle(style, STYLE_TEXT.chip(style)),
+    })),
+    [chosenStyles, engine.allowedStyles, removeStyle]
+  )
+  const unusedStyles = chosenStyles.filter((style) => !engine.allowedStyles.includes(style as OutfitStyle))
+  const styleNote = unusedStyles.length > 0 ? STYLE_TEXT.unused(unusedStyles) : undefined
+
   // Others shows once the make-up has someone besides the characters (the chosen one, or the one the scenes give).
   const composition = engine.people ?? brief.people
   const othersApply = composition ? composition.girls + composition.boys > identity.cast.girls + identity.cast.boys : null
   const othersRow = useMemo(() => ({ applies: othersApply }), [othersApply])
   const summary = useMemo(() => {
-    const label = brief.people ? companionsLabel(brief.people, identity.cast) : null
+    // Several make-ups: "with 2 boys or with 3 boys".
+    const label = brief.people ? briefCompositions(brief).map((p) => companionsLabel(p, identity.cast)).join(" or ") : null
     const parts = briefSummaryParts(brief, label, characterInfo)
     // The folded line says when only one part changes.
     const changes = CHANGES_OPTIONS.find((o) => o.value === brief.changes)
@@ -1015,6 +1081,11 @@ function BriefWorkspace({
           changes={changesControl}
           people={people}
           others={othersRow}
+          exactness={exactness}
+          onSetExact={pack.setExact}
+          styleOptions={styleOptions}
+          styleChips={styleChips}
+          styleNote={styleNote}
           offers={offers}
           suggestions={suggestions.suggestions}
           suggestionStatus={suggestions.status}

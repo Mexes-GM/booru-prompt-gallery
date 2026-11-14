@@ -7,22 +7,23 @@
  * The steps each composed scene goes through are listed on finishOne.
  */
 import type { BooruPost } from '../booru/types'
-import { SLOT_CONSTRAINTS, getTagSlotFromOverrides } from '../tag-taxonomy'
+import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import { splitTags } from '../utils/tag-utils'
 import { finalizePackPrompt } from './always-add'
 import { MAX_PACK_OVERGENERATE, createSeededRng, normalizeTagForPack, type PackPrompt } from './pack-generator'
 import { NearDuplicateFilter, DEFAULT_SIMILARITY_THRESHOLD } from './prompt-similarity'
-import { HAND_SLOTS, composeLent, composePack, composePackPrompts, outfitWears, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { HAND_SLOTS, composeLent, composePack, composePackPrompts, lentScene, outfitWears, placeFits, sceneHasIdeaTag, type ComposeOptions, type ScenePrompt } from './scene/scene-compose'
+import { CLOTHING_SLOTS, ConditionQueue, garmentPieces, garmentRegion, isLibraryDonor, layersOver, libraryDonor, metCount, regionTags, lendOutfitPart, slotsTakenBy, valueKey, type GarmentRegion } from './scene/scene-conditions'
 import { AXIS_SOURCE, AXIS_UNITS, DonorQueue, axisKey, axisOfTag, axisTags, canLend, lendingClashes, showsFace, type OneAxis } from './scene/scene-axis'
 import { coherentPromptTags, dropRedundantTags, isCompanyAct, loneCompanyTags } from './prompt-coherence'
 import { COUNT_TAG_RE, isCompositionPattern, type Permanence } from './scene/permanence'
-import { normalizeRating, sceneTags, unitOfSlot, type Scene, type SceneRating, type TagKind } from './scene/scene'
+import { UNIT_ORDER, normalizeRating, sceneTags, unitOfSlot, type Scene, type SceneRating, type TagKind, type UnitName } from './scene/scene'
 import { isQualifiedVariant } from './character-identity'
-import { compositionsOf, type PackPeople, type ScenePool } from './scene/scene-pool'
+import { compositionsOf, groupSituations, type PackPeople, type ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
 import { garmentPrefix, lastQualifier } from './scene/franchise'
 import type { ChangesAxis, SceneRequests } from './brief'
-import { excludes, loadedTagRelations, needsCompany, type TagRelations } from '../tag-relations'
+import { excludes, loadedTagRelations, needsCompany, requiredBy, type TagRelations } from '../tag-relations'
 import { resolveTagConflicts } from '../tag-conflicts'
 
 /** The pack's content rating (same values as the source dialog). */
@@ -322,6 +323,52 @@ export function identityWithOutfits(
 export const samePeople = (a: PackPeople | null | undefined, b: PackPeople | null | undefined): boolean =>
   !!a && !!b && a.girls === b.girls && a.boys === b.boys
 
+/**
+ * The compositions a pack mixes (ScenePackArgs.compositions): two or more different ones that can
+ * hold the pack's named characters (as many people as `castSize`, the subject's gender among them).
+ * Null for a pack of one composition, which runs exactly as before.
+ */
+export function mixedCompositions(args: Pick<ScenePackArgs, 'compositions' | 'castSize' | 'subject'>): PackPeople[] | null {
+  const named = args.castSize ?? 1
+  const out: PackPeople[] = []
+  for (const people of args.compositions ?? []) {
+    const fits = people.girls + people.boys >= named && (args.subject === 'girl' ? people.girls : people.boys) >= 1
+    if (fits && !out.some((have) => samePeople(have, people))) out.push({ girls: people.girls, boys: people.boys })
+  }
+  return out.length >= 2 ? out : null
+}
+
+/**
+ * `pool` with the scenes of every composition of a mixed pack: those of `allScenes` whose people are
+ * one of them, grouped into situations again as one pool. The same pool for a pack of one composition.
+ */
+export function poolForCompositions(pool: ScenePool, args: Pick<ScenePackArgs, 'compositions' | 'castSize' | 'subject' | 'overrides'>): ScenePool {
+  const mixed = mixedCompositions(args)
+  if (!mixed) return pool
+  const scenes = (pool.allScenes ?? pool.scenes).filter((scene) => mixed.some((people) => samePeople(scene.people, people)))
+  const situations = groupSituations(scenes, args.overrides)
+  return { ...pool, scenes, situations, stats: { ...pool.stats, scenes: scenes.length, situations: situations.length } }
+}
+
+/** How many people a prompt made from `scene` has: its own count in a mixed pack, else the pack's (or one). */
+function headcountFor(args: ScenePackArgs, scene: Scene | undefined): number {
+  if (mixedCompositions(args)) return Math.max(1, scene ? headcount(scene) : 1)
+  return args.people ? args.people.girls + args.people.boys : 1
+}
+
+/** The composition a prompt made from `scene` is held to: its own in a mixed pack, else the pack's. */
+function peopleFor(args: ScenePackArgs, scene: Scene | undefined): PackPeople | null {
+  if (mixedCompositions(args)) return scene?.people ?? null
+  return args.people ?? null
+}
+
+/** True when a people-count or pairing tag fits the pack: every composition of a mixed one, else the pack's. */
+function fitsPack(tag: string, args: ScenePackArgs): boolean {
+  const mixed = mixedCompositions(args)
+  if (mixed) return mixed.every((people) => fitsComposition(tag, people))
+  return !args.people || fitsComposition(tag, args.people)
+}
+
 /** What the base says about who is in the picture. */
 export interface BaseComposition {
   /** The people the base's count tags declare ("1girl, solo" is one girl), or null when they don't. */
@@ -481,17 +528,6 @@ export function poseCompositions(pool: ScenePool, args: PoseArgs & Pick<ScenePac
 
 // ── What the character owns ─────────────────────────────────────────────────
 
-/** Garment slots that hold one piece at a time (taxonomy SLOT_CONSTRAINTS); accessories are left out. */
-const BODY_SLOTS = new Set(['clothing:outfit', 'clothing:top', 'clothing:bottom', 'clothing:underwear', 'clothing:legwear', 'clothing:footwear'])
-
-/** Body slots a garment takes up: its own, and those the taxonomy says it can't share a prompt with. */
-function slotsTakenBy(tag: string, overrides: Record<string, string>): string[] {
-  const slot = getTagSlotFromOverrides(tag, overrides)?.slot
-  if (!slot || !BODY_SLOTS.has(slot)) return []
-  const constraint = SLOT_CONSTRAINTS[slot]
-  return constraint && constraint.maxCount === 1 ? [slot, ...(constraint.incompatibleWith ?? [])] : []
-}
-
 /**
  * `tags` without what the character's own tags rule out. `fixed` are the tags
  * every prompt keeps (they stay whatever they say); then, among the rest:
@@ -580,6 +616,8 @@ export function alwaysAddFor(alwaysAdd: readonly string[], header: readonly stri
 export interface LibraryOutfit {
   outfitId: number
   tags: string[]
+  /** The outfit's style (lib/outfit-swap.ts OutfitStyle): what `requests.outfitStyles` matches. */
+  style?: string
 }
 
 export interface ScenePackArgs {
@@ -669,10 +707,35 @@ export interface ScenePackArgs {
    * or without a selected pose it can't take: the first scene the pack would use otherwise.
    */
   baseScene?: number
+  /**
+   * Posts of the pool that only lend a part to meet a condition (`requests.conditions`): the posts of
+   * the condition searches (SourcePlan.donors) that no scene search brought. Never the scene of a
+   * prompt; ignored without conditions (they are then left out of the pack).
+   */
+  donorPosts?: readonly number[]
+  /**
+   * Outfits of the library a condition may take a variant from (the outfit library of the pack's
+   * rating, with each outfit's style), whatever the Clothing option. Without it, `library` stands in.
+   */
+  outfitLibrary?: readonly LibraryOutfit[]
+  /**
+   * Other names of the conditions, by condition (brief spelling): the aliases of the tag in the tag
+   * database (auto_suggest_tags.aliases: "qipao", "cheongsam" for "china dress"). A post that carries
+   * one of them meets the condition, and the prompt says it with the condition's own name.
+   */
+  conditionAliases?: Readonly<Record<string, readonly string[]>>
+  /**
+   * Two or more compositions the pack mixes (the user's choice; each must hold the named
+   * characters, castComposition / holdsCast). The scenes come from any of them (the pool's
+   * `allScenes`), each prompt keeps the composition of its base scene (its header, pairing, pose
+   * and what depends on how many people there are), and only what doesn't depend on it (clothes,
+   * place, face, framing) is lent across them. Missing or one: `people` alone, exactly as before.
+   */
+  compositions?: readonly PackPeople[]
 }
 
 /** A request's role for the engine (keys of SceneRequests); not brief.ts's RequestRole, which names the brief's slots. */
-export type SceneRequestRole = keyof SceneRequests
+export type SceneRequestRole = Exclude<keyof SceneRequests, 'conditions' | 'outfitStyles'>
 
 /**
  * What the engine could not do as asked, for the interface to say in words. One entry per
@@ -708,6 +771,19 @@ export type ScenePackIssue =
    * (the base's included) go with the base scene, so `prompts` prompts were made.
    */
   | { kind: 'few-variations'; axis: Exclude<ChangesAxis, 'scene'>; variations: number; prompts: number }
+  /**
+   * Requests met as conditions (`requests.conditions`, `outfitStyles`): one entry for the garments
+   * and styles (role 'wearing') and one for the places ('where'), always, in a pack of whole scenes.
+   * `variants` different outfit parts (or places) met them across the pack; by prompt, where the
+   * variant came from: the prompt's own scene (`fromScene`), another scene that lent it
+   * (`fromDonors`), a library outfit (`fromLibrary`), or none, so the tags went in as typed
+   * (`imposed`). `partial` prompts had a donor that met only some of the tags (the rest as typed).
+   * `styles`: the library styles asked for (role 'wearing'; [] otherwise).
+   */
+  | {
+    kind: 'condition-variety'; role: 'wearing' | 'where'; tags: string[]; styles: string[]
+    variants: number; fromScene: number; fromDonors: number; fromLibrary: number; imposed: number; partial: number
+  }
 
 export type RequestDropReason =
   /** The same tag is in "Never include" (or a removed chip). */
@@ -725,12 +801,19 @@ export interface ScenePackResult {
 const isCast = (args: ScenePackArgs) => (args.castSize ?? 1) >= 2
 /** The base's clothing is used: the option is on, there is some, the pack has one character, and no garment was asked for. */
 const wearsBaseClothing = (args: ScenePackArgs) =>
-  !isCast(args) && args.settings.clothing === 'base' && (args.baseClothing?.length ?? 0) > 0 && requestPlan(args).wearing.length === 0
+  !isCast(args) && args.settings.clothing === 'base' && (args.baseClothing?.length ?? 0) > 0 && !asksOutfit(args)
+/** A garment or a library style was asked for: the clothing options give way to it. */
+const asksOutfit = (args: ScenePackArgs) => requestPlan(args).wearing.length > 0 || requestPlan(args).conditions.styles.length > 0
+/** Some requests are met as conditions (a variant per prompt). */
+const hasConditions = (args: ScenePackArgs) => {
+  const { wearing, where, styles } = requestPlan(args).conditions
+  return wearing.length + where.length + styles.length > 0
+}
 /** Every character wears their own outfit (it is in the identity), and nothing of the scene's. */
 const wearsCharacterOutfit = (args: ScenePackArgs) => args.settings.clothing === 'character' && (args.characterOutfit?.length ?? 0) > 0
 /** Every character wears what is pinned in their block, and nothing of the scene's. */
 const wearsOwnOutfits = (args: ScenePackArgs) =>
-  requestPlan(args).wearing.length === 0 && ((isCast(args) && args.settings.clothing === 'own') || wearsCharacterOutfit(args))
+  !asksOutfit(args) && ((isCast(args) && args.settings.clothing === 'own') || wearsCharacterOutfit(args))
 
 // ── Requests ──────────────────────────────────────────────────────────────────
 
@@ -767,12 +850,17 @@ interface RequestPlan {
   /** What the character usually wears, set aside for the garments asked for: it doesn't come back through the scene either. */
   setAside: string[]
   literal: string[]
+  /**
+   * The requests met as conditions (SceneRequests.conditions, outfitStyles): `wearing` and `where`
+   * are subsets of the plan's own; `styles`, the library styles asked for.
+   */
+  conditions: { wearing: string[]; where: string[]; styles: string[] }
   roleOf: Map<string, SceneRequestRole>
   /** Requests left out before composing, and why. */
   dropped: ScenePackIssue[]
 }
 
-const NO_REQUESTS: RequestPlan = { identity: [], imposed: [], wearing: [], where: [], owning: [], select: [], setAside: [], literal: [], roleOf: new Map(), dropped: [] }
+const NO_REQUESTS: RequestPlan = { identity: [], imposed: [], wearing: [], where: [], owning: [], select: [], setAside: [], literal: [], conditions: { wearing: [], where: [], styles: [] }, roleOf: new Map(), dropped: [] }
 const plans = new WeakMap<ScenePackArgs, RequestPlan>()
 
 /** What `args.requests` means for this pack, worked out once per args. */
@@ -793,7 +881,7 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
         dropped.push({ kind: 'request-dropped', tag, role, reason: 'never' })
         return []
       }
-      if (args.people && isCompositionPattern(tag) && !fitsComposition(tag, args.people)) {
+      if (isCompositionPattern(tag) && !fitsPack(tag, args)) {
         dropped.push({ kind: 'request-dropped', tag, role, reason: 'composition' })
         return []
       }
@@ -806,11 +894,12 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
   const imposed = [...wearing, ...where, ...owning]
   const literal = requests.literal.filter((tag) => tag.trim())
   literal.forEach((tag) => roleOf.set(normalizeTagForPack(tag), roleOf.get(normalizeTagForPack(tag)) ?? 'literal'))
-  alwaysAddOmitted(literal, args.people ?? null).forEach((tag) =>
+  ;(mixedCompositions(args) ? literal.filter((tag) => isCompositionPattern(tag) && !mixedCompositions(args)!.some((people) => fitsComposition(tag, people))) : alwaysAddOmitted(literal, args.people ?? null)).forEach((tag) =>
     dropped.push({ kind: 'request-dropped', tag, role: 'literal', reason: 'composition' })
   )
-  // What the character wears gives way to the garment asked for; what they are stays.
-  const setAside = wearing.length > 0 ? args.identity.filter((tag) => isWornByCharacter(tag, args.overrides, args.permanence)) : []
+  const asCondition = new Set((requests.conditions ?? []).map(normalizeTagForPack).filter(Boolean))
+  // What the character wears gives way to the garment asked for (or a library style); what they are stays.
+  const setAside = wearing.length > 0 || (requests.outfitStyles ?? []).some((style) => style.trim()) ? args.identity.filter((tag) => isWornByCharacter(tag, args.overrides, args.permanence)) : []
   const aside = new Set(setAside)
   const character = args.identity.filter((tag) => !aside.has(tag))
   const have = new Set(character.map(normalizeTagForPack))
@@ -823,6 +912,11 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
     select,
     setAside: setAside.map(normalizeTagForPack),
     literal,
+    conditions: {
+      wearing: wearing.filter((tag) => asCondition.has(tag)),
+      where: where.filter((tag) => asCondition.has(tag)),
+      styles: Array.from(new Set((requests.outfitStyles ?? []).map((style) => style.trim().toLowerCase()).filter(Boolean))),
+    },
     roleOf,
     dropped,
   }
@@ -965,7 +1059,7 @@ function composeOptions(args: ScenePackArgs, count: number, seed: number, disabl
   const { settings } = args
   const plan = requestPlan(args)
   const selection = args.requests ? poseSelection(args) : null
-  const library = !isCast(args) && settings.clothing === 'library' && args.library && args.library.length > 0 && plan.wearing.length === 0
+  const library = !isCast(args) && settings.clothing === 'library' && args.library && args.library.length > 0 && !asksOutfit(args)
   return {
     identity: fixedTags(args),
     subject: args.subject,
@@ -981,6 +1075,7 @@ function composeOptions(args: ScenePackArgs, count: number, seed: number, disabl
     sceneIdeaTags: args.sceneIdea?.core.length ? args.sceneIdea.core : undefined,
     ...(plan.wearing.length > 0 ? { wearing: plan.wearing } : {}),
     ...(plan.where.length > 0 ? { where: plan.where } : {}),
+    ...(hasConditions(args) ? { conditions: true } : {}),
     ...(selection && selection.needed.size > 0
       ? { actBody: (scene: Scene, clothes: readonly string[]) => actBody(scene, clothes, selection, args.overrides) }
       : {}),
@@ -1139,6 +1234,8 @@ interface Finisher {
   lonely: Map<string, number>
   /** With selected poses: the scenes the pack used and the steps it took. */
   pose: PoseTally | null
+  /** With conditions: their donors and what they did. */
+  cond: ConditionRun | null
 }
 
 interface PoseTally {
@@ -1151,13 +1248,14 @@ interface PoseTally {
   imposed: Map<string, number>
 }
 
-function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filter: NearDuplicateFilter, pose: PosePlan | null = null): Finisher {
+function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filter: NearDuplicateFilter, pose: PosePlan | null = null, cond: ConditionRun | null = null): Finisher {
   const situationOf = new Map<number, string>()
   pool.situations.forEach((situation) => situation.sceneIds.forEach((id) => situationOf.set(id, situation.id)))
   return {
     pool, args, leftOut: ideaClothesLeftOut(args), seen, filter,
     sceneById: new Map(pool.scenes.map((scene) => [scene.postId, scene])), situationOf, lonely: new Map(),
     pose: pose ? { plan: pose, used: new Set(), reused: 0, imposed: new Map() } : null,
+    cond,
   }
 }
 
@@ -1185,6 +1283,7 @@ function packIssues(f: Finisher, made: number, count: number): ScenePackIssue[] 
   const plan = requestPlan(f.args)
   const issues = [...plan.dropped, ...othersIssues(f)]
   f.lonely.forEach((prompts, tag) => issues.push({ kind: 'needs-company', tag, role: plan.roleOf.get(normalizeTagForPack(tag)) ?? 'literal', prompts }))
+  issues.push(...conditionIssues(f.cond))
   const tally = f.pose
   if (!tally) return issues
   const { selection, carriers, elsewhere } = tally.plan
@@ -1216,7 +1315,8 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const owner = wearing.size > 0 ? composed.locked.filter((tag) => !wearing.has(tag)) : composed.locked
   const owned = new Set(applySceneOwnership(tags, owner, [...(args.never ?? []), ...plan.setAside], args.overrides, !isCast(args)))
   const ownedTags = tags.filter((tag) => locked.has(tag) || owned.has(tag))
-  const people = args.people ? args.people.girls + args.people.boys : 1
+  const baseScene = f.sceneById.get(composed.sources.skeleton)
+  const people = headcountFor(args, baseScene)
   const requested = displaceRequestedSlots(ownedTags, plan.owning, composed.locked, args.overrides, people)
   // A selected pose the scene of the prompt's pose lacks is imposed on it: what of that pose contradicts it goes.
   const imposed = args.requests ? imposedOn(f.sceneById.get(composed.sources.pose ?? composed.sources.skeleton), poseSelection(args)) : []
@@ -1236,7 +1336,7 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
     people: true,
   })
   const front = Array.from(new Set([...plan.literal, ...args.alwaysAdd]))
-  const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(front, composed.locked, args.people))
+  const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(front, composed.locked, peopleFor(args, baseScene)))
   if (!prompt || f.seen.has(prompt) || !f.filter.tryAccept(prompt)) return null
   f.seen.add(prompt)
   // A request that needs company stays in a one-person prompt; the pack says so.
@@ -1260,7 +1360,8 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
       preview: f.sceneById.get(postId)?.preview,
       ...(f.sceneById.get(postId)?.invented ? { invented: true } : {}),
       situation: f.situationOf.get(postId),
-      donors: Array.from(new Set(Object.values(composed.sources).filter((id): id is number => id !== undefined))),
+      // Library outfits lend with negative ids (PackPrompt.outfitId says which): never a post's.
+      donors: Array.from(new Set(Object.values(composed.sources).filter((id): id is number => id !== undefined && id >= 0))),
     },
   }
 }
@@ -1379,10 +1480,10 @@ function packPlan(pool: ScenePool, args: ScenePackArgs, count: number): PackPlan
   })
   if (carriers.length > 0) add(restrictPool(base, idsOf(carriers)), 0, 'reuse', 'remix')
   // Among the scenes a pose is imposed on, those whose own pose has nothing that contradicts it come first.
-  const people = args.people ? args.people.girls + args.people.boys : 1
   const relations = loadedTagRelations()
   const clashes = (scene: Scene) => {
     const imposed = imposedOn(scene, selection)
+    const people = headcountFor(args, scene)
     return scene.units.skeleton.some((tag) => contradictsImposedPose(tag, imposed, args.overrides, people, relations))
   }
   const levels = Array.from(new Set(imposable.map(carried)))
@@ -1408,6 +1509,391 @@ function* composeForPack(args: ScenePackArgs, phases: readonly Phase[], used?: R
     const options = composeOptions(args, phase.kind === 'reuse' ? reusable * REUSES_PER_SCENE : phase.count, phase.seed, args.disabledSituations)
     for (const prompt of composePackPrompts(phasePool, phase.mix ? { ...options, mix: phase.mix } : options)) yield { prompt, kind: phase.kind }
   }
+}
+
+// ── Requests as conditions ────────────────────────────────────────────────────
+
+/** Where the variant of a condition in one prompt came from. */
+type VariantSource = 'scene' | 'donor' | 'library' | 'imposed'
+
+/** What one condition (the garments and styles, or the places) did across the pack. */
+interface ConditionTally {
+  /** Prompts by where their variant came from. */
+  from: Record<VariantSource, number>
+  /** Prompts whose donor met only some of the tags (the rest went in as typed). */
+  partial: number
+  /** Different variants in the pack (the tags lent or kept, as a set). */
+  values: Set<string>
+}
+
+const newTally = (): ConditionTally => ({ from: { scene: 0, donor: 0, library: 0, imposed: 0 }, partial: 0, values: new Set() })
+
+/** The conditions of a pack and the donors that can meet them. */
+interface ConditionRun {
+  wearing: string[]
+  where: string[]
+  styles: string[]
+  /** The part of an outfit the garments (or a style: the whole outfit) take; null without them. */
+  region: GarmentRegion | null
+  outfits: ConditionQueue | null
+  places: ConditionQueue | null
+  outfitTally: ConditionTally
+  placeTally: ConditionTally
+  /** Every scene by post id (the pool's own and the donors'), for the swaps a composed prompt records. */
+  byId: Map<number, Scene>
+  /** The pieces of each garment of the outfit slot asked for (garmentPieces), measured on those scenes. */
+  pieces: Map<string, Set<string>>
+  /** The variants of the last prompt finishWithConditions made, until the pack keeps it (commitVariant). */
+  last: { outfit: VariantOption; place: VariantOption } | null
+}
+
+/** Most donors tried for one prompt before the condition's tag goes in as typed. */
+export const MAX_CONDITION_TRIES = 16
+/** Most places tried with each outfit. */
+const MAX_PLACE_TRIES = 3
+
+/** Every clothing slot: the region a library style takes (the whole outfit). */
+const ALL_CLOTHING: GarmentRegion = { garments: [], slots: CLOTHING_SLOTS, torso: true }
+
+/** The garments' layers in an outfit part (layersOver, with the measured relations). */
+function layered(value: readonly string[], garments: readonly string[], overrides: Record<string, string>, pieces?: ReadonlyMap<string, ReadonlySet<string>>): boolean {
+  const relations = loadedTagRelations()
+  const none: ReadonlySet<string> = new Set()
+  return layersOver(value, garments, overrides, relations ? (garment) => requiredBy(relations, garment) : undefined, (garment) => pieces?.get(garment) ?? none).length > 0
+}
+
+/** The pool a pack takes its scenes from: without the posts that only lend (`donorPosts`). */
+function basesOf(pool: ScenePool, args: ScenePackArgs): ScenePool {
+  const donors = args.donorPosts ?? []
+  return donors.length > 0 ? withoutScenes(pool, new Set(donors)) : pool
+}
+
+/**
+ * `scene` with every other name of a condition (ScenePackArgs.conditionAliases) written as the
+ * condition, in its outfit (a garment) or place (a place) whatever unit the unknown name fell in, qualified forms too ("red qipao" -> "red china dress"): a post
+ * the booru tagged with another name of the garment or place meets it like one tagged with its own.
+ * The same scene when it has none.
+ */
+function conditionNames(args: ScenePackArgs, wearing: readonly string[], where: readonly string[]): (scene: Scene) => Scene {
+  const canonical = new Map<string, string>()
+  for (const [tag, names] of Object.entries(args.conditionAliases ?? {})) {
+    const condition = normalizeTagForPack(tag)
+    if (!wearing.includes(condition) && !where.includes(condition)) continue
+    for (const name of names) {
+      const alias = normalizeTagForPack(name)
+      if (alias && alias !== condition) canonical.set(alias, condition)
+    }
+  }
+  if (canonical.size === 0) return (scene) => scene
+  /** The tag with the condition's own name, and the condition it names; null when it names none. */
+  const rename = (tag: string): { tag: string; condition: string } | null => {
+    const exact = canonical.get(tag)
+    if (exact) return { tag: exact, condition: exact }
+    for (const [alias, condition] of canonical) if (tag.endsWith(` ${alias}`)) return { tag: `${tag.slice(0, -alias.length)}${condition}`, condition }
+    return null
+  }
+  return (scene) => {
+    let changed = false
+    const units = { ...scene.units }
+    const moved: { outfit: string[]; place: string[] } = { outfit: [], place: [] }
+    for (const unit of UNIT_ORDER) {
+      units[unit] = units[unit].filter((tag) => {
+        const named = rename(tag)
+        if (!named) return true
+        changed = true
+        // Another name of a garment is a garment, of a place a place, whatever unit an unknown tag fell in.
+        moved[wearing.includes(named.condition) ? 'outfit' : 'place'].push(named.tag)
+        return false
+      })
+    }
+    if (!changed) return scene
+    units.outfit = Array.from(new Set([...units.outfit, ...moved.outfit]))
+    units.place = Array.from(new Set([...units.place, ...moved.place]))
+    return { ...scene, units }
+  }
+}
+
+/** The conditions of `args` with their donors from `pool` (the whole pool: donor posts and every composition), or null. */
+function conditionRun(pool: ScenePool, args: ScenePackArgs): ConditionRun | null {
+  if (!hasConditions(args)) return null
+  const { wearing, where, styles } = requestPlan(args).conditions
+  const removed = new Set(args.removedScenes ?? [])
+  const byId = new Map<number, Scene>()
+  const named = conditionNames(args, wearing, where)
+  for (const scene of [...pool.scenes, ...(pool.allScenes ?? [])]) {
+    if (!removed.has(scene.postId) && !byId.has(scene.postId)) byId.set(scene.postId, named(scene))
+  }
+  const scenes = Array.from(byId.values())
+  const own = new Set(basesOf(pool, args).scenes.map((scene) => scene.postId))
+  const group = (scene: Scene) => (own.has(scene.postId) ? 0 : 1)
+  const rng = createSeededRng(args.seed + 7919)
+
+  const outfitsOfScenes = scenes.map((scene) => scene.units.outfit)
+  const pieces = new Map(wearing.map((garment) => [garment, garmentPieces(garment, outfitsOfScenes, args.overrides)]))
+  let region: GarmentRegion | null = null
+  let outfits: ConditionQueue | null = null
+  if (wearing.length > 0 || styles.length > 0) {
+    const taken = styles.length > 0 ? { ...ALL_CLOTHING, garments: wearing } : garmentRegion(wearing, args.overrides)
+    region = taken
+    const library = (args.outfitLibrary ?? args.library ?? [])
+      .filter((outfit) => styles.length === 0 || (!!outfit.style && styles.includes(outfit.style)))
+      .map(libraryDonor)
+    // A style is met only by the library; garments by any scene's outfit too.
+    const sources: Scene[] = styles.length > 0 ? library : [...scenes, ...library]
+    const candidates = sources.flatMap((scene) => {
+      const value = regionTags(scene.units.outfit, taken, args.overrides)
+      const met = metCount(value, wearing)
+      if (value.length === 0 || (wearing.length > 0 && met === 0) || layered(value, wearing, args.overrides, pieces)) return []
+      const kind = isLibraryDonor(scene) ? 2 : group(scene)
+      return [{ scene, value, group: (wearing.length - met) * 10 + kind }]
+    })
+    outfits = new ConditionQueue(candidates, rng)
+  }
+  let places: ConditionQueue | null = null
+  if (where.length > 0) {
+    const candidates = scenes.flatMap((scene) => {
+      const met = metCount(scene.units.place, where)
+      return met === 0 ? [] : [{ scene, value: scene.units.place.slice(), group: (where.length - met) * 10 + group(scene) }]
+    })
+    places = new ConditionQueue(candidates, rng)
+  }
+  return { wearing, where, styles, region, outfits, places, outfitTally: newTally(), placeTally: newTally(), byId, pieces, last: null }
+}
+
+const peopleKeyOf = (scene: Scene) => (scene.people ? `${scene.people.girls}g${scene.people.boys}b` : 'open')
+
+/** True when `donor`'s clothes can be the character's in a picture of `base`: the subject alone in it, the same people, or the library. */
+function outfitFitsPeople(donor: Scene, base: Scene, subject: 'girl' | 'boy'): boolean {
+  if (isLibraryDonor(donor)) return true
+  const p = donor.people
+  if (p && p.girls + p.boys === 1 && (subject === 'girl' ? p.girls : p.boys) === 1) return true
+  return peopleKeyOf(donor) === peopleKeyOf(base)
+}
+
+/** The scene of a composed prompt with the swaps it recorded (Remix): its face, camera, and the outfit or place no condition replaces. */
+function sceneOfPrompt(run: ConditionRun, composed: ScenePrompt): Scene | null {
+  let scene = run.byId.get(composed.sources.skeleton)
+  if (!scene) return null
+  const swap = (id: number | undefined, parts: UnitName[]) => {
+    const donor = id !== undefined ? run.byId.get(id) : undefined
+    if (donor && scene) scene = lentScene(scene, donor, parts)
+  }
+  swap(composed.sources.face, ['face'])
+  swap(composed.sources.camera, ['camera'])
+  if (!run.places) swap(composed.sources.place, ['place'])
+  if (!run.outfits) swap(composed.sources.outfit, ['outfit', 'exposure'])
+  return scene
+}
+
+interface VariantOption {
+  donor: Scene | null
+  /** The tags it lends or keeps for the condition ([] for the tag as typed). */
+  value: string[]
+  source: VariantSource
+  /** It meets only some of the tags. */
+  partial: boolean
+}
+
+const AS_IT_IS: VariantOption = { donor: null, value: [], source: 'scene', partial: false }
+
+/** The ways one prompt of `base` may meet the outfit condition, in the order to try them. */
+function outfitOptions(run: ConditionRun, base: Scene, args: ScenePackArgs): VariantOption[] {
+  if (!run.outfits || !run.region) return [AS_IT_IS]
+  const own = regionTags(base.units.outfit, run.region, args.overrides)
+  const ownMeets = run.styles.length === 0 && own.length > 0 && metCount(own, run.wearing) === run.wearing.length && !layered(own, run.wearing, args.overrides, run.pieces)
+  const options: VariantOption[] = []
+  if (ownMeets && !run.outfits.isUsed(own)) options.push({ donor: null, value: own, source: 'scene', partial: false })
+  const donors = run.outfits.ordered((donor) => donor.postId !== base.postId && outfitFitsPeople(donor, base, args.subject))
+  donors.slice(0, MAX_CONDITION_TRIES).forEach(({ scene, value }) => options.push({
+    donor: scene,
+    value,
+    source: isLibraryDonor(scene) ? 'library' : 'donor',
+    partial: run.wearing.length > 0 && metCount(value, run.wearing) < run.wearing.length,
+  }))
+  // The scene's own variant again, then the tag as typed.
+  if (ownMeets && run.outfits.isUsed(own)) options.push({ donor: null, value: own, source: 'scene', partial: false })
+  options.push({ donor: null, value: [], source: 'imposed', partial: false })
+  // A full variant before a partial one.
+  return [...options.filter((o) => !o.partial), ...options.filter((o) => o.partial)]
+}
+
+/** The ways one prompt of `base` may meet the place condition, in the order to try them. */
+function placeOptions(run: ConditionRun, base: Scene): VariantOption[] {
+  if (!run.places) return [AS_IT_IS]
+  const own = base.units.place
+  const ownMeets = metCount(own, run.where) === run.where.length
+  const options: VariantOption[] = []
+  if (ownMeets && !run.places.isUsed(own)) options.push({ donor: null, value: own.slice(), source: 'scene', partial: false })
+  run.places.ordered((donor) => donor.postId !== base.postId && placeFits(base, donor)).slice(0, MAX_CONDITION_TRIES).forEach(({ scene, value }) =>
+    options.push({ donor: scene, value, source: 'donor', partial: metCount(value, run.where) < run.where.length }))
+  if (ownMeets && run.places.isUsed(own)) options.push({ donor: null, value: own.slice(), source: 'scene', partial: false })
+  options.push({ donor: null, value: [], source: 'imposed', partial: false })
+  return [...options.filter((o) => !o.partial), ...options.filter((o) => o.partial)]
+}
+
+/**
+ * `base` meeting the conditions, in the order a prompt tries them: each outfit variant (the scene's
+ * own, a donor's part, a library outfit, the tag as typed) with each place variant, skipping a
+ * variant that contradicts what stays of the scene (lendingClashes, the rule of the one-axis donors).
+ */
+function* conditionScenes(f: Finisher, base: Scene): Generator<{ scene: Scene; outfit: VariantOption; place: VariantOption }> {
+  const run = f.cond!
+  const { args } = f
+  const people = mixedCompositions(args) ? headcountFor(args, base) : args.people ? args.people.girls + args.people.boys : Math.max(1, headcount(base))
+  const relations = loadedTagRelations()
+  const fixed = fixedTags(args)
+  const fixedSet = new Set(fixed)
+  for (const outfit of outfitOptions(run, base, args)) {
+    const dressed = outfit.donor && run.region
+      ? lendOutfitPart(base, outfit.donor, run.region, args.overrides)
+      : outfit.source === 'imposed' && run.region ? withoutOutfitPart(base, run.region, args.overrides) : base
+    // With an outfit condition too, a few places per outfit; with a place condition alone, as many as outfits.
+    const placeTries = run.outfits ? MAX_PLACE_TRIES : MAX_CONDITION_TRIES
+    let places = 0
+    for (const place of placeOptions(run, dressed)) {
+      if (place.donor && ++places > placeTries) continue
+      const scene = place.donor ? lentScene(dressed, place.donor, ['place']) : dressed
+      // What the identity already says (the requested tag itself) is not lent: it is checked as what stays.
+      const lent = [...(outfit.donor ? outfit.value : []), ...(place.donor ? place.value : [])].filter((tag) => !fixedSet.has(tag))
+      if (lent.length > 0) {
+        const lentSet = new Set(lent)
+        const rest = [...fixed, ...sceneTags(scene).filter((tag) => !lentSet.has(tag))]
+        if (lendingClashes(lent, rest, people, args.overrides, relations, true)) continue
+      }
+      yield { scene, outfit, place }
+    }
+  }
+}
+
+/**
+ * `base` without its part of the outfit for `region` (and its exposure, for the torso): the tag as typed
+ * then takes it. A scene whose own variant has a layer over the garment gives up that part too,
+ * instead of keeping it as a scene that already wears the garment would.
+ */
+function withoutOutfitPart(base: Scene, region: GarmentRegion, overrides: Record<string, string>): Scene {
+  const outfit = base.units.outfit.filter((tag) => !regionTags([tag], region, overrides).length)
+  if (outfit.length === base.units.outfit.length) return base
+  return { ...base, units: { ...base.units, outfit, exposure: region.torso ? [] : base.units.exposure } }
+}
+
+/** Notes the variant a prompt used. */
+function tallyVariant(queue: ConditionQueue | null, tally: ConditionTally, option: VariantOption): void {
+  if (!queue) return
+  tally.from[option.source]++
+  if (option.partial) tally.partial++
+  if (option.value.length > 0) {
+    queue.accept(option.value)
+    tally.values.add(valueKey(option.value))
+  }
+}
+
+/**
+ * One composed scene of the pack as a finished prompt that meets the conditions (conditionScenes),
+ * or null: the first variant whose prompt passes finishOne. Its sources record the donor posts; a
+ * library outfit's id goes to `outfitId`.
+ */
+function finishWithConditions(f: Finisher, composed: ScenePrompt): PackPrompt | null {
+  const run = f.cond!
+  const base = sceneOfPrompt(run, composed)
+  if (!base) return finishOne(f, composed)
+  const options = composeOptions(f.args, 1, f.args.seed, undefined)
+  for (const { scene, outfit, place } of conditionScenes(f, base)) {
+    const lent = composeLent(f.pool, scene, null, [], 'outfit', options)
+    if (!lent) continue
+    const sources: ScenePrompt['sources'] = { ...composed.sources }
+    if (run.outfits) delete sources.outfit
+    if (run.places) delete sources.place
+    if (outfit.donor && !isLibraryDonor(outfit.donor)) sources.outfit = outfit.donor.postId
+    if (place.donor) sources.place = place.donor.postId
+    const prompt = finishOne(f, { ...lent, sources })
+    if (!prompt) continue
+    run.last = { outfit, place }
+    return outfit.donor && isLibraryDonor(outfit.donor) ? { ...prompt, outfitId: outfit.donor.outfitId } : prompt
+  }
+  return null
+}
+
+/** Marks as used every donor value a finished prompt (`tags`) already shows whole. */
+function acceptShown(run: ConditionRun, tags: readonly string[]): void {
+  const shown = new Set(tags)
+  const accept = (queue: ConditionQueue | null, value: readonly string[]) => {
+    if (queue && value.length > 0 && value.every((tag) => shown.has(tag))) queue.accept(value)
+  }
+  for (const { value } of run.outfits?.ordered() ?? []) accept(run.outfits, value)
+  for (const { value } of run.places?.ordered() ?? []) accept(run.places, value)
+}
+
+/** The pack keeps the last prompt finishWithConditions made: its variants count as used. */
+function commitVariant(run: ConditionRun): void {
+  if (!run.last) return
+  tallyVariant(run.outfits, run.outfitTally, run.last.outfit)
+  tallyVariant(run.places, run.placeTally, run.last.place)
+  run.last = null
+}
+
+/**
+ * True when the last prompt took a condition's tag as typed while variants that meet it fully are
+ * still unused: none fitted this scene (its pose leans on something no such place has, its people
+ * can't wear them). The pack keeps such a prompt for last and tries its other scenes first.
+ */
+function typedTooSoon(run: ConditionRun): boolean {
+  if (!run.last) return false
+  const unused = (queue: ConditionQueue | null) => !!queue && queue.ordered().some((entry) => entry.group < 10)
+  return (run.last.outfit.source === 'imposed' && unused(run.outfits)) || (run.last.place.source === 'imposed' && unused(run.places))
+}
+
+/** A composed scene as a pack prompt: through the conditions when the pack has some (its variants count as used). */
+function finishItem(f: Finisher, composed: ScenePrompt): PackPrompt | null {
+  if (!f.cond) return finishOne(f, composed)
+  const prompt = finishWithConditions(f, composed)
+  if (prompt) commitVariant(f.cond)
+  return prompt
+}
+
+/** A prompt a pack with conditions set aside (typedTooSoon), with what it needs to be kept later. */
+interface Deferred { prompt: PackPrompt; kind: PhaseKind; composed: ScenePrompt; last: ConditionRun['last'] }
+
+/**
+ * The pack's next prompt from `composed`, or null: with conditions, one that took a tag as typed while
+ * variants were left goes to `deferred` instead (keepDeferred adds them at the end if the pack is short).
+ */
+function packItem(f: Finisher, composed: ScenePrompt, kind: PhaseKind, deferred: Deferred[]): PackPrompt | null {
+  if (!f.cond) return finishOne(f, composed)
+  const prompt = finishWithConditions(f, composed)
+  if (!prompt) return null
+  if (typedTooSoon(f.cond)) {
+    deferred.push({ prompt, kind, composed, last: f.cond.last })
+    f.cond.last = null
+    return null
+  }
+  commitVariant(f.cond)
+  return prompt
+}
+
+/** Adds the set-aside prompts while the pack is short of `count`. */
+function keepDeferred(f: Finisher, prompts: PackPrompt[], deferred: readonly Deferred[], count: number): void {
+  for (const item of deferred) {
+    if (prompts.length >= count) break
+    if (f.cond) {
+      f.cond.last = item.last
+      commitVariant(f.cond)
+    }
+    prompts.push(item.prompt)
+    tallyPose(f, item.kind, item.composed)
+  }
+}
+
+/** The `condition-variety` issues of a pack with conditions. */
+function conditionIssues(run: ConditionRun | null): ScenePackIssue[] {
+  if (!run) return []
+  const issue = (role: 'wearing' | 'where', tags: string[], styles: string[], tally: ConditionTally): ScenePackIssue => ({
+    kind: 'condition-variety', role, tags, styles, variants: tally.values.size,
+    fromScene: tally.from.scene, fromDonors: tally.from.donor, fromLibrary: tally.from.library, imposed: tally.from.imposed, partial: tally.partial,
+  })
+  const out: ScenePackIssue[] = []
+  if (run.outfits) out.push(issue('wearing', run.wearing, run.styles, run.outfitTally))
+  if (run.places) out.push(issue('where', run.where, [], run.placeTally))
+  return out
 }
 
 // ── Only one thing changes ────────────────────────────────────────────────────
@@ -1469,7 +1955,6 @@ function defaultBase(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count:
   const plan = packPlan(pool, plain, Math.max(count, MAX_PACK_OVERGENERATE))
   const f = finisher(pool, plain, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(plain)), plan.pose)
   const requested = new Set(requestPlan(plain).imposed)
-  const people = plain.people ? plain.people.girls + plain.people.boys : 1
   const relations = loadedTagRelations()
   let first: AxisBase | null = null
   for (const item of composeForPack(plain, plan.phases, f.pose?.used)) {
@@ -1482,7 +1967,7 @@ function defaultBase(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count:
     const face = new Set(scene.units.face)
     if (axis === 'expression' && !showsFace(tags.filter((tag) => !face.has(tag)))) continue
     const asked = tags.filter((tag) => requested.has(tag))
-    if (asked.length === 0 || !lendingClashes(asked, tags.filter((tag) => !requested.has(tag)), people, plain.overrides, relations)) return { base, issues: [] }
+    if (asked.length === 0 || !lendingClashes(asked, tags.filter((tag) => !requested.has(tag)), headcountFor(plain, scene), plain.overrides, relations)) return { base, issues: [] }
   }
   return first ? { base: first, issues: [] } : { base: null, issues: packIssues(f, 0, count) }
 }
@@ -1541,11 +2026,29 @@ function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: num
     const scene = pool.scenes.find((s) => s.postId === run.base)
     base = scene ? { scene, kind: 'scene' } : null
   } else {
-    base = pickedBase(pool, a)
-    if (!base) ({ base, issues: missing } = defaultBase(pool, a, axis, count))
+    const bases = basesOf(pool, a)
+    base = pickedBase(bases, a)
+    if (!base) ({ base, issues: missing } = defaultBase(bases, a, axis, count))
   }
   // Every prompt shares the base on purpose: only exact repeats go through the finisher's filter.
   const f = finisher(pool, a, new Set(), new NearDuplicateFilter(Number.POSITIVE_INFINITY), null)
+  // Conditions: the one on the axis picks and widens the donors; one on another part is met once, by the base.
+  const cond = conditionRun(pool, a)
+  const onAxisCond = !!cond && ((axis === 'outfit' && !!cond.outfits) || (axis === 'place' && !!cond.places))
+  const offAxis: ConditionRun | null = cond && {
+    ...cond,
+    outfits: axis === 'outfit' ? null : cond.outfits,
+    places: axis === 'place' ? null : cond.places,
+  }
+  if (base && offAxis && (offAxis.outfits || offAxis.places)) {
+    const g = finisher(pool, a, new Set(), new NearDuplicateFilter(Number.POSITIVE_INFINITY), null, offAxis)
+    const first = conditionScenes(g, base.scene).next()
+    if (!first.done) {
+      base = { ...base, scene: first.value.scene }
+      offAxis.last = { outfit: first.value.outfit, place: first.value.place }
+      commitVariant(offAxis)
+    }
+  }
   const selection = a.requests ? poseSelection(a) : null
   const parts = AXIS_UNITS[axis]
   const options: ComposeOptions = { ...composeOptions(a, 1, a.seed, undefined), ...(axis === 'place' && plan.where.length > 0 ? { whereKeepsPlace: true } : {}) }
@@ -1578,18 +2081,35 @@ function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: num
       if (axis === 'pose' && selection && poseFit(donor, selection) !== 'all') return false
       if (axis === 'outfit' && plan.wearing.length > 0 && !outfitWears(donor.units.outfit, plan.wearing)) return false
       if (axis === 'place' && plan.where.length > 0 && !plan.where.every((tag) => donor.units.place.some((at) => isQualifiedVariant(at, tag)))) return false
+      if (onAxisCond && axis === 'outfit') {
+        // A condition's outfit: no layer over the garment (layersOver); a style, only the library's.
+        if (layered(donor.units.outfit, cond!.wearing, a.overrides, cond!.pieces)) return false
+        if (cond!.styles.length > 0 && !(isLibraryDonor(donor) && !!donor.style && cond!.styles.includes(donor.style))) return false
+        if (isLibraryDonor(donor)) return true
+      }
       return canLend(scene, donor, axis, axis === 'place' ? [] : plan.where)
     }
+    // With a condition on the axis, the donors are every scene that can meet it (the donor posts and
+    // other compositions too: canLend decides) and, for an outfit, the library's outfits.
+    // With conditions, the scenes as the conditions read them (their other names written as the condition).
+    const inPlay = scenesInPlay(pool, a.disabledSituations).map((s) => (onAxisCond ? cond!.byId.get(s.postId) ?? s : s))
+    const playing = new Set(inPlay.map((s) => s.postId))
+    const extra = onAxisCond
+      ? [
+        ...Array.from(cond!.byId.values()).filter((s) => !playing.has(s.postId)),
+        ...(axis === 'outfit' ? (a.outfitLibrary ?? a.library ?? []).map(libraryDonor) : []),
+      ]
+      : []
     // A face lent to a picture that doesn't show it contradicts it, whatever the expression.
     const shown = axis !== 'expression' || showsFace(rest)
     const queue = new DonorQueue(
-      shown ? scenesInPlay(pool, a.disabledSituations).filter(lendsTo) : [],
+      shown ? [...inPlay, ...extra].filter(lendsTo) : [],
       (donor) => axisTags(donor, axis),
       [baseValue],
       new Set(a.preferredPosts ?? []),
       createSeededRng(a.seed)
     )
-    const people = a.people ? a.people.girls + a.people.boys : Math.max(1, headcount(scene))
+    const people = mixedCompositions(a) ? headcountFor(a, scene) : a.people ? a.people.girls + a.people.boys : Math.max(1, headcount(scene))
     const relations = loadedTagRelations()
     const lentValues = new Set([axisKey(baseValue)])
     for (let donor = queue.next(); donor; donor = queue.next()) {
@@ -1612,7 +2132,7 @@ function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: num
       usedKeys.add(key)
       lentValues.add(axisKey(value))
       queue.accept(value)
-      yield { prompt, donor }
+      yield { prompt: isLibraryDonor(donor) ? { ...prompt, outfitId: donor.outfitId } : prompt, donor }
     }
   }
 
@@ -1633,6 +2153,7 @@ function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: num
         if (!has.has(tag) && made > 0) out.push({ kind: 'pose-imposed', tag, prompts: made })
       })
     }
+    if (offAxis) out.push(...conditionIssues(offAxis))
     if (onAxis.length > 0) out.push({ kind: 'axis-requested', axis, tags: onAxis })
     if (made < total) out.push({ kind: 'few-variations', axis, variations: made, prompts: made })
     return out
@@ -1670,18 +2191,22 @@ function rerollAxisPrompt(pool: ScenePool, prompts: readonly PackPrompt[], index
 export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePackResult {
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
+  pool = poolForCompositions(pool, args)
   const axis = oneAxis(args)
   if (axis) return axisPack(pool, args, axis, count)
-  const plan = packPlan(pool, args, count)
-  const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(args)), plan.pose)
+  const bases = basesOf(pool, args)
+  const plan = packPlan(bases, args, count)
+  const f = finisher(bases, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(args)), plan.pose, conditionRun(pool, args))
   const prompts: PackPrompt[] = []
+  const deferred: Deferred[] = []
   for (const item of composeForPack(args, plan.phases, f.pose?.used)) {
     if (prompts.length >= count) break
-    const prompt = finishOne(f, item.prompt)
+    const prompt = packItem(f, item.prompt, item.kind, deferred)
     if (!prompt) continue
     prompts.push(prompt)
     tallyPose(f, item.kind, item.prompt)
   }
+  keepDeferred(f, prompts, deferred, count)
   return { prompts, shortBy: count - prompts.length, issues: packIssues(f, prompts.length, count) }
 }
 
@@ -1706,6 +2231,7 @@ export async function generateScenePackAsync(
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
   const slice = control.slice ?? 12
+  pool = poolForCompositions(pool, args)
   await control.pause()
   if (control.cancelled()) return null
   const axis = oneAxis(args)
@@ -1725,10 +2251,12 @@ export async function generateScenePackAsync(
     }
     return { prompts: made, shortBy: count - made.length, issues: run.issues(made.length, count) }
   }
-  const plan = packPlan(pool, args, count)
-  const f = finisher(pool, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(args)), plan.pose)
+  const bases = basesOf(pool, args)
+  const plan = packPlan(bases, args, count)
+  const f = finisher(bases, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(args)), plan.pose, conditionRun(pool, args))
   const composed = composeForPack(args, plan.phases, f.pose?.used)
   const prompts: PackPrompt[] = []
+  const deferred: Deferred[] = []
   let started = Date.now()
   // Composing a scene is the costly part, so the pause comes before pulling the next one.
   while (prompts.length < count) {
@@ -1739,11 +2267,12 @@ export async function generateScenePackAsync(
     }
     const next = composed.next()
     if (next.done) break
-    const prompt = finishOne(f, next.value.prompt)
+    const prompt = packItem(f, next.value.prompt, next.value.kind, deferred)
     if (!prompt) continue
     prompts.push(prompt)
     tallyPose(f, next.value.kind, next.value.prompt)
   }
+  keepDeferred(f, prompts, deferred, count)
   return { prompts, shortBy: count - prompts.length, issues: packIssues(f, prompts.length, count) }
 }
 
@@ -1762,6 +2291,11 @@ export interface SceneCandidate {
   invented?: boolean
   /** One-axis pack (`ScenePackArgs.changes`): 'base' for the base scene, 'donor' for a scene that lends it the axis. */
   axisRole?: 'base' | 'donor'
+  /**
+   * A donor that is an outfit of the library (a one-axis outfit pack with a condition): its id in
+   * the library. `postId` is then negative (-1 - outfitId) and there is no post nor preview.
+   */
+  outfitId?: number
 }
 
 /**
@@ -1777,17 +2311,19 @@ export interface SceneCandidate {
  * the order the pack uses them (`'donor'`); its length is the most prompts that pack can make.
  */
 export function sceneCandidates(pool: ScenePool, args: ScenePackArgs): SceneCandidate[] {
+  pool = poolForCompositions(pool, args)
   // Enough to take every phase to its end: the composer never makes more than MAX_PACK_OVERGENERATE per phase.
   const count = Math.max(pool.scenes.length, MAX_PACK_OVERGENERATE)
   const axis = oneAxis(args)
   if (axis) return axisCandidates(pool, args, axis, count)
   const faithful: ScenePackArgs = { ...args, settings: { ...args.settings, mix: 'faithful' }, count }
-  const plan = packPlan(pool, faithful, count)
-  const f = finisher(pool, faithful, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(faithful)), plan.pose)
+  const bases = basesOf(pool, faithful)
+  const plan = packPlan(bases, faithful, count)
+  const f = finisher(bases, faithful, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(faithful)), plan.pose, conditionRun(pool, faithful))
   const order: number[] = []
   const seen = new Set<number>()
   for (const item of composeForPack(faithful, plan.phases, f.pose?.used)) {
-    if (!finishOne(f, item.prompt)) continue
+    if (!finishItem(f, item.prompt)) continue
     tallyPose(f, item.kind, item.prompt)
     const id = item.prompt.sources.skeleton
     if (seen.has(id)) continue
@@ -1835,6 +2371,7 @@ function axisCandidates(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, cou
       situation: situationOf.get(scene.postId),
       ...(scene.invented ? { invented: true } : {}),
       axisRole: item.donor ? 'donor' : 'base',
+      ...(item.donor && isLibraryDonor(item.donor) ? { outfitId: item.donor.outfitId } : {}),
     })
     if (list.length >= count) break
   }
@@ -1862,19 +2399,22 @@ function restrictPool(pool: ScenePool, allowed: ReadonlySet<number>): ScenePool 
  * when none is left.
  */
 export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[], index: number, args: ScenePackArgs): PackPrompt | null {
+  pool = poolForCompositions(pool, args)
   const current = prompts[index]
   if (!current) return null
   // One-axis pack: the same base with another donor the pack doesn't use yet (the base's own row too).
   const axis = oneAxis(args)
   if (axis) return rerollAxisPrompt(pool, prompts, index, args, axis)
+  const full = pool
+  const bases = basesOf(full, args)
   const disabled = new Set(args.disabledSituations ?? [])
-  const enabled = pool.situations.filter((situation) => !disabled.has(situation.id))
+  const enabled = bases.situations.filter((situation) => !disabled.has(situation.id))
   const used = new Set(prompts.flatMap((p) => (p.scene ? [p.scene.postId] : [])))
   const situation = enabled.find((s) => s.id === current.scene?.situation)
   // Never a removed scene; with selected poses, only a scene that has them or can take them.
   const removed = new Set(args.removedScenes ?? [])
   const selection = args.requests ? poseSelection(args) : null
-  const byId = new Map(pool.scenes.map((scene) => [scene.postId, scene]))
+  const byId = new Map(bases.scenes.map((scene) => [scene.postId, scene]))
   const serves = (id: number) => {
     if (removed.has(id)) return false
     const scene = byId.get(id)
@@ -1893,15 +2433,18 @@ export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[
   const others = prompts.filter((_, i) => i !== index).map((p) => p.prompt)
   for (const attempt of attempts) {
     if (attempt.scenes.length === 0) continue
-    const view = restrictPool(pool, new Set(attempt.scenes))
+    const view = restrictPool(bases, new Set(attempt.scenes))
     const keep = new Set(attempt.situations)
-    const off = pool.situations.filter((s) => !keep.has(s.id)).map((s) => s.id)
+    const off = bases.situations.filter((s) => !keep.has(s.id)).map((s) => s.id)
     const { prompts: composed } = composePack(view, composeOptions(args, 6, args.seed, off))
     const filter = new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, filterIgnores(args))
     others.forEach((prompt) => filter.tryAccept(prompt))
-    const f = finisher(pool, args, new Set([...others, current.prompt]), filter)
+    const cond = conditionRun(full, args)
+    // The variants the other prompts already wear (or are at) aren't lent again.
+    if (cond) others.forEach((prompt) => acceptShown(cond, promptTagsOf(prompt)))
+    const f = finisher(bases, args, new Set([...others, current.prompt]), filter, null, cond)
     for (const item of composed) {
-      const replacement = finishOne(f, item)
+      const replacement = finishItem(f, item)
       if (replacement) return replacement
     }
   }

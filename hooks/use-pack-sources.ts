@@ -19,21 +19,26 @@
  * that can bring most. A page the pace limit doesn't allow yet waits for it and goes
  * by itself (`waiting`); nothing is refused.
  *
+ * The plan's donor searches (SourcePlan.donors) run on MAX_DONOR_FEEDS slots of their own, one
+ * rating each; their posts come after the scene searches' and page like any other search.
+ *
  * Mount timing is the same as usePackSeedSearch's: this hook fetches page 1 of
  * every search on mount and has no "enabled" flag; mount the component that calls
  * it only when the pack should fetch.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { BooruPost } from "@/lib/api-client"
-import { assignFeedSlots, planFeeds, type FeedSlot, type SceneSearchKind, type SourcePlan } from "@/lib/pack/source-plan"
+import { MAX_DONOR_FEEDS, assignFeedSlots, planDonorFeeds, planFeeds, type DonorSearch, type FeedSlot, type SceneSearchKind, type SourcePlan } from "@/lib/pack/source-plan"
 import { useSingleRatingFeed, type UsePackSeedSearchResult } from "./use-pack-seed-search"
 import { useScrollRateLimiter, MAX_SESSION_PAGE_LOADS } from "./use-scroll-rate-limiter"
 import { NO_PAGING, nextSearch, recordPage, searchEnded, type SearchPaging } from "@/lib/pack/source-paging"
 
 export interface PackSourceProgress {
-  /** The scene search's id (SceneSearch.id). */
+  /** The search's id (SceneSearch.id, or DonorSearch.id). */
   id: string
-  kind: SceneSearchKind
+  kind: SceneSearchKind | DonorSearch["kind"]
+  /** A donor search: its posts only lend clothes ('wearing') or a place ('where'). */
+  donor: boolean
   /** Posts this search has brought, without repeats (some may also be in a preferred search). */
   posts: number
   /** Posts it brought that no search before it in the plan had. */
@@ -78,7 +83,9 @@ function interleave(lists: readonly BooruPost[][]): BooruPost[] {
 }
 
 export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: UsePackSourcesArgs): UsePackSourcesResult {
-  const { provider, sceneKey } = plan
+  const { provider, sceneKey, donorKey } = plan
+  // Every search the hook runs: the scene searches, then the donor searches.
+  const feedKey = `${sceneKey}##${donorKey}`
   const [sessionSeed] = useState(() => Date.now())
 
   // The plan's feeds change only with its scene key.
@@ -103,7 +110,32 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   const feed3 = useSingleRatingFeed(slots[3].query, slots[3].ratingFilter, provider, slots[3].seed)
   const feed4 = useSingleRatingFeed(slots[4].query, slots[4].ratingFilter, provider, slots[4].seed)
   const feed5 = useSingleRatingFeed(slots[5].query, slots[5].ratingFilter, provider, slots[5].seed)
-  const feeds: Feed[] = [feed0, feed1, feed2, feed3, feed4, feed5]
+
+  // The donor searches' slots, kept the same way.
+  const wantedDonors = useMemo(
+    () => planDonorFeeds(plan, sessionSeed),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [donorKey, sessionSeed]
+  )
+  const [donorState, setDonorState] = useState<{ key: string; slots: FeedSlot[] }>(() => ({ key: donorKey, slots: assignFeedSlots(null, wantedDonors, MAX_DONOR_FEEDS) }))
+  let donorSlots = donorState.slots
+  if (donorState.key !== donorKey) {
+    donorSlots = assignFeedSlots(donorState.slots, wantedDonors, MAX_DONOR_FEEDS)
+    setDonorState({ key: donorKey, slots: donorSlots })
+  }
+  // An unused donor slot asks for nothing: it keeps the query of a scene slot that runs anyway.
+  const donorSpec = (i: number) => (donorSlots[i].active || donorSlots[i].query ? donorSlots[i] : slots[0])
+  const feed6 = useSingleRatingFeed(donorSpec(0).query, donorSpec(0).ratingFilter, provider, donorSpec(0).seed)
+  const feed7 = useSingleRatingFeed(donorSpec(1).query, donorSpec(1).ratingFilter, provider, donorSpec(1).seed)
+  const feeds: Feed[] = [feed0, feed1, feed2, feed3, feed4, feed5, feed6, feed7]
+  const allSearches = useMemo(
+    () => [
+      ...plan.scenes.map((search) => ({ id: search.id, kind: search.kind as PackSourceProgress["kind"], donor: false })),
+      ...plan.donors.map((search) => ({ id: search.id, kind: search.kind as PackSourceProgress["kind"], donor: true })),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [feedKey]
+  )
 
   // Callers needn't pass stable callbacks: the limiter memoizes on them (see usePackSeedSearch).
   const callbacksRef = useRef({ onSessionCapReached, onScrollLimited })
@@ -113,28 +145,33 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   const rateLimiter = useScrollRateLimiter({ onSessionCapReached: handleSessionCap, onScrollLimited: handleScrollLimited })
 
   // A new set of searches starts a new page budget, as a new source does in usePackSeedSearch.
-  const limiterKeyRef = useRef(sceneKey)
+  const limiterKeyRef = useRef(feedKey)
   useEffect(() => {
-    if (limiterKeyRef.current !== sceneKey) {
-      limiterKeyRef.current = sceneKey
+    if (limiterKeyRef.current !== feedKey) {
+      limiterKeyRef.current = feedKey
       rateLimiter.reset()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneKey])
+  }, [feedKey])
 
-  // Each search's slots, in rating order.
-  const slotsBySearch = useMemo(() => plan.scenes.map((search) =>
-    plan.ratings.map((rating) => slots.findIndex((s) => s.active && s.searchId === search.id && s.ratingFilter === rating)).filter((i) => i >= 0)
+  // Each search's slots, in rating order (a donor search's one slot is after the scene slots).
+  const slotsBySearch = useMemo(() => [
+    ...plan.scenes.map((search) =>
+      plan.ratings.map((rating) => slots.findIndex((s) => s.active && s.searchId === search.id && s.ratingFilter === rating)).filter((i) => i >= 0)),
+    ...plan.donors.map((search) => {
+      const i = donorSlots.findIndex((s) => s.active && s.searchId === search.id)
+      return i >= 0 ? [slots.length + i] : []
+    }),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [sceneKey, slots])
+  ], [feedKey, slots, donorSlots])
 
   const { allPosts, originOf, postsPerSearch, addsPerSearch } = useMemo(() => {
-    const postLists = [feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts]
+    const postLists = [feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts, feed6.allPosts, feed7.allPosts]
     const all: BooruPost[] = []
     const origin = new Map<number, string>()
     const perSearch: number[] = []
     const adds: number[] = []
-    plan.scenes.forEach((search, s) => {
+    allSearches.forEach((search, s) => {
       const own = new Set<number>()
       let added = 0
       for (const post of interleave(slotsBySearch[s].map((i) => postLists[i]))) {
@@ -149,13 +186,12 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
       adds.push(added)
     })
     return { allPosts: all, originOf: origin as ReadonlyMap<number, string>, postsPerSearch: perSearch, addsPerSearch: adds }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneKey, slotsBySearch, feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts])
+  }, [allSearches, slotsBySearch, feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts, feed6.allPosts, feed7.allPosts])
 
   // Each search's paging, by search id (a search the next plan keeps keeps its record).
   // Recorded while rendering once a page has arrived for every rating of the search.
   const [paging, setPaging] = useState<Readonly<Record<string, SearchPaging>>>({})
-  const arrived = plan.scenes.map((search, s) => {
+  const arrived = allSearches.map((search, s) => {
     const own = slotsBySearch[s].map((i) => feeds[i])
     const pages = own.length > 0 ? Math.min(...own.map((f) => f.loadedPages)) : 0
     return {
@@ -181,12 +217,13 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
     const p = pagingNow[a.id] ?? NO_PAGING
     return [a.id, a.loading, a.failed, a.siteEnded, p.pages, p.dry, p.lastAdds, postsPerSearch[s] ?? 0, addsPerSearch[s] ?? 0].join(":")
   }).join("|")
-  const searches = useMemo<PackSourceProgress[]>(() => plan.scenes.map((search, s) => {
+  const searches = useMemo<PackSourceProgress[]>(() => allSearches.map((search, s) => {
     const a = arrived[s]
     const p = pagingNow[search.id] ?? NO_PAGING
     return {
       id: search.id,
       kind: search.kind,
+      donor: search.donor,
       posts: postsPerSearch[s] ?? 0,
       adds: addsPerSearch[s] ?? 0,
       pages: p.pages,
@@ -195,7 +232,7 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
       failed: a.failed,
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [sceneKey, searchState])
+  }), [allSearches, searchState])
 
   const isLoadingMore = searches.some((s) => s.loading)
   const noMoreResults = searches.every((s) => s.exhausted)
@@ -214,7 +251,7 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   }, [isLoadingMore])
   // A page asked for that never starts loading must not lock loadMore for good: a new
   // target search (the old one ran out) or a new plan frees it.
-  useEffect(() => { loadMoreGuardRef.current = false }, [targetKey, sceneKey])
+  useEffect(() => { loadMoreGuardRef.current = false }, [targetKey, feedKey])
 
   const { setSize: setSize0 } = feed0
   const { setSize: setSize1 } = feed1
@@ -222,6 +259,8 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   const { setSize: setSize3 } = feed3
   const { setSize: setSize4 } = feed4
   const { setSize: setSize5 } = feed5
+  const { setSize: setSize6 } = feed6
+  const { setSize: setSize7 } = feed7
   const { canLoadMore, msUntilAllowed } = rateLimiter
   // Fetches the target search's next page now; false when the guards say no.
   const startPage = useCallback((): boolean => {
@@ -229,10 +268,10 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
     if (!targetKey) return false
     if (!canLoadMore(totalPages)) return false
     loadMoreGuardRef.current = true
-    const setSizes = [setSize0, setSize1, setSize2, setSize3, setSize4, setSize5]
+    const setSizes = [setSize0, setSize1, setSize2, setSize3, setSize4, setSize5, setSize6, setSize7]
     for (const i of targetKey.split(",").map(Number)) void setSizes[i]((size) => size + 1)
     return true
-  }, [canLoadMore, totalPages, targetKey, setSize0, setSize1, setSize2, setSize3, setSize4, setSize5])
+  }, [canLoadMore, totalPages, targetKey, setSize0, setSize1, setSize2, setSize3, setSize4, setSize5, setSize6, setSize7])
   // A page that waits for the pace limit starts with the latest target when its turn comes.
   const startRef = useRef(startPage)
   useEffect(() => { startRef.current = startPage }, [startPage])
@@ -244,7 +283,7 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
     setWaiting(false)
   }, [])
   // Another plan, or unmounting: a waiting page is not for it.
-  useEffect(() => clearWait, [sceneKey, clearWait])
+  useEffect(() => clearWait, [feedKey, clearWait])
   // True when a page was asked for, now or once the pace limit allows it (false: one is
   // already on its way or waiting, nothing is left, or the session's page cap is reached).
   const loadMore = useCallback((): boolean => {
@@ -268,12 +307,14 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   const { retry: retry3 } = feed3
   const { retry: retry4 } = feed4
   const { retry: retry5 } = feed5
+  const { retry: retry6 } = feed6
+  const { retry: retry7 } = feed7
   const failedKey = slotsBySearch.flat().filter((i) => feeds[i].failed).join(",")
   const retry = useCallback(() => {
     if (!failedKey) return
-    const retries = [retry0, retry1, retry2, retry3, retry4, retry5]
+    const retries = [retry0, retry1, retry2, retry3, retry4, retry5, retry6, retry7]
     for (const i of failedKey.split(",").map(Number)) retries[i]()
-  }, [failedKey, retry0, retry1, retry2, retry3, retry4, retry5])
+  }, [failedKey, retry0, retry1, retry2, retry3, retry4, retry5, retry6, retry7])
 
   // Memoized for the same reason as usePackSeedSearch's result: callers put it in effect deps.
   return useMemo(() => ({

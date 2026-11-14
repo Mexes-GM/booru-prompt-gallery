@@ -11,6 +11,10 @@
  * - `offered`: something the card suggests. The whole chip is one button that adds it;
  *   its detail wraps to a second line rather than being cut.
  *
+ * A Wearing or Where request carries its mode in front of the label: "Any" (each prompt has a
+ * different kind of it) or "Exactly" (this tag in every prompt); one click switches it.
+ * A chip that doesn't apply now (`inactive`) is struck through and says why; it can still go.
+ *
  * Any chip can carry a conflict note: a warning icon, with the note as its name and tooltip.
  * Remove and Restore carry `data-chip-action`, so the row can move focus to a
  * neighbour when a chip goes away.
@@ -29,6 +33,10 @@ export interface RequestChipProps {
   removed?: boolean
   /** For `trait`: clothing the garments in Wearing replace. Struck through, with no action. */
   replaced?: boolean
+  /** Wearing and Where: any kind of the tag (a condition) or exactly it; the switch is on the chip. */
+  mode?: { exact: boolean; onToggle: () => void }
+  /** Doesn't apply now: struck through, with the reason for screen readers and as a tooltip. */
+  inactive?: string
   /** Remove (request, never, trait) or put back (a removed trait). */
   onRemove?: () => void
   onRestore?: () => void
@@ -107,6 +115,8 @@ function RequestChipInner({
   variant = "request",
   removed = false,
   replaced = false,
+  mode,
+  inactive,
   onRemove,
   onRestore,
   onAccept,
@@ -118,14 +128,16 @@ function RequestChipInner({
 }: RequestChipProps) {
   if (variant === "offered") return <OfferedChip label={label} detail={detail} onAccept={onAccept} className={className} />
 
-  const struck = variant === "trait" && (removed || replaced)
-  const action = replaced && !removed ? undefined : struck ? onRestore : onRemove
+  const struck = (variant === "trait" && (removed || replaced)) || !!inactive
+  const restorable = variant === "trait" && removed
+  const action = replaced && !removed ? undefined : restorable ? onRestore : onRemove
   return (
     <span
+      title={inactive}
       className={cn(
         BASE,
         SURFACE[variant],
-        "pl-2",
+        mode ? "pl-0.5" : "pl-2",
         action ? "pr-0.5" : "pr-2",
         conflict && "border-warning-border",
         struck && "border-dashed",
@@ -134,10 +146,27 @@ function RequestChipInner({
       )}
     >
       {variant === "never" && <Ban className="size-3.5 shrink-0" aria-hidden />}
+      {mode && (
+        <button
+          type="button"
+          onClick={mode.onToggle}
+          aria-pressed={mode.exact}
+          aria-label={`Exactly ${label}`}
+          title={mode.exact ? "Every prompt has this exact tag. Select for a different kind in each prompt" : "Each prompt has a different kind. Select to use this exact tag"}
+          className={cn(
+            "relative h-6 shrink-0 rounded-[6px] px-1.5 text-[11px] font-medium",
+            "pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5 pointer-coarse:after:content-['']",
+            "transition-[color,background-color] duration-150 ease-out-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            mode.exact ? "bg-foreground/10 text-foreground hover:bg-foreground/15" : "text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
+          )}
+        >
+          {mode.exact ? "Exactly" : "Any"}
+        </button>
+      )}
       <span className={cn("truncate py-1", strong ? "font-semibold" : "font-medium", struck && "line-through")}>
         {variant === "never" && <span className="sr-only">Never: </span>}
         {label}
-        {struck && <span className="sr-only">{removed ? " (removed)" : " (replaced by Wearing)"}</span>}
+        {struck && <span className="sr-only">{inactive ? ` (${inactive})` : removed ? " (removed)" : " (replaced by Wearing)"}</span>}
       </span>
       {conflict && <ConflictMark note={conflict} />}
       {action && (
@@ -145,10 +174,10 @@ function RequestChipInner({
           type="button"
           data-chip-action=""
           onClick={action}
-          aria-label={`${struck ? "Restore" : "Remove"} ${label}`}
+          aria-label={`${restorable ? "Restore" : "Remove"} ${label}`}
           className={ICON_BUTTON}
         >
-          {struck ? <RotateCcw className="size-3.5" aria-hidden /> : <X className="size-3.5" aria-hidden />}
+          {restorable ? <RotateCcw className="size-3.5" aria-hidden /> : <X className="size-3.5" aria-hidden />}
         </button>
       )}
     </span>

@@ -14,10 +14,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import type { PackBrief } from "@/lib/pack/brief"
-import { isOthersTag, toSceneRequests } from "@/lib/pack/brief"
+import { briefCompositions, briefConditions, isOthersTag, toSceneRequests } from "@/lib/pack/brief"
+import { knownAliases, loadConditionAliases } from "@/lib/pack/condition-aliases"
 import {
   briefIdentity,
   lookReplacedByWearing,
+  conditionSupply,
+  type ConditionSupply,
   briefPackArgs,
   generateLayout,
   oneAxis,
@@ -43,7 +46,7 @@ import { planSources, type AppearanceSearch, type SourcePlan } from "@/lib/pack/
 import { holdsCast, roleFromProfile, roleFromSubject, type CastRole } from "@/lib/pack/scene/cast"
 import { createPermanence, type PermanenceData } from "@/lib/pack/scene/permanence"
 import type { TagKind } from "@/lib/pack/scene/scene"
-import { buildScenePool, compositionOfIdentity, type PackPeople, type ScenePool } from "@/lib/pack/scene/scene-pool"
+import { buildScenePool, compositionOfIdentity, compositionsOf, type PackPeople, type ScenePool } from "@/lib/pack/scene/scene-pool"
 import {
   castComposition,
   defaultComposition,
@@ -63,7 +66,7 @@ import {
   type ScenePackIssue,
 } from "@/lib/pack/scene-pack"
 import { clampMaxLongSide } from "@/lib/extension/generation-resolution"
-import { ADULT_OUTFIT_STYLES, outfitPackDraw, type Outfit, type OutfitDetail, type OutfitStyle } from "@/lib/outfit-swap"
+import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, outfitPackDraw, outfitTags as libraryOutfitTags, type Outfit, type OutfitDetail, type OutfitStyle } from "@/lib/outfit-swap"
 import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
 import { getCharacterTraits, getNoCharacterTraits, loadCharacterTraits, loadTraitAliases, subscribeCharacterTraits } from "@/lib/prompt/natural-prompt-loader"
 import { userPreferences } from "@/lib/storage"
@@ -107,6 +110,8 @@ export interface UsePackBriefScenesArgs {
   globalWeights: Record<string, number>
   isGlobalWeightsEnabled: boolean
   outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail }
+  /** Posts only the donor searches brought (they lend clothes or a place, never a scene of their own). */
+  donorPosts?: readonly number[]
 }
 
 /** How a pack was made, so a correction can make it again the same way. */
@@ -161,6 +166,12 @@ export interface UsePackBriefScenesResult {
   replacedLook: Readonly<Record<string, string[]>>
   /** True for a look tag about the people who are not the characters (isOthersTag), wherever it is typed. */
   othersTag: (tag: string) => boolean
+  /** Wearing and Where met as conditions, with the loaded pictures that meet them (for the fit line's forecast). */
+  conditionSupply: readonly ConditionSupply[]
+  /** Outfits of the library per style allowed at the pack's rating; empty until the library loads. */
+  styleCounts: Readonly<Partial<Record<OutfitStyle, number>>>
+  /** Styles of the library allowed at the pack's rating. */
+  allowedStyles: readonly OutfitStyle[]
   /** The first character's official outfits, by name. */
   officialOutfits: string[]
   /** The permanence data has loaded. */
@@ -176,6 +187,10 @@ export interface UsePackBriefScenesResult {
   /** Every composition of the pool the characters fit in; null until the pool is built. */
   available: PoseComposition[] | null
   peopleLine: ReturnType<typeof peopleLineState>
+  /** The make-ups the pack uses: the ones the brief marks, else the one the scenes give. */
+  peopleSelected: readonly PackPeople[]
+  /** Make-ups the scenes have with no room for the characters: shown, not offered. */
+  peopleBlocked: readonly PoseComposition[]
   /** Scenes that fit (left-out ones included, so they stay on the sheet); null until worked out once. */
   candidates: SceneCandidate[] | null
   /** The scenes are being worked out again; `candidates` are the previous ones. */
@@ -239,7 +254,7 @@ function postTagNames(posts: readonly BooruPost[]): string[] {
 export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefScenesResult {
   const {
     brief, posts, preferredPosts, provider, rating, includeSensitive, gallerySearch, promptCount, outfit, overrides,
-    enrichTagSlots, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions,
+    enrichTagSlots, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions, donorPosts,
   } = args
   const relations = useTagRelations(true)
 
@@ -308,8 +323,10 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       const fromSubject = solo?.status === "ready" ? roleFromSubject(solo.subject) : null
       return c.role ?? fromSubject ?? profileRoles[c.tag!] ?? null
     })
-    return planSources(plannedBrief, { ...env, roles })
-  }, [plannedBrief, plannedNamed, env, soloOf, profileRoles])
+    // A pack mixing make-ups searches with no head count (one-part packs never mix).
+    const mix = plannedBrief.changes === "scene" ? briefCompositions(plannedBrief) : []
+    return planSources(plannedBrief, { ...env, roles, conditions: briefConditions(plannedBrief, overrides), ...(mix.length >= 2 ? { compositions: mix } : {}) })
+  }, [plannedBrief, plannedNamed, env, soloOf, profileRoles, overrides])
 
   // ── Looks ─────────────────────────────────────────────────────────────────────
   const base = named[0] ?? null
@@ -369,7 +386,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   // A one-part pack keeps the whole-scene choices (they rule out scenes) and shows its
   // variants left out on the sheet; the scene that repeats is part of it.
   const axis = oneAxis(brief)
-  const coreKey = JSON.stringify([brief.who, brief.requests, brief.never, brief.literal, brief.others, brief.people, brief.changes, brief.baseScene, axis ? brief.leftOut : null])
+  const coreKey = JSON.stringify([brief.who, brief.requests, brief.never, brief.literal, brief.others, brief.outfitStyles, brief.people, brief.changes, brief.baseScene, axis ? brief.leftOut : null])
   const coreBrief = useMemo<PackBrief>(
     () => ({ ...brief, leftOut: axis ? brief.leftOut : [], leftOutVariants: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -432,40 +449,48 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const castPeopleMemo = useMemo(() => fromPeopleKey(castKey)!, [castKey])
   const basePool = useMemo(() => {
     if (!permanence || waitingForLookup || rated.length === 0) return null
-    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag) })
-  }, [permanence, waitingForLookup, rated, overrides, subject, castPeopleMemo, tagKinds])
+    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), provider })
+  }, [permanence, waitingForLookup, rated, overrides, subject, castPeopleMemo, tagKinds, provider])
 
   const requests = useMemo(() => toSceneRequests(coreBrief), [coreBrief])
   const leftOutKey = brief.leftOut.join(",")
   const poseArgs = useMemo(
-    () => ({ requests, never: identity.never, overrides, removedScenes: leftOutKey ? leftOutKey.split(",").map(Number) : [] }),
+    // The donors' posts only lend: they are no scene of the pack, so they count in no composition.
+    () => ({ requests, never: identity.never, overrides, removedScenes: [...(leftOutKey ? leftOutKey.split(",").map(Number) : []), ...(donorPosts ?? [])] }),
     // `relations` is read inside poseCompositions: a new value means new answers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [requests, identity.never, overrides, leftOutKey, relations]
+    [requests, identity.never, overrides, leftOutKey, relations, donorPosts]
   )
   const poses = useMemo(() => (basePool ? poseCompositions(basePool, poseArgs) : NO_POSES), [basePool, poseArgs])
 
   const firstCandidates = identity.members[0]?.candidates ?? NO_NAMES
+  // The make-ups of the scenes that can be a prompt's scene: the donors' posts only lend, so
+  // they count in none (the pool's own stats count every scene).
+  const sceneCompositions = useMemo(() => {
+    if (!basePool) return null
+    if (!donorPosts?.length) return basePool.stats.compositions
+    const donors = new Set(donorPosts)
+    return compositionsOf((basePool.allScenes ?? basePool.scenes).filter((scene) => !donors.has(scene.postId)))
+  }, [basePool, donorPosts])
   // Every composition of the pool the characters fit in; null until the pool is built.
   const available = useMemo(() => {
-    if (!basePool) return null
-    const all = basePool.stats.compositions
-    return isCast ? all.filter((c) => holdsCast(c.people, castPeopleMemo)) : all
-  }, [basePool, isCast, castPeopleMemo])
+    if (!sceneCompositions) return null
+    return isCast ? sceneCompositions.filter((c) => holdsCast(c.people, castPeopleMemo)) : sceneCompositions
+  }, [sceneCompositions, isCast, castPeopleMemo])
   const peopleKey = useMemo(() => {
-    if (!basePool || missingRoles.length > 0) return ""
-    const all = basePool.stats.compositions
+    if (!basePool || !sceneCompositions || missingRoles.length > 0) return ""
+    const all = sceneCompositions
     if (isCast) return peopleKeyOf(castComposition(all.filter((c) => holdsCast(c.people, castPeopleMemo)), castPeopleMemo, brief.people, poses))
     const declared = compositionOfIdentity(firstCandidates)
     return peopleKeyOf(defaultComposition(all, subject, brief.people, { declared, character: !!base }, poses))
-  }, [basePool, missingRoles, isCast, castPeopleMemo, brief.people, poses, firstCandidates, subject, base])
+  }, [basePool, sceneCompositions, missingRoles, isCast, castPeopleMemo, brief.people, poses, firstCandidates, subject, base])
   const people = useMemo(() => fromPeopleKey(peopleKey), [peopleKey])
 
   const pool = useMemo(() => {
     if (!basePool || !permanence) return null
     if (!people || peopleKey === peopleKeyOf(basePool.stats.composition)) return basePool
-    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), people })
-  }, [basePool, permanence, people, peopleKey, rated, overrides, subject, castPeopleMemo, tagKinds])
+    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), people, provider })
+  }, [basePool, permanence, people, peopleKey, rated, overrides, subject, castPeopleMemo, tagKinds, provider])
 
   const peopleLine = useMemo(
     () => peopleLineState({
@@ -481,6 +506,16 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     }),
     [requests.select, overrides, relations, poses, castPeopleMemo, people, brief.people, available]
   )
+  // Several make-ups: the ones the brief marks with room for the characters, the first being `people`.
+  const mixKey = JSON.stringify(axis ? [] : briefCompositions(coreBrief))
+  const peopleSelected = useMemo<PackPeople[]>(() => {
+    const marked = (JSON.parse(mixKey) as PackPeople[]).filter((p) => holdsCast(p, castPeopleMemo))
+    return marked.length > 0 ? marked : people ? [people] : []
+  }, [mixKey, castPeopleMemo, people])
+  const peopleBlocked = useMemo(() => {
+    const all = requests.select.length > 0 ? poses : sceneCompositions ?? []
+    return all.filter((c) => !holdsCast(c.people, castPeopleMemo))
+  }, [requests.select, poses, sceneCompositions, castPeopleMemo])
 
   // ── Clothes ───────────────────────────────────────────────────────────────────
   const [outfitData, setOutfitData] = useState<ReadonlyMap<string, CharacterOutfits | null>>(() => new Map())
@@ -517,7 +552,52 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   }, [outfit, identity.blocks, outfitData])
 
   const useLibrary = outfit.kind === "library"
-  const outfitLibrary = useOutfitLibrary(useLibrary)
+  // The library also offers its styles in Wearing and lends outfits to the conditions: loaded with the pack.
+  const outfitLibrary = useOutfitLibrary(true)
+  const allowedStyles = useMemo(
+    () => OUTFIT_STYLES.filter((style) => rating !== "sfw" || !ADULT_OUTFIT_STYLES.includes(style)),
+    [rating]
+  )
+  const styleCounts = useMemo(() => {
+    const out: Partial<Record<OutfitStyle, number>> = {}
+    for (const o of outfitLibrary) if (allowedStyles.includes(o.style)) out[o.style] = (out[o.style] ?? 0) + 1
+    return out
+  }, [outfitLibrary, allowedStyles])
+  // Every outfit allowed at the rating, whole, for the conditions and the styles (ScenePackArgs.outfitLibrary).
+  const conditionLibrary = useMemo<LibraryOutfit[]>(
+    () => outfitLibrary
+      .filter((o) => allowedStyles.includes(o.style))
+      .map((o) => ({ outfitId: o.id, tags: libraryOutfitTags(o, "full").map(normalizeTagForPack), style: o.style })),
+    [outfitLibrary, allowedStyles]
+  )
+  const conditions = useMemo(() => briefConditions(coreBrief, overrides), [coreBrief, overrides])
+  // Other names of the conditions: asked once, never waited for.
+  const conditionsKey = conditions.map(normalizeTagForPack).sort().join("|")
+  const [aliases, setAliases] = useState<{ key: string; names: Record<string, string[]> }>({ key: "", names: {} })
+  useEffect(() => {
+    if (!conditionsKey) return
+    let active = true
+    void loadConditionAliases(conditionsKey.split("|")).then((names) => { if (active) setAliases({ key: conditionsKey, names }) })
+    return () => { active = false }
+  }, [conditionsKey])
+  const conditionAliases = useMemo(
+    () => (aliases.key === conditionsKey ? aliases.names : knownAliases(conditions)),
+    [aliases, conditionsKey, conditions]
+  )
+  // The different forms of each condition the loaded scenes and the library offer, for the fit
+  // line before generating: what condition-variety will count, at most.
+  const supply = useMemo(() => {
+    if (!basePool) return []
+    const scenes = basePool.allScenes ?? basePool.scenes
+    const wearing = requests.wearing.filter((t) => conditions.includes(t))
+    const where = requests.where.filter((t) => conditions.includes(t))
+    const styles = (coreBrief.outfitStyles ?? []).filter((style) => allowedStyles.includes(style as OutfitStyle))
+    const base = { scenes, library: conditionLibrary, overrides, aliases: conditionAliases }
+    return [
+      ...(wearing.length > 0 || styles.length > 0 ? [conditionSupply({ ...base, role: "wearing", tags: wearing, styles })] : []),
+      ...(where.length > 0 ? [conditionSupply({ ...base, role: "where", tags: where })] : []),
+    ]
+  }, [basePool, requests, conditions, coreBrief.outfitStyles, allowedStyles, conditionLibrary, overrides, conditionAliases])
   const libraryStyles = useMemo(
     () => (rating === "sfw" ? outfitOptions.styles.filter((s) => !ADULT_OUTFIT_STYLES.includes(s)) : outfitOptions.styles),
     [rating, outfitOptions.styles]
@@ -554,9 +634,15 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         clean,
         resolution: (aspect) => resolutionForAspect(aspect, prefs),
         baseScene,
+        conditions: briefConditions(forBrief, overrides),
+        outfitStyles: (forBrief.outfitStyles ?? []).filter((style) => allowedStyles.includes(style as OutfitStyle)),
+        donorPosts,
+        outfitLibrary: conditionLibrary,
+        conditionAliases,
+        compositions: oneAxis(forBrief) ? [] : briefCompositions(forBrief).filter((p) => holdsCast(p, castPeopleMemo)),
       })
     },
-    [useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, identity, overrides, permanence, people, preferredPosts, outfit, characterOutfits, clean]
+    [useLibrary, outfitLibrary, libraryStyles, outfitOptions.detail, identity, overrides, permanence, people, preferredPosts, outfit, characterOutfits, clean, allowedStyles, donorPosts, conditionLibrary, conditionAliases, castPeopleMemo]
   )
 
   // The pack made last (see "Generating and correcting" below).
@@ -832,6 +918,9 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     identity,
     replacedLook,
     othersTag,
+    conditionSupply: supply,
+    styleCounts,
+    allowedStyles,
     officialOutfits,
     ready: !!permanence,
     loadFailed: loadFailed && !permanence,
@@ -841,6 +930,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     people,
     available,
     peopleLine,
+    peopleSelected,
+    peopleBlocked,
     // Another part (or none) than the one asked for is another list: not shown as this one.
     // Nothing when there is nothing to work them out from (roles missing, no pool).
     candidates: pool && candidateArgs && candidateState && candidateState.axis === (axis ?? null) ? candidateState.list : null,
@@ -857,7 +948,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     reroll,
     naturalSourceOf,
   }), [
-    plan, looks, identity, replacedLook, othersTag, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState, axis, candidateArgs,
+    plan, looks, identity, replacedLook, othersTag, supply, styleCounts, allowedStyles, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, peopleSelected, peopleBlocked, candidateState, axis, candidateArgs,
     candidatesPending, result, op, sourceKey, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
   ])
 }

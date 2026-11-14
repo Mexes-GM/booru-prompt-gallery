@@ -9,7 +9,7 @@ import { memo } from "react"
 import type { PackSourceProgress } from "@/hooks/use-pack-sources"
 import type { SourcePlan } from "@/lib/pack/source-plan"
 import { cn } from "@/lib/utils"
-import { SEARCH_RULE, leftOutSentence, noPostsSentence, ratingsSentence, searchCount, searchDescription, searchTagsText } from "./search-text"
+import { DONOR_ROLE, SEARCH_RULE, donorDescription, leftOutSentence, noPostsSentence, ratingsSentence, searchCount, searchDescription, searchTagsText } from "./search-text"
 
 export interface SearchDetailsProps {
   id: string
@@ -33,7 +33,7 @@ export const SearchDetails = memo(function SearchDetails({ id, plan, progress, c
           const p = progress.find((x) => x.id === search.id)
           const posts = p?.posts ?? 0
           const none = !!p && posts === 0 && p.exhausted && !p.loading && !p.failed
-          const count = !p || (p.loading && posts === 0) ? "Searching…" : searchCount(posts, p.exhausted)
+          const count = !p || (p.loading && posts === 0) ? "Searching…" : searchCount(p.adds, posts, p.exhausted)
           return (
             <li key={search.id} className="min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
@@ -42,6 +42,23 @@ export const SearchDetails = memo(function SearchDetails({ id, plan, progress, c
               </div>
               <code className="block break-all font-mono text-[11px] text-muted-foreground">{searchTagsText(search)}</code>
               {none && <p className="text-warning-text">{noPostsSentence(search.kind, site)}</p>}
+            </li>
+          )
+        })}
+        {plan.donors.map((search) => {
+          const p = progress.find((x) => x.id === search.id)
+          const posts = p?.posts ?? 0
+          const none = !!p && posts === 0 && p.exhausted && !p.loading && !p.failed
+          const count = !p || (p.loading && posts === 0) ? "Searching…" : searchCount(p.adds, posts, p.exhausted)
+          return (
+            <li key={search.id} className="min-w-0">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="font-medium text-foreground">{donorDescription(search.kind, search.conditions)}</span>
+                <span className={cn("tabular-nums", none ? "text-warning-text" : "text-muted-foreground")}>{count}</span>
+              </div>
+              <code className="block break-all font-mono text-[11px] text-muted-foreground">{searchTagsText(search)}</code>
+              <p className="text-muted-foreground">{DONOR_ROLE[search.kind]}</p>
+              {none && <p className="text-warning-text">{noPostsSentence("theme", site)}</p>}
             </li>
           )
         })}

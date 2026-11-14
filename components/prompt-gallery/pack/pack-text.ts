@@ -43,11 +43,16 @@ export const BUILDER_TEXT = {
   providerNeedsConsent: "Choose it in the gallery first to confirm adult content",
   providerNoSensitive: "Safe only: no sensitive rating there",
   providerChanged: (site: string) => `Now searching ${site}`,
-  /** After the fit line: the posts the scenes come from; `all` once the site has no more for this search. */
-  loadedFrom: (posts: number, site: string, all: boolean) =>
-    all
-      ? `from all ${posts} matching ${posts === 1 ? "post" : "posts"} on ${site}`
-      : `from ${posts} ${posts === 1 ? "post" : "posts"} on ${site} so far`,
+  /**
+   * After the fit line: the posts the scenes come from, and the ones that only lend clothes or a
+   * place (the donor searches'); `all` once the site has no more for these searches.
+   */
+  loadedFrom: (posts: number, site: string, all: boolean, lend = 0) => {
+    const lending = lend > 0 ? `, plus ${lend} that only lend clothes or places` : ""
+    return all
+      ? `from all ${posts} matching ${posts === 1 ? "post" : "posts"} on ${site}${lending}`
+      : `from ${posts} ${posts === 1 ? "post" : "posts"} on ${site}${lending} so far`
+  },
   loadFailed: "Couldn't load the scenes. Check your connection and try again.",
   retry: "Try again",
   sheetHint: "Select a scene to leave it out",
@@ -111,6 +116,23 @@ export const SIZE_TEXT = {
   unsized: (n: number) => `${n} ${n === 1 ? "prompt has" : "prompts have"} no size and ${n === 1 ? "was" : "were"} copied without one.`,
 } as const
 
+/** Under Wearing: what it does to the character's own clothes. */
+export const WEARING_TEXT = {
+  anyKind: "Each prompt gets its own kind of it, in place of the usual outfit",
+  exact: "Replaces the usual outfit",
+  styles: "Each prompt wears a different outfit from the library",
+} as const
+
+/** The outfit library's styles as Wearing offers them (not tags: a whole outfit of the style per prompt). */
+export const STYLE_TEXT = {
+  name: (style: string) => style.charAt(0).toUpperCase() + style.slice(1),
+  count: (n: number) => `${n} ${n === 1 ? "outfit" : "outfits"}`,
+  chip: (style: string) => `${style.charAt(0).toUpperCase() + style.slice(1)} outfits`,
+  notAtRating: "Not used at the Safe rating",
+  unused: (styles: readonly string[]) =>
+    `${styles.map((s) => `${s.charAt(0).toUpperCase() + s.slice(1)} outfits`).join(" and ")} ${styles.length === 1 ? "isn't" : "aren't"} used at the Safe rating.`,
+} as const
+
 /** "4 prompts missing" beside the results, when the pack came out short. */
 export const missingText = (missing: number) => `${missing} ${missing === 1 ? "prompt" : "prompts"} missing`
 
@@ -170,6 +192,13 @@ export const CHANGES_OPTIONS: ReadonlyArray<{ value: ChangesAxis; label: string;
 // ── People ───────────────────────────────────────────────────────────────────────
 
 export const peopleKey = (p: PackPeople) => `${p.girls}g${p.boys}b`
+
+/** People with several make-ups marked. */
+export const PEOPLE_TEXT = {
+  noRoom: "No room for the characters",
+  lastOne: "A pack needs at least one",
+  axis: "The scene that repeats sets who's in the picture",
+} as const
 
 /** The line under People when the requested pose needs company: "This pose needs 2 people". */
 export const poseNeedsText = (people: number) => `This pose needs ${people} people`
@@ -279,6 +308,29 @@ function fitSentence(state: FitState): string {
     }
     case "waiting":
       return "Waiting a few seconds to keep searching"
+    case "variety": {
+      const kind = state.styles ? `${state.what} outfit` : state.what
+      if (state.variants >= state.prompts) {
+        return state.role === "where" ? `Each prompt is at a different ${kind}` : `Each prompt wears a different ${kind}`
+      }
+      return state.styles
+        ? `${plural(state.variants, `${state.what} outfit`)} across ${plural(state.prompts, "prompt")}`
+        : `${plural(state.variants, "kind")} of ${state.what} across ${plural(state.prompts, "prompt")}`
+    }
+    case "as-written":
+      if (state.styles) return `${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "has" : "have"} no ${state.what} outfit: the library has no other one`
+      return state.partial
+        ? `${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "has" : "have"} only part of ${state.what} from another picture; the rest is as typed`
+        : `${plural(state.prompts, "prompt")} ${state.prompts === 1 ? "has" : "have"} ${state.what} as typed: no other kind was found`
+    case "condition-supply":
+      if (state.styles) {
+        return state.variants === 0
+          ? `The library has no ${state.what} outfit for this pack`
+          : `Only ${plural(state.variants, `${state.what} outfit`)} for ${plural(state.asked, "prompt")}`
+      }
+      return state.variants === 0
+        ? `No loaded picture has ${state.what} yet, so it would go as typed`
+        : `Only ${plural(state.variants, "kind")} of ${state.what} so far for ${plural(state.asked, "prompt")}`
     case "no-new":
       return state.exhausted ? "No new scenes found. There's nothing more to search." : "No new scenes found on that page."
     case "paused":
