@@ -787,8 +787,6 @@ interface RequestPlan {
   /** What the character usually wears, set aside for the garments asked for: it doesn't come back through the scene either. */
   setAside: string[]
   literal: string[]
-  /** `others`: how the people besides the characters look, for prompts of two or more people (ComposeOptions.others). */
-  others: string[]
   /**
    * The requests met as conditions (SceneRequests.conditions, outfitStyles): `wearing` and `where`
    * are subsets of the plan's own; `styles`, the library styles asked for.
@@ -799,7 +797,7 @@ interface RequestPlan {
   dropped: ScenePackIssue[]
 }
 
-const NO_REQUESTS: RequestPlan = { identity: [], imposed: [], wearing: [], where: [], owning: [], select: [], setAside: [], literal: [], others: [], conditions: { wearing: [], where: [], styles: [] }, roleOf: new Map(), dropped: [] }
+const NO_REQUESTS: RequestPlan = { identity: [], imposed: [], wearing: [], where: [], owning: [], select: [], setAside: [], literal: [], conditions: { wearing: [], where: [], styles: [] }, roleOf: new Map(), dropped: [] }
 const plans = new WeakMap<ScenePackArgs, RequestPlan>()
 
 /** What `args.requests` means for this pack, worked out once per args. */
@@ -831,13 +829,6 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
   const select = take('select')
   const owning = [...select, ...take('also')]
   const imposed = [...wearing, ...where, ...owning]
-  // How the others look goes only in a picture of two or more: a pack of one person drops it.
-  const alone = !!args.people && args.people.girls + args.people.boys < 2
-  const others = take('others').filter((tag) => {
-    if (!alone) return true
-    dropped.push({ kind: 'request-dropped', tag, role: 'others', reason: 'composition' })
-    return false
-  })
   const literal = requests.literal.filter((tag) => tag.trim())
   literal.forEach((tag) => roleOf.set(normalizeTagForPack(tag), roleOf.get(normalizeTagForPack(tag)) ?? 'literal'))
   alwaysAddOmitted(literal, args.people ?? null).forEach((tag) =>
@@ -858,7 +849,6 @@ function requestPlan(args: ScenePackArgs): RequestPlan {
     select,
     setAside: setAside.map(normalizeTagForPack),
     literal,
-    others,
     conditions: {
       wearing: wearing.filter((tag) => asCondition.has(tag)),
       where: where.filter((tag) => asCondition.has(tag)),
@@ -1022,7 +1012,6 @@ function composeOptions(args: ScenePackArgs, count: number, seed: number, disabl
     sceneIdeaTags: args.sceneIdea?.core.length ? args.sceneIdea.core : undefined,
     ...(plan.wearing.length > 0 ? { wearing: plan.wearing } : {}),
     ...(plan.where.length > 0 ? { where: plan.where } : {}),
-    ...(plan.others.length > 0 ? { others: plan.others } : {}),
     ...(hasConditions(args) ? { conditions: true } : {}),
     ...(selection && selection.needed.size > 0
       ? { actBody: (scene: Scene, clothes: readonly string[]) => actBody(scene, clothes, selection, args.overrides) }
@@ -1091,8 +1080,6 @@ interface Finisher {
   lonely: Map<string, number>
   /** With selected poses: the scenes the pack used and the steps it took. */
   pose: PoseTally | null
-  /** Tag of `requests.others` -> prompts it went into (a picture of one person leaves it out). */
-  othersIn: Map<string, number>
   /** With conditions: their donors and what they did. */
   cond: ConditionRun | null
 }
@@ -1114,7 +1101,6 @@ function finisher(pool: ScenePool, args: ScenePackArgs, seen: Set<string>, filte
     pool, args, leftOut: ideaClothesLeftOut(args), seen, filter,
     sceneById: new Map(pool.scenes.map((scene) => [scene.postId, scene])), situationOf, lonely: new Map(),
     pose: pose ? { plan: pose, used: new Set(), reused: 0, imposed: new Map() } : null,
-    othersIn: new Map(),
     cond,
   }
 }
@@ -1143,10 +1129,6 @@ function packIssues(f: Finisher, made: number, count: number): ScenePackIssue[] 
   const plan = requestPlan(f.args)
   const issues = [...plan.dropped]
   f.lonely.forEach((prompts, tag) => issues.push({ kind: 'needs-company', tag, role: plan.roleOf.get(normalizeTagForPack(tag)) ?? 'literal', prompts }))
-  // How the others look, when no prompt of the pack had room for it (every picture shows one person).
-  if (made > 0) plan.others.forEach((tag) => {
-    if (!f.othersIn.has(tag)) issues.push({ kind: 'request-dropped', tag, role: 'others', reason: 'composition' })
-  })
   issues.push(...conditionIssues(f.cond))
   const tally = f.pose
   if (!tally) return issues
@@ -1201,10 +1183,6 @@ function finishOne(f: Finisher, composed: ScenePrompt): PackPrompt | null {
   const prompt = finalizePackPrompt(kept.join(', '), alwaysAddFor(front, composed.locked, args.people))
   if (!prompt || f.seen.has(prompt) || !f.filter.tryAccept(prompt)) return null
   f.seen.add(prompt)
-  if (plan.others.length > 0) {
-    const locked = new Set(composed.locked)
-    plan.others.forEach((tag) => { if (locked.has(tag)) f.othersIn.set(tag, (f.othersIn.get(tag) ?? 0) + 1) })
-  }
   // A request that needs company stays in a one-person prompt; the pack says so.
   if (args.requests) {
     const finalTags = prompt.split(',').map((tag) => tag.trim()).filter(Boolean)

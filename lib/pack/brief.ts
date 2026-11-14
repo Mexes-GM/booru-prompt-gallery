@@ -55,12 +55,6 @@ export interface SceneRequests {
   also: string[]      // imposed; pass the same ownership rule
   literal: string[]   // first, as typed
   /**
-   * How the people who are not the named characters look ("dark-skinned male", "faceless male"):
-   * in every prompt of two or more people, as a block of its own after the characters. Missing or
-   * empty: nothing.
-   */
-  others?: string[]
-  /**
    * Tags of `wearing` and `where` the pack meets as conditions: each prompt wears (or is at) the tag
    * or a qualified form of it ("white bikini" for "bikini"), a different one per prompt where the
    * scenes, the donor posts (ScenePackArgs.donorPosts) and the outfit library offer them. A tag of
@@ -75,8 +69,12 @@ export interface SceneRequests {
   outfitStyles?: string[]
 }
 
-/** What toSceneRequests gives the engine (kept as a name: `others` is part of SceneRequests now). */
-export type BriefSceneRequests = SceneRequests
+/**
+ * What toSceneRequests gives the engine: SceneRequests, plus `others` (how the people
+ * who are not the characters look) when the brief has any. The engine does not read
+ * `others` yet; it arrives as it is.
+ */
+export type BriefSceneRequests = SceneRequests & { others?: string[] }
 
 /** Where a typed tag belongs in the brief. */
 export type BriefRoute =
