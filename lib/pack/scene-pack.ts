@@ -1407,6 +1407,8 @@ interface ConditionRun {
   placeTally: ConditionTally
   /** Every scene by post id (the pool's own and the donors'), for the swaps a composed prompt records. */
   byId: Map<number, Scene>
+  /** The variants of the last prompt finishWithConditions made, until the pack keeps it (commitVariant). */
+  last: { outfit: VariantOption; place: VariantOption } | null
 }
 
 /** Most donors tried for one prompt before the condition's tag goes in as typed. */
@@ -1468,7 +1470,7 @@ function conditionRun(pool: ScenePool, args: ScenePackArgs): ConditionRun | null
     })
     places = new ConditionQueue(candidates, rng)
   }
-  return { wearing, where, styles, region, outfits, places, outfitTally: newTally(), placeTally: newTally(), byId }
+  return { wearing, where, styles, region, outfits, places, outfitTally: newTally(), placeTally: newTally(), byId, last: null }
 }
 
 const peopleKeyOf = (scene: Scene) => (scene.people ? `${scene.people.girls}g${scene.people.boys}b` : 'open')
@@ -1618,8 +1620,7 @@ function finishWithConditions(f: Finisher, composed: ScenePrompt): PackPrompt | 
     if (place.donor) sources.place = place.donor.postId
     const prompt = finishOne(f, { ...lent, sources })
     if (!prompt) continue
-    tallyVariant(run.outfits, run.outfitTally, outfit)
-    tallyVariant(run.places, run.placeTally, place)
+    run.last = { outfit, place }
     return outfit.donor && isLibraryDonor(outfit.donor) ? { ...prompt, outfitId: outfit.donor.outfitId } : prompt
   }
   return null
@@ -1635,8 +1636,65 @@ function acceptShown(run: ConditionRun, tags: readonly string[]): void {
   for (const { value } of run.places?.ordered() ?? []) accept(run.places, value)
 }
 
-/** A composed scene as a pack prompt: through the conditions when the pack has some. */
-const finishItem = (f: Finisher, composed: ScenePrompt): PackPrompt | null => (f.cond ? finishWithConditions(f, composed) : finishOne(f, composed))
+/** The pack keeps the last prompt finishWithConditions made: its variants count as used. */
+function commitVariant(run: ConditionRun): void {
+  if (!run.last) return
+  tallyVariant(run.outfits, run.outfitTally, run.last.outfit)
+  tallyVariant(run.places, run.placeTally, run.last.place)
+  run.last = null
+}
+
+/**
+ * True when the last prompt took a condition's tag as typed while variants that meet it fully are
+ * still unused: none fitted this scene (its pose leans on something no such place has, its people
+ * can't wear them). The pack keeps such a prompt for last and tries its other scenes first.
+ */
+function typedTooSoon(run: ConditionRun): boolean {
+  if (!run.last) return false
+  const unused = (queue: ConditionQueue | null) => !!queue && queue.ordered().some((entry) => entry.group < 10)
+  return (run.last.outfit.source === 'imposed' && unused(run.outfits)) || (run.last.place.source === 'imposed' && unused(run.places))
+}
+
+/** A composed scene as a pack prompt: through the conditions when the pack has some (its variants count as used). */
+function finishItem(f: Finisher, composed: ScenePrompt): PackPrompt | null {
+  if (!f.cond) return finishOne(f, composed)
+  const prompt = finishWithConditions(f, composed)
+  if (prompt) commitVariant(f.cond)
+  return prompt
+}
+
+/** A prompt a pack with conditions set aside (typedTooSoon), with what it needs to be kept later. */
+interface Deferred { prompt: PackPrompt; kind: PhaseKind; composed: ScenePrompt; last: ConditionRun['last'] }
+
+/**
+ * The pack's next prompt from `composed`, or null: with conditions, one that took a tag as typed while
+ * variants were left goes to `deferred` instead (keepDeferred adds them at the end if the pack is short).
+ */
+function packItem(f: Finisher, composed: ScenePrompt, kind: PhaseKind, deferred: Deferred[]): PackPrompt | null {
+  if (!f.cond) return finishOne(f, composed)
+  const prompt = finishWithConditions(f, composed)
+  if (!prompt) return null
+  if (typedTooSoon(f.cond)) {
+    deferred.push({ prompt, kind, composed, last: f.cond.last })
+    f.cond.last = null
+    return null
+  }
+  commitVariant(f.cond)
+  return prompt
+}
+
+/** Adds the set-aside prompts while the pack is short of `count`. */
+function keepDeferred(f: Finisher, prompts: PackPrompt[], deferred: readonly Deferred[], count: number): void {
+  for (const item of deferred) {
+    if (prompts.length >= count) break
+    if (f.cond) {
+      f.cond.last = item.last
+      commitVariant(f.cond)
+    }
+    prompts.push(item.prompt)
+    tallyPose(f, item.kind, item.composed)
+  }
+}
 
 /** The `condition-variety` issues of a pack with conditions. */
 function conditionIssues(run: ConditionRun | null): ScenePackIssue[] {
@@ -1801,8 +1859,8 @@ function axisRun(pool: ScenePool, args: ScenePackArgs, axis: OneAxis, count: num
     const first = conditionScenes(g, base.scene).next()
     if (!first.done) {
       base = { ...base, scene: first.value.scene }
-      tallyVariant(offAxis.outfits, offAxis.outfitTally, first.value.outfit)
-      tallyVariant(offAxis.places, offAxis.placeTally, first.value.place)
+      offAxis.last = { outfit: first.value.outfit, place: first.value.place }
+      commitVariant(offAxis)
     }
   }
   const selection = a.requests ? poseSelection(a) : null
@@ -1952,13 +2010,15 @@ export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePa
   const plan = packPlan(bases, args, count)
   const f = finisher(bases, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)), plan.pose, conditionRun(pool, args))
   const prompts: PackPrompt[] = []
+  const deferred: Deferred[] = []
   for (const item of composeForPack(args, plan.phases, f.pose?.used)) {
     if (prompts.length >= count) break
-    const prompt = finishItem(f, item.prompt)
+    const prompt = packItem(f, item.prompt, item.kind, deferred)
     if (!prompt) continue
     prompts.push(prompt)
     tallyPose(f, item.kind, item.prompt)
   }
+  keepDeferred(f, prompts, deferred, count)
   return { prompts, shortBy: count - prompts.length, issues: packIssues(f, prompts.length, count) }
 }
 
@@ -2007,6 +2067,7 @@ export async function generateScenePackAsync(
   const f = finisher(bases, args, new Set(), new NearDuplicateFilter(DEFAULT_SIMILARITY_THRESHOLD, fixedTags(args)), plan.pose, conditionRun(pool, args))
   const composed = composeForPack(args, plan.phases, f.pose?.used)
   const prompts: PackPrompt[] = []
+  const deferred: Deferred[] = []
   let started = Date.now()
   // Composing a scene is the costly part, so the pause comes before pulling the next one.
   while (prompts.length < count) {
@@ -2017,11 +2078,12 @@ export async function generateScenePackAsync(
     }
     const next = composed.next()
     if (next.done) break
-    const prompt = finishItem(f, next.value.prompt)
+    const prompt = packItem(f, next.value.prompt, next.value.kind, deferred)
     if (!prompt) continue
     prompts.push(prompt)
     tallyPose(f, next.value.kind, next.value.prompt)
   }
+  keepDeferred(f, prompts, deferred, count)
   return { prompts, shortBy: count - prompts.length, issues: packIssues(f, prompts.length, count) }
 }
 
