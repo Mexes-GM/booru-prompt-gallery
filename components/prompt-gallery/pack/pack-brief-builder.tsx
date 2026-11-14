@@ -32,14 +32,28 @@ import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
-import { addNever, addTag, briefFromPrompt, routeTag, type RequestRole } from "@/lib/pack/brief"
+import {
+  addLook as addLookInBrief,
+  addNever,
+  addTag,
+  briefFromPrompt,
+  routeTag,
+  setPeople as setPeopleInBrief,
+  type PackBrief,
+  type RequestRole,
+} from "@/lib/pack/brief"
+import { briefFromCharacters } from "@/lib/pack/brief-history"
 import type { CastRole } from "@/lib/pack/scene/cast"
 import { normalizeTagForPack } from "@/lib/pack/pack-generator"
 import { splitTags } from "@/lib/utils/tag-utils"
 import {
   axisRequests,
+  briefFromCardPost,
+  correctionAfterBriefChange,
   briefFromSearch,
   castPeopleNote,
+  keptRows,
+  lookOwner,
   changedRows,
   oneAxis,
   issuesFit,
@@ -69,7 +83,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -85,12 +99,16 @@ export type PackBriefStart =
 
 /** A correction from the results: what it was, and the pack as it was before, for Undo. */
 interface Correction {
+  id: number
   kind: "always" | "never"
   tag: string
   snapshot: BriefPackResult
   format: PromptFormat
-  briefBefore: unknown
-  done: boolean
+  /** The brief before the correction, and right after it (null until it lands). */
+  briefBefore: PackBrief
+  briefAfter: PackBrief | null
+  /** waiting: the brief has the change, the remake hasn't started; running; done (Undo offered). */
+  status: "waiting" | "running" | "done"
   message: string | null
 }
 
@@ -130,55 +148,74 @@ export interface PackBriefBuilderProps {
   onExit: () => void
 }
 
-/** The brief a start makes, and what to say about it. */
-function begin(pack: UsePackBriefResult, start: PackBriefStart, overrides: Record<string, string>): StartNote {
+/** The brief a start makes, and what to say about it. Pure: nothing is written while rendering. */
+function begin(start: PackBriefStart, overrides: Record<string, string>): { brief: PackBrief; note: StartNote } {
   switch (start.kind) {
     case "characters":
-      pack.startFromCharacters([...start.names])
-      return { kind: "characters" }
+      return { brief: briefFromCharacters([...start.names]), note: { kind: "characters" } }
     case "card": {
+      // The card's characters come from the post's own character field, known to the taxonomy or not.
+      const characters = splitTags(start.post.tag_string_character ?? "")
       const tags = splitTags(`${start.post.tag_string ?? ""} ${start.post.tag_string_character ?? ""}`)
-      const { offered } = pack.startFromCard(tags)
-      const named = splitTags(start.post.tag_string_character ?? "").length > 0
-      return { kind: "card", named, outfit: offered.outfit, pose: offered.pose }
+      const { brief, offered } = briefFromCardPost(tags, characters, overrides)
+      return { brief, note: { kind: "card", named: characters.length > 0, outfit: offered.outfit, pose: offered.pose } }
     }
     case "prompt": {
       const { brief, peopleTags } = briefFromPrompt(start.text, overrides)
-      pack.startWith(withPromptPeople(brief, peopleTags))
-      return { kind: "prompt" }
+      return { brief: withPromptPeople(brief, peopleTags), note: { kind: "prompt" } }
     }
     case "search": {
       const { brief, skipped } = briefFromSearch(start.search, overrides, start.character)
-      pack.startWith(brief)
-      return { kind: "search", skipped }
+      return { brief, note: { kind: "search", skipped } }
     }
   }
 }
 
-/** Shell: the panel and its header. The work starts once the brief holds the start. */
+/**
+ * Shell: the panel and its header. Closed, it stays mounted (the pack and its posts wait
+ * here) but inert: not shown, not focusable, and the environment it works from is held as
+ * it was when it closed, so nothing is fetched, timed or worked out until it opens again.
+ */
 export function PackBriefBuilder(props: PackBriefBuilderProps) {
   const { start, open, overrides, rating, onRatingChange, onExit, onNewPack } = props
-  const pack = usePackBrief(overrides)
-  // The pack starts once, before anything is fetched.
-  const [note, setNote] = useState<StartNote | null>(null)
-  if (!note) setNote(begin(pack, start, overrides))
+  const [begun] = useState(() => begin(start, overrides))
+  const pack = usePackBrief(overrides, begun.brief)
+  // The environment while open; held while closed.
+  const [held, setHeld] = useState(props)
+  if (open && held !== props) setHeld(props)
+  const env = open ? props : held
+
+  // Focus goes into the panel when it opens and back where it was when it closes.
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const returnRef = useRef<Element | null>(null)
+  useEffect(() => {
+    if (open) {
+      returnRef.current = document.activeElement
+      headingRef.current?.focus()
+      return
+    }
+    const back = returnRef.current
+    if (back instanceof HTMLElement && back.isConnected) back.focus()
+  }, [open])
 
   return (
     <TooltipProvider delayDuration={300}>
       <section
         aria-label={BUILDER_TEXT.title}
-        aria-hidden={!open || undefined}
+        inert={!open}
         className={cn(
-          // Hidden, not unmounted: the pack waits here until Pack Mode comes back.
-          !open && "hidden",
           "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-hidden",
           "rounded-t-2xl border border-border bg-background shadow-2xl sm:bottom-4 sm:w-[calc(100%-2rem)] sm:rounded-2xl",
           "animate-in fade-in-0 slide-in-from-bottom-4 duration-200 ease-out-strong motion-reduce:animate-none",
+          // Last, so it wins over "flex": closed is not shown.
+          !open && "hidden",
         )}
       >
         <header className="flex flex-shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
           <Package className="size-5 shrink-0 text-mode-pack-text" aria-hidden />
-          <h2 className="text-base font-semibold leading-tight text-foreground">{BUILDER_TEXT.title}</h2>
+          <h2 ref={headingRef} tabIndex={-1} className="text-base font-semibold leading-tight text-foreground focus-visible:outline-none">
+            {BUILDER_TEXT.title}
+          </h2>
           <div className="ml-auto flex items-center gap-1">
             <Button
               type="button"
@@ -205,7 +242,7 @@ export function PackBriefBuilder(props: PackBriefBuilderProps) {
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 pt-2">
-          {note && <BriefWorkspace {...props} pack={pack} startNote={note} />}
+          <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
         </div>
       </section>
     </TooltipProvider>
@@ -365,7 +402,9 @@ function BriefWorkspace({
   const loadingPosts = !!source?.isLoadingMore || (searching && !source)
   // One state for any failed load (the pack data or a page of posts): one line, one retry.
   const loadError = engine.loadFailed || !!source?.failed
-  const finding = !loadError && (loadingPosts || (needMore && canLoad) || (!candidates && searching && !noPosts))
+  // Waiting for roles is not searching: the button says what is missing.
+  const rolesMissing = identity.missingRoles.length > 0
+  const finding = !loadError && !rolesMissing && (loadingPosts || (needMore && canLoad) || (!candidates && searching && !noPosts))
   const canOfferSensitive = rating === "sfw" && plan.sensitive === "excluded" && !finding
   // The pace limit stopped the fetching and the source has more: one click asks for one page.
   const paused = !!source && (limited || source.scrollLimited) && !source.isLoadingMore &&
@@ -389,17 +428,17 @@ function BriefWorkspace({
     setManual(null)
   }
   const loadOnePage = useCallback(() => {
-    if (!source) return
-    setManual({ before: usableCount, seen: false, nothingNew: false })
-    source.loadMore()
+    // Only a page really asked for shows "searching".
+    if (source?.loadMore()) setManual({ before: usableCount, seen: false, nothingNew: false })
   }, [source, usableCount])
   const axisNote = useMemo(() => (axis ? { axis, requested: axisRequests(brief, axis) } : null), [axis, brief])
   const peopleNote = pickedPeopleNote({ picked: brief.people, available: engine.available, using: engine.people, cast: identity.cast })
 
-  // A correction from the results remakes the prompts itself: no "generate again" for it.
+  // A correction from the results remakes the prompts itself: no "generate again" for it
+  // while it runs. A pack made from another source (booru, rating, characters) is out of date.
   const [correction, setCorrection] = useState<Correction | null>(null)
-  const correcting = !!correction && !correction.done
-  const stale = !!result && !correcting && (result.brief !== brief || result.count !== count || result.outfit !== outfit)
+  const correcting = !!correction && correction.status !== "done"
+  const stale = !!result && (engine.sourceChanged || (!correcting && (result.brief !== brief || result.count !== count || result.outfit !== outfit)))
   const notes: FitNote[] = useMemo(() => {
     const castNote = castPeopleNote(brief.people, identity.cast)
     const lead = [peopleNote, castNote].filter((n): n is FitNote => !!n)
@@ -418,6 +457,7 @@ function BriefWorkspace({
       scenes: usable ? have : null,
       canOfferSensitive,
       paused,
+      axis: oneAxis(result.brief),
     })
     return withSearchProgress(stale ? [{ kind: "stale" }, ...lead, ...after] : [...lead, ...after], progress)
   }, [result, usable, count, poses, finding, canOfferSensitive, paused, axisNote, peopleNote, brief.people, identity.cast, have, stale, sourceLoading, manual, loadError, source?.noMoreResults])
@@ -484,9 +524,18 @@ function BriefWorkspace({
   const [undoing, setUndoing] = useState(false)
   if (seenBrief !== brief) {
     setSeenBrief(brief)
-    // A correction has its own notice.
-    setUndoFor(pack.canUndo && !undoing && !correction ? brief : null)
+    // The correction's own change has its own notice; any other change retires it, and from
+    // then on the brief's undo and "The pack changed…" apply.
+    const next = correctionAfterBriefChange(correction, brief)
+    const own = next.own
+    if (next.correction !== correction) setCorrection(next.correction)
+    setUndoFor(pack.canUndo && !undoing && !own ? brief : null)
     if (undoing) setUndoing(false)
+  }
+  // Closed: no notices and no timers.
+  if (!open && (undoFor || correction)) {
+    setUndoFor(null)
+    setCorrection(null)
   }
   useEffect(() => {
     if (!undoFor) return
@@ -503,33 +552,75 @@ function BriefWorkspace({
   // The tag menu changes the brief and the pack is remade at once with the same seed and
   // scenes; Undo puts brief, prompts, locks and format back as they were.
   const { format: promptFormat, setFormat } = usePromptFormat()
+  const correctionIdRef = useRef(0)
+  const { addLook } = pack
   const correct = useCallback((kind: "always" | "never", raw: string) => {
+    if (!result || engine.busy || engine.sourceChanged) return
     const tag = bareToken(raw)
-    const next = kind === "never" ? addNever(brief, tag) : addTag(brief, tag, overrides, "also")
+    const route = routeTag(tag, overrides)
+    let next: PackBrief
+    let apply: () => void
+    if (kind === "never") {
+      next = addNever(brief, tag)
+      apply = () => never(tag)
+    } else if (route.kind === "people") {
+      // A count says who is in the picture: it goes to People, as when typed.
+      const people = peopleFromCountTags([tag], cast)
+      if (!people) return
+      next = setPeopleInBrief(brief, people)
+      apply = () => setPeople(people)
+    } else if (route.kind === "look" && identity.castSize >= 2) {
+      // With several characters a look tag goes to the one it came from, never to a guess.
+      const owner = lookOwner(tag, identity.blocks)
+      const ownerTag = owner ? brief.who.find((c) => c.tag && normalizeTagForPack(c.tag) === owner)?.tag ?? null : null
+      if (!ownerTag) {
+        toast({ description: CORRECTION_TEXT.lookWhose(showTag(tag)), duration: 5000 })
+        return
+      }
+      next = addLookInBrief(brief, ownerTag, tag)
+      apply = () => addLook(ownerTag, tag)
+    } else {
+      next = addTag(brief, tag, overrides, "also")
+      apply = () => add(tag, "also")
+    }
     if (JSON.stringify(next) === JSON.stringify(brief)) return
-    if (result) setCorrection({ kind, tag, snapshot: result, format: promptFormat, briefBefore: brief, done: false, message: null })
-    if (kind === "never") never(tag)
-    else add(tag, "also")
-  }, [brief, overrides, result, promptFormat, never, add])
+    setCorrection({
+      id: ++correctionIdRef.current, kind, tag, snapshot: result, format: promptFormat,
+      briefBefore: brief, briefAfter: null, status: "waiting", message: null,
+    })
+    apply()
+  }, [result, engine.busy, engine.sourceChanged, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, add])
   const onAlways = useCallback((tag: string) => correct("always", tag), [correct])
   const onNever = useCallback((tag: string) => correct("never", tag), [correct])
-  // Runs once the brief has the change (the engine's arguments follow it).
+  // Runs once the brief has the change (the engine's arguments follow it). Every outcome
+  // closes the notice: done offers Undo; replaced, skipped or failed goes.
   const { recompose, restore } = engine
-  const runningRef = useRef<Correction | null>(null)
+  const runningRef = useRef(0)
   useEffect(() => {
-    if (!correction || correction.done || brief === correction.briefBefore || runningRef.current === correction) return
-    runningRef.current = correction
-    void recompose().then((out) => {
-      if (!out) return
-      const changed = changedRows(out.before.prompts, out.after.prompts)
-      const locked = correction.kind === "never" ? lockedWithTag(out.after.prompts, out.after.locked, correction.tag) : 0
-      const base = CORRECTION_TEXT[correction.kind](correction.tag, changed)
-      const message = locked > 0 ? `${base}. ${CORRECTION_TEXT.lockedKeep(locked)}` : base
-      setCorrection((cur) => (cur === correction ? { ...cur, done: true, message } : cur))
+    if (!correction || correction.status !== "waiting" || correction.briefAfter !== brief || runningRef.current === correction.id) return
+    runningRef.current = correction.id
+    const { id, kind, tag } = correction
+    void recompose().then((outcome) => {
+      if (outcome.status !== "done") {
+        setCorrection((cur) => (cur?.id === id ? null : cur))
+        return
+      }
+      const { before, after } = outcome
+      const changed = changedRows(before.prompts, after.prompts)
+      const kept = keptRows(after.prompts.length, new Set(after.locked), after.made.slots)
+      const parts = [CORRECTION_TEXT[kind](tag, changed)]
+      if (kind === "never") {
+        const locked = lockedWithTag(after.prompts, kept.locked, tag)
+        const older = lockedWithTag(after.prompts, kept.older, tag)
+        if (locked > 0) parts.push(CORRECTION_TEXT.lockedKeep(locked))
+        if (older > 0) parts.push(CORRECTION_TEXT.olderKeep(older))
+      }
+      setCorrection((cur) => (cur?.id === id ? { ...cur, status: "done", message: parts.join(". ") } : cur))
     })
   }, [correction, brief, recompose])
   const undoCorrection = useCallback(() => {
-    if (!correction) return
+    if (!correction || correction.status !== "done") return
+    // Any other change would have retired this notice: the last change is the correction's.
     if (undo() !== null) setUndoing(true)
     restore(correction.snapshot)
     setFormat(correction.format)
@@ -537,10 +628,16 @@ function BriefWorkspace({
   }, [correction, undo, restore, setFormat])
   // A correction notice goes after a while, like the brief's.
   useEffect(() => {
-    if (!correction?.done) return
-    const timer = setTimeout(() => setCorrection((cur) => (cur === correction ? null : cur)), UNDO_MS)
+    if (correction?.status !== "done") return
+    const timer = setTimeout(() => setCorrection((cur) => (cur?.id === correction.id ? null : cur)), UNDO_MS)
     return () => clearTimeout(timer)
   }, [correction])
+  // Generate is another operation: a correction's notice goes.
+  const { generate } = engine
+  const onGenerate = useCallback(() => {
+    setCorrection(null)
+    generate()
+  }, [generate])
   const onRemoveCharacter = useCallback((tag: string | null) => { if (tag) removeCharacter(tag) }, [removeCharacter])
   const onToggleScene = useCallback(
     (id: string) => {
@@ -606,8 +703,11 @@ function BriefWorkspace({
     : null
   const summary = useMemo(() => {
     const label = brief.people ? companionsLabel(brief.people, identity.cast) : null
-    return briefSummaryParts(brief, label, characterInfo)
-  }, [brief, identity.cast, characterInfo])
+    const parts = briefSummaryParts(brief, label, characterInfo)
+    // The folded line says when only one part changes.
+    const changes = CHANGES_OPTIONS.find((o) => o.value === brief.changes)
+    return axis && changes ? [...parts, changes.label.toLowerCase()] : parts
+  }, [brief, identity.cast, characterInfo, axis])
 
   // ── The contact sheet ───────────────────────────────────────────────────────────
   const thumbs = useMemo<SceneThumb[]>(
@@ -686,13 +786,15 @@ function BriefWorkspace({
 
       <div className="space-y-1">
         {fitStates.map((state, i) => (
-          <FitLine key={`${state.kind}-${i}`} state={state} hint={i === 0 && !folded && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined} />
+          <FitLine key={state.kind} state={state} hint={i === 0 && !folded && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined} />
         ))}
       </div>
       {!folded && !(loadError && thumbs.length === 0) && (
         <ContactSheet
           scenes={thumbs}
           leftOut={leftOutList}
+          emptyTitle={rolesMissing ? BLOCKED.roles : undefined}
+          emptyHint={rolesMissing ? "" : undefined}
           onToggle={onToggleScene}
           fixed={fixed}
           status={sheetStatus}
@@ -703,18 +805,16 @@ function BriefWorkspace({
       <GenerateBar
         count={count}
         onCountChange={pack.setPromptCount}
-        onGenerate={engine.generate}
+        onGenerate={onGenerate}
         generating={isGenerating}
         blockedReason={blockedReason}
         locked={result?.locked.length ?? 0}
       />
 
-      {correction ? (
-        <UndoNotice
-          message={correction.message ?? CORRECTION_TEXT.working}
-          onUndo={undoCorrection}
-          onDismiss={() => setCorrection(null)}
-        />
+      {correction?.status === "done" && correction.message ? (
+        <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
+      ) : correcting ? (
+        <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
       ) : showUndo && pack.lastChange && (
         <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
       )}
@@ -726,6 +826,7 @@ function BriefWorkspace({
           missing={result.shortBy}
           copyNote={copyNoteText({ missing: result.shortBy, stale })}
           onToggleLock={engine.toggleLock}
+          busy={engine.busy || engine.sourceChanged}
           naturalSourceOf={engine.naturalSourceOf}
           overrides={overrides}
           onCopy={onCopy}
@@ -763,6 +864,7 @@ const warnTagsCopied = () => toast({ description: BUILDER_TEXT.convertFailed, va
 
 function Results({
   prompts,
+  busy,
   locked,
   missing,
   copyNote,
@@ -775,6 +877,8 @@ function Results({
   onNever,
 }: {
   prompts: PackPrompt[]
+  /** A run is going on, or the pack is from another source: re-roll and the tag menu wait. */
+  busy: boolean
   locked: readonly number[]
   /** Prompts asked for and not made. */
   missing: number
@@ -834,7 +938,8 @@ function Results({
       <div className="space-y-1.5">
         {prompts.map((p, i) => (
           <BriefResultRow
-            key={`${i}-${p.prompt}`}
+            // By position: a row whose prompt changes is the same row (focus stays in it).
+            key={`row-${i}`}
             index={i}
             prompt={p}
             format={format}
@@ -843,6 +948,7 @@ function Results({
             overrides={overrides}
             shownRef={shownRef}
             locked={lockedSet.has(i)}
+            busy={busy}
             onToggleLock={onToggleLock}
             onCopy={copyOne}
             onReroll={reroll}
@@ -865,6 +971,7 @@ const BriefResultRow = memo(function BriefResultRow({
   overrides,
   shownRef,
   locked,
+  busy,
   onToggleLock,
   onCopy,
   onReroll,
@@ -872,6 +979,7 @@ const BriefResultRow = memo(function BriefResultRow({
   onNever,
 }: {
   locked: boolean
+  busy: boolean
   onToggleLock: (index: number) => void
   index: number
   prompt: PackPrompt
@@ -903,6 +1011,7 @@ const BriefResultRow = memo(function BriefResultRow({
       thumbSrc={prompt.scene?.preview ? getPostThumbnailUrl(prompt.scene.preview) : undefined}
       pending={format !== "tags" && natural.status === "loading"}
       locked={locked}
+      busy={busy}
       onToggleLock={onToggleLock}
       onCopy={onCopy}
       onReroll={onReroll}

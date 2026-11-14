@@ -19,6 +19,7 @@ import {
   briefIdentity,
   briefPackArgs,
   oneAxis,
+  opAfterEnd,
   placeRows,
   peopleLineState,
   resolveLook,
@@ -115,9 +116,20 @@ export interface PackMade {
   slots: readonly number[]
   /** One-part pack: the scene that repeats (part of how it was made, for Undo and corrections). */
   baseScene?: number
-  /** Rows re-rolled since, in order, each with its seed. */
-  rerolls: ReadonlyArray<{ index: number; seed: number }>
+  /** Rows re-rolled since, in order, each with its seed and the slot of its row (if any). */
+  rerolls: ReadonlyArray<{ index: number; seed: number; slot?: number }>
+  /** Where the posts came from (booru, rating, characters): another source makes another pack. */
+  sourceKey: string
 }
+
+/** What a correction's remake did: the caller closes its notice in every case. */
+export type RecomposeOutcome =
+  | { status: "done"; before: BriefPackResult; after: BriefPackResult }
+  /** Another run replaced it before it landed. */
+  | { status: "superseded" }
+  /** Nothing to remake (no pack, no pool, roles missing, or the source changed). */
+  | { status: "skipped" }
+  | { status: "failed" }
 
 export interface BriefPackResult {
   prompts: PackPrompt[]
@@ -158,10 +170,16 @@ export interface UsePackBriefScenesResult {
   candidatesPending: boolean
   result: BriefPackResult | null
   isGenerating: boolean
+  /** A correction is being applied. */
+  isCorrecting: boolean
+  /** Any run is going on: re-roll and the tag menu wait for it. */
+  busy: boolean
+  /** The pack was made from another source (booru, rating, characters): corrections and re-rolls need Generate first. */
+  sourceChanged: boolean
   /** Generates; `count` defaults to the brief's. */
   generate: () => void
   /** Remakes the pack for the brief as it is now (a correction from the results). */
-  recompose: () => Promise<{ before: BriefPackResult; after: BriefPackResult } | null>
+  recompose: () => Promise<RecomposeOutcome>
   /** Puts a pack back as it was (Undo of a correction). */
   restore: (snapshot: BriefPackResult | null) => void
   toggleLock: (index: number) => void
@@ -214,8 +232,12 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const relations = useTagRelations(true)
 
   // ── Who: trait profiles and the characters' looks ─────────────────────────────
-  const named = useMemo(() => brief.who.flatMap((c) => (c.tag ? [c.tag] : [])), [brief.who])
-  const namedKey = named.join("|")
+  // From a key, not from `brief.who`: every edit of the brief makes a new array, and
+  // everything downstream (looks, identity, the scenes that fit) would be worked out again.
+  const namedKey = brief.who.flatMap((c) => (c.tag ? [c.tag] : [])).join("|")
+  const named = useMemo(() => (namedKey ? namedKey.split("|") : NO_NAMES), [namedKey])
+  /** Where the posts come from: a pack made from another one can't be corrected on it. */
+  const sourceKey = `${provider}|${rating}|${rating === "sfw" ? includeSensitive : ""}|${namedKey}`
   const traitData = useSyncExternalStore(subscribeCharacterTraits, getCharacterTraits, getNoCharacterTraits)
   useEffect(() => {
     if (namedKey) void loadCharacterTraits(namedKey.split("|")).catch(() => {})
@@ -536,12 +558,22 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const candidatesPending = !!pool && !!candidateArgs && (candidateState?.pool !== pool || candidateState?.args !== candidateArgs)
 
   // ── Generating and correcting ─────────────────────────────────────────────────
-  // A pack is a function of (brief, seed, locked rows, re-rolls): Generate draws a seed;
-  // a correction remakes the free rows with the same seed, pool and scene order; a
-  // re-roll is replayed with its own seed. Every run is numbered: only the newest lands.
+  // A pack is a function of (brief, source, seed, locked rows, re-rolls): Generate draws a
+  // seed; a correction remakes the free rows with the same seed, pool and scene order; a
+  // re-roll is replayed with its own seed. One operation runs at a time: each has an id,
+  // only the newest is applied, and every one clears its own indicator in `finally`.
   const [result, setResult] = useState<BriefPackResult | null>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const requestRef = useRef(0)
+  const resultRef = useRef(result)
+  useEffect(() => { resultRef.current = result }, [result])
+  const [op, setOp] = useState<{ id: number; kind: "generate" | "correct" } | null>(null)
+  const opRef = useRef(0)
+  const startOp = useCallback((kind: "generate" | "correct") => {
+    const id = ++opRef.current
+    setOp({ id, kind })
+    return id
+  }, [])
+  // Only the operation that still owns the indicator clears it: one that replaced it keeps it.
+  const endOp = useCallback((id: number) => setOp((cur) => opAfterEnd(cur, id)), [])
   const control = useCallback((id: number) => {
     let first = true
     return {
@@ -550,7 +582,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         first = false
         return nextPaint()
       },
-      cancelled: () => requestRef.current !== id,
+      cancelled: () => opRef.current !== id,
     }
   }, [])
 
@@ -564,122 +596,143 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     }
   }, [argsFor])
 
-  /** Replays the re-rolls on fresh rows (the ones whose row is still free). */
-  const replayRerolls = useCallback((rows: PackPrompt[], locked: ReadonlySet<number>, made: PackMade, forBrief: PackBrief) => {
+  /** Replays the re-rolls on fresh rows: each on the row its slot went to, if that row is still free. */
+  const replayRerolls = useCallback((rows: PackPrompt[], locked: ReadonlySet<number>, slots: readonly number[], made: PackMade, forBrief: PackBrief) => {
     let out = rows
-    const kept: Array<{ index: number; seed: number }> = []
+    const kept: PackMade["rerolls"][number][] = []
     for (const r of made.rerolls) {
-      if (r.index >= out.length || locked.has(r.index)) continue
-      const replacement = rerollScenePrompt(made.pool, out, r.index, argsFor(forBrief, r.seed, made.genCount, made.baseScene))
+      const index = r.slot !== undefined ? slots[r.slot] : r.index
+      if (index === undefined || index >= out.length || locked.has(index)) continue
+      const replacement = rerollScenePrompt(made.pool, out, index, argsFor(forBrief, r.seed, made.genCount, made.baseScene))
       if (!replacement) continue
-      out = out.map((p, i) => (i === r.index ? replacement : p))
-      kept.push(r)
+      out = out.map((p, i) => (i === index ? replacement : p))
+      kept.push({ ...r, index })
     }
     return { rows: out, rerolls: kept }
   }, [argsFor])
 
-  /** Issues of a run, counted over the whole pack (locked rows included). */
+  /** Issues of a run, counted over the whole pack (rows it didn't remake included). */
   const withKept = (issues: ScenePackIssue[], kept: number): ScenePackIssue[] =>
     kept === 0 ? issues : issues.map((issue) =>
       issue.kind === "few-scenes" || issue.kind === "few-variations" ? { ...issue, prompts: issue.prompts + kept } : issue)
 
+  // The scene the sheet marks as the one that repeats is the one Generate repeats.
+  const fixedBase = axis && candidateState?.pool === pool && candidateState?.list[0]?.axisRole === "base" ? candidateState.list[0].postId : undefined
+
   const generate = useCallback(() => {
-    const id = ++requestRef.current
-    if (!pool || missingRoles.length > 0) {
-      setIsGenerating(false)
-      return
-    }
+    if (!pool || missingRoles.length > 0) return
+    const id = startOp("generate")
     // Locked rows stay where they are; the others are made again, never from a locked row's scene.
-    const previous = result?.prompts ?? []
-    const locked = new Set((result?.locked ?? []).filter((i) => i < previous.length))
+    const before = resultRef.current
+    const previous = before?.prompts ?? []
+    const locked = new Set((before?.locked ?? []).filter((i) => i < previous.length))
     const length = Math.max(promptCount, ...Array.from(locked, (i) => i + 1))
     const slots = Array.from({ length }, (_, i) => i).filter((i) => !locked.has(i))
-    // A one-part pack repeats one scene: what a locked row holds is its donor, not that scene.
+    // A one-part pack repeats one scene: what a row holds of its own is its donor.
+    const ownScene = (p: PackPrompt | undefined) => {
+      const scene = p?.scene
+      if (!scene) return undefined
+      return axis ? scene.donors?.find((d) => d !== scene.postId) : scene.postId
+    }
     const lockedScenes = Array.from(locked).flatMap((i) => {
-      const scene = previous[i]?.scene
-      if (!scene) return []
-      if (!axis) return [scene.postId]
-      const donor = scene.donors?.find((id) => id !== scene.postId)
-      return donor !== undefined ? [donor] : []
+      const own = ownScene(previous[i])
+      return own !== undefined ? [own] : []
     })
+    // Generate again draws another set: the scenes the last pack used come after the others.
+    const used = new Set(previous.flatMap((p) => {
+      const own = ownScene(p)
+      return own !== undefined ? [own] : []
+    }))
+    const unusedOwn = preferredPosts.filter((pid) => !used.has(pid))
+    const unusedRest = pool.scenes.map((sc) => sc.postId).filter((pid) => !used.has(pid) && !preferredPosts.includes(pid))
+    const preferred = used.size > 0 && unusedOwn.length + unusedRest.length > 0 ? [...unusedOwn, ...unusedRest] : [...preferredPosts]
     const made: PackMade = {
       pool,
       seed: Math.floor(Math.random() * 1e9),
       genCount: slots.length,
-      preferredPosts: [...preferredPosts],
+      preferredPosts: preferred,
       lockedScenes,
       slots,
+      baseScene: axis ? brief.baseScene ?? fixedBase : undefined,
       rerolls: [],
+      sourceKey,
     }
     const startedWith = { brief, count: promptCount, outfit }
-    setIsGenerating(true)
-    void generateScenePackAsync(pool, runArgs(brief, made), control(id))
-      .then((out) => {
-        if (requestRef.current !== id) return
-        setIsGenerating(false)
-        if (!out) return
-        const placed = placeRows(previous, locked, slots, out.prompts)
-        setResult({
-          prompts: placed.rows,
-          locked: placed.locked,
-          shortBy: Math.max(0, promptCount - placed.rows.length),
-          issues: withKept(out.issues, placed.rows.length - out.prompts.length),
-          // The scene that repeats, so a correction keeps it even if the pool grows.
-          made: { ...made, slots: placed.slots, baseScene: axis ? out.prompts[0]?.scene?.postId : undefined },
-          ...startedWith,
+    void (async () => {
+      try {
+        const out = await generateScenePackAsync(pool, runArgs(brief, made), control(id))
+        if (opRef.current !== id || !out) return
+        // Applied on the pack as it is now: a row locked meanwhile keeps its prompt.
+        setResult((prev) => {
+          const now = new Set(prev?.locked ?? [])
+          const placed = placeRows(prev?.prompts ?? previous, now, slots, out.prompts)
+          return {
+            prompts: placed.rows,
+            locked: placed.locked,
+            shortBy: Math.max(0, promptCount - placed.rows.length),
+            issues: withKept(out.issues, placed.rows.length - out.prompts.length),
+            made: { ...made, slots: placed.slots, baseScene: axis ? made.baseScene ?? out.prompts[0]?.scene?.postId : undefined },
+            ...startedWith,
+          }
         })
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Scene pack generation failed:", err)
-        if (requestRef.current === id) setIsGenerating(false)
-      })
-  }, [pool, missingRoles, result, promptCount, preferredPosts, brief, outfit, runArgs, control, axis])
+      } finally {
+        endOp(id)
+      }
+    })()
+  }, [pool, missingRoles, startOp, endOp, promptCount, axis, preferredPosts, brief, fixedBase, sourceKey, outfit, runArgs, control])
 
   /**
    * Remakes the pack for the brief as it is now: same seed, same pool (unless the brief
-   * asks for other people), same scene order; locked rows stay. Resolves to the pack
-   * before and after, or null when nothing ran or a newer run replaced this one.
+   * asks for other people), same scene order. Rows that are locked, or that no slot
+   * remakes, stay. Says what happened, so the caller always closes its notice.
    */
-  const recompose = useCallback(async (): Promise<{ before: BriefPackResult; after: BriefPackResult } | null> => {
-    const before = result
-    if (!before || !pool || missingRoles.length > 0) return null
-    const id = ++requestRef.current
+  const recompose = useCallback(async (): Promise<RecomposeOutcome> => {
+    const before = resultRef.current
+    if (!before || !pool || missingRoles.length > 0 || before.made.sourceKey !== sourceKey) return { status: "skipped" }
+    const id = startOp("correct")
     const samePeople = peopleKeyOf(before.made.pool.stats.composition) === peopleKeyOf(pool.stats.composition)
     const made: PackMade = samePeople ? before.made : { ...before.made, pool }
-    const locked = new Set(before.locked)
     try {
       const out = await generateScenePackAsync(made.pool, runArgs(brief, made), control(id))
-      if (requestRef.current !== id || !out) return null
-      const placed = placeRows(before.prompts, locked, made.slots, out.prompts)
-      const lockedNow = new Set(placed.locked)
-      const replayed = replayRerolls(placed.rows, lockedNow, made, brief)
+      if (opRef.current !== id || !out) return { status: "superseded" }
+      // On the pack as it is now (locks changed meanwhile count).
+      const now = resultRef.current ?? before
+      const locked = new Set(now.locked)
+      const placed = placeRows(now.prompts, locked, made.slots, out.prompts)
+      const replayed = replayRerolls(placed.rows, new Set(placed.locked), placed.slots, made, brief)
       // A row whose text didn't change keeps its object: it doesn't redraw or convert again.
-      const prompts = replayed.rows.map((p, i) => (before.prompts[i]?.prompt === p.prompt ? before.prompts[i] : p))
+      const prompts = replayed.rows.map((p, i) => (now.prompts[i]?.prompt === p.prompt ? now.prompts[i] : p))
       const after: BriefPackResult = {
         prompts,
         locked: placed.locked,
-        shortBy: Math.max(0, before.count - replayed.rows.length),
-        issues: withKept(out.issues, replayed.rows.length - out.prompts.length),
+        shortBy: Math.max(0, now.count - prompts.length),
+        issues: withKept(out.issues, prompts.length - out.prompts.length),
         made: { ...made, slots: placed.slots, rerolls: replayed.rerolls },
         brief,
-        count: before.count,
+        count: now.count,
         outfit,
       }
+      resultRef.current = after
       setResult(after)
-      return { before, after }
+      return { status: "done", before: now, after }
     } catch (err) {
       console.error("Remaking the pack failed:", err)
-      return null
+      return { status: "failed" }
+    } finally {
+      endOp(id)
     }
-  }, [result, pool, missingRoles, brief, outfit, runArgs, replayRerolls, control])
+  }, [pool, missingRoles, sourceKey, startOp, endOp, brief, outfit, runArgs, replayRerolls, control])
 
   /** Puts a pack back exactly as it was (Undo of a correction). Cancels a run on its way. */
   const restore = useCallback((snapshot: BriefPackResult | null) => {
-    requestRef.current++
-    setIsGenerating(false)
+    opRef.current++
+    setOp(null)
     setResult(snapshot)
   }, [])
 
+  // Locking works at any time: a run that lands later reads the locks it finds then.
   const toggleLock = useCallback((index: number) => {
     setResult((prev) => {
       if (!prev || index < 0 || index >= prev.prompts.length) return prev
@@ -688,19 +741,26 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     })
   }, [])
 
-  // A re-roll follows the brief as it is now and never touches a locked row.
+  // A re-roll follows the brief as it is now, never touches a locked row, and waits for no
+  // run (the interface offers it only when none is running and the source is the pack's).
   const reroll = useCallback((index: number): boolean => {
-    if (!result || index < 0 || index >= result.prompts.length || result.locked.includes(index)) return false
+    const now = resultRef.current
+    if (!now || op || index < 0 || index >= now.prompts.length || now.locked.includes(index)) return false
+    if (now.made.sourceKey !== sourceKey) return false
     const seed = Math.floor(Math.random() * 1e9)
-    const replacement = rerollScenePrompt(result.made.pool, result.prompts, index, argsFor(brief, seed, result.made.genCount, result.made.baseScene))
+    const replacement = rerollScenePrompt(now.made.pool, now.prompts, index, argsFor(brief, seed, now.made.genCount, now.made.baseScene))
     if (!replacement) return false
+    const slot = now.made.slots.indexOf(index)
     setResult((prev) => (prev ? {
       ...prev,
       prompts: prev.prompts.map((p, i) => (i === index ? replacement : p)),
-      made: { ...prev.made, rerolls: [...prev.made.rerolls.filter((r) => r.index !== index), { index, seed }] },
+      made: {
+        ...prev.made,
+        rerolls: [...prev.made.rerolls.filter((r) => r.index !== index), { index, seed, ...(slot >= 0 ? { slot } : {}) }],
+      },
     } : prev))
     return true
-  }, [result, brief, argsFor])
+  }, [op, sourceKey, brief, argsFor])
 
   // ── Natural-language formats ──────────────────────────────────────────────────
   const { format: promptFormat } = usePromptFormat()
@@ -732,10 +792,14 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     available,
     peopleLine,
     // Another part (or none) than the one asked for is another list: not shown as this one.
-    candidates: candidateState && candidateState.axis === (axis ?? null) ? candidateState.list : null,
+    // Nothing when there is nothing to work them out from (roles missing, no pool).
+    candidates: pool && candidateArgs && candidateState && candidateState.axis === (axis ?? null) ? candidateState.list : null,
     candidatesPending,
     result,
-    isGenerating,
+    isGenerating: op?.kind === "generate",
+    isCorrecting: op?.kind === "correct",
+    busy: !!op,
+    sourceChanged: !!result && result.made.sourceKey !== sourceKey,
     generate,
     recompose,
     restore,
@@ -743,7 +807,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     reroll,
     naturalSourceOf,
   }), [
-    plan, looks, identity, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState, axis,
-    candidatesPending, result, isGenerating, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
+    plan, looks, identity, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, candidateState, axis, candidateArgs,
+    candidatesPending, result, op, sourceKey, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
   ])
 }

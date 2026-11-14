@@ -40,6 +40,8 @@ export interface ResultRowProps {
   /** Resolves true when the copy worked. */
   onCopy: (index: number) => Promise<boolean> | boolean
   onReroll: (index: number) => void
+  /** Re-roll and the tag menu wait (a run is going on, or the pack needs Generate first). */
+  busy?: boolean
   /** Without it the row has no lock. */
   onToggleLock?: (index: number) => void
   onAlways: (tag: string) => void
@@ -63,11 +65,13 @@ const TOKEN =
 function TokenMenu({
   tag,
   index,
+  busy = false,
   onClose,
   onReturnFocus,
   onAlways,
   onNever,
 }: {
+  busy?: boolean
   tag: string
   index: number
   onClose: () => void
@@ -90,8 +94,8 @@ function TokenMenu({
         }}
       >
         <DropdownMenuLabel className="truncate font-mono text-xs font-medium text-muted-foreground">{tag}</DropdownMenuLabel>
-        <DropdownMenuItem onSelect={() => onAlways(tag)}>Always in every prompt</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onNever(tag)}>Never in this pack</DropdownMenuItem>
+        <DropdownMenuItem disabled={busy} onSelect={() => onAlways(tag)}>Always in every prompt</DropdownMenuItem>
+        <DropdownMenuItem disabled={busy} onSelect={() => onNever(tag)}>Never in this pack</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -104,6 +108,7 @@ export const ResultRow = memo(function ResultRow({
   postId,
   thumbSrc,
   locked = false,
+  busy = false,
   pending = false,
   onCopy,
   onReroll,
@@ -210,6 +215,7 @@ export const ResultRow = memo(function ResultRow({
                 <span key={`${i}-${tag}`}>
                   {menuAt === i ? (
                     <TokenMenu
+                      busy={busy}
                       tag={tag}
                       index={i}
                       onClose={() => setMenuAt(null)}
@@ -265,7 +271,7 @@ export const ResultRow = memo(function ResultRow({
           <button
             type="button"
             onClick={() => onReroll(index)}
-            disabled={locked || pending}
+            disabled={locked || pending || busy}
             aria-label={`Re-roll prompt ${n}`}
             title={locked ? "Unlock to re-roll" : "Re-roll this prompt"}
             className={ACTION}

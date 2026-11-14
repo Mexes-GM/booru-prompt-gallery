@@ -12,7 +12,10 @@ import assert from "node:assert/strict"
 import { buildScenePool } from "../lib/pack/scene/scene-pool"
 import { createPermanence, type PermanenceData } from "../lib/pack/scene/permanence"
 import { cleanSyntheticPrompt } from "../lib/pack/bulk-send"
-import { DEFAULT_SCENE_SETTINGS, generateScenePack, tagKindsFromPosts, type ScenePackArgs } from "../lib/pack/scene-pack"
+import { DEFAULT_SCENE_SETTINGS, generateScenePack, generateScenePackAsync, sceneCandidates, tagKindsFromPosts, type ScenePackArgs } from "../lib/pack/scene-pack"
+import { addTag, toSceneRequests } from "../lib/pack/brief"
+import { briefFromCharacters } from "../lib/pack/brief-history"
+import { briefIdentity, briefPackArgs, issuesFit, predictFit } from "../lib/pack/brief-pack"
 import type { SceneRequests } from "../lib/pack/brief"
 import { makePost } from "./fixtures/pack-scene-data"
 import { placeRows } from "../lib/pack/brief-pack"
@@ -113,4 +116,54 @@ check("with locked rows: the free rows remade with the locked scenes left out ke
   })
 })
 
-console.log(`pack-brief-correct: ${passed} checks passed`)
+// ── Generate again (INT-6) ──────────────────────────────────────────────────────
+
+check("the engine picks almost the same scenes whatever the seed: Generate again prefers the unused ones", () => {
+  // Measured, not changed: with fewer prompts than scenes the engine's choice barely depends on the seed.
+  const small = (seed: number) => sceneOrder(generateScenePack(pool, args({ count: 4, seed })).prompts)
+  const runs = [1, 2, 3, 99999].map(small)
+  const overlap = runs.slice(1).map((r) => r.filter((id) => runs[0].includes(id)).length)
+  assert.ok(overlap.every((n) => n >= 3), `seeds share most scenes (${overlap.join(", ")} of 4)`)
+  // What the builder does: the scenes the last pack didn't use go first.
+  const used = new Set(runs[0])
+  const unused = pool.scenes.map((sc) => sc.postId).filter((id) => !used.has(id))
+  const again = sceneOrder(generateScenePack(pool, args({ count: 4, seed: 2, preferredPosts: unused })).prompts)
+  assert.ok(again.every((id) => !used.has(id!)), `another set (${again.join(", ")} after ${runs[0].join(", ")})`)
+})
+
+// ── A pose the scenes don't have (INT-6) ────────────────────────────────────────
+
+/** reading: the hook's path (briefPackArgs → generateScenePackAsync → issuesFit) says it was added. */
+async function readingPath() {
+  let brief = briefFromCharacters(["tifa lockhart"])
+  brief = addTag(brief, "reading", overrides)
+  assert.deepEqual(toSceneRequests(brief).select, ["reading"], "reading goes to Doing")
+  const who = briefIdentity({ brief, looks: {}, permanence, overrides })
+  const packArgs = briefPackArgs(brief, who, { overrides, permanence, count: 6, seed: 3, people: null, outfit: { kind: "scene" }, clean })
+  const sync = generateScenePack(pool, packArgs)
+  const out = await generateScenePackAsync(pool, packArgs, { pause: async () => {}, cancelled: () => false })
+  assert.ok(out)
+  assert.equal(JSON.stringify(out.prompts), JSON.stringify(sync.prompts), "async and sync make the same prompts")
+  assert.deepEqual(out.issues, sync.issues, "and the same issues")
+  assert.ok(out.issues.some((i) => i.kind === "pose-imposed"), JSON.stringify(out.issues))
+  const notes = issuesFit({ issues: out.issues, count: 6, made: out.prompts.length, cast: who.cast, scenes: null, canOfferSensitive: false })
+  assert.ok(notes.some((n) => n.kind === "imposed"), JSON.stringify(notes))
+  // Before generating: no scene has it, so the line foresees the imposing.
+  const candidates = sceneCandidates(pool, { ...packArgs, count: 1 })
+  assert.ok(candidates.every((c) => !c.hasPose))
+  const predicted = predictFit({ candidates, count: 6, poses: ["reading"], finding: false, canOfferSensitive: false })
+  assert.ok(predicted.some((n) => n.kind === "imposed"), JSON.stringify(predicted))
+  // A pool searched for the pose has it in its scenes: then nothing is imposed and nothing is said.
+  const withBook = POSTS.map((p) => ({ ...p, tag_string: `${p.tag_string} reading book holding_book` }))
+  const bookPool = buildScenePool(withBook, { overrides, permanence, subject: "girl", tagKind: (tag) => tagKindsFromPosts(withBook).get(tag) })
+  const bookOut = generateScenePack(bookPool, packArgs)
+  assert.ok(!bookOut.issues.some((i) => i.kind === "pose-imposed"), JSON.stringify(bookOut.issues))
+  passed++
+}
+
+void readingPath().then(() => console.log(`pack-brief-correct: ${passed} checks passed`)).catch((err) => {
+  console.error("FAIL: reading path")
+  console.error(err)
+  process.exit(1)
+})
+

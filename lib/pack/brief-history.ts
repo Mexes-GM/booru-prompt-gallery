@@ -57,7 +57,12 @@ export function lastChange(history: BriefHistory): string | null {
  */
 export function seedNever(brief: PackBrief, defaults: readonly string[]): PackBrief {
   const asked = new Set(briefTags(brief).map(normalizeTagForPack))
+  // What the start already keeps out (a search's "-tag") stays, before the defaults.
   const never: string[] = []
+  for (const tag of brief.never) {
+    const name = normalizeTagForPack(tag)
+    if (name && !never.includes(name)) never.push(name)
+  }
   for (const tag of defaults) {
     const name = normalizeTagForPack(tag)
     if (name && !asked.has(name) && !never.includes(name)) never.push(name)

@@ -51,6 +51,8 @@ export interface UsePackSourcesResult extends UsePackSeedSearchResult {
   originOf: ReadonlyMap<number, string>
   /** One per scene search, in the plan's order. */
   searches: PackSourceProgress[]
+  /** Asks for the next page; true when one was asked for. */
+  loadMore: () => boolean
 }
 
 type Feed = ReturnType<typeof useSingleRatingFeed>
@@ -176,13 +178,15 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   const { setSize: setSize4 } = feed4
   const { setSize: setSize5 } = feed5
   const { canLoadMore } = rateLimiter
-  const loadMore = useCallback(() => {
-    if (loadMoreGuardRef.current || isLoadingMoreRef.current) return
-    if (!targetKey) return
-    if (!canLoadMore(totalPages)) return
+  // True when a page was asked for (false: one is already on its way, nothing is left, or the pace limit said no).
+  const loadMore = useCallback((): boolean => {
+    if (loadMoreGuardRef.current || isLoadingMoreRef.current) return false
+    if (!targetKey) return false
+    if (!canLoadMore(totalPages)) return false
     loadMoreGuardRef.current = true
     const setSizes = [setSize0, setSize1, setSize2, setSize3, setSize4, setSize5]
     for (const i of targetKey.split(",").map(Number)) void setSizes[i]((size) => size + 1)
+    return true
   }, [canLoadMore, totalPages, targetKey, setSize0, setSize1, setSize2, setSize3, setSize4, setSize5])
 
   const { retry: retry0 } = feed0

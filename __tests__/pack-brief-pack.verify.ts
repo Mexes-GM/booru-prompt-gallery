@@ -10,12 +10,14 @@ import { addLook, addNever, addTag, leaveOutScene, removeLook, setCharacterRole 
 import { briefFromPrompt, toSceneRequests } from "../lib/pack/brief"
 import { chooseChanges, leaveOutVariant, restoreVariant, setBaseScene } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
+import { seedNever } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
   preferredPostIds, resolveLook, slotSuggestions, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
 } from "../lib/pack/brief-pack"
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
+  keptRows, opAfterEnd, correctionAfterBriefChange, lookOwner, briefFromCardPost,
   type ResolvedLook,
 } from "../lib/pack/brief-pack"
 import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/character-identity"
@@ -552,6 +554,75 @@ check("copyNoteText: says what Copy all left out or what changed", () => {
   assert.equal(copyNoteText({ missing: 1, stale: false }), "1 prompt is missing.")
   assert.equal(copyNoteText({ missing: 4, stale: true }), "4 prompts are missing. These were made before your last changes to the pack.")
   assert.equal(copyNoteText({ missing: 0, stale: true }), "These were made before your last changes to the pack.")
+})
+
+// ── Hardening (INT-6) ───────────────────────────────────────────────────────────
+
+check("placeRows: a row locked at Generate and unlocked since stays when a correction remakes the rest", () => {
+  // Generated with row 1 locked: slots are 0, 2, 3. Row 1 is unlocked now.
+  const prev = ["a", "b", "c", "d"]
+  const out = placeRows(prev, new Set<number>(), [0, 2, 3], ["A", "C", "D"])
+  assert.deepEqual(out.rows, ["A", "b", "C", "D"])
+  assert.deepEqual(out.locked, [])
+  assert.deepEqual(keptRows(4, new Set<number>(), [0, 2, 3]), { locked: [], older: [1] })
+  // Locked during the run: the row keeps its prompt and its slot stays.
+  const during = placeRows(prev, new Set([2]), [0, 1, 2, 3], ["A", "B", "C", "D"])
+  assert.deepEqual(during.rows, ["A", "B", "c", "D"])
+  assert.deepEqual(during.locked, [2])
+  assert.deepEqual(during.slots, [0, 1, 2, 3])
+})
+
+check("opAfterEnd: an operation clears only itself; the one that replaced it keeps the indicator", () => {
+  const running = { id: 2, kind: "correct" }
+  assert.equal(opAfterEnd(running, 2), null)
+  assert.equal(opAfterEnd(running, 1), running)
+  assert.equal(opAfterEnd(null, 1), null)
+})
+
+check("correctionAfterBriefChange: its own change keeps the notice, any other retires it", () => {
+  const before = { v: 0 }
+  const mine = { v: 1 }
+  const other = { v: 2 }
+  const c = { briefBefore: before, briefAfter: null as unknown }
+  const first = correctionAfterBriefChange(c, mine)
+  assert.equal(first.own, true)
+  assert.equal(first.correction?.briefAfter, mine)
+  assert.equal(correctionAfterBriefChange(first.correction, mine).own, true)
+  // Another edit after the correction: its Undo would no longer undo just the correction.
+  assert.deepEqual(correctionAfterBriefChange(first.correction, other), { correction: null, own: false })
+  assert.deepEqual(correctionAfterBriefChange(null, other), { correction: null, own: false })
+})
+
+check("lookOwner: the character whose identity has the tag; nobody when it can't be told", () => {
+  const blocks = [
+    { character: "tifa lockhart", pinned: ["tifa lockhart", "black hair", "red eyes"] },
+    { character: "cloud strife", pinned: ["cloud strife", "spiked hair", "blue eyes"] },
+  ]
+  assert.equal(lookOwner("spiked hair", blocks), "cloud strife")
+  assert.equal(lookOwner("black_hair", blocks), "tifa lockhart")
+  assert.equal(lookOwner("long hair", blocks), null)
+  assert.equal(lookOwner("long hair", [blocks[0]]), "tifa lockhart")
+})
+
+check("briefFromCardPost: the card's characters come from its character field", () => {
+  const { brief, offered } = briefFromCardPost(["1girl", "new_heroine", "bikini", "sitting", "black hair"], ["new_heroine"], OVERRIDES)
+  assert.equal(brief.who[0].tag, "new heroine")
+  assert.deepEqual(brief.who[0].addedLook, ["black hair"])
+  assert.deepEqual(offered, { outfit: ["bikini"], pose: ["sitting"] })
+})
+
+check("a search start keeps its exclusions in Never (with the defaults after them)", () => {
+  const { brief } = briefFromSearch("tifa lockhart, beach, -smile", OVERRIDES, "tifa lockhart")
+  assert.deepEqual(seedNever(brief, ["blurry", "smile"]).never, ["smile", "blurry"])
+})
+
+check("after generating a one-part pack, the line counts variants", () => {
+  assert.deepEqual(issuesFit({ issues: [], count: 10, made: 10, cast, scenes: 18, canOfferSensitive: false, axis: "outfit" }), [
+    { kind: "axis-fit", axis: "outfit", variations: 18 },
+  ])
+  assert.deepEqual(issuesFit({ issues: [], count: 10, made: 4, cast, scenes: 4, canOfferSensitive: false, axis: "pose" }), [
+    { kind: "few-variations", axis: "pose", variations: 4, made: 4, asked: 10 },
+  ])
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

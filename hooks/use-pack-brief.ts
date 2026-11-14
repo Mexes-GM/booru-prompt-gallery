@@ -100,9 +100,10 @@ function readPreferences(): PackPreferences {
  * `overrides` is read at the moment of each action, so its growth doesn't change the
  * identity of the actions.
  */
-export function usePackBrief(overrides: Record<string, string>): UsePackBriefResult {
+export function usePackBrief(overrides: Record<string, string>, initial?: PackBrief): UsePackBriefResult {
   const [preferences, setPreferencesState] = useState<PackPreferences>(readPreferences)
-  const [history, setHistory] = useState<BriefHistory>(() => startHistory(seedNever(emptyBrief(), preferences.neverDefaults)))
+  // A pack can start with its brief already made (an entry), so nothing is written while rendering.
+  const [history, setHistory] = useState<BriefHistory>(() => startHistory(seedNever(initial ?? emptyBrief(), preferences.neverDefaults)))
 
   // Latest values for callbacks that must stay stable and still read the current state.
   const overridesRef = useRef(overrides)
