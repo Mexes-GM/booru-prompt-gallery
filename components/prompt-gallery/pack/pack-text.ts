@@ -101,6 +101,16 @@ export function copyNoteText({ missing, stale }: { missing: number; stale: boole
   return parts.length > 0 ? parts.join(" ") : undefined
 }
 
+/** The size option of Copy all, worded as the old builder's (pack-add-resolution). */
+export const SIZE_TEXT = {
+  option: "Add size as [WIDTHxHEIGHT]",
+  optionDetail: "For the extension's Import List. Taken from the post each prompt's scene came from.",
+  copyAll: "Copy all with size",
+  menu: "Copy options",
+  rowLabel: "Suggested size",
+  unsized: (n: number) => `${n} ${n === 1 ? "prompt has" : "prompts have"} no size and ${n === 1 ? "was" : "were"} copied without one.`,
+} as const
+
 /** "4 prompts missing" beside the results, when the pack came out short. */
 export const missingText = (missing: number) => `${missing} ${missing === 1 ? "prompt" : "prompts"} missing`
 

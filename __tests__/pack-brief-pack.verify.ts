@@ -13,7 +13,7 @@ import { briefFromCharacters } from "../lib/pack/brief-history"
 import { seedNever } from "../lib/pack/brief-history"
 import {
   briefIdentity, briefPackArgs, issuesFit, outfitSetting, peopleFromCountTags, peopleLineState, pickedPeopleNote, predictFit,
-  preferredPostIds, resolveLook, slotSuggestions, packProviderChoices, loadedState, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
+  preferredPostIds, resolveLook, slotSuggestions, packProviderChoices, loadedState, packCopyText, promptSize, withSearchProgress, briefFromSearch, withPromptPeople, type FitNote,
 } from "../lib/pack/brief-pack"
 import {
   placeRows, changedRows, lockedWithTag, usableSearchTags, leftOutPosts, axisRequests, oneAxis, castPeopleNote,
@@ -440,6 +440,21 @@ check("search-text: each search of the plan in plain words, with the tags as the
     `${danbooru.leftOut.map((l) => l.tag).join(" and ")} didn't fit in the searches: Danbooru searches at most 2 tags at a time.`
   )
   assert.equal(leftOutSentence([], "Danbooru", 2), null)
+})
+
+check("sizes: a row shows its suggested size; Copy all puts [WIDTHxHEIGHT] in front of each prompt that has one", () => {
+  const sized = { width: 832, height: 1216 }
+  const unsized = {}
+  assert.equal(promptSize(sized), "832×1216")
+  assert.equal(promptSize(unsized), null)
+  const prompts = [sized, unsized, { width: 1216, height: 832 }]
+  const bodies = ["1girl, beach", "1girl, library", "A woman sits on a bench."]
+  assert.deepEqual(packCopyText(prompts, bodies, false), { text: bodies.join("\n"), unsized: 0 })
+  // The extension's Import List form, in any format; the prompt without a size goes without one.
+  assert.deepEqual(packCopyText(prompts, bodies, true), {
+    text: "[832x1216] 1girl, beach\n1girl, library\n[1216x832] A woman sits on a bench.",
+    unsized: 1,
+  })
 })
 
 // ── One-part packs (changes) ────────────────────────────────────────────────────

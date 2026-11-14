@@ -64,6 +64,8 @@ import {
   oneAxis,
   issuesFit,
   packProviderChoices,
+  packCopyText,
+  promptSize,
   withWaiting,
   loadedState,
   lockedWithTag,
@@ -97,7 +99,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -1188,6 +1190,24 @@ function Results({
     }
   }, [format, fullDetail, naturalSourceOf, overrides])
 
+  // "Add size as [WIDTHxHEIGHT]": the old builder's preference (pack-add-resolution), kept.
+  const [withSize, setWithSize] = useState(() => {
+    try {
+      return userPreferences.getPackAddResolution()
+    } catch {
+      return false
+    }
+  })
+  const changeWithSize = useCallback((next: boolean) => {
+    setWithSize(next)
+    try {
+      userPreferences.setPackAddResolution(next)
+    } catch {
+      // Storage unavailable: the choice lasts this session.
+    }
+  }, [])
+  const sizeOption = useMemo(() => ({ value: withSize, onChange: changeWithSize }), [withSize, changeWithSize])
+
   // One live region for every row's copy.
   const [copySaid, setCopySaid] = useState("")
   const copyOne = useCallback(async (index: number) => {
@@ -1195,17 +1215,22 @@ function Results({
     if (!p) return false
     const body = await bodyOf(p, shownRef.current.get(index))
     if (body.failed) warnTagsCopied()
-    const ok = await onCopy(body.text, body.failed ? "tags" : format)
-    setCopySaid(ok ? `Prompt ${index + 1} copied` : COPY_FAILED)
+    const { text, unsized } = packCopyText([p], [body.text], withSize)
+    const ok = await onCopy(text, body.failed ? "tags" : format)
+    setCopySaid(ok ? `Prompt ${index + 1} copied${withSize && unsized === 0 ? " with its size" : ""}` : COPY_FAILED)
     return ok
-  }, [prompts, bodyOf, onCopy, format])
+  }, [prompts, bodyOf, onCopy, format, withSize])
 
+  const [unsizedCopied, setUnsizedCopied] = useState(0)
   const copyAll = useCallback(async () => {
     const bodies = await Promise.all(prompts.map((p, i) => bodyOf(p, shownRef.current.get(i))))
     const failed = bodies.some((b) => b.failed)
     if (failed) warnTagsCopied()
-    return onCopy(bodies.map((b) => b.text).join("\n"), failed ? "tags" : format)
-  }, [prompts, bodyOf, onCopy, format])
+    const { text, unsized } = packCopyText(prompts, bodies.map((b) => b.text), withSize)
+    setUnsizedCopied(unsized)
+    return onCopy(text, failed ? "tags" : format)
+  }, [prompts, bodyOf, onCopy, format, withSize])
+  const allCopyNote = [copyNote, unsizedCopied > 0 ? SIZE_TEXT.unsized(unsizedCopied) : null].filter(Boolean).join(" ") || undefined
 
   const reroll = useCallback((index: number) => {
     if (!onReroll(index)) toast({ description: BUILDER_TEXT.rerollFailed, duration: 3000 })
@@ -1219,7 +1244,15 @@ function Results({
   return (
     <div ref={containerRef} tabIndex={-1} aria-label={BUILDER_TEXT.resultsLabel} className="space-y-2 focus-visible:outline-none">
       <p className="sr-only" role="status" aria-live="polite">{copySaid}</p>
-      <ResultsToolbar formats={FORMATS} format={format} onFormatChange={onFormatChange} count={prompts.length} onCopyAll={copyAll} copyNote={copyNote}>
+      <ResultsToolbar
+        formats={FORMATS}
+        format={format}
+        onFormatChange={onFormatChange}
+        count={prompts.length}
+        onCopyAll={copyAll}
+        copyNote={allCopyNote}
+        withSize={sizeOption}
+      >
         {missing > 0 && <span className="text-xs tabular-nums text-warning-text">{missingText(missing)}</span>}
       </ResultsToolbar>
       <div className="space-y-1.5">
@@ -1299,6 +1332,7 @@ const BriefResultRow = memo(function BriefResultRow({
       text={text}
       postId={prompt.scene?.postId}
       thumbSrc={prompt.scene?.preview ? getPostThumbnailUrl(prompt.scene.preview) : undefined}
+      size={promptSize(prompt)}
       pending={format !== "tags" && natural.status === "loading"}
       locked={locked}
       busy={busy}

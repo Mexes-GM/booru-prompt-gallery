@@ -10,6 +10,7 @@ import { getTagSlotFromOverrides } from '../tag-taxonomy'
 import type { BooruProvider } from '../booru/types'
 import type { PackRatingMode } from '../../hooks/use-pack-seed-search'
 import { planRatings } from './source-plan'
+import { withResolutionPrefix } from './prompt-resolution'
 import { addCharacter, addNever, addTag, briefFromCard, briefFromPrompt, setPeople, toSceneRequests, type ChangesAxis, type PackBrief } from './brief'
 import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
@@ -996,4 +997,26 @@ export function loadedState(s: {
   if (s.posts === 0 || s.failed || s.finding) return null
   const more = !s.noMoreResults && !s.sessionCapReached && !s.paused && !s.loading
   return { posts: s.posts, all: s.noMoreResults, more }
+}
+
+// ── Sizes ─────────────────────────────────────────────────────────────────────
+
+/** A prompt's suggested size as a row shows it ("832×1216"), or null when its scene had no size. */
+export const promptSize = (p: Pick<PackPrompt, 'width' | 'height'>): string | null =>
+  p.width && p.height ? `${p.width}×${p.height}` : null
+
+/**
+ * The text a copy puts on the clipboard: one prompt per line, each with its suggested
+ * size in front as "[WIDTHxHEIGHT] " when `withSize` (the form the extension's Import List
+ * reads, withResolutionPrefix); a prompt without a size goes without one. `bodies` are
+ * the prompts in the chosen format. `unsized` counts the prompts that went without.
+ */
+export function packCopyText(
+  prompts: readonly Pick<PackPrompt, 'width' | 'height'>[],
+  bodies: readonly string[],
+  withSize: boolean
+): { text: string; unsized: number } {
+  const lines = bodies.map((body, i) => (withSize ? withResolutionPrefix(body, prompts[i] ?? {}) : body))
+  const unsized = withSize ? prompts.filter((p) => !promptSize(p)).length : 0
+  return { text: lines.join('\n'), unsized }
 }
