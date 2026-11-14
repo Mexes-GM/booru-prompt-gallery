@@ -240,7 +240,9 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
               conflict={conflicts[tag]}
               selected={picked === slot && i === tags.length - 1}
               onRemove={() => onRemoveTag(tag)}
-              mode={exact !== undefined && onSetExact ? { exact, onToggle: () => onSetExact(tag, !exact) } : undefined}
+              mode={exact !== undefined && onSetExact
+                ? { exact, onToggle: () => onSetExact(tag, !exact), ambience: brief.requests.some((r) => r.tag === tag && r.ambience) }
+                : undefined}
             />
           )
         })}

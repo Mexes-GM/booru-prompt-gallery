@@ -24,7 +24,10 @@ export interface PackRequest {
    * is a condition: each prompt meets it with a different form of it (briefConditions).
    */
   exact?: true
-  /** Where: the time of day, the weather, the light ("night"). Shown with the places, asked of the engine as Also. */
+  /**
+   * Where: the time of day, the weather, the light ("night"). Like a place, a condition by default:
+   * each prompt gets a place that has it. Exact, it goes on whatever scene each prompt has (as Also).
+   */
   ambience?: true
 }
 
@@ -318,7 +321,7 @@ export function addTag(brief: PackBrief, tag: string, overrides: Record<string, 
 
   const role: RequestRole | null = route.kind === 'request' ? route.role : into ?? null
   if (role) {
-    // The time, the weather or the light shows in Where and goes to the engine as Also: it never replaces the scene's place.
+    // The time, the weather or the light shows in Where with the places (see PackRequest.ambience).
     const ambience = role === 'where' && isAmbienceTag(name, overrides)
     if (!next.requests.some((r) => same(r.tag, name))) next.requests.push(ambience ? { tag: name, role, ambience: true } : { tag: name, role })
   } else if (!has(next.literal, name)) {
@@ -553,9 +556,11 @@ export function briefFromCard(
 }
 
 export function toSceneRequests(brief: PackBrief): BriefSceneRequests {
-  const of = (role: RequestRole) => brief.requests.filter((r) => r.role === role && !r.ambience).map((r) => r.tag)
-  // The ambience of Where is asked as Also, after Also's own tags.
-  const ambience = brief.requests.filter((r) => r.ambience).map((r) => r.tag)
+  // An exact ambience goes on the scene each prompt has (Also, after Also's own tags); any other
+  // ambience is a place condition, asked as Where.
+  const onScene = (r: PackRequest) => !!r.ambience && !!r.exact
+  const of = (role: RequestRole) => brief.requests.filter((r) => r.role === role && !onScene(r)).map((r) => r.tag)
+  const ambience = brief.requests.filter(onScene).map((r) => r.tag)
   const requests = { select: of('doing'), wearing: of('wearing'), where: of('where'), also: [...of('also'), ...ambience], literal: [...brief.literal] }
   return brief.others.length > 0 ? { ...requests, others: [...brief.others] } : requests
 }
@@ -589,7 +594,8 @@ const CONDITION_PLACE_SLOTS = new Set(['scenery:setting'])
  */
 export function canBeCondition(request: Pick<PackRequest, 'tag' | 'role' | 'ambience'>, overrides: Record<string, string>): boolean {
   if (request.role === 'wearing') return true
-  if (request.role !== 'where' || request.ambience) return false
+  if (request.role !== 'where') return false
+  if (request.ambience) return true
   const found = getTagSlotFromOverrides(normalizeTagForPack(request.tag), overrides)
   return !found?.slot || CONDITION_PLACE_SLOTS.has(found.slot)
 }
