@@ -14,6 +14,7 @@ import { loadedTagRelations, needsCompany, relationKey, requiredBy, requiredSlot
 import { isQualifiedVariant } from '../character-identity'
 import { conflictsWithBackground, isEnvironmentTag, isPlainBackgroundTag, isSceneTag } from '../background-coherence'
 import { selectScenes } from './scene-select'
+import { garmentRegion, inRegion } from './scene-conditions'
 import type { ScenePool } from './scene-pool'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isCompositionPattern } from './permanence'
 import {
@@ -72,6 +73,15 @@ export interface ComposeOptions {
    * shown with. Without it, or for a scene it returns nothing for, the exposure goes with its clothes.
    */
   actBody?: (scene: Scene, clothes: readonly string[]) => string[]
+  /**
+   * The requests are conditions (SceneRequests.conditions; the scene may already wear or be at a
+   * variant lent by another scene). The garments of `wearing` the outfit doesn't have give up only
+   * their part of it (garmentRegion: the slots they take and their own forms), and the exposure only
+   * when that part covers the torso; the rest of the scene's clothes stays. A place that already has
+   * every `where` (or a form of it) stays, as with `whereKeepsPlace`, and the supports its own tags
+   * name stay with the pose. Off: the scene's whole outfit gives way to a garment it doesn't have.
+   */
+  conditions?: boolean
 }
 
 /** True when the scene already has one of the picked scenes' own tags. */
@@ -127,6 +137,8 @@ export interface ScenePrompt {
   sources: { skeleton: number; face?: number; camera?: number; place?: number; outfit?: number; pose?: number }
   /** With imposed garments (`ComposeOptions.wearing`): the scene's own clothes already have them, so they stayed. */
   sceneWears?: boolean
+  /** With conditions (`ComposeOptions.conditions`) and not every garment worn: the garments the outfit has (they own nothing). */
+  wears?: string[]
 }
 
 /** True when `outfit` has every garment of `wearing`, or a qualified form of it ("white bikini" for "bikini"). */
@@ -495,9 +507,11 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     // An imposed place replaces the scene's, with what the pose leaned on there.
     const where = options.where ?? []
     if (where.length > 0) {
-      const atPlace = options.whereKeepsPlace === true && where.every((tag) => units.place.some((own) => isQualifiedVariant(own, tag)))
+      const atPlace = (options.whereKeepsPlace === true || options.conditions === true) && where.every((tag) => units.place.some((own) => isQualifiedVariant(own, tag)))
       if (!atPlace) units.place = []
-      const named = (noun: string) => where.some((tag) => tag === noun || tag.endsWith(` ${noun}`))
+      // With conditions, a kept place names its own supports too ("beach towel" at a beach with one).
+      const naming = options.conditions === true ? [...where, ...units.place] : where
+      const named = (noun: string) => naming.some((tag) => tag === noun || tag.endsWith(` ${noun}`))
       const lost = new Set(scene.anchors.filter((anchor) => anchor !== 'indoors' && anchor !== 'outdoors' && !named(anchor)))
       if (lost.size > 0) units.skeleton = units.skeleton.filter((tag) => ![...lost].some((noun) => tag.endsWith(` ${noun}`)))
     }
@@ -533,9 +547,18 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     // Imposed garments: the scene's clothes stay only when they already are what was asked for.
     const wearing = options.wearing ?? []
     const sceneWears = outfitWears(units.outfit, wearing)
+    // With conditions, the garments the outfit already has (or a form of them) own nothing.
+    const wears = options.conditions === true ? wearing.filter((garment) => units.outfit.some((tag) => isQualifiedVariant(tag, garment))) : []
     if (wearing.length > 0 && !sceneWears) {
-      units.outfit = []
-      units.exposure = []
+      if (options.conditions === true) {
+        // Each missing garment takes only its part of the outfit.
+        const region = garmentRegion(wearing.filter((garment) => !wears.includes(garment)), overrides)
+        units.outfit = units.outfit.filter((tag) => !inRegion(tag, region, overrides))
+        if (region.torso) units.exposure = []
+      } else {
+        units.outfit = []
+        units.exposure = []
+      }
     }
     // What an asked-for act shows of the bodies stays with the act, whatever clothes replaced the scene's.
     if (options.actBody) {
@@ -548,8 +571,8 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     const identityTags = new Set(fixed)
     for (const unit of UNIT_ORDER) units[unit] = units[unit].filter((tag) => !identityTags.has(tag))
     // Clothes that already are the imposed garments don't clash with them.
-    const wearingSet = new Set(wearing)
-    const rivals = sceneWears ? fixed.filter((tag) => !wearingSet.has(tag)) : fixed
+    const wearingSet = new Set(sceneWears ? wearing : wears)
+    const rivals = wearingSet.size > 0 ? fixed.filter((tag) => !wearingSet.has(tag)) : fixed
     const clashing = new Set(
       resolveTagConflicts(rivals, unitTags(units)).conflictingTags.map((conflict) => conflict.tag)
     )
@@ -575,7 +598,7 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     const fixedSet = new Set(fixed)
     const tags = [...fixed, ...Array.from(new Set(unitTags(units))).filter((tag) => !fixedSet.has(tag))]
     const rating = (['g', 's', 'q', 'e'] as const)[ratingLevel]
-    return { tags, locked: fixed, rating, aspect: scene.aspect, sources, ...(sceneWears ? { sceneWears } : {}) }
+    return { tags, locked: fixed, rating, aspect: scene.aspect, sources, ...(sceneWears ? { sceneWears } : {}), ...(wears.length > 0 && !sceneWears ? { wears } : {}) }
   }
 
   const seen = new Set<string>()

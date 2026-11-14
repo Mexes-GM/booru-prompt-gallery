@@ -8,7 +8,8 @@
  * their name, their permanent traits, the people count (kept apart as `pairing`
  * so the prompt header can be written from the new character).
  */
-import type { BooruPost } from '../../booru/types'
+import type { BooruPost, BooruProvider } from '../../booru/types'
+import { peopleVocabulary, postPeople } from './people'
 import { classifyPostForPack, normalizeTagForPack, postAspectLog } from '../pack-generator'
 import { postCharacters } from '../character-focus'
 import { splitTags } from '../../utils/tag-utils'
@@ -103,6 +104,11 @@ export interface SceneContext {
   poolShare?: (tag: string) => number
   /** A tag with no type and no slot that is most likely a name the booru didn't type (see names.ts). */
   looksLikeName?: (tag: string) => boolean
+  /**
+   * The site the posts come from: who is in a picture is read in its vocabulary (people.ts
+   * postPeople; Rule34 counts with "male" / "female" and group tags). Missing: the Danbooru reading.
+   */
+  provider?: BooruProvider
 }
 
 const MULTIPLE_RE = /^multiple (girls|boys|others)$/
@@ -310,7 +316,16 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     pairing.push(tag)
   }
   const isTheme = (tag: string) => (ctx.poolShare?.(tag) ?? 0) >= THEME_SHARE
-  const people = openCount || girls + boys === 0 ? null : { girls, boys }
+  let people = openCount || girls + boys === 0 ? null : { girls, boys }
+  // A site that writes who is there its own way (Rule34): its vocabulary decides; once the people are
+  // known, the open counts it also carries say nothing more.
+  if (peopleVocabulary(ctx.provider) !== 'danbooru') {
+    people = postPeople(ordered, ctx.provider).people
+    if (people) {
+      const answered = pairing.filter((tag) => OPEN_COUNT_RE.test(tag) || COUNT_TAG_RE.test(tag) || /^multiple (girls|boys|others)$/.test(tag))
+      for (const tag of answered) pairing.splice(pairing.indexOf(tag), 1)
+    }
+  }
 
   // A signature accessory (glasses, hat) travels only with a complete costume.
   const hasFullOutfit = rest.some(
