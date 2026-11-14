@@ -18,6 +18,7 @@ import type { ScenePool } from './scene-pool'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isCompositionPattern } from './permanence'
 import {
   RATING_LEVEL,
+  tagGender,
   UNIT_ORDER,
   unitTags,
   type Scene,
@@ -72,6 +73,48 @@ export interface ComposeOptions {
    * shown with. Without it, or for a scene it returns nothing for, the exposure goes with its clothes.
    */
   actBody?: (scene: Scene, clothes: readonly string[]) => string[]
+  /**
+   * How the people besides the named characters look (SceneRequests.others). In a picture of two
+   * or more people they go after the identity, as a block of their own, and win over the scene's
+   * tags about the same trait of someone of that gender (same slot); a tag that names a gender goes
+   * only when the picture has someone of that gender besides the subject. Never in a picture of one.
+   */
+  others?: readonly string[]
+}
+
+const traitWords = (tag: string) => tag.split(/[\s-]+/).filter(Boolean)
+
+/**
+ * True when `tag` says something else about the same trait of the same kind of person as `other`:
+ * both name the same gender and they are the same words but one ("pale-skinned male" for
+ * "dark-skinned male", "small penis" for "large penis"). The measured relations have no exclusions
+ * between these (they are traits of the other person, rare in the posts), so the words decide.
+ */
+export function sameTraitOf(other: string, tag: string, rating: Scene['rating']): boolean {
+  if (other === tag) return false
+  const gender = tagGender(other, rating)
+  if (!gender || tagGender(tag, rating) !== gender) return false
+  const a = traitWords(other)
+  const b = traitWords(tag)
+  if (a.length < 2 || a.length !== b.length) return false
+  return a.filter((word, i) => word !== b[i]).length === 1
+}
+
+/**
+ * The tags of `others` that fit a picture of `scene`: none with fewer than two people; a tag that
+ * names a gender ("dark-skinned male") only when someone of that gender besides the subject is in
+ * it. An open count ("multiple boys") fits anything.
+ */
+export function othersFor(others: readonly string[], scene: Scene, subject: 'girl' | 'boy'): string[] {
+  if (others.length === 0) return []
+  const people = scene.people
+  if (people && people.girls + people.boys < 2) return []
+  return others.filter((tag) => {
+    const gender = tagGender(tag, scene.rating)
+    if (!gender || !people) return true
+    const present = gender === 'girl' ? people.girls : people.boys
+    return present - (gender === subject ? 1 : 0) > 0
+  })
 }
 
 /** True when the scene already has one of the picked scenes' own tags. */
@@ -475,7 +518,14 @@ export function* composePackPrompts(pool: ScenePool, options: ComposeOptions): G
     const sources: ScenePrompt['sources'] = { skeleton: scene.postId }
     let ratingLevel = RATING_LEVEL[scene.rating]
     const header = buildHeader(options.identity, scene, options.subject, overrides)
-    const fixed = [...header.tags, ...header.identity]
+    const own = new Set(header.identity)
+    const others = othersFor(options.others ?? [], scene, options.subject).filter((tag) => !own.has(tag))
+    const fixed = [...header.tags, ...header.identity, ...others]
+    // The others' look wins over what the scene says about the same trait of someone of that gender.
+    if (others.length > 0) {
+      const sameTrait = (tag: string) => others.some((other) => sameTraitOf(other, tag, scene.rating))
+      for (const unit of UNIT_ORDER) units[unit] = units[unit].filter((tag) => !sameTrait(tag))
+    }
 
     // A post that has nothing of the picked scene lends only the person.
     const ideaTags = options.sceneIdeaTags ?? []
