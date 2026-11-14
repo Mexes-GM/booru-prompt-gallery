@@ -22,7 +22,7 @@ import { lookYieldingTo, splitSignature, subjectForPool } from "../lib/pack/char
 import { REUSES_PER_SCENE, castChips, type ScenePackIssue } from "../lib/pack/scene-pack"
 import type { Permanence } from "../lib/pack/scene/permanence"
 import { poseNeedsScene } from "../lib/pack/scene-pack"
-import { fitText } from "../components/prompt-gallery/pack/pack-text"
+import { copyNoteText, fitText } from "../components/prompt-gallery/pack/pack-text"
 
 let passed = 0
 const check = (name: string, fn: () => void) => {
@@ -543,6 +543,15 @@ check("roles in a cast: assumed from the subject, set by the user", () => {
   assert.deepEqual(who.cast, { girls: 1, boys: 1 })
   const fixed = briefIdentity({ brief: setCharacterRole(b, "cloud strife", "girl"), looks, permanence, overrides: OVERRIDES })
   assert.deepEqual(fixed.cast, { girls: 2, boys: 0 })
+})
+
+// ── Copy (INT-5) ────────────────────────────────────────────────────────────────
+
+check("copyNoteText: says what Copy all left out or what changed", () => {
+  assert.equal(copyNoteText({ missing: 0, stale: false }), undefined)
+  assert.equal(copyNoteText({ missing: 1, stale: false }), "1 prompt is missing.")
+  assert.equal(copyNoteText({ missing: 4, stale: true }), "4 prompts are missing. These were made before your last changes to the pack.")
+  assert.equal(copyNoteText({ missing: 0, stale: true }), "These were made before your last changes to the pack.")
 })
 
 console.log(`pack-brief-pack: ${passed} checks passed`)

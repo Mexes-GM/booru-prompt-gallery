@@ -175,6 +175,8 @@ export interface ResultsToolbarProps<F extends string> {
   count: number
   /** Resolves true when the copy worked. */
   onCopyAll: () => Promise<boolean> | boolean
+  /** Said after a copy that worked, when what was copied isn't the whole, current pack. */
+  copyNote?: string
   /** Extra controls on the right. */
   children?: ReactNode
   className?: string
@@ -186,6 +188,7 @@ function ResultsToolbarInner<F extends string>({
   onFormatChange,
   count,
   onCopyAll,
+  copyNote,
   children,
   className,
 }: ResultsToolbarProps<F>) {
@@ -222,9 +225,15 @@ function ResultsToolbarInner<F extends string>({
           {copied ? `Copied ${count}` : failed ? "Couldn't copy" : "Copy all"}
         </Button>
         <span className="sr-only" role="status" aria-live="polite">
-          {copied ? `Copied ${count} ${count === 1 ? "prompt" : "prompts"}` : failed ? COPY_FAILED : ""}
+          {copied ? `Copied ${count} ${count === 1 ? "prompt" : "prompts"}${copyNote ? `. ${copyNote}` : ""}` : failed ? COPY_FAILED : ""}
         </span>
       </div>
+      {copied && copyNote && (
+        <p className="flex basis-full items-start gap-1.5 text-xs text-warning-text" aria-hidden>
+          <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+          {copyNote}
+        </p>
+      )}
       {failed && (
         <p className="flex basis-full items-start gap-1.5 text-xs text-destructive-text" aria-hidden>
           <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />

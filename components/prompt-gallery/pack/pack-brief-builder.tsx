@@ -69,7 +69,7 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CORRECTION_TEXT, SHEET_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
@@ -724,6 +724,7 @@ function BriefWorkspace({
           prompts={result.prompts}
           locked={result.locked}
           missing={result.shortBy}
+          copyNote={copyNoteText({ missing: result.shortBy, stale })}
           onToggleLock={engine.toggleLock}
           naturalSourceOf={engine.naturalSourceOf}
           overrides={overrides}
@@ -764,6 +765,7 @@ function Results({
   prompts,
   locked,
   missing,
+  copyNote,
   onToggleLock,
   naturalSourceOf,
   overrides,
@@ -776,6 +778,7 @@ function Results({
   locked: readonly number[]
   /** Prompts asked for and not made. */
   missing: number
+  copyNote?: string
   onToggleLock: (index: number) => void
   naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
   overrides: Record<string, string>
@@ -825,7 +828,7 @@ function Results({
 
   return (
     <div className="space-y-2">
-      <ResultsToolbar formats={FORMATS} format={format} onFormatChange={onFormatChange} count={prompts.length} onCopyAll={copyAll}>
+      <ResultsToolbar formats={FORMATS} format={format} onFormatChange={onFormatChange} count={prompts.length} onCopyAll={copyAll} copyNote={copyNote}>
         {missing > 0 && <span className="text-xs tabular-nums text-warning-text">{missingText(missing)}</span>}
       </ResultsToolbar>
       <div className="space-y-1.5">

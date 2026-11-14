@@ -69,6 +69,18 @@ export const CORRECTION_TEXT = {
   working: "Updating the prompts…",
 } as const
 
+/**
+ * After Copy all, when what was copied isn't the whole, current pack: how many are
+ * missing, and whether the brief changed after the prompts were made.
+ */
+export function copyNoteText({ missing, stale }: { missing: number; stale: boolean }): string | undefined {
+  const parts = [
+    missing > 0 ? `${missing} ${missing === 1 ? "prompt is" : "prompts are"} missing.` : null,
+    stale ? "These were made before your last changes to the pack." : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(" ") : undefined
+}
+
 /** "4 prompts missing" beside the results, when the pack came out short. */
 export const missingText = (missing: number) => `${missing} ${missing === 1 ? "prompt" : "prompts"} missing`
 
