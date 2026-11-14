@@ -24,7 +24,8 @@ export interface TagEntryProps {
   suggestions?: readonly TagSuggestion[]
   suggestionStatus?: SuggestionStatus
   onQueryChange?: (query: string) => void
-  onAdd: (tags: string[]) => void
+  /** `picked`: the suggestion chosen, when the tag came from one. */
+  onAdd: (tags: string[], picked?: TagSuggestion) => void
   /** The row's last chip, which Backspace on an empty field picks and then removes. */
   lastChipLabel?: string
   onPickLast?: (picked: boolean) => void
@@ -80,7 +81,7 @@ export const TagEntry = memo(function TagEntry({
   // One list for the keyboard: the options first, then the tags.
   const items: Array<{ key: string; label: string; kind?: string; count?: number; detail?: string; pick: () => void }> = [
     ...shownOptions.map((o) => ({ key: `option:${o.id}`, label: o.label, detail: o.detail, pick: () => { o.onPick(); setQuery(""); setOpen(false) } })),
-    ...suggestions.map((sg) => ({ key: sg.name, label: showTag(sg.name), kind: sg.kind, count: sg.count, pick: () => commit([sg.name]) })),
+    ...suggestions.map((sg) => ({ key: sg.name, label: showTag(sg.name), kind: sg.kind, count: sg.count, pick: () => commit([sg.name], sg) })),
   ]
   const hasList = suggestions.length > 0
   const showList = open && ((query.length > 0 && (hasList || suggestionStatus !== "idle")) || shownOptions.length > 0)
@@ -115,9 +116,9 @@ export const TagEntry = memo(function TagEntry({
     onQueryChange?.(value.trim())
   }
 
-  const commit = (tags: string[]) => {
+  const commit = (tags: string[], picked?: TagSuggestion) => {
     if (tags.length === 0) return
-    onAdd(tags)
+    onAdd(tags, picked)
     setQuery("")
     setOpen(false)
   }

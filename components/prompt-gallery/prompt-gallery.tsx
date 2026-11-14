@@ -174,6 +174,7 @@ const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSour
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBriefBuilder), { ssr: false, loading: () => null })
 import type { PackBriefStart } from "./pack/pack-brief-builder"
+import { BUILDER_SWITCH_TEXT, sameBriefStart } from "./pack/builder-switch"
 import { usableSearchTags } from "@/lib/pack/brief-pack"
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, Package, PenLine, SlidersHorizontal } from "lucide-react"
@@ -813,7 +814,12 @@ export function PromptGallery() {
   const [packBrief, setPackBrief] = useState<{ start: PackBriefStart; key: number } | null>(null)
   const [packPickingCard, setPackPickingCard] = useState(false)
   if (packPickingCard && !packModeIsPackMode) setPackPickingCard(false)
-  const packBriefOpen = !!packBrief && packModeIsPackMode && !packPickingCard
+  // The builder in use: the new one (default) or the classic one, kept for whoever finds it
+  // useful. Each keeps its own pack; switching starts the other from the same card or character.
+  const [packBuilderKind, setPackBuilderKind] = useState<'brief' | 'classic'>('brief')
+  // "Open in the classic builder" in the entry dialog, for the next start only.
+  const [packEntryClassic, setPackEntryClassic] = useState(false)
+  const packBriefOpen = !!packBrief && packModeIsPackMode && !packPickingCard && packBuilderKind === 'brief'
   // The card a pack started from, marked in the gallery.
   const packBriefCardId = packBrief?.start.kind === 'card' ? packBrief.start.post.id : null
   // Pack Mode picks and cleans tags with the measured tag relations: load them while it's open.
@@ -954,18 +960,27 @@ export function PromptGallery() {
   // there is kept aside (its bar shows) until a card replaces it, or it is reopened.
   const handlePackEntryChooseCard = useCallback(() => {
     setPackEntryOpen(false)
+    // The card picked next goes to the builder chosen in the dialog; each shows its own hint meanwhile.
+    if (packEntryClassic) {
+      setPackBuilderKind('classic')
+      setPackEntryClassic(false)
+      if (packModeHasBaseForEntry) setPackBuilderHidden(true)
+      return
+    }
+    setPackBuilderKind('brief')
     setPackPickingCard(true)
-    if (packModeHasBaseForEntry) setPackBuilderHidden(true)
-  }, [packModeHasBaseForEntry])
+  }, [packModeHasBaseForEntry, packEntryClassic])
 
   // Every entry ends here: a new pack in the builder, Pack Mode on, the dialog closed.
   const packModeEnablePackMode = packMode.enablePackMode
-  const startPackBrief = useCallback((start: PackBriefStart) => {
+  const startNewPackBrief = useCallback((start: PackBriefStart) => {
     packModeEnablePackMode()
     setPackBrief((prev) => ({ start, key: (prev?.key ?? 0) + 1 }))
+    setPackBuilderKind('brief')
     setPackPickingCard(false)
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
+    setPackEntryClassic(false)
   }, [packModeEnablePackMode])
 
   // What the pack is built on, to tell a base picked again from a new one.
@@ -983,6 +998,7 @@ export function PromptGallery() {
     setPackBuilderHidden(false)
     return true
   }, [packCurrentBaseKey])
+
   // Sources that already fetched fresh posts this session: picking another
   // base on the same source reuses what's in memory instead of refetching.
   const enrichedSourcesRef = useRef<Set<string>>(new Set())
@@ -1124,17 +1140,88 @@ export function PromptGallery() {
   // default source; the header chip changes it. Editing an existing prompt
   // base keeps the source as it is.
   const packModeSetFocusCharacter = packMode.setFocusCharacter
+  // The classic builder from a start of the new one: the same card, prompt or characters as
+  // its base, on the default source. The base it already has, picked again, brings its pack back.
+  const packModeSetBasePromptForClassic = packMode.setBasePrompt
+  const packModeSetBaseFromCharacter = packMode.setBaseFromCharacter
+  const startClassicPack = useCallback((start: PackBriefStart) => {
+    packModeEnablePackMode()
+    const source = defaultPackSource()
+    if (start.kind === 'card') {
+      if (!reopenIfSamePackBase({ kind: 'card', id: start.post.id })) {
+        packModeSetBaseCard(start.post)
+        packModeSetFocusCharacter(searchedCharacterOf(start.post, source.searchTags))
+        applyPackSource(source)
+      }
+    } else {
+      const names = start.kind === 'characters' ? [...start.names] : start.kind === 'search' && start.character ? [start.character] : []
+      if (names[0]) {
+        if (!reopenIfSamePackBase({ kind: 'character', names })) {
+          packModeSetBaseFromCharacter(names[0], names.slice(1))
+          applyPackSource(source)
+        }
+      } else {
+        const text = start.kind === 'prompt' ? start.text : start.kind === 'search' ? start.search : ''
+        if (text && !reopenIfSamePackBase({ kind: 'prompt', text })) {
+          packModeSetBasePromptForClassic(text)
+          applyPackSource(source)
+        }
+      }
+    }
+    setPackBuilderKind('classic')
+    setPackBuilderHidden(false)
+    setPackPickingCard(false)
+    setPackEntryOpen(false)
+    setPackEntryStartInPrompt(false)
+    setPackEntryClassic(false)
+  }, [packModeEnablePackMode, reopenIfSamePackBase, packModeSetBaseCard, packModeSetBaseFromCharacter, packModeSetBasePromptForClassic, defaultPackSource, packModeSetFocusCharacter, applyPackSource])
+  // Every entry of the dialog: the builder the dialog chose.
+  const startPackBrief = useCallback(
+    (start: PackBriefStart) => (packEntryClassic ? startClassicPack(start) : startNewPackBrief(start)),
+    [packEntryClassic, startClassicPack, startNewPackBrief]
+  )
   // A card starts the pack builder with the card's character, and offers its outfit and pose.
   // The same card again brings back the pack it started.
   const setAsPackBaseNow = useCallback((post: BooruPost) => {
+    // The classic builder takes the card as its base, as it always did.
+    if (packBuilderKind === 'classic') {
+      startClassicPack({ kind: 'card', post })
+      return
+    }
     const current = packBrief?.start
     if (current?.kind === 'card' && current.post.id === post.id) {
       setPackPickingCard(false)
       setPackEntryOpen(false)
       return
     }
-    startPackBrief({ kind: 'card', post })
-  }, [packBrief, startPackBrief])
+    startNewPackBrief({ kind: 'card', post })
+  }, [packBrief, packBuilderKind, startClassicPack, startNewPackBrief])
+
+  // Switching builders: the other one starts from the same card, prompt or characters (its own
+  // pack with that base comes back as it was); the rest of the pack stays with the one it was made in.
+  const handleOpenClassicBuilder = useCallback(() => {
+    if (!packBrief) return
+    startClassicPack(packBrief.start)
+    toast({ description: BUILDER_SWITCH_TEXT.toClassic, duration: 6000 })
+  }, [packBrief, startClassicPack, toast])
+  const packClassicStart = useMemo<PackBriefStart | null>(() => {
+    if (packMode.baseCard) return { kind: 'card', post: packMode.baseCard }
+    if (packMode.baseFromCharacter) return { kind: 'characters', names: packCastNames.length > 0 ? packCastNames : [packMode.basePrompt] }
+    if (packMode.basePrompt) return { kind: 'prompt', text: packMode.basePrompt }
+    return null
+  }, [packMode.baseCard, packMode.baseFromCharacter, packMode.basePrompt, packCastNames])
+  const handleOpenNewBuilder = useCallback(() => {
+    const sameBase = !!packBrief && !!packClassicStart && sameBriefStart(packBrief.start, packClassicStart)
+    if (packClassicStart && !sameBase) startNewPackBrief(packClassicStart)
+    else {
+      setPackBuilderKind('brief')
+      if (!packBrief) {
+        setPackEntryStartInPrompt(false)
+        setPackEntryOpen(true)
+      }
+    }
+    toast({ description: BUILDER_SWITCH_TEXT.toNew, duration: 6000 })
+  }, [packBrief, packClassicStart, startNewPackBrief, toast])
   // Cards keep the first handler they get (MasonryItem's arePropsEqual skips callbacks),
   // so theirs is stable and always runs the latest one: a stale one saw an old pack.
   const setAsPackBaseRef = useRef(setAsPackBaseNow)
@@ -1193,7 +1280,13 @@ export function PromptGallery() {
   const handlePackEntryCancel = useCallback(() => {
     setPackEntryOpen(false)
     setPackEntryStartInPrompt(false)
+    setPackEntryClassic(false)
   }, [])
+  // Picking a card for the new builder, given up: back to the pack (or out of the hint).
+  const handleCancelPickCard = useCallback(() => {
+    setPackPickingCard(false)
+    if (!packBrief) packModeDisablePackMode()
+  }, [packBrief, packModeDisablePackMode])
 
   const handleEditBasePrompt = useCallback(() => {
     setPackEntryStartInPrompt(true)
@@ -1949,7 +2042,8 @@ export function PromptGallery() {
       onTogglePart={mergeModeTogglePostPart}
       onMergeSelect={() => { }}
       isPackMode={packModeIsPackMode}
-      isPackBase={packMode.baseCard?.id === post.id || packBriefCardId === post.id}
+      // "In pack" for the pack of the builder in use only: the other builder's pack is not this one.
+      isPackBase={packBuilderKind === 'classic' ? packMode.baseCard?.id === post.id : packBriefCardId === post.id}
       onSetAsPackBase={handleSetAsPackBase}
       onMakePack={handleMakePack}
       onSkipAnimation={() => setCopiedId(null)}
@@ -1962,7 +2056,7 @@ export function PromptGallery() {
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, cardFillMissingTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, packBriefCardId, handleSetAsPackBase, handleMakePack])
+  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, cardFillMissingTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, packBriefCardId, packBuilderKind, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -2081,8 +2175,8 @@ export function PromptGallery() {
                       setIsAiConvertMode(false)
                       if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
                       packMode.enablePackMode()
-                      // A pack already made comes back as it was; otherwise, the entry dialog.
-                      if (!packBrief && !packMode.hasBase) {
+                      // A pack already made in the builder in use comes back as it was; otherwise, the entry dialog.
+                      if (packBuilderKind === 'brief' ? !packBrief : !packMode.hasBase) {
                         setPackEntryStartInPrompt(false)
                         setPackEntryOpen(true)
                       }
@@ -2593,6 +2687,8 @@ export function PromptGallery() {
         searchTags={packSearchTags}
         onChooseSearch={handleStartFromSearch}
         onSubmitCharacters={handleStartFromCharacters}
+        classic={packEntryClassic}
+        onClassicChange={setPackEntryClassic}
       />}
       {packSourceMounted && <PackSourceModal
         open={packSourceShown}
@@ -2603,7 +2699,7 @@ export function PromptGallery() {
         postCount={packSeedSnapshot?.postCount ?? 0}
         ratingBreakdown={packSeedSnapshot?.ratings}
       />}
-      {packModeIsPackMode && packBuilderHidden && packMode.hasBase && !packBriefOpen && (
+      {packModeIsPackMode && packBuilderKind === 'classic' && packBuilderHidden && packMode.hasBase && (
         <div
           role="status"
           className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-lg rounded-2xl border shadow-2xl bg-background/95 backdrop-blur-xl p-4 flex items-center gap-3"
@@ -2638,9 +2734,24 @@ export function PromptGallery() {
           outfitOptions={packOutfitOptions}
           onCopy={packBriefCopy}
           onExit={handleExitPackBrief}
+          onOpenClassic={handleOpenClassicBuilder}
         />
       )}
-      {packBuilderMounted && !packBriefOpen && <PackBuilderStickyFooter
+      {/* The new builder's own hint while a card is picked for it. */}
+      {packModeIsPackMode && packBuilderKind === 'brief' && packPickingCard && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-lg rounded-2xl border shadow-2xl bg-background/95 backdrop-blur-xl p-4 flex items-center gap-3"
+        >
+          <Package className="w-5 h-5 text-mode-pack-text flex-shrink-0" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground min-w-0 flex-1">{BUILDER_SWITCH_TEXT.pickCard}</p>
+          <Button variant="ghost" size="sm" onClick={handleCancelPickCard} className="h-9 pointer-coarse:h-11 flex-shrink-0 text-muted-foreground hover:text-foreground">
+            {packBrief ? BUILDER_SWITCH_TEXT.backToPack : 'Cancel'}
+          </Button>
+        </div>
+      )}
+      {packBuilderMounted && packBuilderKind === 'classic' && <PackBuilderStickyFooter
+        onOpenNewBuilder={handleOpenNewBuilder}
         isOpen={packModeIsPackMode && !packBuilderHidden}
         onHide={handleHidePackBuilder}
         baseCard={packMode.baseCard}
@@ -2714,6 +2825,8 @@ export function PromptGallery() {
           resetPackSeeding()
           setPackFetcherActive(false)
           setPackBuilderHidden(false)
+          // The new builder is the one that opens next time.
+          setPackBuilderKind('brief')
         }}
         savedPostCount={packSeedSnapshot?.savedCount ?? 0}
         onClearSavedPosts={handleClearSavedPackPosts}

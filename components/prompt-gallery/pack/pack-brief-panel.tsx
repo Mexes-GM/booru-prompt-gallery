@@ -43,7 +43,8 @@ export interface PackBriefPanelProps {
   /** Most characters a pack can have. */
   maxCharacters?: number
 
-  onAddTags: (tags: string[], slot: SlotId) => void
+  /** `picked`: the autocomplete suggestion the tag came from, if any. */
+  onAddTags: (tags: string[], slot: SlotId, picked?: TagSuggestion) => void
   onRemoveTag: (tag: string) => void
   onRemoveNever: (tag: string) => void
   onRemoveCharacter: (tag: string | null) => void
@@ -175,7 +176,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
 
   const entryFor = useCallback(
     (slot: SlotId, last: LastChip | null): SlotEntryProps => ({
-      onAdd: (tags) => onAddTags(tags, slot),
+      onAdd: (tags, picked) => onAddTags(tags, slot, picked),
       onQueryChange: (q) => {
         setQuerySlot(slot)
         onQueryChange?.(q, slot)

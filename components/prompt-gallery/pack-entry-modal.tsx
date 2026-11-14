@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { BUILDER_SWITCH_TEXT } from "./pack/builder-switch"
 import { ImageIcon, PenLine, ArrowLeft, Plus, Search, UserRound, X } from "lucide-react"
 import { MAX_CAST, castFromNames } from "@/lib/pack/scene/cast"
 import { PackCharacterSearch } from "./pack-character-search"
@@ -35,9 +37,12 @@ export interface PackEntryModalProps {
   onChooseSearch?: () => void
   /** "From a character": the typed characters, with spaces ("hatsune miku"); the first is the base, the others its group. */
   onSubmitCharacters: (characters: string[]) => void
+  /** "Open in the classic builder": the start goes to the classic builder instead of the new one. */
+  classic?: boolean
+  onClassicChange?: (classic: boolean) => void
 }
 
-export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = false, onChooseCard, onSubmitPrompt, onCancel, searchCharacter, searchTags = [], onChooseSearch, onSubmitCharacters }: PackEntryModalProps) {
+export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = false, onChooseCard, onSubmitPrompt, onCancel, searchCharacter, searchTags = [], onChooseSearch, onSubmitCharacters, classic = false, onClassicChange }: PackEntryModalProps) {
   const [view, setView] = useState<"choose" | "prompt" | "character">("choose")
   const [promptText, setPromptText] = useState(initialPrompt)
   const [characters, setCharacters] = useState<string[]>([])
@@ -153,7 +158,17 @@ export function PackEntryModal({ isOpen, initialPrompt, startInPromptView = fals
                 </span>
               </button>
             </div>
-            <DialogFooter>
+            <DialogFooter className="sm:items-center sm:justify-between">
+              {onClassicChange && (
+                <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs text-muted-foreground sm:min-h-0">
+                  <Checkbox checked={classic} onCheckedChange={(v) => onClassicChange(v === true)} />
+                  <span>
+                    {BUILDER_SWITCH_TEXT.entryClassic}
+                    <span className="sr-only">. </span>
+                    <span className="block text-[11px] text-faint-foreground">{BUILDER_SWITCH_TEXT.entryClassicHint}</span>
+                  </span>
+                </label>
+              )}
               <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
             </DialogFooter>
           </>

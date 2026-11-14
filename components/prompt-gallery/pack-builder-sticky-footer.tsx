@@ -15,6 +15,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { BUILDER_SWITCH_TEXT } from "./pack/builder-switch"
 import { Check, Package, Shuffle, Copy, CopyCheck, X, Dices, Pencil, Loader2, RefreshCw, AlertTriangle, Database, HelpCircle, ChevronDown, MoreHorizontal, LogOut, Eraser, Brain, Layers, Plus, UserRound } from "lucide-react"
 import { BooruPost } from '@/lib/booru/types'
 import { TagCategory } from '@/lib/tag-classifier'
@@ -137,6 +138,8 @@ export interface PackBuilderStickyFooterProps {
     onSetBaseLook?: (look: CharacterLook) => void
     typicalLookAvailable?: boolean
     onExit: () => void
+    /** Opens this pack's card or character in the new builder (the one that opens by default). */
+    onOpenNewBuilder?: () => void
     prompts: PackPrompt[]
     /** What the natural-language formats convert for one prompt (see usePackMode). */
     naturalSourceOf: (prompt: PackPrompt) => NaturalPromptSource
@@ -747,6 +750,7 @@ const PackBuilderStickyFooterComponent = ({
     onSetBaseLook,
     typicalLookAvailable = false,
     onExit,
+    onOpenNewBuilder,
     prompts,
     naturalSourceOf,
     onCopyPrompt,
@@ -987,6 +991,11 @@ const PackBuilderStickyFooterComponent = ({
                                 Pick a card and press <span className="font-medium text-foreground">Use as base</span> to build a pack.
                             </p>
                         </div>
+                        {onOpenNewBuilder && (
+                            <Button variant="ghost" size="sm" onClick={onOpenNewBuilder} className="h-9 pointer-coarse:h-11 flex-shrink-0 text-xs text-muted-foreground hover:text-foreground">
+                                {BUILDER_SWITCH_TEXT.toNewLabel}
+                            </Button>
+                        )}
                         <Button variant="ghost" size="icon" onClick={onExit} className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 rounded-full hover:bg-muted flex-shrink-0" aria-label="Exit Pack Mode">
                             <X className="w-4 h-4" />
                         </Button>
@@ -1086,6 +1095,15 @@ const PackBuilderStickyFooterComponent = ({
                                         <span className="flex flex-col">
                                             Reset learning
                                             <span className="text-xs text-muted-foreground">Forget which tags you tend to copy</span>
+                                        </span>
+                                    </DropdownMenuItem>
+                                )}
+                                {onOpenNewBuilder && (
+                                    <DropdownMenuItem onSelect={onOpenNewBuilder} className="gap-2">
+                                        <Package className="w-4 h-4 text-muted-foreground" />
+                                        <span className="flex flex-col">
+                                            {BUILDER_SWITCH_TEXT.toNewLabel}
+                                            <span className="text-xs text-muted-foreground">{BUILDER_SWITCH_TEXT.toNewHint}</span>
                                         </span>
                                     </DropdownMenuItem>
                                 )}

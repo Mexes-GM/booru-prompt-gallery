@@ -48,6 +48,7 @@ export const SLOTS: Record<SlotId, SlotMeta> = {
     iconClass: "text-cat-pose-text",
     emptyText: "Anything",
     moreText: "Add a pose or action",
+    help: "Poses and actions, like sitting or shirt lift",
   },
   where: {
     id: "where",
@@ -56,6 +57,7 @@ export const SLOTS: Record<SlotId, SlotMeta> = {
     iconClass: "text-cat-scenery-text",
     emptyText: "Anything",
     moreText: "Add a place",
+    help: "A place, or the time of day, weather and light",
   },
   also: {
     id: "also",
@@ -64,7 +66,7 @@ export const SLOTS: Record<SlotId, SlotMeta> = {
     iconClass: "text-muted-foreground",
     emptyText: "Add tags",
     moreText: "Add more",
-    help: "Expression, camera, objects",
+    help: "Expression, camera, objects, and what shows in this picture",
   },
   style: {
     id: "style",

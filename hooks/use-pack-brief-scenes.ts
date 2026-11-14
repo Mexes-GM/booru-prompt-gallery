@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import type { PackBrief } from "@/lib/pack/brief"
-import { briefCompositions, briefConditions, isOthersTag, toSceneRequests } from "@/lib/pack/brief"
+import { briefCompositions, briefConditions, isOthersTag, setRoutePermanence, toSceneRequests } from "@/lib/pack/brief"
 import { knownAliases, loadConditionAliases } from "@/lib/pack/condition-aliases"
 import {
   briefIdentity,
@@ -380,6 +380,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     setLoadAttempt((n) => n + 1)
   }, [])
   const permanence = useMemo(() => (permanenceData ? createPermanence(permanenceData, overrides) : null), [permanenceData, overrides])
+  // Where a typed tag goes reads the same permanence data (what lasts, what belongs to the picture).
+  useEffect(() => { setRoutePermanence(permanence ?? undefined) }, [permanence])
 
   // ── Identity ─────────────────────────────────────────────────────────────────
   // Everything but the left-out scenes: leaving a scene out must not rebuild the pool or the sheet.

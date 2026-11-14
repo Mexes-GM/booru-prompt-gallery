@@ -193,6 +193,11 @@ export const CHANGES_OPTIONS: ReadonlyArray<{ value: ChangesAxis; label: string;
 
 export const peopleKey = (p: PackPeople) => `${p.girls}g${p.boys}b`
 
+/** A pairing or a focus typed in a row ("hetero"): who is in the picture sets it. */
+export const COMPOSITION_TEXT = {
+  setByPeople: (tag: string) => `${tag} is set by who's in the picture, under People.`,
+} as const
+
 /** People with several make-ups marked. */
 export const PEOPLE_TEXT = {
   noRoom: "No room for the characters",
