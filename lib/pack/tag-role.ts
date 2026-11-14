@@ -548,15 +548,14 @@ const KIND_PRIORITY: readonly RoleKind[] = ['action', 'garment-state', 'garment'
  */
 function genusOf(tag: string, ctx: TagRoleContext, depth: number): { required: string; role: TagRole } | null {
   if (!ctx.relations || depth >= MAX_GENUS_DEPTH) return null
-  const own = words(tag).map(stem)
+  const own = new Set(words(tag).map(stem))
   const head = stem(lastWord(tag))
   const placed = PLACED_RE.test(tag)
   const candidates = requiredBy(ctx.relations, tag)
     .filter((r) => r !== tag)
     .map((required) => {
       const role = roleOf(required, ctx, depth + 1)
-      const theirs = words(required).map(stem)
-      const closeness = stem(lastWord(required)) === head ? 2 : theirs.some((w) => own.includes(w)) ? 1 : 0
+      const closeness = stem(lastWord(required)) === head ? 2 : words(required).some((w) => own.has(stem(w))) ? 1 : 0
       return { required, role, closeness }
     })
     .filter(({ role, closeness }) => {
