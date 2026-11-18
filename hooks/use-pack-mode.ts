@@ -45,7 +45,7 @@ import { clampMaxLongSide } from '@/lib/extension/generation-resolution'
 import { userPreferences, type PackModeConfigV2 } from '@/lib/storage'
 import { usePackLearning } from '@/hooks/use-pack-learning'
 import { contextKeysFor } from '@/lib/pack/pack-learning'
-import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, packEngineConfig } from '@/lib/pack/pack-config-migration'
+import { DEFAULT_AXIS_MIN_COUNTS, migratePackConfig, migratePackPreferences, packEngineConfig, sanitizePackPreferences } from '@/lib/pack/pack-config-migration'
 import { coherentPromptTags } from '@/lib/pack/prompt-coherence'
 import { yieldToPage } from '@/lib/utils/yield-to-page'
 import { addedTraitCategory, classicKeptTags, dashedAddedByCategory, pinnedConflicts, withoutKeptValues, withoutNeverTags } from '@/lib/pack/classic-chips'
@@ -524,7 +524,18 @@ export function usePackMode(
   const [initialEngine] = useState(() => packEngineConfig(initialConfig))
   const [engine, setEngine] = useState<'scenes' | 'classic'>(initialEngine.engine)
   const [sceneSettings, setSceneSettings] = useState<ScenePackSettings>(initialEngine.sceneSettings)
-  const [neverIncludeText, setNeverIncludeText] = useState(initialConfig.neverIncludeText ?? '')
+  // "Never include" is the same default as the new builder's Never: one preference (pack-preferences),
+  // read and written with its validation. The old config's text only seeds it once (migratePackPreferences).
+  const [neverIncludeText, setNeverIncludeTextState] = useState(() => sharedNeverText(initialConfig))
+  const setNeverIncludeText = useCallback((text: string) => {
+    setNeverIncludeTextState(text)
+    try {
+      const prefs = migratePackPreferences(userPreferences.getPackPreferences(), userPreferences.getPackModeConfigV2())
+      userPreferences.setPackPreferences(sanitizePackPreferences({ ...prefs, neverDefaults: splitCommaSeparatedTags(text) }))
+    } catch {
+      // Storage unavailable: the text lasts this session.
+    }
+  }, [])
   // A character base's other characters (scenes engine), and the roles the user picked.
   const [castExtras, setCastExtras] = useState<string[]>([])
   const [castRoles, setCastRoles] = useState<Record<string, CastRole>>({})
@@ -2365,5 +2376,14 @@ export function usePackMode(
     removeCastMember,
     setCastRole,
     enrichTagSlots: enrichOverrides,
+  }
+}
+
+/** The "Never include" text the classic builder starts with: the shared Never defaults. */
+function sharedNeverText(config: PackModeConfigV2): string {
+  try {
+    return migratePackPreferences(userPreferences.getPackPreferences(), config).neverDefaults.join(', ')
+  } catch {
+    return config.neverIncludeText ?? ''
   }
 }

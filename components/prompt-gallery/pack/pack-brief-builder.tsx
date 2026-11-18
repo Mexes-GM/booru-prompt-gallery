@@ -48,7 +48,7 @@ import {
   setPeople as setPeopleInBrief,
   type PackBrief,
 } from "@/lib/pack/brief"
-import { briefFromCharacters } from "@/lib/pack/brief-history"
+import { DEFAULT_ROWS, briefFromCharacters, rowDefaults, rowMatchesDefaults, type DefaultRow } from "@/lib/pack/brief-history"
 import type { CastRole } from "@/lib/pack/scene/cast"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 import { getTagSlotFromOverrides } from "@/lib/tag-taxonomy"
@@ -106,11 +106,11 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState, type OutfitSource } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
-import { briefSummaryParts, characterName, companionsLabel, showTag, type CharacterInfo, type SlotId, type TagSuggestion } from "./slots"
+import { SLOTS, briefSummaryParts, characterName, companionsLabel, showTag, type CharacterInfo, type SlotId, type TagSuggestion } from "./slots"
 import { UndoNotice } from "./undo-notice"
 import { PackEmptyState, type ExampleBrief } from "./pack-empty-state"
 import { PackTip } from "./pack-tip"
@@ -757,6 +757,42 @@ function BriefWorkspace({
     setUndoFor(null)
   }
   if (!open && providerUndo) setProviderUndo(null)
+  // Never and Style defaults: set on purpose from the row, never part of the brief's Undo; the
+  // notice that confirms a change has its own Undo, which puts the defaults back as they were.
+  const { setRowDefaults, removeRowDefault } = pack
+  const [defaultsUndo, setDefaultsUndo] = useState<{ row: DefaultRow; before: string[]; message: string } | null>(null)
+  if (!open && defaultsUndo) setDefaultsUndo(null)
+  useEffect(() => {
+    if (!defaultsUndo) return
+    const timer = setTimeout(() => setDefaultsUndo(null), UNDO_MS)
+    return () => clearTimeout(timer)
+  }, [defaultsUndo])
+  const rowDefaultsProps = useMemo(() => {
+    const prefs = pack.preferences
+    const make = (row: DefaultRow, label: string) => {
+      const saved = new Set(rowDefaults(prefs, row).map(normalizeTagForPack))
+      const tags = DEFAULT_ROWS[row].tagsOf(brief)
+      return {
+        has: (tag: string) => saved.has(normalizeTagForPack(tag)),
+        matches: rowMatchesDefaults(brief, prefs, row),
+        empty: tags.length === 0,
+        onUse: () => {
+          const before = setRowDefaults(row, tags)
+          setDefaultsUndo({ row, before, message: tags.length === 0 ? DEFAULTS_TEXT.cleared(label) : DEFAULTS_TEXT.saved(label) })
+        },
+        onRemove: (tag: string) => {
+          const before = removeRowDefault(row, tag)
+          setDefaultsUndo({ row, before, message: DEFAULTS_TEXT.removed(showTag(tag)) })
+        },
+      }
+    }
+    return { never: make("never", SLOTS.never.label), style: make("style", SLOTS.style.label) }
+  }, [pack.preferences, brief, setRowDefaults, removeRowDefault])
+  const onUndoDefaults = useCallback(() => {
+    if (!defaultsUndo) return
+    setRowDefaults(defaultsUndo.row, defaultsUndo.before)
+    setDefaultsUndo(null)
+  }, [defaultsUndo, setRowDefaults])
   useEffect(() => {
     if (!providerUndo) return
     const timer = setTimeout(() => setProviderUndo(null), UNDO_MS)
@@ -1134,6 +1170,7 @@ function BriefWorkspace({
           styleOptions={styleOptions}
           styleChips={styleChips}
           styleNote={styleNote}
+          rowDefaults={rowDefaultsProps}
           offers={offers}
           suggestions={suggestions.suggestions}
           suggestionStatus={suggestions.status}
@@ -1219,6 +1256,8 @@ function BriefWorkspace({
             <p role="status" className="text-sm text-muted-foreground">{CORRECTION_TEXT.working}</p>
           ) : showUndo && pack.lastChange ? (
             <UndoNotice message={pack.lastChange} onUndo={onUndo} onDismiss={() => setUndoFor(null)} />
+          ) : defaultsUndo ? (
+            <UndoNotice message={defaultsUndo.message} onUndo={onUndoDefaults} onDismiss={() => setDefaultsUndo(null)} />
           ) : providerUndo ? (
             <UndoNotice message={BUILDER_TEXT.providerChanged(PROVIDER_LABELS[providerUndo.to])} onUndo={onUndoProvider} onDismiss={() => setProviderUndo(null)} />
           ) : null}

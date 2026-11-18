@@ -842,8 +842,10 @@ export interface PackModeConfigV2 {
 export interface PackPreferences {
   /** 1 to 100, default 10. */
   promptCount: number
-  /** Tags every new pack starts with in "Never". */
+  /** Tags every new pack starts with in "Never" (the classic builder's "Never include" too). */
   neverDefaults: string[]
+  /** Tags every new pack starts with in "Style", as typed (LoRA triggers, artists). Missing in older values. */
+  styleDefaults?: string[]
   /** SFW packs also draw from sensitive-rated posts; default false. */
   includeSensitive: boolean
 }

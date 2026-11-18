@@ -20,7 +20,8 @@
  * neighbour when a chip goes away.
  */
 import { memo } from "react"
-import { AlertTriangle, Ban, Plus, RotateCcw, X } from "lucide-react"
+import { AlertTriangle, Ban, Plus, Repeat2, RotateCcw, X } from "lucide-react"
+import { DEFAULTS_TEXT } from "./pack-text"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
@@ -37,6 +38,8 @@ export interface RequestChipProps {
   mode?: { exact: boolean; onToggle: () => void; ambience?: boolean }
   /** Doesn't apply now: struck through, with the reason for screen readers and as a tooltip. */
   inactive?: string
+  /** One of the tags every new pack starts with: a small mark that takes it out of them. */
+  inDefaults?: { onRemove: () => void }
   /** Remove (request, never, trait) or put back (a removed trait). */
   onRemove?: () => void
   onRestore?: () => void
@@ -129,6 +132,7 @@ function RequestChipInner({
   replaced = false,
   mode,
   inactive,
+  inDefaults,
   onRemove,
   onRestore,
   onAccept,
@@ -181,6 +185,17 @@ function RequestChipInner({
         {struck && <span className="sr-only">{inactive ? ` (${inactive})` : removed ? " (removed)" : " (replaced by Wearing)"}</span>}
       </span>
       {conflict && <ConflictMark note={conflict} />}
+      {inDefaults && (
+        <button
+          type="button"
+          onClick={inDefaults.onRemove}
+          aria-label={DEFAULTS_TEXT.removeOne(label)}
+          title={DEFAULTS_TEXT.markHint}
+          className={cn(ICON_BUTTON, "size-5 opacity-70 hover:opacity-100")}
+        >
+          <Repeat2 className="size-3" aria-hidden />
+        </button>
+      )}
       {action && (
         <button
           type="button"

@@ -193,6 +193,18 @@ export const CHANGES_OPTIONS: ReadonlyArray<{ value: ChangesAxis; label: string;
 
 export const peopleKey = (p: PackPeople) => `${p.girls}g${p.boys}b`
 
+/** Never and Style: the tags every new pack starts with (pack-preferences), set from a row on purpose. */
+export const DEFAULTS_TEXT = {
+  use: "Use in new packs",
+  clear: "Start new packs empty",
+  useHint: "New packs start with these tags in this row",
+  markHint: "In new packs. Select to remove it from new packs",
+  removeOne: (tag: string) => `Remove ${tag} from new packs`,
+  saved: (row: string) => `New packs start with these in ${row}.`,
+  cleared: (row: string) => `New packs start with ${row} empty.`,
+  removed: (tag: string) => `${tag} removed from new packs.`,
+} as const
+
 /** A pairing or a focus typed in a row ("hetero"): who is in the picture sets it. */
 export const COMPOSITION_TEXT = {
   setByPeople: (tag: string) => `${tag} is set by who's in the picture, under People.`,

@@ -8,7 +8,7 @@
  * runs the brief functions (addTag, removeTag, addNever…) and fetches suggestions.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { AlertTriangle, MapPin } from "lucide-react"
+import { AlertTriangle, MapPin, Repeat2 } from "lucide-react"
 import type { BriefCharacter, ChangesAxis, PackBrief, RequestRole } from "@/lib/pack/brief"
 import type { CastRole } from "@/lib/pack/scene/cast"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -21,7 +21,7 @@ import { RequestChip } from "./request-chip"
 import type { EntryOption } from "./tag-entry"
 import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { WearingSourceMenu } from "./wearing-source-menu"
-import { OTHERS_UNUSED, WEARING_TEXT } from "./pack-text"
+import { DEFAULTS_TEXT, OTHERS_UNUSED, WEARING_TEXT } from "./pack-text"
 import type { OutfitSource } from "./pack-text"
 
 export type { CharacterInfo }
@@ -80,6 +80,11 @@ export interface PackBriefPanelProps {
   styleChips?: readonly { style: string; label: string; inactive?: string; onRemove: () => void }[]
   /** Under Wearing when a chosen style doesn't apply at the pack's rating. */
   styleNote?: string
+  /**
+   * Never and Style: the tags new packs start with. Their chips are marked; the row offers to make
+   * what it has now the defaults when it differs from them.
+   */
+  rowDefaults?: Readonly<Record<"never" | "style", RowDefaultsProps>>
 
   /** Shown only when given (and when PeopleLine decides it applies). */
   people?: PeopleLineProps | null
@@ -152,6 +157,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     styleOptions,
     styleChips = NO_STYLE_CHIPS,
     styleNote,
+    rowDefaults,
     suggestions,
     suggestionStatus,
     onQueryChange,
@@ -207,7 +213,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   }
 
   /** A request row: chips for its tags, the last one removable from the keyboard. */
-  const requestRow = (slot: RequestRole | "style" | "others", extra?: { actions?: ReactNode; notes?: ReactNode; leading?: ReactNode; filled?: boolean }) => {
+  const requestRow = (slot: RequestRole | "style" | "others", extra?: { actions?: ReactNode; notes?: ReactNode; leading?: ReactNode; filled?: boolean; defaults?: RowDefaultsProps }) => {
     const tags = slotTags(brief, slot)
     const lastTag = tags[tags.length - 1]
     const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveTag(lastTag) } : null
@@ -243,6 +249,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
               mode={exact !== undefined && onSetExact
                 ? { exact, onToggle: () => onSetExact(tag, !exact), ambience: brief.requests.some((r) => r.tag === tag && r.ambience) }
                 : undefined}
+              inDefaults={extra?.defaults?.has(tag) ? { onRemove: () => extra.defaults!.onRemove(tag) } : undefined}
             />
           )
         })}
@@ -322,13 +329,14 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           ) : undefined,
         })}
         {requestRow("also")}
-        {requestRow("style")}
+        {requestRow("style", rowDefaults ? { defaults: rowDefaults.style, actions: <UseDefaults defaults={rowDefaults.style} /> } : undefined)}
         <NeverRow
           tags={brief.never}
           picked={picked === "never"}
           entryFor={entryFor}
           onRemoveNever={onRemoveNever}
           flashKey={flashFor("never")}
+          defaults={rowDefaults?.never}
         />
 
         {(people || changes || othersShown) && (
@@ -349,23 +357,63 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   )
 })
 
+/** A row's defaults (Never, Style): which of its tags new packs start with, and the row's two actions. */
+export interface RowDefaultsProps {
+  /** True for a tag of the row that new packs start with. */
+  has: (tag: string) => boolean
+  /** The row holds exactly the defaults: nothing to offer. */
+  matches: boolean
+  /** The row is empty: the action clears the defaults. */
+  empty: boolean
+  onUse: () => void
+  onRemove: (tag: string) => void
+}
+
+/** "Use in new packs" beside a row whose tags differ from its defaults; nothing when they match. */
+function UseDefaults({ defaults }: { defaults: RowDefaultsProps }) {
+  if (defaults.matches) return null
+  return (
+    <button
+      type="button"
+      onClick={defaults.onUse}
+      title={DEFAULTS_TEXT.useHint}
+      className={cn(
+        "inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground pointer-coarse:h-11",
+        "transition-[color,background-color] duration-150 ease-out-strong hover:bg-muted hover:text-foreground",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
+      <Repeat2 className="size-3.5" aria-hidden />
+      {defaults.empty ? DEFAULTS_TEXT.clear : DEFAULTS_TEXT.use}
+    </button>
+  )
+}
+
 function NeverRow({
   tags,
   picked,
   entryFor,
   onRemoveNever,
   flashKey,
+  defaults,
 }: {
   tags: readonly string[]
   picked: boolean
   entryFor: (slot: SlotId, last: LastChip | null) => SlotEntryProps
   onRemoveNever: (tag: string) => void
   flashKey?: number
+  defaults?: RowDefaultsProps
 }) {
   const lastTag = tags[tags.length - 1]
   const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveNever(lastTag) } : null
   return (
-    <BriefSlot slot="never" filled={tags.length > 0} entry={entryFor("never", last)} flashKey={flashKey}>
+    <BriefSlot
+      slot="never"
+      filled={tags.length > 0}
+      entry={entryFor("never", last)}
+      flashKey={flashKey}
+      actions={defaults ? <UseDefaults defaults={defaults} /> : undefined}
+    >
       {tags.map((tag, i) => (
         <RequestChip
           key={tag}
@@ -373,6 +421,7 @@ function NeverRow({
           label={showTag(tag)}
           selected={picked && i === tags.length - 1}
           onRemove={() => onRemoveNever(tag)}
+          inDefaults={defaults?.has(tag) ? { onRemove: () => defaults.onRemove(tag) } : undefined}
         />
       ))}
     </BriefSlot>

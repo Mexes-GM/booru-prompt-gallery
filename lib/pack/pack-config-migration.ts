@@ -141,10 +141,21 @@ export function sanitizePackPreferences(prefs: PackPreferences): PackPreferences
     const name = normalizeTagForPack(tag)
     if (name && !neverDefaults.includes(name)) neverDefaults.push(name)
   }
+  // Style keeps each tag as typed ("@angeltights"), without repeats; anything else in a stored value goes.
+  const styleDefaults: string[] = []
+  const rawStyle: unknown = (prefs as { styleDefaults?: unknown }).styleDefaults
+  if (Array.isArray(rawStyle)) {
+    for (const tag of rawStyle) {
+      if (typeof tag !== 'string') continue
+      const typed = tag.trim()
+      if (typed && !styleDefaults.some((t) => normalizeTagForPack(t) === normalizeTagForPack(typed))) styleDefaults.push(typed)
+    }
+  }
   return {
     promptCount: Math.min(100, Math.max(1, count)),
     neverDefaults,
     includeSensitive: prefs.includeSensitive === true,
+    ...(styleDefaults.length > 0 ? { styleDefaults } : {}),
   }
 }
 
