@@ -80,11 +80,12 @@ export function leftOutSentence(leftOut: SourcePlan["leftOut"], site: string, li
 /**
  * The posts a search adds to the pack, and whether it has more: "95 posts, all there are",
  * "240 posts", "12 new of 95 posts" (the rest were already in a search above). The first numbers
- * of the rows add up to the loaded line's.
+ * of the rows add up to the loaded line's. `earlier`: posts of the search a search the pack had
+ * before a change loaded, counted in and said: "240 posts (95 found earlier)".
  */
-export const searchCount = (adds: number, posts: number, ended: boolean): string => {
+export const searchCount = (adds: number, posts: number, ended: boolean, earlier: number = 0): string => {
   const count = posts > adds ? `${adds} new of ${plural(posts, "post", "posts")}` : plural(adds, "post", "posts")
-  return `${count}${ended && posts > 0 ? ", all there are" : ""}`
+  return `${count}${earlier > 0 ? ` (${earlier} found earlier)` : ""}${ended && posts > 0 ? ", all there are" : ""}`
 }
 
 /** A donor search in plain words: "Anyone wearing bikini", "Any picture at a beach". */
