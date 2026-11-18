@@ -23,7 +23,8 @@ import type { PackPeople } from './scene/scene-pool'
 
 /**
  * What a scene search looks for, in the order the plan prefers them:
- *  - own: the base character's posts, by name only ("name": alone or with anyone) or with the first requested pose ("name, pose");
+ *  - own: the base character's posts: alone ("name, solo"), by name only ("name": alone or with anyone),
+ *    or with the first requested pose ("name, pose");
  *  - group: pictures with the same mix of people (a cast, or a head count the user set);
  *  - gallery: the gallery's search, for a character without a name (a pasted prompt);
  *  - theme: the requested poses (and the head count, when there is one), without any name;
@@ -93,7 +94,8 @@ export interface SourcePlan {
   /**
    * Whether the pool can give the base character's look: only when every scene search brings posts
    * of them alone. A search by name brings them with company too (other people's hair and eyes in
-   * the same posts), so it is false for every plan today, and their look comes from `appearance`.
+   * the same posts), and every plan with "name, solo" also has "name", so it is false for every
+   * plan today, and their look comes from `appearance`.
    */
   baseLookFromPool: boolean
   /** Searches for the conditions' donors: at most MAX_DONOR_SEARCHES ('wearing' first). Empty without conditions. */
@@ -134,8 +136,8 @@ export interface SourcePlanEnv {
   /**
    * The compositions a pack mixes (ScenePackArgs.compositions), when two or more: no search asks
    * for a head count (one count would leave the others out). The scene searches are those of a
-   * single character: its own posts by name with no pose, the pose without any count with one.
-   * One or missing: the plan as before.
+   * single character: its own posts by name with no pose (and alone too when the mix has one
+   * person), the pose without any count with one. One or missing: the plan as before.
    */
   compositions?: ReadonlyArray<PackPeople>
 }
@@ -198,6 +200,17 @@ function fill(lead: string[], poses: readonly string[], limit: number): { tags: 
   return { tags: [...lead, ...taken.map(toBooru)], taken, rest: poses.slice(room) }
 }
 
+/**
+ * Whether a plan with one named character and no pose also searches them alone ("name, solo"):
+ * when the pack's compositions include one person (no head count set, one set, or a mix that has
+ * one) and the booru's limit leaves room for both tags. A head count of two or more never gets
+ * here (its own search).
+ */
+function soloSearchFits(env: SourcePlanEnv, mixed: boolean, limit: number): boolean {
+  if (limit < 2) return false
+  return !mixed || (env.compositions ?? []).some((people) => people.girls + people.boys === 1)
+}
+
 /** True when a scene search brings only posts of `character` alone: their own search with "solo". */
 function showsAlone(search: SceneSearch, character: string): boolean {
   return search.kind === 'own' && search.tags[0] === toBooru(character) && search.tags.includes('solo')
@@ -256,9 +269,10 @@ function groupLead(people: PackPeople, provider: BooruProvider, rating: PackRati
 /**
  * The plan for a brief. In preference order:
  *  - no pose asked: the cast's mix of people (a cast, or a head count of two or more the user
- *    set), else the character's own posts by name, alone or with anyone ("name": the pool has
- *    every composition of theirs, for the People line to offer), or, for an unnamed character,
- *    the gallery's search;
+ *    set); else, for one named character, their posts alone ("name, solo", which fills a pack of
+ *    them alone quickly) whenever the pack's compositions include them alone (soloSearchFits),
+ *    and their posts by name ("name": alone or with anyone, so the pool has every composition of
+ *    theirs for the People line to offer); or, for an unnamed character, the gallery's search;
  *  - poses asked: the base character with the first pose ("name, pose") when the brief
  *    names one character, then the poses without any name (with the head count of a
  *    cast), then the first pose alone when the theme search asks for several.
@@ -296,6 +310,7 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     if (people) {
       scenes.push(sceneSearch(provider, 'group', groupLead(people, provider, rating, null), []))
     } else if (base) {
+      if (named.length === 1 && soloSearchFits(env, mixed, limit)) scenes.push(sceneSearch(provider, 'own', [toBooru(base), 'solo'], []))
       scenes.push(sceneSearch(provider, 'own', [toBooru(base)], []))
     } else {
       const { tags, rest } = gallerySearchTags(env.gallerySearch ?? '', limit)
