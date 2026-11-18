@@ -426,6 +426,11 @@ check("search-text: each search of the plan in plain words, with the tags as the
   assert.equal(ratingsSentence(plan.ratings), "Each search runs for Questionable and Explicit pictures.")
   // No pose: the character alone; a head count: pictures with those people.
   assert.equal(searchDescription({ kind: "own", poses: [] }, "Sui-Feng", null), "Sui-Feng, alone or with others")
+  // The two own searches without a pose a plan can have, told apart by their tags.
+  const ownTwo = planSources(briefFromCharacters(["sui-feng"]), { provider: "rule34", rating: "both", includeSensitive: false })
+  assert.deepEqual(ownTwo.scenes.map((s) => s.tags), [["sui-feng", "solo"], ["sui-feng"]])
+  assert.deepEqual(ownTwo.scenes.map((s) => searchDescription(s, "Sui-Feng", ownTwo.people)), ["Sui-Feng alone", "Sui-Feng, alone or with others"])
+  assert.equal(searchDescription({ kind: "own", poses: [], tags: ["sui-feng", "solo"] }, "Sui-Feng", null), "Sui-Feng alone")
   assert.equal(searchDescription({ kind: "group", poses: [] }, null, { girls: 2, boys: 1 }), "Pictures with 2 girls and 1 boy")
   assert.equal(searchDescription({ kind: "theme", poses: ["sitting"] }, null, { girls: 1, boys: 1 }), "Anyone doing sitting, with 1 girl and 1 boy")
   assert.equal(searchDescription({ kind: "gallery", poses: [] }, null, null), "Your gallery search")

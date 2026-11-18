@@ -19,6 +19,7 @@ const env: SourcePlanEnv = { provider: "danbooru", rating: "sfw", includeSensiti
 const solo: PackBrief = briefFromCharacters(["frieren"])
 const sitting: PackBrief = { ...solo, requests: [{ tag: "sitting", role: "doing" }] }
 const MIX = [{ girls: 1, boys: 0 }, { girls: 1, boys: 1 }]
+const COMPANY = [{ girls: 1, boys: 1 }, { girls: 2, boys: 0 }]
 
 function post(id: number, general: string, character: string, provider: BooruProvider = "danbooru", ratings = ["rating:general"]): LoadedPost & { id: number } {
   const p = { id, tag_string: `${general} ${character}`, tag_string_character: character, tag_string_copyright: "", tag_string_artist: "" } as Pick<BooruPost, "tag_string" | "tag_string_character" | "tag_string_copyright" | "tag_string_artist">
@@ -56,9 +57,24 @@ check(() => {
   // "frieren, solo" becomes "frieren" (a make-up with company marked): every post it had stays.
   assert.deepEqual(kept(soloPosts, ownPlan(["frieren"])).map((k) => k.id), [1, 2, 3])
   assert.ok(kept(soloPosts, ownPlan(["frieren"])).every((k) => k.search === "own"))
-  // The plan's own search by name, with a second make-up marked or not, keeps them too.
-  assert.deepEqual(planSources(solo, { ...env, compositions: MIX }).scenes.map((s) => s.tags), [["frieren"]])
-  assert.deepEqual(kept(soloPosts, planSources(solo, { ...env, compositions: MIX })).map((k) => k.id), [1, 2, 3])
+  // A mix without her alone: the plan searches her by name only, and keeps them too.
+  const withCompany = planSources(solo, { ...env, compositions: COMPANY })
+  assert.deepEqual(withCompany.scenes.map((s) => s.tags), [["frieren"]])
+  assert.deepEqual(kept(soloPosts, withCompany).map((k) => k.id), [1, 2, 3])
+})
+
+check(() => {
+  // Both own searches at once ("frieren, solo" to fill, "frieren" for the make-ups): a post of
+  // her alone fits both and counts for the first; one with company fits "frieren" only.
+  const both = planSources(solo, { ...env, compositions: MIX })
+  assert.deepEqual(both.scenes.map((s) => s.tags), [["frieren", "solo"], ["frieren"]])
+  const fits = (p: LoadedPost) => both.scenes.map((s) => postFitsSearch(p, s, { provider: both.provider, ratings: both.ratings }))
+  assert.deepEqual(fits(soloPosts[0]), [true, true])
+  assert.deepEqual(fits(withOthers[0]), [false, true])
+  const firsts = [...soloPosts, ...withOthers].map((p) => firstFittingSearch(p, both.scenes, { provider: both.provider, ratings: both.ratings }))
+  assert.deepEqual(firsts, [0, 0, 0, 1, 1])
+  // The same with no make-up marked.
+  assert.deepEqual(planSources(solo, env).scenes.map((s) => s.tags), [["frieren", "solo"], ["frieren"]])
 })
 
 check(() => {
@@ -91,7 +107,7 @@ check(() => {
 check(() => {
   // Another site: nothing stays, even with the same tags.
   const after = planSources(solo, { ...env, provider: "gelbooru" })
-  assert.equal(after.scenes[0].tags.join(" "), "frieren")
+  assert.equal(after.scenes[0].tags.join(" "), "frieren solo")
   assert.deepEqual(kept(soloPosts, after), [])
   const gelbooru = soloPosts.map((p) => ({ ...p, provider: "gelbooru" as BooruProvider }))
   assert.deepEqual(kept(gelbooru, after).map((k) => k.id), [1, 2, 3])
