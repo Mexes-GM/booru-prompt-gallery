@@ -174,7 +174,8 @@ const PackSourceModal = dynamic(() => loadPackSourceModal().then(m => m.PackSour
 const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then(m => m.PackBuilderStickyFooter), { ssr: false, loading: () => null })
 const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBriefBuilder), { ssr: false, loading: () => null })
 import type { PackBriefStart } from "./pack/pack-brief-builder"
-import { BUILDER_SWITCH_TEXT, sameBriefStart } from "./pack/builder-switch"
+import type { SavedPack } from "@/lib/pack/saved-pack"
+import { BUILDER_SWITCH_TEXT, baseOfStart, sameBriefStart } from "./pack/builder-switch"
 import { usableSearchTags } from "@/lib/pack/brief-pack"
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, Package, PenLine, SlidersHorizontal } from "lucide-react"
@@ -820,6 +821,23 @@ export function PromptGallery() {
   // "Open in the classic builder" in the entry dialog, for the next start only.
   const [packEntryClassic, setPackEntryClassic] = useState(false)
   const packBriefOpen = !!packBrief && packModeIsPackMode && !packPickingCard && packBuilderKind === 'brief'
+  // The pack saved on the last visit (lib/pack/saved-pack.ts) comes back the first time Pack Mode
+  // opens the new builder with no pack, in place of the entry dialog. Read once per visit.
+  const savedPackReadRef = useRef(false)
+  const restoreSavedPackBrief = useCallback((): boolean => {
+    if (savedPackReadRef.current) return false
+    savedPackReadRef.current = true
+    let saved: SavedPack | null = null
+    try {
+      saved = userPreferences.getSavedPack()
+    } catch {
+      // Storage unavailable: no pack to bring back.
+    }
+    if (!saved) return false
+    const restored = saved
+    setPackBrief((prev) => prev ?? { start: { kind: 'restored', saved: restored }, key: 1 })
+    return true
+  }, [])
   // The card a pack started from, marked in the gallery.
   const packBriefCardId = packBrief?.start.kind === 'card' ? packBrief.start.post.id : null
   // Pack Mode picks and cleans tags with the measured tag relations: load them while it's open.
@@ -1144,7 +1162,8 @@ export function PromptGallery() {
   // its base, on the default source. The base it already has, picked again, brings its pack back.
   const packModeSetBasePromptForClassic = packMode.setBasePrompt
   const packModeSetBaseFromCharacter = packMode.setBaseFromCharacter
-  const startClassicPack = useCallback((start: PackBriefStart) => {
+  const startClassicPack = useCallback((from: PackBriefStart) => {
+    const start = baseOfStart(from)
     packModeEnablePackMode()
     const source = defaultPackSource()
     if (start.kind === 'card') {
@@ -1215,13 +1234,13 @@ export function PromptGallery() {
     if (packClassicStart && !sameBase) startNewPackBrief(packClassicStart)
     else {
       setPackBuilderKind('brief')
-      if (!packBrief) {
+      if (!packBrief && !restoreSavedPackBrief()) {
         setPackEntryStartInPrompt(false)
         setPackEntryOpen(true)
       }
     }
     toast({ description: BUILDER_SWITCH_TEXT.toNew, duration: 6000 })
-  }, [packBrief, packClassicStart, startNewPackBrief, toast])
+  }, [packBrief, packClassicStart, startNewPackBrief, toast, restoreSavedPackBrief])
   // Cards keep the first handler they get (MasonryItem's arePropsEqual skips callbacks),
   // so theirs is stable and always runs the latest one: a stale one saw an old pack.
   const setAsPackBaseRef = useRef(setAsPackBaseNow)
@@ -2176,7 +2195,7 @@ export function PromptGallery() {
                       if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
                       packMode.enablePackMode()
                       // A pack already made in the builder in use comes back as it was; otherwise, the entry dialog.
-                      if (packBuilderKind === 'brief' ? !packBrief : !packMode.hasBase) {
+                      if (packBuilderKind === 'brief' ? !packBrief && !restoreSavedPackBrief() : !packMode.hasBase) {
                         setPackEntryStartInPrompt(false)
                         setPackEntryOpen(true)
                       }

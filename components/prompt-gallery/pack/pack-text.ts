@@ -61,6 +61,7 @@ export const BUILDER_TEXT = {
   howItSearches: "How it searches",
   generatingSpoken: "Making the prompts",
   busySource: "Generate again first: the pack was made with another site or rating",
+  busyReloading: "Wait for the scenes to load",
   busyRunning: "Wait for the prompts to update",
   resultsLabel: "Prompts",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
@@ -164,6 +165,9 @@ export const START_TEXT = {
   cardOffers: "Its outfit and pose are offered under Wearing and Doing.",
   prompt: "Your prompt is split across the rows. Tags we don't recognize are under Style.",
   search: "Started from your search.",
+  restored: "Your pack is back as you left it.",
+  restoredLoading: "Your pack is back as you left it. Re-roll, Always and Never work once its scenes load.",
+  restoredDropped: "Your pack is back, but its prompts were too large to save. Press Generate to make them again.",
   searchSkipped: (tags: readonly string[]) => `Search filters left out: ${tags.join(", ")}.`,
 } as const
 
@@ -192,6 +196,18 @@ export const CHANGES_OPTIONS: ReadonlyArray<{ value: ChangesAxis; label: string;
 // ── People ───────────────────────────────────────────────────────────────────────
 
 export const peopleKey = (p: PackPeople) => `${p.girls}g${p.boys}b`
+
+/** Never and Style: the tags every new pack starts with (pack-preferences), set from a row on purpose. */
+export const DEFAULTS_TEXT = {
+  use: "Use in new packs",
+  clear: "Start new packs empty",
+  useHint: "New packs start with these tags in this row",
+  markHint: "In new packs. Select to remove it from new packs",
+  removeOne: (tag: string) => `Remove ${tag} from new packs`,
+  saved: (row: string) => `New packs start with these in ${row}.`,
+  cleared: (row: string) => `New packs start with ${row} empty.`,
+  removed: (tag: string) => `${tag} removed from new packs.`,
+} as const
 
 /** A pairing or a focus typed in a row ("hetero"): who is in the picture sets it. */
 export const COMPOSITION_TEXT = {

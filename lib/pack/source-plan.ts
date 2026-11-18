@@ -2,7 +2,7 @@
  * The source plan: which booru searches a pack's posts come from, worked out from
  * the brief. Scene searches give the pool the engine takes scenes from; appearance
  * searches read a named character's usual look from posts that show them alone,
- * for when the pool is not theirs.
+ * whenever the pool doesn't only show them alone (`baseLookFromPool`).
  *
  * Only what the brief asks the characters to do (`SceneRequests.select`) goes in a
  * scene search: clothes, places and the rest are imposed later by the engine and
@@ -23,7 +23,8 @@ import type { PackPeople } from './scene/scene-pool'
 
 /**
  * What a scene search looks for, in the order the plan prefers them:
- *  - own: the base character's posts, alone ("name, solo") or with the first requested pose ("name, pose");
+ *  - own: the base character's posts: alone ("name, solo"), by name only ("name": alone or with anyone),
+ *    or with the first requested pose ("name, pose");
  *  - group: pictures with the same mix of people (a cast, or a head count the user set);
  *  - gallery: the gallery's search, for a character without a name (a pasted prompt);
  *  - theme: the requested poses (and the head count, when there is one), without any name;
@@ -88,8 +89,15 @@ export interface SourcePlan {
   sensitive: 'included' | 'excluded' | 'unavailable' | null
   /** Scene searches, preferred first. Never empty, at most MAX_SCENE_SEARCHES. */
   scenes: SceneSearch[]
-  /** One per named character whose look can't come from the pool. */
+  /** One per named character whose look can't come from the pool: every one unless `baseLookFromPool`. */
   appearance: AppearanceSearch[]
+  /**
+   * Whether the pool can give the base character's look: only when every scene search brings posts
+   * of them alone. A search by name brings them with company too (other people's hair and eyes in
+   * the same posts), and every plan with "name, solo" also has "name", so it is false for every
+   * plan today, and their look comes from `appearance`.
+   */
+  baseLookFromPool: boolean
   /** Searches for the conditions' donors: at most MAX_DONOR_SEARCHES ('wearing' first). Empty without conditions. */
   donors: DonorSearch[]
   /** Requested tags no scene search could hold. */
@@ -128,8 +136,8 @@ export interface SourcePlanEnv {
   /**
    * The compositions a pack mixes (ScenePackArgs.compositions), when two or more: no search asks
    * for a head count (one count would leave the others out). The scene searches are those of a
-   * single character: its own posts by name (without "solo") with no pose, the pose without any
-   * count with one. One or missing: the plan as before.
+   * single character: its own posts by name with no pose (and alone too when the mix has one
+   * person), the pose without any count with one. One or missing: the plan as before.
    */
   compositions?: ReadonlyArray<PackPeople>
 }
@@ -192,6 +200,22 @@ function fill(lead: string[], poses: readonly string[], limit: number): { tags: 
   return { tags: [...lead, ...taken.map(toBooru)], taken, rest: poses.slice(room) }
 }
 
+/**
+ * Whether a plan with one named character and no pose also searches them alone ("name, solo"):
+ * when the pack's compositions include one person (no head count set, one set, or a mix that has
+ * one) and the booru's limit leaves room for both tags. A head count of two or more never gets
+ * here (its own search).
+ */
+function soloSearchFits(env: SourcePlanEnv, mixed: boolean, limit: number): boolean {
+  if (limit < 2) return false
+  return !mixed || (env.compositions ?? []).some((people) => people.girls + people.boys === 1)
+}
+
+/** True when a scene search brings only posts of `character` alone: their own search with "solo". */
+function showsAlone(search: SceneSearch, character: string): boolean {
+  return search.kind === 'own' && search.tags[0] === toBooru(character) && search.tags.includes('solo')
+}
+
 /** A character's solo posts for their look, within the limit left once the "popular" order takes its slot. */
 function appearanceSearch(character: string, provider: BooruProvider, ratingFilter: string): AppearanceSearch {
   const limit = getProviderTagLimit(provider)
@@ -244,14 +268,17 @@ function groupLead(people: PackPeople, provider: BooruProvider, rating: PackRati
 
 /**
  * The plan for a brief. In preference order:
- *  - no pose asked: the character's own posts ("name, solo"), the cast's mix of people,
- *    or, for an unnamed character, the gallery's search;
+ *  - no pose asked: the cast's mix of people (a cast, or a head count of two or more the user
+ *    set); else, for one named character, their posts alone ("name, solo", which fills a pack of
+ *    them alone quickly) whenever the pack's compositions include them alone (soloSearchFits),
+ *    and their posts by name ("name": alone or with anyone, so the pool has every composition of
+ *    theirs for the People line to offer); or, for an unnamed character, the gallery's search;
  *  - poses asked: the base character with the first pose ("name, pose") when the brief
  *    names one character, then the poses without any name (with the head count of a
  *    cast), then the first pose alone when the theme search asks for several.
  * The first pose written is the anchor: it goes in every pose search, and later ones
  * fill the room the limit leaves. A named character's look is read from their own
- * solo posts whenever the pool is not their own.
+ * solo posts whenever the pool doesn't show only them alone.
  */
 export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
   const { provider, rating } = env
@@ -283,7 +310,8 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     if (people) {
       scenes.push(sceneSearch(provider, 'group', groupLead(people, provider, rating, null), []))
     } else if (base) {
-      scenes.push(sceneSearch(provider, 'own', mixed ? [toBooru(base)] : ownSoloTags(base, limit), []))
+      if (named.length === 1 && soloSearchFits(env, mixed, limit)) scenes.push(sceneSearch(provider, 'own', [toBooru(base), 'solo'], []))
+      scenes.push(sceneSearch(provider, 'own', [toBooru(base)], []))
     } else {
       const { tags, rest } = gallerySearchTags(env.gallerySearch ?? '', limit)
       scenes.push(sceneSearch(provider, 'gallery', tags, []))
@@ -304,11 +332,11 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     }
   }
 
-  // The pool is the base character's own only in the "name, solo" case; everyone else
-  // (a cast waiting for its roles) still has their look read apart.
-  const poolIsOwn = scenes.length === 1 && scenes[0].kind === 'own'
+  // The pool gives the base character's look only when all of it shows them alone; everyone
+  // else (a cast waiting for its roles) still has their look read apart.
+  const baseLookFromPool = !!base && scenes.every((s) => showsAlone(s, base))
   const appearance = named
-    .filter((_, i) => !(poolIsOwn && i === 0))
+    .filter((_, i) => !(baseLookFromPool && i === 0))
     .map((c) => appearanceSearch(c.tag, provider, ratings[0]))
 
   const donors = donorSearches(brief, env, ratings[0], limit, leftOut)
@@ -322,6 +350,7 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     sensitive,
     scenes,
     appearance,
+    baseLookFromPool,
     donors,
     leftOut,
     people,
@@ -376,12 +405,6 @@ export function planDonorFeeds(plan: Pick<SourcePlan, 'donors'>, sessionSeed: nu
     ratingFilter: search.ratingFilter,
     seed: feedSeed(search.id, sessionSeed),
   }))
-}
-
-/** The tags of a character's own search: their name, and "solo" when the limit allows (characterSearchTags). */
-function ownSoloTags(character: string, limit: number): string[] {
-  const name = toBooru(character)
-  return limit >= 2 ? [name, 'solo'] : [name]
 }
 
 /** One feed of a plan: a scene search at one rating. */

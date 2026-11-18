@@ -9,6 +9,7 @@ import type { PackLearningModel } from '@/lib/pack/pack-learning'
 import type { AxisTagMode } from '@/lib/pack/pack-generator'
 import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
+import { readSavedPack, savedPackToStore, type SavedPack, type SavedPackInput } from '@/lib/pack/saved-pack'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -26,19 +27,24 @@ export const storage = {
     }
   },
 
-  set: <T>(key: string, value: T): void => {
-    if (typeof window === 'undefined') return
+  /** Writes the value; false when it couldn't be written (no storage, or full). */
+  set: <T>(key: string, value: T): boolean => {
+    if (typeof window === 'undefined') return false
 
     try {
       localStorage.setItem(key, JSON.stringify(value))
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent(STORAGE_EVENT_NAME, { detail: { key, value } }))
-        // Also broadcast for cross-context sync (web app ↔ extension iframe)
-        broadcastSettingChange(key, value)
-      }
     } catch (error) {
       console.warn(`Error writing to localStorage key "${key}":`, error)
+      return false
     }
+    try {
+      window.dispatchEvent(new CustomEvent(STORAGE_EVENT_NAME, { detail: { key, value } }))
+      // Also broadcast for cross-context sync (web app ↔ extension iframe)
+      broadcastSettingChange(key, value)
+    } catch (error) {
+      console.warn(`Error announcing localStorage key "${key}":`, error)
+    }
+    return true
   },
 
   remove: (key: string): void => {
@@ -175,6 +181,9 @@ export const STORAGE_KEYS = {
 
   // The pack builder's one-time tips already shown (ids), so none comes back.
   PACK_TIPS_SEEN: 'pack-tips-seen',
+  // The new pack builder's current pack (brief, prompts, how it was made), so a reload brings
+  // it back (lib/pack/saved-pack.ts). One pack; never the posts.
+  PACK_SAVED_CURRENT: 'pack-brief-current',
 } as const
 
 export interface HistoryItem {
@@ -770,6 +779,26 @@ export const userPreferences = {
 
   setLastPackBasePrompt: (prompt: string) =>
     storage.set(STORAGE_KEYS.PACK_LAST_BASE_PROMPT, prompt),
+
+  // Validated on read: another version or a broken value reads back as null.
+  getSavedPack: (): SavedPack | null =>
+    readSavedPack(storage.get<unknown>(STORAGE_KEYS.PACK_SAVED_CURRENT, null)),
+
+  /**
+   * Saves the current pack in place of the one saved before. Without the results when they
+   * don't fit (`resultsDropped`, also when the browser's storage is full); when nothing fits, no
+   * pack stays saved (an older one would come back in its place). Returns what was saved.
+   */
+  setSavedPack: (pack: SavedPackInput): SavedPack | null => {
+    const value = savedPackToStore(pack, Date.now())
+    if (value && storage.set(STORAGE_KEYS.PACK_SAVED_CURRENT, value)) return value
+    if (value?.result) {
+      const lean: SavedPack = { ...value, result: null, resultsDropped: true }
+      if (storage.set(STORAGE_KEYS.PACK_SAVED_CURRENT, lean)) return lean
+    }
+    storage.remove(STORAGE_KEYS.PACK_SAVED_CURRENT)
+    return null
+  },
 }
 
 /**
@@ -842,8 +871,10 @@ export interface PackModeConfigV2 {
 export interface PackPreferences {
   /** 1 to 100, default 10. */
   promptCount: number
-  /** Tags every new pack starts with in "Never". */
+  /** Tags every new pack starts with in "Never" (the classic builder's "Never include" too). */
   neverDefaults: string[]
+  /** Tags every new pack starts with in "Style", as typed (LoRA triggers, artists). Missing in older values. */
+  styleDefaults?: string[]
   /** SFW packs also draw from sensitive-rated posts; default false. */
   includeSensitive: boolean
 }

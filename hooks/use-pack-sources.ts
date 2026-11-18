@@ -22,6 +22,13 @@
  * The plan's donor searches (SourcePlan.donors) run on MAX_DONOR_FEEDS slots of their own, one
  * rating each; their posts come after the scene searches' and page like any other search.
  *
+ * A change of plan keeps the posts already loaded that still count: a post a search of the
+ * plan before brought stays when it fits a search of the new plan (lib/pack/source-fit.ts: same
+ * site, one of the plan's ratings, every tag the search asks for). It counts as that search's,
+ * ahead of the pages the search brings itself, and a donor search's posts stay donors. The rest
+ * go. The new searches page from the start; a page that brings nothing beyond the posts kept for
+ * them ends them, as any page with nothing new does.
+ *
  * Mount timing is the same as usePackSeedSearch's: this hook fetches page 1 of
  * every search on mount and has no "enabled" flag; mount the component that calls
  * it only when the pack should fetch.
@@ -32,6 +39,8 @@ import { MAX_DONOR_FEEDS, assignFeedSlots, planDonorFeeds, planFeeds, type Donor
 import { useSingleRatingFeed, type UsePackSeedSearchResult } from "./use-pack-seed-search"
 import { useScrollRateLimiter, MAX_SESSION_PAGE_LOADS } from "./use-scroll-rate-limiter"
 import { NO_PAGING, nextSearch, recordPage, searchEnded, type SearchPaging } from "@/lib/pack/source-paging"
+import { firstFittingSearch, postFitsSearch, postTagSet, type LoadedPost } from "@/lib/pack/source-fit"
+import type { BooruProvider } from "@/lib/booru/types"
 
 export interface PackSourceProgress {
   /** The search's id (SceneSearch.id, or DonorSearch.id). */
@@ -43,6 +52,8 @@ export interface PackSourceProgress {
   posts: number
   /** Posts it brought that no search before it in the plan had. */
   adds: number
+  /** Of `posts`, those a search the plan had before a change loaded (they fit this one): counted in, not fetched again. */
+  earlier: number
   /** Pages that have arrived (per rating). */
   pages: number
   loading: boolean
@@ -73,6 +84,78 @@ export interface UsePackSourcesResult extends UsePackSeedSearchResult {
 }
 
 type Feed = ReturnType<typeof useSingleRatingFeed>
+
+/** A post loaded for the pack, and the feeds (FeedSpec.feedId) that brought it. */
+interface Remembered extends LoadedPost {
+  post: BooruPost
+  sceneFeeds: readonly string[]
+  donorFeeds: readonly string[]
+}
+type Memory = ReadonlyMap<string, Remembered>
+
+/** A feed of the plan in use, with its posts. */
+interface LiveFeed {
+  feedId: string
+  donor: boolean
+  ratingFilter: string
+  posts: readonly BooruPost[]
+}
+
+const memoryKey = (provider: BooruProvider, id: number) => `${provider}|${id}`
+
+/** `memory` with the posts of the live feeds it doesn't have yet (or not from that feed); null when nothing is new. */
+function rememberLive(memory: Memory, live: readonly LiveFeed[], provider: BooruProvider): Map<string, Remembered> | null {
+  let next: Map<string, Remembered> | null = null
+  for (const feed of live) {
+    for (const post of feed.posts) {
+      if (!post) continue
+      const key = memoryKey(provider, post.id)
+      const had: Remembered | undefined = (next ?? memory).get(key)
+      if (had && (feed.donor ? had.donorFeeds : had.sceneFeeds).includes(feed.feedId)) continue
+      next ??= new Map(memory)
+      const base: Remembered = had ?? { post, tags: postTagSet(post), provider, ratings: [], sceneFeeds: [], donorFeeds: [] }
+      next.set(key, {
+        ...base,
+        ratings: base.ratings.includes(feed.ratingFilter) ? base.ratings : [...base.ratings, feed.ratingFilter],
+        sceneFeeds: feed.donor ? base.sceneFeeds : [...base.sceneFeeds, feed.feedId],
+        donorFeeds: feed.donor ? [...base.donorFeeds, feed.feedId] : base.donorFeeds,
+      })
+    }
+  }
+  return next
+}
+
+/**
+ * The remembered posts a feed of an earlier plan brought, by the search of this plan each one
+ * fits first (scene searches, then donor searches, as `allSearches`), and the keys of those that
+ * fit none and aren't in a live feed either: they go.
+ */
+function carryOver(memory: Memory, active: ReadonlySet<string>, plan: SourcePlan): { bySearch: BooruPost[][]; drop: string[] } {
+  const scenes = plan.scenes.map((): BooruPost[] => [])
+  const donors = plan.donors.map((): BooruPost[] => [])
+  const drop: string[] = []
+  const scenePlan = { provider: plan.provider, ratings: plan.ratings }
+  memory.forEach((entry, key) => {
+    let keep = entry.sceneFeeds.some((f) => active.has(f)) || entry.donorFeeds.some((f) => active.has(f))
+    if (entry.sceneFeeds.some((f) => !active.has(f))) {
+      const i = firstFittingSearch(entry, plan.scenes, scenePlan)
+      if (i >= 0) {
+        scenes[i].push(entry.post)
+        keep = true
+      }
+    }
+    // A donor's posts stay donors: only a donor search of this plan keeps them.
+    if (entry.donorFeeds.some((f) => !active.has(f))) {
+      const i = plan.donors.findIndex((d) => postFitsSearch(entry, d, { provider: plan.provider, ratings: [d.ratingFilter] }))
+      if (i >= 0) {
+        donors[i].push(entry.post)
+        keep = true
+      }
+    }
+    if (!keep) drop.push(key)
+  })
+  return { bySearch: [...scenes, ...donors], drop }
+}
 
 /** A rating feed's posts interleaved with the others of its search, so no rating outweighs the rest. */
 function interleave(lists: readonly BooruPost[][]): BooruPost[] {
@@ -165,28 +248,72 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [feedKey, slots, donorSlots])
 
-  const { allPosts, originOf, postsPerSearch, addsPerSearch } = useMemo(() => {
-    const postLists = [feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts, feed6.allPosts, feed7.allPosts]
+  const postLists = useMemo(
+    () => [feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts, feed6.allPosts, feed7.allPosts],
+    [feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts, feed6.allPosts, feed7.allPosts]
+  )
+
+  // ── Posts loaded for the pack, kept across a change of plan while they fit it ──
+  // Remembered while rendering, as the paging below: every post of the plan's live feeds, with
+  // where and at which rating it was fetched.
+  const [memory, setMemory] = useState<Memory>(() => new Map())
+  const liveFeeds = useMemo<LiveFeed[]>(() => [
+    ...slots.flatMap((slot, i) => (slot.active ? [{ feedId: slot.feedId, donor: false, ratingFilter: slot.ratingFilter, posts: postLists[i] }] : [])),
+    ...donorSlots.flatMap((slot, i) => (slot.active ? [{ feedId: slot.feedId, donor: true, ratingFilter: slot.ratingFilter, posts: postLists[slots.length + i] }] : [])),
+  ], [slots, donorSlots, postLists])
+  const activeFeeds = useMemo(() => new Set(liveFeeds.map((f) => f.feedId)), [liveFeeds])
+  const remembered = useMemo(() => rememberLive(memory, liveFeeds, provider), [memory, liveFeeds, provider])
+  const carried = useMemo(
+    () => carryOver(memory, activeFeeds, plan),
+    // The plan's searches, ratings and site are all in its keys.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [memory, activeFeeds, feedKey]
+  )
+  if (remembered || carried.drop.length > 0) {
+    const next = remembered ?? new Map(memory)
+    // A post dropped as left over that a live feed has just brought again stays.
+    carried.drop.forEach((key) => {
+      const entry = next.get(key)
+      if (!entry || ![...entry.sceneFeeds, ...entry.donorFeeds].some((f) => activeFeeds.has(f))) next.delete(key)
+    })
+    setMemory(next)
+  }
+
+  const { allPosts, originOf, postsPerSearch, addsPerSearch, carriedPerSearch, carriedAddsPerSearch } = useMemo(() => {
     const all: BooruPost[] = []
     const origin = new Map<number, string>()
     const perSearch: number[] = []
     const adds: number[] = []
+    const keptPosts: number[] = []
+    const keptAdds: number[] = []
     allSearches.forEach((search, s) => {
       const own = new Set<number>()
       let added = 0
-      for (const post of interleave(slotsBySearch[s].map((i) => postLists[i]))) {
-        if (!post || own.has(post.id)) continue
+      const take = (post: BooruPost | undefined) => {
+        if (!post || own.has(post.id)) return
         own.add(post.id)
-        if (origin.has(post.id)) continue
+        if (origin.has(post.id)) return
         origin.set(post.id, search.id)
         all.push(post)
         added++
       }
+      // The posts kept for this search first: they were on the sheet already.
+      for (const post of carried.bySearch[s] ?? []) take(post)
+      keptPosts.push(own.size)
+      keptAdds.push(added)
+      for (const post of interleave(slotsBySearch[s].map((i) => postLists[i]))) take(post)
       perSearch.push(own.size)
       adds.push(added)
     })
-    return { allPosts: all, originOf: origin as ReadonlyMap<number, string>, postsPerSearch: perSearch, addsPerSearch: adds }
-  }, [allSearches, slotsBySearch, feed0.allPosts, feed1.allPosts, feed2.allPosts, feed3.allPosts, feed4.allPosts, feed5.allPosts, feed6.allPosts, feed7.allPosts])
+    return {
+      allPosts: all,
+      originOf: origin as ReadonlyMap<number, string>,
+      postsPerSearch: perSearch,
+      addsPerSearch: adds,
+      carriedPerSearch: keptPosts,
+      carriedAddsPerSearch: keptAdds,
+    }
+  }, [allSearches, slotsBySearch, postLists, carried])
 
   // Each search's paging, by search id (a search the next plan keeps keeps its record).
   // Recorded while rendering once a page has arrived for every rating of the search.
@@ -205,7 +332,9 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   let nextPaging: Record<string, SearchPaging> | null = null
   arrived.forEach((a, s) => {
     if (a.loading || a.failed) return
-    const prev = paging[a.id] ?? NO_PAGING
+    // A search new to the pack starts from the posts kept for it: a first page with nothing beyond them ends it.
+    const kept = carriedPerSearch[s] ?? 0
+    const prev = paging[a.id] ?? (kept > 0 ? { ...NO_PAGING, posts: kept, adds: carriedAddsPerSearch[s] ?? 0 } : NO_PAGING)
     const rec = recordPage(prev, { pages: a.pages, posts: postsPerSearch[s] ?? 0, adds: addsPerSearch[s] ?? 0 })
     if (rec !== prev) nextPaging = { ...(nextPaging ?? paging), [a.id]: rec }
   })
@@ -215,7 +344,7 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   // Primitive per-search state, so the progress below changes only when one of them does.
   const searchState = arrived.map((a, s) => {
     const p = pagingNow[a.id] ?? NO_PAGING
-    return [a.id, a.loading, a.failed, a.siteEnded, p.pages, p.dry, p.lastAdds, postsPerSearch[s] ?? 0, addsPerSearch[s] ?? 0].join(":")
+    return [a.id, a.loading, a.failed, a.siteEnded, p.pages, p.dry, p.lastAdds, postsPerSearch[s] ?? 0, addsPerSearch[s] ?? 0, carriedPerSearch[s] ?? 0].join(":")
   }).join("|")
   const searches = useMemo<PackSourceProgress[]>(() => allSearches.map((search, s) => {
     const a = arrived[s]
@@ -226,6 +355,7 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
       donor: search.donor,
       posts: postsPerSearch[s] ?? 0,
       adds: addsPerSearch[s] ?? 0,
+      earlier: carriedPerSearch[s] ?? 0,
       pages: p.pages,
       loading: a.loading,
       exhausted: searchEnded(p, a.siteEnded),

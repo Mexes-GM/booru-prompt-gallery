@@ -5,7 +5,8 @@ import {
   type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
 import {
-  briefFromCharacters, commit, lastChange, seedNever, startHistory, undo as undoHistory,
+  briefFromCharacters, commit, lastChange, seedDefaults, startHistory, undo as undoHistory,
+  rowDefaults, withRowDefaults, withoutRowDefault, type DefaultRow,
   type BriefHistory,
 } from '@/lib/pack/brief-history'
 import { migratePackPreferences, sanitizePackPreferences } from '@/lib/pack/pack-config-migration'
@@ -96,6 +97,13 @@ export interface UsePackBriefResult {
   setIncludeSensitive: (value: boolean) => void
   addNeverDefault: (tag: string) => void
   removeNeverDefault: (tag: string) => void
+  /**
+   * A row's defaults (Never, Style): what every new pack starts with. Setting them is explicit and
+   * never part of the brief's history. Returns the defaults they replaced, for an Undo of its own.
+   */
+  rowDefaults: (row: DefaultRow) => string[]
+  setRowDefaults: (row: DefaultRow, tags: readonly string[]) => string[]
+  removeRowDefault: (row: DefaultRow, tag: string) => string[]
 }
 
 function readPreferences(): PackPreferences {
@@ -115,10 +123,13 @@ function readPreferences(): PackPreferences {
  * `overrides` is read at the moment of each action, so its growth doesn't change the
  * identity of the actions.
  */
-export function usePackBrief(overrides: Record<string, string>, initial?: PackBrief): UsePackBriefResult {
+export function usePackBrief(overrides: Record<string, string>, initial?: PackBrief, options?: { seeded?: boolean }): UsePackBriefResult {
   const [preferences, setPreferencesState] = useState<PackPreferences>(readPreferences)
   // A pack can start with its brief already made (an entry), so nothing is written while rendering.
-  const [history, setHistory] = useState<BriefHistory>(() => startHistory(seedNever(initial ?? emptyBrief(), preferences.neverDefaults)))
+  // A pack kept across a reload comes back as it was: its defaults were seeded when it started.
+  const [history, setHistory] = useState<BriefHistory>(() => startHistory(
+    options?.seeded && initial ? initial : seedDefaults(initial ?? emptyBrief(), preferences)
+  ))
 
   // Latest values for callbacks that must stay stable and still read the current state.
   const overridesRef = useRef(overrides)
@@ -136,7 +147,11 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
   }, [setHistoryNow])
 
   const start = useCallback((brief: PackBrief) => {
-    setHistoryNow(startHistory(seedNever(brief, preferencesRef.current.neverDefaults)))
+    // The defaults as saved now: the classic builder may have changed Never since.
+    const fresh = readPreferences()
+    preferencesRef.current = fresh
+    setPreferencesState(fresh)
+    setHistoryNow(startHistory(seedDefaults(brief, fresh)))
   }, [setHistoryNow])
 
   const undo = useCallback((): string | null => {
@@ -276,6 +291,18 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
     [updatePreferences]
   )
 
+  const getRowDefaults = useCallback((row: DefaultRow) => rowDefaults(preferencesRef.current, row), [])
+  const setRowDefaults = useCallback((row: DefaultRow, tags: readonly string[]) => {
+    const before = rowDefaults(preferencesRef.current, row)
+    updatePreferences(withRowDefaults(preferencesRef.current, row, tags))
+    return before
+  }, [updatePreferences])
+  const removeRowDefault = useCallback((row: DefaultRow, tag: string) => {
+    const before = rowDefaults(preferencesRef.current, row)
+    updatePreferences(withoutRowDefault(preferencesRef.current, row, tag))
+    return before
+  }, [updatePreferences])
+
   const brief = history.present
   const requests = useMemo(() => toSceneRequests(brief), [brief])
 
@@ -288,5 +315,6 @@ export function usePackBrief(overrides: Record<string, string>, initial?: PackBr
     setBaseScene: setBaseSceneAction, leaveOutVariant: leaveOutVariantAction, restoreVariant: restoreVariantAction,
     startEmpty, startWith, startFromCharacters, startFromPrompt, startFromCard,
     preferences, setPromptCount, setIncludeSensitive, addNeverDefault, removeNeverDefault,
+    rowDefaults: getRowDefaults, setRowDefaults, removeRowDefault,
   }
 }

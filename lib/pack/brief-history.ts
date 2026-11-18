@@ -5,6 +5,7 @@
  */
 import { addCharacter, emptyBrief, briefTags, type PackBrief } from './brief'
 import { normalizeTagForPack } from './pack-generator'
+import type { PackPreferences } from '../storage'
 
 export interface BriefChange { brief: PackBrief; label: string }
 /** `past` is oldest first; each entry is the brief BEFORE a change, and that change's label. */
@@ -77,4 +78,59 @@ export function seedNever(brief: PackBrief, defaults: readonly string[]): PackBr
  */
 export function briefFromCharacters(names: readonly string[]): PackBrief {
   return names.reduce(addCharacter, emptyBrief())
+}
+
+// ── Rows with defaults ───────────────────────────────────────────────────────
+
+/**
+ * The rows of the brief a user can give defaults: what every new pack starts with. Adding a row is
+ * declaring it here (its preference and its tags in a brief).
+ */
+export const DEFAULT_ROWS = {
+  never: { key: 'neverDefaults', tagsOf: (brief: PackBrief) => brief.never },
+  style: { key: 'styleDefaults', tagsOf: (brief: PackBrief) => brief.literal },
+} as const satisfies Record<string, { key: keyof PackPreferences; tagsOf: (brief: PackBrief) => readonly string[] }>
+export type DefaultRow = keyof typeof DEFAULT_ROWS
+
+/** A row's defaults in the preferences ([] when none). */
+export const rowDefaults = (prefs: PackPreferences, row: DefaultRow): string[] => [...(prefs[DEFAULT_ROWS[row].key] ?? [])]
+
+/** The preferences with a row's defaults set to `tags` (sanitizePackPreferences cleans them). */
+export function withRowDefaults(prefs: PackPreferences, row: DefaultRow, tags: readonly string[]): PackPreferences {
+  return { ...prefs, [DEFAULT_ROWS[row].key]: [...tags] }
+}
+
+/** The preferences without `tag` in a row's defaults. */
+export function withoutRowDefault(prefs: PackPreferences, row: DefaultRow, tag: string): PackPreferences {
+  const name = normalizeTagForPack(tag)
+  return withRowDefaults(prefs, row, rowDefaults(prefs, row).filter((t) => normalizeTagForPack(t) !== name))
+}
+
+/** True when a row of the brief holds exactly the row's defaults (same tags, any order). */
+export function rowMatchesDefaults(brief: PackBrief, prefs: PackPreferences, row: DefaultRow): boolean {
+  const key = (tags: readonly string[]) => Array.from(new Set(tags.map(normalizeTagForPack))).sort().join('|')
+  return key(DEFAULT_ROWS[row].tagsOf(brief)) === key(rowDefaults(prefs, row))
+}
+
+/**
+ * Starts the Style row of a new pack with the user's defaults, as typed, after what the start
+ * brought; a default the start already has, or keeps out (Never), is not added: the start wins.
+ */
+export function seedStyle(brief: PackBrief, defaults: readonly string[]): PackBrief {
+  const asked = new Set([...briefTags(brief), ...brief.never].map(normalizeTagForPack))
+  const literal = [...brief.literal]
+  for (const tag of defaults) {
+    const typed = tag.trim()
+    const name = normalizeTagForPack(typed)
+    if (name && !asked.has(name)) {
+      literal.push(typed)
+      asked.add(name)
+    }
+  }
+  return literal.length === brief.literal.length ? brief : { ...brief, literal }
+}
+
+/** A new pack's brief with every row's defaults: Never, then Style. */
+export function seedDefaults(brief: PackBrief, prefs: PackPreferences): PackBrief {
+  return seedStyle(seedNever(brief, prefs.neverDefaults), prefs.styleDefaults ?? [])
 }
