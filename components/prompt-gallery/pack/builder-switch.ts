@@ -25,8 +25,16 @@ export const BUILDER_SWITCH_TEXT = {
 
 const norm = (s: string) => s.toLowerCase().replace(/_/g, " ").trim()
 
+/** A start as a base the other builder knows: a pack kept across a reload is its characters. */
+export function baseOfStart(start: PackBriefStart): PackBriefStart {
+  if (start.kind !== "restored") return start
+  return { kind: "characters", names: start.saved.brief.who.flatMap((c) => (c.tag ? [c.tag] : [])) }
+}
+
 /** True when two starts are the same base: the same card, prompt or characters. */
-export function sameBriefStart(a: PackBriefStart, b: PackBriefStart): boolean {
+export function sameBriefStart(first: PackBriefStart, second: PackBriefStart): boolean {
+  const a = baseOfStart(first)
+  const b = baseOfStart(second)
   if (a.kind === "card" || b.kind === "card") return a.kind === "card" && b.kind === "card" && a.post.id === b.post.id
   if (a.kind === "prompt" || b.kind === "prompt") return a.kind === "prompt" && b.kind === "prompt" && a.text.trim() === b.text.trim()
   const names = (s: PackBriefStart) =>

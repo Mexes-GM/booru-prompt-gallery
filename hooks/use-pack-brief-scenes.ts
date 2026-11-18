@@ -42,6 +42,7 @@ import { chosenOutfit, loadCharacterOutfits, outfitTags, type CharacterOutfits }
 import { poolSoloShare, profileIdentity, subjectForPool, typicalLook, typicalSubject } from "@/lib/pack/character-identity"
 import { normalizeTagForPack, type PackPrompt } from "@/lib/pack/pack-generator"
 import { packNaturalSource } from "@/lib/pack/pack-natural"
+import type { SavedResult } from "@/lib/pack/saved-pack"
 import { loadPackVocabulary, loadedTagBaseline, tagBaselineOf } from "@/lib/pack/pack-vocabulary"
 import { resolutionForAspect } from "@/lib/pack/prompt-resolution"
 import { planSources, type AppearanceSearch, type SourcePlan } from "@/lib/pack/source-plan"
@@ -114,6 +115,16 @@ export interface UsePackBriefScenesArgs {
   outfitOptions: { styles: readonly OutfitStyle[]; detail: OutfitDetail }
   /** Posts only the donor searches brought (they lend clothes or a place, never a scene of their own). */
   donorPosts?: readonly number[]
+  /**
+   * The results of a pack kept across a reload (lib/pack/saved-pack.ts), made from `brief` and
+   * `outfit` as they are on the first render unless they say otherwise. Read once.
+   */
+  restored?: SavedResult | null
+  /**
+   * The source isn't fetching or about to fetch pages: a pack kept across a reload takes the pool
+   * then (re-rolls and corrections work on it), not the first page's.
+   */
+  sourceSettled?: boolean
 }
 
 /** How a pack was made, so a correction can make it again the same way. */
@@ -135,7 +146,12 @@ export interface PackMade {
   rerolls: ReadonlyArray<{ index: number; seed: number; slot?: number }>
   /** Where the posts came from (booru, rating, characters): another source makes another pack. */
   sourceKey: string
+  /** Kept across a reload: `pool` is a stand-in until the source's posts are back. */
+  restored?: true
 }
+
+// The pool of a pack kept across a reload until its posts are fetched again: nothing reads it then.
+const NO_POOL: ScenePool = buildScenePool([], { overrides: {}, permanence: () => "identity", subject: "girl" })
 
 /** What a correction's remake did: the caller closes its notice in every case. */
 export type RecomposeOutcome =
@@ -205,6 +221,8 @@ export interface UsePackBriefScenesResult {
   busy: boolean
   /** The pack was made from another source (booru, rating, characters): corrections and re-rolls need Generate first. */
   sourceChanged: boolean
+  /** A pack kept across a reload whose posts aren't back yet: corrections and re-rolls wait for them. */
+  poolPending: boolean
   /** Generates; `count` defaults to the brief's. */
   generate: () => void
   /** Remakes the pack for the brief as it is now (a correction from the results). */
@@ -258,6 +276,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     brief, posts, preferredPosts, provider, rating, includeSensitive, gallerySearch, promptCount, outfit, overrides,
     enrichTagSlots, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions, donorPosts,
   } = args
+  const restoredArgs = args.restored
+  const sourceSettled = args.sourceSettled ?? true
   const relations = useTagRelations(true)
 
   // ── Who: trait profiles and the characters' looks ─────────────────────────────
@@ -649,7 +669,26 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   )
 
   // The pack made last (see "Generating and correcting" below).
-  const [result, setResult] = useState<BriefPackResult | null>(null)
+  // A pack kept across a reload starts with its rows; its pool comes with the posts (below).
+  const [result, setResult] = useState<BriefPackResult | null>(() => restoredArgs
+    ? {
+        prompts: restoredArgs.prompts,
+        locked: restoredArgs.locked,
+        shortBy: restoredArgs.shortBy,
+        issues: restoredArgs.issues,
+        count: restoredArgs.count,
+        // The same objects as the pack's when the prompts were made from them: not out of date.
+        brief: restoredArgs.brief ?? brief,
+        outfit: restoredArgs.outfit ?? outfit,
+        made: { ...restoredArgs.made, pool: NO_POOL, restored: true },
+      }
+    : null)
+  // The posts are back, from the same source, and done loading: the pack is whole again.
+  if (result?.made.restored && pool && sourceSettled && result.made.sourceKey === sourceKey) {
+    const { restored: _done, ...made } = result.made
+    void _done
+    setResult({ ...result, made: { ...made, pool } })
+  }
   const resultRef = useRef(result)
   useEffect(() => { resultRef.current = result }, [result])
 
@@ -827,7 +866,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
    */
   const recompose = useCallback(async (): Promise<RecomposeOutcome> => {
     const before = resultRef.current
-    if (!before || !pool || missingRoles.length > 0 || before.made.sourceKey !== sourceKey) return { status: "skipped" }
+    if (!before || !pool || missingRoles.length > 0 || before.made.restored || before.made.sourceKey !== sourceKey) return { status: "skipped" }
     const id = startOp("correct")
     const samePeople = peopleKeyOf(before.made.pool.stats.composition) === peopleKeyOf(pool.stats.composition)
     const made: PackMade = samePeople ? before.made : { ...before.made, pool }
@@ -883,7 +922,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const reroll = useCallback((index: number): boolean => {
     const now = resultRef.current
     if (!now || op || index < 0 || index >= now.prompts.length || now.locked.includes(index)) return false
-    if (now.made.sourceKey !== sourceKey) return false
+    if (now.made.sourceKey !== sourceKey || now.made.restored) return false
     const seed = Math.floor(Math.random() * 1e9)
     const replacement = rerollScenePrompt(now.made.pool, now.prompts, index, argsFor(brief, seed, now.made.genCount, now.made.baseScene))
     if (!replacement) return false
@@ -944,6 +983,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     isCorrecting: op?.kind === "correct",
     busy: !!op,
     sourceChanged: !!result && result.made.sourceKey !== sourceKey,
+    poolPending: !!result?.made.restored,
     generate,
     recompose,
     restore,

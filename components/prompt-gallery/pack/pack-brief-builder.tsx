@@ -97,6 +97,7 @@ import { cn } from "@/lib/utils"
 import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
 import { getProviderTagLimit } from "@/lib/booru/tag-limits"
 import { SearchDetails } from "./search-details"
+import { savedResultOf, type SavedPack } from "@/lib/pack/saved-pack"
 import { BUILDER_SWITCH_TEXT } from "./builder-switch"
 import type { EntryOption } from "./tag-entry"
 import { AUTO_PAGE_CAP } from "@/lib/pack/source-paging"
@@ -118,6 +119,8 @@ import { userPreferences } from "@/lib/storage"
 
 /** Where a pack starts from: each way into Pack Mode. */
 export type PackBriefStart =
+  /** The pack kept across a reload (lib/pack/saved-pack.ts). */
+  | { kind: "restored"; saved: SavedPack }
   | { kind: "characters"; names: readonly string[] }
   | { kind: "card"; post: BooruPost }
   | { kind: "prompt"; text: string }
@@ -140,6 +143,7 @@ interface Correction {
 
 /** What a start brought to the brief, for the note under the header. */
 type StartNote =
+  | { kind: "restored"; dropped: boolean }
   | { kind: "characters" }
   | { kind: "card"; named: boolean; outfit: string[]; pose: string[] }
   | { kind: "prompt" }
@@ -179,6 +183,8 @@ export interface PackBriefBuilderProps {
 /** The brief a start makes, and what to say about it. Pure: nothing is written while rendering. */
 function begin(start: PackBriefStart, overrides: Record<string, string>): { brief: PackBrief; note: StartNote } {
   switch (start.kind) {
+    case "restored":
+      return { brief: start.saved.brief, note: { kind: "restored", dropped: !!start.saved.resultsDropped } }
     case "characters":
       return { brief: briefFromCharacters([...start.names]), note: { kind: "characters" } }
     case "card": {
@@ -207,12 +213,14 @@ function begin(start: PackBriefStart, overrides: Record<string, string>): { brie
 export function PackBriefBuilder(props: PackBriefBuilderProps) {
   const { start, open, overrides, rating, onRatingChange, onExit, onNewPack, onOpenClassic } = props
   const [begun] = useState(() => begin(start, overrides))
-  const pack = usePackBrief(overrides, begun.brief)
+  const pack = usePackBrief(overrides, begun.brief, { seeded: start.kind === "restored" })
   // The environment while open; held while closed.
   // The pack keeps the booru and gallery search it was started with, open or closed; only
   // "New pack" takes the gallery's current ones. Its own controls (site, rating) stay live:
   // another site is another source, like another rating.
-  const [startSource, setStartSource] = useState(() => ({ provider: props.provider, gallerySearch: props.gallerySearch }))
+  const [startSource, setStartSource] = useState(() => start.kind === "restored"
+    ? { provider: start.saved.provider, gallerySearch: start.saved.gallerySearch }
+    : { provider: props.provider, gallerySearch: props.gallerySearch })
   const onProviderChange = useCallback((provider: BooruProvider) => setStartSource((s) => ({ ...s, provider })), [])
   // While closed, the rest of the environment is held as it was when it closed.
   const [held, setHeld] = useState<PackBriefBuilderProps | null>(null)
@@ -413,6 +421,8 @@ const NO_IDS: string[] = []
 const NO_PROGRESS: never[] = []
 const NO_DONORS: number[] = []
 const UNDO_MS = 6000
+/** Changes to the pack wait this long before it is saved for the next visit. */
+const SAVE_DELAY_MS = 600
 
 /** A sentence that ends with its stop, once. */
 const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`)
@@ -468,12 +478,16 @@ function BriefWorkspace({
   outfitOptions,
   onCopy,
   open,
+  start,
   startNote,
   onProviderChange,
 }: PackBriefBuilderProps & { pack: UsePackBriefResult; startNote: StartNote; onProviderChange: (provider: BooruProvider) => void }) {
   const { brief, preferences } = pack
   const count = preferences.promptCount
-  const [outfit, setOutfit] = useState<BriefOutfit>({ kind: "scene" })
+  const restored = start.kind === "restored" ? start.saved : null
+  const [outfit, setOutfit] = useState<BriefOutfit>(() => restored?.outfit ?? { kind: "scene" })
+  // A pack kept across a reload gets its pool back once the source is done loading (from the last render).
+  const [sourceSettled, setSourceSettled] = useState(false)
 
   // ── Source ──────────────────────────────────────────────────────────────────────
   const [source, setSource] = useState<UsePackSourcesResult | null>(null)
@@ -497,6 +511,8 @@ function BriefWorkspace({
     posts,
     preferredPosts,
     donorPosts,
+    restored: restored?.result ?? null,
+    sourceSettled,
     provider,
     rating,
     includeSensitive: preferences.includeSensitive,
@@ -549,6 +565,8 @@ function BriefWorkspace({
   // Waiting for roles is not searching: the button says what is missing.
   const rolesMissing = identity.missingRoles.length > 0
   const finding = !loadError && !rolesMissing && (loadingPosts || (needMore && canLoad) || (!candidates && searching && !noPosts))
+  const settledNow = !!source && !finding && !source.waiting && !loadError
+  if (settledNow !== sourceSettled) setSourceSettled(settledNow)
   const canOfferSensitive = rating === "sfw" && plan.sensitive === "excluded" && !finding
   // Nothing stops the loading for good any more: a page waits for the pace limit and goes
   // by itself, and past the cap "Find more scenes" is on the loaded line.
@@ -661,7 +679,8 @@ function BriefWorkspace({
   )
 
   // ── Folding ─────────────────────────────────────────────────────────────────────
-  const [folded, setFolded] = useState(false)
+  // A pack kept across a reload with its prompts comes back as a made pack does: prompts first.
+  const [folded, setFolded] = useState(() => !!restored?.result?.prompts.length)
   const [openedFromSummary, setOpenedFromSummary] = useState(false)
   // A pack just made folds the brief away, so the prompts come first.
   const [wasGenerating, setWasGenerating] = useState(false)
@@ -827,7 +846,7 @@ function BriefWorkspace({
   const correctionIdRef = useRef(0)
   const { addLook, addExactly } = pack
   const correct = useCallback((kind: "always" | "never", raw: string) => {
-    if (!result || engine.busy || engine.sourceChanged) return
+    if (!result || engine.busy || engine.sourceChanged || engine.poolPending) return
     const tag = bareToken(raw)
     const route = routeTag(tag, overrides)
     let next: PackBrief
@@ -872,7 +891,7 @@ function BriefWorkspace({
       briefBefore: brief, briefAfter: null, status: "waiting", message: null,
     })
     apply()
-  }, [result, engine.busy, engine.sourceChanged, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, addExactly, othersTag, addOther])
+  }, [result, engine.busy, engine.sourceChanged, engine.poolPending, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, addExactly, othersTag, addOther])
   const onAlways = useCallback((tag: string) => correct("always", tag), [correct])
   const onNever = useCallback((tag: string) => correct("never", tag), [correct])
   // Runs once the brief has the change (the engine's arguments follow it). Every outcome
@@ -979,7 +998,41 @@ function BriefWorkspace({
     return out
   }, [startNote, has, addTags])
   // Said until the first change: what the start put in, and what it left out.
-  const startText = pack.canUndo ? null : startNoteText(startNote)
+  const startText = pack.canUndo ? null : startNoteText(startNote, engine.poolPending)
+  // The note on a pack that came back stays in view with the brief folded: it explains the prompts.
+  const showStartText = !!startText && (showBrief || startNote.kind === "restored")
+
+  // ── Saved for the next visit ────────────────────────────────────────────────────
+  // The pack as it is now replaces the one saved before, a moment after each change (never while
+  // rendering); a change still waiting is written when the page goes or the pack is replaced.
+  const pendingSave = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    const write = () => {
+      try {
+        userPreferences.setSavedPack({ brief, outfit, provider, gallerySearch, result: result ? savedResultOf(result, brief, outfit) : null })
+      } catch {
+        // Storage unavailable: the pack lasts this visit.
+      }
+    }
+    pendingSave.current = write
+    const timer = setTimeout(() => {
+      pendingSave.current = null
+      write()
+    }, SAVE_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [brief, outfit, provider, gallerySearch, result])
+  useEffect(() => {
+    const flush = () => {
+      const write = pendingSave.current
+      pendingSave.current = null
+      write?.()
+    }
+    window.addEventListener("pagehide", flush)
+    return () => {
+      window.removeEventListener("pagehide", flush)
+      flush()
+    }
+  }, [])
 
   // ── What the brief shows of each character ──────────────────────────────────────
   const characterInfo = useMemo(() => {
@@ -1133,7 +1186,7 @@ function BriefWorkspace({
         </p>
       )}
 
-      {startText && showBrief && (
+      {showStartText && (
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground text-pretty">
           <Info className="mt-px size-3.5 shrink-0 text-info-text" aria-hidden />
           {startText}
@@ -1235,8 +1288,8 @@ function BriefWorkspace({
           missing={result.shortBy}
           copyNote={copyNoteText({ missing: result.shortBy, stale })}
           onToggleLock={onToggleLock}
-          busy={engine.busy || engine.sourceChanged}
-          busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : BUILDER_TEXT.busyRunning}
+          busy={engine.busy || engine.sourceChanged || engine.poolPending}
+          busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : engine.poolPending ? BUILDER_TEXT.busyReloading : BUILDER_TEXT.busyRunning}
           naturalSourceOf={engine.naturalSourceOf}
           overrides={overrides}
           onCopy={onCopy}
@@ -1279,8 +1332,10 @@ function BriefWorkspace({
   )
 }
 
-function startNoteText(note: StartNote): string | null {
+function startNoteText(note: StartNote, poolPending: boolean): string | null {
   switch (note.kind) {
+    case "restored":
+      return note.dropped ? START_TEXT.restoredDropped : poolPending ? START_TEXT.restoredLoading : START_TEXT.restored
     case "characters":
       return null
     case "card": {

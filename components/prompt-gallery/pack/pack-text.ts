@@ -61,6 +61,7 @@ export const BUILDER_TEXT = {
   howItSearches: "How it searches",
   generatingSpoken: "Making the prompts",
   busySource: "Generate again first: the pack was made with another site or rating",
+  busyReloading: "Wait for the scenes to load",
   busyRunning: "Wait for the prompts to update",
   resultsLabel: "Prompts",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
@@ -164,6 +165,9 @@ export const START_TEXT = {
   cardOffers: "Its outfit and pose are offered under Wearing and Doing.",
   prompt: "Your prompt is split across the rows. Tags we don't recognize are under Style.",
   search: "Started from your search.",
+  restored: "Your pack is back as you left it.",
+  restoredLoading: "Your pack is back as you left it. Re-roll, Always and Never work once its scenes load.",
+  restoredDropped: "Your pack is back, but its prompts were too large to save. Press Generate to make them again.",
   searchSkipped: (tags: readonly string[]) => `Search filters left out: ${tags.join(", ")}.`,
 } as const
 
