@@ -11,7 +11,7 @@ import {
   assignFeedSlots, feedSeed, MAX_DONOR_FEEDS, MAX_DONOR_SEARCHES, MAX_FEEDS, MAX_RATINGS, MAX_SCENE_SEARCHES, planDonorFeeds, planFeeds, planSources,
   type FeedSlot, type SourcePlan, type SourcePlanEnv,
 } from "../lib/pack/source-plan"
-import { getProviderTagLimit } from "../lib/booru/tag-limits"
+import { getProviderTagLimit, PROVIDER_TAG_LIMITS } from "../lib/booru/tag-limits"
 import type { BooruProvider } from "../lib/booru/types"
 
 let passed = 0
@@ -64,9 +64,9 @@ type Row = { label: string; brief: PackBrief; env: SourcePlanEnv; scenes: string
 
 const ROWS: Row[] = [
   { label: "one character, nothing asked", brief: tifa(), env: env(),
-    scenes: ["own: tifa_lockhart, solo"], appearance: [] },
+    scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart"] },
   { label: "one character, clothes and a place asked", brief: withTags(tifa(), "bikini", "beach", "smile"), env: env(),
-    scenes: ["own: tifa_lockhart, solo"], appearance: [] },
+    scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart"] },
   { label: "one character, one pose", brief: withTags(tifa(), "princess carry"), env: env(),
     scenes: ["own: tifa_lockhart, princess_carry", "theme: princess_carry"], appearance: ["tifa_lockhart"] },
   { label: "one character, two poses, Danbooru", brief: withTags(tifa(), "princess carry", "sitting"), env: env(),
@@ -97,21 +97,21 @@ const ROWS: Row[] = [
   { label: "cast of two, roles from the brief", brief: setCharacterRole(setCharacterRole(pair(), "tifa lockhart", "girl"), "cloud strife", "boy"), env: env(),
     scenes: ["group: 1girl, 1boy"], appearance: ["tifa_lockhart", "cloud_strife"] },
   { label: "cast of two, a role unknown", brief: pair(), env: env({ roles: ["girl", null] }),
-    scenes: ["own: tifa_lockhart, solo"], appearance: ["cloud_strife"] },
+    scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart", "cloud_strife"] },
   { label: "one character with a head count of two", brief: setPeople(tifa(), { girls: 1, boys: 1 }), env: env(),
     scenes: ["group: 1girl, 1boy"], appearance: ["tifa_lockhart"] },
   { label: "safe with sensitive", brief: tifa(), env: env({ includeSensitive: true }),
-    scenes: ["own: tifa_lockhart, solo"], appearance: [], ratings: ["rating:general", "rating:sensitive"] },
+    scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart"], ratings: ["rating:general", "rating:sensitive"] },
   { label: "safe without sensitive", brief: withTags(tifa(), "hug"), env: env({ includeSensitive: false }),
     scenes: ["own: tifa_lockhart, hug", "theme: hug"], appearance: ["tifa_lockhart"], ratings: ["rating:general"] },
   { label: "safe with sensitive on e621", brief: tifa(), env: env({ provider: "e621", includeSensitive: true }),
-    scenes: ["own: tifa_lockhart, solo"], appearance: [], ratings: ["rating:general"] },
+    scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart, solo"], ratings: ["rating:general"] },
   { label: "questionable", brief: tifa(), env: env({ rating: "questionable", includeSensitive: true }),
-    scenes: ["own: tifa_lockhart, solo"], appearance: [], ratings: ["rating:questionable"] },
+    scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart"], ratings: ["rating:questionable"] },
   { label: "explicit", brief: withTags(tifa(), "hug"), env: env({ rating: "explicit" }),
     scenes: ["own: tifa_lockhart, hug", "theme: hug"], appearance: ["tifa_lockhart"], ratings: ["rating:explicit"] },
   { label: "both", brief: tifa(), env: env({ rating: "both" }),
-    scenes: ["own: tifa_lockhart, solo"], appearance: [], ratings: ["rating:questionable", "rating:explicit"] },
+    scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart"], ratings: ["rating:questionable", "rating:explicit"] },
 ]
 
 for (const row of ROWS) {
@@ -279,3 +279,44 @@ check(() => {
 })
 
 console.log(`pack-source-plan (compositions): done`)
+
+// ── One character with no pose: searched by name, the look read apart ───────
+check(() => {
+  const show = (plan: SourcePlan) => ({ scenes: plan.scenes.map((s) => `${s.kind}: ${s.query}`), appearance: plan.appearance.map((a) => a.query), fromPool: plan.baseLookFromPool })
+  // No pose, no People: the name alone, so the pool has them with company too; their look comes from their solo posts.
+  for (const provider of ["danbooru", "aibooru", "gelbooru", "rule34", "e621", "e6ai"] as const) {
+    const plan = planSources(tifa(), env({ provider }))
+    invariants(plan, tifa(), `name alone on ${provider}`)
+    assert.deepEqual(plan.scenes.map((s) => s.tags), [["tifa_lockhart"]], `${provider}: the name, without "solo"`)
+    assert.deepEqual(plan.appearance.map((a) => a.character), ["tifa lockhart"], `${provider}: an appearance search for the character`)
+    assert.equal(plan.baseLookFromPool, false, `${provider}: the look doesn't come from a mixed pool`)
+  }
+  // People set to two or more: the search of that composition, as before.
+  assert.deepEqual(show(planSources(setPeople(tifa(), { girls: 1, boys: 2 }), env())),
+    { scenes: ["group: 1girl, 2boys"], appearance: ["tifa_lockhart"], fromPool: false }, "People set: the composition's search")
+  assert.deepEqual(show(planSources(setPeople(tifa(), { girls: 1, boys: 1 }), env({ provider: "gelbooru" }))),
+    { scenes: ["group: 1girl, 1boy"], appearance: ["tifa_lockhart, solo"], fromPool: false }, "People set on Gelbooru")
+  // Mixed compositions: the name alone as before, now with the appearance search too.
+  const mix = [{ girls: 1, boys: 0 }, { girls: 1, boys: 1 }]
+  assert.deepEqual(show(planSources(tifa(), env({ compositions: mix }))),
+    { scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart"], fromPool: false }, "mixed: the name, and the look read apart")
+  assert.deepEqual(show(planSources(tifa(), env({ provider: "gelbooru", compositions: mix }))),
+    { scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart, solo"], fromPool: false }, "mixed on Gelbooru")
+  // With a pose: unchanged ("name, pose" and the pose of anyone).
+  assert.deepEqual(show(planSources(withTags(tifa(), "hug"), env())).scenes, ["own: tifa_lockhart, hug", "theme: hug"])
+  // The gallery's search (no name): no appearance search.
+  assert.deepEqual(show(planSources(emptyBrief(), env({ gallerySearch: "solo, beach" }))),
+    { scenes: ["gallery: solo, beach"], appearance: [], fromPool: false }, "unnamed: the gallery search, no look search")
+  // A booru that takes one tag: still the name.
+  const saved = PROVIDER_TAG_LIMITS.danbooru
+  try {
+    PROVIDER_TAG_LIMITS.danbooru = 1
+    const one = planSources(tifa(), env())
+    assert.deepEqual(one.scenes.map((s) => `${s.kind}: ${s.query}`), ["own: tifa_lockhart"], "one-tag limit: the name")
+    assert.deepEqual(one.appearance.map((a) => a.query), ["tifa_lockhart"], "one-tag limit: the look search by name (typicalLook keeps the posts alone)")
+  } finally {
+    PROVIDER_TAG_LIMITS.danbooru = saved
+  }
+})
+
+console.log(`pack-source-plan (name alone): done`)
