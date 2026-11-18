@@ -20,6 +20,8 @@ import {
   briefIdentity,
   lookReplacedByWearing,
   conditionSupply,
+  coreKeyOf,
+  peopleChoices,
   type ConditionSupply,
   briefPackArgs,
   generateLayout,
@@ -388,7 +390,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   // A one-part pack keeps the whole-scene choices (they rule out scenes) and shows its
   // variants left out on the sheet; the scene that repeats is part of it.
   const axis = oneAxis(brief)
-  const coreKey = JSON.stringify([brief.who, brief.requests, brief.never, brief.literal, brief.others, brief.outfitStyles, brief.people, brief.changes, brief.baseScene, axis ? brief.leftOut : null])
+  const coreKey = coreKeyOf(brief)
   const coreBrief = useMemo<PackBrief>(
     () => ({ ...brief, leftOut: axis ? brief.leftOut : [], leftOutVariants: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -474,18 +476,20 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     const donors = new Set(donorPosts)
     return compositionsOf((basePool.allScenes ?? basePool.scenes).filter((scene) => !donors.has(scene.postId)))
   }, [basePool, donorPosts])
-  // Every composition of the pool the characters fit in; null until the pool is built.
-  const available = useMemo(() => {
-    if (!sceneCompositions) return null
-    return isCast ? sceneCompositions.filter((c) => holdsCast(c.people, castPeopleMemo)) : sceneCompositions
-  }, [sceneCompositions, isCast, castPeopleMemo])
+  // The make-ups with room for the characters (one or several), the requested poses' apart; those
+  // without room are only shown, once (peopleChoices). Null until the pool is built.
+  const choices = useMemo(
+    () => (sceneCompositions ? peopleChoices({ compositions: sceneCompositions, poses, cast: castPeopleMemo, hasPoses: requests.select.length > 0 }) : null),
+    [sceneCompositions, poses, castPeopleMemo, requests.select.length]
+  )
+  const available = choices?.fitting ?? null
   const peopleKey = useMemo(() => {
-    if (!basePool || !sceneCompositions || missingRoles.length > 0) return ""
-    const all = sceneCompositions
-    if (isCast) return peopleKeyOf(castComposition(all.filter((c) => holdsCast(c.people, castPeopleMemo)), castPeopleMemo, brief.people, poses))
+    if (!basePool || !choices || missingRoles.length > 0) return ""
+    // Only make-ups with room for the characters: the default can't be one without.
+    if (isCast) return peopleKeyOf(castComposition(choices.fitting, castPeopleMemo, brief.people, choices.fittingPoses))
     const declared = compositionOfIdentity(firstCandidates)
-    return peopleKeyOf(defaultComposition(all, subject, brief.people, { declared, character: !!base }, poses))
-  }, [basePool, sceneCompositions, missingRoles, isCast, castPeopleMemo, brief.people, poses, firstCandidates, subject, base])
+    return peopleKeyOf(defaultComposition(choices.fitting, subject, brief.people, { declared, character: !!base }, choices.fittingPoses))
+  }, [basePool, choices, missingRoles, isCast, castPeopleMemo, brief.people, firstCandidates, subject, base])
   const people = useMemo(() => fromPeopleKey(peopleKey), [peopleKey])
 
   const pool = useMemo(() => {
@@ -499,14 +503,14 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       poses: requests.select,
       needsCompany: (tag) => poseNeedsScene(tag, overrides, relations),
       // Only the make-ups with room for the characters: "2 boys" is no option for one girl.
-      compositions: poses.filter((c) => holdsCast(c.people, castPeopleMemo)),
+      compositions: choices?.fittingPoses ?? NO_POSES,
       current: people,
       picked: brief.people,
       available: available ?? undefined,
       // The pack uses one make-up: whenever the scenes have several, the line shows them.
       whenSeveral: true,
     }),
-    [requests.select, overrides, relations, poses, castPeopleMemo, people, brief.people, available]
+    [requests.select, overrides, relations, choices, people, brief.people, available]
   )
   // Several make-ups: the ones the brief marks with room for the characters, the first being `people`.
   const mixKey = JSON.stringify(axis ? [] : briefCompositions(coreBrief))
@@ -514,10 +518,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     const marked = (JSON.parse(mixKey) as PackPeople[]).filter((p) => holdsCast(p, castPeopleMemo))
     return marked.length > 0 ? marked : people ? [people] : []
   }, [mixKey, castPeopleMemo, people])
-  const peopleBlocked = useMemo(() => {
-    const all = requests.select.length > 0 ? poses : sceneCompositions ?? []
-    return all.filter((c) => !holdsCast(c.people, castPeopleMemo))
-  }, [requests.select, poses, sceneCompositions, castPeopleMemo])
+  const peopleBlocked = choices?.blocked ?? NO_POSES
 
   // ── Clothes ───────────────────────────────────────────────────────────────────
   const [outfitData, setOutfitData] = useState<ReadonlyMap<string, CharacterOutfits | null>>(() => new Map())

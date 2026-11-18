@@ -19,7 +19,7 @@ import { parseTagRelations, setTagRelations, type TagRelationsFile } from "../li
 import { generateScenePack, tagKindsFromPosts, type ScenePackIssue } from "../lib/pack/scene-pack"
 import { addOutfitStyle, addTag, addTagExactly, briefCompositions, briefConditions, chooseChanges, setPeople, setRequestExact, toggleComposition, type PackBrief } from "../lib/pack/brief"
 import { briefFromCharacters } from "../lib/pack/brief-history"
-import { briefIdentity, briefPackArgs, conditionSupply, issuesFit, predictFit } from "../lib/pack/brief-pack"
+import { briefIdentity, briefPackArgs, conditionSupply, coreKeyOf, issuesFit, peopleChoices, predictFit } from "../lib/pack/brief-pack"
 import { makePost } from "./fixtures/pack-scene-data"
 
 const root = path.join(__dirname, "..")
@@ -230,6 +230,32 @@ check("forecast before generating: the different forms loaded, the same the pack
   assert.equal(none.variants, 0)
   // Places: each scene's place that has it.
   assert.ok(conditionSupply({ role: "where", tags: ["classroom"], scenes, overrides }).variants >= 2)
+})
+
+check("People with one girl: a second make-up marked changes what the pack is made from and reaches the engine; no make-up without room for her is offered", () => {
+  const alone = { girls: 1, boys: 0 }
+  const pair = { girls: 1, boys: 1 }
+  // The pack's make-up already set (Alone), then a second one marked: only peopleMix changes.
+  const set = setPeople(tifa, alone)
+  const mixed = toggleComposition(set, pair, alone)
+  assert.deepEqual(mixed.people, alone)
+  assert.deepEqual(mixed.peopleMix, [pair])
+  assert.notEqual(coreKeyOf(mixed), coreKeyOf(set), "the second make-up is part of what the pack is made from")
+  assert.deepEqual(briefCompositions(mixed), [alone, pair], "both marked")
+  const who = briefIdentity({ brief: mixed, looks: {}, permanence, overrides })
+  const args = briefPackArgs(mixed, who, { overrides, permanence, count: 4, seed: 3, people: alone, outfit: { kind: "scene" }, clean, compositions: briefCompositions(mixed) })
+  assert.deepEqual(args.compositions, [alone, pair], "both reach the engine")
+  // Leaving a scene out still doesn't rebuild the pack's base.
+  assert.equal(coreKeyOf({ ...mixed, leftOut: ["801"] }), coreKeyOf(mixed))
+  // One boy alone has no room for her: never an option, listed once as not available.
+  const compositions = [{ people: alone, scenes: 22 }, { people: { girls: 0, boys: 1 }, scenes: 1 }, { people: pair, scenes: 1 }]
+  const choices = peopleChoices({ compositions, poses: compositions, cast: { girls: 1, boys: 0 }, hasPoses: false })
+  assert.deepEqual(choices.fitting.map((c) => c.people), [alone, pair])
+  assert.deepEqual(choices.blocked.map((c) => c.people), [{ girls: 0, boys: 1 }])
+  // With a pose, the pose's make-ups; the same rule.
+  const withPose = peopleChoices({ compositions, poses: [{ people: { girls: 0, boys: 1 }, scenes: 5 }, { people: pair, scenes: 3 }], cast: { girls: 1, boys: 0 }, hasPoses: true })
+  assert.deepEqual(withPose.fittingPoses.map((c) => c.people), [pair])
+  assert.deepEqual(withPose.blocked.map((c) => c.people), [{ girls: 0, boys: 1 }])
 })
 
 console.log(`pack-brief-conditions: ${passed} checks passed`)

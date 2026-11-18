@@ -1170,3 +1170,36 @@ export function packCopyText(
   const unsized = withSize ? prompts.filter((p) => !promptSize(p)).length : 0
   return { text: lines.join('\n'), unsized }
 }
+
+// ── What the pack is made from ────────────────────────────────────────────────
+
+/**
+ * The key of everything in the brief that changes what the pack is made from: all of it but the
+ * scenes left out (in a whole-scene pack they don't rebuild the pool or the sheet) and the
+ * variants left out. A field the brief gains is in it by default; the make-ups mixed in too.
+ */
+export function coreKeyOf(brief: PackBrief): string {
+  const { leftOut, leftOutVariants, ...rest } = brief
+  void leftOutVariants
+  return JSON.stringify([rest, oneAxis(brief) ? leftOut : null])
+}
+
+/**
+ * The make-ups People can offer: only those with room for the characters, one or several (never
+ * "1 boy" for a girl alone), with the requested poses' and the pool's apart; and the ones without
+ * room, each once, shown but not offered. The default make-up is chosen among `fitting` only.
+ */
+export function peopleChoices<T extends { people: PackPeople }>({ compositions, poses, cast, hasPoses }: {
+  compositions: readonly T[]
+  poses: readonly T[]
+  cast: PackPeople
+  hasPoses: boolean
+}): { fitting: T[]; fittingPoses: T[]; blocked: T[] } {
+  const holds = (c: T) => c.people.girls >= cast.girls && c.people.boys >= cast.boys
+  const listed = hasPoses ? poses : compositions
+  return {
+    fitting: compositions.filter(holds),
+    fittingPoses: poses.filter(holds),
+    blocked: listed.filter((c) => !holds(c)),
+  }
+}
