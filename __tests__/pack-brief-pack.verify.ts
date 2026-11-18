@@ -425,7 +425,7 @@ check("search-text: each search of the plan in plain words, with the tags as the
   assert.equal(searchTagsText(plan.scenes[0]), "sui-feng double_penetration")
   assert.equal(ratingsSentence(plan.ratings), "Each search runs for Questionable and Explicit pictures.")
   // No pose: the character alone; a head count: pictures with those people.
-  assert.equal(searchDescription({ kind: "own", poses: [] }, "Sui-Feng", null), "Sui-Feng alone")
+  assert.equal(searchDescription({ kind: "own", poses: [] }, "Sui-Feng", null), "Sui-Feng, alone or with others")
   assert.equal(searchDescription({ kind: "group", poses: [] }, null, { girls: 2, boys: 1 }), "Pictures with 2 girls and 1 boy")
   assert.equal(searchDescription({ kind: "theme", poses: ["sitting"] }, null, { girls: 1, boys: 1 }), "Anyone doing sitting, with 1 girl and 1 boy")
   assert.equal(searchDescription({ kind: "gallery", poses: [] }, null, null), "Your gallery search")

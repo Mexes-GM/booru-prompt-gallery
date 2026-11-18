@@ -22,7 +22,7 @@ const listWords = (tags: readonly string[]) =>
   tags.length <= 1 ? tags.map(showTag).join("") : `${tags.slice(0, -1).map(showTag).join(", ")} and ${showTag(tags[tags.length - 1])}`
 
 /**
- * Whose posts a search looks for: "Sui-Feng doing double penetration", "Sui-Feng alone",
+ * Whose posts a search looks for: "Sui-Feng doing double penetration", "Sui-Feng, alone or with others",
  * "Anyone doing double penetration", "Anyone doing sitting, with 1 girl and 1 boy",
  * "Pictures with 2 girls", "Your gallery search". `character` is the name the card shows.
  */
@@ -35,7 +35,7 @@ export function searchDescription(
   const withPeople = people ? `, with ${peopleWords(people)}` : ""
   switch (search.kind) {
     case "own":
-      return doing ? `${character ?? "The character"}${doing}` : `${character ?? "The character"} alone`
+      return doing ? `${character ?? "The character"}${doing}` : `${character ?? "The character"}, alone or with others`
     case "group":
       return people ? `Pictures with ${peopleWords(people)}` : "Pictures with the same people"
     case "gallery":

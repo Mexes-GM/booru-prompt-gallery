@@ -49,20 +49,21 @@ const anyoneSitting = [
   post(7, "1girl solo sitting", "makima_(chainsaw_man)"),
 ]
 
+/** A plan of one search of the character's own posts with these tags. */
+const ownPlan = (tags: string[]): SourcePlan => ({ ...planSources(solo, env), scenes: [{ id: `scene|danbooru|${tags.join(" ")}`, tags, query: tags.join(", "), kind: "own", poses: [] }] })
+
 check(() => {
-  // A second make-up marked: "frieren, solo" becomes "frieren". Every post it had stays.
-  const before = planSources(solo, env)
-  const after = planSources(solo, { ...env, compositions: MIX })
-  assert.deepEqual(before.scenes.map((s) => s.tags), [["frieren", "solo"]])
-  assert.deepEqual(after.scenes.map((s) => s.tags), [["frieren"]])
-  assert.deepEqual(kept(soloPosts, after).map((k) => k.id), [1, 2, 3])
-  assert.ok(kept(soloPosts, after).every((k) => k.search === "own"))
+  // "frieren, solo" becomes "frieren" (a make-up with company marked): every post it had stays.
+  assert.deepEqual(kept(soloPosts, ownPlan(["frieren"])).map((k) => k.id), [1, 2, 3])
+  assert.ok(kept(soloPosts, ownPlan(["frieren"])).every((k) => k.search === "own"))
+  // The plan's own search by name, with a second make-up marked or not, keeps them too.
+  assert.deepEqual(planSources(solo, { ...env, compositions: MIX }).scenes.map((s) => s.tags), [["frieren"]])
+  assert.deepEqual(kept(soloPosts, planSources(solo, { ...env, compositions: MIX })).map((k) => k.id), [1, 2, 3])
 })
 
 check(() => {
   // And back: "frieren" to "frieren, solo" keeps only the pictures of her alone.
-  const back = planSources(solo, env)
-  assert.deepEqual(kept([...soloPosts, ...withOthers], back).map((k) => k.id), [1, 2, 3])
+  assert.deepEqual(kept([...soloPosts, ...withOthers], ownPlan(["frieren", "solo"])).map((k) => k.id), [1, 2, 3])
 })
 
 check(() => {
@@ -77,18 +78,20 @@ check(() => {
 })
 
 check(() => {
-  // The pose taken away: the theme search's pictures of other characters go; hers alone stay.
+  // The pose taken away: the theme search's pictures of other characters go; hers stay.
   const before = planSources(sitting, env)
   assert.ok(before.scenes.some((s) => s.kind === "theme"))
   const after = planSources(solo, env)
   const loaded = [post(1, "1girl solo sitting", "frieren"), post(4, "1girl 1boy sitting", "frieren himmel_(sousou_no_frieren)"), ...anyoneSitting]
-  assert.deepEqual(kept(loaded, after).map((k) => k.id), [1])
+  assert.deepEqual(kept(loaded, after).map((k) => k.id), [1, 4])
+  // With "frieren, solo" instead, only her pictures alone.
+  assert.deepEqual(kept(loaded, ownPlan(["frieren", "solo"])).map((k) => k.id), [1])
 })
 
 check(() => {
   // Another site: nothing stays, even with the same tags.
   const after = planSources(solo, { ...env, provider: "gelbooru" })
-  assert.equal(after.scenes[0].tags.join(" "), "frieren solo")
+  assert.equal(after.scenes[0].tags.join(" "), "frieren")
   assert.deepEqual(kept(soloPosts, after), [])
   const gelbooru = soloPosts.map((p) => ({ ...p, provider: "gelbooru" as BooruProvider }))
   assert.deepEqual(kept(gelbooru, after).map((k) => k.id), [1, 2, 3])

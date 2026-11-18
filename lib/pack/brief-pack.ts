@@ -50,7 +50,7 @@ export interface ResolvedLook {
 export interface LookInputs {
   /** Read from the character's own solo posts (useCharacterLooks). */
   solo?: { status: 'loading' | 'ready' | 'none'; look: string[] | null; subject: string[] } | null
-  /** typicalLook over the pack's own posts, when the pool is the character's ("name, solo"). */
+  /** typicalLook over the pack's own posts, when the pool shows only the character alone (SourcePlan.baseLookFromPool). */
   pool?: { look: string[]; subject: string[] } | null
   /** Their static trait profile (profileIdentity); empty when there is none. */
   profile?: readonly string[]

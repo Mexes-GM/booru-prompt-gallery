@@ -352,7 +352,9 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
 
   // ── Looks ─────────────────────────────────────────────────────────────────────
   const base = named[0] ?? null
-  const poolIsOwn = plan.scenes.length === 1 && plan.scenes[0].kind === "own"
+  // The pool reads the base character's look only when it shows them alone (the plan says so):
+  // a search by name brings them with company too, other people's hair and eyes in the same posts.
+  const poolIsOwn = plan.baseLookFromPool
   const soloShare = useMemo(() => poolSoloShare(posts), [posts])
   const poolLook = useMemo(() => {
     if (!poolIsOwn || !base || posts.length === 0) return null
