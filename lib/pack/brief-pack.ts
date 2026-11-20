@@ -16,14 +16,16 @@ import { castPeople, roleFromSubject, type CastRole } from './scene/cast'
 import { COUNT_TAG_RE, type Permanence } from './scene/permanence'
 import type { PackPeople } from './scene/scene-pool'
 import type { Scene } from './scene/scene'
+import { requestSpelling } from './scene/spelling'
 import { garmentPieces, garmentRegion, layersOver, meetsAll, regionTags, valueKey } from './scene/scene-conditions'
-import { loadedTagRelations, requiredBy } from '../tag-relations'
+import { loadedTagRelations, requiredBy, type TagRelations } from '../tag-relations'
 import {
   DEFAULT_SCENE_SETTINGS,
   REUSES_PER_SCENE,
   castChips,
   identityWithOutfits,
   isWornByCharacter,
+  poseNeedsScene,
   subjectOfTags,
   type CastChipsBlock,
   type LibraryOutfit,
@@ -403,7 +405,7 @@ export interface ConditionSupply {
  * `library` the outfits allowed at the rating. A forecast: the engine also skips donors of another
  * make-up and donors that clash with a scene, so it can come out lower, never higher.
  */
-export function conditionSupply({ role, tags, styles = [], scenes, library = [], overrides, aliases = {} }: {
+export function conditionSupply({ role, tags, styles = [], scenes, library = [], overrides, aliases = {}, permanence }: {
   role: 'wearing' | 'where'
   tags: readonly string[]
   styles?: readonly string[]
@@ -412,10 +414,13 @@ export function conditionSupply({ role, tags, styles = [], scenes, library = [],
   overrides: Record<string, string>
   /** Other names of each condition (auto_suggest_tags.aliases): written as the condition, as the engine does. */
   aliases?: Readonly<Record<string, readonly string[]>>
+  /** Permanence lookup: with it, the conditions are spelled as the scenes are by the whole rule (spelling.ts). */
+  permanence?: (tag: string) => Permanence
 }): ConditionSupply {
-  const wanted = tags.map(normalizeTagForPack).filter(Boolean)
+  // Compared in the scenes' spelling, as the engine does ("stockings" finds "thighhighs").
+  const wanted = tags.map((tag) => requestSpelling(tag, overrides, permanence)).filter(Boolean)
   const renames: Array<[string, string]> = Object.entries(aliases).flatMap(([cond, names]) =>
-    names.map((name) => [normalizeTagForPack(name), normalizeTagForPack(cond)] as [string, string]))
+    names.map((name) => [normalizeTagForPack(name), requestSpelling(cond, overrides, permanence)] as [string, string]))
   const named = (list: readonly string[]) => (renames.length === 0 ? list : list.map((tag) => {
     for (const [name, cond] of renames) {
       if (tag === name) return cond
@@ -1182,6 +1187,16 @@ export function coreKeyOf(brief: PackBrief): string {
   const { leftOut, leftOutVariants, ...rest } = brief
   void leftOutVariants
   return JSON.stringify([rest, oneAxis(brief) ? leftOut : null])
+}
+
+/**
+ * Whether a requested pose needs a scene that has it (poseNeedsScene), read in the scenes'
+ * spelling as the engine reads it (spelling.ts, with the permanence lookup when given): Rule34's
+ * "female on top" is asked as Danbooru's "girl on top". For the People line's "needs company".
+ */
+export function poseNeedsCompany(tag: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence, relations?: TagRelations | null): boolean {
+  const spelled = requestSpelling(tag, overrides, permanence)
+  return relations === undefined ? poseNeedsScene(spelled, overrides) : poseNeedsScene(spelled, overrides, relations)
 }
 
 /**
