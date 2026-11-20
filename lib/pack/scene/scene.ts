@@ -19,6 +19,7 @@ import { GENDER_AFFINITY } from '../../prompt/natural/gender-affinity'
 import { COUNT_TAG_RE, OPEN_COUNT_RE, isKinshipTag, type Permanence } from './permanence'
 import { hasGarmentQualifier, isFranchiseGarment, isQualifiedName } from './franchise'
 import { isEnvironmentTag } from '../background-coherence'
+import { canonicalSpelling } from './spelling'
 
 /**
  * Types a booru gives its tags. 'deprecated' is a tag the booru retired; 'unlisted' is
@@ -293,6 +294,8 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
   const multiple: string[] = []
   const pairing: string[] = []
   const rest: string[] = []
+  // Danbooru spellings already taken: two spellings of one tag in a post make one tag.
+  const spelledSeen = new Set<string>()
   for (const tag of ordered) {
     if (tag === 'no humans') return null
     const count = COUNT_TAG_RE.exec(tag)
@@ -311,12 +314,22 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
       pairing.push(tag)
       continue
     }
-    if (siteRole(tag) === 'people') continue
-    if (ctx.permanence(tag) === 'composition') {
-      if (!isKinshipTag(tag)) pairing.push(tag)
+    const role = siteRole(tag)
+    if (role === 'people') continue
+    // From here on the scene speaks Danbooru's spelling ("cum inside" is "cum in pussy"); the site's
+    // own words for the people are read above in its own.
+    const spelled = role ? tag : canonicalSpelling(tag, ctx.overrides, ctx.permanence)
+    if (spelled !== tag) {
+      if (spelled === 'no humans') return null
+      if (spelledSeen.has(spelled) || ordered.includes(spelled)) continue
+      spelledSeen.add(spelled)
+      if (!bucket.has(spelled)) bucket.set(spelled, bucket.get(tag)!)
+    }
+    if (ctx.permanence(spelled) === 'composition') {
+      if (!isKinshipTag(spelled)) pairing.push(spelled)
       continue
     }
-    rest.push(tag)
+    rest.push(spelled)
   }
   for (const tag of multiple) {
     const counted = tag.endsWith('girls') ? girls > 1 : tag.endsWith('boys') ? boys > 1 : false
