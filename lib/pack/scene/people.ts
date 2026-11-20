@@ -46,11 +46,15 @@ export type PeopleReason =
   /** Nothing says how many people there are. */
   | 'none'
 
-/** The way a site writes who is in the picture. */
-export type PeopleVocabulary = 'danbooru' | 'rule34'
+/**
+ * The way a site writes who is in the picture: Danbooru's counts ("1girl, 2boys"), Rule34's mix of
+ * counts and gender tags ("1girls, male"), or e621's gender and body-type tags with no count at all
+ * ("female, male, duo"; cast.ts searches it that way). The prompt is written in Danbooru's.
+ */
+export type PeopleVocabulary = 'danbooru' | 'rule34' | 'e621'
 
-/** Rule34 writes the people its own way; the other sites read here count everyone Danbooru-style. */
-export const peopleVocabulary = (provider: BooruProvider | undefined): PeopleVocabulary => (provider === 'rule34' ? 'rule34' : 'danbooru')
+export const peopleVocabulary = (provider: BooruProvider | undefined): PeopleVocabulary =>
+  provider === 'rule34' ? 'rule34' : provider === 'e621' || provider === 'e6ai' ? 'e621' : 'danbooru'
 
 const MULTIPLE = /^multiple (girls|boys|others)$/
 const OPEN_PLUS = /^\d+\+(girls?|boys?|others?)$/
@@ -83,6 +87,61 @@ const CROWD = new Set(['threesome', 'foursome', 'group sex', 'gangbang', 'orgy',
 /** Tags that say both genders are there. */
 const MIXED = new Set(['hetero', 'straight', 'male/female'])
 const FUTA_COUNT = /^(\d+futas?|multiple futa)$/
+
+// ── The site's own words for the people ──────────────────────────────────────
+
+/** The genders Rule34 and e621 name people by: the ones the presence tags above read ("female", "male"). */
+const GENDER_WORDS = Object.keys(PRESENCE).filter((tag) => !tag.startsWith('multiple '))
+/**
+ * What kind of being each person is, as Rule34 and e621 tag it next to the gender: after the genders
+ * and the futa words, the words those sites use most for a participant in their own relation tags
+ * ("anthro penetrating human", "human on feral", "humanoid penetrated", "human female"): measured on
+ * 1029 Rule34 posts, human in 28 such tags, anthro 19, feral 15, humanoid 10. Danbooru doesn't tag
+ * them alone; it files the being by its features ("animal ears", "furry female"), which the look keeps.
+ */
+const KIND_WORDS = ['human', 'anthro', 'feral', 'humanoid']
+/** How those sites say who is with whom by orientation: "straight" is Rule34's "hetero" (MIXED above). */
+const ORIENTATION_WORDS = ['straight', 'gay', 'lesbian', 'bisexual']
+/** Head counts by word, the way e621 counts (cast.ts searches it with "duo" / "trio"); "solo" is the prompt's own. */
+const HEAD_COUNT_WORDS = ['duo', 'trio', 'group']
+
+const alt = (words: readonly string[]) => words.join('|')
+const PERSON = `(?:${alt([...GENDER_WORDS, ...KIND_WORDS])})`
+/**
+ * Tags made only of those words and the words that tie people together: who is there ("female",
+ * "multiple males", "human female", "partial male"), who the picture is about ("female focus",
+ * "male only"), who is with whom ("male/female", "anthro on anthro", "male penetrating female",
+ * "female penetrated"), the orientation ("straight", "lesbian sex") and the head count by word
+ * ("trio", "group"). Words for the third kind ("futa", "intersex") are left alone: the prompt's
+ * header has no way to say them.
+ */
+const SITE_PEOPLE_RE = new RegExp(
+  [
+    `^(?:multiple |partial )?(?:(?:${alt(KIND_WORDS)}) )?(?:${alt(GENDER_WORDS)})s?$`,
+    `^${PERSON}(?: ${PERSON})? (?:focus|only)$`,
+    `^${PERSON}(?:/${PERSON})+$`,
+    `^${PERSON} on ${PERSON}$`,
+    `^${PERSON} penetrat(?:ing|ed)(?: ${PERSON})?$`,
+    `^(?:${alt(ORIENTATION_WORDS)})(?: sex)?$`,
+    `^(?:${alt(HEAD_COUNT_WORDS)})(?: focus)?$`,
+  ].join('|')
+)
+const KIND_RE = new RegExp(`^(?:${alt(KIND_WORDS)})$`)
+
+/**
+ * What a tag is in the people vocabulary of a site that writes them its own way (Rule34, e621):
+ *  - `people`: it says who is in the picture or how they pair up. The prompt's header says that
+ *    from the scene's people and act ("1girl, 2boys, hetero"), so the tag never travels with a scene.
+ *  - `kind`: the kind of being a person is ("human", "anthro"): who they are, not what the picture
+ *    shows, like a hair colour. A named character's comes from their look, not from another post.
+ * Null for any other tag, and for every tag of a site that writes people Danbooru's way: there the
+ * people are its counts, which the scene reads as it always has.
+ */
+export function sitePeopleRole(tag: string, vocabulary: PeopleVocabulary): 'people' | 'kind' | null {
+  if (vocabulary === 'danbooru') return null
+  if (KIND_RE.test(tag)) return 'kind'
+  return SITE_PEOPLE_RE.test(tag) ? 'people' : null
+}
 
 /** The Danbooru reading the scene extraction has always done: counts, open counts, absent means none. */
 function danbooruPeople(tags: readonly string[]): PostPeople {
@@ -190,7 +249,8 @@ function rule34People(tags: readonly string[]): PostPeople {
 
 /**
  * The people of a post with these tags (pack form: spaces, lower case), read in the vocabulary of
- * `provider`. Without a provider, or for a Danbooru-like site, the Danbooru reading.
+ * `provider`. Without a provider, for a Danbooru-like site, and for e621 (whose posts carry no count
+ * to read; nothing measured yet for a reading of its own), the Danbooru reading.
  */
 export function postPeople(tags: readonly string[], provider?: BooruProvider): PostPeople {
   return peopleVocabulary(provider) === 'rule34' ? rule34People(tags) : danbooruPeople(tags)
