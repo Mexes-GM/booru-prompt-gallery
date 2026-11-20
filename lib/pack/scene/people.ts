@@ -21,6 +21,7 @@
  */
 import type { BooruProvider } from '../../booru/types'
 import { COUNT_TAG_RE, type Permanence } from './permanence'
+import { derivedRead } from './vocabulary'
 
 export interface PostPeople {
   /** The people of the picture, or null when the tags don't pin them down. */
@@ -177,8 +178,13 @@ function nounsOf(stem: string): string[] {
  * The two-word tags of a person's slot, by their last word ("dark skin", "pale skin", "shiny skin"
  * under "skin"), with the slot they share (null when they disagree). Worked out once per overrides.
  */
-const families = new WeakMap<Record<string, string>, Map<string, { slot: string | null; members: string[] }>>()
-function familyOf(noun: string, overrides: Record<string, string>): { slot: string | null; members: string[] } | undefined {
+interface Family { slot: string | null; members: string[] }
+const families = new WeakMap<Record<string, string>, Map<string, Family>>()
+const sameFamily = (a: Family | undefined, b: Family | undefined) => a === b || (!!a && !!b && a.slot === b.slot && a.members.join('|') === b.members.join('|'))
+function familyOf(noun: string, overrides: Record<string, string>): Family | undefined {
+  return derivedRead(overrides, (raw) => familiesOf(raw).get(noun), sameFamily)
+}
+function familiesOf(overrides: Record<string, string>): Map<string, Family> {
   let map = families.get(overrides)
   if (!map) {
     map = new Map()
@@ -194,7 +200,7 @@ function familyOf(noun: string, overrides: Record<string, string>): { slot: stri
     }
     families.set(overrides, map)
   }
-  return map.get(noun)
+  return map
 }
 
 const genderOf = (word: string): 'girl' | 'boy' => (word === 'female' ? 'girl' : 'boy')

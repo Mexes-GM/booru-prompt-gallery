@@ -16,6 +16,7 @@
  */
 import { getTagSlotFromOverrides } from '../../tag-taxonomy'
 import type { TagKind } from './scene'
+import { wholeVocabulary } from './vocabulary'
 
 /** Booru disambiguators that only say what kind of thing the tag is. */
 const GENERIC_QUALIFIERS = new Set([
@@ -28,7 +29,8 @@ const NAMED_UNIFORM = /^(.+?) (?:school )?uniform$/
 const vocabularyCache = new WeakMap<Record<string, string>, Map<string, number>>()
 
 /** How many tags of the vocabulary (both spellings counted once) use each word. */
-function wordCounts(overrides: Record<string, string>): Map<string, number> {
+function wordCounts(vocabulary: Record<string, string>): Map<string, number> {
+  const overrides = wholeVocabulary(vocabulary)
   let counts = vocabularyCache.get(overrides)
   if (counts) return counts
   counts = new Map()
