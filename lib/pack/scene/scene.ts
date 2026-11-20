@@ -9,7 +9,7 @@
  * so the prompt header can be written from the new character).
  */
 import type { BooruPost, BooruProvider } from '../../booru/types'
-import { peopleVocabulary, postPeople } from './people'
+import { peopleVocabulary, postPeople, sitePeopleRole } from './people'
 import { classifyPostForPack, normalizeTagForPack, postAspectLog } from '../pack-generator'
 import { postCharacters } from '../character-focus'
 import { splitTags } from '../../utils/tag-utils'
@@ -106,7 +106,9 @@ export interface SceneContext {
   looksLikeName?: (tag: string) => boolean
   /**
    * The site the posts come from: who is in a picture is read in its vocabulary (people.ts
-   * postPeople; Rule34 counts with "male" / "female" and group tags). Missing: the Danbooru reading.
+   * postPeople; Rule34 counts with "male" / "female" and group tags), and the site's own words for
+   * the people ("female", "straight", "male/female", "anthro") stay out of the scene (sitePeopleRole).
+   * Missing: the Danbooru reading.
    */
   provider?: BooruProvider
 }
@@ -277,6 +279,12 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
   const ordered = Array.from(new Set(splitTags(post.tag_string || '').map(normalizeTagForPack)))
     .filter((tag) => tag && bucket.has(tag) && !characters.has(tag))
 
+  // A site that writes the people its own way (Rule34, e621): its words for who is there are read
+  // below and said by the prompt's header; the kind of being someone is ("human", "anthro") is part
+  // of who they are, like a hair colour.
+  const vocabulary = peopleVocabulary(ctx.provider)
+  const siteRole = (tag: string) => sitePeopleRole(tag, vocabulary)
+
   // Pass 1: people and pairing.
   let girls = 0
   let boys = 0
@@ -303,6 +311,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
       pairing.push(tag)
       continue
     }
+    if (siteRole(tag) === 'people') continue
     if (ctx.permanence(tag) === 'composition') {
       if (!isKinshipTag(tag)) pairing.push(tag)
       continue
@@ -319,7 +328,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
   let people = openCount || girls + boys === 0 ? null : { girls, boys }
   // A site that writes who is there its own way (Rule34): its vocabulary decides; once the people are
   // known, the open counts it also carries say nothing more.
-  if (peopleVocabulary(ctx.provider) !== 'danbooru') {
+  if (vocabulary === 'rule34') {
     people = postPeople(ordered, ctx.provider).people
     if (people) {
       const answered = pairing.filter((tag) => OPEN_COUNT_RE.test(tag) || COUNT_TAG_RE.test(tag) || /^multiple (girls|boys|others)$/.test(tag))
@@ -363,7 +372,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     // A general tag qualified by a work or a character is a name tied to it ("... (project moon)").
     if (!slot && isQualifiedName(tag, ctx.tagKind)) continue
 
-    const permanence = ctx.permanence(tag)
+    const permanence = siteRole(tag) === 'kind' ? 'identity' : ctx.permanence(tag)
     if (permanence === 'identity') {
       const gender = tagGender(tag, rating)
       if (gender && anonymousTraitsOf(gender) && isTheme(tag)) put('body', tag)
