@@ -22,6 +22,7 @@ import { isQualifiedVariant } from './character-identity'
 import { compositionsOf, groupSituations, type PackPeople, type ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
 import { genderedTrait } from './scene/people'
+import { requestSpelling } from './scene/spelling'
 import { garmentPrefix, lastQualifier } from './scene/franchise'
 import type { ChangesAxis, SceneRequests } from './brief'
 import { excludes, loadedTagRelations, needsCompany, requiredBy, type TagRelations } from '../tag-relations'
@@ -519,8 +520,11 @@ const selections = new WeakMap<PoseArgs, PoseSelection | null>()
 function poseSelection(args: PoseArgs): PoseSelection | null {
   const cached = selections.get(args)
   if (cached !== undefined) return cached
-  const never = (args.never ?? []).map(normalizeTagForPack).filter(Boolean)
-  const tags = Array.from(new Set((args.requests?.select ?? []).map(normalizeTagForPack)))
+  // In the scenes' spelling (spelling.ts), whoever calls: the engine's own args already are.
+  const permanence = (args as Pick<ScenePackArgs, 'permanence'>).permanence
+  const spell = (tag: string) => requestSpelling(tag, args.overrides, permanence)
+  const never = (args.never ?? []).flatMap((tag) => [normalizeTagForPack(tag), spell(tag)]).filter(Boolean)
+  const tags = Array.from(new Set((args.requests?.select ?? []).map(spell)))
     .filter((tag) => tag && !never.some((base) => isQualifiedVariant(tag, base)))
   let selection: PoseSelection | null = null
   if (tags.length > 0) {
@@ -541,7 +545,8 @@ function poseSelection(args: PoseArgs): PoseSelection | null {
  * another scene it contradicts it. A plain posture ("sitting") can be imposed.
  */
 export function poseNeedsScene(tag: string, overrides: Record<string, string>, relations: TagRelations | null = loadedTagRelations()): boolean {
-  const key = normalizeTagForPack(tag)
+  // In the scenes' spelling: "doggy style" is read as "doggystyle".
+  const key = requestSpelling(tag, overrides)
   if (getTagSlotFromOverrides(key, overrides)?.slot === 'pose:interaction') return true
   return !!relations && needsCompany(relations, key)
 }
@@ -2279,7 +2284,105 @@ function rerollAxisPrompt(pool: ScenePool, prompts: readonly PackPrompt[], index
  * (Faithful makes at most one prompt per scene); `issues`, what was asked and not met.
  * With `args.changes` on one axis, a one-axis pack (see ScenePackArgs.changes).
  */
+// ── The user's spelling and the scenes' ──────────────────────────────────────
+
+/**
+ * The engine's view of `args`: what the user asked for (requests, conditions, "Never include",
+ * the others' look) in the spelling the scenes use (spelling.ts: "stockings" is "thighhighs",
+ * "doggy style" "doggystyle"), so every comparison with scenes and donors (poses, conditions and
+ * their variants, slots, ownership, never) sees one tag. What the prompt says stays what the user
+ * wrote: a tag asked for exactly (Wearing or Where as typed, Also, the others' look) is written back
+ * in the user's spelling (`exact`), whether the scene brought it too or not; one met in any form (a
+ * pose of Doing, a condition) is the scene's, as the scene spells it. Issues name the user's tags.
+ */
+interface SpellingView {
+  args: ScenePackArgs
+  /** Scenes' spelling -> the user's, for the tags written back into prompts. */
+  exact: ReadonlyMap<string, string>
+  /** Scenes' spelling -> the user's, for every respelled tag (issues). */
+  typed: ReadonlyMap<string, string>
+}
+const spellingViews = new WeakMap<ScenePackArgs, SpellingView>()
+
+function spellingView(args: ScenePackArgs): SpellingView {
+  const cached = spellingViews.get(args)
+  if (cached) return cached
+  const exact = new Map<string, string>()
+  const typed = new Map<string, string>()
+  const spell = (raw: string) => requestSpelling(raw, args.overrides, args.permanence)
+  const respell = (list: readonly string[], writtenBack: (raw: string) => boolean): string[] =>
+    list.map((raw) => {
+      const to = spell(raw)
+      if (!to || to === normalizeTagForPack(raw)) return raw
+      if (!typed.has(to)) typed.set(to, raw)
+      if (writtenBack(raw) && !exact.has(to)) exact.set(to, raw)
+      return to
+    })
+  // "Never include" keeps the user's spelling too: a scene's tag in either is left out.
+  const never = args.never ? Array.from(new Set([...args.never, ...respell(args.never, () => false)])) : undefined
+  const r = args.requests
+  let requests = r
+  if (r) {
+    const conditions = new Set((r.conditions ?? []).map(normalizeTagForPack))
+    const asTyped = (raw: string) => !conditions.has(normalizeTagForPack(raw))
+    requests = {
+      ...r,
+      select: respell(r.select, () => false),
+      wearing: respell(r.wearing, asTyped),
+      where: respell(r.where, asTyped),
+      also: respell(r.also, () => true),
+      ...(r.others ? { others: respell(r.others, () => true) } : {}),
+      ...(r.conditions ? { conditions: respell(r.conditions, () => false) } : {}),
+    }
+  }
+  const aliases = args.conditionAliases
+    ? Object.fromEntries(Object.entries(args.conditionAliases).map(([tag, names]) => [spell(tag) || tag, names]))
+    : undefined
+  const view: SpellingView = typed.size === 0
+    ? { args, exact, typed }
+    : { args: { ...args, ...(requests ? { requests } : {}), ...(never ? { never } : {}), ...(aliases ? { conditionAliases: aliases } : {}) }, exact, typed }
+  spellingViews.set(args, view)
+  return view
+}
+
+/** A prompt tag as a key: escapes off, pack form. */
+const promptKey = (tag: string) => normalizeTagForPack(tag.replace(/\\/g, ''))
+
+/** A prompt of the engine with the tags asked for exactly in the user's spelling. */
+function inUserSpelling(prompt: PackPrompt, view: SpellingView): PackPrompt {
+  if (view.exact.size === 0) return prompt
+  let changed = false
+  const tags = prompt.prompt.split(', ').map((tag) => {
+    const typed = view.exact.get(promptKey(tag))
+    if (!typed) return tag
+    changed = true
+    return typed
+  })
+  return changed ? { ...prompt, prompt: Array.from(new Set(tags)).join(', ') } : prompt
+}
+
+/** Issues naming the user's tags as they wrote them. */
+function issuesInUserSpelling(issues: ScenePackIssue[], view: SpellingView): ScenePackIssue[] {
+  if (view.typed.size === 0) return issues
+  const name = (tag: string) => view.typed.get(tag) ?? tag
+  return issues.map((issue) => ({
+    ...issue,
+    ...('tag' in issue ? { tag: name(issue.tag) } : {}),
+    ...('tags' in issue ? { tags: issue.tags.map(name) } : {}),
+  }) as ScenePackIssue)
+}
+
+function resultInUserSpelling(result: ScenePackResult, view: SpellingView): ScenePackResult {
+  if (view.typed.size === 0) return result
+  return { ...result, prompts: result.prompts.map((p) => inUserSpelling(p, view)), issues: issuesInUserSpelling(result.issues, view) }
+}
+
 export function generateScenePack(pool: ScenePool, args: ScenePackArgs): ScenePackResult {
+  const view = spellingView(args)
+  return resultInUserSpelling(generateSpelled(pool, view.args), view)
+}
+
+function generateSpelled(pool: ScenePool, args: ScenePackArgs): ScenePackResult {
   const count = Math.max(0, Math.floor(args.count))
   if (count === 0) return { prompts: [], shortBy: 0, issues: [] }
   pool = packScenes(pool, args)
@@ -2314,7 +2417,7 @@ export interface AsyncControl {
  * `generateScenePack` in slices: pauses between prompts so the page keeps
  * responding, and stops early (null) when the request is cancelled.
  */
-export async function generateScenePackAsync(
+async function generateSpelledAsync(
   pool: ScenePool,
   args: ScenePackArgs,
   control: AsyncControl
@@ -2402,6 +2505,7 @@ export interface SceneCandidate {
  * the order the pack uses them (`'donor'`); its length is the most prompts that pack can make.
  */
 export function sceneCandidates(pool: ScenePool, args: ScenePackArgs): SceneCandidate[] {
+  args = spellingView(args).args
   pool = packScenes(pool, args)
   // Enough to take every phase to its end: the composer never makes more than MAX_PACK_OVERGENERATE per phase.
   const count = Math.max(pool.scenes.length, MAX_PACK_OVERGENERATE)
@@ -2489,7 +2593,7 @@ function restrictPool(pool: ScenePool, allowed: ReadonlySet<number>): ScenePool 
  * value of the axis it doesn't have (also for the base's own row: the base never changes); null
  * when none is left.
  */
-export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[], index: number, args: ScenePackArgs): PackPrompt | null {
+function rerollSpelled(pool: ScenePool, prompts: readonly PackPrompt[], index: number, args: ScenePackArgs): PackPrompt | null {
   pool = packScenes(pool, args)
   const current = prompts[index]
   if (!current) return null
@@ -2540,4 +2644,26 @@ export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[
     }
   }
   return null
+}
+
+export async function generateScenePackAsync(pool: ScenePool, args: ScenePackArgs, control: AsyncControl): Promise<ScenePackResult | null> {
+  const view = spellingView(args)
+  const result = await generateSpelledAsync(pool, view.args, control)
+  return result && resultInUserSpelling(result, view)
+}
+
+/**
+ * A new prompt for row `index` (rerollSpelled): the pack's prompts are read back in the scenes'
+ * spelling, as the engine compares them, and the new prompt is written in the user's.
+ */
+export function rerollScenePrompt(pool: ScenePool, prompts: readonly PackPrompt[], index: number, args: ScenePackArgs): PackPrompt | null {
+  const view = spellingView(args)
+  if (view.exact.size === 0) return rerollSpelled(pool, prompts, index, view.args)
+  const back = new Map(Array.from(view.exact, ([scene, user]) => [normalizeTagForPack(user), scene]))
+  const spelled = prompts.map((p) => {
+    const tags = p.prompt.split(', ').map((tag) => back.get(promptKey(tag)) ?? tag)
+    return { ...p, prompt: Array.from(new Set(tags)).join(', ') }
+  })
+  const made = rerollSpelled(pool, spelled, index, view.args)
+  return made && inUserSpelling(made, view)
 }

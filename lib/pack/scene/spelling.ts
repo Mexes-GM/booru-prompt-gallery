@@ -31,3 +31,15 @@ export function canonicalSpelling(tag: string, overrides: Record<string, string>
   const slot = (t: string) => getTagSlotFromOverrides(t, overrides)?.slot
   return slot(to) === slot(tag) && permanence(to) === permanence(tag) ? to : tag
 }
+
+/**
+ * A tag the user asked for, in the spelling the scenes use, for comparing with them (the prompt
+ * keeps what the user wrote). The same rule as the scenes; without the permanence lookup, only a
+ * tag the taxonomy doesn't file under its own name is respelled (the rule can't tell for the rest).
+ */
+export function requestSpelling(raw: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence): string {
+  const tag = raw.toLowerCase().replace(/_/g, ' ').trim()
+  if (!tag) return tag
+  if (!permanence) return overrides[tag] ? tag : canonicalSpelling(tag, overrides, () => 'state')
+  return canonicalSpelling(tag, overrides, permanence)
+}
