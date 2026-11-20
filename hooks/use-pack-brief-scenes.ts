@@ -34,6 +34,7 @@ import {
   placeRows,
   peopleLineState,
   resolveLook,
+  sceneEstimate as estimateScenes,
   type BriefOutfit,
   type ResolvedLook,
 } from "@/lib/pack/brief-pack"
@@ -87,6 +88,8 @@ export const PLAN_DELAY_MS = 400
 /** Edits wait this long before the scenes that fit are worked out again. */
 const CANDIDATES_DELAY_MS = 150
 const GELBOORU_LOOKUP_TIMEOUT_MS = 8000
+/** New posts wait at most this long for the slots of their tags before the pool takes them anyway. */
+const SLOTS_WAIT_MS = 4000
 const LIBRARY_DRAW_SIZE = 60
 const NO_POSES: PoseComposition[] = []
 const NO_NAMES: string[] = []
@@ -125,6 +128,12 @@ export interface UsePackBriefScenesArgs {
    * then (re-rolls and corrections work on it), not the first page's.
    */
   sourceSettled?: boolean
+  /**
+   * The source is still bringing pages by itself because the pool can't have enough scenes yet
+   * (`sceneEstimate` below the count): the scenes that fit wait until it stops, so they are
+   * worked out once for the batch of pages instead of once per page.
+   */
+  deferCandidates?: boolean
 }
 
 /** How a pack was made, so a correction can make it again the same way. */
@@ -223,6 +232,14 @@ export interface UsePackBriefScenesResult {
   sourceChanged: boolean
   /** A pack kept across a reload whose posts aren't back yet: corrections and re-rolls wait for them. */
   poolPending: boolean
+  /**
+   * The most scenes that can fit (with the requested poses, if any), read from the pool alone; null
+   * when it can't be told cheaply (one-part pack, no pool; lib/pack/brief-pack.ts sceneEstimate). Never below the
+   * scenes that fit: while it is below the count, more pages are needed whatever they are.
+   */
+  sceneEstimate: number | null
+  /** The source has posts the pool hasn't taken yet (their tag slots are being looked up). */
+  poolBehind: boolean
   /** Generates; `count` defaults to the brief's. */
   generate: () => void
   /** Remakes the pack for the brief as it is now (a correction from the results). */
@@ -273,12 +290,41 @@ function postTagNames(posts: readonly BooruPost[]): string[] {
 
 export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefScenesResult {
   const {
-    brief, posts, preferredPosts, provider, rating, includeSensitive, gallerySearch, promptCount, outfit, overrides,
-    enrichTagSlots, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions, donorPosts,
+    brief, posts: livePosts, preferredPosts: livePreferred, provider, rating, includeSensitive, gallerySearch, promptCount, outfit, overrides,
+    enrichTagSlots, cleanOptions, globalWeights, isGlobalWeightsEnabled, outfitOptions, donorPosts: liveDonors,
   } = args
   const restoredArgs = args.restored
   const sourceSettled = args.sourceSettled ?? true
+  const deferCandidates = !!args.deferCandidates
   const relations = useTagRelations(true)
+
+  // ── The posts the pack works from ─────────────────────────────────────────────
+  // A page joins once the slots of its tags have been looked up (or after SLOTS_WAIT_MS): a page
+  // and its slots arrive a moment apart, and each would rebuild the pool and work out the scenes
+  // that fit again. The slots land just before the page, so both change in one render.
+  const [taken, setTaken] = useState(() => ({ posts: livePosts, preferredPosts: livePreferred, donorPosts: liveDonors }))
+  useEffect(() => {
+    let active = true
+    const take = () => {
+      if (!active) return
+      active = false
+      setTaken((prev) => (prev.posts === livePosts && prev.preferredPosts === livePreferred && prev.donorPosts === liveDonors
+        ? prev
+        : { posts: livePosts, preferredPosts: livePreferred, donorPosts: liveDonors }))
+    }
+    if (livePosts.length === 0) {
+      take()
+      return () => { active = false }
+    }
+    const timer = setTimeout(take, SLOTS_WAIT_MS)
+    void enrichTagSlots(postTagNames(livePosts)).catch(() => false).then(take)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [livePosts, livePreferred, liveDonors, enrichTagSlots])
+  const { posts, preferredPosts, donorPosts } = taken
+  const poolBehind = taken.posts !== livePosts
 
   // ── Who: trait profiles and the characters' looks ─────────────────────────────
   // From a key, not from `brief.who`: every edit of the brief makes a new array, and
@@ -439,9 +485,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const isCast = castSize >= 2
 
   // ── The pool ──────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (posts.length > 0) void enrichTagSlots(postTagNames(posts)).catch(() => false)
-  }, [posts, enrichTagSlots])
+  // The slots of the posts' tags are looked up as they arrive (see "The posts the pack works from").
   const rated = useMemo(() => postsForRating(posts as BooruPost[], rating), [posts, rating])
   const postKinds = useMemo(() => tagKindsFromPosts(rated), [rated])
 
@@ -541,6 +585,24 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     return marked.length > 0 ? marked : people ? [people] : []
   }, [mixKey, castPeopleMemo, people])
   const peopleBlocked = choices?.blocked ?? NO_POSES
+  // The most scenes that can fit, from the pool alone: the scenes that fit are some of the pool's
+  // scenes of the make-ups in use (with the poses, those that have them all), less those left out
+  // and the donors'. Unknown for a one-part pack or poses the pool can't read.
+  const sceneEstimate = useMemo(
+    () => (pool && missingRoles.length === 0
+      ? estimateScenes({
+          scenes: pool.scenes,
+          allScenes: pool.allScenes,
+          people,
+          mix: peopleSelected,
+          poses,
+          hasPoses: requests.select.length > 0,
+          removed: poseArgs.removedScenes,
+          oneAxis: !!axis,
+        })
+      : null),
+    [pool, people, axis, peopleSelected, missingRoles.length, requests.select.length, poses, poseArgs]
+  )
 
   // ── Clothes ───────────────────────────────────────────────────────────────────
   const [outfitData, setOutfitData] = useState<ReadonlyMap<string, CharacterOutfits | null>>(() => new Map())
@@ -702,8 +764,10 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     () => (pool && missingRoles.length === 0 ? argsFor(coreBrief, 1, 1, keptBase) : null),
     [pool, missingRoles, argsFor, coreBrief, keptBase]
   )
+  // While the source is still bringing the pages the pool needs, they wait (`deferCandidates`): one
+  // run for the batch of pages, not one per page (sceneCandidates takes up to two seconds).
   useEffect(() => {
-    if (!pool || !candidateArgs) return
+    if (!pool || !candidateArgs || deferCandidates) return
     let active = true
     const timer = setTimeout(() => {
       if (!active) return
@@ -718,7 +782,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       active = false
       clearTimeout(timer)
     }
-  }, [pool, candidateArgs])
+  }, [pool, candidateArgs, deferCandidates])
   const candidatesPending = !!pool && !!candidateArgs && (candidateState?.pool !== pool || candidateState?.args !== candidateArgs)
 
   // ── Generating and correcting ─────────────────────────────────────────────────
@@ -807,7 +871,17 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     // Generate again draws another set: for the same brief, the scenes the last runs used
     // stay aside while the rest are enough, then the cycle starts again. The source's own
     // posts still go first; in a one-part pack the variants turn, never the scene that repeats.
-    const listed = candidateState?.pool === pool && (candidateState.axis ?? null) === (axis ?? null) ? candidateState.list : null
+    let listed = candidateState?.pool === pool && (candidateState.axis ?? null) === (axis ?? null) ? candidateState.list : null
+    // Generate while pages are still coming: the scenes that fit, held for the batch, are worked
+    // out now, so the pack is the one these posts make.
+    if (!listed && deferCandidates && candidateArgs) {
+      try {
+        listed = sceneCandidates(pool, candidateArgs)
+        setCandidateState({ pool, args: candidateArgs, axis: candidateArgs.changes ?? null, list: listed })
+      } catch (err) {
+        console.error("Working out the pack's scenes failed:", err)
+      }
+    }
     const leftOutIds = new Set(leftOutPosts(brief))
     const lockedSet = new Set(lockedScenes)
     const available = (listed ? (axis ? listed.slice(1) : listed).map((c) => c.postId) : pool.scenes.map((sc) => sc.postId))
@@ -859,7 +933,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         endOp(id)
       }
     })()
-  }, [pool, missingRoles, startOp, endOp, promptCount, axis, preferredPosts, brief, fixedBase, sourceKey, outfit, runArgs, control, candidateState])
+  }, [pool, missingRoles, startOp, endOp, promptCount, axis, preferredPosts, brief, fixedBase, sourceKey, outfit, runArgs, control, candidateState, deferCandidates, candidateArgs])
 
   /**
    * Remakes the pack for the brief as it is now: same seed, same pool (unless the brief
@@ -986,6 +1060,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     busy: !!op,
     sourceChanged: !!result && result.made.sourceKey !== sourceKey,
     poolPending: !!result?.made.restored,
+    sceneEstimate,
+    poolBehind,
     generate,
     recompose,
     restore,
@@ -994,6 +1070,6 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     naturalSourceOf,
   }), [
     plan, looks, identity, replacedLook, othersTag, supply, styleCounts, allowedStyles, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, peopleSelected, peopleBlocked, candidateState, axis, candidateArgs,
-    candidatesPending, result, op, sourceKey, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
+    candidatesPending, result, op, sourceKey, sceneEstimate, poolBehind, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
   ])
 }

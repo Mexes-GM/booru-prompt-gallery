@@ -1185,6 +1185,39 @@ export function coreKeyOf(brief: PackBrief): string {
 }
 
 /**
+ * The most scenes of a pool that can fit the pack, read from the pool alone (sceneCandidates takes
+ * seconds on a large pool; this, a few milliseconds): the scenes that fit are among the pool's
+ * scenes of the make-up in use, less those `removed` (left out, donors'); with requested poses,
+ * among those that have them all (`poses`, from poseCompositions with the same removed scenes).
+ * Several make-ups marked (`mix`, two or more): the pool's scenes of any of them (`allScenes`), as
+ * the engine mixes them (poolForCompositions). Null when it can't be told this way: no make-up yet,
+ * a one-part pack (its variants come from donors), or poses the pool can't read (`poses` empty).
+ */
+export function sceneEstimate({ scenes, allScenes, people, mix = [], poses, hasPoses, removed, oneAxis = false }: {
+  scenes: ReadonlyArray<{ postId: number; people?: PackPeople | null }>
+  /** Every scene of the pool, of any make-up (ScenePool.allScenes); `scenes` when missing. */
+  allScenes?: ReadonlyArray<{ postId: number; people?: PackPeople | null }>
+  people: PackPeople | null
+  mix?: readonly PackPeople[]
+  poses: ReadonlyArray<{ people: PackPeople; scenes: number }>
+  hasPoses: boolean
+  removed: readonly number[]
+  oneAxis?: boolean
+}): number | null {
+  const mixed = mix.length >= 2
+  const groups = mixed ? mix : people ? [people] : null
+  if (!groups || oneAxis) return null
+  const same = (a: PackPeople, b: PackPeople | null | undefined) => !!b && a.girls === b.girls && a.boys === b.boys
+  if (hasPoses) {
+    if (poses.length === 0) return null
+    return groups.reduce((sum, g) => sum + (poses.find((p) => same(g, p.people))?.scenes ?? 0), 0)
+  }
+  const out = new Set(removed)
+  const source = mixed ? (allScenes ?? scenes).filter((scene) => groups.some((g) => same(g, scene.people))) : scenes
+  return source.filter((scene) => !out.has(scene.postId)).length
+}
+
+/**
  * The make-ups People can offer: only those with room for the characters, one or several (never
  * "1 boy" for a girl alone), with the requested poses' and the pool's apart; and the ones without
  * room, each once, shown but not offered. The default make-up is chosen among `fitting` only.
