@@ -10,7 +10,9 @@
  * directions, Home and End go to the first and last, Space or Enter toggles.
  * Collapsed, it shows three rows (6, 9 or 12 columns by the width of its container;
  * six keeps each tile at least 44 px wide in a 343 px column)
- * and a "Show all" button. Keep `onToggle` stable: tiles are memoized.
+ * and a "Show all" button. Collapsed, only the tiles on screen are mounted; "Show all" mounts the
+ * rest a batch per frame, so a few hundred scenes never block the page at once. Keep `onToggle`
+ * stable: tiles are memoized.
  */
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { AlertTriangle, EyeOff } from "lucide-react"
@@ -56,6 +58,8 @@ export interface ContactSheetProps {
 
 // Collapsed: three rows at 6, 9 and 12 columns. Rendering stops at the widest.
 const COLLAPSED = { narrow: 18, mid: 27, wide: 36 }
+/** Tiles "Show all" mounts per frame. */
+const SHOW_ALL_BATCH = 60
 const COLLAPSE_CLASSES =
   "[&>*:nth-child(n+19)]:hidden @md:[&>*:nth-child(n+19)]:block @md:[&>*:nth-child(n+28)]:hidden @xl:[&>*:nth-child(n+28)]:block"
 
@@ -167,6 +171,18 @@ export const ContactSheet = memo(function ContactSheet({
   className,
 }: ContactSheetProps) {
   const [expanded, setExpanded] = useState(false)
+  // Expanded: the tiles mounted so far (a batch more each frame until all are).
+  const [mounted, setMounted] = useState(SHOW_ALL_BATCH)
+  const toggleExpanded = useCallback(() => {
+    setMounted(SHOW_ALL_BATCH)
+    setExpanded((v) => !v)
+  }, [])
+  const allMounted = mounted >= scenes.length
+  useEffect(() => {
+    if (!expanded || allMounted) return
+    const frame = requestAnimationFrame(() => setMounted((n) => n + SHOW_ALL_BATCH))
+    return () => cancelAnimationFrame(frame)
+  }, [expanded, allMounted, mounted])
   const [current, setCurrent] = useState(0)
   // Tiles a folded sheet shows at its width (three rows of 6, 9 or 12 columns).
   const [foldedVisible, setFoldedVisible] = useState(COLLAPSED.narrow)
@@ -219,7 +235,8 @@ export const ContactSheet = memo(function ContactSheet({
   }
 
   const collapsed = !expanded
-  const shown = collapsed ? scenes.slice(0, COLLAPSED.wide) : scenes
+  // Collapsed: the tiles the three rows show at this width (the CSS below hides the rest until measured).
+  const shown = collapsed ? scenes.slice(0, Math.min(COLLAPSED.wide, foldedVisible)) : scenes.slice(0, mounted)
   const placeholders = loading ? Math.max(0, Math.min(12, expected - scenes.length)) : 0
   const total = scenes.length + placeholders
   // "Show all" only where some tiles are actually hidden at that width.
@@ -313,7 +330,7 @@ export const ContactSheet = memo(function ContactSheet({
             variant="ghost"
             size="sm"
             aria-expanded={expanded}
-            onClick={() => setExpanded((v) => !v)}
+            onClick={toggleExpanded}
             className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground pointer-coarse:h-11"
           >
             {expanded ? "Show fewer" : <>Show all <span className="tabular-nums">{scenes.length}</span></>}
