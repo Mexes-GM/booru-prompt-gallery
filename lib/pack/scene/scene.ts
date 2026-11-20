@@ -9,7 +9,7 @@
  * so the prompt header can be written from the new character).
  */
 import type { BooruPost, BooruProvider } from '../../booru/types'
-import { peopleVocabulary, postPeople, sitePeopleRole } from './people'
+import { genderedTrait, peopleVocabulary, postPeople, sitePeopleRole } from './people'
 import { classifyPostForPack, normalizeTagForPack, postAspectLog } from '../pack-generator'
 import { postCharacters } from '../character-focus'
 import { splitTags } from '../../utils/tag-utils'
@@ -372,7 +372,10 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
     // A general tag qualified by a work or a character is a name tied to it ("... (project moon)").
     if (!slot && isQualifiedName(tag, ctx.tagKind)) continue
 
-    const permanence = siteRole(tag) === 'kind' ? 'identity' : ctx.permanence(tag)
+    // A trait written with a gender ("light-skinned female", "nude male") is that person's trait,
+    // read as the trait on its own: lasting like skin or hair, or of this picture like nudity.
+    const trait = genderedTrait(tag, ctx.overrides, ctx.permanence)
+    const permanence = siteRole(tag) === 'kind' ? 'identity' : trait ? trait.permanence : ctx.permanence(tag)
     if (permanence === 'identity') {
       const gender = tagGender(tag, rating)
       if (gender && anonymousTraitsOf(gender) && isTheme(tag)) put('body', tag)
@@ -394,7 +397,7 @@ export function extractScene(post: BooruPost, ctx: SceneContext): Scene | null {
       if (slot || supported(tag)) put('place', tag)
       continue
     }
-    const unit = slot ? unitOfSlot(slot) : null
+    const unit = trait ? unitOfSlot(trait.slot) : slot ? unitOfSlot(slot) : null
     const garment = unit === 'outfit' || (!unit && (fallback === 'outfit' || hasGarmentQualifier(tag)))
     if (garment && isFranchiseGarment(tag, ctx.overrides, ctx.tagKind)) continue
     if (unit) {
