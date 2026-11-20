@@ -20,7 +20,8 @@
  * others are posts whose own count and "threesome" disagree.
  */
 import type { BooruProvider } from '../../booru/types'
-import { COUNT_TAG_RE } from './permanence'
+import { COUNT_TAG_RE, type Permanence } from './permanence'
+import { derivedRead } from './vocabulary'
 
 export interface PostPeople {
   /** The people of the picture, or null when the tags don't pin them down. */
@@ -46,11 +47,15 @@ export type PeopleReason =
   /** Nothing says how many people there are. */
   | 'none'
 
-/** The way a site writes who is in the picture. */
-export type PeopleVocabulary = 'danbooru' | 'rule34'
+/**
+ * The way a site writes who is in the picture: Danbooru's counts ("1girl, 2boys"), Rule34's mix of
+ * counts and gender tags ("1girls, male"), or e621's gender and body-type tags with no count at all
+ * ("female, male, duo"; cast.ts searches it that way). The prompt is written in Danbooru's.
+ */
+export type PeopleVocabulary = 'danbooru' | 'rule34' | 'e621'
 
-/** Rule34 writes the people its own way; the other sites read here count everyone Danbooru-style. */
-export const peopleVocabulary = (provider: BooruProvider | undefined): PeopleVocabulary => (provider === 'rule34' ? 'rule34' : 'danbooru')
+export const peopleVocabulary = (provider: BooruProvider | undefined): PeopleVocabulary =>
+  provider === 'rule34' ? 'rule34' : provider === 'e621' || provider === 'e6ai' ? 'e621' : 'danbooru'
 
 const MULTIPLE = /^multiple (girls|boys|others)$/
 const OPEN_PLUS = /^\d+\+(girls?|boys?|others?)$/
@@ -83,6 +88,167 @@ const CROWD = new Set(['threesome', 'foursome', 'group sex', 'gangbang', 'orgy',
 /** Tags that say both genders are there. */
 const MIXED = new Set(['hetero', 'straight', 'male/female'])
 const FUTA_COUNT = /^(\d+futas?|multiple futa)$/
+
+// ── The site's own words for the people ──────────────────────────────────────
+
+/** The genders Rule34 and e621 name people by: the ones the presence tags above read ("female", "male"). */
+const GENDER_WORDS = Object.keys(PRESENCE).filter((tag) => !tag.startsWith('multiple '))
+/**
+ * What kind of being each person is, as Rule34 and e621 tag it next to the gender: after the genders
+ * and the futa words, the words those sites use most for a participant in their own relation tags
+ * ("anthro penetrating human", "human on feral", "humanoid penetrated", "human female"): measured on
+ * 1029 Rule34 posts, human in 28 such tags, anthro 19, feral 15, humanoid 10. Danbooru doesn't tag
+ * them alone; it files the being by its features ("animal ears", "furry female"), which the look keeps.
+ */
+const KIND_WORDS = ['human', 'anthro', 'feral', 'humanoid']
+/** How those sites say who is with whom by orientation: "straight" is Rule34's "hetero" (MIXED above). */
+const ORIENTATION_WORDS = ['straight', 'gay', 'lesbian', 'bisexual']
+/** Head counts by word, the way e621 counts (cast.ts searches it with "duo" / "trio"); "solo" is the prompt's own. */
+const HEAD_COUNT_WORDS = ['duo', 'trio', 'group']
+
+const alt = (words: readonly string[]) => words.join('|')
+const PERSON = `(?:${alt([...GENDER_WORDS, ...KIND_WORDS])})`
+/**
+ * Tags made only of those words and the words that tie people together: who is there ("female",
+ * "multiple males", "human female", "partial male"), who the picture is about ("female focus",
+ * "male only"), who is with whom ("male/female", "anthro on anthro", "male penetrating female",
+ * "female penetrated"), the orientation ("straight", "lesbian sex") and the head count by word
+ * ("trio", "group"). Words for the third kind ("futa", "intersex") are left alone: the prompt's
+ * header has no way to say them.
+ */
+const SITE_PEOPLE_RE = new RegExp(
+  [
+    `^(?:multiple |partial )?(?:(?:${alt(KIND_WORDS)}) )?(?:${alt(GENDER_WORDS)})s?$`,
+    `^${PERSON}(?: ${PERSON})? (?:focus|only)$`,
+    `^${PERSON}(?:/${PERSON})+$`,
+    `^${PERSON} on ${PERSON}$`,
+    `^${PERSON} penetrat(?:ing|ed)(?: ${PERSON})?$`,
+    `^(?:${alt(ORIENTATION_WORDS)})(?: sex)?$`,
+    `^(?:${alt(HEAD_COUNT_WORDS)})(?: focus)?$`,
+  ].join('|')
+)
+const KIND_RE = new RegExp(`^(?:${alt(KIND_WORDS)})$`)
+
+/**
+ * What a tag is in the people vocabulary of a site that writes them its own way (Rule34, e621):
+ *  - `people`: it says who is in the picture or how they pair up. The prompt's header says that
+ *    from the scene's people and act ("1girl, 2boys, hetero"), so the tag never travels with a scene.
+ *  - `kind`: the kind of being a person is ("human", "anthro"): who they are, not what the picture
+ *    shows, like a hair colour. A named character's comes from their look, not from another post.
+ * Null for any other tag, and for every tag of a site that writes people Danbooru's way: there the
+ * people are its counts, which the scene reads as it always has.
+ */
+export function sitePeopleRole(tag: string, vocabulary: PeopleVocabulary): 'people' | 'kind' | null {
+  if (vocabulary === 'danbooru') return null
+  if (KIND_RE.test(tag)) return 'kind'
+  return SITE_PEOPLE_RE.test(tag) ? 'people' : null
+}
+
+// ── Traits written with a gender ─────────────────────────────────────────────
+
+/**
+ * A trait of one person, written with that person's gender: "light-skinned female", "black-haired
+ * female", "fat male", "nude female". Rule34 and e621 tag most traits this way; Danbooru does it for
+ * a few, each with data of its own ("dark-skinned male" is anatomy, "faceless male" identity).
+ */
+export interface GenderedTrait {
+  /** Whose trait it is. */
+  gender: 'girl' | 'boy'
+  /** The trait read on its own: "light skin", "black hair", "fat", "nude". */
+  core: string
+  /** The core's slot, and whether it lasts (identity) or belongs to this picture (state). */
+  slot: string
+  permanence: Permanence
+}
+
+const GENDERED_RE = new RegExp(`^(.+) (${alt(GENDER_WORDS)})$`)
+/** A compound adjective made from a noun: "light-skinned" is "light skin", "black-haired" "black hair". */
+const COMPOUND_RE = /^(.+?)[- ]([a-z]+?)ed$/
+/** Slots that hold a trait of a person: their body, hair, eyes, what they are, what they wear. */
+const PERSON_SLOT_RE = /^(appearance|clothing):/
+const DEMOGRAPHICS = 'appearance:demographics'
+
+/** The forms a compound adjective's noun may take in a tag: "skinned" skin, "haired" hair, "figured" figure, "eyed" eyes. */
+function nounsOf(stem: string): string[] {
+  const single = /([b-df-hj-np-tv-z])\1$/.test(stem) ? stem.slice(0, -1) : stem
+  return Array.from(new Set([stem, single, `${stem}e`, `${stem}s`, `${stem}es`]))
+}
+
+/**
+ * The two-word tags of a person's slot, by their last word ("dark skin", "pale skin", "shiny skin"
+ * under "skin"), with the slot they share (null when they disagree). Worked out once per overrides.
+ */
+interface Family { slot: string | null; members: string[] }
+const families = new WeakMap<Record<string, string>, Map<string, Family>>()
+const sameFamily = (a: Family | undefined, b: Family | undefined) => a === b || (!!a && !!b && a.slot === b.slot && a.members.join('|') === b.members.join('|'))
+function familyOf(noun: string, overrides: Record<string, string>): Family | undefined {
+  return derivedRead(overrides, (raw) => familiesOf(raw).get(noun), sameFamily)
+}
+function familiesOf(overrides: Record<string, string>): Map<string, Family> {
+  let map = families.get(overrides)
+  if (!map) {
+    map = new Map()
+    for (const [tag, slot] of Object.entries(overrides)) {
+      const words = tag.split(' ')
+      if (words.length !== 2 || !PERSON_SLOT_RE.test(slot)) continue
+      const family = map.get(words[1])
+      if (!family) map.set(words[1], { slot, members: [tag] })
+      else {
+        family.members.push(tag)
+        if (family.slot !== slot) family.slot = null
+      }
+    }
+    families.set(overrides, map)
+  }
+  return map
+}
+
+const genderOf = (word: string): 'girl' | 'boy' => (word === 'female' ? 'girl' : 'boy')
+/**
+ * Share of a family that must agree on a permanence for a core no tag spells to take it. The "skin"
+ * family: 15 of its 18 tags are lasting colours ("dark skin", "pale skin"), 3 surface states ("shiny
+ * skin", "cracked skin").
+ */
+const FAMILY_AGREEMENT = 0.75
+
+/**
+ * The trait a tag like "light-skinned female" writes, read on its own, when the tag has no data of
+ * its own: no exact slot but its gender's ("appearance:demographics", which a suffix lookup gives it
+ * from "female"), and no permanence beyond the default. The core is the words before the gender, or
+ * the noun a compound adjective is made from ("light-skinned" -> "light skin"). Its slot and
+ * permanence come from the taxonomy, or, for a core no tag spells exactly, from the two-word tags
+ * that share its noun, when they share its slot and most agree on how long it lasts ("dark skin",
+ * "pale skin", "white skin": lasting anatomy).
+ * It must be a trait of a person (an appearance or clothing slot, not a head count). Null otherwise:
+ * a tag that names two people ("clothed female nude male"), a word the data doesn't know
+ * ("voluptuous female"), or a tag with data of its own ("dark-skinned male" is anatomy, "faceless
+ * male" identity).
+ */
+export function genderedTrait(tag: string, overrides: Record<string, string>, permanence: (tag: string) => Permanence): GenderedTrait | null {
+  const m = GENDERED_RE.exec(tag)
+  if (!m) return null
+  const [, words, gender] = m
+  if (words.split(/[ /]/).some((w) => GENDER_WORDS.includes(w))) return null
+  const own = overrides[tag]
+  if ((own && own !== DEMOGRAPHICS) || permanence(tag) !== 'state') return null
+  const trait = (core: string, slot: string, lasts: Permanence): GenderedTrait | null =>
+    lasts === 'composition' ? null : { gender: genderOf(gender), core, slot, permanence: lasts }
+  const compound = COMPOUND_RE.exec(words)
+  const nouns = compound ? nounsOf(compound[2]) : []
+  for (const core of [words, ...nouns.map((noun) => `${compound![1]} ${noun}`)]) {
+    const slot = overrides[core]
+    if (slot && PERSON_SLOT_RE.test(slot)) return trait(core, slot, permanence(core))
+  }
+  for (const noun of nouns) {
+    const family = familyOf(noun, overrides)
+    if (!family?.slot) continue
+    const counts = new Map<Permanence, number>()
+    for (const member of family.members) counts.set(permanence(member), (counts.get(permanence(member)) ?? 0) + 1)
+    const [lasts, n] = [...counts].sort((a, b) => b[1] - a[1])[0]
+    if (n / family.members.length >= FAMILY_AGREEMENT) return trait(`${compound![1]} ${noun}`, family.slot, lasts)
+  }
+  return null
+}
 
 /** The Danbooru reading the scene extraction has always done: counts, open counts, absent means none. */
 function danbooruPeople(tags: readonly string[]): PostPeople {
@@ -190,7 +356,8 @@ function rule34People(tags: readonly string[]): PostPeople {
 
 /**
  * The people of a post with these tags (pack form: spaces, lower case), read in the vocabulary of
- * `provider`. Without a provider, or for a Danbooru-like site, the Danbooru reading.
+ * `provider`. Without a provider, for a Danbooru-like site, and for e621 (whose posts carry no count
+ * to read; nothing measured yet for a reading of its own), the Danbooru reading.
  */
 export function postPeople(tags: readonly string[], provider?: BooruProvider): PostPeople {
   return peopleVocabulary(provider) === 'rule34' ? rule34People(tags) : danbooruPeople(tags)
