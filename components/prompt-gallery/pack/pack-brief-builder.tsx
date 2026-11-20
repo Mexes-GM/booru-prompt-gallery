@@ -30,6 +30,7 @@ import { usePackBriefScenes } from "@/hooks/use-pack-brief-scenes"
 import { usePackSources, type UsePackSourcesResult } from "@/hooks/use-pack-sources"
 import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useStableCallback } from "@/hooks/use-stable-callback"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
@@ -488,6 +489,9 @@ function BriefWorkspace({
   const [outfit, setOutfit] = useState<BriefOutfit>(() => restored?.outfit ?? { kind: "scene" })
   // A pack kept across a reload gets its pool back once the source is done loading (from the last render).
   const [sourceSettled, setSourceSettled] = useState(false)
+  // Collecting: the pool can't have enough scenes yet, whatever they turn out to be, so pages keep
+  // coming by themselves and the scenes that fit are worked out once they stop (from the last render).
+  const [collecting, setCollecting] = useState(false)
 
   // ── Source ──────────────────────────────────────────────────────────────────────
   const [source, setSource] = useState<UsePackSourcesResult | null>(null)
@@ -513,6 +517,7 @@ function BriefWorkspace({
     donorPosts,
     restored: restored?.result ?? null,
     sourceSettled,
+    deferCandidates: collecting,
     provider,
     rating,
     includeSensitive: preferences.includeSensitive,
@@ -553,7 +558,11 @@ function BriefWorkspace({
   // allow yet waits and goes by itself (usePackSources). By itself the pack stops at
   // AUTO_PAGE_CAP pages; "Find more scenes" goes on from there.
   const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && source.pages < AUTO_PAGE_CAP
-  const needMore = !!usable && !candidatesPending && have < count
+  // While the pool alone says there can't be enough scenes yet, the next page goes as soon as the
+  // pool has taken the last one, without waiting for the scenes that fit (they wait for the batch).
+  const collectingNow = open && canLoad && engine.sceneEstimate !== null && engine.sceneEstimate < count
+  if (collectingNow !== collecting) setCollecting(collectingNow)
+  const needMore = (collectingNow && !engine.poolBehind) || (!!usable && !candidatesPending && have < count)
   // Short of scenes: fetch more pages until there are enough, every search has run out or
   // the cap is reached (then the fit line says what there is).
   useEffect(() => {
@@ -892,8 +901,10 @@ function BriefWorkspace({
     })
     apply()
   }, [result, engine.busy, engine.sourceChanged, engine.poolPending, overrides, brief, cast, identity.castSize, identity.blocks, promptFormat, never, setPeople, addLook, addExactly, othersTag, addOther])
-  const onAlways = useCallback((tag: string) => correct("always", tag), [correct])
-  const onNever = useCallback((tag: string) => correct("never", tag), [correct])
+  // Stable: `correct` follows the brief, the slots and the engine, which change with every page of
+  // posts, and the rows would all render again for it.
+  const onAlways = useStableCallback((tag: string) => correct("always", tag))
+  const onNever = useStableCallback((tag: string) => correct("never", tag))
   // Runs once the brief has the change (the engine's arguments follow it). Every outcome
   // closes the notice: done offers Undo; replaced, skipped or failed goes.
   const { recompose, restore } = engine
@@ -940,11 +951,12 @@ function BriefWorkspace({
     setCorrection(null)
     toggleLock(index)
   }, [toggleLock])
-  const onReroll = useCallback((index: number) => {
+  // Stable for the rows: `reroll` follows the engine's arguments, which change with every page.
+  const onReroll = useStableCallback((index: number) => {
     const done = reroll(index)
     if (done) setCorrection(null)
     return done
-  }, [reroll])
+  })
   // Generate is another operation: a correction's notice goes.
   const { generate } = engine
   const onGenerate = useCallback(() => {
@@ -1434,6 +1446,26 @@ function Results({
     return ok
   }, [prompts, bodyOf, onCopy, format, withSize])
 
+  // Stable for the rows: it follows the slots, which grow with every page of posts.
+  const copyRow = useStableCallback(copyOne)
+
+  // The slots the rows convert with: those of the moment the prompts were made, renewed only when
+  // the prompts change or a slot of one of their tags does. Slots looked up for the pages that
+  // keep arriving are about other posts, and every row would be converted again for them.
+  const promptTags = useMemo(() => {
+    const out = new Set<string>()
+    for (const p of prompts) for (const raw of p.prompt.split(",")) {
+      const tag = bareToken(raw).toLowerCase()
+      if (tag) out.add(tag).add(tag.replace(/ /g, "_"))
+    }
+    return out
+  }, [prompts])
+  const [rowSlots, setRowSlots] = useState({ prompts, overrides })
+  if (rowSlots.overrides !== overrides && (rowSlots.prompts !== prompts || Array.from(promptTags).some((t) => rowSlots.overrides[t] !== overrides[t]))) {
+    setRowSlots({ prompts, overrides })
+  }
+  const rowOverrides = rowSlots.overrides
+
   const [unsizedCopied, setUnsizedCopied] = useState(0)
   const copyAll = useCallback(async () => {
     const bodies = await Promise.all(prompts.map((p, i) => bodyOf(p, shownRef.current.get(i))))
@@ -1445,9 +1477,9 @@ function Results({
   }, [prompts, bodyOf, onCopy, format, withSize])
   const allCopyNote = [copyNote, unsizedCopied > 0 ? SIZE_TEXT.unsized(unsizedCopied) : null].filter(Boolean).join(" ") || undefined
 
-  const reroll = useCallback((index: number) => {
+  const reroll = useStableCallback((index: number) => {
     if (!onReroll(index)) toast({ description: BUILDER_TEXT.rerollFailed, duration: 3000 })
-  }, [onReroll])
+  })
 
   const onFormatChange = useCallback((next: PromptFormat) => {
     if (next !== "tags") preloadNaturalPrompt()
@@ -1478,13 +1510,13 @@ function Results({
             format={format}
             fullDetail={fullDetail}
             naturalSourceOf={naturalSourceOf}
-            overrides={overrides}
+            overrides={rowOverrides}
             shownRef={shownRef}
             locked={lockedSet.has(i)}
             busy={busy}
             busyReason={busyReason}
             onToggleLock={onToggleLock}
-            onCopy={copyOne}
+            onCopy={copyRow}
             onReroll={reroll}
             onAlways={onAlways}
             onNever={onNever}
