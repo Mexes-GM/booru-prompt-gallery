@@ -18,13 +18,14 @@ import type { PackPeople } from './scene/scene-pool'
 import type { Scene } from './scene/scene'
 import { requestSpelling } from './scene/spelling'
 import { garmentPieces, garmentRegion, layersOver, meetsAll, regionTags, valueKey } from './scene/scene-conditions'
-import { loadedTagRelations, requiredBy } from '../tag-relations'
+import { loadedTagRelations, requiredBy, type TagRelations } from '../tag-relations'
 import {
   DEFAULT_SCENE_SETTINGS,
   REUSES_PER_SCENE,
   castChips,
   identityWithOutfits,
   isWornByCharacter,
+  poseNeedsScene,
   subjectOfTags,
   type CastChipsBlock,
   type LibraryOutfit,
@@ -1186,6 +1187,16 @@ export function coreKeyOf(brief: PackBrief): string {
   const { leftOut, leftOutVariants, ...rest } = brief
   void leftOutVariants
   return JSON.stringify([rest, oneAxis(brief) ? leftOut : null])
+}
+
+/**
+ * Whether a requested pose needs a scene that has it (poseNeedsScene), read in the scenes'
+ * spelling as the engine reads it (spelling.ts, with the permanence lookup when given): Rule34's
+ * "female on top" is asked as Danbooru's "girl on top". For the People line's "needs company".
+ */
+export function poseNeedsCompany(tag: string, overrides: Record<string, string>, permanence?: (tag: string) => Permanence, relations?: TagRelations | null): boolean {
+  const spelled = requestSpelling(tag, overrides, permanence)
+  return relations === undefined ? poseNeedsScene(spelled, overrides) : poseNeedsScene(spelled, overrides, relations)
 }
 
 /**

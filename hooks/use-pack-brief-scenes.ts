@@ -35,6 +35,7 @@ import {
   peopleLineState,
   resolveLook,
   sceneEstimate as estimateScenes,
+  poseNeedsCompany,
   type BriefOutfit,
   type ResolvedLook,
 } from "@/lib/pack/brief-pack"
@@ -57,7 +58,6 @@ import {
   gelbooruTagKinds,
   generateScenePackAsync,
   poseCompositions,
-  poseNeedsScene,
   postsForRating,
   rerollScenePrompt,
   sceneCandidates,
@@ -530,10 +530,11 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const leftOutKey = brief.leftOut.join(",")
   const poseArgs = useMemo(
     // The donors' posts only lend: they are no scene of the pack, so they count in no composition.
-    () => ({ requests, never: identity.never, overrides, removedScenes: [...(leftOutKey ? leftOutKey.split(",").map(Number) : []), ...(donorPosts ?? [])] }),
+    // With the permanence lookup, the poses are read in the scenes' spelling by the engine's whole rule (spelling.ts).
+    () => ({ requests, never: identity.never, overrides, permanence: permanence ?? undefined, removedScenes: [...(leftOutKey ? leftOutKey.split(",").map(Number) : []), ...(donorPosts ?? [])] }),
     // `relations` is read inside poseCompositions: a new value means new answers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [requests, identity.never, overrides, leftOutKey, relations, donorPosts]
+    [requests, identity.never, overrides, permanence, leftOutKey, relations, donorPosts]
   )
   const poses = useMemo(() => (basePool ? poseCompositions(basePool, poseArgs) : NO_POSES), [basePool, poseArgs])
 
@@ -571,7 +572,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const peopleLine = useMemo(
     () => peopleLineState({
       poses: requests.select,
-      needsCompany: (tag) => poseNeedsScene(tag, overrides, relations),
+      // In the scenes' spelling, as the engine asks it (poseSelection spells the pose first).
+      needsCompany: (tag) => poseNeedsCompany(tag, overrides, permanence ?? undefined, relations),
       // Only the make-ups with room for the characters: "2 boys" is no option for one girl.
       compositions: choices?.fittingPoses ?? NO_POSES,
       current: people,
@@ -580,7 +582,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       // The pack uses one make-up: whenever the scenes have several, the line shows them.
       whenSeveral: true,
     }),
-    [requests.select, overrides, relations, choices, people, brief.people, available]
+    [requests.select, overrides, permanence, relations, choices, people, brief.people, available]
   )
   // Several make-ups: the ones the brief marks with room for the characters, the first being `people`.
   const mixKey = JSON.stringify(axis ? [] : briefCompositions(coreBrief))
@@ -683,12 +685,13 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     const wearing = requests.wearing.filter((t) => conditions.includes(t))
     const where = requests.where.filter((t) => conditions.includes(t))
     const styles = (coreBrief.outfitStyles ?? []).filter((style) => allowedStyles.includes(style as OutfitStyle))
-    const base = { scenes, library: conditionLibrary, overrides, aliases: conditionAliases }
+    // With the permanence lookup: conditions spelled as the scenes are, by the engine's rule.
+    const base = { scenes, library: conditionLibrary, overrides, aliases: conditionAliases, permanence: permanence ?? undefined }
     return [
       ...(wearing.length > 0 || styles.length > 0 ? [conditionSupply({ ...base, role: "wearing", tags: wearing, styles })] : []),
       ...(where.length > 0 ? [conditionSupply({ ...base, role: "where", tags: where })] : []),
     ]
-  }, [basePool, requests, conditions, coreBrief.outfitStyles, allowedStyles, conditionLibrary, overrides, conditionAliases])
+  }, [basePool, requests, conditions, coreBrief.outfitStyles, allowedStyles, conditionLibrary, overrides, conditionAliases, permanence])
   const libraryStyles = useMemo(
     () => (rating === "sfw" ? outfitOptions.styles.filter((s) => !ADULT_OUTFIT_STYLES.includes(s)) : outfitOptions.styles),
     [rating, outfitOptions.styles]
