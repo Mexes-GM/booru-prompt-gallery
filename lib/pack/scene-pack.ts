@@ -21,6 +21,7 @@ import { UNIT_ORDER, normalizeRating, sceneTags, unitOfSlot, type Scene, type Sc
 import { isQualifiedVariant } from './character-identity'
 import { compositionsOf, groupSituations, type PackPeople, type ScenePool } from './scene/scene-pool'
 import { holdsCast } from './scene/cast'
+import { genderedTrait } from './scene/people'
 import { garmentPrefix, lastQualifier } from './scene/franchise'
 import type { ChangesAxis, SceneRequests } from './brief'
 import { excludes, loadedTagRelations, needsCompany, requiredBy, type TagRelations } from '../tag-relations'
@@ -1247,11 +1248,19 @@ function hasOthers(f: Finisher, composed: ScenePrompt): boolean {
   return crowd && named < 2
 }
 
+/** A tag that is a lasting trait of someone (permanence identity, a trait written with a gender read as its core). */
+function isLastingTrait(tag: string, args: ScenePackArgs): boolean {
+  const permanence = args.permanence
+  if (!permanence) return false
+  const trait = genderedTrait(tag, args.overrides, permanence)
+  return (trait ? trait.permanence : permanence(tag)) === 'identity'
+}
+
 /**
  * `tags` (a composed prompt after the ownership rules, `locked` its fixed tags) with the other
  * people's look (`requests.others`) as a block of its own right after the header and the named
  * characters' identity, before the requests and the scene's tags; the scene's own copy of one of
- * them goes. They join the locked tags, so the cleaner and the last pass keep them, but they never
+ * them, and the companion's lasting look the scene brought (isLastingTrait), go. They join the locked tags, so the cleaner and the last pass keep them, but they never
  * reach the ownership rule: a companion's look takes nothing of the characters'. A prompt with no
  * one besides the characters gets none of them (packIssues says so when no prompt had room).
  */
@@ -1271,7 +1280,10 @@ function withOthers(f: Finisher, composed: ScenePrompt, tags: readonly string[])
   const fixed = new Set(fixedTags(f.args))
   const locked = new Set(composed.locked)
   const block = new Set(others)
-  const rest = tags.filter((tag) => locked.has(tag) || !block.has(normalizeTagForPack(tag)))
+  // The user said how the others look: the scene's own say about it (a companion's lasting trait,
+  // which travels only when it is the source's theme) gives way to it.
+  const theirs = new Set(f.sceneById.get(composed.sources.skeleton)?.units.body.filter((tag) => isLastingTrait(tag, f.args)) ?? [])
+  const rest = tags.filter((tag) => locked.has(tag) || (!block.has(normalizeTagForPack(tag)) && !theirs.has(tag)))
   // Header (locked, not one of the pack's fixed tags) and the characters' identity come first.
   let at = 0
   while (at < rest.length && locked.has(rest[at]) && (character.has(rest[at]) || !fixed.has(rest[at]))) at++

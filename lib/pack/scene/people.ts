@@ -20,7 +20,8 @@
  * others are posts whose own count and "threesome" disagree.
  */
 import type { BooruProvider } from '../../booru/types'
-import { COUNT_TAG_RE } from './permanence'
+import { COUNT_TAG_RE, type Permanence } from './permanence'
+import { derivedRead } from './vocabulary'
 
 export interface PostPeople {
   /** The people of the picture, or null when the tags don't pin them down. */
@@ -141,6 +142,112 @@ export function sitePeopleRole(tag: string, vocabulary: PeopleVocabulary): 'peop
   if (vocabulary === 'danbooru') return null
   if (KIND_RE.test(tag)) return 'kind'
   return SITE_PEOPLE_RE.test(tag) ? 'people' : null
+}
+
+// ── Traits written with a gender ─────────────────────────────────────────────
+
+/**
+ * A trait of one person, written with that person's gender: "light-skinned female", "black-haired
+ * female", "fat male", "nude female". Rule34 and e621 tag most traits this way; Danbooru does it for
+ * a few, each with data of its own ("dark-skinned male" is anatomy, "faceless male" identity).
+ */
+export interface GenderedTrait {
+  /** Whose trait it is. */
+  gender: 'girl' | 'boy'
+  /** The trait read on its own: "light skin", "black hair", "fat", "nude". */
+  core: string
+  /** The core's slot, and whether it lasts (identity) or belongs to this picture (state). */
+  slot: string
+  permanence: Permanence
+}
+
+const GENDERED_RE = new RegExp(`^(.+) (${alt(GENDER_WORDS)})$`)
+/** A compound adjective made from a noun: "light-skinned" is "light skin", "black-haired" "black hair". */
+const COMPOUND_RE = /^(.+?)[- ]([a-z]+?)ed$/
+/** Slots that hold a trait of a person: their body, hair, eyes, what they are, what they wear. */
+const PERSON_SLOT_RE = /^(appearance|clothing):/
+const DEMOGRAPHICS = 'appearance:demographics'
+
+/** The forms a compound adjective's noun may take in a tag: "skinned" skin, "haired" hair, "figured" figure, "eyed" eyes. */
+function nounsOf(stem: string): string[] {
+  const single = /([b-df-hj-np-tv-z])\1$/.test(stem) ? stem.slice(0, -1) : stem
+  return Array.from(new Set([stem, single, `${stem}e`, `${stem}s`, `${stem}es`]))
+}
+
+/**
+ * The two-word tags of a person's slot, by their last word ("dark skin", "pale skin", "shiny skin"
+ * under "skin"), with the slot they share (null when they disagree). Worked out once per overrides.
+ */
+interface Family { slot: string | null; members: string[] }
+const families = new WeakMap<Record<string, string>, Map<string, Family>>()
+const sameFamily = (a: Family | undefined, b: Family | undefined) => a === b || (!!a && !!b && a.slot === b.slot && a.members.join('|') === b.members.join('|'))
+function familyOf(noun: string, overrides: Record<string, string>): Family | undefined {
+  return derivedRead(overrides, (raw) => familiesOf(raw).get(noun), sameFamily)
+}
+function familiesOf(overrides: Record<string, string>): Map<string, Family> {
+  let map = families.get(overrides)
+  if (!map) {
+    map = new Map()
+    for (const [tag, slot] of Object.entries(overrides)) {
+      const words = tag.split(' ')
+      if (words.length !== 2 || !PERSON_SLOT_RE.test(slot)) continue
+      const family = map.get(words[1])
+      if (!family) map.set(words[1], { slot, members: [tag] })
+      else {
+        family.members.push(tag)
+        if (family.slot !== slot) family.slot = null
+      }
+    }
+    families.set(overrides, map)
+  }
+  return map
+}
+
+const genderOf = (word: string): 'girl' | 'boy' => (word === 'female' ? 'girl' : 'boy')
+/**
+ * Share of a family that must agree on a permanence for a core no tag spells to take it. The "skin"
+ * family: 15 of its 18 tags are lasting colours ("dark skin", "pale skin"), 3 surface states ("shiny
+ * skin", "cracked skin").
+ */
+const FAMILY_AGREEMENT = 0.75
+
+/**
+ * The trait a tag like "light-skinned female" writes, read on its own, when the tag has no data of
+ * its own: no exact slot but its gender's ("appearance:demographics", which a suffix lookup gives it
+ * from "female"), and no permanence beyond the default. The core is the words before the gender, or
+ * the noun a compound adjective is made from ("light-skinned" -> "light skin"). Its slot and
+ * permanence come from the taxonomy, or, for a core no tag spells exactly, from the two-word tags
+ * that share its noun, when they share its slot and most agree on how long it lasts ("dark skin",
+ * "pale skin", "white skin": lasting anatomy).
+ * It must be a trait of a person (an appearance or clothing slot, not a head count). Null otherwise:
+ * a tag that names two people ("clothed female nude male"), a word the data doesn't know
+ * ("voluptuous female"), or a tag with data of its own ("dark-skinned male" is anatomy, "faceless
+ * male" identity).
+ */
+export function genderedTrait(tag: string, overrides: Record<string, string>, permanence: (tag: string) => Permanence): GenderedTrait | null {
+  const m = GENDERED_RE.exec(tag)
+  if (!m) return null
+  const [, words, gender] = m
+  if (words.split(/[ /]/).some((w) => GENDER_WORDS.includes(w))) return null
+  const own = overrides[tag]
+  if ((own && own !== DEMOGRAPHICS) || permanence(tag) !== 'state') return null
+  const trait = (core: string, slot: string, lasts: Permanence): GenderedTrait | null =>
+    lasts === 'composition' ? null : { gender: genderOf(gender), core, slot, permanence: lasts }
+  const compound = COMPOUND_RE.exec(words)
+  const nouns = compound ? nounsOf(compound[2]) : []
+  for (const core of [words, ...nouns.map((noun) => `${compound![1]} ${noun}`)]) {
+    const slot = overrides[core]
+    if (slot && PERSON_SLOT_RE.test(slot)) return trait(core, slot, permanence(core))
+  }
+  for (const noun of nouns) {
+    const family = familyOf(noun, overrides)
+    if (!family?.slot) continue
+    const counts = new Map<Permanence, number>()
+    for (const member of family.members) counts.set(permanence(member), (counts.get(permanence(member)) ?? 0) + 1)
+    const [lasts, n] = [...counts].sort((a, b) => b[1] - a[1])[0]
+    if (n / family.members.length >= FAMILY_AGREEMENT) return trait(`${compound![1]} ${noun}`, family.slot, lasts)
+  }
+  return null
 }
 
 /** The Danbooru reading the scene extraction has always done: counts, open counts, absent means none. */

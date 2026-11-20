@@ -1833,83 +1833,101 @@ export const TAG_CONFLICTS: Record<string, TagConflictRule> = {
   }
 }
 
+// Suffix-based fuzzy matching for compound tags: a rule's word and the words that count as it.
+const RELATED_SUFFIXES = new Map<string, readonly string[]>(Object.entries({
+  "eyes": ["eyes"],
+  "hair": ["hair"],
+  "breasts": ["breasts"],
+  "skin": ["skin"],
+  "legs": ["legs", "leg"],
+  "arms": ["arms", "arm"],
+  "clothes": ["clothes", "clothing", "clothed"],
+  "shoes": ["shoes", "shoe"],
+  "ears": ["ears", "ear"],
+  "tail": ["tail", "tails"],
+  "background": ["background"],
+  "sleeves": ["sleeves", "sleeve"],
+  "body": ["body"],
+  "face": ["face"],
+  "hands": ["hands", "hand"],
+  "feet": ["feet", "foot"],
+  "skirt": ["skirt", "skirts"],
+  "dress": ["dress", "dresses"],
+  "pants": ["pants"],
+  "socks": ["socks", "sock"],
+  "uniform": ["uniform", "uniforms"],
+  "headwear": ["hat", "hood", "helmet", "cap", "beanie"],
+  "neck": ["neck", "necks"],
+  "teeth": ["teeth", "tooth", "fangs"],
+  "tongue": ["tongue", "tongues"],
+  "mouth": ["mouth", "mouths"],
+  "lips": ["lips", "lip", "lipstick"],
+  "lipstick": ["lipstick"],
+  "lip_gloss": ["lip gloss"],
+  "mouth_mask": ["mouth mask", "mouth masks"],
+  "surgical_mask": ["surgical mask", "surgical masks"],
+  "face_mask": ["face mask", "face masks"],
+  "gas_mask": ["gas mask", "gas masks"],
+  "veil": ["veil", "veils", "niqab"],
+  "gag": ["gag", "gags", "gagged"],
+  "muzzle": ["muzzle", "muzzles"],
+  "nose": ["nose", "noses"],
+  "eyebrows": ["eyebrows", "eyebrow"],
+  "shoulders": ["shoulders", "shoulder"],
+  "knees": ["knees", "knee"],
+  "elbows": ["elbows", "elbow"],
+  "wrists": ["wrists", "wrist"],
+  "ankles": ["ankles", "ankle"],
+  "toes": ["toes", "toe"],
+  "fingers": ["fingers", "finger"],
+  "thighs": ["thighs", "thigh"],
+  "hips": ["hips", "hip"],
+  "chest": ["chest", "chests"],
+  "stomach": ["stomach", "stomachs"],
+  "waist": ["waist", "waists"],
+  "back": ["back", "backs"],
+  "navel": ["navel", "navels"],
+  "butt": ["butt", "butts", "ass"],
+  "pussy": ["pussy"],
+  "penis": ["penis"],
+}));
+
+/**
+ * normalize() and flattenHyphens() of the tags the resolver compares, worked out once: a pack
+ * checks every tag of every scene against every rule it triggers, so the same few thousand
+ * strings come back millions of times. Both are pure; the memo is cleared when it grows large.
+ */
+const COMPARE_KEYS = new Map<string, { norm: string; flat: string }>();
+const MAX_COMPARE_KEYS = 50000;
+function compareKeys(tag: string): { norm: string; flat: string } {
+  let keys = COMPARE_KEYS.get(tag);
+  if (!keys) {
+    if (COMPARE_KEYS.size >= MAX_COMPARE_KEYS) COMPARE_KEYS.clear();
+    const norm = normalize(tag);
+    keys = { norm, flat: flattenHyphens(norm) };
+    COMPARE_KEYS.set(tag, keys);
+  }
+  return keys;
+}
+
 // Flexible matching to catch variants (e.g. "red eyes" falls under "eyes")
 export function isRelatedTag(blockedTag: string, targetTag: string): boolean {
-  const normBlocked = normalize(blockedTag);
-  const normTarget = normalize(targetTag);
+  const blocked = compareKeys(blockedTag);
+  const target = compareKeys(targetTag);
 
   // "close_up" in a rule must match Danbooru's "close-up"
-  if (flattenHyphens(normBlocked) === flattenHyphens(normTarget)) return true;
-  
-  // Suffix-based fuzzy matching for compound tags
-  const suffixMap: Record<string, string[]> = {
-    "eyes": ["eyes"],
-    "hair": ["hair"],
-    "breasts": ["breasts"],
-    "skin": ["skin"],
-    "legs": ["legs", "leg"],
-    "arms": ["arms", "arm"],
-    "clothes": ["clothes", "clothing", "clothed"],
-    "shoes": ["shoes", "shoe"],
-    "ears": ["ears", "ear"],
-    "tail": ["tail", "tails"],
-    "background": ["background"],
-    "sleeves": ["sleeves", "sleeve"],
-    "body": ["body"],
-    "face": ["face"],
-    "hands": ["hands", "hand"],
-    "feet": ["feet", "foot"],
-    "skirt": ["skirt", "skirts"],
-    "dress": ["dress", "dresses"],
-    "pants": ["pants"],
-    "socks": ["socks", "sock"],
-    "uniform": ["uniform", "uniforms"],
-    "headwear": ["hat", "hood", "helmet", "cap", "beanie"],
-    "neck": ["neck", "necks"],
-    "teeth": ["teeth", "tooth", "fangs"],
-    "tongue": ["tongue", "tongues"],
-    "mouth": ["mouth", "mouths"],
-    "lips": ["lips", "lip", "lipstick"],
-    "lipstick": ["lipstick"],
-    "lip_gloss": ["lip gloss"],
-    "mouth_mask": ["mouth mask", "mouth masks"],
-    "surgical_mask": ["surgical mask", "surgical masks"],
-    "face_mask": ["face mask", "face masks"],
-    "gas_mask": ["gas mask", "gas masks"],
-    "veil": ["veil", "veils", "niqab"],
-    "gag": ["gag", "gags", "gagged"],
-    "muzzle": ["muzzle", "muzzles"],
-    "nose": ["nose", "noses"],
-    "eyebrows": ["eyebrows", "eyebrow"],
-    "shoulders": ["shoulders", "shoulder"],
-    "knees": ["knees", "knee"],
-    "elbows": ["elbows", "elbow"],
-    "wrists": ["wrists", "wrist"],
-    "ankles": ["ankles", "ankle"],
-    "toes": ["toes", "toe"],
-    "fingers": ["fingers", "finger"],
-    "thighs": ["thighs", "thigh"],
-    "hips": ["hips", "hip"],
-    "chest": ["chest", "chests"],
-    "stomach": ["stomach", "stomachs"],
-    "waist": ["waist", "waists"],
-    "back": ["back", "backs"],
-    "navel": ["navel", "navels"],
-    "butt": ["butt", "butts", "ass"],
-    "pussy": ["pussy"],
-    "penis": ["penis"],
-  };
-  
-  for (const [category, suffixes] of Object.entries(suffixMap)) {
-    if (normBlocked === category) {
-      for (const suffix of suffixes) {
-        if (normTarget === suffix || normTarget.endsWith(" " + suffix) || normTarget.startsWith(suffix + " ")) {
-          return true;
-        }
+  if (blocked.flat === target.flat) return true;
+
+  const suffixes = RELATED_SUFFIXES.get(blocked.norm);
+  if (suffixes) {
+    const normTarget = target.norm;
+    for (const suffix of suffixes) {
+      if (normTarget === suffix || normTarget.endsWith(" " + suffix) || normTarget.startsWith(suffix + " ")) {
+        return true;
       }
     }
   }
-  
+
   return false;
 }
 

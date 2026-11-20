@@ -50,7 +50,7 @@ import { planSources, type AppearanceSearch, type SourcePlan } from "@/lib/pack/
 import { holdsCast, roleFromProfile, roleFromSubject, type CastRole } from "@/lib/pack/scene/cast"
 import { createPermanence, type PermanenceData } from "@/lib/pack/scene/permanence"
 import type { TagKind } from "@/lib/pack/scene/scene"
-import { buildScenePool, compositionOfIdentity, compositionsOf, type PackPeople, type ScenePool } from "@/lib/pack/scene/scene-pool"
+import { buildScenePool, compositionOfIdentity, compositionsOf, createScenePoolCache, type PackPeople, type ScenePool } from "@/lib/pack/scene/scene-pool"
 import {
   castComposition,
   defaultComposition,
@@ -517,10 +517,14 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   }, [postKinds, tableKinds, lookupKey, lookup, lookupNames])
 
   const castPeopleMemo = useMemo(() => fromPeopleKey(castKey)!, [castKey])
+  // One cache of scene work per source: a new page reads only its new posts. Each entry is checked
+  // before use, so it can outlive any change; another site starts a new one to free the memory.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const poolCache = useMemo(() => createScenePoolCache(), [provider])
   const basePool = useMemo(() => {
     if (!permanence || waitingForLookup || rated.length === 0) return null
-    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), provider })
-  }, [permanence, waitingForLookup, rated, overrides, subject, castPeopleMemo, tagKinds, provider])
+    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), provider, cache: poolCache })
+  }, [permanence, waitingForLookup, rated, overrides, subject, castPeopleMemo, tagKinds, provider, poolCache])
 
   const requests = useMemo(() => toSceneRequests(coreBrief), [coreBrief])
   const leftOutKey = brief.leftOut.join(",")
@@ -561,8 +565,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const pool = useMemo(() => {
     if (!basePool || !permanence) return null
     if (!people || peopleKey === peopleKeyOf(basePool.stats.composition)) return basePool
-    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), people, provider })
-  }, [basePool, permanence, people, peopleKey, rated, overrides, subject, castPeopleMemo, tagKinds, provider])
+    return buildScenePool(rated, { overrides, permanence, subject, cast: castPeopleMemo, tagKind: (tag) => tagKinds.get(tag), people, provider, cache: poolCache })
+  }, [basePool, permanence, people, peopleKey, rated, overrides, subject, castPeopleMemo, tagKinds, provider, poolCache])
 
   const peopleLine = useMemo(
     () => peopleLineState({

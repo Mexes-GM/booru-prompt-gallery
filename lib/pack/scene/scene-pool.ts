@@ -13,6 +13,7 @@ import { COUNT_TAG_RE } from './permanence'
 import { nameDetector } from './names'
 import { extractScene, sceneTags, stateTagCount, MIN_TYPICAL_SUPPORT, type Scene, type SceneContext } from './scene'
 import { isInventedPost } from './invented'
+import type { ScenePoolCache } from './scene-cache'
 
 /** Scenes with fewer state tags than this are too poor to be worth a prompt. */
 export const DEFAULT_MIN_STATE_TAGS = 6
@@ -87,6 +88,11 @@ export type ScenePoolContext = Omit<SceneContext, 'poolSupport' | 'poolPlace' | 
   identity?: readonly string[]
   /** Composition to use when the identity declares no count. Without it, the most frequent one of the pool. */
   people?: PackPeople
+  /**
+   * Work kept from earlier pools of the same source (createScenePoolCache): a post whose scene
+   * would come out the same is not read again. The pool is the same with or without it.
+   */
+  cache?: ScenePoolCache
 }
 
 /**
@@ -127,7 +133,9 @@ export function compositionsOf(scenes: readonly Scene[]): Array<{ people: PackPe
   return Array.from(counts.values()).sort((a, b) => b.scenes - a.scenes)
 }
 
-export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): ScenePool {
+export function buildScenePool(posts: BooruPost[], poolCtx: ScenePoolContext): ScenePool {
+  const { cache, ...ctx } = poolCtx
+  cache?.startBuild(posts.length)
   const minState = ctx.minStateTags ?? DEFAULT_MIN_STATE_TAGS
   // Invented scenes go through every step, but only real posts are counted and only real
   // posts are evidence of what a tag is (support, names, places): a scene the model
@@ -163,7 +171,8 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
       if (seen) seen.add(signature)
       else signatures.set(tag, new Set([signature]))
     })
-    classifyPostForPack(post, ctx.overrides).scenery.forEach((tag) => wordSuffixes(tag).forEach((s) => place.add(s)))
+    const classified = cache ? cache.classify(post, ctx.overrides) : classifyPostForPack(post, ctx.overrides)
+    classified.scenery.forEach((tag) => wordSuffixes(tag).forEach((s) => place.add(s)))
   }
   const spread = new Set(evidence.map(signatureOf)).size >= MIN_SIGNATURES_FOR_SPREAD
   const sceneCtx: SceneContext = {
@@ -177,7 +186,7 @@ export function buildScenePool(posts: BooruPost[], ctx: ScenePoolContext): Scene
 
   const good: Scene[] = []
   for (const post of distinct) {
-    const scene = extractScene(post, sceneCtx)
+    const scene = cache ? cache.extract(post, sceneCtx) : extractScene(post, sceneCtx)
     const counted = !isInventedPost(post)
     if (!scene) {
       if (counted) stats.unextractable++
@@ -360,3 +369,5 @@ function situationName(
   const leading = pairs.filter((pair) => pair[0] === candidates[0])
   return [...leading, ...pairs, [candidates[0]]].find((pair) => !used.has(labelKey(pair))) ?? [candidates[0]]
 }
+
+export { createScenePoolCache, type ScenePoolCache } from './scene-cache'
