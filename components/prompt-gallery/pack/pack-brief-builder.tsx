@@ -41,6 +41,7 @@ import { storedPackRating, withPackRating } from "@/lib/pack/pack-rating"
 import { track } from "@/lib/analytics"
 import { recordPromptCopy } from "@/lib/support-prompt"
 import { toastError } from "@/lib/toast-error"
+import { copyText } from "@/lib/clipboard"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import {
@@ -1794,11 +1795,11 @@ function startNoteText(note: StartNote, poolPending: boolean): string | null {
  */
 async function copyPackText(text: string, format: PromptFormat, provider: BooruProvider): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(text)
+    await copyText(text)
   } catch {
     toastError({
-      title: "Error",
-      description: "Could not copy prompt",
+      title: "Couldn't copy the prompt",
+      description: "The browser didn't allow clipboard access. Try again.",
       errorSource: "copy_to_clipboard",
       context: { provider, postId: 0, isPrompt: true },
     })

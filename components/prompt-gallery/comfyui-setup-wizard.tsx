@@ -26,6 +26,7 @@ import { checkNodesAgainstObjectInfo } from "@/lib/comfyui/import"
 import type { ComfyPanelReason } from "@/lib/comfyui/panel-request"
 import { nodeTitle } from "@/lib/comfyui/role-choices"
 import { detectRoles } from "@/lib/comfyui/roles"
+import { copyText } from "@/lib/clipboard"
 import {
   NUMBERED_STEPS,
   canContinue,
@@ -157,7 +158,7 @@ function CopyCommand({ command, note }: { command: string; note: string }) {
           variant="ghost"
           size="sm"
           onClick={() => {
-            void navigator.clipboard?.writeText(command).then(
+            void copyText(command).then(
               () => setCopied(true),
               () => {},
             )
