@@ -226,34 +226,46 @@ export const poseNeedsText = (people: number) => `This pose needs ${people} peop
 
 // ── Wearing ──────────────────────────────────────────────────────────────────────
 
+/** What the pack wears while Wearing has no chips: the outfit menu's choices. */
 export type OutfitSource =
   | { kind: "scene" }
   | { kind: "usual" }
   | { kind: "official"; name: string }
-  | { kind: "library" }
 
 export const OUTFIT_KIND_LABEL = {
   scene: "Each scene's outfit",
   usual: "Usual outfit",
-  library: "Outfit library",
 } as const
 
+/** What an empty Wearing field reads: "Each scene's outfit", "Usual outfit", or the official outfit's name. */
 export function outfitSourceLabel(source: OutfitSource): string {
   return source.kind === "official" ? source.name : OUTFIT_KIND_LABEL[source.kind]
-}
-
-/** The value after "Outfit:" on the menu button: "each scene's", "usual", "from the library", or the outfit's name. */
-const OUTFIT_SHORT = { scene: "each scene's", usual: "usual", library: "from the library" } as const
-export function outfitSourceValue(source: OutfitSource): string {
-  return source.kind === "official" ? source.name : OUTFIT_SHORT[source.kind]
 }
 
 export const outfitKey = (s: OutfitSource) => (s.kind === "official" ? `official:${s.name}` : s.kind)
 
 export function outfitFromKey(key: string): OutfitSource {
   if (key.startsWith("official:")) return { kind: "official", name: key.slice("official:".length) }
-  return { kind: key as "scene" | "usual" | "library" }
+  return { kind: key === "usual" ? "usual" : "scene" }
 }
+
+/** The menu on an empty Wearing field. */
+export const OUTFIT_MENU_TEXT = {
+  /** The menu button's name for screen readers. */
+  button: (current: string) => `Outfit when Wearing is empty: ${current}`,
+  heading: "When nothing is written here",
+  official: "Official outfits",
+} as const
+
+/** How much of each library outfit goes in a prompt, set in Wearing while it has a style chip. */
+export const OUTFIT_DETAIL_TEXT = {
+  heading: "From each library outfit",
+  button: (current: string) => `Library outfit detail: ${current}`,
+  options: [
+    { value: "simple", label: "Main pieces", hint: "Top, bottom and shoes" },
+    { value: "full", label: "Full outfit", hint: "Plus legwear, bag and jewelry" },
+  ],
+} as const
 
 // ── Fit line ─────────────────────────────────────────────────────────────────────
 
@@ -383,9 +395,6 @@ export const PROMPT_OPTIONS_TEXT = {
   defaults: "Defaults",
   sizeLabel: "Longest side of sizes",
   sizeHint: "Suggested sizes fit within this, from 512 to 1536 px",
-  outfitLabel: "Library outfits",
-  outfitHint: "The styles and detail a pack can take from the outfit library",
-  outfitSafeNote: "Lingerie and Sexy aren't used at the Safe rating.",
 } as const
 
 /** What differs from the defaults, for the folded line: "+3 tags · 2 weights · no character names". */

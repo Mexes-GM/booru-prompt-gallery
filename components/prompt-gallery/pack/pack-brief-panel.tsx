@@ -20,9 +20,10 @@ import { PeopleLine, type PeopleLineProps } from "./people-line"
 import { RequestChip, type RequestChipTone } from "./request-chip"
 import type { EntryOption } from "./tag-entry"
 import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
-import { WearingSourceMenu } from "./wearing-source-menu"
-import { DEFAULTS_TEXT, OTHERS_UNUSED, WEARING_TEXT } from "./pack-text"
+import { OutfitDetailMenu, WearingSourceMenu } from "./wearing-source-menu"
+import { DEFAULTS_TEXT, OTHERS_UNUSED, WEARING_TEXT, outfitSourceLabel } from "./pack-text"
 import type { OutfitSource } from "./pack-text"
+import type { OutfitDetail } from "@/lib/outfit-swap"
 
 export type { CharacterInfo }
 
@@ -52,6 +53,7 @@ export interface PackBriefPanelProps {
   onRemoveTrait: (character: string | null, tag: string) => void
   onRestoreTrait: (character: string | null, tag: string) => void
 
+  /** What the pack wears while Wearing has no chips: read in the empty field, with its menu at the end. */
   outfitSource: OutfitSource
   onOutfitSourceChange: (source: OutfitSource) => void
   officialOutfits?: readonly string[]
@@ -78,6 +80,8 @@ export interface PackBriefPanelProps {
   /** Wearing: the outfit library's styles, offered in the field (not tags), and the ones chosen as chips. */
   styleOptions?: readonly EntryOption[]
   styleChips?: readonly { style: string; label: string; inactive?: string; onRemove: () => void }[]
+  /** How much of each library outfit goes in a prompt: its menu shows beside Wearing while a style chip applies. */
+  outfitDetail?: { value: OutfitDetail; onChange: (detail: OutfitDetail) => void }
   /** Under Wearing when a chosen style doesn't apply at the pack's rating. */
   styleNote?: string
   /**
@@ -167,6 +171,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     styleOptions,
     styleChips = NO_STYLE_CHIPS,
     styleNote,
+    outfitDetail,
     rowDefaults,
     suggestions,
     suggestionStatus,
@@ -223,7 +228,10 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   }
 
   /** A request row: chips for its tags, the last one removable from the keyboard. */
-  const requestRow = (slot: RequestRole | "style" | "others", extra?: { actions?: ReactNode; notes?: ReactNode; leading?: ReactNode; filled?: boolean; defaults?: RowDefaultsProps }) => {
+  const requestRow = (
+    slot: RequestRole | "style" | "others",
+    extra?: { actions?: ReactNode; notes?: ReactNode; leading?: ReactNode; filled?: boolean; defaults?: RowDefaultsProps; placeholder?: string; trailing?: ReactNode },
+  ) => {
     const tags = slotTags(brief, slot)
     const lastTag = tags[tags.length - 1]
     const last = lastTag ? { label: showTag(lastTag), remove: () => onRemoveTag(lastTag) } : null
@@ -241,7 +249,8 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
         key={slot}
         slot={slot}
         filled={tags.length > 0 || !!extra?.filled}
-        entry={entryFor(slot, last)}
+        entry={extra?.trailing ? { ...entryFor(slot, last), trailing: extra.trailing } : entryFor(slot, last)}
+        placeholder={extra?.placeholder}
         actions={extra?.actions}
         notes={notes}
         flashKey={flashFor(slot)}
@@ -275,6 +284,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   const othersShown = !!others && (others.applies === true || brief.others.length > 0)
   // What Wearing does to the character's own clothes: a kind per prompt, or the same tags in all.
   const anyKind = wearing.some((t) => exactness[t] === false)
+  const sourceShown = wearing.length === 0 && styleChips.length === 0 && !outfitNote
   const wearingNote = outfitNote && wearing.length === 0
     ? outfitNote
     : wearing.length > 0 && hasNamed
@@ -306,15 +316,24 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           leading: styleChips.map((c) => (
             <RequestChip key={`style:${c.style}`} label={c.label} inactive={c.inactive} onRemove={c.onRemove} />
           )),
-          actions:
-            wearing.length === 0 && styleChips.length === 0 && !outfitNote ? (
-              <WearingSourceMenu
-                value={outfitSource}
-                onChange={onOutfitSourceChange}
-                officialOutfits={officialOutfits}
-                noCharacter={!hasNamed}
-              />
-            ) : undefined,
+          // While a style applies: how much of each library outfit goes in. Not otherwise.
+          actions: outfitDetail && styleChips.some((c) => !c.inactive) ? (
+            <OutfitDetailMenu value={outfitDetail.value} onChange={outfitDetail.onChange} />
+          ) : undefined,
+          // Empty, the field reads what the pack wears instead, with its menu; any chip replaces it.
+          ...(sourceShown
+            ? {
+                placeholder: outfitSourceLabel(outfitSource),
+                trailing: (
+                  <WearingSourceMenu
+                    value={outfitSource}
+                    onChange={onOutfitSourceChange}
+                    officialOutfits={officialOutfits}
+                    noCharacter={!hasNamed}
+                  />
+                ),
+              }
+            : {}),
           notes: wearingNote || styleNote ? (
             <>
               {wearingNote && <SlotNote>{wearingNote}</SlotNote>}

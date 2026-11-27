@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, toggleComposition, addOutfitStyle, removeOutfitStyle, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
+  addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, toggleComposition, addOutfitStyle, removeOutfitStyle, setOutfitDetail, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
   removeTag, restoreLook, restoreScene, setCharacterRole, setPeople, settleStart, toSceneRequests,
   type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
@@ -36,6 +36,7 @@ export const BRIEF_LABELS = {
   leaveOutScene: 'Left a scene out',
   setBaseScene: 'Changed the scene that repeats',
   restoreScene: 'Put a scene back',
+  setOutfitDetail: 'Changed the outfit detail',
 }
 
 export interface UsePackBriefResult {
@@ -58,6 +59,8 @@ export interface UsePackBriefResult {
   /** Wearing: a style of the outfit library (every prompt wears a whole outfit of one). */
   addStyle: (style: string, label: string) => void
   removeStyle: (style: string, label: string) => void
+  /** How much of each library outfit of the styles goes in a prompt. */
+  setOutfitDetail: (detail: 'simple' | 'full') => void
   /** Replaces the brief with one made from it (an example picked), as one change. */
   changeTo: (next: PackBrief, label: string) => void
   /** Adds several tags as one change (one Undo). */
@@ -229,6 +232,9 @@ export function usePackBrief(
   const removeStyle = useCallback((style: string, label: string) => {
     change(BRIEF_LABELS.remove(label), (b) => removeOutfitStyle(b, style))
   }, [change])
+  const setOutfitDetailAction = useCallback((detail: 'simple' | 'full') => {
+    change(BRIEF_LABELS.setOutfitDetail, (b) => setOutfitDetail(b, detail))
+  }, [change])
   const addOtherAction = useCallback((tag: string) => {
     change(BRIEF_LABELS.add(tag.trim()), (b) => addOther(b, tag))
   }, [change])
@@ -358,7 +364,7 @@ export function usePackBrief(
 
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
-    add, addOther: addOtherAction, addExactly, setExact, addStyle, removeStyle, toggleComposition: toggleCompositionAction, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
+    add, addOther: addOtherAction, addExactly, setExact, addStyle, removeStyle, setOutfitDetail: setOutfitDetailAction, toggleComposition: toggleCompositionAction, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
     addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
