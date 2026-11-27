@@ -89,11 +89,11 @@ function statusCopy(d: Diagnosis): { tone: "ok" | "problem"; text: string } {
     case "bridge-missing":
       return { tone: "problem", text: `ComfyUI is running but blocks this site. ${BRIDGE_INSTALL_STEP}` }
     case "bridge-outdated":
-      return { tone: "problem", text: `The ${BRIDGE_NAME} node is out of date (${d.version}). Update it in ComfyUI and restart ComfyUI.` }
+      return { tone: "problem", text: `${BRIDGE_NAME} is out of date (${d.version}). Update it and restart ComfyUI.` }
     case "bridge-inactive":
       return {
         tone: "problem",
-        text: `The ${BRIDGE_NAME} node doesn't work with this ComfyUI version. Update the node and restart ComfyUI.`,
+        text: `${BRIDGE_NAME} doesn't work with this ComfyUI version. Update it and restart ComfyUI.`,
       }
   }
 }

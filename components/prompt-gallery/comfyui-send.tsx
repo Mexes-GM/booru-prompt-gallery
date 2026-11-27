@@ -51,10 +51,10 @@ function reasonFor(d: Diagnosis): string {
     case "unreachable":
       return "ComfyUI isn't answering. Check that it's running."
     case "bridge-missing":
-      return `ComfyUI blocks this site. Install the ${BRIDGE_NAME} node.`
+      return `ComfyUI blocks this site. Install ${BRIDGE_NAME} and restart ComfyUI.`
     case "bridge-outdated":
     case "bridge-inactive":
-      return `The ${BRIDGE_NAME} node needs an update.`
+      return `${BRIDGE_NAME} needs an update.`
     case "ok":
       return "ComfyUI didn't take the prompt. Try again."
   }
