@@ -115,16 +115,17 @@ function newId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `w${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
 }
 
+const RELATIVE_TIME = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
+
 function updatedLabel(updated: number | string): string | null {
   const ms = typeof updated === "number" ? (updated < 1e12 ? updated * 1000 : updated) : Date.parse(updated)
   if (!Number.isFinite(ms)) return null
   const seconds = Math.round((ms - Date.now()) / 1000)
-  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
   const abs = Math.abs(seconds)
   if (abs < 60) return "Updated just now"
-  if (abs < 3600) return `Updated ${rtf.format(Math.round(seconds / 60), "minute")}`
-  if (abs < 86400) return `Updated ${rtf.format(Math.round(seconds / 3600), "hour")}`
-  return `Updated ${rtf.format(Math.round(seconds / 86400), "day")}`
+  if (abs < 3600) return `Updated ${RELATIVE_TIME.format(Math.round(seconds / 60), "minute")}`
+  if (abs < 86400) return `Updated ${RELATIVE_TIME.format(Math.round(seconds / 3600), "hour")}`
+  return `Updated ${RELATIVE_TIME.format(Math.round(seconds / 86400), "day")}`
 }
 
 function refText(workflow: SavedComfyWorkflow, ref: InputRef | null): string | null {
