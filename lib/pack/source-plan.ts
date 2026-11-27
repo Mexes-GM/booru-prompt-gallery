@@ -16,7 +16,7 @@
 import type { BooruProvider } from '../booru/types'
 import { getProviderTagLimit, processTagsForAPI } from '../booru/tag-limits'
 import type { PackRatingMode } from '../../hooks/use-pack-seed-search'
-import { toSceneRequests, type PackBrief } from './brief'
+import { castTurns, toSceneRequests, type PackBrief } from './brief'
 import { normalizeTagForPack } from './pack-generator'
 import { castPeople, compositionQuery, holdsCast, type CastRole } from './scene/cast'
 import type { PackPeople } from './scene/scene-pool'
@@ -50,6 +50,13 @@ export interface SceneSearch extends PlannedSearch {
    * composition of two or more). Missing elsewhere: the plan's `people` says it.
    */
   people?: PackPeople
+  /** One per prompt in turn (castTurns), with nothing asked for: the character this own search is of (brief spelling). */
+  character?: string
+  /**
+   * One per prompt in turn with clothes or a place asked for and no pose: the tag of Wearing or Where
+   * this theme search looks for (brief spelling), so its posts are of that concept.
+   */
+  concept?: { role: 'wearing' | 'where'; tags: string[] }
 }
 
 export interface AppearanceSearch extends PlannedSearch {
@@ -344,6 +351,7 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
   const { ratings, sensitive } = planRatings(rating, env.includeSensitive, provider)
 
   const named = brief.who.filter((c): c is typeof c & { tag: string } => !!c.tag)
+  if (castTurns(brief)) return planTurns(brief, env, named.map((c) => c.tag))
   const roles = named.map((c, i) => env.roles?.[i] ?? c.role ?? null)
   const mixed = (env.compositions?.length ?? 0) >= 2
   const group = groupPeople(brief, roles)
@@ -399,6 +407,26 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     }
   }
 
+  return finishPlan(brief, env, { wanted, poses, people, rolesPending, ratings, sensitive, limit, base, named: named.map((c) => c.tag) })
+}
+
+/** The scene searches a plan keeps (MAX_SCENE_SEARCHES), what they leave out, and the rest of the plan around them. */
+function finishPlan(brief: PackBrief, env: SourcePlanEnv, p: {
+  wanted: Array<{ search: SceneSearch; galleryRest?: string[] }>
+  poses: string[]
+  people: PackPeople | null
+  rolesPending: boolean
+  ratings: string[]
+  sensitive: SourcePlan['sensitive']
+  limit: number
+  /** The character the pool can give the look of when it shows only them alone; null: none. */
+  base: string | null
+  named: string[]
+  /** Leaves out a donor search that asks what a scene search already does (its posts are in the pool). */
+  dedupeDonors?: boolean
+}): SourcePlan {
+  const { provider, rating } = env
+  const { wanted, poses, people, rolesPending, ratings, sensitive, limit, base } = p
   const scenes: SceneSearch[] = []
   const leftOut: LeftOutTag[] = []
   const leftOutSearches: LeftOutSearch[] = []
@@ -419,11 +447,12 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
   // The pool gives the base character's look only when all of it shows them alone; everyone
   // else (a cast waiting for its roles) still has their look read apart.
   const baseLookFromPool = !!base && scenes.every((s) => showsAlone(s, base))
-  const appearance = named
+  const appearance = p.named
     .filter((_, i) => !(baseLookFromPool && i === 0))
-    .map((c) => appearanceSearch(c.tag, provider, ratings[0]))
+    .map((tag) => appearanceSearch(tag, provider, ratings[0]))
 
-  const donors = donorSearches(brief, env, ratings[0], limit, leftOut)
+  const allDonors = donorSearches(brief, env, ratings[0], limit, leftOut)
+  const donors = p.dedupeDonors ? allDonors.filter((d) => !scenes.some((s) => s.query === d.query)) : allDonors
   const sceneKey = `${provider}|${ratings.join('+')}|${scenes.map((s) => s.id).join('||')}`
   const appearanceKey = appearance.map((s) => `${s.id}|${normalizeTagForPack(s.character)}`).join('||')
   const donorKey = donors.map((s) => s.id).join('||')
@@ -445,6 +474,80 @@ export function planSources(brief: PackBrief, env: SourcePlanEnv): SourcePlan {
     donorKey,
     key: donorKey ? `${sceneKey}##${appearanceKey}##${donorKey}` : `${sceneKey}##${appearanceKey}`,
   }
+}
+
+/**
+ * The plan of a pack with one character per prompt, in turn (castTurns). The scenes come from what
+ * the pack asks for, not from any one character, searched as for a pack without a named character:
+ *  - a pose: the theme search (and the first pose alone, when several), with the head count of
+ *    People when it sets two or more, and each composition's theme search in a mixed pack;
+ *  - no pose, but clothes or a place: a theme search for the first garment of Wearing (else the
+ *    first place of Where), with the same head count; the conditions keep their donor searches, but
+ *    one that asks the same as that search (its posts are already scenes);
+ *  - nothing asked: each character's own search, alone ("name, solo") when the pack has a one-person
+ *    make-up, else by name, in brief order (a pack has at most MAX_CAST characters, as many as
+ *    MAX_SCENE_SEARCHES, so none is left out).
+ * Every character's look is read from their own appearance search.
+ */
+function planTurns(brief: PackBrief, env: SourcePlanEnv, named: string[]): SourcePlan {
+  const { provider, rating } = env
+  const limit = getProviderTagLimit(provider)
+  const { ratings, sensitive } = planRatings(rating, env.includeSensitive, provider)
+  const requests = toSceneRequests(brief)
+  const seen = new Set<string>()
+  const poses = requests.select.filter((tag) => {
+    const key = normalizeTagForPack(tag)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  const mixed = (env.compositions?.length ?? 0) >= 2
+  const set = brief.people
+  const people = !mixed && set && set.girls + set.boys >= 2 ? { girls: set.girls, boys: set.boys } : null
+  // Each composition of two or more of a mixed pack, once: every prompt has one named person.
+  const mixGroups: PackPeople[] = []
+  for (const group of mixed ? env.compositions ?? [] : []) {
+    if (group.girls + group.boys < 2 || mixGroups.some((g) => g.girls === group.girls && g.boys === group.boys)) continue
+    mixGroups.push({ girls: group.girls, boys: group.boys })
+  }
+  const forGroup = (search: SceneSearch, group: PackPeople): SceneSearch => ({ ...search, people: { girls: group.girls, boys: group.boys } })
+
+  const wanted: Array<{ search: SceneSearch }> = []
+  const anchor = poses[0] ?? null
+  const conceptRole: 'wearing' | 'where' | null = requests.wearing.length > 0 ? 'wearing' : requests.where.length > 0 ? 'where' : null
+  const conceptTag = conceptRole ? requests[conceptRole][0] : null
+  if (anchor) {
+    for (const group of mixGroups) {
+      const own = fill(groupLead(group, provider, rating, anchor), poses, limit)
+      wanted.push({ search: forGroup(sceneSearch(provider, 'theme', own.tags, own.taken), group) })
+    }
+    const lead = people ? groupLead(people, provider, rating, anchor) : []
+    const theme = fill(lead, poses, limit)
+    wanted.push({ search: sceneSearch(provider, 'theme', theme.tags, theme.taken) })
+    if (theme.taken.length > 1) {
+      const alone = fill(lead, [anchor], limit)
+      wanted.push({ search: sceneSearch(provider, 'anchor', alone.tags, alone.taken) })
+    }
+  } else if (conceptRole && conceptTag) {
+    const concept = (lead: string[]): SceneSearch | null => {
+      const theme = fill(lead, [conceptTag], limit)
+      return theme.taken.length > 0 ? { ...sceneSearch(provider, 'theme', theme.tags, []), concept: { role: conceptRole, tags: theme.taken } } : null
+    }
+    for (const group of mixGroups) {
+      const search = concept(groupLead(group, provider, rating, conceptTag))
+      if (search) wanted.push({ search: forGroup(search, group) })
+    }
+    const search = concept(people ? groupLead(people, provider, rating, conceptTag) : [])
+    if (search) wanted.push({ search })
+  }
+  if (wanted.length === 0) {
+    // Nothing to search the scenes by: each character's own posts.
+    const alone = limit >= 2 && (mixed ? (env.compositions ?? []).some((g) => g.girls + g.boys === 1) : !people)
+    for (const tag of named) {
+      wanted.push({ search: { ...sceneSearch(provider, 'own', alone ? [toBooru(tag), 'solo'] : [toBooru(tag)], []), character: tag } })
+    }
+  }
+  return finishPlan(brief, env, { wanted, poses, people, rolesPending: false, ratings, sensitive, limit, base: null, named, dedupeDonors: true })
 }
 
 /**

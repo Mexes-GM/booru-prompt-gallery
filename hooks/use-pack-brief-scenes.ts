@@ -14,7 +14,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import type { PackBrief } from "@/lib/pack/brief"
-import { briefCompositions, briefConditions, isOthersTag, setRoutePermanence, toSceneRequests } from "@/lib/pack/brief"
+import { briefCompositions, briefConditions, isOthersTag, setRoutePermanence, toSceneRequests, turnBriefs } from "@/lib/pack/brief"
+import { assignTurns, generateTurnsAsync } from "@/lib/pack/cast-turns"
 import { knownAliases, loadConditionAliases } from "@/lib/pack/condition-aliases"
 import {
   briefIdentity,
@@ -157,6 +158,8 @@ export interface PackMade {
   sourceKey: string
   /** Kept across a reload: `pool` is a stand-in until the source's posts are back. */
   restored?: true
+  /** One character per prompt: the character (normalized tag) of each prompt the engine made, in order (assignTurns). */
+  turns?: readonly string[]
 }
 
 // The pool of a pack kept across a reload until its posts are fetched again: nothing reads it then.
@@ -595,6 +598,48 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     return marked.length > 0 ? marked : people ? [people] : []
   }, [mixKey, castPeopleMemo, people])
   const peopleBlocked = choices?.blocked ?? NO_POSES
+
+  // ── One character per prompt ──────────────────────────────────────────────────
+  // Each character's prompts come from the pool of their own composition, as a pack of only them:
+  // the first character's is the pack's pool; a character of the other gender gets one of their own.
+  const turnIdentities = identity.turns
+  const turnCharacters = useMemo(() => turnIdentities?.map((t) => t.members[0]?.character ?? "") ?? NO_NAMES, [turnIdentities])
+  const otherPools = useMemo(() => {
+    const out = new Map<"girl" | "boy", { pool: ScenePool; people: PackPeople | null }>()
+    if (!turnIdentities || !permanence || waitingForLookup || rated.length === 0) return out
+    const donors = new Set(donorPosts ?? [])
+    for (const t of turnIdentities) {
+      if (t.subject === subject || out.has(t.subject)) continue
+      const ctx = { overrides, permanence, subject: t.subject, cast: t.cast, tagKind: (tag: string) => tagKinds.get(tag), provider, cache: poolCache }
+      const base = buildScenePool(rated, ctx)
+      const compositions = donors.size > 0 ? compositionsOf((base.allScenes ?? base.scenes).filter((scene) => !donors.has(scene.postId))) : base.stats.compositions
+      const own = peopleChoices({ compositions, poses: poseCompositions(base, poseArgs), cast: t.cast, hasPoses: requests.select.length > 0 })
+      const chosen = defaultComposition(own.fitting, t.subject, coreBrief.people, { declared: null, character: true }, own.fittingPoses)
+      const pool = chosen && peopleKeyOf(chosen) !== peopleKeyOf(base.stats.composition) ? buildScenePool(rated, { ...ctx, people: chosen }) : base
+      out.set(t.subject, { pool, people: chosen })
+    }
+    return out
+  }, [turnIdentities, permanence, waitingForLookup, rated, donorPosts, subject, overrides, tagKinds, provider, poolCache, poseArgs, requests.select.length, coreBrief.people])
+  /** A character's identity, pool and composition in a pack of one per prompt; null while their pool isn't built. */
+  const turnOf = useCallback((character: string) => {
+    const t = turnIdentities?.find((x) => x.members[0]?.character === character)
+    if (!t) return null
+    const own = t.subject === subject ? (pool ? { pool, people } : null) : otherPools.get(t.subject) ?? null
+    return own ? { identity: t, pool: own.pool, people: own.people } : null
+  }, [turnIdentities, subject, pool, people, otherPools])
+  // The character's own posts among the preferred ones (the plan searched each one's own posts):
+  // posts that name them. Without own searches the preferred posts are anyone's and stay as they are.
+  const postCharacters = useMemo(() => {
+    if (!turnIdentities) return null
+    const out = new Map<number, Set<string>>()
+    for (const post of posts) out.set(post.id, new Set((post.tag_string_character ?? "").split(/\s+/).map(normalizeTagForPack).filter(Boolean)))
+    return out
+  }, [turnIdentities, posts])
+  const preferredFor = useCallback(
+    (character: string, ids: readonly number[]): number[] =>
+      postCharacters && preferredPosts.length > 0 ? ids.filter((id) => postCharacters.get(id)?.has(character)) : [...ids],
+    [postCharacters, preferredPosts]
+  )
   // The most scenes that can fit, from the pool alone: the scenes that fit are some of the pool's
   // scenes of the make-ups in use (with the poses, those that have them all), less those left out
   // and the donors'. Unknown for a one-part pack or poses the pool can't read.
@@ -697,40 +742,68 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
 
   // ── Arguments ─────────────────────────────────────────────────────────────────
   const characterTags = useMemo(() => named.map(normalizeTagForPack), [named])
-  const clean = useCallback<ScenePackArgs["clean"]>(
-    (tags, locked) => cleanSyntheticPrompt(
+  // The prompt settings, with the characters a prompt names ("Include characters" puts their names in).
+  const cleanFor = useCallback(
+    (characters: readonly string[]): ScenePackArgs["clean"] => (tags, locked) => cleanSyntheticPrompt(
       tags,
-      characterTags,
+      [...characters],
       { ...cleanOptions, optimizeTags: false, tagOverrides: overrides, globalWeights, isGlobalWeightsEnabled, lockedTags: locked },
       locked
     ),
-    [characterTags, cleanOptions, overrides, globalWeights, isGlobalWeightsEnabled]
+    [cleanOptions, overrides, globalWeights, isGlobalWeightsEnabled]
   )
-  const argsFor = useCallback(
-    (forBrief: PackBrief, seed: number, count: number, baseScene?: number): ScenePackArgs => {
+  const clean = useMemo(() => cleanFor(characterTags), [cleanFor, characterTags])
+  const envFor = useCallback(
+    (forBrief: PackBrief, seed: number, count: number, baseScene: number | undefined, forPeople: PackPeople | null, preferred: readonly number[], cast: PackPeople, forClean: ScenePackArgs["clean"]) => {
       const prefs = sizePrefs()
-      return briefPackArgs(forBrief, identity, {
+      return {
         overrides,
-        permanence: permanence ?? (() => "identity"),
+        permanence: permanence ?? (() => "identity" as const),
         count,
         seed,
-        people,
-        preferredPosts,
+        people: forPeople,
+        preferredPosts: preferred,
         outfit,
         characterOutfits,
-        clean,
-        resolution: (aspect) => resolutionForAspect(aspect, prefs),
+        clean: forClean,
+        resolution: (aspect: number) => resolutionForAspect(aspect, prefs),
         baseScene,
         conditions: briefConditions(forBrief, overrides),
         outfitStyles: (forBrief.outfitStyles ?? []).filter((style) => allowedStyles.includes(style as OutfitStyle)),
         donorPosts,
         outfitLibrary: libraries[packOutfitDetail(forBrief)],
         conditionAliases,
-        compositions: oneAxis(forBrief) ? [] : briefCompositions(forBrief).filter((p) => holdsCast(p, castPeopleMemo)),
-      })
+        compositions: oneAxis(forBrief) ? [] : briefCompositions(forBrief).filter((p) => holdsCast(p, cast)),
+      }
     },
-    [identity, overrides, permanence, people, preferredPosts, outfit, characterOutfits, clean, allowedStyles, donorPosts, libraries, conditionAliases, castPeopleMemo]
+    [overrides, permanence, outfit, characterOutfits, allowedStyles, donorPosts, libraries, conditionAliases]
   )
+  /**
+   * The engine's arguments for the brief. One character per prompt: those of a pack of only
+   * `character` (the first one by default), their identity, composition and own posts.
+   */
+  const argsFor = useCallback(
+    (forBrief: PackBrief, seed: number, count: number, baseScene?: number, character?: string): ScenePackArgs => {
+      if (turnIdentities) {
+        const who = character ?? turnCharacters[0]
+        const turn = turnOf(who)
+        const solo = turnBriefs(forBrief).find((b) => normalizeTagForPack(b.who[0]?.tag ?? "") === who)
+        if (turn && solo) {
+          // Their own name only: the others aren't in their prompts.
+          return briefPackArgs(solo, turn.identity, envFor(forBrief, seed, count, baseScene, turn.people, preferredFor(who, preferredPosts), turn.identity.cast, cleanFor([who])))
+        }
+      }
+      return briefPackArgs(forBrief, identity, envFor(forBrief, seed, count, baseScene, people, preferredPosts, castPeopleMemo, clean))
+    },
+    [turnIdentities, turnCharacters, turnOf, preferredFor, envFor, identity, people, preferredPosts, castPeopleMemo, cleanFor, clean]
+  )
+  /** The pool a prompt for `character` comes from: the pack's (`made`'s) for the first character's gender, else their own. */
+  const poolFor = useCallback((character: string | undefined, packPool: ScenePool): ScenePool | null => {
+    if (!turnIdentities || !character) return packPool
+    const t = turnIdentities.find((x) => x.members[0]?.character === character)
+    if (!t || t.subject === subject) return packPool
+    return otherPools.get(t.subject)?.pool ?? null
+  }, [turnIdentities, subject, otherPools])
 
   // The pack made last (see "Generating and correcting" below).
   // A pack kept across a reload starts with its rows; its pool comes with the posts (below).
@@ -823,6 +896,37 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     }
   }, [argsFor])
 
+  /**
+   * A run of `made`: the engine once, or with one character per prompt, once per character
+   * (generateTurnsAsync), each with their share of `made.turns`, the run's scene choices (preferred
+   * posts, locked and skipped scenes) and their own pool.
+   */
+  const runPack = useCallback((forBrief: PackBrief, made: PackMade, ctl: ReturnType<typeof control>) => {
+    if (!made.turns) return generateScenePackAsync(made.pool, runArgs(forBrief, made), ctl)
+    return generateTurnsAsync(made.turns, (character) => {
+      const from = poolFor(character, made.pool)
+      if (!from) return null
+      const args = argsFor(forBrief, made.seed, made.genCount, made.baseScene, character)
+      return {
+        character,
+        pool: from,
+        args: {
+          ...args,
+          preferredPosts: preferredFor(character, made.preferredPosts),
+          removedScenes: [...(args.removedScenes ?? []), ...made.lockedScenes, ...(made.skipScenes ?? [])],
+        },
+      }
+    }, ctl)
+  }, [runArgs, poolFor, argsFor, preferredFor])
+
+  /** The character a row is for, one per prompt: its own while still in Who, else whoever has fewest rows. */
+  const rowCharacter = useCallback((rows: readonly PackPrompt[], index: number): string | undefined => {
+    if (!turnIdentities) return undefined
+    const own = rows[index]?.character
+    if (own && turnCharacters.includes(own)) return own
+    return assignTurns([index], turnCharacters, rows.filter((_, i) => i !== index).map((p) => p.character))[0]
+  }, [turnIdentities, turnCharacters])
+
   /** Replays the re-rolls on fresh rows: each on the row its slot went to, if that row is still free. */
   const replayRerolls = useCallback((rows: PackPrompt[], locked: ReadonlySet<number>, slots: readonly number[], made: PackMade, forBrief: PackBrief) => {
     let out = rows
@@ -830,13 +934,16 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     for (const r of made.rerolls) {
       const index = r.slot !== undefined ? slots[r.slot] : r.index
       if (index === undefined || index >= out.length || locked.has(index)) continue
-      const replacement = rerollScenePrompt(made.pool, out, index, argsFor(forBrief, r.seed, made.genCount, made.baseScene))
+      const character = rowCharacter(out, index)
+      const from = poolFor(character, made.pool)
+      const made1 = from ? rerollScenePrompt(from, out, index, argsFor(forBrief, r.seed, made.genCount, made.baseScene, character)) : null
+      const replacement = made1 && character ? { ...made1, character } : made1
       if (!replacement) continue
       out = out.map((p, i) => (i === index ? replacement : p))
       kept.push({ ...r, index })
     }
     return { rows: out, rerolls: kept }
-  }, [argsFor])
+  }, [argsFor, rowCharacter, poolFor])
 
   /** Issues of a run, counted over the whole pack (rows it didn't remake included). */
   const withKept = (issues: ScenePackIssue[], kept: number): ScenePackIssue[] =>
@@ -901,11 +1008,13 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       baseScene: axis ? (locked.size > 0 ? before?.made.baseScene : undefined) ?? brief.baseScene ?? fixedBase : undefined,
       rerolls: [],
       sourceKey,
+      // One character per prompt: whose each new row is, evenly with the locked rows counted in.
+      ...(turnIdentities ? { turns: assignTurns(slots, turnCharacters, Array.from(locked).map((i) => previous[i]?.character)) } : {}),
     }
     const startedWith = { brief, count: promptCount, outfit }
     void (async () => {
       try {
-        const out = await generateScenePackAsync(pool, runArgs(brief, made), control(id))
+        const out = await runPack(brief, made, control(id))
         if (opRef.current !== id || !out) return
         rotationRef.current = {
           brief,
@@ -933,7 +1042,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
         endOp(id)
       }
     })()
-  }, [pool, missingRoles, startOp, endOp, promptCount, axis, preferredPosts, brief, fixedBase, sourceKey, outfit, runArgs, control, candidateState, deferCandidates, candidateArgs])
+  }, [pool, missingRoles, startOp, endOp, promptCount, axis, preferredPosts, brief, fixedBase, sourceKey, outfit, runPack, control, candidateState, deferCandidates, candidateArgs, turnIdentities, turnCharacters])
 
   /**
    * Remakes the pack for the brief as it is now: same seed, same pool (unless the brief
@@ -945,9 +1054,15 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     if (!before || !pool || missingRoles.length > 0 || before.made.restored || before.made.sourceKey !== sourceKey) return { status: "skipped" }
     const id = startOp("correct")
     const samePeople = peopleKeyOf(before.made.pool.stats.composition) === peopleKeyOf(pool.stats.composition)
-    const made: PackMade = samePeople ? before.made : { ...before.made, pool }
+    const kept = samePeople ? before.made : { ...before.made, pool }
+    // One character per prompt: the same characters for the same rows while they are all still in Who.
+    const turnsKept = !!kept.turns && kept.turns.every((c) => turnCharacters.includes(c))
+    const others = before.prompts.filter((_, i) => !kept.slots.includes(i)).map((p) => p.character)
+    const made: PackMade = !turnIdentities
+      ? (kept.turns ? { ...kept, turns: undefined } : kept)
+      : turnsKept ? kept : { ...kept, turns: assignTurns(kept.slots, turnCharacters, others) }
     try {
-      const out = await generateScenePackAsync(made.pool, runArgs(brief, made), control(id))
+      const out = await runPack(brief, made, control(id))
       if (opRef.current !== id || !out) return { status: "superseded" }
       // On the pack as it is now (locks changed meanwhile count).
       const now = resultRef.current ?? before
@@ -975,7 +1090,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     } finally {
       endOp(id)
     }
-  }, [pool, missingRoles, sourceKey, startOp, endOp, brief, outfit, runArgs, replayRerolls, control])
+  }, [pool, missingRoles, sourceKey, startOp, endOp, brief, outfit, runPack, replayRerolls, control, turnIdentities, turnCharacters])
 
   /** Puts a pack back exactly as it was (Undo of a correction). Cancels a run on its way. */
   const restore = useCallback((snapshot: BriefPackResult | null) => {
@@ -1000,7 +1115,11 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     if (!now || op || index < 0 || index >= now.prompts.length || now.locked.includes(index)) return false
     if (now.made.sourceKey !== sourceKey || now.made.restored) return false
     const seed = Math.floor(Math.random() * 1e9)
-    const replacement = rerollScenePrompt(now.made.pool, now.prompts, index, argsFor(brief, seed, now.made.genCount, now.made.baseScene))
+    // One character per prompt: the row stays the same character's.
+    const character = rowCharacter(now.prompts, index)
+    const from = poolFor(character, now.made.pool)
+    const fresh = from ? rerollScenePrompt(from, now.prompts, index, argsFor(brief, seed, now.made.genCount, now.made.baseScene, character)) : null
+    const replacement = fresh && character ? { ...fresh, character } : fresh
     if (!replacement) return false
     const slot = now.made.slots.indexOf(index)
     setResult((prev) => (prev ? {
@@ -1012,14 +1131,15 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
       },
     } : prev))
     return true
-  }, [op, sourceKey, brief, argsFor])
+  }, [op, sourceKey, brief, argsFor, rowCharacter, poolFor])
 
   // ── Natural-language formats ──────────────────────────────────────────────────
   const naturalSourceOf = useCallback(
     (prompt: PackPrompt) => packNaturalSource(prompt, {
       provider,
-      character: characterTags[0] ?? null,
-      characters: characterTags,
+      // One character per prompt: the prompt's own.
+      character: prompt.character ?? characterTags[0] ?? null,
+      characters: prompt.character ? [prompt.character] : characterTags,
       contentRating: rating,
     }),
     [provider, characterTags, rating]

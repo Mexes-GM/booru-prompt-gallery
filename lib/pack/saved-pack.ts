@@ -31,6 +31,8 @@ export interface SavedMade {
   baseScene?: number
   rerolls: Array<{ index: number; seed: number; slot?: number }>
   sourceKey: string
+  /** One character per prompt: the character of each prompt the engine made, in order. */
+  turns?: string[]
 }
 
 export interface SavedResult {
@@ -79,6 +81,7 @@ export interface LiveResult {
     baseScene?: number
     rerolls: ReadonlyArray<{ index: number; seed: number; slot?: number }>
     sourceKey: string
+    turns?: readonly string[]
   }
 }
 
@@ -97,6 +100,7 @@ export function savedResultOf(result: LiveResult, brief: PackBrief, outfit: Brie
     ...(m.baseScene !== undefined ? { baseScene: m.baseScene } : {}),
     rerolls: m.rerolls.map((r) => ({ ...r })),
     sourceKey: m.sourceKey,
+    ...(m.turns ? { turns: [...m.turns] } : {}),
   }
   return {
     prompts: result.prompts,
@@ -151,6 +155,7 @@ function isBrief(v: unknown): v is PackBrief {
     && optional(v.outfitStyles, isStrings)
     && optional(v.outfitDetail, (d) => d === 'simple' || d === 'full')
     && optional(v.peopleMix, (m) => Array.isArray(m) && m.every(isPeople))
+    && optional(v.castMode, (m) => m === 'together' || m === 'turns')
 }
 
 function isOutfit(v: unknown): v is BriefOutfit {
@@ -160,6 +165,7 @@ function isOutfit(v: unknown): v is BriefOutfit {
 function isMade(v: unknown): v is SavedMade {
   return isObj(v) && isNum(v.seed) && isNum(v.genCount) && isNumbers(v.preferredPosts) && isNumbers(v.lockedScenes)
     && optional(v.skipScenes, isNumbers) && isNumbers(v.slots) && optional(v.baseScene, isNum) && typeof v.sourceKey === 'string'
+    && optional(v.turns, isStrings)
     && Array.isArray(v.rerolls) && v.rerolls.every((r) => isObj(r) && isNum(r.index) && isNum(r.seed) && optional(r.slot, isNum))
 }
 
@@ -167,6 +173,7 @@ function isPrompt(p: unknown): p is PackPrompt {
   return isObj(p) && typeof p.prompt === 'string' && isStrings(p.values)
     && optional(p.width, isNum) && optional(p.height, isNum)
     && optional(p.scene, (s) => isObj(s) && isNum(s.postId))
+    && optional(p.character, (c) => typeof c === 'string')
 }
 
 function isResult(v: unknown): v is SavedResult {

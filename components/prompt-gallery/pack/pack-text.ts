@@ -423,3 +423,14 @@ export function promptOptionsSummary(s: {
   ].filter(Boolean)
   return parts.join(" · ") || PROMPT_OPTIONS_TEXT.defaults
 }
+
+/** Who: how two or more characters share the pack. */
+export const CAST_MODE_TEXT = {
+  label: "How the characters appear",
+  together: "Together",
+  turns: "One per prompt",
+  /** Under Who while each prompt has one of them. */
+  turnsNote: "Each prompt shows one of them, taking turns.",
+  /** Before a result row's character, for screen readers. */
+  rowLabel: "Character",
+} as const

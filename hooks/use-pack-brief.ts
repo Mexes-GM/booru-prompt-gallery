@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, toggleComposition, addOutfitStyle, removeOutfitStyle, setOutfitDetail, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
-  removeTag, restoreLook, restoreScene, setCharacterRole, setPeople, settleStart, toSceneRequests,
-  type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
+  removeTag, restoreLook, restoreScene, setCastMode, setCharacterRole, setPeople, settleStart, toSceneRequests,
+  type CastMode, type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
 import {
   briefFromCharacters, commit, lastChange, seedDefaults, startHistory, undo as undoHistory,
@@ -33,6 +33,7 @@ export const BRIEF_LABELS = {
   setRole: (name: string) => `Changed ${name}'s role`,
   setPeople: "Changed who's in the picture",
   setChanges: 'Changed what varies',
+  setCastMode: 'Changed how the characters appear',
   leaveOutScene: 'Left a scene out',
   setBaseScene: 'Changed the scene that repeats',
   restoreScene: 'Put a scene back',
@@ -79,6 +80,8 @@ export interface UsePackBriefResult {
   setRole: (tag: string | null, role: CastRole | undefined) => void
   setPeople: (people: PackPeople | null) => void
   setChanges: (axis: ChangesAxis) => void
+  /** With two or more characters: all of them in every prompt, or one per prompt in turn. */
+  setCastMode: (mode: CastMode) => void
   leaveOutScene: (id: string) => void
   restoreScene: (id: string) => void
   /** One-part packs: the scene that repeats, and the variants left out. */
@@ -280,6 +283,10 @@ export function usePackBrief(
     (axis: ChangesAxis) => change(BRIEF_LABELS.setChanges, (b) => chooseChanges(b, axis)),
     [change]
   )
+  const setCastModeAction = useCallback(
+    (mode: CastMode) => change(BRIEF_LABELS.setCastMode, (b) => setCastMode(b, mode)),
+    [change]
+  )
   const leaveOutSceneAction = useCallback(
     (id: string) => change(BRIEF_LABELS.leaveOutScene, (b) => leaveOutScene(b, id)),
     [change]
@@ -366,7 +373,7 @@ export function usePackBrief(
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
     add, addOther: addOtherAction, addExactly, setExact, addStyle, removeStyle, setOutfitDetail: setOutfitDetailAction, toggleComposition: toggleCompositionAction, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
     addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
-    setPeople: setPeopleAction, setChanges: setChangesAction,
+    setPeople: setPeopleAction, setChanges: setChangesAction, setCastMode: setCastModeAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
     setBaseScene: setBaseSceneAction, leaveOutVariant: leaveOutVariantAction, restoreVariant: restoreVariantAction,
     startEmpty, startWith, startFromCharacters, startFromPrompt, startFromCard, placeWith,

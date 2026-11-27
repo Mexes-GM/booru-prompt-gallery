@@ -69,7 +69,15 @@ export interface PackBrief {
   outfitDetail?: 'simple' | 'full'
   /** More make-ups the pack mixes with `people` (ScenePackArgs.compositions); none: `people` alone. */
   peopleMix?: PackPeople[]
+  /**
+   * With two or more named characters: 'together' (missing, the default) puts all of them in every
+   * prompt; 'turns' gives each prompt one of them, in turn (castTurns, lib/pack/cast-turns.ts).
+   */
+  castMode?: CastMode
 }
+
+/** How the named characters share a pack: all in every prompt, or one per prompt in turn. */
+export type CastMode = 'together' | 'turns'
 
 /** The engine's view of a brief. */
 export interface SceneRequests {
@@ -298,6 +306,35 @@ function cloneBrief(brief: PackBrief): PackBrief {
     ...(brief.outfitStyles ? { outfitStyles: [...brief.outfitStyles] } : {}),
     ...(brief.peopleMix ? { peopleMix: brief.peopleMix.map((p) => ({ ...p })) } : {}),
   }
+}
+
+/**
+ * True when each prompt has one of the brief's named characters, in turn: 'turns' with two or more
+ * of them. With one, there is nothing to take turns with and the pack is that character's own.
+ */
+export const castTurns = (brief: Pick<PackBrief, 'who' | 'castMode'>): boolean =>
+  brief.castMode === 'turns' && brief.who.filter((c) => c.tag !== null).length >= 2
+
+/** Sets how the named characters share the pack ('together' is the default and is not stored). */
+export function setCastMode(brief: PackBrief, mode: CastMode): PackBrief {
+  if ((brief.castMode ?? 'together') === mode) return brief
+  const next = cloneBrief(brief)
+  if (mode === 'turns') next.castMode = 'turns'
+  else delete next.castMode
+  return next
+}
+
+/**
+ * A turns brief as one brief per named character, in brief order: the same brief with that
+ * character alone in Who (their own look, role and edits), as a pack of only them would have it.
+ */
+export function turnBriefs(brief: PackBrief): PackBrief[] {
+  return brief.who.filter((c) => c.tag !== null).map((c) => {
+    const next = cloneBrief(brief)
+    next.who = [{ ...c, addedLook: [...c.addedLook], removedLook: [...c.removedLook] }]
+    delete next.castMode
+    return next
+  })
 }
 
 const unnamedCharacter = (): BriefCharacter => ({ tag: null, addedLook: [], removedLook: [] })

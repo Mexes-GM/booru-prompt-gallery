@@ -18,13 +18,15 @@ export interface SearchDetailsProps {
   progress: readonly PackSourceProgress[]
   /** The name the card shows for the first character, for their own search. */
   character: string | null
+  /** One character per prompt: the name the card shows for each character, by brief tag, for their own searches. */
+  characterNames?: Readonly<Record<string, string>>
   site: string
   /** The site's tag limit per search. */
   limit: number
   className?: string
 }
 
-export const SearchDetails = memo(function SearchDetails({ id, plan, progress, character, site, limit, className }: SearchDetailsProps) {
+export const SearchDetails = memo(function SearchDetails({ id, plan, progress, character, characterNames, site, limit, className }: SearchDetailsProps) {
   const leftOut = leftOutSentence(plan.leftOut, site, limit)
   return (
     <div id={id} className={cn("space-y-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs", className)}>
@@ -37,7 +39,7 @@ export const SearchDetails = memo(function SearchDetails({ id, plan, progress, c
           return (
             <li key={search.id} className="min-w-0">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <span className="font-medium text-foreground">{searchDescription(search, character, plan.people)}</span>
+                <span className="font-medium text-foreground">{searchDescription(search, search.character ? characterNames?.[search.character] ?? search.character : character, plan.people)}</span>
                 <span className={cn("tabular-nums", none ? "text-warning-text" : "text-muted-foreground")}>{count}</span>
               </div>
               <code className="block break-all font-mono text-[11px] text-muted-foreground">{searchTagsText(search)}</code>

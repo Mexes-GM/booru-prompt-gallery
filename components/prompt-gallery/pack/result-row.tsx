@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { COPY_FAILED, SIZE_TEXT } from "./pack-text"
+import { CAST_MODE_TEXT, COPY_FAILED, SIZE_TEXT } from "./pack-text"
 import { useCopyResult } from "./use-copy-result"
 
 export interface ResultRowProps {
@@ -52,6 +52,8 @@ export interface ResultRowProps {
   size?: string | null
   onAlways: (tag: string) => void
   onNever: (tag: string) => void
+  /** One character per prompt: the name of the character this prompt is for. */
+  character?: string
 }
 
 const ACTION =
@@ -139,6 +141,7 @@ export const ResultRow = memo(function ResultRow({
   size,
   onAlways,
   onNever,
+  character,
 }: ResultRowProps) {
   const [copy, reportCopy] = useCopyResult()
   const [menuAt, setMenuAt] = useState<number | null>(null)
@@ -223,6 +226,12 @@ export const ResultRow = memo(function ResultRow({
             <p className="mb-1 flex items-center gap-1 text-xs font-medium text-mode-pack-text">
               <Lock className="size-3" aria-hidden />
               Locked: stays when you generate again
+            </p>
+          )}
+          {character && (
+            <p className="mb-0.5 truncate text-xs font-medium text-muted-foreground">
+              <span className="sr-only">{CAST_MODE_TEXT.rowLabel}: </span>
+              {character}
             </p>
           )}
           {pending && <p className="mb-0.5 text-xs text-muted-foreground">Updating…</p>}

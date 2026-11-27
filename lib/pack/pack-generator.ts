@@ -761,6 +761,8 @@ export interface PackPrompt {
   scene?: { postId: number; preview?: string; situation?: string; donors?: number[]; invented?: boolean }
   /** Scenes engine: the rating of the scene the prompt was built on (the highest of the posts it took parts from). */
   sceneRating?: 'g' | 's' | 'q' | 'e'
+  /** One character per prompt (lib/pack/cast-turns.ts): the character tag this prompt is for. */
+  character?: string
 }
 
 /**
