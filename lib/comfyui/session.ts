@@ -117,6 +117,26 @@ function pickFromEntry(entry: HistoryEntry, output: string | null): HistoryImage
   return null
 }
 
+/**
+ * One readable line from ComfyUI's per-node validation error, or null.
+ * A value that is not in the list is nearly always a model file this ComfyUI
+ * does not have, so that case names the input and the value.
+ */
+export function describeNodeError(entry: unknown): string | null {
+  const first = (entry as { errors?: unknown[] } | undefined)?.errors?.[0] as
+    | { type?: string; message?: string; details?: string; extra_info?: { input_name?: string; received_value?: unknown } }
+    | undefined
+  if (!first) return null
+  const input = first.extra_info?.input_name
+  const value = first.extra_info?.received_value
+  if (first.type === "value_not_in_list" && input && typeof value === "string") {
+    return `${input} “${value}” isn't in this ComfyUI`
+  }
+  const text = [first.message, first.details].filter(Boolean).join(": ")
+  if (!text) return null
+  return text.length > 200 ? `${text.slice(0, 199)}…` : text
+}
+
 export function createComfySession(options: SessionOptions) {
   const client = options.client ?? createComfyClient(options.baseUrl)
   const WS: WebSocketCtor | undefined =
@@ -544,7 +564,8 @@ export function createComfySession(options: SessionOptions) {
         const localId = `local-${++localCounter}-${now()}`
         const rec = newRec(localId, input.roles.output)
         const node = error.nodeErrors ? Object.keys(error.nodeErrors)[0] : undefined
-        patch(rec, { status: "error", error: { message: error.message, node } })
+        const message = (node && describeNodeError(error.nodeErrors?.[node])) || error.message
+        patch(rec, { status: "error", error: { message, node } })
         emit()
         checkIdle()
         return localId

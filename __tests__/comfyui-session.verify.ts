@@ -5,7 +5,7 @@
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/comfyui-session.verify.ts
  */
-import { createComfySession, type ComfySession, type WebSocketLike } from "../lib/comfyui/session"
+import { createComfySession, type ComfySession, type WebSocketLike, describeNodeError } from "../lib/comfyui/session"
 import { ComfyError, type ApiWorkflow, type HistoryEntry, type Roles } from "../lib/comfyui/types"
 
 let passed = 0
@@ -202,6 +202,25 @@ async function main() {
     await session.cancel(id)
     assert(session.getJob(id)?.status === "error", "cancel on a local error job is a no-op")
     session.dispose()
+  }
+
+  // 2b) Validation errors read the per-node detail ComfyUI sends (real response shape)
+  {
+    const missingModel = {
+      errors: [{
+        type: "value_not_in_list",
+        message: "Value not in list",
+        details: "clip_name: 'a.safetensors' not in ['b.safetensors']",
+        extra_info: { input_name: "clip_name", received_value: "a.safetensors" },
+      }],
+      class_type: "CLIPLoader",
+    }
+    assert(describeNodeError(missingModel) === "clip_name “a.safetensors” isn't in this ComfyUI", "missing model names the input and file")
+    const other = { errors: [{ type: "required_input_missing", message: "Required input is missing", details: "images" }] }
+    assert(describeNodeError(other) === "Required input is missing: images", "other errors join message and details")
+    assert(describeNodeError({}) === null && describeNodeError(undefined) === null, "no detail gives null")
+    const long = describeNodeError({ errors: [{ message: "x".repeat(400) }] })
+    assert(long !== null && long.length === 200, "long details are cut")
   }
 
   // 3) execution_error
