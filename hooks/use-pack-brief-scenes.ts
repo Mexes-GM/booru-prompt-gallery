@@ -408,10 +408,10 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const soloShare = useMemo(() => poolSoloShare(posts), [posts])
   const poolLook = useMemo(() => {
     if (!poolIsOwn || !base || posts.length === 0) return null
-    const look = typicalLook(posts, base, overrides, baseline)
+    const look = typicalLook(posts, base, overrides, baseline, provider)
     if (!look?.length) return null
-    return { look, subject: subjectForPool(typicalSubject(posts, base, overrides) ?? [], soloShare) }
-  }, [poolIsOwn, base, posts, overrides, baseline, soloShare])
+    return { look, subject: subjectForPool(typicalSubject(posts, base, overrides, provider) ?? [], soloShare) }
+  }, [poolIsOwn, base, posts, overrides, baseline, soloShare, provider])
   const looks = useMemo(() => {
     const out: Record<string, ResolvedLook> = {}
     named.forEach((c, i) => {

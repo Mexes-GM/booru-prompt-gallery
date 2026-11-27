@@ -1121,9 +1121,9 @@ export function usePackMode(
         .then(async (posts) => {
           const [, vocabulary] = await Promise.all([enrichOverrides(collectPostTags(posts)), loadPackVocabulary()])
           const overrides = currentOverrides()
-          const look = typicalLook(posts, character, overrides, tagBaselineOf(vocabulary))
+          const look = typicalLook(posts, character, overrides, tagBaselineOf(vocabulary), booruProvider)
           if (look?.length) {
-            const subject = typicalSubject(posts, character, overrides) ?? []
+            const subject = typicalSubject(posts, character, overrides, booruProvider) ?? []
             setTypicalLooks((prev) => ({ ...prev, [character]: { look, subject } }))
           }
           setSoloLookStatus((prev) => (look?.length ? omit(prev, character) : { ...prev, [character]: 'none' }))
@@ -1689,13 +1689,13 @@ export function usePackMode(
         const baseline = tagBaselineOf(vocabulary)
         const looks: Record<string, { look: string[]; subject: string[] }> = {}
         lookOwners.forEach((c) => {
-          const look = typicalLook(posts, c, currentOverrides(), baseline)
-          if (look?.length) looks[c] = { look, subject: typicalSubject(posts, c, currentOverrides()) ?? [] }
+          const look = typicalLook(posts, c, currentOverrides(), baseline, booruProvider)
+          if (look?.length) looks[c] = { look, subject: typicalSubject(posts, c, currentOverrides(), booruProvider) ?? [] }
         })
         if (Object.keys(looks).length > 0) setTypicalLooks((prev) => ({ ...prev, ...looks }))
       })
     },
-    [resample, axisTagModes, baseCard, basePromptTags, baseFromCharacter, currentOverrides, characterTags]
+    [resample, axisTagModes, baseCard, basePromptTags, baseFromCharacter, currentOverrides, characterTags, booruProvider]
   )
 
   const setClothingFromLibrary = useCallback((on: boolean) => {

@@ -27,9 +27,17 @@ export const MIN_PROFILE_POSTS = 3
 export const TRAIT_SHARE = 0.5
 /** Share of solo posts a subject count tag (1girl, 1boy…) needs to stand in for the group count. */
 const SUBJECT_SHARE = 0.6
-const SUBJECT_TAGS = ['1girl', '1boy', '1other']
+// One person, as each site writes it: Rule34 tags a girl alone "1girls" (and a group
+// "1girls, 2girls"), so on a group post its "1girls" is a count and goes, and the
+// solo posts' "1girls" comes back as the subject, as "1girl" does on Danbooru.
+const SUBJECT_TAGS = ['1girl', '1boy', '1other', '1girls', '1boys']
 
-/** "2girls", "6+boys", "multiple girls"… — how many people are in the picture, not who they are. */
+/**
+ * "2girls", "6+boys", "multiple girls"… — how many people are in the picture, not who
+ * they are, in Danbooru's vocabulary. On a post with several characters Rule34's
+ * "1girls" is one too: that site tags every count up to the real one. Whether a
+ * post shows one person or more is read per site (character-identity.ts).
+ */
 export function isGroupCountTag(tag: string): boolean {
   return /^(\d+\+?(girls|boys|others)|multiple (girls|boys|others))$/.test(normalizeTagForPack(tag))
 }
