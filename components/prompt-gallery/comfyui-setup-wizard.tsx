@@ -40,7 +40,7 @@ import {
 import { refreshComfyStatus } from "@/lib/comfyui/status"
 import type { BridgeWorkflowSummary, Diagnosis, ObjectInfo, Roles, SavedComfyWorkflow } from "@/lib/comfyui/types"
 import { cn } from "@/lib/utils"
-import { ManagerIllustration, TopBarIllustration } from "./comfyui-setup-illustrations"
+import { SetupLoop } from "./comfyui-setup-loop"
 import {
   AddressField,
   ComfyUIWorkflowViewer,
@@ -332,7 +332,7 @@ function InstallStep({
           ))}
         </ol>
       </div>
-      <ManagerIllustration />
+      <SetupLoop name="install" />
       <InstallStatus diagnosis={diagnosis} url={url} />
       <div className="flex flex-col gap-1 border-t border-border/60 pt-3">
         <Disclosure label="Other ways to install">
@@ -471,7 +471,7 @@ function PublishStep({
         Open the workflow you want to use in ComfyUI. Then click <strong className="font-semibold text-foreground">{BRIDGE_PUBLISH_LABEL}</strong> in
         the top bar, next to Run. It&apos;s also in the File menu.
       </Lead>
-      <TopBarIllustration />
+      <SetupLoop name="publish" />
       {connected ? (
         <PublishedList
           items={bridge.items}
