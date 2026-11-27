@@ -194,7 +194,10 @@ export const SEND_TEXT = {
   allLabel: "Send all prompts to ComfyUI",
 } as const
 
-/** Send all's button: "Send all", "Sending 3 of 10", "Sent 10", or "Sent 4 of 10" when it stopped. */
+/**
+ * Send all's button: "Send all", "Sending 3 of 10", "Sent 10", "Sent 4 of 10" when it stopped,
+ * or "Not sent" when none went (ComfyUI's own message says why).
+ */
 export function sendAllLabel(state: SendAllState): string {
   switch (state.kind) {
     case "idle":
@@ -202,13 +205,14 @@ export function sendAllLabel(state: SendAllState): string {
     case "sending":
       return `Sending ${Math.min(state.done + 1, state.total)} of ${state.total}`
     case "ended":
-      return state.sent === state.total ? `Sent ${state.total}` : `Sent ${state.sent} of ${state.total}`
+      if (state.sent === state.total) return `Sent ${state.total}`
+      return state.sent === 0 ? "Not sent" : `Sent ${state.sent} of ${state.total}`
   }
 }
 
-/** Under Send all when it stopped early (the message that says why is the ComfyUI one). */
+/** Under Send all when it stopped partway (the message that says why is the ComfyUI one). */
 export function sendAllNote(state: SendAllState): string | null {
-  if (state.kind !== "ended" || state.sent >= state.total) return null
+  if (state.kind !== "ended" || state.sent === 0 || state.sent >= state.total) return null
   const left = state.total - state.sent
   return `${left} ${left === 1 ? "prompt wasn't" : "prompts weren't"} sent.`
 }
@@ -224,7 +228,9 @@ export function sendAllAnnouncement(state: SendAllState): string {
       const note = sendAllNote(state)
       const head = state.sent === state.total
         ? `Sent ${state.total} ${state.total === 1 ? "prompt" : "prompts"} to ComfyUI`
-        : `Sent ${state.sent} of ${state.total} prompts to ComfyUI`
+        : state.sent === 0
+          ? "No prompts were sent to ComfyUI"
+          : `Sent ${state.sent} of ${state.total} prompts to ComfyUI`
       return note ? `${head}. ${note}` : head
     }
   }
