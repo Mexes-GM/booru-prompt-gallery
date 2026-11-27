@@ -95,6 +95,8 @@ import {
   promptTokens,
   shortConditionRoles,
   menuOutfit,
+  NEW_PACK_OUTFIT,
+  shownOutfit,
   type BriefOutfit,
   type ConditionSupply,
   type FitNote,
@@ -775,8 +777,9 @@ function BriefWorkspace({
   const { brief, preferences } = pack
   const count = preferences.promptCount
   const restored = start.kind === "restored" ? start.saved : null
-  // A pack saved with the library as its outfit (no longer offered here) reads as "each scene's".
-  const [outfit, setOutfit] = useState<BriefOutfit>(() => menuOutfit(restored?.outfit))
+  // A new pack starts with the characters' usual outfit. A pack saved with the library as its
+  // outfit (no longer offered here) reads as "each scene's".
+  const [outfit, setOutfit] = useState<BriefOutfit>(() => (restored ? menuOutfit(restored.outfit) : NEW_PACK_OUTFIT))
   // A pack kept across a reload gets its pool back once the source is done loading (from the last render).
   const [sourceSettled, setSourceSettled] = useState(false)
   // Collecting: the pool can't have enough scenes yet, whatever they turn out to be, so pages keep
@@ -1538,7 +1541,7 @@ function BriefWorkspace({
               onSetRole={setRole}
               onRemoveTrait={removeLook}
               onRestoreTrait={restoreLook}
-              outfitSource={menuOutfit(outfit)}
+              outfitSource={shownOutfit(outfit, engine.usualOutfitKnown)}
               onOutfitSourceChange={setOutfit}
               officialOutfits={engine.officialOutfits}
               outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}

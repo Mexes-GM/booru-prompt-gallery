@@ -201,6 +201,8 @@ export interface UsePackBriefScenesResult {
   allowedStyles: readonly OutfitStyle[]
   /** The first character's official outfits, by name. */
   officialOutfits: string[]
+  /** The first character's usual outfit is known (their outfit data has loaded). */
+  usualOutfitKnown: boolean
   /** The permanence data has loaded. */
   ready: boolean
   /** The permanence lookup once its data has loaded, else null. */
@@ -634,6 +636,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   }, [namedKey])
   const firstOutfits = base ? outfitData.get(normalizeTagForPack(base)) ?? null : null
   const officialOutfits = useMemo(() => firstOutfits?.official.map((o) => o.name) ?? NO_NAMES, [firstOutfits])
+  const usualOutfitKnown = !!firstOutfits
   const characterOutfits = useMemo(() => {
     if (outfit.kind !== "usual" && outfit.kind !== "official") return undefined
     const map = new Map<string, string[]>()
@@ -1032,6 +1035,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     styleCounts,
     allowedStyles,
     officialOutfits,
+    usualOutfitKnown,
     ready: !!permanence,
     permanence,
     loadFailed: loadFailed && !permanence,
@@ -1062,7 +1066,7 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     reroll,
     naturalSourceOf,
   }), [
-    plan, looks, identity, replacedLook, othersTag, supply, styleCounts, allowedStyles, officialOutfits, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, peopleSelected, peopleBlocked, candidateState, axis, candidateArgs,
+    plan, looks, identity, replacedLook, othersTag, supply, styleCounts, allowedStyles, officialOutfits, usualOutfitKnown, permanence, loadFailed, retryLoad, pool, poses, people, available, peopleLine, peopleSelected, peopleBlocked, candidateState, axis, candidateArgs,
     candidatesPending, result, op, sourceKey, sceneEstimate, poolBehind, generate, recompose, restore, toggleLock, reroll, naturalSourceOf,
   ])
 }

@@ -215,6 +215,19 @@ export type BriefOutfit =
 export const menuOutfit = (outfit: BriefOutfit | null | undefined): Exclude<BriefOutfit, { kind: 'library' }> =>
   !outfit || outfit.kind === 'library' ? { kind: 'scene' } : outfit
 
+/**
+ * What a new pack's characters wear while Wearing is empty: their usual outfit, the one they are
+ * known by. Without a named character, or one whose outfit isn't known, the engine takes each
+ * scene's own (outfitSetting), and the menu says so (shownOutfit).
+ */
+export const NEW_PACK_OUTFIT: BriefOutfit = { kind: 'usual' }
+
+/** The outfit choice as the menu shows it: the usual outfit reads as each scene's when there is none to take. */
+export function shownOutfit(outfit: BriefOutfit, usualOutfitKnown: boolean): Exclude<BriefOutfit, { kind: 'library' }> {
+  const choice = menuOutfit(outfit)
+  return choice.kind === 'usual' && !usualOutfitKnown ? { kind: 'scene' } : choice
+}
+
 // ── The outfit library in a pack ──────────────────────────────────────────────
 
 /** The library styles a pack offers in Wearing: every one, less the adult ones at the Safe rating. */
