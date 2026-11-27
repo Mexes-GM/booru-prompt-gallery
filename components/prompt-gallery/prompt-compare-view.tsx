@@ -5,8 +5,8 @@ import { Check, Copy, GitCompare } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { useCopyFeedback } from "@/hooks/use-copy-feedback"
-import { toast } from "@/hooks/use-toast"
 import { copyText } from "@/lib/clipboard"
+import { toastCopyFailed } from "@/lib/copy-toast"
 import { compareTagLists, parseRawPrompt } from "@/lib/reverse-prompt-parser"
 import { cn } from "@/lib/utils"
 
@@ -102,7 +102,7 @@ function TagList({ title, copyLabel, tags, emptyText, badgeClass }: { title: str
       await copyText(tags.join(", "))
       triggerCopyFeedback()
     } catch {
-      toast({ title: "Couldn't copy", description: "Your browser blocked clipboard access. Select the text and copy it by hand.", variant: "destructive" })
+      toastCopyFailed("copy_text")
     }
   }
 

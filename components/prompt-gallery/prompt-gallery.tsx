@@ -1,6 +1,7 @@
 "use client"
 
 import { copyText } from "@/lib/clipboard"
+import { toastCopied, toastCopyFailed } from "@/lib/copy-toast"
 import type React from "react"
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy } from "react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -1812,22 +1813,12 @@ export function PromptGallery() {
       // On touch screens the card's own "Copied" overlay is the feedback; the
       // top toast only covered the next row of cards.
       if (!window.matchMedia("(pointer: coarse)").matches) {
-        toast({
-          title: "Copied",
-          description: format !== 'tags'
-            ? `${PROMPT_FORMAT_INFO[format].label} prompt copied to clipboard`
-            : isPrompt ? "Prompt copied to clipboard" : "Tags copied to clipboard",
-        })
+        toastCopied(format !== 'tags' ? `${PROMPT_FORMAT_INFO[format].label} prompt` : isPrompt ? "Prompt" : "Tags")
       }
       setTimeout(() => setCopiedId(null), 2000)
       return true
     } catch (error) {
-      toastError({
-        title: isPrompt ? "Couldn't copy the prompt" : "Couldn't copy the tags",
-        description: "The browser didn't allow clipboard access. Try again.",
-        errorSource: "copy_to_clipboard",
-        context: { provider: search.booruProvider, postId, isPrompt },
-      })
+      toastCopyFailed("copy_to_clipboard", { provider: search.booruProvider, postId, isPrompt })
       return false
     }
   }, [toast, recordPromptUse, search.booruProvider, isAiConvertMode])

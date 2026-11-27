@@ -1,7 +1,7 @@
 "use client"
 
 import { copyText } from "@/lib/clipboard"
-import { toast } from "@/hooks/use-toast"
+import { toastCopyFailed } from "@/lib/copy-toast"
 import { useState, useMemo } from "react"
 import { useCopyFeedback } from "@/hooks/use-copy-feedback"
 import {
@@ -169,7 +169,7 @@ export function ReversePromptParserModal({
       await copyText(outputPrompt)
       triggerCopyFeedback()
     } catch {
-      toast({ title: "Couldn't copy", description: "Your browser blocked clipboard access. Select the text and copy it by hand.", variant: "destructive" })
+      toastCopyFailed("copy_text")
     }
   }
 

@@ -41,3 +41,8 @@ function legacyCopy(text: string): boolean {
     active?.focus?.({ preventScroll: true })
   }
 }
+
+/** The words every copy uses, so a copy reads the same wherever it happens. */
+export const COPIED_TITLE = "Copied"
+export const COPY_FAILED_TITLE = "Couldn't copy"
+export const COPY_FAILED_TEXT = "Your browser blocked the clipboard. Select the text and copy it yourself."

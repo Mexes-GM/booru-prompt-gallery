@@ -1,6 +1,7 @@
 "use client"
 
 import { copyText } from "@/lib/clipboard"
+import { toastCopied, toastCopyFailed } from "@/lib/copy-toast"
 import React, { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
@@ -251,17 +252,9 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
       setJustCopied(true)
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
       copyTimeoutRef.current = setTimeout(() => setJustCopied(false), 1200)
-      toast({
-        title: "Tag copied",
-        description: tag.text,
-      })
+      toastCopied(tag.text)
     } catch {
-      toastError({
-        title: "Couldn't copy the tag",
-        description: "The browser didn't allow clipboard access. Try again.",
-        errorSource: "copy_tag_to_clipboard",
-        context: { tag: tag.text },
-      })
+      toastCopyFailed("copy_tag_to_clipboard", { tag: tag.text })
     }
   }, [tag.text, toast])
 

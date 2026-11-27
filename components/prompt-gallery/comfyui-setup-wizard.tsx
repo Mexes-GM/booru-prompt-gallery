@@ -27,7 +27,8 @@ import { checkNodesAgainstObjectInfo } from "@/lib/comfyui/import"
 import type { ComfyPanelReason } from "@/lib/comfyui/panel-request"
 import { nodeTitle } from "@/lib/comfyui/role-choices"
 import { detectRoles } from "@/lib/comfyui/roles"
-import { copyText } from "@/lib/clipboard"
+import { copyText, COPIED_TITLE, COPY_FAILED_TITLE } from "@/lib/clipboard"
+import { toastCopyFailed } from "@/lib/copy-toast"
 import {
   NUMBERED_STEPS,
   canContinue,
@@ -142,10 +143,10 @@ function Disclosure({ label, defaultOpen = false, children }: { label: string; d
 }
 
 function CopyCommand({ command, note }: { command: string; note: string }) {
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<"done" | "failed" | null>(null)
   useEffect(() => {
     if (!copied) return
-    const timer = window.setTimeout(() => setCopied(false), 2000)
+    const timer = window.setTimeout(() => setCopied(null), 2000)
     return () => window.clearTimeout(timer)
   }, [copied])
   return (
@@ -160,15 +161,18 @@ function CopyCommand({ command, note }: { command: string; note: string }) {
           size="sm"
           onClick={() => {
             void copyText(command).then(
-              () => setCopied(true),
-              () => {},
+              () => setCopied("done"),
+              () => {
+                setCopied("failed")
+                toastCopyFailed("copy_comfyui_command")
+              },
             )
           }}
-          aria-label={copied ? "Copied" : `Copy: ${command}`}
+          aria-label={copied === "done" ? COPIED_TITLE : copied === "failed" ? COPY_FAILED_TITLE : `Copy: ${command}`}
           className="h-8 shrink-0 gap-1.5 px-2 text-xs"
         >
-          {copied ? <Check aria-hidden className="h-3.5 w-3.5 text-success-text" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
-          {copied ? "Copied" : "Copy"}
+          {copied === "done" ? <Check aria-hidden className="h-3.5 w-3.5 text-success-text" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
+          {copied === "done" ? COPIED_TITLE : copied === "failed" ? COPY_FAILED_TITLE : "Copy"}
         </Button>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">{note}</p>

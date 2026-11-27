@@ -1,4 +1,5 @@
 import { copyText } from "@/lib/clipboard"
+import { toastCopied, toastCopyFailed } from "@/lib/copy-toast"
 import { useCallback, useEffect, useState, memo, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -164,12 +165,9 @@ const AiConvertStickyFooterComponent = ({
   const copyHistoryItem = async (text: string) => {
     try {
       await copyText(text)
-      toast({
-        title: 'Copied!',
-        description: 'The natural language prompt has been copied to your clipboard.',
-      })
+      toastCopied()
     } catch {
-      toast({ title: "Couldn't copy", description: 'Your browser blocked clipboard access. Select the text and copy it by hand.', variant: 'destructive' })
+      toastCopyFailed('copy_ai_convert')
     }
   }
 
@@ -317,12 +315,9 @@ const AiConvertStickyFooterComponent = ({
     try {
       await copyText(result)
       triggerCopyFeedback()
-      toast({
-        title: 'Copied!',
-        description: 'The natural language prompt has been copied to your clipboard.',
-      })
+      toastCopied()
     } catch {
-      toast({ title: "Couldn't copy", description: 'Your browser blocked clipboard access. Select the text and copy it by hand.', variant: 'destructive' })
+      toastCopyFailed('copy_ai_convert')
     }
   }
 
