@@ -21,7 +21,6 @@ import {
     Sparkles,
     Package,
     ImageOff,
-    Send
 } from "lucide-react"
 import {
     BooruPost,
@@ -42,9 +41,17 @@ import { convertPromptOnce } from "@/lib/prompt/natural-prompt-loader"
 import { PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { NaturalPromptBody } from "./natural-prompt-body"
 import { cardJobKey, getCardJob, setCardJob, type CardJob } from "@/lib/comfyui/card-jobs"
+import { SendGlyph } from "./comfyui-motion"
 
 // Loaded once a card sends to ComfyUI; cards that never send don't pay for it.
-const ComfyCardJob = dynamic(() => import("./comfyui-card-job").then((m) => m.ComfyCardJob), { ssr: false, loading: () => null })
+const loadComfyCardJob = () => import("./comfyui-card-job").then((m) => m.ComfyCardJob)
+const ComfyCardJob = dynamic(loadComfyCardJob, { ssr: false, loading: () => null })
+// Fetched when the pointer or focus reaches Send, so the send's motion can
+// start on the click instead of after a download.
+const preloadComfySend = () => {
+    void loadComfyCardJob().catch(() => {})
+    void import("./comfyui-send").catch(() => {})
+}
 
 // Richness tooltip depth labels/classes (Palanca 7, docs/prompt-genericness-mitigation-plan.md
 // §7.8): maps each category's RichnessDepth to a short prefix + color, replacing the old
@@ -343,7 +350,8 @@ export const MasonryItem = memo(function MasonryItem({
     const comfyKey = cardJobKey(itemProvider, post.id)
     const [comfyJob, setComfyJobState] = useState<CardJob | null>(() => getCardJob(comfyKey))
     const [comfySending, setComfySending] = useState(false)
-    const showComfyJob = comfyMode && comfyJob !== null
+    // The job surface comes up on the click, before ComfyUI answers.
+    const showComfyStage = comfyMode && (comfyJob !== null || comfySending)
     const setComfyJob = useCallback((job: CardJob | null) => {
         setCardJob(comfyKey, job)
         setComfyJobState(job)
@@ -491,6 +499,10 @@ export const MasonryItem = memo(function MasonryItem({
     // Where focus goes when the job's own controls go away (cancel, close).
     const comfySendRef = useRef<HTMLButtonElement>(null)
     const focusComfySend = useCallback(() => comfySendRef.current?.focus(), [])
+    // Touch has no hover to preload on: the first card fetches it once ComfyUI mode is on.
+    useEffect(() => {
+        if (comfyMode && index === 0) preloadComfySend()
+    }, [comfyMode, index])
 
     // Authoritative identity metadata for the AI converter, taken straight from
     // the booru API (not guessed from the flattened prompt). Gated by
@@ -657,7 +669,7 @@ export const MasonryItem = memo(function MasonryItem({
                         }
                     }}
                 >
-                    {isPreviouslyCopied && !showComfyJob && (
+                    {isPreviouslyCopied && !showComfyStage && (
                         <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
                             <motion.div
                                 initial={{ opacity: 0, scale: 0.8 }}
@@ -771,17 +783,20 @@ export const MasonryItem = memo(function MasonryItem({
                             retryCountRef.current = 0
                         }}
                     />
-                    {showComfyJob && (
-                        <ComfyCardJob
-                            key={comfyJob.jobId}
-                            jobId={comfyJob.jobId}
-                            api={comfyJob.api}
-                            originalSrc={displayFileUrl || ''}
-                            referrerPolicy={imageReferrerPolicy(itemProvider)}
-                            onDismiss={clearComfyJob}
-                            returnFocus={focusComfySend}
-                        />
-                    )}
+                    <AnimatePresence initial={false}>
+                        {showComfyStage && (
+                            <ComfyCardJob
+                                key="comfy-job"
+                                jobId={comfyJob?.jobId ?? null}
+                                api={comfyJob?.api ?? null}
+                                launching={comfySending}
+                                originalSrc={displayFileUrl || ''}
+                                referrerPolicy={imageReferrerPolicy(itemProvider)}
+                                onDismiss={clearComfyJob}
+                                returnFocus={focusComfySend}
+                            />
+                        )}
+                    </AnimatePresence>
                     {imageError && (
                         <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
                             {imageGaveUp ? (
@@ -1005,17 +1020,15 @@ export const MasonryItem = memo(function MasonryItem({
                             <Button
                                 ref={comfySendRef}
                                 onClick={() => void sendToComfyUI(copyText, showsNatural ? promptFormat : "tags")}
+                                onPointerEnter={preloadComfySend}
+                                onFocus={preloadComfySend}
                                 className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
                                 variant="secondary"
                                 disabled={!copyText}
                                 aria-busy={comfySending || natural.status === "loading" || undefined}
                                 aria-label={showsNatural ? `Send ${PROMPT_FORMAT_INFO[promptFormat].label} prompt to ComfyUI` : "Send prompt to ComfyUI"}
                             >
-                                {comfySending ? (
-                                    <Loader2 className={`${getIconClass()} mr-1 motion-safe:animate-spin`} aria-hidden="true" />
-                                ) : (
-                                    <Send className={`${getIconClass()} mr-1`} aria-hidden="true" />
-                                )}
+                                <SendGlyph sending={comfySending} className={`${getIconClass()} mr-1 [&_svg]:size-full!`} />
                                 Send
                             </Button>
                         ) : (
