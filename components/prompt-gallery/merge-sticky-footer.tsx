@@ -185,7 +185,9 @@ const MergeStickyFooterComponent = ({
                 <motion.div
                     key="merge-footer"
                     initial={lowMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
-                    animate={lowMotion ? { opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
+                    // Always settle y and scale: lowMotion can turn on after the first frame (it reads the
+                    // viewport in an effect), and an opacity-only target would leave the footer half off-screen.
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={lowMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
                     transition={lowMotion ? { duration: 0.15 } : {
                         type: "spring",

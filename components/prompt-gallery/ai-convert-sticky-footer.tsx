@@ -323,7 +323,9 @@ const AiConvertStickyFooterComponent = ({
         <motion.div
           key="ai-convert-footer"
           initial={shouldReduceMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
-          animate={shouldReduceMotion ? { opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
+          // Always settle y and scale: shouldReduceMotion can turn on after the first frame (it reads
+          // the viewport in an effect), and an opacity-only target would leave the footer half off-screen.
+          animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={shouldReduceMotion ? { opacity: 0 } : { y: 200, opacity: 0, scale: 0.95 }}
           transition={shouldReduceMotion ? { duration: 0.15 } : {
             type: "spring",
