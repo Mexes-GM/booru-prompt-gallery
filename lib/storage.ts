@@ -177,6 +177,8 @@ export const STORAGE_KEYS = {
   COMFYUI_WORKFLOWS: 'comfyui-workflows',
   COMFYUI_ACTIVE_WORKFLOW: 'comfyui-active-workflow',
   COMFYUI_OPTIONS: 'comfyui-options',
+  // Set once a test passes, so changing roles later doesn't send the user back to setup.
+  COMFYUI_SETUP_DONE: 'comfyui-setup-done',
 } as const
 
 export interface HistoryItem {
@@ -991,6 +993,13 @@ const readComfyOptions = cachedRead(STORAGE_KEYS.COMFYUI_OPTIONS, (raw): ComfyOp
 export const getComfyEnabled = (): boolean => readComfyEnabled()
 
 export const setComfyEnabled = (enabled: boolean): boolean => writeChecked(STORAGE_KEYS.COMFYUI_ENABLED, enabled)
+
+const readComfySetupDone = cachedRead(STORAGE_KEYS.COMFYUI_SETUP_DONE, (raw) => parseJson(raw) === true)
+
+/** Whether a test has ever passed in this browser (setup finished once). */
+export const getComfySetupDone = (): boolean => readComfySetupDone()
+
+export const setComfySetupDone = (done: boolean): boolean => writeChecked(STORAGE_KEYS.COMFYUI_SETUP_DONE, done)
 
 /** The normalized server address, or the default when nothing valid is stored. */
 export const getComfyUrl = (): string => readComfyUrl()

@@ -7,6 +7,7 @@ import {
   getComfyActiveWorkflowId,
   getComfyEnabled,
   getComfyOptions,
+  getComfySetupDone,
   getComfyUrl,
   getComfyWorkflows,
   markComfyWorkflowTested,
@@ -15,6 +16,7 @@ import {
   setComfyActiveWorkflow,
   setComfyEnabled,
   setComfyOptions,
+  setComfySetupDone,
   setComfyUrl,
   updateComfyWorkflowRoles,
 } from "@/lib/storage"
@@ -27,6 +29,7 @@ const COMFY_KEYS: ReadonlySet<string> = new Set([
   STORAGE_KEYS.COMFYUI_WORKFLOWS,
   STORAGE_KEYS.COMFYUI_ACTIVE_WORKFLOW,
   STORAGE_KEYS.COMFYUI_OPTIONS,
+  STORAGE_KEYS.COMFYUI_SETUP_DONE,
 ])
 
 /** Same-tab writes, other tabs, and the extension's settings bridge. */
@@ -56,6 +59,8 @@ export interface ComfyUIState {
   /** The workflow chosen for sending, or null. */
   activeWorkflow: SavedComfyWorkflow | null
   options: ComfyOptions
+  /** A test passed once in this browser: setup is finished, even if the roles changed since. */
+  setupDone: boolean
 }
 
 let lastSnapshot: ComfyUIState | null = null
@@ -68,6 +73,7 @@ function readSnapshot(): ComfyUIState {
   const activeId = getComfyActiveWorkflowId()
   const activeWorkflow = activeId === null ? null : (workflows.find((w) => w.id === activeId) ?? null)
   const options = getComfyOptions()
+  const setupDone = getComfySetupDone()
   const prev = lastSnapshot
   if (
     prev &&
@@ -75,11 +81,12 @@ function readSnapshot(): ComfyUIState {
     prev.url === url &&
     prev.workflows === workflows &&
     prev.activeWorkflow === activeWorkflow &&
-    prev.options === options
+    prev.options === options &&
+    prev.setupDone === setupDone
   ) {
     return prev
   }
-  lastSnapshot = { enabled, url, workflows, activeWorkflow, options }
+  lastSnapshot = { enabled, url, workflows, activeWorkflow, options, setupDone }
   return lastSnapshot
 }
 
@@ -89,6 +96,7 @@ const SERVER_STATE: ComfyUIState = {
   workflows: [],
   activeWorkflow: null,
   options: DEFAULT_COMFYUI_OPTIONS,
+  setupDone: false,
 }
 
 /** Current settings for non-React code (reads storage at call time). */
@@ -108,6 +116,7 @@ const actions = {
   updateRoles: updateComfyWorkflowRoles,
   markTested: markComfyWorkflowTested,
   setOptions: setComfyOptions,
+  setSetupDone: setComfySetupDone,
 }
 
 /** Settings for "Send to ComfyUI", shared by every component and other tabs. */

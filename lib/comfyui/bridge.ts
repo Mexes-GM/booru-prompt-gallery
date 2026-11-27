@@ -20,3 +20,18 @@ export const BRIDGE_INSTALL_STEP = `Install ${BRIDGE_MANAGER_NAME} from ComfyUI 
 /** Where the publish command lives in ComfyUI: a top-bar button next to Run, and the File menu. */
 export const BRIDGE_PUBLISH_STEP =
   "In ComfyUI, click Use in Booru Prompt Gallery in the top bar, next to Run, or find it in the File menu."
+
+/** The add-on's id in the ComfyUI registry (comfy-cli and Manager). */
+export const BRIDGE_REGISTRY_ID = "comfyui-booru-prompt-gallery"
+
+/** Install with comfy-cli. */
+export const BRIDGE_CLI_COMMAND = `comfy node install ${BRIDGE_REGISTRY_ID}`
+
+/** Install by hand, inside ComfyUI/custom_nodes. */
+export const BRIDGE_GIT_COMMAND = "git clone https://github.com/Mexes-GM/comfyui-booru-prompt-gallery"
+
+/** What ComfyUI's console prints once the add-on loaded. */
+export const BRIDGE_CONSOLE_LINE = "Booru Prompt Gallery bridge installed"
+
+/** The publish command's label in ComfyUI. */
+export const BRIDGE_PUBLISH_LABEL = "Use in Booru Prompt Gallery"

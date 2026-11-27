@@ -13,6 +13,7 @@ import {
   type QueueResponse,
   type SystemStats,
 } from "./types"
+import { isWebKitOnly } from "./setup-steps"
 import { normalizeComfyUrl } from "./url"
 
 // The address check lives in ./url so settings code can use it without this client.
@@ -200,16 +201,6 @@ export interface DiagnoseOptions {
 }
 
 /**
- * WebKit blocks http://localhost from an https page. That covers desktop Safari
- * and every iOS browser (Chrome and Firefox on iOS are WebKit too), so iOS user
- * agents are unsupported whatever their brand.
- */
-function isSafari(userAgent: string): boolean {
-  if (/iPhone|iPad|iPod/i.test(userAgent)) return true
-  return /Safari/i.test(userAgent) && !/Chrome|Chromium|Edg|Firefox/i.test(userAgent)
-}
-
-/**
  * Works out why the connection does or does not work, in this order:
  * unsupported browser, the bridge endpoint (a failure there with a denied
  * local-network permission means "denied"), then a no-cors probe to tell
@@ -217,7 +208,7 @@ function isSafari(userAgent: string): boolean {
  */
 export async function diagnose(baseUrl: string, options: DiagnoseOptions): Promise<Diagnosis> {
   const userAgent = options.userAgent ?? (typeof navigator !== "undefined" ? navigator.userAgent : "")
-  if (isSafari(userAgent)) return { state: "unsupported-browser" }
+  if (isWebKitOnly(userAgent)) return { state: "unsupported-browser" }
 
   const url = normalizeComfyUrl(baseUrl)
   if (!url) return { state: "invalid-url" }
