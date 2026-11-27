@@ -466,6 +466,17 @@ export function conditionSupply({ role, tags, styles = [], scenes, library = [],
   return { role, tags: [...tags], variants: keys.size }
 }
 
+/**
+ * The conditions whose donor search should bring more pages: fewer different forms loaded
+ * than prompts asked for, counted on the loaded scenes. Library styles are left out: their
+ * forms are the library's outfits, which more pages don't add to.
+ */
+export function shortConditionRoles(conditions: readonly ConditionSupply[], count: number): Array<'wearing' | 'where'> {
+  return conditions
+    .filter((c) => c.tags.length > 0 && (c.styles?.length ?? 0) === 0 && c.variants < count)
+    .map((c) => c.role)
+}
+
 /** "bikini and thighhighs". */
 const andList = (tags: readonly string[]) =>
   tags.length <= 1 ? tags.join('') : `${tags.slice(0, -1).join(', ')} and ${tags[tags.length - 1]}`

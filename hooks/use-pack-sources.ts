@@ -16,11 +16,19 @@
  *
  * Each search pages on its own (lib/pack/source-paging.ts): it runs out when the site
  * says so or when a page brings it nothing new, and the next page goes to the search
- * that can bring most. A page the pace limit doesn't allow yet waits for it and goes
- * by itself (`waiting`); nothing is refused.
+ * that can bring most. A page the pace doesn't allow yet waits for it and goes by itself
+ * (`waiting`); nothing is refused.
+ *
+ * Every request goes at the site's Pack pace (lib/booru/request-pacer.ts) and counts in
+ * the pack's one budget (lib/pack/request-budget.ts): the first page of each search, the
+ * later pages and the page counts, a page of a two-rating search as two requests. The
+ * budget lasts as long as the hook: a change of plan doesn't start a new one.
  *
  * The plan's donor searches (SourcePlan.donors) run on MAX_DONOR_FEEDS slots of their own, one
- * rating each; their posts come after the scene searches' and page like any other search.
+ * rating each; their posts come after the scene searches'. A donor search brings its first page;
+ * it pages further only while its condition is short of different forms for the pack
+ * (`shortConditions`): its posts are never scenes, so past that its pages are better spent on
+ * the scene searches.
  *
  * A change of plan keeps the posts already loaded that still count: a post a search of the
  * plan before brought stays when it fits a search of the new plan (lib/pack/source-fit.ts: same
@@ -33,11 +41,12 @@
  * every search on mount and has no "enabled" flag; mount the component that calls
  * it only when the pack should fetch.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { BooruPost } from "@/lib/api-client"
 import { MAX_DONOR_FEEDS, assignFeedSlots, planDonorFeeds, planFeeds, type DonorSearch, type FeedSlot, type SceneSearchKind, type SourcePlan } from "@/lib/pack/source-plan"
 import { useSingleRatingFeed, type UsePackSeedSearchResult } from "./use-pack-seed-search"
-import { useScrollRateLimiter, MAX_SESSION_PAGE_LOADS } from "./use-scroll-rate-limiter"
+import { sitePacer } from "@/lib/booru/request-pacer"
+import { PackRequestBudget, SESSION_REQUEST_CAP } from "@/lib/pack/request-budget"
 import { NO_PAGING, nextSearch, recordPage, searchEnded, type SearchPaging } from "@/lib/pack/source-paging"
 import { firstFittingSearch, postFitsSearch, postTagSet, type LoadedPost } from "@/lib/pack/source-fit"
 import type { BooruProvider } from "@/lib/booru/types"
@@ -64,10 +73,13 @@ export interface PackSourceProgress {
 
 export interface UsePackSourcesArgs {
   plan: SourcePlan
-  /** Called once when the session's page cap is reached. The hook shows nothing itself. */
+  /**
+   * The conditions (Wearing, Where) the pack is short of different forms of, for its prompt
+   * count (shortConditionRoles): only their donor searches page past their first page.
+   */
+  shortConditions?: readonly DonorSearch["kind"][]
+  /** Called once when the session's request cap is reached. The hook shows nothing itself. */
   onSessionCapReached?: () => void
-  /** Called once when loading is paused for going too fast. */
-  onScrollLimited?: () => void
 }
 
 export interface UsePackSourcesResult extends UsePackSeedSearchResult {
@@ -81,6 +93,8 @@ export interface UsePackSourcesResult extends UsePackSeedSearchResult {
   waiting: boolean
   /** Pages that have arrived, all searches together (each rating's page once). */
   pages: number
+  /** Requests the pack's source has sent, all searches and ratings together (its budget so far). */
+  requests: number
 }
 
 type Feed = ReturnType<typeof useSingleRatingFeed>
@@ -100,6 +114,8 @@ interface LiveFeed {
   ratingFilter: string
   posts: readonly BooruPost[]
 }
+
+const NO_SHORT: readonly DonorSearch["kind"][] = []
 
 const memoryKey = (provider: BooruProvider, id: number) => `${provider}|${id}`
 
@@ -165,11 +181,18 @@ function interleave(lists: readonly BooruPost[][]): BooruPost[] {
   return out
 }
 
-export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: UsePackSourcesArgs): UsePackSourcesResult {
+export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapReached }: UsePackSourcesArgs): UsePackSourcesResult {
   const { provider, sceneKey, donorKey } = plan
   // Every search the hook runs: the scene searches, then the donor searches.
   const feedKey = `${sceneKey}##${donorKey}`
   const [sessionSeed] = useState(() => Date.now())
+  // One budget for the pack, whatever plans it goes through.
+  const [{ budget, record }] = useState(() => {
+    const budget = new PackRequestBudget()
+    return { budget, record: (n: number) => budget.record(n) }
+  })
+  const spent = useSyncExternalStore(budget.subscribe, budget.getSnapshot, budget.getSnapshot)
+  const feedOptions = useMemo(() => ({ budget }), [budget])
 
   // The plan's feeds change only with its scene key.
   const wanted = useMemo(
@@ -187,12 +210,12 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
     setSlotState({ key: sceneKey, slots })
   }
 
-  const feed0 = useSingleRatingFeed(slots[0].query, slots[0].ratingFilter, provider, slots[0].seed)
-  const feed1 = useSingleRatingFeed(slots[1].query, slots[1].ratingFilter, provider, slots[1].seed)
-  const feed2 = useSingleRatingFeed(slots[2].query, slots[2].ratingFilter, provider, slots[2].seed)
-  const feed3 = useSingleRatingFeed(slots[3].query, slots[3].ratingFilter, provider, slots[3].seed)
-  const feed4 = useSingleRatingFeed(slots[4].query, slots[4].ratingFilter, provider, slots[4].seed)
-  const feed5 = useSingleRatingFeed(slots[5].query, slots[5].ratingFilter, provider, slots[5].seed)
+  const feed0 = useSingleRatingFeed(slots[0].query, slots[0].ratingFilter, provider, slots[0].seed, feedOptions)
+  const feed1 = useSingleRatingFeed(slots[1].query, slots[1].ratingFilter, provider, slots[1].seed, feedOptions)
+  const feed2 = useSingleRatingFeed(slots[2].query, slots[2].ratingFilter, provider, slots[2].seed, feedOptions)
+  const feed3 = useSingleRatingFeed(slots[3].query, slots[3].ratingFilter, provider, slots[3].seed, feedOptions)
+  const feed4 = useSingleRatingFeed(slots[4].query, slots[4].ratingFilter, provider, slots[4].seed, feedOptions)
+  const feed5 = useSingleRatingFeed(slots[5].query, slots[5].ratingFilter, provider, slots[5].seed, feedOptions)
 
   // The donor searches' slots, kept the same way.
   const wantedDonors = useMemo(
@@ -208,8 +231,8 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   }
   // An unused donor slot asks for nothing: it keeps the query of a scene slot that runs anyway.
   const donorSpec = (i: number) => (donorSlots[i].active || donorSlots[i].query ? donorSlots[i] : slots[0])
-  const feed6 = useSingleRatingFeed(donorSpec(0).query, donorSpec(0).ratingFilter, provider, donorSpec(0).seed)
-  const feed7 = useSingleRatingFeed(donorSpec(1).query, donorSpec(1).ratingFilter, provider, donorSpec(1).seed)
+  const feed6 = useSingleRatingFeed(donorSpec(0).query, donorSpec(0).ratingFilter, provider, donorSpec(0).seed, feedOptions)
+  const feed7 = useSingleRatingFeed(donorSpec(1).query, donorSpec(1).ratingFilter, provider, donorSpec(1).seed, feedOptions)
   const feeds: Feed[] = [feed0, feed1, feed2, feed3, feed4, feed5, feed6, feed7]
   const allSearches = useMemo(
     () => [
@@ -220,22 +243,9 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
     [feedKey]
   )
 
-  // Callers needn't pass stable callbacks: the limiter memoizes on them (see usePackSeedSearch).
-  const callbacksRef = useRef({ onSessionCapReached, onScrollLimited })
-  useEffect(() => { callbacksRef.current = { onSessionCapReached, onScrollLimited } }, [onSessionCapReached, onScrollLimited])
-  const handleSessionCap = useCallback(() => callbacksRef.current.onSessionCapReached?.(), [])
-  const handleScrollLimited = useCallback(() => callbacksRef.current.onScrollLimited?.(), [])
-  const rateLimiter = useScrollRateLimiter({ onSessionCapReached: handleSessionCap, onScrollLimited: handleScrollLimited })
-
-  // A new set of searches starts a new page budget, as a new source does in usePackSeedSearch.
-  const limiterKeyRef = useRef(feedKey)
-  useEffect(() => {
-    if (limiterKeyRef.current !== feedKey) {
-      limiterKeyRef.current = feedKey
-      rateLimiter.reset()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedKey])
+  // Callers needn't pass a stable callback.
+  const capCallbackRef = useRef(onSessionCapReached)
+  useEffect(() => { capCallbackRef.current = onSessionCapReached }, [onSessionCapReached])
 
   // Each search's slots, in rating order (a donor search's one slot is after the scene slots).
   const slotsBySearch = useMemo(() => [
@@ -367,11 +377,21 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   const isLoadingMore = searches.some((s) => s.loading)
   const noMoreResults = searches.every((s) => s.exhausted)
   const failed = searches.some((s) => s.failed)
-  // One budget for every search: the pages fetched across all of them.
   const totalPages = searches.reduce((sum, s) => sum + s.pages, 0)
-  // The next page goes to the search that can bring most (lib/pack/source-paging.ts).
-  const target = nextSearch(searches.map((s) => ({ paging: pagingNow[s.id] ?? NO_PAGING, ended: s.exhausted, failed: s.failed })))
-  const targetKey = target >= 0 ? slotsBySearch[target].join(",") : ""
+  // The next page goes to the search that can bring most (lib/pack/source-paging.ts); a donor
+  // search only while its condition is short.
+  const target = nextSearch(searches.map((s) => ({
+    paging: pagingNow[s.id] ?? NO_PAGING,
+    ended: s.exhausted,
+    failed: s.failed,
+    firstPageOnly: s.donor && !shortConditions.includes(s.kind as DonorSearch["kind"]),
+  })))
+  // Its feeds that still have pages: one request each.
+  const targetKey = target >= 0 ? slotsBySearch[target].filter((i) => !feeds[i].noMoreResults).join(",") : ""
+  const targetRequests = targetKey ? targetKey.split(",").length : 0
+  // The session's cap: the next page would take the pack past it.
+  const sessionCapReached = spent + Math.max(1, targetRequests) > SESSION_REQUEST_CAP
+  useEffect(() => { if (sessionCapReached) capCallbackRef.current?.() }, [sessionCapReached])
 
   const loadMoreGuardRef = useRef(false)
   const isLoadingMoreRef = useRef(isLoadingMore)
@@ -383,28 +403,27 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   // target search (the old one ran out) or a new plan frees it.
   useEffect(() => { loadMoreGuardRef.current = false }, [targetKey, feedKey])
 
-  const { setSize: setSize0 } = feed0
-  const { setSize: setSize1 } = feed1
-  const { setSize: setSize2 } = feed2
-  const { setSize: setSize3 } = feed3
-  const { setSize: setSize4 } = feed4
-  const { setSize: setSize5 } = feed5
-  const { setSize: setSize6 } = feed6
-  const { setSize: setSize7 } = feed7
-  const { canLoadMore, msUntilAllowed } = rateLimiter
-  // Fetches the target search's next page now; false when the guards say no.
+  const { addPages: addPages0 } = feed0
+  const { addPages: addPages1 } = feed1
+  const { addPages: addPages2 } = feed2
+  const { addPages: addPages3 } = feed3
+  const { addPages: addPages4 } = feed4
+  const { addPages: addPages5 } = feed5
+  const { addPages: addPages6 } = feed6
+  const { addPages: addPages7 } = feed7
+  // Fetches the target search's next page now; false when the guards or the pace say no.
   const startPage = useCallback((): boolean => {
     if (loadMoreGuardRef.current || isLoadingMoreRef.current) return false
-    if (!targetKey) return false
-    if (!canLoadMore(totalPages)) return false
+    if (!targetKey || spent + targetRequests > SESSION_REQUEST_CAP) return false
+    const pacer = sitePacer(provider)
+    if (pacer.msUntil(targetRequests) > 0) return false
+    pacer.take(targetRequests)
+    record(targetRequests)
     loadMoreGuardRef.current = true
-    const setSizes = [setSize0, setSize1, setSize2, setSize3, setSize4, setSize5, setSize6, setSize7]
-    for (const i of targetKey.split(",").map(Number)) void setSizes[i]((size) => size + 1)
+    const adds = [addPages0, addPages1, addPages2, addPages3, addPages4, addPages5, addPages6, addPages7]
+    for (const i of targetKey.split(",").map(Number)) adds[i](1)
     return true
-  }, [canLoadMore, totalPages, targetKey, setSize0, setSize1, setSize2, setSize3, setSize4, setSize5, setSize6, setSize7])
-  // A page that waits for the pace limit starts with the latest target when its turn comes.
-  const startRef = useRef(startPage)
-  useEffect(() => { startRef.current = startPage }, [startPage])
+  }, [targetKey, targetRequests, spent, record, provider, addPages0, addPages1, addPages2, addPages3, addPages4, addPages5, addPages6, addPages7])
   const [waiting, setWaiting] = useState(false)
   const waitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearWait = useCallback(() => {
@@ -414,22 +433,25 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
   }, [])
   // Another plan, or unmounting: a waiting page is not for it.
   useEffect(() => clearWait, [feedKey, clearWait])
-  // True when a page was asked for, now or once the pace limit allows it (false: one is
-  // already on its way or waiting, nothing is left, or the session's page cap is reached).
+  // True when a page was asked for, now or once the pace allows it (false: one is already
+  // on its way or waiting, nothing is left, or the session's request cap is reached).
+  const loadMoreRef = useRef<() => boolean>(() => false)
   const loadMore = useCallback((): boolean => {
     if (waitTimerRef.current || loadMoreGuardRef.current || isLoadingMoreRef.current) return false
-    if (!targetKey) return false
-    if (totalPages >= MAX_SESSION_PAGE_LOADS) return canLoadMore(totalPages)
-    const wait = msUntilAllowed()
-    if (wait <= 0) return startPage()
+    if (!targetKey || spent + targetRequests > SESSION_REQUEST_CAP) return false
+    const wait = sitePacer(provider).msUntil(targetRequests)
+    if (wait <= 0 && startPage()) return true
+    // Waits for the pace, then asks again with the target of that moment (another request
+    // may have taken the turn meanwhile: then it waits again).
     setWaiting(true)
     waitTimerRef.current = setTimeout(() => {
       waitTimerRef.current = null
       setWaiting(false)
-      startRef.current()
-    }, wait + 50)
+      loadMoreRef.current()
+    }, Math.max(wait, 100) + 50)
     return true
-  }, [targetKey, totalPages, canLoadMore, msUntilAllowed, startPage])
+  }, [targetKey, targetRequests, spent, provider, startPage])
+  useEffect(() => { loadMoreRef.current = loadMore }, [loadMore])
 
   const { retry: retry0 } = feed0
   const { retry: retry1 } = feed1
@@ -451,14 +473,16 @@ export function usePackSources({ plan, onSessionCapReached, onScrollLimited }: U
     allPosts,
     isLoadingMore,
     noMoreResults,
-    sessionCapReached: rateLimiter.sessionCapReached,
-    scrollLimited: rateLimiter.scrollLimited,
+    sessionCapReached,
+    // Nothing is refused for going too fast: a page waits for the pace (`waiting`).
+    scrollLimited: waiting,
     loadMore,
     waiting,
     pages: totalPages,
+    requests: spent,
     failed,
     retry,
     originOf,
     searches,
-  }), [allPosts, isLoadingMore, noMoreResults, rateLimiter.sessionCapReached, rateLimiter.scrollLimited, loadMore, waiting, totalPages, failed, retry, originOf, searches])
+  }), [allPosts, isLoadingMore, noMoreResults, sessionCapReached, loadMore, waiting, totalPages, spent, failed, retry, originOf, searches])
 }

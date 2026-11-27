@@ -17,16 +17,6 @@
 /** Pages in a row with no new post that end a search. See the module comment. */
 export const DRY_PAGES_TO_END = 1
 
-/**
- * Pages the pack loads by itself, all searches together (each rating's page counts
- * once). Measured: on Rule34 a page of the search without a name brings about 16
- * scenes, so 50 prompts need 3 pages; on Danbooru about 8, so 50 prompts need 7.
- * Fifteen covers a 100-prompt pack on Rule34 and most of one on Danbooru, about a
- * minute at the allowed pace. Past it, "Find more scenes" goes on by hand, up to the
- * session's own cap.
- */
-export const AUTO_PAGE_CAP = 15
-
 /** What the pack knows of one search after its last page. */
 export interface SearchPaging {
   /** Pages that have arrived. */
@@ -67,25 +57,36 @@ export interface SearchTurn {
   paging: SearchPaging
   ended: boolean
   failed: boolean
+  /**
+   * The search may have its first page but no more for now: a condition's donor search
+   * while the pack already has enough different forms of that condition (conditionSupply).
+   * Such a search adds many posts a page (every post with a bikini) that are never scenes,
+   * so it would otherwise take most of the pages.
+   */
+  firstPageOnly?: boolean
 }
 
 /**
  * The search the next page goes to, or -1 when none can bring anything. Never an ended
- * or failed search. Among the others, the one whose last page added most to the pack
- * (a search of 95 posts adds nothing after its first page; one of 138,845 adds about
- * 100 a page); a search that hasn't had a page yet goes first. A search far behind in
- * pages (TURN_GAP) gets its turn, so a large one doesn't keep a smaller one waiting
- * for good. Ties go to the earlier search of the plan (the preferred one).
+ * or failed search, nor one held to its first page that has it. Among the others, the one
+ * whose last page added most to the pack (a search of 95 posts adds nothing after its
+ * first page; one of 138,845 adds about 100 a page); a search that hasn't had a page yet
+ * goes first. A search far behind in pages (TURN_GAP) gets its turn, whatever its last page
+ * added: a search whose first page added nothing new to the pack (its posts were all in a
+ * search before it) can still have thousands more, and every search that hasn't run out
+ * gets a page sooner or later. Ties go to the earlier search of the plan (the preferred one).
  */
 export const TURN_GAP = 3
 
 export function nextSearch(searches: readonly SearchTurn[]): number {
-  const live = searches.map((s, i) => ({ ...s, i })).filter((s) => !s.ended && !s.failed)
+  const live = searches
+    .map((s, i) => ({ ...s, i }))
+    .filter((s) => !s.ended && !s.failed && !(s.firstPageOnly && s.paging.lastAdds !== null))
   if (live.length === 0) return -1
   const unread = live.find((s) => s.paging.lastAdds === null)
   if (unread) return unread.i
   const most = Math.max(...live.map((s) => s.paging.pages))
-  const behind = live.find((s) => most - s.paging.pages >= TURN_GAP && (s.paging.lastAdds ?? 0) > 0)
+  const behind = live.find((s) => most - s.paging.pages >= TURN_GAP)
   if (behind) return behind.i
   let best = live[0]
   for (const s of live) if ((s.paging.lastAdds ?? 0) > (best.paging.lastAdds ?? 0)) best = s

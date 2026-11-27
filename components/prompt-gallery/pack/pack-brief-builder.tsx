@@ -84,7 +84,9 @@ import {
   withSearchProgress,
   preferredPostIds,
   promptTokens,
+  shortConditionRoles,
   type BriefOutfit,
+  type ConditionSupply,
   type FitNote,
 } from "@/lib/pack/brief-pack"
 import type { BulkSendCleanOptions } from "@/lib/pack/bulk-send"
@@ -102,7 +104,7 @@ import { SearchDetails } from "./search-details"
 import { savedResultOf, type SavedPack } from "@/lib/pack/saved-pack"
 import { BUILDER_SWITCH_TEXT } from "./builder-switch"
 import type { EntryOption } from "./tag-entry"
-import { AUTO_PAGE_CAP } from "@/lib/pack/source-paging"
+import { AUTO_REQUEST_CAP } from "@/lib/pack/request-budget"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
 import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
@@ -415,12 +417,19 @@ const RatingMenu = memo(function RatingMenu({ value, onChange }: { value: PackRa
  */
 function BriefSource({
   plan,
+  conditions,
+  count,
   onResult,
 }: {
   plan: SourcePlan
+  /** The conditions' supply (conditionSupply): a donor search pages only while its condition is short. */
+  conditions: readonly ConditionSupply[]
+  count: number
   onResult: (result: UsePackSourcesResult | null) => void
 }) {
-  const result = usePackSources({ plan })
+  const shortKey = shortConditionRoles(conditions, count).join(",")
+  const shortConditions = useMemo(() => (shortKey ? (shortKey.split(",") as Array<"wearing" | "where">) : []), [shortKey])
+  const result = usePackSources({ plan, shortConditions })
   useEffect(() => onResult(result), [result, onResult])
   useEffect(() => () => onResult(null), [onResult])
   return null
@@ -574,8 +583,8 @@ function BriefWorkspace({
   const have = usable ? (poses.length > 0 && !axis ? usable.filter((c) => c.hasPose).length : usable.length) : 0
   // Pages go one at a time to the search that can bring most; one the pace limit doesn't
   // allow yet waits and goes by itself (usePackSources). By itself the pack stops at
-  // AUTO_PAGE_CAP pages; "Find more scenes" goes on from there.
-  const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && source.pages < AUTO_PAGE_CAP
+  // AUTO_REQUEST_CAP requests; "Find more scenes" goes on from there.
+  const canLoad = !!source && !source.noMoreResults && !source.failed && !source.sessionCapReached && source.requests < AUTO_REQUEST_CAP
   // While the pool alone says there can't be enough scenes yet, the next page goes as soon as the
   // pool has taken the last one, without waiting for the scenes that fit (they wait for the batch).
   const collectingNow = open && canLoad && engine.sceneEstimate !== null && engine.sceneEstimate < count
@@ -1356,7 +1365,7 @@ function BriefWorkspace({
       </div>
 
       {searching && (
-        <BriefSource plan={plan} onResult={setSource} />
+        <BriefSource plan={plan} conditions={engine.conditionSupply} count={count} onResult={setSource} />
       )}
     </div>
   )
