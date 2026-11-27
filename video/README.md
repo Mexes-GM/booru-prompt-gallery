@@ -13,7 +13,7 @@ npm run render
 ```
 
 `npm run render` renders the prompt formats video; `npm run render -- outfits` renders the Random outfit video,
-`npm run render -- comfyui` the Send to ComfyUI video, `npm run render -- setup-loops` the ComfyUI setup guide's two
+`npm run render -- comfyui` the Send to ComfyUI video, `npm run render -- pack` the Pack Mode video, `npm run render -- setup-loops` the ComfyUI setup guide's two
 loops, and `npm run render -- all` everything. Each video writes three files to `public/whats-new/`:
 
 | File | What it is |
@@ -23,6 +23,7 @@ loops, and `npm run render -- all` everything. Each video writes three files to 
 | `10.4.0-prompt-formats-poster.jpg` | Poster frame (`POSTER_FRAME` in `src/chapters.ts`) |
 | `10.7.0-random-outfit.webm` / `.mp4` / `-poster.jpg` | Same, for the Random outfit video (`POSTER_FRAME` in `src/outfit-chapters.ts`) |
 | `10.9.0-send-to-comfyui.webm` / `.mp4` / `-poster.jpg` | Same, for the Send to ComfyUI video (`POSTER_FRAME` in `src/send-to-comfy-chapters.ts`) |
+| `10.9.0-pack-mode.webm` / `.mp4` / `-poster.jpg` | Same, for the Pack Mode video (`POSTER_FRAME` in `src/pack-chapters.ts`) |
 
 `npm run studio` opens Remotion Studio to preview and scrub the composition. `npm run typecheck` checks the source.
 
@@ -35,8 +36,10 @@ loops, and `npm run render -- all` everything. Each video writes three files to 
 - `public/danbooru-5513008.jpg` — the post shown on the card ([Danbooru #5513008](https://danbooru.donmai.us/posts/5513008),
   rating general, art by maiii_(smaii_i)).
 
-If you change chapter timings, update `CHAPTERS` in `components/prompt-gallery/feature-intro-dialog.tsx` too: the
-dialog lists the chapters, seeks to them and highlights the one playing (seconds = frames / 30).
+If you change chapter timings, update the video's chapters in `lib/feature-intro-videos.ts` too: the dialog
+(`components/prompt-gallery/feature-intro-dialog.tsx`) lists them, seeks to them and highlights the one playing
+(seconds = frames / 30). `__tests__/feature-intro-videos.verify.ts` checks the current release's videos against
+their chapter files.
 
 ## Card text
 
@@ -104,8 +107,8 @@ between the overlays and the Copy button, as in the script above).
 ## Send to ComfyUI video (10.9.0) and setup loops
 
 - `src/SendToComfy.tsx` — the composition (`SendToComfy`, poster still `SendToComfyPoster`): five chapters, timed in
-  `src/send-to-comfy-chapters.ts`, which also holds the chapter text the dialog lists. Keep `CHAPTERS` in
-  `components/prompt-gallery/feature-intro-dialog.tsx` in step with it (seconds = frames / 30).
+  `src/send-to-comfy-chapters.ts`, which also holds the chapter text the dialog lists. Keep its chapters in
+  `lib/feature-intro-videos.ts` in step with it (seconds = frames / 30).
 - `src/comfy-ui.tsx` — the pieces it shares with the loops: an abstract ComfyUI window (neutral greys, no logo; shapes
   and the few labels the setup guide names), the Manager search, the setup guide's "Published from ComfyUI" list, and
   the card's job surface from `components/prompt-gallery/comfyui-card-job.tsx`, with the curves from
@@ -116,3 +119,19 @@ between the overlays and the Copy button, as in the script above).
   "Install the node" and "Publish your workflow" steps. Each one ends exactly on its first frame, so it repeats without
   a cut. `npm run render -- setup-loops` writes `install` and `publish` (`.webm`, `.mp4` and a `.jpg` poster, also shown
   with reduced motion) to `public/comfyui-setup/`.
+
+## Pack Mode video (10.9.0)
+
+- `src/PackMode.tsx` — the composition (`PackMode`, poster still `PackModePoster`): five chapters, timed in
+  `src/pack-chapters.ts`, which also holds the chapter text the dialog lists. Keep its chapters in
+  `lib/feature-intro-videos.ts` in step with it, word for word (seconds = frames / 30). The dialog shows it first and
+  Send to ComfyUI second.
+- `src/pack-ui.tsx` — the pack screen's pieces from `components/prompt-gallery/pack/` (chips, the row field, labels,
+  segmented choices, menus). They are written in the site's CSS pixels and the panel is scaled 1.5×, so sizes can be
+  checked against the Tailwind classes they copy. Chips and tags wrap in code (`flow`, `wrapTags`) so the pointer
+  knows where each one lands.
+- Every label, button and note comes from `components/prompt-gallery/pack/pack-text.ts`, `slots.ts` or the component
+  that draws it. The characters, tags, post numbers and prompts are examples (rating general), not the pack's output
+  for a real search.
+- The paused gallery behind the panel reuses the two posts above.
+- Its H.264 file uses a coarser `mp4Crf` (30) so it stays close to the other videos' size.

@@ -3,6 +3,7 @@
 //   npm run render                  the prompt formats video (10.4.0)
 //   npm run render -- outfits       the Random outfit video (10.7.0)
 //   npm run render -- comfyui       the Send to ComfyUI video (10.9.0)
+//   npm run render -- pack          the Pack Mode video (10.9.0)
 //   npm run render -- setup-loops   the ComfyUI setup guide's two loops
 //   npm run render -- all           all of them
 import { execFileSync } from "node:child_process"
@@ -25,6 +26,8 @@ const VIDEOS = {
   formats: [{ ...WHATS_NEW, composition: "PromptFormats", poster: "PromptFormatsPoster", name: "10.4.0-prompt-formats" }],
   outfits: [{ ...WHATS_NEW, composition: "RandomOutfit", poster: "RandomOutfitPoster", name: "10.7.0-random-outfit" }],
   comfyui: [{ ...WHATS_NEW, composition: "SendToComfy", poster: "SendToComfyPoster", name: "10.9.0-send-to-comfyui" }],
+  // Mostly text on flat panels: one notch coarser H.264 keeps it near the other videos' size.
+  pack: [{ ...WHATS_NEW, mp4Crf: 30, composition: "PackMode", poster: "PackModePoster", name: "10.9.0-pack-mode" }],
   "setup-loops": [
     { ...SETUP, composition: "ComfyInstallLoop", poster: "ComfyInstallLoopPoster", name: "install" },
     { ...SETUP, composition: "ComfyPublishLoop", poster: "ComfyPublishLoopPoster", name: "publish" },
