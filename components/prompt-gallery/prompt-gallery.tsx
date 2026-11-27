@@ -2403,34 +2403,6 @@ export function PromptGallery() {
         onCopyAll={(text, format) => copyToClipboard(text, 0, true, undefined, format)}
         onResetLearning={packMode.resetLearning}
       />}
-
-      <GalleryModals
-        onTeachSuccess={refreshOverrides}
-        isQuickTeachOpen={isQuickTeachOpen}
-        setIsQuickTeachOpen={setIsQuickTeachOpen}
-        isGlobalWeightsEnabled={isGlobalWeightsEnabled}
-        tagOverrides={tagOverrides}
-        isGlobalWeightsModalOpen={isGlobalWeightsModalOpen}
-        setIsGlobalWeightsModalOpen={setIsGlobalWeightsModalOpen}
-        globalWeights={globalWeights}
-        onRemoveGlobalWeight={handleRemoveGlobalWeight}
-        onClearGlobalWeights={handleClearGlobalWeights}
-        onGlobalWeightsEnabledChange={setIsGlobalWeightsEnabled}
-        onGlobalWeightChange={handleGlobalWeightChange}
-        isReverseParserModalOpen={isReverseParserModalOpen}
-        setIsReverseParserModalOpen={setIsReverseParserModalOpen}
-        onImportRawPrompt={handleImportRawPrompt}
-        folderToDelete={folderToDelete}
-        setFolderToDelete={setFolderToDelete}
-        onConfirmDeleteFolder={() => {
-          if (folderToDelete) {
-            favs.deleteFolder(folderToDelete.id)
-            if (activeFavoriteFolder === folderToDelete.id) {
-              setActiveFavoriteFolder('all')
-            }
-          }
-        }}
-      />
     </TooltipProvider>
   )
 }
