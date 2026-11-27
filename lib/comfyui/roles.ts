@@ -302,6 +302,21 @@ export function detectRoles(api: ApiWorkflow, objectInfo?: ObjectInfo): Detectio
     const primary = samplers.find((id) => emptyLatentBehind(api, id) !== null) ?? samplers[0]
     const sampler = api[primary]
 
+    // Output: with a hires fix (or a preview after the first pass) the last
+    // output by id can be an intermediate image. Prefer the outputs fed by the
+    // primary sampler, and among those the one with the most samplers behind
+    // it (the final pass). Ties keep the id order, so the last one wins.
+    const chain = candidates.output
+      .map((id) => {
+        const behind = upstream(api, id)
+        return { id, fed: behind.includes(primary), passes: behind.filter((n) => isSampler(api[n])).length }
+      })
+      .filter((o) => o.fed)
+    if (chain.length) {
+      const most = Math.max(...chain.map((o) => o.passes))
+      roles.output = chain.filter((o) => o.passes === most).at(-1)?.id ?? roles.output
+    }
+
     // Prompt
     let positive = sampler.inputs.positive
     if (!isLink(positive) && isLink(sampler.inputs.guider)) {

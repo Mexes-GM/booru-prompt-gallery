@@ -173,6 +173,28 @@ const advanced = load("api-ksampler-advanced-linked.json")
   same(detectRoles({}).roles, { prompt: null, seed: null, width: null, height: null, output: null }, "empty graph gives no roles")
 }
 
+// ── 9b) Output after a hires fix ──
+{
+  const hires = load("api-sdxl-hires-fix.json")
+  // A preview of the first pass, added with a higher id than the final SaveImage (9).
+  const withPreview: ApiWorkflow = {
+    ...hires,
+    "20": { class_type: "VAEDecode", inputs: { samples: ["3", 0], vae: ["4", 2] } },
+    "21": { class_type: "PreviewImage", inputs: { images: ["20", 0] } },
+  }
+  const { roles, candidates } = detectRoles(withPreview)
+  same(candidates.output, ["9", "21"], "hires + preview: both outputs are candidates")
+  assert(roles.output === "9", "hires + preview: the output after the second pass wins over the later first-pass preview")
+
+  // An output that the primary sampler does not feed (a preview of a loaded image) is skipped.
+  const unrelated: ApiWorkflow = {
+    ...hires,
+    "30": { class_type: "LoadImage", inputs: { image: "ref.png" } },
+    "31": { class_type: "PreviewImage", inputs: { images: ["30", 0] } },
+  }
+  assert(detectRoles(unrelated).roles.output === "9", "an output not fed by the sampler is not chosen")
+}
+
 // ── 10) applyRoles ──
 {
   const cases: [string, ApiWorkflow][] = [
