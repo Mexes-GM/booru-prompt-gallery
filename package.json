@@ -6,14 +6,18 @@
     "build": "next build",
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
-    "lint": "eslint .",
+    "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/ --cache-strategy content",
+    "lint:changed": "node tools/lint-changed.mjs",
     "start": "next start",
     "doctor": "npx react-doctor@latest",
     "theme:build": "node scripts/build-theme.mjs",
     "theme:check": "node scripts/build-theme.mjs --check",
     "colors:audit": "node scripts/audit-colors.mjs",
     "test": "node __tests__/run-all.mjs",
-    "typecheck": "tsc --noEmit"
+    "test:changed": "node __tests__/run-all.mjs --changed",
+    "typecheck": "tsc --noEmit",
+    "typecheck:fast": "tsgo --noEmit --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
+    "check:fast": "node tools/check-fast.mjs"
   },
   "dependencies": {
     "@posthog/nextjs-config": "^1.11.3",
