@@ -192,7 +192,7 @@ const MergeStickyFooterComponent = ({
                         damping: 25,
                         mass: 0.8
                     }}
-                    className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-foreground/5 sm:max-h-[400px] max-h-[320px] ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
+                    className={`fixed bottom-6 left-0 right-0 mx-auto z-50 w-[95%] max-w-3xl border shadow-2xl rounded-2xl overflow-hidden ring-1 ring-foreground/5 sm:max-h-[400px] ${comfy.enabled ? "max-h-[360px]" : "max-h-[320px]"} ${lowMotion ? "bg-background/95" : "bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"}`}
                     style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
                     {/* Border Glow Effect */}
@@ -204,7 +204,10 @@ const MergeStickyFooterComponent = ({
                             />
                         )}
                     </div>
-                    <div className="p-3 sm:p-4 flex flex-col gap-3 sm:gap-4">
+                    {/* ComfyUI mode adds a row under the tags, so the footer gets a little taller on phones.
+                        Capping this column at the footer's height (less its border) lets the tag box
+                        shrink (it scrolls) so the row is never cut off. */}
+                    <div className={`p-3 sm:p-4 flex flex-col gap-3 sm:gap-4 ${comfy.enabled ? 'max-h-[calc(358px-env(safe-area-inset-bottom,0px))] sm:max-h-[calc(398px-env(safe-area-inset-bottom,0px))]' : ''}`}>
 
                         {/* Header / Controls */}
                         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -379,7 +382,7 @@ const MergeStickyFooterComponent = ({
 
                         {/* Selection Thumbnails */}
                         {selectedPosts.size > 0 && (
-                            <ScrollArea className="w-full whitespace-nowrap pb-2">
+                            <ScrollArea className="w-full shrink-0 whitespace-nowrap pb-2">
                                 <div className="flex gap-2 p-1">
                                     <AnimatePresence mode='popLayout'>
                                         {Array.from(selectedPosts.values()).map(({ post, parts }) => (
@@ -425,7 +428,7 @@ const MergeStickyFooterComponent = ({
                         )}
 
                         {/* Prompt Output */}
-                        <div className="relative">
+                        <div className={comfy.enabled ? "relative flex min-h-0 flex-col" : "relative"}>
                             <div className="min-h-[60px] max-h-[120px] sm:max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-3 text-sm shadow-sm overflow-y-auto overflow-x-hidden flex flex-col gap-2">
                                 {mergeModeType === 'variations' && variationsOutput ? (
                                     <div className="flex flex-wrap gap-1.5 min-h-[2rem] content-start items-center">
