@@ -233,6 +233,14 @@ async function main() {
     r = await diag(okRoutes, { userAgent: SAFARI, permissions: perm("denied") })
     same(r.d, { state: "unsupported-browser" }, "Safari is unsupported")
     assert(r.calls.length === 0, "Safari check makes no request")
+    // Every iOS browser is WebKit, so Chrome and Firefox on iOS are unsupported too.
+    for (const ua of [
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/130.0 Mobile/15E148 Safari/605.1.15",
+    ]) {
+      r = await diag(okRoutes, { userAgent: ua })
+      same(r.d, { state: "unsupported-browser" }, `iOS browser is unsupported: ${ua.slice(13, 25)}`)
+    }
 
     // Order: a denied permission beats the bridge check and never touches the network.
     r = await diag(okRoutes, { permissions: perm("denied") })

@@ -203,8 +203,14 @@ export interface DiagnoseOptions {
   minBridgeVersion: string
 }
 
+/**
+ * WebKit blocks http://localhost from an https page. That covers desktop Safari
+ * and every iOS browser (Chrome and Firefox on iOS are WebKit too), so iOS user
+ * agents are unsupported whatever their brand.
+ */
 function isSafari(userAgent: string): boolean {
-  return /Safari/i.test(userAgent) && !/Chrome|Chromium|Edg|Firefox|CriOS|FxiOS/i.test(userAgent)
+  if (/iPhone|iPad|iPod/i.test(userAgent)) return true
+  return /Safari/i.test(userAgent) && !/Chrome|Chromium|Edg|Firefox/i.test(userAgent)
 }
 
 /**
