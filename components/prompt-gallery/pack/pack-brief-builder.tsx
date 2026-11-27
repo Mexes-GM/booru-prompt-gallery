@@ -111,7 +111,6 @@ import type { OutfitStyle } from "@/lib/outfit-swap"
 import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
 import { convertPromptOnce, preloadNaturalPrompt } from "@/lib/prompt/natural-prompt-loader"
 import { PROMPT_FORMATS, PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
-import { getPostThumbnailUrl } from "@/lib/proxy-url"
 import { cn } from "@/lib/utils"
 import { PROVIDERS, PROVIDER_LABELS } from "../provider-select"
 import { getProviderTagLimit } from "@/lib/booru/tag-limits"
@@ -122,6 +121,7 @@ import type { EntryOption } from "./tag-entry"
 import { BriefSummary } from "./brief-summary"
 import type { Choice } from "./choice-group"
 import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contact-sheet"
+import { scenePostHref, sceneThumbs } from "./scene-tile"
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
@@ -1489,7 +1489,7 @@ function BriefWorkspace({
 
   // ── The contact sheet ───────────────────────────────────────────────────────────
   const thumbs = useMemo<SceneThumb[]>(
-    () => (candidates ?? []).map((c) => ({ id: String(c.postId), postId: c.postId, src: c.preview ? getPostThumbnailUrl(c.preview) : undefined })),
+    () => sceneThumbs(candidates ?? []),
     [candidates]
   )
   // The sheet never shows its own error: the builder's one line above covers every failed load.
@@ -1713,6 +1713,8 @@ function BriefWorkspace({
               onReroll={onReroll}
               onAlways={onAlways}
               onNever={onNever}
+              // Links go to the site the prompts came from; after a change of source, until Generate, none.
+              postProvider={engine.sourceChanged ? undefined : provider}
             />
           )}
         </div>
@@ -1825,6 +1827,7 @@ function Results({
   onReroll,
   onAlways,
   onNever,
+  postProvider,
 }: {
   /** Where focus goes after a pack is made. */
   containerRef?: RefObject<HTMLDivElement | null>
@@ -1848,6 +1851,8 @@ function Results({
   onReroll: (index: number) => boolean
   onAlways: (tag: string) => void
   onNever: (tag: string) => void
+  /** The site of the posts the prompts came from, for the links to them. */
+  postProvider?: BooruProvider
 }) {
   const lockedSet = useMemo(() => new Set(locked), [locked])
   // Text on screen per row, so a copy matches what is shown.
@@ -1968,6 +1973,7 @@ function Results({
             onReroll={reroll}
             onAlways={onAlways}
             onNever={onNever}
+            postProvider={postProvider}
           />
         ))}
       </div>
@@ -1992,7 +1998,9 @@ const BriefResultRow = memo(function BriefResultRow({
   onReroll,
   onAlways,
   onNever,
+  postProvider,
 }: {
+  postProvider?: BooruProvider
   locked: boolean
   busy: boolean
   busyReason: string
@@ -2025,7 +2033,9 @@ const BriefResultRow = memo(function BriefResultRow({
       tokens={tokens}
       text={text}
       postId={prompt.scene?.postId}
-      thumbSrc={prompt.scene?.preview ? getPostThumbnailUrl(prompt.scene.preview) : undefined}
+      postHref={scenePostHref(postProvider, prompt.scene)}
+      postSite={postProvider ? PROVIDER_LABELS[postProvider] : undefined}
+      inventedScene={!!prompt.scene?.invented}
       size={promptSize(prompt)}
       pending={format !== "tags" && natural.status === "loading"}
       locked={locked}

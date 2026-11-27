@@ -1,15 +1,16 @@
 "use client"
 
 /**
- * The scenes the pack will draw from, before generating: a dense, even grid of
- * portrait (3:4) thumbnails, like a photographer's contact sheet. Any scene can be
- * left out with one tap and put back with another; a scene that is out stays in its
- * place, its picture faded, with a dashed edge and a crossed-eye mark.
+ * The scenes the pack will draw from, before generating: a dense, even grid of small
+ * tiles, one per scene, each with its post number (no pictures: the pack loads no
+ * images) and, when it tells them apart, a short detail such as the people count.
+ * Any scene can be left out with one tap and put back with another; a scene that is
+ * out stays in its place, faded, with a dashed edge and a crossed-eye mark.
  *
  * The sheet is one stop in the tab order: arrow keys move between scenes in four
  * directions, Home and End go to the first and last, Space or Enter toggles.
- * Collapsed, it shows three rows (6, 9 or 12 columns by the width of its container;
- * six keeps each tile at least 44 px wide in a 343 px column)
+ * Collapsed, it shows three rows (4, 6 or 8 columns by the width of its container;
+ * four keeps an eight-digit post number on one line in a 343 px column)
  * and a "Show all" button. Collapsed, only the tiles on screen are mounted; "Show all" mounts the
  * rest a batch per frame, so a few hundred scenes never block the page at once. Keep `onToggle`
  * stable: tiles are memoized.
@@ -23,8 +24,12 @@ import { SHEET_TEXT } from "./pack-text"
 export interface SceneThumb {
   id: string
   postId: number
-  /** Thumbnail URL; without it the tile shows the post number on a plain well. */
-  src?: string
+  /** Shown instead of the post number for a scene with no post ("Invented"). */
+  name?: string
+  /** How screen readers name such a scene ("Invented scene"); defaults to `name`. */
+  spokenName?: string
+  /** A second, quieter line that tells scenes apart ("2 people"). */
+  detail?: string
 }
 
 export type ContactSheetStatus = "loading" | "ready" | "error"
@@ -56,12 +61,12 @@ export interface ContactSheetProps {
   className?: string
 }
 
-// Collapsed: three rows at 6, 9 and 12 columns. Rendering stops at the widest.
-const COLLAPSED = { narrow: 18, mid: 27, wide: 36 }
+// Collapsed: three rows at 4, 6 and 8 columns. Rendering stops at the widest.
+const COLLAPSED = { narrow: 12, mid: 18, wide: 24 }
 /** Tiles "Show all" mounts per frame. */
 const SHOW_ALL_BATCH = 60
 const COLLAPSE_CLASSES =
-  "[&>*:nth-child(n+19)]:hidden @md:[&>*:nth-child(n+19)]:block @md:[&>*:nth-child(n+28)]:hidden @xl:[&>*:nth-child(n+28)]:block"
+  "[&>*:nth-child(n+13)]:hidden @md:[&>*:nth-child(n+13)]:flex @md:[&>*:nth-child(n+19)]:hidden @xl:[&>*:nth-child(n+19)]:flex"
 
 const Tile = memo(function Tile({
   scene,
@@ -85,11 +90,14 @@ const Tile = memo(function Tile({
   /** Choosing the scene that repeats: a select picks this one. */
   picking?: boolean
 }) {
+  const said = scene.spokenName ?? (scene.name ? scene.name : `post ${scene.postId}`)
   const label = fixed
-    ? `${SHEET_TEXT.fixedBadge} in every prompt, post ${scene.postId}. ${fixedNote ?? (picking ? SHEET_TEXT.keepFixed : SHEET_TEXT.changeFixed)}`
+    ? `${SHEET_TEXT.fixedBadge} in every prompt, ${said}. ${fixedNote ?? (picking ? SHEET_TEXT.keepFixed : SHEET_TEXT.changeFixed)}`
     : picking
-      ? `${SHEET_TEXT.pickThis}, post ${scene.postId}`
-      : `Leave this scene out, post ${scene.postId}`
+      ? `${SHEET_TEXT.pickThis}, ${said}`
+      : `Leave this scene out, ${said}${scene.detail ? `, ${scene.detail.toLowerCase()}` : ""}`
+  // The fixed tile's second line says it repeats; the others' says what tells them apart.
+  const second = fixed ? SHEET_TEXT.fixedBadge : scene.detail
   return (
     <button
       type="button"
@@ -100,50 +108,34 @@ const Tile = memo(function Tile({
       title={fixed ? fixedNote ?? SHEET_TEXT.changeFixed : picking ? SHEET_TEXT.pickThis : out ? "Put this scene back" : "Leave this scene out"}
       onClick={() => onToggle(scene.id)}
       className={cn(
-        "group/tile relative block aspect-[3/4] w-full overflow-hidden rounded-[6px] border",
-        "transition-[border-color,background-color] duration-150 ease-out-strong",
+        "relative flex h-10 w-full min-w-0 flex-col items-center justify-center gap-px rounded-[6px] border px-1 pointer-coarse:h-11",
+        "transition-[border-color,background-color,color] duration-150 ease-out-strong",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         "animate-in fade-in-0 motion-reduce:animate-none",
         fixed
-          ? "border-2 border-mode-pack bg-muted"
+          ? "border-mode-pack bg-mode-pack-soft text-foreground"
           : out
-            ? "border-dashed border-muted-foreground bg-muted/30"
+            ? "border-dashed border-muted-foreground/70 bg-transparent text-muted-foreground"
             : picking
-              ? "border-mode-pack-border bg-muted hover:border-mode-pack"
-              : "border-transparent bg-muted hover:border-foreground/50",
+              ? "border-mode-pack-border bg-muted text-foreground hover:border-mode-pack"
+              : "border-transparent bg-muted text-foreground hover:border-foreground/50",
       )}
     >
-      {scene.src ? (
-        // Plain img: thumbnails come from several booru hosts and are already small.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={scene.src}
-          alt=""
-          loading="lazy"
-          decoding="async"
+      <span className="max-w-full truncate font-mono text-xs leading-4 tabular-nums">
+        {scene.name ?? scene.postId}
+      </span>
+      {second && (
+        <span
           className={cn(
-            "absolute inset-x-0 top-0 w-full object-cover transition-opacity duration-150 ease-out-strong",
-            fixed ? "bottom-4 h-[calc(100%-1rem)]" : "bottom-0 h-full",
-            out && "opacity-25 grayscale",
+            "max-w-full truncate text-[10px] leading-3",
+            fixed ? "font-medium text-mode-pack-text" : "text-muted-foreground",
           )}
-        />
-      ) : (
-        // The number stays readable when the scene is out; only the well behind it fades.
-        <span className="absolute inset-x-0 top-1 text-center font-mono text-[11px] tabular-nums text-foreground">
-          {scene.postId}
-        </span>
-      )}
-      {fixed && (
-        <span className="absolute inset-x-0 bottom-0 grid h-4 place-items-center bg-mode-pack px-1 text-center text-[10px] font-medium leading-none text-mode-pack-foreground">
-          {SHEET_TEXT.fixedBadge}
+        >
+          {second}
         </span>
       )}
       {out && !fixed && (
-        <span className="absolute inset-0 grid place-items-center">
-          <span className="grid size-6 place-items-center rounded-full bg-overlay/80 text-overlay-foreground">
-            <EyeOff className="size-3.5" aria-hidden />
-          </span>
-        </span>
+        <EyeOff className="absolute right-0.5 top-0.5 size-2.5 text-muted-foreground" aria-hidden />
       )}
     </button>
   )
@@ -184,7 +176,7 @@ export const ContactSheet = memo(function ContactSheet({
     return () => cancelAnimationFrame(frame)
   }, [expanded, allMounted, mounted])
   const [current, setCurrent] = useState(0)
-  // Tiles a folded sheet shows at its width (three rows of 6, 9 or 12 columns).
+  // Tiles a folded sheet shows at its width (three rows of 4, 6 or 8 columns).
   const [foldedVisible, setFoldedVisible] = useState(COLLAPSED.narrow)
   const gridRef = useRef<HTMLDivElement>(null)
   const helpId = useId()
@@ -299,7 +291,7 @@ export const ContactSheet = memo(function ContactSheet({
           const tile = (e.target as HTMLElement).closest<HTMLElement>("[data-tile]")
           if (tile) setCurrent(Number(tile.dataset.tile))
         }}
-        className={cn("grid grid-cols-6 gap-1.5 @md:grid-cols-9 @xl:grid-cols-12", collapsed && COLLAPSE_CLASSES)}
+        className={cn("grid grid-cols-4 gap-1.5 @md:grid-cols-6 @xl:grid-cols-8", collapsed && COLLAPSE_CLASSES)}
       >
         {shown.map((scene, i) => (
           <Tile
@@ -319,7 +311,7 @@ export const ContactSheet = memo(function ContactSheet({
             key={`pending-${scenes.length + i}`}
             aria-hidden
             style={{ animationDelay: `${Math.min(i, 8) * 60}ms` }}
-            className="block aspect-[3/4] rounded-[6px] bg-muted/70 animate-in fade-in-0 fill-mode-both duration-300 motion-reduce:animate-none"
+            className="flex h-10 rounded-[6px] bg-muted/70 pointer-coarse:h-11 animate-in fade-in-0 fill-mode-both duration-300 motion-reduce:animate-none"
           />
         ))}
       </div>
