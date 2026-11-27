@@ -9,11 +9,11 @@
 import { ToastAction } from "@/components/ui/toast"
 import { toast } from "@/hooks/use-toast"
 import { getComfyUISettings } from "@/hooks/use-comfyui-settings"
-import { MIN_BRIDGE_VERSION } from "@/lib/comfyui/bridge"
+import { BRIDGE_NAME, MIN_BRIDGE_VERSION } from "@/lib/comfyui/bridge"
 import { diagnose } from "@/lib/comfyui/client"
 import { openComfyPanel } from "@/lib/comfyui/panel-request"
 import { randomSeed } from "@/lib/comfyui/roles"
-import { getComfyJobSnapshot, getComfySession } from "@/lib/comfyui/session"
+import { getComfyJobSnapshot, getComfySession, type ComfySession } from "@/lib/comfyui/session"
 import { ComfyError, type ApiWorkflow, type Diagnosis } from "@/lib/comfyui/types"
 import { clampMaxLongSide, computeGenerationResolution } from "@/lib/extension/generation-resolution"
 import { userPreferences } from "@/lib/storage"
@@ -24,7 +24,11 @@ export interface ComfySendRequest {
   /** The post's image size, for "Match the post's size". */
   sourceWidth?: number
   sourceHeight?: number
-  /** A job this button showed before; it is dropped if it already finished. */
+  /**
+   * The job this button showed before. Sending again replaces it: a job still
+   * in the queue is canceled, one already generating finishes in ComfyUI but
+   * is no longer shown.
+   */
   previousJobId?: string | null
   /** The toast's fallback when ComfyUI can't be reached. */
   onCopyInstead?: () => void
@@ -47,10 +51,10 @@ function reasonFor(d: Diagnosis): string {
     case "unreachable":
       return "ComfyUI isn't answering. Check that it's running."
     case "bridge-missing":
-      return "ComfyUI blocks this site. The bridge node isn't installed."
+      return `ComfyUI blocks this site. Install the ${BRIDGE_NAME} node.`
     case "bridge-outdated":
     case "bridge-inactive":
-      return "The bridge node in ComfyUI needs an update."
+      return `The ${BRIDGE_NAME} node needs an update.`
     case "ok":
       return "ComfyUI didn't take the prompt. Try again."
   }
@@ -75,6 +79,19 @@ function showFailure(description: string, onCopyInstead?: () => void) {
       </div>
     ),
   })
+}
+
+/** Sending again: a queued job is canceled, a running one finishes in ComfyUI untracked. */
+function replacePrevious(session: ComfySession, jobId: string) {
+  const previous = getComfyJobSnapshot(jobId)
+  if (previous?.status === "queued") {
+    void session
+      .cancel(jobId)
+      .catch(() => {})
+      .finally(() => session.forget(jobId))
+  } else {
+    session.forget(jobId)
+  }
 }
 
 function sizeFor(req: ComfySendRequest): { width?: number; height?: number } {
@@ -122,15 +139,12 @@ export async function sendToComfy(req: ComfySendRequest): Promise<ComfySent | nu
       height: size.height,
       preview: options.livePreview,
     })
-    if (req.previousJobId && req.previousJobId !== jobId) {
-      const previous = getComfyJobSnapshot(req.previousJobId)
-      if (previous && previous.status !== "queued" && previous.status !== "running") session.forget(req.previousJobId)
-    }
+    if (req.previousJobId && req.previousJobId !== jobId) replacePrevious(session, req.previousJobId)
     return { jobId, api: workflow.api }
   } catch (error) {
     if (!(error instanceof ComfyError)) {
       // applyRoles refuses roles that no longer point at a typed input.
-      showFailure("The workflow's roles don't match it anymore. Check them in the settings.")
+      showFailure("The workflow's roles no longer match it. Check them in the ComfyUI settings.")
       return null
     }
     const diagnosis = await diagnose(url, { minBridgeVersion: MIN_BRIDGE_VERSION, timeoutMs: 3000 }).catch(

@@ -24,7 +24,7 @@ export function useComfySend() {
         if (sent) setJob(sent)
         return !!sent
       } catch {
-        toast({ description: "Couldn't load the ComfyUI sender. Check your connection and try again.", variant: "destructive", duration: 3000 })
+        toast({ description: "Couldn't load Send to ComfyUI. Check your connection and try again.", variant: "destructive", duration: 3000 })
         return false
       } finally {
         setSending(false)
