@@ -1,5 +1,6 @@
 import { PROVIDER_URLS, USER_AGENT } from "@/lib/constants"
 import { apiUrl, buildDirectDanbooruUrl } from "./urls"
+import { E621_POSTS_MODE } from "./e621-format"
 import {
   getScoreFloor,
   isTagCountSupportedProvider,
@@ -128,10 +129,10 @@ export function createPostsKey({
       return buildDirectDanbooruUrl(query, String(effectivePage), order, randomSeed, pageIndex)
     }
 
-    // E621 (and e6ai, same engine): direct client fetch — CORS *, no auth required.
+    // E621 (and Floofgens, same engine): direct client fetch — CORS *, no auth required.
     // Each user's browser has its own IP, eliminating shared rate-limit contention.
     // ponytail: direct URL, no transform needed (handled by fetcher).
-    if (provider === 'e621' || provider === 'e6ai') {
+    if (provider === 'e621' || provider === 'floofgens') {
       const isRandom = order === 'random' || /order:random|random:\d+/i.test(tags)
       const effectivePage = isRandom ? "1" : pageAt(pageIndex).toString()
       // buildBooruQuery leaves the order metatag to each provider. Without it the
@@ -141,12 +142,14 @@ export function createPostsKey({
         limit: "60",
         page: effectivePage,
         tags: [query, orderTag].filter(Boolean).join(' '),
+        // Tags grouped by category (lib/booru/e621-format.ts).
+        mode: E621_POSTS_MODE,
         _client: USER_AGENT,
       })
       if (isRandom) {
         params.append("seed", `${randomSeed}_${pageIndex}`)
       }
-      return `${provider === 'e6ai' ? PROVIDER_URLS.E6AI : PROVIDER_URLS.E621}/posts.json?${params.toString()}`
+      return `${provider === 'floofgens' ? PROVIDER_URLS.FLOOFGENS : PROVIDER_URLS.E621}/posts.json?${params.toString()}`
     }
 
     // Other providers — route through the Worker API

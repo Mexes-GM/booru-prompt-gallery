@@ -2,40 +2,7 @@ import { BaseBooruProvider } from '../base'
 import { BooruPost, SearchOptions } from '../types'
 import { PROVIDER_URLS, USER_AGENT } from '../../constants'
 import { logger } from '../../../logger'
-
-interface E621FileData {
-  url?: string
-  width?: number
-  height?: number
-}
-
-// e6ai runs the same engine but calls its artist category "director" and its
-// copyright category "franchise".
-interface E621TagsData {
-  general?: string[]
-  species?: string[]
-  character?: string[]
-  copyright?: string[]
-  franchise?: string[]
-  artist?: string[]
-  director?: string[]
-  lore?: string[]
-}
-
-interface E621PostData {
-  id: number
-  file?: E621FileData
-  sample?: E621FileData
-  preview?: E621FileData
-  tags?: E621TagsData
-  rating: string
-  score?: { total: number }
-  sources?: string[]
-}
-
-interface E621Response {
-  posts: E621PostData[]
-}
+import { E621_POSTS_MODE, extractE621Posts, parseE621Post } from './e621-format'
 
 export class E621Provider extends BaseBooruProvider {
   protected baseUrl: string = PROVIDER_URLS.E621
@@ -47,6 +14,8 @@ export class E621Provider extends BaseBooruProvider {
     if (options.limit) {
       params.set('limit', options.limit)
     }
+    // Tags grouped by category, so artist names and meta tags stay out of prompts.
+    params.set('mode', E621_POSTS_MODE)
     params.set('_client', USER_AGENT)
 
     let tags = (options.tags || '').trim()
@@ -55,37 +24,13 @@ export class E621Provider extends BaseBooruProvider {
     if (tags) params.set('tags', tags.trim())
 
     try {
-      const data = await this.fetchJson<E621Response>(`${this.baseUrl}/posts.json`, params)
+      const data = await this.fetchJson<unknown>(`${this.baseUrl}/posts.json`, params)
 
-      if (!data?.posts) return []
-
-      const contentCategories: (keyof E621TagsData)[] = [
-        'general', 'species', 'character', 'copyright', 'franchise', 'artist', 'director', 'lore',
-      ]
-
-      const mappedPosts: BooruPost[] = data.posts.map((post) => {
-        const tagsObj = post.tags || {}
-        const allTags: string[] = []
-        contentCategories.forEach((cat) => {
-          if (tagsObj[cat]) allTags.push(...tagsObj[cat])
-        })
-
-        return {
-          id: post.id,
-          file_url: post.file?.url || '',
-          large_file_url: post.sample?.url || post.file?.url || '',
-          preview_file_url: post.preview?.url || post.file?.url || '',
-          tag_string: allTags.join(' '),
-          tag_string_artist: [...(tagsObj.artist || []), ...(tagsObj.director || [])].join(' '),
-          tag_string_character: (tagsObj.character || []).join(' '),
-          tag_string_copyright: [...(tagsObj.copyright || []), ...(tagsObj.franchise || [])].join(' '),
-          rating: post.rating,
-          score: post.score?.total ?? 0,
-          width: post.file?.width ?? 0,
-          height: post.file?.height ?? 0,
-          source: post.sources?.[0] || '',
-        }
-      })
+      const mappedPosts: BooruPost[] = []
+      for (const raw of extractE621Posts(data)) {
+        const post = parseE621Post(raw)
+        if (post) mappedPosts.push(post)
+      }
 
       return this.filterValidPosts(mappedPosts)
     } catch (error) {
@@ -97,7 +42,7 @@ export class E621Provider extends BaseBooruProvider {
   }
 }
 
-/** e6ai.net: e621's engine and API, AI-generated posts only. */
-export class E6aiProvider extends E621Provider {
-  protected baseUrl: string = PROVIDER_URLS.E6AI
+/** floofgens.net: e621's engine and API, AI-generated posts only. */
+export class FloofgensProvider extends E621Provider {
+  protected baseUrl: string = PROVIDER_URLS.FLOOFGENS
 }

@@ -1,4 +1,5 @@
 import type { BooruPost } from "@/lib/booru/types"
+import { type E621ParsedPost, extractE621Posts, parseE621Post } from "./e621-format"
 
 // Pure post-shape transformers extracted from lib/api-client.ts so they can be
 // imported both by api-client.ts (search results) and hooks/use-booru-posts-by-ids.ts
@@ -56,40 +57,37 @@ export const transformAibooruPost = (post: unknown): BooruPost => {
 }
 
 // Helper to transform raw E621 posts to BooruPost (direct client fetch — CORS *, no auth)
-// ponytail: minimal mapping, only fields the gallery uses. Add more when needed.
-// e6ai runs the same engine; its artist category is called "director" and its
-// copyright category "franchise", so both spellings are read.
-export const transformE621Post = (post: unknown, provider: 'e621' | 'e6ai' = 'e621'): BooruPost => {
-  if (!post || typeof post !== 'object') {
-    throw new Error(`Invalid post data from ${provider}`)
-  }
-  const p = post as Record<string, unknown>
-  const file = (p.file as Record<string, unknown>) || {}
-  const sample = (p.sample as Record<string, unknown>) || {}
-  const preview = (p.preview as Record<string, unknown>) || {}
-  const tags = (p.tags as Record<string, string[]>) || {}
-  const score = (p.score as Record<string, number>) || {}
+// e621-engine posts (e621, Floofgens), in the legacy or the current API format; see
+// ./e621-format.ts. ponytail: only the fields the gallery uses.
+const toE621BooruPost = (post: E621ParsedPost, provider: 'e621' | 'floofgens'): BooruPost => ({
+  id: post.id,
+  file_url: post.file_url,
+  large_file_url: post.large_file_url,
+  preview_file_url: post.preview_file_url,
+  tag_string: post.tag_string,
+  tag_string_artist: post.tag_string_artist,
+  tag_string_character: post.tag_string_character,
+  tag_string_copyright: post.tag_string_copyright,
+  rating: post.rating || 'q',
+  score: post.score,
+  width: post.width,
+  height: post.height,
+  _provider: provider,
+})
 
-  // Collect content tags (exclude meta/invalid categories)
-  const contentCategories = ['general', 'species', 'character', 'copyright', 'franchise', 'artist', 'director', 'lore']
-  const allTags: string[] = []
-  contentCategories.forEach(cat => {
-    if (tags[cat]) allTags.push(...tags[cat])
-  })
+/** One raw e621-engine post. Throws when it is deleted or has no file. */
+export const transformE621Post = (post: unknown, provider: 'e621' | 'floofgens' = 'e621'): BooruPost => {
+  const parsed = parseE621Post(post)
+  if (!parsed) throw new Error(`Invalid post data from ${provider}`)
+  return toE621BooruPost(parsed, provider)
+}
 
-  return {
-    id: (p.id as number) || 0,
-    file_url: (file.url as string) || '',
-    large_file_url: (sample.url as string) || (file.url as string) || '',
-    preview_file_url: (preview.url as string) || (file.url as string) || '',
-    tag_string: allTags.join(' '),
-    tag_string_artist: [...(tags.artist || []), ...(tags.director || [])].join(' '),
-    tag_string_character: (tags.character || []).join(' '),
-    tag_string_copyright: [...(tags.copyright || []), ...(tags.franchise || [])].join(' '),
-    rating: (p.rating as string) || 'q',
-    score: score.total ?? 0,
-    width: (file.width as number) || 0,
-    height: (file.height as number) || 0,
-    _provider: provider,
+/** Every usable post of an e621-engine posts response; deleted and fileless posts are dropped. */
+export const transformE621Posts = (data: unknown, provider: 'e621' | 'floofgens' = 'e621'): BooruPost[] => {
+  const posts: BooruPost[] = []
+  for (const raw of extractE621Posts(data)) {
+    const parsed = parseE621Post(raw)
+    if (parsed) posts.push(toE621BooruPost(parsed, provider))
   }
+  return posts
 }
