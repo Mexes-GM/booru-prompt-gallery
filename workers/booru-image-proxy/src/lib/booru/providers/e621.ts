@@ -42,7 +42,7 @@ export class E621Provider extends BaseBooruProvider {
   }
 }
 
-/** e6ai.net: e621's engine and API, AI-generated posts only. */
-export class E6aiProvider extends E621Provider {
-  protected baseUrl: string = PROVIDER_URLS.E6AI
+/** floofgens.net: e621's engine and API, AI-generated posts only. */
+export class FloofgensProvider extends E621Provider {
+  protected baseUrl: string = PROVIDER_URLS.FLOOFGENS
 }

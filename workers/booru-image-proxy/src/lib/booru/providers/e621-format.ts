@@ -1,5 +1,5 @@
 /**
- * Reads post JSON from the e621 engine (e621.net, e6ai.net and other sites
+ * Reads post JSON from the e621 engine (e621.net, floofgens.net and other sites
  * running it) in both of the formats it serves.
  *
  * Legacy format (the default until 2026-11, now opt-in with `v1=true`):
@@ -28,8 +28,9 @@ export const E621_POSTS_MODE = 'extended'
 
 /**
  * Categories whose tags describe the image. `meta`, `invalid` and
- * `contributor` are left out of `tag_string`. e6ai calls its artist category
- * "director" and its copyright category "franchise", so both spellings are read.
+ * `contributor` are left out of `tag_string`. e6ai.net (retired) called its
+ * artist category "director" and its copyright category "franchise"; both
+ * spellings are still read.
  */
 const CONTENT_CATEGORIES = ['general', 'species', 'character', 'copyright', 'franchise', 'artist', 'director', 'lore']
 

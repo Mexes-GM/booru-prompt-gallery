@@ -57,9 +57,9 @@ export const transformAibooruPost = (post: unknown): BooruPost => {
 }
 
 // Helper to transform raw E621 posts to BooruPost (direct client fetch — CORS *, no auth)
-// e621-engine posts (e621, e6ai), in the legacy or the current API format; see
+// e621-engine posts (e621, Floofgens), in the legacy or the current API format; see
 // ./e621-format.ts. ponytail: only the fields the gallery uses.
-const toE621BooruPost = (post: E621ParsedPost, provider: 'e621' | 'e6ai'): BooruPost => ({
+const toE621BooruPost = (post: E621ParsedPost, provider: 'e621' | 'floofgens'): BooruPost => ({
   id: post.id,
   file_url: post.file_url,
   large_file_url: post.large_file_url,
@@ -76,14 +76,14 @@ const toE621BooruPost = (post: E621ParsedPost, provider: 'e621' | 'e6ai'): Booru
 })
 
 /** One raw e621-engine post. Throws when it is deleted or has no file. */
-export const transformE621Post = (post: unknown, provider: 'e621' | 'e6ai' = 'e621'): BooruPost => {
+export const transformE621Post = (post: unknown, provider: 'e621' | 'floofgens' = 'e621'): BooruPost => {
   const parsed = parseE621Post(post)
   if (!parsed) throw new Error(`Invalid post data from ${provider}`)
   return toE621BooruPost(parsed, provider)
 }
 
 /** Every usable post of an e621-engine posts response; deleted and fileless posts are dropped. */
-export const transformE621Posts = (data: unknown, provider: 'e621' | 'e6ai' = 'e621'): BooruPost[] => {
+export const transformE621Posts = (data: unknown, provider: 'e621' | 'floofgens' = 'e621'): BooruPost[] => {
   const posts: BooruPost[] = []
   for (const raw of extractE621Posts(data)) {
     const parsed = parseE621Post(raw)

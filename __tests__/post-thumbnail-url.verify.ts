@@ -47,7 +47,7 @@ function load(env: { cdn?: string; worker?: string }): typeof import('../lib/pro
     'https://api-cdn.rule34.xxx/thumbnails/1/thumbnail_a.jpg',
     'https://cdn.aibooru.download/preview/a.jpg',
     'https://static1.e621.net/data/preview/a.jpg',
-    'https://static1.e6ai.net/data/preview/a.jpg',
+    'https://static1.floofgens.net/data/preview/a.jpg',
   ]) {
     assert(p.getPostThumbnailUrl(direct) === direct, `direct host stays direct: ${direct}`)
   }

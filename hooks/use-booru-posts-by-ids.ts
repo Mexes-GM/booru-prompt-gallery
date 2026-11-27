@@ -43,14 +43,14 @@ const parseWorkerPosts = (data: unknown): BooruPost[] => (Array.isArray(data) ? 
 /**
  * How each provider's posts are hydrated by id.
  *
- * Danbooru/Aibooru/e621/e6ai are fetched directly from the browser (like the
+ * Danbooru/Aibooru/e621/Floofgens are fetched directly from the browser (like the
  * gallery itself), 100 ids per request — within Danbooru-family's `limit`
  * max of 200 and e621's 320 — and spaced ~1 req/s per origin. Gelbooru and
  * Rule34 need our Worker (API keys, Referer, tag categories); the Worker
  * meters them per upstream call, and Gelbooru costs one call per id, so its
  * batches are kept small to spread the load.
  */
-const e621FamilyPlan = (provider: 'e621' | 'e6ai', baseUrl: string): FetchPlan => ({
+const e621FamilyPlan = (provider: 'e621' | 'floofgens', baseUrl: string): FetchPlan => ({
   batchSize: 100,
   delayMs: 1000,
   direct: true,
@@ -85,7 +85,7 @@ const FETCH_PLANS: Record<string, FetchPlan> = {
       : []),
   },
   e621: e621FamilyPlan('e621', PROVIDER_URLS.E621),
-  e6ai: e621FamilyPlan('e6ai', PROVIDER_URLS.E6AI),
+  floofgens: e621FamilyPlan('floofgens', PROVIDER_URLS.FLOOFGENS),
   gelbooru: { batchSize: 20, delayMs: 8000, direct: false, url: () => '', parse: parseWorkerPosts },
   rule34: { batchSize: 100, delayMs: 0, direct: false, url: () => '', parse: parseWorkerPosts },
 }
