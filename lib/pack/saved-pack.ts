@@ -8,6 +8,7 @@
  * keeps the brief without the results.
  */
 import type { BooruProvider } from '../booru/types'
+import { canonicalProvider } from '../booru/retired-providers'
 import type { PackPrompt } from './pack-generator'
 import type { BriefOutfit } from './brief-pack'
 import { liftBriefWeights, type ChangesAxis, type PackBrief, type RequestRole } from './brief'
@@ -198,9 +199,11 @@ function isResult(v: unknown): v is SavedResult {
 /** The stored pack, or null for anything else: another version, a broken value, a pack of no use. */
 export function readSavedPack(v: unknown): SavedPack | null {
   if (!isObj(v) || v.version !== SAVED_PACK_VERSION || !isNum(v.savedAt)) return null
-  if (!isBrief(v.brief) || !isOutfit(v.outfit) || !PROVIDERS.includes(v.provider as string) || typeof v.gallerySearch !== 'string') return null
+  // A pack kept while e6ai was open names a provider that no longer exists: read it as Floofgens.
+  const provider = typeof v.provider === 'string' ? canonicalProvider(v.provider) : null
+  if (!isBrief(v.brief) || !isOutfit(v.outfit) || !provider || !PROVIDERS.includes(provider) || typeof v.gallerySearch !== 'string') return null
   if (v.result !== null && !isResult(v.result)) return null
-  const pack = v as unknown as SavedPack
+  const pack = (provider === v.provider ? v : { ...v, provider }) as unknown as SavedPack
   // A pack kept before weights were read has them in its tags ("(excessive cum:2)"): read them now.
   const brief = liftBriefWeights(pack.brief)
   const resultBrief = pack.result?.brief ? liftBriefWeights(pack.result.brief) : undefined

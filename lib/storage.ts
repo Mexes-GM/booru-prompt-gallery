@@ -781,7 +781,10 @@ export const userPreferences = {
 
   getPackSourceAnswers: (): StoredPackSourceAnswers | null => {
     const stored = storage.get<unknown>(STORAGE_KEYS.PACK_SOURCE_ANSWERS, null)
-    return isStoredPackSourceAnswers(stored) ? stored : null
+    // The provider saved before e6ai closed is Floofgens now; requests with "e6ai" are rejected.
+    return isStoredPackSourceAnswers(stored)
+      ? { ...stored, booruProvider: canonicalProvider(stored.booruProvider) as BooruProvider }
+      : null
   },
 
   setPackSourceAnswers: (answers: StoredPackSourceAnswers) =>
