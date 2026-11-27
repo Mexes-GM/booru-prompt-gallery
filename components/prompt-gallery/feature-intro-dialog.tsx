@@ -1,38 +1,16 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { Pause, Play, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { safeTrack } from "@/lib/analytics"
+import { FEATURE_VIDEOS, chapterAt, chapterProgress, tabAfterKey, type FeatureVideoId } from "@/lib/feature-intro-videos"
 import { cn } from "@/lib/utils"
-import { FEATURE_INTRO_POSTER, FEATURE_INTRO_RELEASE } from "@/components/prompt-gallery/feature-intro"
-
-const VIDEO = "/whats-new/10.9.0-send-to-comfyui"
-
-/**
- * What the video shows, chapter by chapter. `at` is where each chapter starts
- * (seconds); keep it in step with video/src/send-to-comfy-chapters.ts (frames / 30).
- * The list doubles as the text version of the video, which has no audio.
- */
-const CHAPTERS = [
-  { at: 0, title: "Install the node", body: "In ComfyUI Manager, search for Booru Prompt Gallery and install it. Then restart ComfyUI." },
-  { at: 6.5, title: "Add your workflow", body: "In ComfyUI, click Use in Booru Prompt Gallery next to Run. The workflow stays on your computer and shows up in the setup guide." },
-  { at: 14, title: "Turn on Send to ComfyUI", body: "It's in Customize prompt. Copy buttons on the cards become Send." },
-  { at: 18, title: "Send from any card", body: "The card shows the queue, the steps and a live preview. The post moves to a corner thumbnail you can switch to." },
-  { at: 28, title: "Send as another format", body: "The ▾ menu next to Send sends the card once in another prompt format." },
-] as const
+import { FEATURE_INTRO_RELEASE } from "@/components/prompt-gallery/feature-intro"
 
 type CloseMethod = "close_button" | "x_button" | "escape" | "outside" | "try"
-
-function chapterAt(seconds: number) {
-  let index = 0
-  CHAPTERS.forEach((c, i) => {
-    if (seconds >= c.at) index = i
-  })
-  return index
-}
 
 /** Text column enters in small steps; each block passes its own delay (none with reduced motion). */
 const RISE = "animate-in fade-in slide-in-from-bottom-1.5 fill-mode-both duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none"
@@ -46,6 +24,14 @@ function subscribeReducedMotion(onChange: () => void) {
 }
 const prefersReducedMotion = () => window.matchMedia(REDUCED_MOTION).matches
 
+const tabId = (id: FeatureVideoId) => `feature-intro-tab-${id}`
+const PANEL_ID = "feature-intro-panel"
+
+/**
+ * The release's videos, one at a time: a tab per feature above its description and
+ * chapters. Only the video on screen is in the page, so the other one downloads
+ * nothing until its tab is chosen; with reduced motion, nothing downloads until Play.
+ */
 export function FeatureIntroDialog({
   open,
   onOpenChange,
@@ -53,28 +39,35 @@ export function FeatureIntroDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onTry: () => void
+  /** The main button of the video on screen, run once the dialog has closed. */
+  onTry: (video: FeatureVideoId) => void
 }) {
   const reduceMotion = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef<HTMLSpanElement>(null)
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   const closeMethod = useRef<CloseMethod>("outside")
-  const furthest = useRef(0)
+  // Furthest chapter reached in each video, and the videos opened, for the close event.
+  const furthest = useRef<Partial<Record<FeatureVideoId, number>>>({})
+  const [viewed] = useState(() => new Set<FeatureVideoId>([FEATURE_VIDEOS[0].id]))
+  const [active, setActive] = useState(0)
   const [chapter, setChapter] = useState(0)
   const [state, setState] = useState<"idle" | "playing" | "paused" | "ended">("idle")
+  // After the first switch, a panel's text comes in without the opening's stagger delay.
+  const [switched, setSwitched] = useState(false)
+  const video = FEATURE_VIDEOS[active]
+  const chapters = video.chapters
 
   // Follow the playhead: highlight the current chapter and fill its bar.
   const syncChapter = useCallback(() => {
-    const video = videoRef.current
-    if (!video) return
-    const index = chapterAt(video.currentTime)
-    const start = CHAPTERS[index].at
-    const end = CHAPTERS[index + 1]?.at ?? (video.duration || start + 1)
-    progressRef.current?.style.setProperty("--chapter-progress", String(Math.min(1, (video.currentTime - start) / (end - start))))
-    furthest.current = Math.max(furthest.current, index)
+    const el = videoRef.current
+    if (!el) return
+    const index = chapterAt(chapters, el.currentTime)
+    progressRef.current?.style.setProperty("--chapter-progress", String(chapterProgress(chapters, index, el.currentTime, el.duration)))
+    furthest.current[video.id] = Math.max(furthest.current[video.id] ?? 0, index)
     setChapter(index)
-  }, [])
+  }, [chapters, video.id])
 
   // Every frame while playing, for a smooth bar (timeupdate alone ticks ~4×/s).
   useEffect(() => {
@@ -89,18 +82,38 @@ export function FeatureIntroDialog({
   }, [state, syncChapter])
 
   const seek = (index: number) => {
-    const video = videoRef.current
-    if (!video) return
-    video.currentTime = CHAPTERS[index].at
+    const el = videoRef.current
+    if (!el) return
+    el.currentTime = chapters[index].at
     setChapter(index)
-    video.play().catch(() => {})
+    el.play().catch(() => {})
   }
 
   const togglePlay = () => {
-    const video = videoRef.current
-    if (!video) return
-    if (state === "playing") video.pause()
-    else video.play().catch(() => {})
+    const el = videoRef.current
+    if (!el) return
+    if (state === "playing") el.pause()
+    else el.play().catch(() => {})
+  }
+
+  // Another video: the one on screen is swapped out (its element unmounts), the new one starts
+  // from its poster and plays as the first one did.
+  const select = (index: number) => {
+    if (index === active) return
+    videoRef.current?.pause()
+    viewed.add(FEATURE_VIDEOS[index].id)
+    setActive(index)
+    setSwitched(true)
+    setChapter(0)
+    setState("idle")
+  }
+
+  const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const next = tabAfterKey(active, e.key, FEATURE_VIDEOS.length)
+    if (next === null) return
+    e.preventDefault()
+    select(next)
+    tabRefs.current[next]?.focus()
   }
 
   const close = (method: CloseMethod) => {
@@ -114,14 +127,16 @@ export function FeatureIntroDialog({
       safeTrack("feature_intro_closed", {
         release: FEATURE_INTRO_RELEASE,
         method: closeMethod.current,
-        chapters_seen: furthest.current + 1,
+        video: video.id,
+        chapters_seen: (furthest.current[video.id] ?? 0) + 1,
+        videos_viewed: viewed.size,
       })
     }
     onOpenChange(next)
   }
 
   const tryIt = () => {
-    safeTrack("feature_intro_try_clicked", { release: FEATURE_INTRO_RELEASE })
+    safeTrack("feature_intro_try_clicked", { release: FEATURE_INTRO_RELEASE, video: video.id })
     close("try")
   }
 
@@ -140,10 +155,10 @@ export function FeatureIntroDialog({
           contentRef.current?.focus({ preventScroll: true })
         }}
         onCloseAutoFocus={(e) => {
-          // "Set up ComfyUI" opens the ComfyUI dialog, which takes focus.
+          // "Open Pack Mode" and "Set up ComfyUI" open their own screen, which takes focus.
           if (closeMethod.current === "try") {
             e.preventDefault()
-            onTry()
+            onTry(video.id)
           }
         }}
         onEscapeKeyDown={() => {
@@ -157,9 +172,11 @@ export function FeatureIntroDialog({
         {/* Same color as the video's own background, so it blends with the frame. */}
         <div className="relative flex items-center bg-[oklch(0.27_0.022_250)] lg:rounded-l-xl">
           <video
+            // A new element per video: the old one stops downloading, the new one shows its own poster.
+            key={video.id}
             ref={videoRef}
             className="block aspect-[4/3] w-full"
-            poster={FEATURE_INTRO_POSTER}
+            poster={video.poster}
             // Muted autoplay, unless the user asked for reduced motion: then
             // nothing downloads until they press Play on the poster.
             autoPlay={!reduceMotion}
@@ -167,17 +184,17 @@ export function FeatureIntroDialog({
             muted
             playsInline
             disablePictureInPicture
-            aria-label="Demo of Send to ComfyUI, described in the chapter list"
+            aria-label={video.videoLabel}
             onPlay={() => setState("playing")}
             onTimeUpdate={syncChapter}
             onPause={(e) => setState(e.currentTarget.ended ? "ended" : "paused")}
             onEnded={() => {
-              furthest.current = CHAPTERS.length - 1
+              furthest.current[video.id] = chapters.length - 1
               setState("ended")
             }}
           >
-            <source src={`${VIDEO}.webm`} type="video/webm" />
-            <source src={`${VIDEO}.mp4`} type="video/mp4" />
+            <source src={`${video.src}.webm`} type="video/webm" />
+            <source src={`${video.src}.mp4`} type="video/mp4" />
           </video>
 
           {state === "idle" ? (
@@ -207,57 +224,100 @@ export function FeatureIntroDialog({
           )}
         </div>
 
-        <div className="flex min-w-0 flex-col p-5 pb-0 sm:p-6 sm:pb-0 lg:pb-6">
-          <p className={cn(RISE, "pr-10 text-xs font-medium text-primary-text")} style={delay(0)}>
+        <div className="flex min-w-0 flex-col p-5 pb-0 sm:p-6 sm:pb-0 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto lg:overscroll-contain lg:pb-6">
+          <DialogTitle className={cn(RISE, "pr-10 text-lg text-balance")} style={delay(0)}>
             New in v{FEATURE_INTRO_RELEASE}
-          </p>
-          <DialogTitle className={cn(RISE, "mt-1.5 pr-10 text-lg text-balance")} style={delay(1)}>
-            Send to ComfyUI
           </DialogTitle>
-          <DialogDescription id="feature-intro-description" className={cn(RISE, "mt-2 text-pretty")} style={delay(2)}>
-            Send a card&apos;s prompt straight to ComfyUI on your computer and watch the image generate on the card. It needs a
-            free node for ComfyUI, and the setup guide shows how to add it.
-          </DialogDescription>
 
-          <ol aria-label="Video chapters" className={cn(RISE, "-mx-2 mt-4 flex flex-col gap-0.5")} style={delay(3)}>
-            {CHAPTERS.map((c, i) => {
-              const current = i === chapter && state !== "idle"
+          {/* One tab per feature; the arrow keys move between them. */}
+          <div
+            role="tablist"
+            aria-label="Features"
+            className={cn(RISE, "mt-3 flex gap-0.5 rounded-lg border border-border bg-muted/50 p-0.5")}
+            style={delay(1)}
+          >
+            {FEATURE_VIDEOS.map((v, i) => {
+              const selected = i === active
               return (
-                <li key={c.title}>
-                  <button
-                    type="button"
-                    onClick={() => seek(i)}
-                    aria-current={current ? "step" : undefined}
-                    className={cn(
-                      "flex w-full gap-3 rounded-lg px-2 py-2 text-left transition-colors duration-150 ease-out hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      current && "bg-muted hover:bg-muted"
-                    )}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={cn("mt-px w-3 shrink-0 text-xs tabular-nums", current ? "text-primary-text" : "text-muted-foreground")}
-                    >
-                      {i + 1}
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="text-sm font-medium leading-snug text-foreground">{c.title}</span>
-                      <span className="text-xs leading-snug text-muted-foreground text-pretty">{c.body}</span>
-                      {current && (
-                        <span ref={progressRef} aria-hidden="true" className="mt-1.5 block h-0.5 overflow-hidden rounded-full bg-border">
-                          <span className="block h-full origin-left scale-x-[var(--chapter-progress,0)] rounded-full bg-primary" />
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                </li>
+                <button
+                  key={v.id}
+                  ref={(el) => {
+                    tabRefs.current[i] = el
+                  }}
+                  type="button"
+                  role="tab"
+                  id={tabId(v.id)}
+                  aria-selected={selected}
+                  aria-controls={PANEL_ID}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => select(i)}
+                  onKeyDown={onTabKeyDown}
+                  className={cn(
+                    "h-8 min-w-0 flex-1 truncate rounded-md px-3 text-sm font-medium pointer-coarse:h-11",
+                    "transition-[color,background-color,box-shadow] duration-150 ease-out",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    selected ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {v.label}
+                </button>
               )
             })}
-          </ol>
+          </div>
+
+          <div
+            // A new panel per video, so its text fades in with the switch.
+            key={video.id}
+            role="tabpanel"
+            id={PANEL_ID}
+            aria-labelledby={tabId(video.id)}
+            className={cn(RISE, "flex flex-col")}
+            style={switched ? undefined : delay(2)}
+          >
+            <DialogDescription id="feature-intro-description" className="mt-3 text-pretty">
+              {video.description}
+            </DialogDescription>
+
+            <ol aria-label="Video chapters" className="-mx-2 mt-4 flex flex-col gap-0.5">
+              {chapters.map((c, i) => {
+                const current = i === chapter && state !== "idle"
+                return (
+                  <li key={c.title}>
+                    <button
+                      type="button"
+                      onClick={() => seek(i)}
+                      aria-current={current ? "step" : undefined}
+                      className={cn(
+                        "flex w-full gap-3 rounded-lg px-2 py-2 text-left transition-colors duration-150 ease-out hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        current && "bg-muted hover:bg-muted"
+                      )}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn("mt-px w-3 shrink-0 text-xs tabular-nums", current ? "text-primary-text" : "text-muted-foreground")}
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="text-sm font-medium leading-snug text-foreground">{c.title}</span>
+                        <span className="text-xs leading-snug text-muted-foreground text-pretty">{c.body}</span>
+                        {current && (
+                          <span ref={progressRef} aria-hidden="true" className="mt-1.5 block h-0.5 overflow-hidden rounded-full bg-border">
+                            <span className="block h-full origin-left scale-x-[var(--chapter-progress,0)] rounded-full bg-primary" />
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
 
           {/* Pinned to the bottom while the dialog scrolls on short screens,
               so both actions stay in reach. */}
           <div
-            style={delay(4)}
+            style={delay(3)}
             className={cn(
               RISE,
               "sticky bottom-0 -mx-5 mt-auto flex flex-col-reverse gap-2 border-t border-border/60 bg-background px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:flex-row sm:justify-end sm:px-6 sm:pb-6 lg:static lg:mx-0 lg:border-0 lg:px-0 lg:pb-0 lg:pt-5"
@@ -267,7 +327,7 @@ export function FeatureIntroDialog({
               Close
             </Button>
             <Button type="button" onClick={tryIt}>
-              Set up ComfyUI
+              {video.action}
             </Button>
           </div>
         </div>

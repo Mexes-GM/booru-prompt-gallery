@@ -1,6 +1,8 @@
 import { Composition, Still } from "remotion"
 import { DURATION, FPS, POSTER_FRAME } from "./chapters"
 import { FeatureIntro } from "./FeatureIntro"
+import * as Pack from "./pack-chapters"
+import { PackMode } from "./PackMode"
 import * as Outfit from "./outfit-chapters"
 import { RandomOutfit } from "./RandomOutfit"
 import * as Comfy from "./send-to-comfy-chapters"
@@ -33,6 +35,14 @@ export function Root() {
         width={960}
         height={720}
         defaultProps={{ staticFrame: Comfy.POSTER_FRAME, hidePointer: true }}
+      />
+      <Composition id="PackMode" component={PackMode} durationInFrames={Pack.DURATION} fps={Pack.FPS} width={960} height={720} />
+      <Still
+        id="PackModePoster"
+        component={PackMode}
+        width={960}
+        height={720}
+        defaultProps={{ staticFrame: Pack.POSTER_FRAME, hidePointer: true }}
       />
       <Composition id="ComfyInstallLoop" component={Loops.InstallLoop} durationInFrames={Loops.INSTALL_LOOP_FRAMES} fps={Loops.LOOP.fps} width={Loops.LOOP.width} height={Loops.LOOP.height} />
       <Still
