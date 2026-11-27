@@ -63,12 +63,15 @@ export const FitLine = memo(function FitLine({ state, hint, announce = true, onI
   const { icon: Icon, className: tone } = TONE[state.kind]
   return (
     <div className={cn("flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1", lead ? "text-[15px]" : "text-sm", className)}>
-      <Icon className={cn("size-4 shrink-0", tone)} aria-hidden />
-      <span className={cn("min-w-0 text-pretty tabular-nums text-foreground", lead && "font-medium")}>
-        <span aria-hidden>{text}</span>
-        {/* Goes on the sentence ("76 scenes fit from 240 posts…"), or follows it as its own. */}
-        {loaded && <span className="text-muted-foreground"> {/[.!?…]$/.test(text) ? `${loaded.text.charAt(0).toUpperCase()}${loaded.text.slice(1)}.` : loaded.text}</span>}
-        {hint && <span aria-hidden className="text-muted-foreground"> · {hint}</span>}
+      {/* The icon stays with the sentence; the buttons wrap under it when the line is short. */}
+      <span className="flex min-w-0 flex-[1_1_16rem] items-start gap-2">
+        <Icon className={cn("mt-[0.2em] size-4 shrink-0", tone)} aria-hidden />
+        <span className={cn("min-w-0 text-pretty tabular-nums text-foreground", lead && "font-medium")}>
+          <span aria-hidden>{text}</span>
+          {/* Goes on the sentence ("76 scenes fit from 240 posts…"), or follows it as its own. */}
+          {loaded && <span className="font-normal text-muted-foreground"> {/[.!?…]$/.test(text) ? `${loaded.text.charAt(0).toUpperCase()}${loaded.text.slice(1)}.` : loaded.text}</span>}
+          {hint && <span aria-hidden className="font-normal text-muted-foreground"> · {hint}</span>}
+        </span>
       </span>
       {searches && (
         <button
