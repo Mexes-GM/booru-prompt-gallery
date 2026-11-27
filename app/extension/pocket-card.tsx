@@ -1,6 +1,6 @@
 "use client"
 
-import { copyText } from "@/lib/clipboard"
+import { copyText as writeClipboard } from "@/lib/clipboard"
 import React, { Fragment, memo, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import {
@@ -200,7 +200,7 @@ export const PocketCard = memo(function PocketCard({
 
   const copyText = async (text: string) => {
     try {
-      await copyText(text)
+      await writeClipboard(text)
       flashCopied()
       onUsedPrompt(post)
     } catch (err) {
@@ -234,7 +234,7 @@ export const PocketCard = memo(function PocketCard({
       return
     }
     try {
-      await copyText(subset.join(", "))
+      await writeClipboard(subset.join(", "))
       flashCopied()
       toast({ description: `Copied ${subset.length} ${category} tag${subset.length === 1 ? "" : "s"}`, duration: 2000 })
     } catch (err) {
@@ -245,7 +245,7 @@ export const PocketCard = memo(function PocketCard({
   const handleSend = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await copyText(displayPrompt)
+      await writeClipboard(displayPrompt)
     } catch (err) {
       console.warn("Clipboard copy in iframe failed:", err)
     }

@@ -47,7 +47,7 @@ export function PromptCompareView({ tagOverrides }: PromptCompareViewProps) {
           <p className="text-xs text-muted-foreground">{emptyMessage}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3" aria-live="polite">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <TagList
             title="Only in A"
             copyLabel="Copy tags only in A"
