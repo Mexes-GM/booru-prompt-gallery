@@ -1,0 +1,118 @@
+{
+ "3": {
+  "class_type": "KSampler",
+  "inputs": {
+   "seed": 123456789,
+   "steps": 28,
+   "cfg": 6,
+   "sampler_name": "euler_ancestral",
+   "scheduler": "normal",
+   "denoise": 1,
+   "model": [
+    "11",
+    0
+   ],
+   "positive": [
+    "6",
+    0
+   ],
+   "negative": [
+    "7",
+    0
+   ],
+   "latent_image": [
+    "5",
+    0
+   ]
+  }
+ },
+ "4": {
+  "class_type": "CheckpointLoaderSimple",
+  "inputs": {
+   "ckpt_name": "sdxl_base.safetensors"
+  }
+ },
+ "5": {
+  "class_type": "EmptyLatentImage",
+  "inputs": {
+   "width": 832,
+   "height": 1216,
+   "batch_size": 1
+  }
+ },
+ "6": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "1girl, solo, looking at viewer, masterpiece",
+   "clip": [
+    "11",
+    1
+   ]
+  }
+ },
+ "7": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "lowres, bad anatomy, watermark",
+   "clip": [
+    "11",
+    1
+   ]
+  }
+ },
+ "8": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "3",
+    0
+   ],
+   "vae": [
+    "4",
+    2
+   ]
+  }
+ },
+ "9": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "filename_prefix": "sdxl",
+   "images": [
+    "8",
+    0
+   ]
+  }
+ },
+ "10": {
+  "class_type": "LoraLoader",
+  "inputs": {
+   "model": [
+    "4",
+    0
+   ],
+   "clip": [
+    "4",
+    1
+   ],
+   "lora_name": "style_a.safetensors",
+   "strength_model": 0.8,
+   "strength_clip": 0.8
+  }
+ },
+ "11": {
+  "class_type": "LoraLoader",
+  "inputs": {
+   "model": [
+    "10",
+    0
+   ],
+   "clip": [
+    "10",
+    1
+   ],
+   "lora_name": "style_b.safetensors",
+   "strength_model": 0.8,
+   "strength_clip": 0.8
+  }
+ }
+}
