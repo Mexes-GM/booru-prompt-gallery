@@ -195,6 +195,7 @@ import { usableSearchTags } from "@/lib/pack/brief-pack"
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, Package, PenLine, SlidersHorizontal } from "lucide-react"
 import { ControlSection } from "@/components/prompt-gallery/control-section"
+import { ComfyStatusChip } from "@/components/prompt-gallery/comfyui-status"
 import { ProviderSelect } from "@/components/prompt-gallery/provider-select"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { SaveFavoriteButton } from "./save-favorite-button"
@@ -253,6 +254,9 @@ import { usePresetsAndHistory } from "@/hooks/use-presets-and-history"
 import { useHistoryPosts } from "@/hooks/use-history-posts"
 import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { usePromptFormat } from "@/hooks/use-natural-prompt"
+import { useComfyEnabled } from "@/hooks/use-comfyui-settings"
+import { ComfyUIPanelHost } from "@/components/prompt-gallery/comfyui-panel-host"
+import { openComfyPanel } from "@/lib/comfyui/panel-request"
 import { PROMPT_FORMAT_INFO, hasWordBudget, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { NaturalPromptStatus } from "@/components/prompt-gallery/prompt-format-setting"
 
@@ -714,27 +718,9 @@ export function PromptGallery() {
   const [showStickyPanel, setShowStickyPanel] = useState(false)
   const controlPanelRef = useRef<HTMLDivElement>(null)
 
-  // "Try Random outfit" in the release dialog: open Customize prompt and put
-  // focus on its Outfit setting.
-  const openOutfitSetting = useCallback(() => {
-    // Bring the control panel to the top so the section drops down below it.
-    // A jump, not the page's smooth scroll: the section measures where to
-    // open as it renders, so the panel must already be in place.
-    const top = controlPanelRef.current?.getBoundingClientRect().top
-    if (top !== undefined && Math.abs(top - 16) > 8) {
-      window.scrollTo({ top: window.scrollY + top - 16, behavior: "instant" })
-    }
-    // Opened once its content has loaded; the setting renders when the
-    // section (or the mobile sheet) has opened.
-    void Promise.all([loadTagsManagementPanel(), loadPromptGenerationOptionsPanel()]).finally(() => {
-      setPromptOptionsOpen(true)
-      window.setTimeout(() => {
-        const select = document.getElementById("outfit-mode-select-embedded")
-        select?.focus({ preventScroll: true })
-        select?.scrollIntoView({ block: "nearest" })
-      }, 350)
-    })
-  }, [])
+  // "Set up ComfyUI" in the release dialog: the ComfyUI dialog, which opens
+  // on the setup guide until setup is done.
+  const openComfySetup = useCallback(() => openComfyPanel(null, null), [])
 
   // Folder Delete State
   const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
@@ -1558,6 +1544,7 @@ export function PromptGallery() {
 
   // Natural Language AI Mode State
   const [isAiConvertMode, setIsAiConvertMode] = useState(false)
+  const comfyMode = useComfyEnabled()
   const aiConvertFooterMounted = useMountedOnceActive(isAiConvertMode)
   const [aiConvertTags, setAiConvertTags] = useState("")
   const [aiConvertImage, setAiConvertImage] = useState<string | undefined>(undefined)
@@ -1771,9 +1758,39 @@ export function PromptGallery() {
     await copyToClipboardRef.current(content, postId, isPrompt, thumbnailUrl, format)
   }, [])
 
+  const recordPromptUseRef = useRef<(postId: number) => void>(() => {})
+  const stableRecordPromptUse = useCallback((postId: number) => recordPromptUseRef.current(postId), [])
+
   const stableDownloadImage = useCallback(async (post: BooruPost) => {
     return downloadImageRef.current(post)
   }, [])
+
+  // The bookkeeping of a use (History entry, support-prompt counter), shared by
+  // Copy and Send so both count the same. Does not touch the clipboard.
+  const recordPromptUse = useCallback((postId: number) => {
+    // Merge mode's combined prompt calls copyToClipboard with postId=0 (no
+    // single real post backs it) — skip history in that case since
+    // useHistoryPosts needs a real (provider, postId) pair to hydrate later.
+    if (postId) {
+      // Snapshot the post the user just copied so History can render it later
+      // with ZERO network hydration (immune to transient booru/API failures).
+      // The copied card is always present in one of the currently-visible,
+      // provider-scoped lists — find it there. If somehow absent, we still
+      // store the {postId, provider} pointer and fall back to network fetch.
+      const snapshot =
+        search.allPosts?.find(p => p.id === postId) ||
+        favs.favoritePosts?.find(p => p.id === postId) ||
+        historyPosts?.find(p => p.id === postId)
+      // Use the snapshot's OWN provider, not the currently-selected provider
+      // tab. They can differ (favorites/history views, merge mode, etc.), and
+      // getting this wrong permanently mislabels the post — e.g. a Gelbooru
+      // post copied while the AIbooru tab is active would otherwise be stored
+      // as an AIbooru post, so "View original post" later builds an
+      // aibooru.com/<gelbooru-id> link instead of the real gelbooru.com one.
+      addToHistory({ postId, provider: (snapshot?._provider as BooruProvider) || search.booruProvider, post: snapshot })
+    }
+    recordPromptCopy()
+  }, [addToHistory, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts])
 
   const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string, format: PromptFormat = 'tags') => {
     try {
@@ -1789,27 +1806,7 @@ export function PromptGallery() {
 
       setCopiedId(postId)
 
-      // Merge mode's combined prompt calls copyToClipboard with postId=0 (no
-      // single real post backs it) — skip history in that case since
-      // useHistoryPosts needs a real (provider, postId) pair to hydrate later.
-      if (postId) {
-        // Snapshot the post the user just copied so History can render it later
-        // with ZERO network hydration (immune to transient booru/API failures).
-        // The copied card is always present in one of the currently-visible,
-        // provider-scoped lists — find it there. If somehow absent, we still
-        // store the {postId, provider} pointer and fall back to network fetch.
-        const snapshot =
-          search.allPosts?.find(p => p.id === postId) ||
-          favs.favoritePosts?.find(p => p.id === postId) ||
-          historyPosts?.find(p => p.id === postId)
-        // Use the snapshot's OWN provider, not the currently-selected provider
-        // tab. They can differ (favorites/history views, merge mode, etc.), and
-        // getting this wrong permanently mislabels the post — e.g. a Gelbooru
-        // post copied while the AIbooru tab is active would otherwise be stored
-        // as an AIbooru post, so "View original post" later builds an
-        // aibooru.com/<gelbooru-id> link instead of the real gelbooru.com one.
-        addToHistory({ postId, provider: (snapshot?._provider as BooruProvider) || search.booruProvider, post: snapshot })
-      }
+      recordPromptUse(postId)
 
       // On touch screens the card's own "Copied" overlay is the feedback; the
       // top toast only covered the next row of cards.
@@ -1822,7 +1819,6 @@ export function PromptGallery() {
         })
       }
       setTimeout(() => setCopiedId(null), 2000)
-      recordPromptCopy()
       return true
     } catch (error) {
       toastError({
@@ -1833,7 +1829,7 @@ export function PromptGallery() {
       })
       return false
     }
-  }, [toast, addToHistory, search.booruProvider, search.allPosts, favs.favoritePosts, historyPosts, isAiConvertMode])
+  }, [toast, recordPromptUse, search.booruProvider, isAiConvertMode])
 
   const downloadImage = useCallback(async (post: BooruPost) => {
     try {
@@ -1936,6 +1932,7 @@ export function PromptGallery() {
   // Sincronizar refs con los callbacks reales (asignación barata, sin efecto)
   useLayoutEffect(() => {
     copyToClipboardRef.current = copyToClipboard
+    recordPromptUseRef.current = recordPromptUse
     downloadImageRef.current = downloadImage
   })
 
@@ -2086,6 +2083,7 @@ export function PromptGallery() {
       createFolder={favs.createFolder}
       downloadImage={stableDownloadImage}
       copyToClipboard={stableCopyToClipboard}
+      recordPromptUse={stableRecordPromptUse}
       excludeInput={debouncedExcludeInput}
       addInput={debouncedAddInput}
       searchTags={search.debouncedSearchTags}
@@ -2132,8 +2130,9 @@ export function PromptGallery() {
       isNaturalLanguageMode={isAiConvertMode}
       onSendToConvert={handleSendToConvert}
       showCategoryTagBadges={cardShowCategoryTagBadges}
+      comfyMode={comfyMode}
     />
-  }, [effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, cardFillMissingTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, packBriefCardId, packBuilderKind, handleSetAsPackBase, handleMakePack])
+  }, [comfyMode, effectiveScale, search.booruProvider, search.debouncedSearchTags, cardAutoAppendSearchTags, cardFillMissingTags, favs.favorites, favs.folders, favs.favoriteFolderMap, favs.toggleFavorite, favs.createFolder, stableDownloadImage, stableCopyToClipboard, stableRecordPromptUse, debouncedExcludeInput, debouncedAddInput, debouncedFindInput, debouncedReplaceInput, tagAppendRules, cardIncludeCharacters, cardOptimizeTags, cardSmartTagExclusion, cardPrependAnimaArtist, cardExperimentalPromptRules, cardRemoveLoRaTags, cardRemoveQualityTags, deferredBackgroundMode, debouncedSimpleBackgroundReplacementTags, randomBackgroundPatterns, randomBackgroundIncludeGradients, detailedBackgroundsList, backgroundMatchStrictness, outfitSettings, tagOverrides, copiedId, expandedPostId, handleToggleExpand, mergeModeIsMergeMode, mergeModeSelectedPosts, mergeModeTogglePostPart, globalWeights, cardIsGlobalWeightsEnabled, handleGlobalWeightChange, handleTagSearch, handleImageError, previouslyCopiedPostIds, EMPTY_ARRAY, tagCounts, isAiConvertMode, handleSendToConvert, cardShowCategoryTagBadges, packModeIsPackMode, packMode.baseCard, packBriefCardId, packBuilderKind, handleSetAsPackBase, handleMakePack])
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -2160,7 +2159,7 @@ export function PromptGallery() {
         {/* Tour steps point at the section headers, which are always visible. */}
         <MainTour runSignal={tourRunSignal} />
 
-        <FeatureIntro version={pkg.version} onTry={openOutfitSetting} />
+        <FeatureIntro version={pkg.version} onTry={openComfySetup} />
 
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
@@ -2383,6 +2382,7 @@ export function PromptGallery() {
                           open={promptOptionsOpen}
                           onOpenChange={setPromptOptionsOpen}
                           onIntent={preloadPromptSection}
+                          accessory={<ComfyStatusChip placement="section" />}
                           data-tour="customize-prompt"
                         >
                           {/* Two columns on desktop (Tags | Output) so the whole
@@ -2729,6 +2729,8 @@ export function PromptGallery() {
         }}
       />
       </div>
+      {/* Mounted with the mode off too: the release dialog's "Set up ComfyUI" opens it. */}
+      <ComfyUIPanelHost />
       {mergeFooterMounted && <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}

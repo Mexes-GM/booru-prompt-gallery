@@ -15,6 +15,7 @@ export function PromptCard({
   overlay,
   image = "danbooru-5513008.jpg",
   objectPosition = "50% 6%",
+  buttonLabel,
 }: {
   well: ReactNode
   /** 0 → 1: the Copy button turns into "Copied!". */
@@ -27,6 +28,8 @@ export function PromptCard({
   image?: string
   /** Crop of the image: the card shows a landscape slice of a portrait post. */
   objectPosition?: string
+  /** Replaces the Copy button's icon and label (Send to ComfyUI turns it into Send). */
+  buttonLabel?: ReactNode
 }) {
   return (
     <div
@@ -79,13 +82,13 @@ export function PromptCard({
         >
           {well}
         </div>
-        <CopyButton copied={copied} />
+        <CopyButton copied={copied} label={buttonLabel} />
       </div>
     </div>
   )
 }
 
-function CopyButton({ copied }: { copied: number }) {
+function CopyButton({ copied, label }: { copied: number; label?: ReactNode }) {
   const fill = copied > 0.5 ? C.primary : C.secondary
   const ink = copied > 0.5 ? C.primaryForeground : C.foreground
   return (
@@ -103,8 +106,12 @@ function CopyButton({ copied }: { copied: number }) {
           fontWeight: 500,
         }}
       >
-        {copied > 0.5 ? <Check size={22} /> : <Copy size={22} />}
-        {copied > 0.5 ? "Copied!" : "Copy"}
+        {label ?? (
+          <>
+            {copied > 0.5 ? <Check size={22} /> : <Copy size={22} />}
+            {copied > 0.5 ? "Copied!" : "Copy"}
+          </>
+        )}
       </div>
       <div
         style={{

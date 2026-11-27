@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useMemo, memo, useState, useEffect, useRef } from "react"
+import dynamic from "next/dynamic"
 import { motion, AnimatePresence } from "framer-motion"
 import { useLowMotion } from "@/hooks/use-low-motion"
 import { isDanbooruCircuitOpen, openDanbooruCircuit } from "@/lib/booru/danbooru-circuit"
@@ -19,7 +20,7 @@ import {
     Tag,
     Sparkles,
     Package,
-    ImageOff
+    ImageOff,
 } from "lucide-react"
 import {
     BooruPost,
@@ -39,6 +40,18 @@ import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import { convertPromptOnce } from "@/lib/prompt/natural-prompt-loader"
 import { PROMPT_FORMAT_INFO, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { NaturalPromptBody } from "./natural-prompt-body"
+import { cardJobKey, getCardJob, setCardJob, type CardJob } from "@/lib/comfyui/card-jobs"
+import { SendGlyph } from "./comfyui-motion"
+
+// Loaded once a card sends to ComfyUI; cards that never send don't pay for it.
+const loadComfyCardJob = () => import("./comfyui-card-job").then((m) => m.ComfyCardJob)
+const ComfyCardJob = dynamic(loadComfyCardJob, { ssr: false, loading: () => null })
+// Fetched when the pointer or focus reaches Send, so the send's motion can
+// start on the click instead of after a download.
+const preloadComfySend = () => {
+    void loadComfyCardJob().catch(() => {})
+    void import("./comfyui-send").catch(() => {})
+}
 
 // Richness tooltip depth labels/classes (Palanca 7, docs/prompt-genericness-mitigation-plan.md
 // §7.8): maps each category's RichnessDepth to a short prefix + color, replacing the old
@@ -191,6 +204,8 @@ interface MasonryItemProps {
     downloadImage: (post: BooruPost) => void
     /** `format` is the prompt format the text was written in (tags when omitted). */
     copyToClipboard: (text: string, id: number, isPrompt: boolean, thumb?: string, format?: PromptFormat) => Promise<void>
+    /** Counts a use (History, used mark) without touching the clipboard; Send calls it. */
+    recordPromptUse: (id: number) => void
     excludeInput: string
     addInput: string
     searchTags?: string
@@ -238,6 +253,8 @@ interface MasonryItemProps {
     isExpanded?: boolean
     /** Toggle the in-place expansion for this post. */
     onToggleExpand?: (postId: number) => void
+    /** "Send to ComfyUI" is on: the Copy button sends the same text to ComfyUI. */
+    comfyMode?: boolean
 }
 
 
@@ -266,6 +283,7 @@ export const MasonryItem = memo(function MasonryItem({
     onMakePack,
     downloadImage,
     copyToClipboard,
+    recordPromptUse,
     excludeInput,
     addInput,
     searchTags,
@@ -303,6 +321,7 @@ export const MasonryItem = memo(function MasonryItem({
     showCategoryTagBadges = true,
     isExpanded = false,
     onToggleExpand,
+    comfyMode = false,
 }: MasonryItemProps) {
     const lowMotion = useLowMotion()
 
@@ -331,6 +350,19 @@ export const MasonryItem = memo(function MasonryItem({
     }, [isExpanded, onToggleExpand, post.id])
 
     const itemProvider = post._provider || booruProvider
+
+    // The ComfyUI job this card shows. Read from the module map on mount so a
+    // card that scrolled away and back keeps it; only shown in ComfyUI mode.
+    const comfyKey = cardJobKey(itemProvider, post.id)
+    const [comfyJob, setComfyJobState] = useState<CardJob | null>(() => getCardJob(comfyKey))
+    const [comfySending, setComfySending] = useState(false)
+    // The job surface comes up on the click, before ComfyUI answers.
+    const showComfyStage = comfyMode && (comfyJob !== null || comfySending)
+    const setComfyJob = useCallback((job: CardJob | null) => {
+        setCardJob(comfyKey, job)
+        setComfyJobState(job)
+    }, [comfyKey])
+    const clearComfyJob = useCallback(() => setComfyJob(null), [setComfyJob])
 
     const handleToggleFavorite = (folderId: string | null | undefined) => {
         toggleFavorite(post.id, itemProvider, folderId, post)
@@ -422,27 +454,67 @@ export const MasonryItem = memo(function MasonryItem({
     const tagPrompt = modifiedContent ?? displayContent
     const copyText = showsNatural ? naturalText : tagPrompt
 
-    // "Copy as": this card in another format, once, without changing the setting.
-    const copyAs = async (format: PromptFormat) => {
-        if (format === "tags") {
-            await copyToClipboard(tagPrompt, post.id, !!aiPrompt, post.preview_file_url, "tags")
-            return
-        }
-        if (format === promptFormat && naturalText) {
-            await copyToClipboard(naturalText, post.id, !!aiPrompt, post.preview_file_url, format)
-            return
-        }
+    // This card's prompt in a format, once, without changing the setting.
+    // Null when the converter couldn't load (a toast says so).
+    const promptIn = async (format: PromptFormat): Promise<string | null> => {
+        if (format === "tags") return tagPrompt
+        if (format === promptFormat && naturalText) return naturalText
         try {
-            const converted = await convertPromptOnce(format, naturalSource, tagOverrides, fullDetail)
-            await copyToClipboard(converted.text, post.id, !!aiPrompt, post.preview_file_url, format)
+            return (await convertPromptOnce(format, naturalSource, tagOverrides, fullDetail)).text
         } catch {
             toast({
                 description: "Couldn't load the prompt converter. Check your connection and try again.",
                 variant: "destructive",
                 duration: 3000,
             })
+            return null
         }
     }
+
+    // "Copy as": this card in another format, once.
+    const copyAs = async (format: PromptFormat) => {
+        const text = await promptIn(format)
+        if (text) await copyToClipboard(text, post.id, !!aiPrompt, post.preview_file_url, format)
+    }
+
+    // Send: the exact text the Copy button would copy, queued in ComfyUI.
+    // Sending again replaces the card's job (see sendToComfy).
+    const sendToComfyUI = async (text: string, format: PromptFormat) => {
+        if (comfySending || !text) return
+        setComfySending(true)
+        try {
+            const { sendToComfy } = await import("./comfyui-send")
+            const sent = await sendToComfy({
+                prompt: text,
+                sourceWidth: post.width,
+                sourceHeight: post.height,
+                previousJobId: comfyJob?.jobId,
+                onCopyInstead: () => void copyToClipboard(text, post.id, !!aiPrompt, post.preview_file_url, format),
+            })
+            if (sent) {
+                setComfyJob(sent)
+                recordPromptUse(post.id)
+            }
+        } catch {
+            toast({ description: "Couldn't load Send to ComfyUI. Check your connection and try again.", variant: "destructive", duration: 3000 })
+        } finally {
+            setComfySending(false)
+        }
+    }
+
+    // "Send as": this card in another format, sent once.
+    const sendAs = async (format: PromptFormat) => {
+        const text = await promptIn(format)
+        if (text) await sendToComfyUI(text, format)
+    }
+
+    // Where focus goes when the job's own controls go away (cancel, close).
+    const comfySendRef = useRef<HTMLButtonElement>(null)
+    const focusComfySend = useCallback(() => comfySendRef.current?.focus(), [])
+    // Touch has no hover to preload on: the first card fetches it once ComfyUI mode is on.
+    useEffect(() => {
+        if (comfyMode && index === 0) preloadComfySend()
+    }, [comfyMode, index])
 
     // Authoritative identity metadata for the AI converter, taken straight from
     // the booru API (not guessed from the flattened prompt). Gated by
@@ -609,8 +681,8 @@ export const MasonryItem = memo(function MasonryItem({
                         }
                     }}
                 >
-                    {isPreviouslyCopied && (
-                        <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied">
+                    {isPreviouslyCopied && !showComfyStage && (
+                        <div className="absolute top-2 left-2 z-20 pointer-events-none" aria-label="Previously copied or sent">
                             <motion.div
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
@@ -723,6 +795,20 @@ export const MasonryItem = memo(function MasonryItem({
                             retryCountRef.current = 0
                         }}
                     />
+                    <AnimatePresence initial={false}>
+                        {showComfyStage && (
+                            <ComfyCardJob
+                                key="comfy-job"
+                                jobId={comfyJob?.jobId ?? null}
+                                api={comfyJob?.api ?? null}
+                                launching={comfySending}
+                                originalSrc={displayFileUrl || ''}
+                                referrerPolicy={imageReferrerPolicy(itemProvider)}
+                                onDismiss={clearComfyJob}
+                                returnFocus={focusComfySend}
+                            />
+                        )}
+                    </AnimatePresence>
                     {imageError && (
                         <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
                             {imageGaveUp ? (
@@ -943,6 +1029,21 @@ export const MasonryItem = memo(function MasonryItem({
                                 <Sparkles className={`${getIconClass()} mr-1.5 text-primary-foreground`} />
                                 Convert
                             </Button>
+                        ) : comfyMode ? (
+                            <Button
+                                ref={comfySendRef}
+                                onClick={() => void sendToComfyUI(copyText, showsNatural ? promptFormat : "tags")}
+                                onPointerEnter={preloadComfySend}
+                                onFocus={preloadComfySend}
+                                className="flex-1 focus-ring h-auto rounded-r-none border-r-0"
+                                variant="secondary"
+                                disabled={!copyText}
+                                aria-busy={comfySending || natural.status === "loading" || undefined}
+                                aria-label={showsNatural ? `Send ${PROMPT_FORMAT_INFO[promptFormat].label} prompt to ComfyUI` : "Send prompt to ComfyUI"}
+                            >
+                                <SendGlyph sending={comfySending} className={`${getIconClass()} mr-1 [&_svg]:size-full!`} />
+                                Send
+                            </Button>
                         ) : (
                             <Button
                                 onClick={() => copyToClipboard(copyText, post.id, !!aiPrompt, post.preview_file_url, showsNatural ? promptFormat : "tags")}
@@ -974,13 +1075,14 @@ export const MasonryItem = memo(function MasonryItem({
                             disabled={!displayContent}
                             contentClassName="z-[10005]"
                             copyAs={{ current: showsNatural ? promptFormat : "tags", onSelect: copyAs }}
+                            sendAs={comfyMode && !isNaturalLanguageMode && !isPackMode ? sendAs : undefined}
                             trigger={
                                 <Button
                                     // Matches the primary half of the split button so both read as one control.
-                                    variant={isPackMode ? "outline" : (isNaturalLanguageMode || copiedId === post.id ? "default" : "secondary")}
+                                    variant={isPackMode ? "outline" : (isNaturalLanguageMode || (!comfyMode && copiedId === post.id) ? "default" : "secondary")}
                                     className={`px-2 pointer-coarse:min-w-11 focus-ring h-auto rounded-l-none ${isPackMode ? "" : "border-l border-foreground/10"}`}
                                     disabled={!displayContent}
-                                    aria-label="Copy options"
+                                    aria-label={comfyMode && !isNaturalLanguageMode && !isPackMode ? "Send and copy options" : "Copy options"}
                                 >
                                     <ChevronDown className="h-4 w-4" aria-hidden="true" />
                                 </Button>
@@ -1039,6 +1141,7 @@ function arePropsEqual(prev: MasonryItemProps, next: MasonryItemProps) {
     if (prev.isPreviouslyCopied !== next.isPreviouslyCopied) return false
     if (prev.showCategoryTagBadges !== next.showCategoryTagBadges) return false
     if (prev.isExpanded !== next.isExpanded) return false
+    if (prev.comfyMode !== next.comfyMode) return false
 
     if (prev.folders !== next.folders) return false
     if (prev.currentFolderIds.length !== next.currentFolderIds.length || 

@@ -7,6 +7,7 @@ import { DebouncedInput } from "@/components/ui/debounced-input"
 import { Button } from "@/components/ui/button"
 import { FileCheck2, Sparkles, X } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { ComfyStatusChip } from "./comfyui-status"
 
 /**
  * Sticky quick-access bar shown once the main "Advanced Filters & Options"
@@ -121,6 +122,8 @@ export function StickyMiniControlPanel({
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2 shrink-0">
+              {/* Only while Send to ComfyUI is on. */}
+              <ComfyStatusChip placement="sticky" />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

@@ -16,6 +16,7 @@ import type { MatchStrictness } from "@/lib/background-context"
 import { ADULT_OUTFIT_STYLES, OUTFIT_STYLES, type OutfitDetail, type OutfitMode, type OutfitStyle } from "@/lib/outfit-swap"
 import { Flame, Flower2, Heart, Leaf, PartyPopper, Snowflake, Sun, TriangleAlert, Waves, type LucideIcon } from "lucide-react"
 import { PromptFormatSetting } from "./prompt-format-setting"
+import { ComfyUISettingRow } from "./comfyui-setting-row"
 
 const OUTFIT_MODES: { value: OutfitMode; label: string }[] = [
   { value: "keep", label: "Keep original" },
@@ -743,6 +744,7 @@ export const PromptGenerationOptionsPanel = memo(function PromptGenerationOption
             {tagWeightsButtonText(globalWeightCount, isGlobalWeightsPaused).text}
           </Button>
         </div>
+        <ComfyUISettingRow />
       </div>
 
       <div className="flex flex-col gap-2.5 border-t border-border/50 pt-3">

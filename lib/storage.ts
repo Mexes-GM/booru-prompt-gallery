@@ -11,6 +11,8 @@ import type { ScenePackSettings } from '@/lib/pack/scene-pack'
 import { isPromptFormat, type PromptFormat } from '@/lib/prompt/prompt-format'
 import { canonicalProvider } from '@/lib/booru/retired-providers'
 import { readSavedPack, savedPackToStore, type SavedPack, type SavedPackInput } from '@/lib/pack/saved-pack'
+import { normalizeComfyUrl } from '@/lib/comfyui/url'
+import type { ComfyOptions, Roles, SavedComfyWorkflow } from '@/lib/comfyui/types'
 
 // Safe localStorage wrapper that handles SSR and errors
 export const STORAGE_EVENT_NAME = 'booru-storage-update'
@@ -185,6 +187,15 @@ export const STORAGE_KEYS = {
   // The new pack builder's current pack (brief, prompts, how it was made), so a reload brings
   // it back (lib/pack/saved-pack.ts). One pack; never the posts.
   PACK_SAVED_CURRENT: 'pack-brief-current',
+
+  // Send to ComfyUI (lib/comfyui): on/off, server address, saved workflows and options.
+  COMFYUI_ENABLED: 'comfyui-enabled',
+  COMFYUI_URL: 'comfyui-url',
+  COMFYUI_WORKFLOWS: 'comfyui-workflows',
+  COMFYUI_ACTIVE_WORKFLOW: 'comfyui-active-workflow',
+  COMFYUI_OPTIONS: 'comfyui-options',
+  // Set once a test passes, so changing roles later doesn't send the user back to setup.
+  COMFYUI_SETUP_DONE: 'comfyui-setup-done',
 } as const
 
 export interface HistoryItem {
@@ -941,4 +952,235 @@ export interface SavedArtist {
   thumbnailUrl: string | null
   thumbnailPostId: number | null
   timestamp: number
+}
+// ---------------------------------------------------------------------------
+// Send to ComfyUI settings
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_COMFYUI_URL = 'http://127.0.0.1:8188'
+export const MAX_COMFYUI_WORKFLOWS = 20
+export const DEFAULT_COMFYUI_OPTIONS: ComfyOptions = { randomSeed: true, matchPostResolution: true, livePreview: true }
+
+function readRaw(key: string): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Parses a stored value once per distinct raw string, so repeated reads return
+ * the same object (useSyncExternalStore needs a stable snapshot).
+ */
+function cachedRead<T>(key: string, parse: (raw: string | null) => T): () => T {
+  let lastRaw: string | null | undefined
+  let lastValue: T
+  return () => {
+    const raw = readRaw(key)
+    if (raw !== lastRaw) {
+      lastRaw = raw
+      lastValue = parse(raw)
+    }
+    return lastValue
+  }
+}
+
+function parseJson(raw: string | null): unknown {
+  if (raw === null) return undefined
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Like `storage.set`, but reports failure. Workflows can be hundreds of KB, so
+ * the browser may refuse the write (QuotaExceededError, private mode...).
+ * Returns false instead of throwing and leaves the previous value in place.
+ */
+function writeChecked(key: string, value: unknown): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch (error) {
+    console.warn(`Could not write localStorage key "${key}":`, error)
+    return false
+  }
+  window.dispatchEvent(new CustomEvent(STORAGE_EVENT_NAME, { detail: { key, value } }))
+  broadcastSettingChange(key, value)
+  return true
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isInputRefOrNull(value: unknown): boolean {
+  return value === null || (isRecord(value) && typeof value.nodeId === 'string' && typeof value.input === 'string')
+}
+
+function isRoles(value: unknown): value is Roles {
+  return (
+    isRecord(value) &&
+    isInputRefOrNull(value.prompt) &&
+    isInputRefOrNull(value.seed) &&
+    isInputRefOrNull(value.width) &&
+    isInputRefOrNull(value.height) &&
+    (value.output === null || typeof value.output === 'string')
+  )
+}
+
+function isApiWorkflow(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.values(value).every((node) => isRecord(node) && typeof node.class_type === 'string' && isRecord(node.inputs))
+  )
+}
+
+function isSavedComfyWorkflow(value: unknown): value is SavedComfyWorkflow {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.id === 'string' &&
+    value.id !== '' &&
+    typeof value.name === 'string' &&
+    (value.source === 'png' || value.source === 'api-json' || value.source === 'bridge') &&
+    (value.bridgeId === undefined || typeof value.bridgeId === 'string') &&
+    isApiWorkflow(value.api) &&
+    (value.ui === null || isRecord(value.ui)) &&
+    isRoles(value.roles) &&
+    typeof value.savedAt === 'number' &&
+    Number.isFinite(value.savedAt) &&
+    (value.testedAt === undefined || (typeof value.testedAt === 'number' && Number.isFinite(value.testedAt)))
+  )
+}
+
+const NO_WORKFLOWS: SavedComfyWorkflow[] = []
+
+const readComfyEnabled = cachedRead(STORAGE_KEYS.COMFYUI_ENABLED, (raw) => parseJson(raw) === true)
+
+const readComfyUrl = cachedRead(STORAGE_KEYS.COMFYUI_URL, (raw) => {
+  const stored = parseJson(raw)
+  return (typeof stored === 'string' && normalizeComfyUrl(stored)) || DEFAULT_COMFYUI_URL
+})
+
+/** Invalid entries (corrupt or from an older shape) are dropped silently. */
+const readComfyWorkflows = cachedRead(STORAGE_KEYS.COMFYUI_WORKFLOWS, (raw): SavedComfyWorkflow[] => {
+  const stored = parseJson(raw)
+  if (!Array.isArray(stored)) return NO_WORKFLOWS
+  return stored.filter(isSavedComfyWorkflow).slice(-MAX_COMFYUI_WORKFLOWS)
+})
+
+const readComfyActiveId = cachedRead(STORAGE_KEYS.COMFYUI_ACTIVE_WORKFLOW, (raw) => {
+  const stored = parseJson(raw)
+  return typeof stored === 'string' ? stored : null
+})
+
+const readComfyOptions = cachedRead(STORAGE_KEYS.COMFYUI_OPTIONS, (raw): ComfyOptions => {
+  const stored = parseJson(raw)
+  const options = { ...DEFAULT_COMFYUI_OPTIONS }
+  if (isRecord(stored)) {
+    for (const key of Object.keys(options) as (keyof ComfyOptions)[]) {
+      if (typeof stored[key] === 'boolean') options[key] = stored[key]
+    }
+  }
+  return options
+})
+
+export const getComfyEnabled = (): boolean => readComfyEnabled()
+
+export const setComfyEnabled = (enabled: boolean): boolean => writeChecked(STORAGE_KEYS.COMFYUI_ENABLED, enabled)
+
+const readComfySetupDone = cachedRead(STORAGE_KEYS.COMFYUI_SETUP_DONE, (raw) => parseJson(raw) === true)
+
+/** Whether a test has ever passed in this browser (setup finished once). */
+export const getComfySetupDone = (): boolean => readComfySetupDone()
+
+export const setComfySetupDone = (done: boolean): boolean => writeChecked(STORAGE_KEYS.COMFYUI_SETUP_DONE, done)
+
+/** The normalized server address, or the default when nothing valid is stored. */
+export const getComfyUrl = (): string => readComfyUrl()
+
+/** Stores the normalized address. Returns false (storing nothing) when it is not a local ComfyUI address. */
+export function setComfyUrl(url: string): boolean {
+  const normalized = normalizeComfyUrl(url)
+  if (!normalized) return false
+  return writeChecked(STORAGE_KEYS.COMFYUI_URL, normalized)
+}
+
+export const getComfyWorkflows = (): SavedComfyWorkflow[] => readComfyWorkflows()
+
+/** The active workflow id, or null when none is set or it no longer exists. */
+export function getComfyActiveWorkflowId(): string | null {
+  const id = readComfyActiveId()
+  return id !== null && readComfyWorkflows().some((w) => w.id === id) ? id : null
+}
+
+export const getComfyOptions = (): ComfyOptions => readComfyOptions()
+
+export const setComfyOptions = (options: Partial<ComfyOptions>): boolean =>
+  writeChecked(STORAGE_KEYS.COMFYUI_OPTIONS, { ...readComfyOptions(), ...options })
+
+/** Returns false when the id is not a saved workflow (null clears the choice). */
+export function setComfyActiveWorkflow(id: string | null): boolean {
+  if (id !== null && !readComfyWorkflows().some((w) => w.id === id)) return false
+  return writeChecked(STORAGE_KEYS.COMFYUI_ACTIVE_WORKFLOW, id)
+}
+
+/**
+ * Saves a workflow, newest last. An entry with the same id, or the same
+ * `bridgeId`, is replaced (and stays the active one if it was). Beyond
+ * MAX_COMFYUI_WORKFLOWS the oldest entries are dropped. Returns false when the
+ * browser refuses the write (quota); the saved list is then left untouched.
+ */
+export function saveComfyWorkflow(workflow: SavedComfyWorkflow): boolean {
+  const current = readComfyWorkflows()
+  const replaced = current.filter(
+    (w) => w.id === workflow.id || (workflow.bridgeId !== undefined && w.bridgeId === workflow.bridgeId),
+  )
+  const next = [...current.filter((w) => !replaced.includes(w)), workflow].slice(-MAX_COMFYUI_WORKFLOWS)
+  if (!writeChecked(STORAGE_KEYS.COMFYUI_WORKFLOWS, next)) return false
+  const activeId = readComfyActiveId()
+  if (activeId !== null && activeId !== workflow.id && replaced.some((w) => w.id === activeId)) {
+    writeChecked(STORAGE_KEYS.COMFYUI_ACTIVE_WORKFLOW, workflow.id)
+  }
+  return true
+}
+
+export function removeComfyWorkflow(id: string): boolean {
+  const wasActive = readComfyActiveId() === id
+  const ok = writeChecked(STORAGE_KEYS.COMFYUI_WORKFLOWS, readComfyWorkflows().filter((w) => w.id !== id))
+  if (ok && wasActive) writeChecked(STORAGE_KEYS.COMFYUI_ACTIVE_WORKFLOW, null)
+  return ok
+}
+
+/**
+ * Returns false when the workflow does not exist or the write fails. New roles
+ * clear the workflow's passed test; the same roles keep it.
+ */
+export function updateComfyWorkflowRoles(id: string, roles: Roles): boolean {
+  const current = readComfyWorkflows()
+  const target = current.find((w) => w.id === id)
+  if (!target) return false
+  if (JSON.stringify(target.roles) === JSON.stringify(roles)) return true
+  return writeChecked(
+    STORAGE_KEYS.COMFYUI_WORKFLOWS,
+    current.map((w) => {
+      if (w.id !== id) return w
+      const { testedAt: _cleared, ...rest } = w
+      return { ...rest, roles }
+    }),
+  )
+}
+
+/** Records that a test with this workflow, as saved now, finished. Returns false when it does not exist or the write fails. */
+export function markComfyWorkflowTested(id: string, at: number = Date.now()): boolean {
+  const current = readComfyWorkflows()
+  if (!current.some((w) => w.id === id)) return false
+  return writeChecked(
+    STORAGE_KEYS.COMFYUI_WORKFLOWS,
+    current.map((w) => (w.id === id ? { ...w, testedAt: at } : w)),
+  )
 }
