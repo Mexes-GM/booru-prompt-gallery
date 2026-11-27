@@ -5,6 +5,7 @@
  *   - while blocked, calls skip direct; after DIRECT_RETRY_MS direct is tried again
  *   - a query error (400) is not treated as a block
  *   - without relay settings, failures surface as before
+ *   - pages past Gelbooru's offset cap come back empty without a request
  *
  * Run with: npx ts-node --project __tests__/tsconfig.json __tests__/gelbooru-relay-switch.verify.ts
  */
@@ -104,6 +105,19 @@ async function main() {
   threw = false
   try { await search({}) } catch { threw = true }
   assert(threw && !log.includes('relay'), 'without relay settings the 429 surfaces')
+
+  // 8. Pages past Gelbooru's offset cap are empty and never call Gelbooru
+  //    (it answers them with a non-JSON "Too deep!" page).
+  resetGelbooruRoute()
+  log = mockFetch(() => ok())
+  posts = await new GelbooruProvider(withRelay, null).search({ tags: 'solo', page: '11', order: 'recent', enrich: false })
+  assert(posts.length === 1 && log.join() === 'direct', 'last page inside the cap is still fetched')
+  log = mockFetch(() => new Response('Too deep! Pull it back some.', { status: 200 }))
+  posts = await new GelbooruProvider(withRelay, null).search({ tags: 'solo', page: '12', order: 'recent', enrich: false })
+  assert(posts.length === 0 && log.length === 0, `page past the cap is empty without a request (got ${log.join()})`)
+  log = mockFetch(() => ok())
+  posts = await new GelbooruProvider(withRelay, null).search({ tags: 'solo', page: '51', limit: '20', order: 'recent', enrich: false })
+  assert(posts.length === 1 && log.length === 1, 'the cap follows the page size')
 
   Date.now = realNow
   console.log(`gelbooru-relay-switch: ${passed} passed, ${failed} failed`)
