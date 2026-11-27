@@ -32,10 +32,10 @@ export const PackEmptyState = memo(function PackEmptyState({
 }: PackEmptyStateProps) {
   return (
     <div className={cn("@container space-y-3", className)}>
-      <p className="text-sm font-medium text-foreground text-balance">{heading}</p>
+      <p className="text-[15px] font-medium text-foreground text-balance">{heading}</p>
       {children}
       {examples.length > 0 && (
-        <ul className="grid gap-1.5 @md:grid-cols-2">
+        <ul className="grid gap-2 @md:grid-cols-2">
           {examples.map((ex) => {
             const [who, ...rest] = ex.parts
             return (
@@ -44,8 +44,8 @@ export const PackEmptyState = memo(function PackEmptyState({
                   type="button"
                   onClick={() => onPick(ex.id)}
                   className={cn(
-                    "flex w-full min-w-0 flex-col items-start gap-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left pointer-coarse:min-h-11",
-                    "transition-[border-color,background-color] duration-150 ease-out-strong hover:border-foreground/30 hover:bg-secondary/40",
+                    "flex w-full min-w-0 flex-col items-start gap-1 rounded-xl border border-border/70 bg-card px-4 py-3 text-left shadow-xs pointer-coarse:min-h-11",
+                    "transition-[border-color,background-color,transform] duration-150 ease-out-strong hover:border-foreground/25 active:scale-[0.99] motion-reduce:active:scale-100",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                   )}
                 >

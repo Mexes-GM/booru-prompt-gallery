@@ -195,13 +195,13 @@ export const ResultRow = memo(function ResultRow({
       <div
         className={cn(
           // Narrow: picture and text, then the row's actions in one line under the text.
-          "group grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1 rounded-lg border p-2 @md:grid-cols-[2.5rem_minmax(0,1fr)_auto]",
+          "group grid grid-cols-[3rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 rounded-xl border p-3 @md:grid-cols-[3rem_minmax(0,1fr)_auto]",
           "transition-[border-color,background-color] duration-150 ease-out-strong",
-          locked ? "border-foreground/25 bg-muted/40" : "border-border/60 hover:border-border",
+          locked ? "border-mode-pack-border bg-mode-pack-soft" : "border-border/60 bg-card hover:border-border",
         )}
       >
         <div className="relative">
-          <div className="aspect-[3/4] w-10 overflow-hidden rounded-[6px] bg-muted">
+          <div className="aspect-[3/4] w-12 overflow-hidden rounded-md bg-muted ring-1 ring-inset ring-foreground/5">
             {thumbSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={thumbSrc} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
@@ -220,7 +220,7 @@ export const ResultRow = memo(function ResultRow({
 
         <div className="min-w-0 pt-0.5">
           {locked && (
-            <p className="mb-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+            <p className="mb-1 flex items-center gap-1 text-xs font-medium text-mode-pack-text">
               <Lock className="size-3" aria-hidden />
               Locked: stays when you generate again
             </p>
@@ -327,7 +327,7 @@ export const ResultRow = memo(function ResultRow({
             aria-pressed={locked}
             aria-label={`${locked ? "Unlock" : "Lock"} prompt ${n}`}
             title={locked ? "Unlock" : "Lock: this prompt stays when you generate again"}
-            className={cn(ACTION, locked && "text-foreground")}
+            className={cn(ACTION, locked && "text-mode-pack-text")}
           >
             {locked ? <Lock className="size-4" aria-hidden /> : <LockOpen className="size-4" aria-hidden />}
           </button>}

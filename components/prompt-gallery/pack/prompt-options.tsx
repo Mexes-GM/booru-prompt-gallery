@@ -63,18 +63,20 @@ export const PackPromptOptions = memo(function PackPromptOptions({
     defaultMaxLongSide: MAX_MAX_LONG_SIDE,
   })
   return (
-    <section className="rounded-lg border border-border/60">
+    <section className="rounded-xl border border-border/60 bg-background/50">
       <button
         type="button"
         aria-expanded={open}
         aria-controls={bodyId}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left",
+          "flex min-h-12 w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left",
           "transition-colors duration-150 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         )}
       >
-        <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground" aria-hidden>
+          <SlidersHorizontal className="size-3.5" />
+        </span>
         <span className="shrink-0 text-sm font-medium text-foreground">{PROMPT_OPTIONS_TEXT.title}</span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{summary}</span>
         <ChevronDown
@@ -83,7 +85,7 @@ export const PackPromptOptions = memo(function PackPromptOptions({
         />
       </button>
       {open && (
-        <div id={bodyId} className="space-y-5 border-t border-border/60 px-3 pb-4 pt-3">
+        <div id={bodyId} className="space-y-5 border-t border-border/60 px-3.5 pb-4 pt-3">
           <p className="text-xs text-muted-foreground text-pretty">{PROMPT_OPTIONS_TEXT.intro}</p>
           <PromptOptionsBody settings={settings} safeOnly={safeOnly} />
         </div>

@@ -1503,8 +1503,8 @@ function BriefWorkspace({
           className={cn(
             "space-y-4 px-4 pt-4 sm:px-6",
             split
-              ? "mx-auto max-w-3xl lg:mx-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:border-r lg:border-border/60 lg:bg-card/60 lg:pb-6 lg:pt-5"
-              : "mx-auto max-w-3xl",
+              ? "mx-auto max-w-4xl lg:mx-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:border-r lg:border-border/60 lg:bg-card/60 lg:pb-6 lg:pt-5"
+              : "mx-auto max-w-4xl",
           )}
         >
           {showStartText && (
@@ -1557,7 +1557,7 @@ function BriefWorkspace({
         <div
           className={cn(
             "space-y-4 px-4 pb-6 pt-4 sm:px-6",
-            split ? "mx-auto max-w-3xl lg:mx-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:pt-5" : "mx-auto max-w-3xl",
+            split ? "mx-auto max-w-4xl lg:mx-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:pt-5" : "mx-auto max-w-4xl",
           )}
         >
           {loadError && (

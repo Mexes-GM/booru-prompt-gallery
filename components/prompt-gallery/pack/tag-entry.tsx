@@ -18,6 +18,8 @@ import { showTag, splitTyped, type SuggestionStatus, type TagSuggestion } from "
 export interface TagEntryProps {
   /** Id of the visible label that names the field (the row's label). */
   labelledBy: string
+  /** Id of a hint that describes the field. */
+  describedBy?: string
   placeholder: string
   /** The row has nothing yet: the field is drawn as an open, dashed slot. */
   empty?: boolean
@@ -55,6 +57,7 @@ const NO_OPTIONS: readonly EntryOption[] = []
 
 export const TagEntry = memo(function TagEntry({
   labelledBy,
+  describedBy,
   placeholder,
   empty = false,
   suggestions = [],
@@ -188,12 +191,11 @@ export const TagEntry = memo(function TagEntry({
     <div className={cn("relative min-w-[7.5rem] flex-1", className)}>
       <div
         className={cn(
-          "flex h-7 items-center gap-1 rounded-md border px-2 pointer-coarse:h-11",
-          "transition-[border-color,background-color] duration-150 ease-out-strong",
-          "focus-within:border-border focus-within:bg-background focus-within:ring-2 focus-within:ring-ring/40",
-          empty
-            ? "border-dashed border-border hover:border-foreground/30"
-            : "border-transparent hover:border-border",
+          // A soft well, not a box: it reads as a place to write and lights up with focus.
+          "flex h-8 items-center gap-1.5 rounded-lg px-2.5 pointer-coarse:h-11",
+          "transition-[background-color,box-shadow] duration-150 ease-out-strong",
+          "focus-within:bg-background focus-within:ring-2 focus-within:ring-ring/60",
+          empty ? "bg-muted/55 hover:bg-muted" : "hover:bg-muted/55",
           disabled && "pointer-events-none opacity-50",
         )}
       >
@@ -204,6 +206,7 @@ export const TagEntry = memo(function TagEntry({
           type="text"
           role="combobox"
           aria-labelledby={labelledBy}
+          aria-describedby={describedBy}
           aria-autocomplete="list"
           aria-expanded={showList}
           aria-controls={listId}
@@ -243,7 +246,7 @@ export const TagEntry = memo(function TagEntry({
         aria-labelledby={labelledBy}
         hidden={!showList}
         className={cn(
-          "absolute inset-x-0 top-full z-50 mt-1 max-h-64 overflow-y-auto overscroll-contain rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md",
+          "absolute inset-x-0 top-full z-50 mt-1.5 max-h-64 overflow-y-auto overscroll-contain rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg",
           "min-w-[12rem]",
         )}
       >
@@ -258,7 +261,7 @@ export const TagEntry = memo(function TagEntry({
             onClick={s.pick}
             onMouseMove={() => i !== active && setActive(i)}
             className={cn(
-              "flex cursor-pointer items-baseline gap-2 rounded-sm px-2 py-1.5 text-[13px] pointer-coarse:py-3",
+              "flex cursor-pointer items-baseline gap-2 rounded-md px-2 py-1.5 text-[13px] pointer-coarse:py-3",
               i === active ? "bg-accent text-accent-foreground" : "text-foreground",
             )}
           >

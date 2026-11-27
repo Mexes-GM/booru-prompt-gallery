@@ -25,14 +25,14 @@ export const BriefSummary = memo(function BriefSummary({ parts, onExpand, expand
       onClick={onExpand}
       aria-expanded={expanded}
       className={cn(
-        "flex h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-border bg-card px-3 text-left pointer-coarse:h-12",
-        "transition-[border-color,background-color] duration-150 ease-out-strong hover:border-foreground/30",
+        "flex min-h-12 w-full min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-card px-4 py-2.5 text-left shadow-xs",
+        "transition-[border-color,background-color] duration-150 ease-out-strong hover:border-foreground/25",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         className,
       )}
     >
       <span className="sr-only">Edit pack: </span>
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
         {parts.length === 0 ? <span className="text-muted-foreground">{line}</span> : line}
       </span>
       <ChevronDown

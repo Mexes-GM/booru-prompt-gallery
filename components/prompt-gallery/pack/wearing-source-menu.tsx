@@ -40,9 +40,9 @@ export const WearingSourceMenu = memo(function WearingSourceMenu({
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger
         className={cn(
-          "inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-border bg-background px-2 text-xs pointer-coarse:h-11",
-          "transition-[border-color,background-color] duration-150 ease-out-strong",
-          "hover:border-foreground/30 data-[state=open]:border-foreground/30",
+          "inline-flex h-7 max-w-full items-center gap-1 rounded-md px-2 text-xs pointer-coarse:h-11",
+          "transition-[background-color] duration-150 ease-out-strong",
+          "hover:bg-muted data-[state=open]:bg-muted",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           className,
         )}

@@ -1,10 +1,12 @@
 "use client"
 
 /**
- * One row of the card: the label on the left in quiet text with its category icon,
- * and on the right what the row asks for, in ink, followed by the field to add more.
- * The label column is narrow and fixed so the rows read down as one sentence:
- * "Who Tifa Lockhart / Wearing bikini / Doing princess carry / Where anything".
+ * One row of the card: the label with its category icon, and what the row asks for, in ink,
+ * followed by the field to add more. Where the card is wide the label sits in a narrow column on
+ * the left, so the rows read down as one sentence ("Who Tifa Lockhart / Wearing bikini / Doing
+ * princess carry"); where it is narrow (a phone, the panel's side column) the label heads its row
+ * and the row's controls sit at the end of that line. An empty row's hint shows while its field
+ * has focus, and is always its description for screen readers.
  *
  * Focus: when a chip's Remove takes the chip away, focus goes to the neighbouring
  * chip's control, or to the row's field when none is left; taking an offer sends
@@ -16,7 +18,7 @@ import { afterUpdate, CHIP_ACTION } from "./focus"
 import { SLOTS, type SlotId } from "./slots"
 import { TagEntry, type TagEntryProps } from "./tag-entry"
 
-export type SlotEntryProps = Omit<TagEntryProps, "labelledBy" | "placeholder" | "empty" | "slotId">
+export type SlotEntryProps = Omit<TagEntryProps, "labelledBy" | "describedBy" | "placeholder" | "empty" | "slotId">
 
 export interface BriefSlotProps {
   slot: SlotId
@@ -36,21 +38,30 @@ export interface BriefSlotProps {
   className?: string
 }
 
-/** The label column of a card row; also used by the People and Changes lines. */
-export function SlotLabel({ id, slot, label, icon }: { id: string; slot?: SlotId; label?: string; icon?: ReactNode }) {
+/** The label of a card row; also used by the People and Changes lines. */
+export function SlotLabel({ id, slot, label, icon, className }: { id: string; slot?: SlotId; label?: string; icon?: ReactNode; className?: string }) {
   const meta = slot ? SLOTS[slot] : null
   const Icon = meta?.icon
   return (
-    <div className="flex h-7 items-center gap-1.5 pointer-coarse:h-11">
-      {icon ?? (Icon && <Icon className={cn("size-3.5 shrink-0", meta.iconClass)} aria-hidden />)}
-      <span id={id} className="text-xs font-medium text-muted-foreground">
+    <div className={cn("flex h-7 items-center gap-2 @[22rem]:h-8 @[22rem]:pointer-coarse:h-11", className)}>
+      {icon ?? (Icon && <Icon className={cn("size-4 shrink-0", meta.iconClass)} aria-hidden />)}
+      <span id={id} className="text-[13px] font-medium text-muted-foreground">
         {label ?? meta?.label}
       </span>
     </div>
   )
 }
 
-export const SLOT_ROW = "grid grid-cols-[5.25rem_minmax(0,1fr)] gap-x-2 @md:grid-cols-[6rem_minmax(0,1fr)]"
+/**
+ * A card row's grid: narrow, the label and the row's controls share the first line and what the
+ * row holds takes the full width under them; from 22rem, label | content | controls on one line.
+ */
+export const SLOT_ROW = "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 @[22rem]:grid-cols-[5.75rem_minmax(0,1fr)_auto] @[22rem]:items-start"
+export const SLOT_LABEL_CELL = "col-start-1 row-start-1"
+const SLOT_ACTIONS_CELL = "col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-1 @[22rem]:col-start-3"
+/** `spanned`: no controls after it, so it takes their column too. */
+export const slotContentCell = (spanned = true) =>
+  cn("col-span-2 row-start-2 min-w-0 @[22rem]:col-start-2 @[22rem]:row-start-1", spanned ? "@[22rem]:col-span-2" : "@[22rem]:col-span-1")
 
 export const BriefSlot = memo(function BriefSlot({
   slot,
@@ -64,6 +75,7 @@ export const BriefSlot = memo(function BriefSlot({
   className,
 }: BriefSlotProps) {
   const labelId = useId()
+  const helpId = useId()
   const rowRef = useRef<HTMLDivElement>(null)
   const meta = SLOTS[slot]
   const help = !filled ? meta.help : undefined
@@ -96,31 +108,27 @@ export const BriefSlot = memo(function BriefSlot({
       role="group"
       aria-labelledby={labelId}
       onClickCapture={onClickCapture}
-      className={cn(SLOT_ROW, "relative py-1", className)}
+      className={cn(SLOT_ROW, "group/slot relative py-3", className)}
     >
-      {flashKey ? (
-        <span
-          key={flashKey}
-          aria-hidden
-          className="pointer-events-none absolute -inset-x-1.5 inset-y-0 rounded-md bg-mode-pack-soft animate-out fade-out-0 fill-mode-forwards duration-1000 ease-out-strong motion-reduce:hidden"
-        />
-      ) : null}
-      <SlotLabel id={labelId} slot={slot} />
-      <div className="relative min-w-0">
+      {flashKey ? <RowFlash key={flashKey} /> : null}
+      <SlotLabel id={labelId} slot={slot} className={SLOT_LABEL_CELL} />
+      {actions && <div className={SLOT_ACTIONS_CELL}>{actions}</div>}
+      <div className={slotContentCell(!actions)}>
         <div className="flex flex-wrap items-center gap-1.5">
           {children}
           <TagEntry
             {...entry}
             slotId={slot}
             labelledBy={labelId}
+            describedBy={help ? helpId : undefined}
             empty={!filled}
             placeholder={placeholder ?? (filled ? meta.moreText : meta.emptyText)}
           />
-          {actions}
         </div>
         {(help || notes) && (
-          <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-            {help && <p className="text-pretty">{help}</p>}
+          // The hint waits for the field (it is the field's description meanwhile); notes always show.
+          <div className={cn("mt-2 space-y-1 text-xs leading-relaxed text-muted-foreground", !notes && "hidden group-focus-within/slot:block")}>
+            {help && <p id={helpId} className="hidden text-pretty group-focus-within/slot:block">{help}</p>}
             {notes}
           </div>
         )}
@@ -128,6 +136,16 @@ export const BriefSlot = memo(function BriefSlot({
     </div>
   )
 })
+
+/** Lights a row up once, when a tag typed in another row lands in it. */
+export function RowFlash() {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute -inset-x-2 inset-y-1 rounded-lg bg-mode-pack-soft animate-out fade-out-0 fill-mode-forwards duration-1000 ease-out-strong motion-reduce:hidden"
+    />
+  )
+}
 
 /** A quiet line under a row, with an optional icon. */
 export function SlotNote({ icon, children, tone = "quiet" }: { icon?: ReactNode; children: ReactNode; tone?: "quiet" | "warning" }) {

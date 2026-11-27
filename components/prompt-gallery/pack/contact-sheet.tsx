@@ -110,7 +110,7 @@ const Tile = memo(function Tile({
             ? "border-dashed border-muted-foreground bg-muted/30"
             : picking
               ? "border-mode-pack-border bg-muted hover:border-mode-pack"
-              : "border-transparent bg-muted hover:border-foreground/40",
+              : "border-transparent bg-muted hover:border-foreground/50",
       )}
     >
       {scene.src ? (
@@ -213,7 +213,7 @@ export const ContactSheet = memo(function ContactSheet({
 
   if (status === "error") {
     return (
-      <div role="alert" className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-dashed border-border px-3 py-4 text-sm", className)}>
+      <div role="alert" className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-destructive-border bg-destructive-soft px-3.5 py-3 text-sm", className)}>
         <AlertTriangle className="size-4 shrink-0 text-destructive-text" aria-hidden />
         <span className="min-w-0 flex-1 text-pretty">Couldn&apos;t load the scenes. Check your connection and try again.</span>
         {onRetry && (
@@ -227,9 +227,9 @@ export const ContactSheet = memo(function ContactSheet({
 
   if (!loading && scenes.length === 0) {
     return (
-      <div className={cn("rounded-lg border border-dashed border-border px-3 py-6 text-center", className)}>
-        <p className="text-sm font-medium text-foreground">{emptyTitle}</p>
-        {emptyHint && <p className="mt-1 text-xs text-muted-foreground">{emptyHint}</p>}
+      <div className={cn("rounded-xl bg-muted/40 px-4 py-8 text-center", className)}>
+        <p className="text-sm font-medium text-foreground text-balance">{emptyTitle}</p>
+        {emptyHint && <p className="mt-1 text-[13px] text-muted-foreground text-balance">{emptyHint}</p>}
       </div>
     )
   }
@@ -299,7 +299,7 @@ export const ContactSheet = memo(function ContactSheet({
           const tile = (e.target as HTMLElement).closest<HTMLElement>("[data-tile]")
           if (tile) setCurrent(Number(tile.dataset.tile))
         }}
-        className={cn("grid grid-cols-6 gap-1 @md:grid-cols-9 @xl:grid-cols-12", collapsed && COLLAPSE_CLASSES)}
+        className={cn("grid grid-cols-6 gap-1.5 @md:grid-cols-9 @xl:grid-cols-12", collapsed && COLLAPSE_CLASSES)}
       >
         {shown.map((scene, i) => (
           <Tile
@@ -319,7 +319,7 @@ export const ContactSheet = memo(function ContactSheet({
             key={`pending-${scenes.length + i}`}
             aria-hidden
             style={{ animationDelay: `${Math.min(i, 8) * 60}ms` }}
-            className="block aspect-[3/4] rounded-[6px] bg-muted/60 animate-in fade-in-0 fill-mode-both duration-300 motion-reduce:animate-none"
+            className="block aspect-[3/4] rounded-[6px] bg-muted/70 animate-in fade-in-0 fill-mode-both duration-300 motion-reduce:animate-none"
           />
         ))}
       </div>

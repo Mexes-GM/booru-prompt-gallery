@@ -17,7 +17,7 @@ import { BriefSlot, SlotNote, type SlotEntryProps } from "./brief-slot"
 import { ChangesSelect } from "./changes-select"
 import { ChoiceGroup, type Choice } from "./choice-group"
 import { PeopleLine, type PeopleLineProps } from "./people-line"
-import { RequestChip } from "./request-chip"
+import { RequestChip, type RequestChipTone } from "./request-chip"
 import type { EntryOption } from "./tag-entry"
 import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { WearingSourceMenu } from "./wearing-source-menu"
@@ -121,6 +121,16 @@ const ROLE_CHOICES: Choice<CastRole>[] = [
   { value: "girl", label: "Girl" },
   { value: "boy", label: "Boy" },
 ]
+
+/** Requests wear their row's prompt category, as tags do on the gallery's cards. */
+const ROW_TONE: Record<RequestRole | "style" | "others", RequestChipTone> = {
+  wearing: "clothing",
+  doing: "pose",
+  where: "scenery",
+  also: "plain",
+  style: "plain",
+  others: "appearance",
+}
 
 const same = (a: string, b: string) => a.trim().toLowerCase().replace(/_/g, " ") === b.trim().toLowerCase().replace(/_/g, " ")
 
@@ -243,6 +253,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
             <RequestChip
               key={tag}
               label={showTag(tag)}
+              tone={ROW_TONE[slot]}
               conflict={conflicts[tag]}
               selected={picked === slot && i === tags.length - 1}
               onRemove={() => onRemoveTag(tag)}
@@ -274,7 +285,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
 
   return (
     <TooltipProvider delayDuration={300}>
-      <section ref={sectionRef} aria-label="Pack" className={cn("@container", className)}>
+      <section ref={sectionRef} aria-label="Pack" className={cn("@container divide-y divide-border/50 [&>*:first-child]:pt-0", className)}>
         <WhoRow
           who={brief.who}
           characterInfo={characterInfo}
@@ -329,7 +340,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           ) : undefined,
         })}
         {requestRow("also")}
-        {requestRow("style", rowDefaults ? { defaults: rowDefaults.style, actions: <UseDefaults defaults={rowDefaults.style} /> } : undefined)}
+        {requestRow("style", rowDefaults ? { defaults: rowDefaults.style, actions: rowDefaults.style.matches ? undefined : <UseDefaults defaults={rowDefaults.style} /> } : undefined)}
         <NeverRow
           tags={brief.never}
           picked={picked === "never"}
@@ -340,7 +351,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
         />
 
         {(people || changes || othersShown) && (
-          <div className="mt-1 border-t border-border/60 pt-1">
+          <div className="space-y-1 py-2">
             {people && <PeopleLine {...people} flashKey={flashFor("people")} />}
             {othersShown &&
               requestRow("others", {
@@ -412,7 +423,7 @@ function NeverRow({
       filled={tags.length > 0}
       entry={entryFor("never", last)}
       flashKey={flashKey}
-      actions={defaults ? <UseDefaults defaults={defaults} /> : undefined}
+      actions={defaults && !defaults.matches ? <UseDefaults defaults={defaults} /> : undefined}
     >
       {tags.map((tag, i) => (
         <RequestChip
@@ -547,6 +558,7 @@ function WhoRow({
               <RequestChip
                 key={`added:${t}`}
                 label={showTag(t)}
+                tone="appearance"
                 selected={picked && isLast && lastKey === `added:${t}`}
                 onRemove={() => onRemoveTag(t)}
               />
