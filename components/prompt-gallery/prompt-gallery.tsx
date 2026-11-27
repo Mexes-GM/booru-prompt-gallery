@@ -2285,6 +2285,10 @@ export function PromptGallery() {
         onRandomize={() => mergeMode.setRandomSelection(finalPosts)}
         randomSettings={mergeMode.randomSettings}
         setRandomSettings={mergeMode.setRandomSettings}
+        minSharedPosts={mergeMode.minSharedPosts}
+        maxSharedPosts={mergeMode.maxSharedPosts}
+        onMinSharedPostsChange={mergeMode.setMinSharedPosts}
+        hiddenTagCount={mergeMode.hiddenByMinShared}
       />}
       <NaturalPromptStatus />
       {aiConvertFooterMounted && <AiConvertStickyFooter

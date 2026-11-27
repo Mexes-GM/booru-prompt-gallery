@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
 import { RemovableTagChip } from './removable-tag-chip'
+import { Stepper } from './count-stepper'
 import { CATEGORY_TEXT_CLASS, CATEGORY_BORDER_CLASS, CATEGORY_ACTIVE_CLASS } from './category-chip-styles'
 import { PACK_AXES, TAG_CATEGORY_IDS } from '@/lib/tag-taxonomy'
 
@@ -38,6 +39,12 @@ interface MergeStickyFooterProps {
     onRandomize?: () => void
     randomSettings: RandomSettings
     setRandomSettings: (settings: RandomSettings | ((prev: RandomSettings) => RandomSettings)) => void
+    /** Merge mode: keep only tags found in at least this many selected posts. */
+    minSharedPosts: number
+    maxSharedPosts: number
+    onMinSharedPostsChange: (value: number) => void
+    /** Tags left out by minSharedPosts. */
+    hiddenTagCount: number
 }
 
 const SymbolTag = memo(({ 
@@ -109,7 +116,11 @@ const MergeStickyFooterComponent = ({
     onToggleMergeModeType,
     onRandomize,
     randomSettings,
-    setRandomSettings
+    setRandomSettings,
+    minSharedPosts,
+    maxSharedPosts,
+    onMinSharedPostsChange,
+    hiddenTagCount
 }: MergeStickyFooterProps) => {
 
     const lowMotion = useLowMotion()
@@ -411,6 +422,26 @@ const MergeStickyFooterComponent = ({
                             </ScrollArea>
                         )}
 
+                        {/* Shared-tags filter: only useful once there's more than one post to share tags */}
+                        {mergeModeType === 'merge' && selectedPosts.size > 1 && (
+                            <div className="flex items-center justify-between gap-2 flex-wrap -mt-1 sm:-mt-2">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <span>Tags in at least</span>
+                                    <Stepper
+                                        value={minSharedPosts}
+                                        min={1}
+                                        max={maxSharedPosts}
+                                        onChange={onMinSharedPostsChange}
+                                        ariaLabel="minimum posts per tag"
+                                    />
+                                    <span>of {selectedPosts.size} posts</span>
+                                </div>
+                                <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+                                    {hiddenTagCount > 0 ? `${hiddenTagCount} ${hiddenTagCount === 1 ? 'tag' : 'tags'} hidden` : ''}
+                                </span>
+                            </div>
+                        )}
+
                         {/* Prompt Output */}
                         <div className="relative">
                             <div className="min-h-[60px] max-h-[120px] sm:max-h-[200px] w-full rounded-md border border-input bg-muted/50 px-3 py-3 text-sm shadow-sm overflow-y-auto overflow-x-hidden flex flex-col gap-2">
@@ -510,7 +541,9 @@ const MergeStickyFooterComponent = ({
                                             exit={{ opacity: 0 }}
                                             className="text-muted-foreground italic block mt-1"
                                         >
-                                            Select posts to merge prompt parts...
+                                            {hiddenTagCount > 0
+                                                ? 'No tag is in that many posts. Lower the minimum to see tags.'
+                                                : 'Select posts to merge prompt parts...'}
                                         </motion.span>
                                     )
                                 )}
