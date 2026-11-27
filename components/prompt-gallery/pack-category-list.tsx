@@ -52,9 +52,9 @@ const CATEGORY_STATE_OPTIONS: { value: PackCategoryState; label: string; hint: s
 ]
 
 const SLOT_STATE_META: Record<PackSlotState, { label: string; icon: typeof Lock }> = {
-  base: { label: "Keep from base", icon: Lock },
+  base: { label: "Keep", icon: Lock },
   vary: { label: "Vary", icon: Shuffle },
-  off: { label: "Leave out", icon: Ban },
+  off: { label: "Off", icon: Ban },
 }
 
 /**
@@ -475,7 +475,7 @@ const CategoryRow = memo(function CategoryRow({
                   <span>Pick a part to change it:</span>
                   <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" /> keep the base&apos;s tags</span>
                   <span className="inline-flex items-center gap-1"><Shuffle className="w-3 h-3 text-mode-pack-text" /> vary</span>
-                  <span className="inline-flex items-center gap-1"><Ban className="w-3 h-3" /> leave out</span>
+                  <span className="inline-flex items-center gap-1"><Ban className="w-3 h-3" /> off</span>
                 </p>
               )}
             </div>

@@ -30,8 +30,7 @@ const KIND_META: Record<NoteKind, { label: string; icon: LucideIcon; tone: strin
 // This release's notes. Edit on each release; display order comes from
 // KIND_META, so write them in any order.
 const NOTES: UpdateNote[] = [
-  { kind: 'fixed', title: 'Gelbooru thumbnails in Merge and Pack', body: "Gelbooru posts added from History or Favorites showed a broken image in the Merge panel and as the Pack Mode base. They load now, the same as in the gallery." },
-  { kind: 'fixed', title: 'Gelbooru searches', body: "Gelbooru searches sometimes failed when Gelbooru blocked the site's server. They load now." },
+  { kind: 'improved', title: 'Clearer messages', body: "Error messages and warnings now say what went wrong and what to try next, and labels across the site are easier to read." },
 ]
 
 const SORTED_NOTES = [...NOTES].sort((a, b) => KIND_META[a.kind].order - KIND_META[b.kind].order)

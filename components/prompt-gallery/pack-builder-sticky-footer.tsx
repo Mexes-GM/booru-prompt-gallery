@@ -793,7 +793,7 @@ const PackBuilderStickyFooterComponent = ({
                                 Pick a card and press <span className="font-medium text-foreground">Use as base</span> to build a pack.
                             </p>
                         </div>
-                        <Button variant="ghost" size="icon" onClick={onExit} className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 rounded-full hover:bg-muted flex-shrink-0" aria-label="Exit Pack Mode">
+                        <Button variant="ghost" size="icon" onClick={onExit} className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 rounded-full hover:bg-muted flex-shrink-0" aria-label="Exit Pack mode">
                             <X className="w-4 h-4" />
                         </Button>
                     </motion.div>

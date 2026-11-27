@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, useRef } from "react"
+import React, { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { Plus, Minus, RotateCcw, Globe, Search, AlertCircle, Copy, Check } from "lucide-react"
@@ -29,6 +29,18 @@ interface InteractivePromptProps {
   onSearch?: (tag: string) => void
   conflictingTags?: { tag: string; reason: string }[]
 }
+
+// Right-click to copy only exists with a mouse, so the hint is offered (as a
+// description, not part of the tag's name) on fine-pointer devices only.
+// One shared media query for every tag on the page.
+const FINE_POINTER_QUERY = "(hover: hover) and (pointer: fine)"
+const subscribeFinePointer = (onChange: () => void) => {
+  const mq = window.matchMedia(FINE_POINTER_QUERY)
+  mq.addEventListener("change", onChange)
+  return () => mq.removeEventListener("change", onChange)
+}
+const getFinePointer = () => window.matchMedia(FINE_POINTER_QUERY).matches
+const getFinePointerServer = () => false
 
 const buildPrompt = (tags: TagData[]): string => {
   return tags.map(tag => {
@@ -202,6 +214,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const triggerRef = useRef<HTMLSpanElement | null>(null)
   const { toast } = useToast()
+  const finePointer = useSyncExternalStore(subscribeFinePointer, getFinePointer, getFinePointerServer)
 
   useEffect(() => {
     return () => {
@@ -231,8 +244,8 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
       })
     } catch {
       toastError({
-        title: "Copy failed",
-        description: "Could not copy tag to clipboard",
+        title: "Couldn't copy the tag",
+        description: "The browser didn't allow clipboard access. Try again.",
         errorSource: "copy_tag_to_clipboard",
         context: { tag: tag.text },
       })
@@ -272,6 +285,8 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
   // Display-only: unescape booru parens/brackets (e.g. "\(alien stage\)" -> "(alien stage)").
   // The copied/committed value keeps the escapes (currentText / tag.text) for correct prompt syntax.
   const displayText = currentText.replace(/\\([()[\]])/g, "$1")
+  const spokenText = tag.text.replace(/\\([()[\]])/g, "$1")
+  const copyHint = finePointer ? "Right-click to copy" : undefined
 
   const isModified = currentWeight !== 1.0
   const isHeavy = currentWeight > 1.0
@@ -332,8 +347,9 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
               handleOpenChange(!isOpen)
             }
           }}
-          title={isGlobal ? "Global weight applied · Right-click to copy" : "Right-click to copy"}
-          aria-label={isGlobal ? `Edit weight for ${tag.text} (Global). Right-click to copy.` : `Edit weight for ${tag.text}. Right-click to copy.`}
+          title={copyHint && (isGlobal ? `Global weight applied · ${copyHint}` : copyHint)}
+          aria-label={isGlobal ? `${spokenText}, global weight, edit weight` : `${spokenText}, edit weight`}
+          aria-description={copyHint}
         >
           {displayText}
           {isGlobal && (
@@ -381,7 +397,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
             {isGlobal && (
               <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-primary-text bg-primary/10 rounded-sm mb-0.5">
                 <Globe className="h-3 w-3" />
-                <span className="font-medium">Global Weight</span>
+                <span className="font-medium">Global weight</span>
               </div>
             )}
 
@@ -454,7 +470,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
                       setIsOpen(false)
                     }}
                     aria-label={isGlobal ? "Remove global weight" : "Set as global weight"}
-                    title={isGlobal ? "Remove Global Weight" : "Set as Global Weight"}
+                    title={isGlobal ? "Remove global weight" : "Set as global weight"}
                   >
                     <Globe className="h-3.5 w-3.5" />
                   </Button>
@@ -473,7 +489,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
                 }}
               >
                 <Copy className="h-3 w-3 mr-2" />
-                Copy Tag
+                Copy tag
               </Button>
               
               {onSearchTag && (
@@ -487,7 +503,7 @@ const PromptTag = React.memo(function PromptTag({ tag, index, isTabStop, onFocus
                   }}
                 >
                   <Search className="h-3 w-3 mr-2" />
-                  Search Tag
+                  Search for this tag
                 </Button>
               )}
             </div>

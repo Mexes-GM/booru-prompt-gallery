@@ -108,7 +108,7 @@ const SuccessAnimation = memo(function SuccessAnimation() {
                 transition={{ delay: 0.3 }}
                 className="text-2xl font-bold tracking-tight mb-2"
             >
-                Thank You!
+                Thanks for your feedback
             </motion.h3>
             <motion.p
                 initial={{ opacity: 0, y: 10 }}
@@ -116,7 +116,7 @@ const SuccessAnimation = memo(function SuccessAnimation() {
                 transition={{ delay: 0.4 }}
                 className="text-muted-foreground max-w-[260px]"
             >
-                Your feedback helps us improve. We appreciate your input.
+                It helps us decide what to fix and build next.
             </motion.p>
         </motion.div>
     )
@@ -177,7 +177,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
         if (turnstileRequired && !turnstileToken) {
             toast({
                 title: "Verification needed",
-                description: "Please complete the verification challenge first.",
+                description: "Complete the verification check, then send again.",
                 variant: "destructive",
             })
             return
@@ -228,8 +228,8 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
 
         } catch (error) {
             toast({
-                title: "Error",
-                description: "Could not send feedback. Please try again.",
+                title: "Couldn't send your feedback",
+                description: "Try again in a moment.",
                 variant: "destructive",
             })
         } finally {
@@ -238,7 +238,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
     }
 
     const feedbackTypes = [
-        { id: "bug", label: "Bug Report", icon: Bug, color: "text-destructive-text", bg: "bg-destructive-soft", borderColor: "var(--destructive)" },
+        { id: "bug", label: "Bug report", icon: Bug, color: "text-destructive-text", bg: "bg-destructive-soft", borderColor: "var(--destructive)" },
         { id: "feature", label: "Feature", icon: Lightbulb, color: "text-warning-text", bg: "bg-warning-soft", borderColor: "var(--warning)" },
         { id: "general", label: "General", icon: MessageSquare, color: "text-info-text", bg: "bg-info-soft", borderColor: "var(--info)" },
     ]
@@ -254,8 +254,8 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
             <InfoTooltip
                 hideIcon
                 side="bottom"
-                title="Feedback & Suggestions"
-                description="Help us improve! Found a bug? Have an idea for a cool new feature? Or just want to share your thoughts? Drop your comments here and contribute to the app's development."
+                title="Send feedback"
+                description="Report a bug, suggest a feature, or tell us what you think."
             >
                 <Button
                     type="button"
@@ -286,10 +286,10 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                     <div className="p-2 bg-primary/10 rounded-lg">
                                         <Sparkles className="w-5 h-5 text-primary-text" />
                                     </div>
-                                    <DialogTitle className="text-xl">Feedback & Suggestions</DialogTitle>
+                                    <DialogTitle className="text-xl">Send feedback</DialogTitle>
                                 </div>
                                 <DialogDescription className="text-base">
-                                    Help us build a better gallery. What&apos;s on your mind?
+                                    Report a bug, suggest a feature, or tell us what you think.
                                 </DialogDescription>
                             </DialogHeader>
 
@@ -354,7 +354,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                         placeholder={
                                             type === 'bug' ? "What happened? How can we reproduce it?" :
                                                 type === 'feature' ? "What would you like to see added?" :
-                                                    "Tell us what you think..."
+                                                    "Tell us what you think…"
                                         }
                                         value={content}
                                         onChange={(e) => setContent(e.target.value)}
@@ -373,7 +373,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                     </div>
                                     <Input
                                         id="contact"
-                                        placeholder="Discord Username (for follow-up)"
+                                        placeholder="Discord username, if you want a reply"
                                         value={contact}
                                         onChange={(e) => setContact(e.target.value)}
                                         className="h-10 bg-secondary/20 focus:bg-background transition-colors border-transparent focus:border-input focus:ring-1 focus:ring-primary/20"
@@ -399,7 +399,7 @@ export function FeedbackDialog({ triggerVariant = "pill", open: openProp, onOpen
                                         ) : (
                                             <Send className="mr-2 h-4 w-4" />
                                         )}
-                                        Submit Feedback
+                                        Send feedback
                                     </Button>
                                 </motion.div>
                             </motion.form>

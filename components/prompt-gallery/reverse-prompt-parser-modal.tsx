@@ -239,7 +239,7 @@ export function ReversePromptParserModal({
                       : "bg-muted text-muted-foreground border-transparent opacity-50"
                   )}
                 >
-                  <span className="font-semibold">Strip Weights & Brackets</span>
+                  <span className="font-semibold">Strip weights and brackets</span>
                   <span className="font-normal opacity-80 text-[10px]">
                     Converts <code className="bg-background/50 px-1 py-0.5 rounded leading-none">(elf:1.2)</code> to <code className="bg-background/50 px-1 py-0.5 rounded leading-none">elf</code>
                   </span>
@@ -255,7 +255,7 @@ export function ReversePromptParserModal({
                       : "bg-muted text-muted-foreground border-transparent opacity-50"
                   )}
                 >
-                  <span className="font-semibold">Remove LoRA Tags</span>
+                  <span className="font-semibold">Remove LoRA tags</span>
                   <span className="font-normal opacity-80 text-[10px]">
                     Removes <code className="bg-background/50 px-1 py-0.5 rounded leading-none">&lt;lora:...&gt;</code> completely
                   </span>

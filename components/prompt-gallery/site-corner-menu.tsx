@@ -98,25 +98,25 @@ export function SiteCornerMenu({ scaleValue, setScaleValue, onOpenTour }: SiteCo
           <DropdownMenuItem asChild>
             <a href="/about" className="cursor-pointer">
               <Info className="mr-2 h-4 w-4" />
-              <span>About Project</span>
+              <span>About</span>
             </a>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <a href="/privacy" className="cursor-pointer">
               <Shield className="mr-2 h-4 w-4" />
-              <span>Privacy Policy</span>
+              <span>Privacy policy</span>
             </a>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <a href="/terms" className="cursor-pointer">
               <Shield className="mr-2 h-4 w-4" />
-              <span>Terms of Service</span>
+              <span>Terms of service</span>
             </a>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <a href="https://stats.uptimerobot.com/YcL3JPgshk" target="_blank" rel="noopener noreferrer" className="cursor-pointer">
               <Activity className="mr-2 h-4 w-4" />
-              <span>Service Status</span>
+              <span>Service status</span>
             </a>
           </DropdownMenuItem>
         </DropdownMenuContent>

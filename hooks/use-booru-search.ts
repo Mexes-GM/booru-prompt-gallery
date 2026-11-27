@@ -283,15 +283,15 @@ export function useBooruSearch() {
   const rateLimiter = useScrollRateLimiter({
     onSessionCapReached: () => {
       toast({
-        title: "Session Limit Reached",
+        title: "Page limit reached",
         description: `You've loaded ${MAX_SESSION_PAGE_LOADS} pages for this search. Try a new search or filter to keep browsing.`,
         variant: "default",
       })
     },
     onScrollLimited: () => {
       toast({
-        title: "Scrolling Too Fast",
-        description: `Loading is paused for 5s to avoid overloading the provider. Please slow down.`,
+        title: "Loading paused",
+        description: "More posts will load in 5 seconds, to stay within the source's request limit.",
         variant: "default",
       })
     },

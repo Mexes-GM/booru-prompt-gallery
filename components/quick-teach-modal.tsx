@@ -219,8 +219,8 @@ export function QuickTeachModal({ open, onOpenChange, tagOverrides, onSuccess }:
           onSuccess?.()
         } else {
           toastError({
-            title: "Submission Failed",
-            description: res.message ?? "Please try again.",
+            title: "Couldn't save your answer",
+            description: res.message ?? "Try again.",
             errorSource: "quick_teach_submission",
           })
         }
@@ -228,8 +228,8 @@ export function QuickTeachModal({ open, onOpenChange, tagOverrides, onSuccess }:
       .catch(err => {
         console.error("[QuickTeachModal] submission failed:", err)
         toastError({
-          title: "Error",
-          description: "An unexpected error occurred while saving classification.",
+          title: "Couldn't save your answer",
+          description: "Try again in a moment.",
           errorSource: "quick_teach_submission",
         })
       })
@@ -271,7 +271,7 @@ export function QuickTeachModal({ open, onOpenChange, tagOverrides, onSuccess }:
       }).catch(err => {
         console.error("[QuickTeachModal] undo revert failed:", err)
         toastError({
-          title: "Undo Failed",
+          title: "Couldn't undo",
           description: "Couldn't revert that tag on the server.",
           errorSource: "quick_teach_undo",
         })
@@ -436,7 +436,7 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
         </div>
       }
       onStart={onStart}
-      startLabel="Start Teaching"
+      startLabel="Start teaching"
       startIcon={Sparkles}
     />
   )
@@ -770,7 +770,7 @@ function SummaryScreen({
         </>
       }
       onKeepGoing={onKeepGoing}
-      keepGoingLabel="Keep Teaching"
+      keepGoingLabel="Keep teaching"
       onDone={onDone}
     />
   )

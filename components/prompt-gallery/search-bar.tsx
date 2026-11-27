@@ -146,8 +146,8 @@ export function SearchBar({
             disabled={isRule34}
             onClick={handleToggleRating}
             data-tour="safety-controls"
-            title={isRule34 ? "NSFW is always enabled for Rule34" : undefined}
-            aria-label={nsfwOn ? "NSFW content shown. Click to show safe content only." : "Safe content only. Click to also show NSFW content."}
+            title={isRule34 ? "Always on for Rule34" : undefined}
+            aria-label="Show NSFW content"
             className="flex h-12 items-center gap-2.5 rounded-lg border border-input bg-background px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
           >
             <CensorLabel revealed={nsfwOn} />
@@ -236,10 +236,9 @@ export function SearchBar({
           <AlertDialogHeader>
             <AlertDialogTitle>Show adult (NSFW) content?</AlertDialogTitle>
             <AlertDialogDescription>
-              You&apos;re about to turn off the Safe filter. Results may include
-              explicit / adult (18+) content. Only continue if you are of legal
-              age and want to see this material. You can switch back to Safe at
-              any time.
+              This turns off Safe mode, so results can include explicit adult
+              (18+) content. Only continue if you&apos;re of legal age. You can
+              turn Safe mode back on at any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

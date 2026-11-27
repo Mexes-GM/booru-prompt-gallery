@@ -153,7 +153,7 @@ export function GlobalWeightsModal({
                     <div className="flex flex-col gap-1 rounded-lg border border-dashed border-border/70 px-4 py-6 text-center">
                         <p className="text-sm font-medium text-foreground">No tag weights yet</p>
                         <p className="text-xs text-muted-foreground">
-                            Add one above, or click a tag on any card, set its weight and choose the globe.
+                            Add one above, or select a tag on any card, set its weight and choose the globe.
                         </p>
                     </div>
                 )}

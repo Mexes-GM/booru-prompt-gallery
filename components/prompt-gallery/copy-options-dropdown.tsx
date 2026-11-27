@@ -89,7 +89,7 @@ export function CopyOptionsDropdown({
           </>
         ) : (
           <>
-            <DropdownMenuLabel>Copy Options</DropdownMenuLabel>
+            <DropdownMenuLabel>Copy options</DropdownMenuLabel>
             <DropdownMenuSeparator />
           </>
         )}

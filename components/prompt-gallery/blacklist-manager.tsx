@@ -132,18 +132,18 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
               <div className="p-2.5 bg-destructive/10 rounded-xl shadow-inner">
                 <AlertOctagon className="w-5 h-5 text-destructive-text" />
               </div>
-              <DialogTitle className="text-xl font-bold tracking-tight">Content Blacklist</DialogTitle>
+              <DialogTitle className="text-xl font-bold tracking-tight">Blacklist</DialogTitle>
             </div>
             <DialogDescription className="text-sm leading-relaxed text-muted-foreground pr-4">
-              Posts matching these tags will be hidden from your view.
+              Posts with these tags are hidden from your results.
             </DialogDescription>
             
             {/* Info Section */}
             <div className="mt-4 p-3 rounded-lg bg-info/5 border border-info-border flex gap-3">
               <Info className="w-4 h-4 text-info-text mt-0.5 flex-shrink-0" />
               <div className="text-xs text-info-text space-y-1">
-                <p className="font-semibold">Client-side filtering</p>
-                <p>Blacklisted tags are filtered after results load. Blocking very common tags may result in few or no images. Different from typing -tag in search (server-side, consumes a tag slot) or &quot;Tags to Exclude&quot; in the options panel (keeps the post, edits the prompt text).</p>
+                <p className="font-semibold">How it works</p>
+                <p>Posts are hidden after results load, so blocking very common tags can leave few or no results. Typing -tag in the search filters on the source instead and uses a tag slot. To keep the post and only drop a tag from its prompt, use Remove from every prompt in Customize prompt.</p>
               </div>
             </div>
             
@@ -152,8 +152,8 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
               <div className="mt-3 p-3 rounded-lg bg-warning/5 border border-warning-border flex gap-3">
                 <AlertCircle className="w-4 h-4 text-warning-text mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-warning-text space-y-1">
-                  <p className="font-semibold">Many tags blocked</p>
-                  <p>You have {blacklist.length} tags filtered. This may significantly reduce available images.</p>
+                  <p className="font-semibold">Many tags blacklisted</p>
+                  <p>{blacklist.length} tags are blacklisted, so fewer posts may show up.</p>
                 </div>
               </div>
             )}
@@ -168,12 +168,12 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
             {/* Input Section */}
             <motion.div variants={itemVariants} className="space-y-3">
               <Label htmlFor="blacklist-input" className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground ml-1">
-                Add New Filter
+                Add tags
               </Label>
               <div className="relative group">
                 <Input
                   id="blacklist-input"
-                  placeholder="Enter tags (comma separated, e.g. gore, 1girl)"
+                  placeholder="Tags, separated by commas"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
@@ -275,7 +275,7 @@ export function BlacklistManager({ blacklist, onAdd, onRemove, onReset, classNam
                 onClick={() => setIsOpen(false)}
                 className="w-full h-11 text-sm font-semibold shadow-lg shadow-foreground/10 hover:shadow-foreground/20 transition-[color,background-color,box-shadow,transform] duration-200 ease-out [@media(hover:hover)_and_(pointer:fine)]:hover:-translate-y-0.5 motion-reduce:transform-none rounded-xl"
               >
-                Close Manager
+                Done
               </Button>
             </motion.div>
           </motion.div>

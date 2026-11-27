@@ -167,8 +167,8 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 {isRenderLoop
-                  ? 'The app hit a rendering error and reloaded this screen. If it keeps happening, please report it using the code below so we can look into it — reloading usually fixes it in the meantime.'
-                  : 'Something went wrong. Try again or reload the page. If it keeps happening, please report the code below.'
+                  ? 'This screen stopped working and was reset. Reloading usually fixes it. If it keeps happening, send us the report code below.'
+                  : 'This part of the page stopped working. Try again or reload the page. If it keeps happening, send us the report code below.'
                 }
               </AlertDescription>
             </Alert>
@@ -187,12 +187,12 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                   className="w-full"
                 >
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Clear Cache &amp; Retry
+                  Clear cache and reload
                 </Button>
               )}
               <Button onClick={this.resetError} className="w-full"{...(isRenderLoop ? { variant: 'outline' as const } : {})}>
                 <RefreshCw className="h-4 w-4 mr-2" />
-                Try Again
+                Try again
               </Button>
               
               <Button 
@@ -200,7 +200,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 onClick={() => window.location.reload()} 
                 className="w-full"
               >
-                Reload Page
+                Reload page
               </Button>
             </div>
             
@@ -213,7 +213,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             {this.state.error && (
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer hover:text-foreground">
-                  Technical Details
+                  Technical details
                 </summary>
                 <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-auto">
                   {this.state.error.message}

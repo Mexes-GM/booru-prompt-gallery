@@ -44,23 +44,23 @@ export function NoResultsState({
   const reasons: Reason[] = [
     {
       type: 'nsfw',
-      title: 'NSFW Filter Enabled',
+      title: isSafeFilterActive ? 'Safe mode is on' : 'Content rating',
       description: isSafeFilterActive
-        ? 'You might be searching for adult content while your Safe filter is active. Tap to show all content.'
-        : 'You might be searching for adult content while your Safe filter is active. Try changing the rating filter.',
+        ? 'Adult content is hidden, which can leave some searches empty.'
+        : 'Safe mode hides adult content. If it is on, try a different content rating.',
       icon: Shield,
       colorClass: 'text-success-text',
       bgClass: 'bg-success-soft border-success-border',
       action: isSafeFilterActive && onToggleRatingFilter
-        ? { label: 'Show all content', onClick: onToggleRatingFilter }
+        ? { label: 'Show NSFW content', onClick: onToggleRatingFilter }
         : undefined,
     },
     {
       type: 'blacklist',
-      title: 'Blacklisted Tags',
+      title: 'Blacklist',
       description: blacklistCount > 0
-        ? `One or more of your search tags might be blocked by your ${blacklistCount}-tag Blacklist. Tap to clear it.`
-        : 'One or more of your search tags might be blocked in your active Blacklist.',
+        ? `Your blacklist (${blacklistCount} ${blacklistCount === 1 ? 'tag' : 'tags'}) might be hiding the posts you're looking for.`
+        : 'Tags in your blacklist can hide the posts you\'re looking for.',
       icon: Ban,
       colorClass: 'text-destructive-text',
       bgClass: 'bg-destructive-soft border-destructive-border',
@@ -70,30 +70,30 @@ export function NoResultsState({
     },
     {
       type: 'opposites',
-      title: 'Conflicting Tags',
-      description: 'Your search contains tags that contradict each other (e.g. 1girl + 2girls).',
+      title: 'Conflicting tags',
+      description: 'Your search might have tags that rule each other out, like 1girl and 2girls.',
       icon: Zap,
       colorClass: 'text-warning-text',
       bgClass: 'bg-warning-soft border-warning-border',
     },
     {
       type: 'missing',
-      title: 'Unknown Tag',
-      description: 'The tag might be misspelled or does not exist in the selected database.',
+      title: 'Unknown tag',
+      description: 'A tag might be misspelled, or it doesn\'t exist on the selected source.',
       icon: Ghost,
       colorClass: 'text-muted-foreground',
       bgClass: 'bg-muted/50 border-border',
     },
     {
       type: 'ratelimit',
-      title: 'Service Busy',
+      title: 'Source is busy',
       description: onRetry
-        ? 'The image provider is temporarily rate-limiting requests. Tap to retry now.'
-        : 'The image provider is temporarily rate-limiting requests. Results should appear if you wait a moment and try again.',
+        ? 'The source is limiting requests for a moment.'
+        : 'The source is limiting requests for a moment. Wait a few seconds and search again.',
       icon: Clock,
       colorClass: 'text-warning-text',
       bgClass: 'bg-warning-soft border-warning-border',
-      action: onRetry ? { label: 'Retry now', onClick: onRetry } : undefined,
+      action: onRetry ? { label: 'Retry', onClick: onRetry } : undefined,
     },
   ]
   const containerVariants = {
@@ -132,10 +132,10 @@ export function NoResultsState({
           </div>
         </div>
         <h2 className="text-2xl sm:text-3xl font-bold mb-3 text-foreground">
-          No Results Found
+          No results
         </h2>
         <p className="text-base sm:text-lg text-muted-foreground max-w-xl mx-auto">
-          We couldn&apos;t find any images matching your search. Here are some common reasons why:
+          No posts match this search. These are the most common reasons:
         </p>
       </motion.div>
 

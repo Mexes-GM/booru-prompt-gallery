@@ -154,7 +154,7 @@ export function SmoothFilterSlider({
           {/* The reason is what explains why the control doesn't respond, so it
               wraps under the label instead of being cut off. */}
           {disabled && disabledReason ? (
-            <span className="text-xs text-muted-foreground text-pretty">{`Off — ${disabledReason}`}</span>
+            <span className="text-xs text-muted-foreground text-pretty">{disabledReason}</span>
           ) : (
             <span className="truncate text-xs text-muted-foreground">{hint}</span>
           )}
