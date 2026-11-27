@@ -776,6 +776,17 @@ const POSTS: BooruPost[] = [
   })
   assert(loose.length === 1 && !(loose[0].prompt.includes("beach") && loose[0].prompt.includes("forest")),
     `two loose settings still collapse to one (got '${loose[0]?.prompt}')`)
+
+  // A set is still checked against the base: a locked setting blocks the set's setting.
+  const [againstBase] = generatePackPrompts({
+    lockedTags: ["1girl", "beach"],
+    axes: { scenery: ["forest, sky"] },
+    count: 1,
+    rng: createSeededRng(31),
+    tagOverrides: overrides,
+  })
+  assert(!!againstBase && !againstBase.prompt.includes("forest") && againstBase.prompt.includes("sky"),
+    `set tags are still checked against the base (got '${againstBase?.prompt}')`)
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)
