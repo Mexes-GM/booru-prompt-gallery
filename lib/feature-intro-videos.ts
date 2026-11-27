@@ -110,6 +110,21 @@ export function chapterProgress(chapters: readonly Pick<FeatureChapter, "at">[],
   return Math.min(1, Math.max(0, (seconds - start) / (end - start)))
 }
 
+/**
+ * The dialog's buttons on tab `index`, besides Close. The tabs are a sequence: every tab but
+ * the last offers only Next, so no feature's button closes the dialog before the rest have
+ * been shown. The last tab opens its own feature, and also offers every earlier one.
+ */
+export type StepActions =
+  | { kind: "next"; next: FeatureVideoId }
+  | { kind: "try"; video: FeatureVideoId; others: FeatureVideoId[] }
+
+export function stepActions(videos: readonly Pick<FeatureVideo, "id">[], index: number): StepActions {
+  const last = videos.length - 1
+  if (index < last) return { kind: "next", next: videos[index + 1].id }
+  return { kind: "try", video: videos[last].id, others: videos.slice(0, last).map((v) => v.id) }
+}
+
 /** The tab a key moves to from `index` (arrows wrap, Home and End jump), or null for any other key. */
 export function tabAfterKey(index: number, key: string, count: number): number | null {
   switch (key) {
