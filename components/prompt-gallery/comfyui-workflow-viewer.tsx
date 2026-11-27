@@ -287,6 +287,7 @@ function RoleSelect({
   options,
   noneLabel,
   description,
+  focusRequest,
 }: {
   role: RoleKey
   value: string
@@ -294,8 +295,22 @@ function RoleSelect({
   options: { value: string; label: string; detail?: string; suggested: boolean }[]
   noneLabel?: string
   description?: string
+  /** Each new value scrolls the roles into view and focuses this control. */
+  focusRequest?: number
 }) {
   const id = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (focusRequest === undefined) return
+    // After the dialog's own open focus has run.
+    const frame = requestAnimationFrame(() => {
+      const trigger = triggerRef.current
+      if (!trigger) return
+      trigger.closest("section")?.scrollIntoView({ block: "start" })
+      trigger.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [focusRequest])
   const style = ROLE_STYLE[role]
   const empty = options.length === 0 && !noneLabel
   const selectedLabel = value === NONE ? noneLabel : options.find((o) => o.value === value)?.label
@@ -306,7 +321,7 @@ function RoleSelect({
         {style.label}
       </label>
       <Select value={value} onValueChange={onChange} disabled={empty}>
-        <SelectTrigger id={id} aria-describedby={description ? `${id}-desc` : undefined} className="h-9 bg-background text-xs">
+        <SelectTrigger ref={triggerRef} id={id} aria-describedby={description ? `${id}-desc` : undefined} className="h-9 bg-background text-xs">
           {/* Only the name in the trigger; the options also show a preview of the value. */}
           <SelectValue placeholder={empty ? "Nothing to pick" : "Choose"}>{selectedLabel}</SelectValue>
         </SelectTrigger>
@@ -334,7 +349,7 @@ function RoleSelect({
   )
 }
 
-function RoleList({ onFocusNode }: { onFocusNode: (nodeId: string) => void }) {
+function RoleList({ onFocusNode, focusPromptRequest }: { onFocusNode: (nodeId: string) => void; focusPromptRequest?: number }) {
   const { api, roles, assign } = useViewer()
   const detection = useRoleDetection()
   const prompts = promptChoices(api, detection.candidates)
@@ -349,6 +364,7 @@ function RoleList({ onFocusNode }: { onFocusNode: (nodeId: string) => void }) {
         role="prompt"
         value={roles.prompt ? refKey(roles.prompt) : NONE}
         noneLabel={roles.prompt ? undefined : "No prompt input"}
+        focusRequest={focusPromptRequest}
         onChange={(v) => {
           const choice = prompts.find((c) => refKey(c.ref) === v)
           if (!choice) return
@@ -444,9 +460,11 @@ interface ViewerProps {
   workflow: SavedComfyWorkflow
   objectInfo: ObjectInfo | null
   onRolesChange: (roles: Roles) => void
+  /** Each new value focuses the Prompt role control (Send found no prompt input). */
+  focusPromptRequest?: number
 }
 
-function ViewerInner({ workflow, objectInfo, onRolesChange }: ViewerProps) {
+function ViewerInner({ workflow, objectInfo, onRolesChange, focusPromptRequest }: ViewerProps) {
   const lowMotion = useLowMotion()
   const flow = useReactFlow()
   const { api, ui, roles } = workflow
@@ -577,7 +595,7 @@ function ViewerInner({ workflow, objectInfo, onRolesChange }: ViewerProps) {
               <Controls showInteractive={false} position="bottom-right" />
             </ReactFlow>
           </div>
-          <RoleList onFocusNode={focusNode} />
+          <RoleList onFocusNode={focusNode} focusPromptRequest={focusPromptRequest} />
         </div>
       </ViewerContext.Provider>
     </DetectionContext.Provider>

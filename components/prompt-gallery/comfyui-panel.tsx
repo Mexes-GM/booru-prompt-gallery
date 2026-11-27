@@ -28,7 +28,8 @@ import { createComfyClient, diagnose, normalizeComfyUrl } from "@/lib/comfyui/cl
 import { checkNodesAgainstObjectInfo, importBridgeRecord, importWorkflowFile, type ImportError, type ImportedWorkflow } from "@/lib/comfyui/import"
 import { nodeTitle, rolesFit, testSize } from "@/lib/comfyui/role-choices"
 import { detectRoles, randomSeed } from "@/lib/comfyui/roles"
-import { getComfySession } from "@/lib/comfyui/session"
+import { errorLine, queueLabel, stepLabel, stepProgress } from "@/lib/comfyui/job-copy"
+import { getComfySession, type ComfyJob } from "@/lib/comfyui/session"
 import type { ComfyPanelReason } from "@/lib/comfyui/panel-request"
 import type {
   BridgeWorkflowSummary,
@@ -92,13 +93,13 @@ function statusCopy(d: Diagnosis): { tone: "ok" | "problem"; text: string } {
     case "bridge-inactive":
       return {
         tone: "problem",
-        text: `The ${BRIDGE_NAME} node can't let this site in with this ComfyUI version. Update the node and restart ComfyUI.`,
+        text: `The ${BRIDGE_NAME} node doesn't work with this ComfyUI version. Update the node and restart ComfyUI.`,
       }
   }
 }
 
 const IMPORT_ERRORS: Record<ImportError, string> = {
-  "ui-format": "This is an editor workflow. Publish it from ComfyUI's File menu with Use in Booru Prompt Gallery, or save it with Export (API).",
+  "ui-format": `This file has an editor workflow, which can't be sent as is. ${BRIDGE_PUBLISH_STEP} Or save it with Export (API) and add the .json here.`,
   "no-workflow": "No workflow found in this file. Use a .png saved by ComfyUI or a .json from Export (API).",
   "invalid-json": "This file couldn't be read as a workflow. Save it again from ComfyUI and retry.",
   "unsupported-file": "Only .png and .json files work here.",
@@ -439,7 +440,7 @@ function SavedList({
   }
   return (
     <div className="flex flex-col gap-2">
-      <span id={`${name}-label`} className="text-xs font-medium text-muted-foreground">Saved here</span>
+      <span id={`${name}-label`} className="text-xs font-medium text-muted-foreground">Saved in this browser</span>
       <ul role="radiogroup" aria-labelledby={`${name}-label`} className="flex flex-col">
         {[...workflows].reverse().map((w) => (
           <li key={w.id} className="flex min-h-11 items-center gap-3 border-b border-border/50 py-1 last:border-b-0">
@@ -480,7 +481,7 @@ function RoleSummary({ workflow, missingNodes }: { workflow: SavedComfyWorkflow;
       role: "size",
       value: roles.width && roles.height ? `${nodeTitle(workflow.api, roles.width.nodeId)} · width and height` : "Set by the workflow",
     },
-    { role: "output", value: roles.output ? nodeTitle(workflow.api, roles.output) : "None found. Pick the node whose image to show" },
+    { role: "output", value: roles.output ? nodeTitle(workflow.api, roles.output) : "None found. Choose it in the graph" },
   ]
   return (
     <div className="flex flex-col gap-3">
@@ -516,22 +517,26 @@ const OPTION_ROWS: { key: keyof ComfyOptions; label: string; hint: string }[] = 
   { key: "livePreview", label: "Live preview", hint: "Show the image on the card while it generates" },
 ]
 
-function TestRun({
-  url,
-  workflow,
-  options,
-  ready,
-  notReadyReason,
-}: {
-  url: string
-  workflow: SavedComfyWorkflow | null
-  options: ComfyOptions
-  ready: boolean
-  notReadyReason: string
-}) {
-  const lowMotion = useLowMotion()
+function OptionList({ options, onChange }: { options: ComfyOptions; onChange: (patch: Partial<ComfyOptions>) => void }) {
+  return (
+    <div className="flex flex-col">
+      {OPTION_ROWS.map((row) => (
+        <div key={row.key} className="flex min-h-[52px] items-center justify-between gap-3 border-b border-border/50 py-2 last:border-b-0">
+          <label htmlFor={`comfy-${row.key}`} className="flex min-w-0 cursor-pointer flex-col gap-0.5">
+            <span className="text-sm text-foreground">{row.label}</span>
+            <span className="text-xs text-muted-foreground">{row.hint}</span>
+          </label>
+          <Switch id={`comfy-${row.key}`} checked={options[row.key]} onCheckedChange={(v) => onChange({ [row.key]: v })} className="shrink-0" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** The test job: send, cancel, and free it when the panel closes or the address changes. */
+function useTestJob(url: string, workflow: SavedComfyWorkflow | null, options: ComfyOptions) {
   const [jobId, setJobId] = useState<string | null>(null)
-  const [sendError, setSendError] = useState<string | null>(null)
+  const [sendError, setSendError] = useState(false)
   const [starting, setStarting] = useState(false)
   const job = useComfyJob(jobId)
   const jobRef = useRef<string | null>(null)
@@ -539,7 +544,6 @@ function TestRun({
     jobRef.current = jobId
   }, [jobId])
 
-  // Free the job (and its preview images) when the panel closes or the address changes.
   useEffect(() => {
     return () => {
       if (jobRef.current) getComfySession(url).forget(jobRef.current)
@@ -550,7 +554,7 @@ function TestRun({
     if (!workflow) return
     if (jobId) getComfySession(url).forget(jobId)
     setJobId(null)
-    setSendError(null)
+    setSendError(false)
     setStarting(true)
     try {
       const size = testSize(workflow.api, workflow.roles)
@@ -565,94 +569,347 @@ function TestRun({
       })
       setJobId(id)
     } catch {
-      setSendError("Couldn't send the test to ComfyUI. Check the connection above and try again.")
+      setSendError(true)
     } finally {
       setStarting(false)
     }
   }
 
-  const stop = () => {
+  const cancel = () => {
     if (jobId) void getComfySession(url).cancel(jobId).catch(() => {})
   }
 
+  return { job, jobId, starting, sendError, start, cancel }
+}
+
+/** The test's status line, and whether it reports a failure. */
+function testLine(
+  job: ComfyJob | null,
+  starting: boolean,
+  sendError: boolean,
+  workflow: SavedComfyWorkflow | null,
+): { text: ReactNode; isError: boolean } | null {
+  if (starting) return { text: "Sending the test…", isError: false }
+  if (sendError) return { text: "Couldn't send the test to ComfyUI. Check the connection above and try again.", isError: true }
+  if (!job) return null
+  switch (job.status) {
+    case "queued":
+      return { text: queueLabel(job), isError: false }
+    case "running":
+      return { text: stepLabel(job), isError: false }
+    case "done":
+      return { text: "Test finished. This is the image ComfyUI made.", isError: false }
+    case "cancelled":
+      return { text: "Test canceled.", isError: false }
+    case "error":
+      return { text: `ComfyUI couldn't run the test. ${sentence(errorLine(job, workflow?.api ?? null))}`, isError: true }
+  }
+}
+
+function TestStatus({ line, job, lowMotion }: { line: { text: ReactNode; isError: boolean }; job: ComfyJob | null; lowMotion: boolean }) {
+  const progress = job ? stepProgress(job) : null
+  return (
+    <div className="flex flex-col gap-2">
+      <p
+        role={line.isError ? "alert" : "status"}
+        aria-live={line.isError ? undefined : "polite"}
+        className={cn("break-words text-sm tabular-nums", line.isError ? "text-destructive-text" : "text-foreground")}
+      >
+        {line.text}
+      </p>
+      {progress !== null && (
+        <div
+          role="progressbar"
+          aria-label="Test progress"
+          aria-valuemin={0}
+          aria-valuemax={job?.totalSteps}
+          aria-valuenow={job?.step ?? 0}
+          className="h-1.5 overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            className={cn("h-full rounded-full bg-primary", !lowMotion && "transition-[width] duration-200 ease-out")}
+            style={{ width: `${progress * 100}%` }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The live preview while it runs, then the result. */
+function TestImage({ image, done }: { image: string | undefined; done: boolean }) {
+  return (
+    <div className="flex h-56 items-center justify-center overflow-hidden rounded-lg bg-muted/40 sm:h-64">
+      {image ? (
+        // crossOrigin: ComfyUI only serves the image to an allowed Origin, and a plain <img> sends none.
+        // eslint-disable-next-line @next/next/no-img-element -- a local ComfyUI image (blob or loopback URL), not optimizable
+        <img crossOrigin="anonymous" src={image} alt={done ? "Test result from ComfyUI" : "Live preview from ComfyUI"} className="h-full w-full object-contain" />
+      ) : (
+        <span className="text-xs text-muted-foreground">The image shows here once ComfyUI starts.</span>
+      )}
+    </div>
+  )
+}
+
+function TestRun({
+  url,
+  workflow,
+  options,
+  ready,
+  notReadyReason,
+}: {
+  url: string
+  workflow: SavedComfyWorkflow | null
+  options: ComfyOptions
+  ready: boolean
+  notReadyReason: string
+}) {
+  const lowMotion = useLowMotion()
+  const { job, jobId, starting, sendError, start, cancel } = useTestJob(url, workflow, options)
   const running = starting || job?.status === "queued" || job?.status === "running"
-  const progress = job?.status === "running" && job.totalSteps ? Math.min(1, (job.step ?? 0) / job.totalSteps) : null
-  const image = job?.status === "done" ? job.imageUrl : job?.previewUrl
-  const failedNode = job?.error?.node && workflow ? nodeTitle(workflow.api, job.error.node) : null
-
-  let line: ReactNode = null
-  if (starting) line = "Sending the test…"
-  else if (sendError) line = sendError
-  else if (job?.status === "queued")
-    line = job.queuePosition ? `Waiting in ComfyUI's queue, ${job.queuePosition} ahead.` : "Waiting in ComfyUI's queue."
-  else if (job?.status === "running")
-    line = job.totalSteps ? `Generating, step ${job.step ?? 0} of ${job.totalSteps}.` : "Generating…"
-  else if (job?.status === "done") line = "Test finished. This is the image ComfyUI made."
-  else if (job?.status === "cancelled") line = "Test stopped."
-  else if (job?.status === "error")
-    line = (
-      <>
-        ComfyUI couldn&apos;t run the test. {failedNode ? `${failedNode}: ` : ""}
-        {sentence(job.error?.message ?? "")}
-      </>
-    )
-
-  const isError = !!sendError || job?.status === "error"
+  const done = job?.status === "done"
+  const image = done ? job?.imageUrl : job?.previewUrl
+  const line = testLine(job, starting, sendError, workflow)
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {ready ? testDescription(workflow) : notReadyReason}
-        </p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{ready ? testDescription(workflow) : notReadyReason}</p>
         {running ? (
-          <Button type="button" variant="outline" onClick={stop} disabled={starting || !jobId} className="h-9 shrink-0 px-4 text-sm">
-            Stop test
+          <Button type="button" variant="outline" onClick={cancel} disabled={starting || !jobId} className="h-9 shrink-0 px-4 text-sm">
+            Cancel test
           </Button>
         ) : (
-          <Button type="button" onClick={start} disabled={!ready} className="h-9 shrink-0 px-4 text-sm">
+          <Button type="button" onClick={() => void start()} disabled={!ready} className="h-9 shrink-0 px-4 text-sm">
             Run a test
           </Button>
         )}
       </div>
-      {line && (
-        <div className="flex flex-col gap-2">
-          <p
-            role={isError ? "alert" : "status"}
-            aria-live={isError ? undefined : "polite"}
-            className={cn("break-words text-sm", isError ? "text-destructive-text" : "text-foreground")}
-          >
-            {line}
-          </p>
-          {progress !== null && (
-            <div
-              role="progressbar"
-              aria-label="Test progress"
-              aria-valuemin={0}
-              aria-valuemax={job?.totalSteps}
-              aria-valuenow={job?.step ?? 0}
-              className="h-1.5 overflow-hidden rounded-full bg-muted"
-            >
-              <div
-                className={cn("h-full rounded-full bg-primary", !lowMotion && "transition-[width] duration-200 ease-out")}
-                style={{ width: `${progress * 100}%` }}
-              />
-            </div>
-          )}
-        </div>
-      )}
-      {(running || image) && (
-        <div className="flex h-56 items-center justify-center overflow-hidden rounded-lg bg-muted/40 sm:h-64">
-          {image ? (
-            // crossOrigin: ComfyUI only serves the image to an allowed Origin, and a plain <img> sends none.
-            // eslint-disable-next-line @next/next/no-img-element -- a local ComfyUI image (blob or loopback URL), not optimizable
-            <img crossOrigin="anonymous" src={image} alt={job?.status === "done" ? "Test result from ComfyUI" : "Live preview from ComfyUI"} className="h-full w-full object-contain" />
-          ) : (
-            <span className="text-xs text-muted-foreground">The image shows here once ComfyUI starts.</span>
-          )}
-        </div>
-      )}
+      {line && <TestStatus line={line} job={job} lowMotion={lowMotion} />}
+      {(running || image) && <TestImage image={image} done={done} />}
     </div>
+  )
+}
+
+// --- Data from ComfyUI ---------------------------------------------------------
+
+/**
+ * The workflows published from ComfyUI. Every load takes a ticket; only the
+ * newest one may write, so a slow answer for an older address or an earlier
+ * Refresh never overwrites (or clears) a newer one.
+ */
+function useBridgeWorkflows(url: string, active: boolean) {
+  const [state, setState] = useState<{ url: string; items: BridgeWorkflowSummary[] | null; failed: boolean }>({ url, items: null, failed: false })
+  const [loading, setLoading] = useState(false)
+  const ticket = useRef(0)
+
+  /** Fetches the list; only the load holding the newest ticket may write. */
+  const load = useCallback(
+    (mine: number) =>
+      createComfyClient(url)
+        .listBridgeWorkflows()
+        .then(
+          (items) => {
+            if (mine === ticket.current) setState({ url, items, failed: false })
+          },
+          () => {
+            if (mine === ticket.current) setState((prev) => ({ url, items: prev.url === url ? prev.items : null, failed: true }))
+          },
+        ),
+    [url],
+  )
+
+  useEffect(() => {
+    if (!active) return
+    const counter = ticket
+    void load(++counter.current)
+    return () => {
+      // Closing the panel or changing the address drops the answer in flight.
+      counter.current++
+      setLoading(false)
+    }
+  }, [active, load])
+
+  /** The Refresh button: spins until its own answer is in. */
+  const refresh = () => {
+    const mine = ++ticket.current
+    setLoading(true)
+    void load(mine).finally(() => {
+      if (mine === ticket.current) setLoading(false)
+    })
+  }
+
+  const current = state.url === url ? state : { items: null, failed: false }
+  return { items: current.items, failed: current.failed, loading, refresh }
+}
+
+/** ComfyUI's node list, to flag nodes this ComfyUI doesn't have. */
+function useObjectInfo(url: string, active: boolean): ObjectInfo | null {
+  const [info, setInfo] = useState<{ url: string; info: ObjectInfo } | null>(null)
+  useEffect(() => {
+    if (!active) return
+    let cancelled = false
+    createComfyClient(url, { timeoutMs: 15000 })
+      .objectInfo()
+      .then((result) => {
+        if (!cancelled) setInfo({ url, info: result })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [active, url])
+  return info?.url === url ? info.info : null
+}
+
+// --- Panel parts ----------------------------------------------------------------
+
+type Settings = ReturnType<typeof useComfyUISettings>
+
+/** Import from the bridge or a file, save it and make it the workflow in use. */
+function useWorkflowImport(settings: Settings, objectInfo: ObjectInfo | null) {
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const adopt = (saved: SavedComfyWorkflow, verb: string) => {
+    if (!settings.saveWorkflow(saved)) {
+      setError("Couldn't save the workflow. The browser's storage for this site is full.")
+      return
+    }
+    settings.setActiveWorkflow(saved.id)
+    setError(null)
+    setNotice(`${verb} ${saved.name}.`)
+  }
+
+  const fromBridge = async (item: BridgeWorkflowSummary) => {
+    setBusyId(item.id)
+    setNotice(null)
+    try {
+      const record = await createComfyClient(settings.url).getBridgeWorkflow(item.id)
+      const result = importBridgeRecord(record)
+      if (!result.ok) {
+        setError(IMPORT_ERRORS[result.error])
+        return
+      }
+      const previous = settings.workflows.find((w) => w.bridgeId === item.id)
+      adopt(toSaved(result.workflow, objectInfo, previous, item.id), previous ? "Updated" : "Now using")
+    } catch {
+      setError("Couldn't load this workflow from ComfyUI. Check the connection and try again.")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const fromFile = async (file: File) => {
+    setNotice(null)
+    const result = await importWorkflowFile({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })
+    if (!result.ok) {
+      setError(IMPORT_ERRORS[result.error])
+      return
+    }
+    adopt(toSaved(result.workflow, objectInfo), "Now using")
+  }
+
+  const select = (id: string) => {
+    settings.setActiveWorkflow(id)
+    setNotice(null)
+  }
+
+  return { busyId, error, notice, fromBridge, fromFile, select }
+}
+
+function removeWithUndo(settings: Settings, w: SavedComfyWorkflow) {
+  const wasActive = settings.activeWorkflow?.id === w.id
+  if (!settings.removeWorkflow(w.id)) return
+  toast({
+    title: `Removed ${w.name}`,
+    action: (
+      <ToastAction
+        altText={`Undo removing ${w.name}`}
+        onClick={() => {
+          settings.saveWorkflow(w)
+          if (wasActive) settings.setActiveWorkflow(w.id)
+        }}
+      >
+        Undo
+      </ToastAction>
+    ),
+  })
+}
+
+function ModeSwitch({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
+  const id = useId()
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 px-3 py-3">
+      <label htmlFor={id} className="flex min-w-0 cursor-pointer flex-col gap-0.5">
+        <span className="text-sm font-medium text-foreground">Send to ComfyUI</span>
+        <span className="text-xs leading-relaxed text-muted-foreground">
+          {enabled
+            ? "On. Copy buttons are Send buttons and queue the prompt in ComfyUI."
+            : "Turns Copy buttons into Send buttons that queue the prompt in ComfyUI."}
+        </span>
+      </label>
+      <Switch id={id} checked={enabled} onCheckedChange={onChange} className="shrink-0" />
+    </div>
+  )
+}
+
+function RolesSection({
+  workflow,
+  objectInfo,
+  missingNodes,
+  showGraph,
+  onToggleGraph,
+  onRolesChange,
+  focusPromptRequest,
+}: {
+  workflow: SavedComfyWorkflow
+  objectInfo: ObjectInfo | null
+  missingNodes: string[]
+  showGraph: boolean
+  onToggleGraph: () => void
+  onRolesChange: (roles: Roles) => void
+  focusPromptRequest?: number
+}) {
+  const id = useId()
+  return (
+    <Section
+      title="Roles"
+      labelledBy={id}
+      action={
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onToggleGraph}
+          onPointerEnter={() => void loadViewer()}
+          onFocus={() => void loadViewer()}
+          aria-expanded={showGraph}
+          className="h-8 px-3 text-xs"
+        >
+          {showGraph ? "Hide graph" : "Change in graph"}
+        </Button>
+      }
+    >
+      <p className="-mt-1 text-xs leading-relaxed text-muted-foreground">
+        Where the site writes into {workflow.name}. Everything else stays as you set it in ComfyUI.
+      </p>
+      {showGraph ? (
+        <>
+          <ComfyUIWorkflowViewer
+            key={workflow.id}
+            workflow={workflow}
+            objectInfo={objectInfo}
+            onRolesChange={onRolesChange}
+            focusPromptRequest={focusPromptRequest}
+          />
+          {missingNodes.length > 0 && <RoleSummary workflow={workflow} missingNodes={missingNodes} />}
+        </>
+      ) : (
+        <RoleSummary workflow={workflow} missingNodes={missingNodes} />
+      )}
+    </Section>
   )
 }
 
@@ -671,7 +928,19 @@ export interface ComfyUIPanelProps {
 
 const REASON_HINT: Record<ComfyPanelReason, string> = {
   workflow: "Choose a workflow to send prompts with.",
-  "prompt-role": "Pick the Prompt input in Roles so Send can write the card's prompt.",
+  "prompt-role": "Choose the Prompt input, so Send knows where to write the card's prompt.",
+}
+
+function reasonHintFor(reason: ComfyPanelReason | null, workflow: SavedComfyWorkflow | null): string | null {
+  if (reason === "workflow" && !workflow) return REASON_HINT.workflow
+  if (reason === "prompt-role" && workflow && !workflow.roles.prompt) return REASON_HINT["prompt-role"]
+  return null
+}
+
+function notReadyReasonFor(connected: boolean, workflow: SavedComfyWorkflow | null): string {
+  if (!connected) return "Connect to ComfyUI to run a test."
+  if (!workflow) return "Choose a workflow to run a test."
+  return "Choose the Output node in Roles to run a test."
 }
 
 export function ComfyUIPanel({ open, onOpenChange, reason = null, requestId, returnFocusTo }: ComfyUIPanelProps) {
@@ -679,14 +948,9 @@ export function ComfyUIPanel({ open, onOpenChange, reason = null, requestId, ret
   const { enabled, url, workflows, activeWorkflow, options } = settings
   const { diagnosis, checking, check } = useDiagnosis(url, open)
   const connected = diagnosis?.state === "ok"
-
-  const [bridgeItems, setBridgeItems] = useState<BridgeWorkflowSummary[] | null>(null)
-  const [bridgeLoading, setBridgeLoading] = useState(false)
-  const [bridgeFailed, setBridgeFailed] = useState(false)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [objectInfo, setObjectInfo] = useState<ObjectInfo | null>(null)
-  const [importError, setImportError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const bridge = useBridgeWorkflows(url, open && connected)
+  const objectInfo = useObjectInfo(url, open && connected)
+  const importer = useWorkflowImport(settings, objectInfo)
   const [showGraph, setShowGraph] = useState(reason === "prompt-role")
 
   // Opened by Send for a missing prompt input: show the graph, where it is picked.
@@ -696,131 +960,19 @@ export function ComfyUIPanel({ open, onOpenChange, reason = null, requestId, ret
     if (reason === "prompt-role") setShowGraph(true)
   }
 
-  const fetchBridge = useCallback(async () => {
-    try {
-      const items = await createComfyClient(url).listBridgeWorkflows()
-      setBridgeItems(items)
-      setBridgeFailed(false)
-    } catch {
-      setBridgeFailed(true)
-    }
-  }, [url])
-
-  /** The Refresh button: also spins while it runs. */
-  const loadBridge = useCallback(async () => {
-    setBridgeLoading(true)
-    try {
-      await fetchBridge()
-    } finally {
-      setBridgeLoading(false)
-    }
-  }, [fetchBridge])
-
-  useEffect(() => {
-    if (!open || !connected) return
-    let cancelled = false
-    createComfyClient(url)
-      .listBridgeWorkflows()
-      .then((items) => {
-        if (cancelled) return
-        setBridgeItems(items)
-        setBridgeFailed(false)
-      })
-      .catch(() => {
-        if (!cancelled) setBridgeFailed(true)
-      })
-    createComfyClient(url, { timeoutMs: 15000 })
-      .objectInfo()
-      .then((info) => {
-        if (!cancelled) setObjectInfo(info)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [open, connected, url])
-
-  const adopt = (saved: SavedComfyWorkflow, verb: string) => {
-    if (!settings.saveWorkflow(saved)) {
-      setImportError("Couldn't save the workflow. The browser's storage for this site is full.")
-      return
-    }
-    settings.setActiveWorkflow(saved.id)
-    setImportError(null)
-    setNotice(`${verb} ${saved.name}.`)
-  }
-
-  const importFromBridge = async (item: BridgeWorkflowSummary) => {
-    setBusyId(item.id)
-    try {
-      const record = await createComfyClient(url).getBridgeWorkflow(item.id)
-      const result = importBridgeRecord(record)
-      if (!result.ok) {
-        setImportError(IMPORT_ERRORS[result.error])
-        return
-      }
-      const previous = workflows.find((w) => w.bridgeId === item.id)
-      adopt(toSaved(result.workflow, objectInfo, previous, item.id), previous ? "Updated" : "Now using")
-    } catch {
-      setImportError("Couldn't load this workflow from ComfyUI. Check the connection and try again.")
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  const importFile = async (file: File) => {
-    setNotice(null)
-    const result = await importWorkflowFile({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })
-    if (!result.ok) {
-      setImportError(IMPORT_ERRORS[result.error])
-      return
-    }
-    adopt(toSaved(result.workflow, objectInfo), "Now using")
-  }
-
-  const remove = (w: SavedComfyWorkflow) => {
-    const wasActive = activeWorkflow?.id === w.id
-    if (!settings.removeWorkflow(w.id)) return
-    toast({
-      title: `Removed ${w.name}`,
-      action: (
-        <ToastAction
-          altText={`Undo removing ${w.name}`}
-          onClick={() => {
-            settings.saveWorkflow(w)
-            if (wasActive) settings.setActiveWorkflow(w.id)
-          }}
-        >
-          Undo
-        </ToastAction>
-      ),
-    })
-  }
-
+  const { updateRoles } = settings
+  const activeId = activeWorkflow?.id
   const onRolesChange = useCallback(
     (roles: Roles) => {
-      if (activeWorkflow) settings.updateRoles(activeWorkflow.id, roles)
+      if (activeId) updateRoles(activeId, roles)
     },
-    [activeWorkflow, settings],
+    [activeId, updateRoles],
   )
 
   const missingNodes = activeWorkflow && objectInfo ? checkNodesAgainstObjectInfo(activeWorkflow.api, objectInfo) : []
   const ready = connected && !!activeWorkflow && !!activeWorkflow.roles.output
-  const notReadyReason = !connected
-    ? "Connect to ComfyUI to run a test."
-    : !activeWorkflow
-      ? "Choose a workflow to run a test."
-      : "Pick the node whose image to show to run a test."
-
-  const reasonHint =
-    reason === "workflow" && !activeWorkflow
-      ? REASON_HINT.workflow
-      : reason === "prompt-role" && activeWorkflow && !activeWorkflow.roles.prompt
-        ? REASON_HINT["prompt-role"]
-        : null
-
-  const ids = { connection: useId(), workflows: useId(), roles: useId(), options: useId(), test: useId() }
-  const switchId = useId()
+  const reasonHint = reasonHintFor(reason, activeWorkflow)
+  const ids = { connection: useId(), workflows: useId(), options: useId(), test: useId() }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -855,17 +1007,7 @@ export function ComfyUIPanel({ open, onOpenChange, reason = null, requestId, ret
               <span className="text-pretty">{reasonHint}</span>
             </p>
           )}
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 px-3 py-3">
-            <label htmlFor={switchId} className="flex min-w-0 cursor-pointer flex-col gap-0.5">
-              <span className="text-sm font-medium text-foreground">Send to ComfyUI</span>
-              <span className="text-xs leading-relaxed text-muted-foreground">
-                {enabled
-                  ? "On. Copy buttons are Send buttons and queue the prompt in ComfyUI."
-                  : "Turns Copy buttons into Send buttons that queue the prompt in ComfyUI."}
-              </span>
-            </label>
-            <Switch id={switchId} checked={enabled} onCheckedChange={(v) => settings.setEnabled(v)} className="shrink-0" />
-          </div>
+          <ModeSwitch enabled={enabled} onChange={(v) => settings.setEnabled(v)} />
 
           <Section title="Connection" labelledBy={ids.connection}>
             {/* Keyed by the saved address, so a change from another tab resets the draft. */}
@@ -876,84 +1018,45 @@ export function ComfyUIPanel({ open, onOpenChange, reason = null, requestId, ret
           <Section title="Workflow" labelledBy={ids.workflows}>
             {connected && (
               <BridgeList
-                items={bridgeItems}
-                loading={bridgeLoading}
-                failed={bridgeFailed}
+                items={bridge.items}
+                loading={bridge.loading}
+                failed={bridge.failed}
                 saved={workflows}
-                busyId={busyId}
-                onUse={(item) => void importFromBridge(item)}
-                onRefresh={() => void loadBridge()}
+                busyId={importer.busyId}
+                onUse={(item) => void importer.fromBridge(item)}
+                onRefresh={bridge.refresh}
               />
             )}
-            <DropZone onFile={(f) => void importFile(f)} error={importError} />
-            {notice && !importError && (
-              <p role="status" className="text-xs text-success-text">{notice}</p>
+            <DropZone onFile={(f) => void importer.fromFile(f)} error={importer.error} />
+            {importer.notice && !importer.error && (
+              <p role="status" className="text-xs text-success-text">{importer.notice}</p>
             )}
             <SavedList
               workflows={workflows}
               activeId={activeWorkflow?.id ?? null}
-              onSelect={(id) => {
-                settings.setActiveWorkflow(id)
-                setNotice(null)
-              }}
-              onRemove={remove}
+              onSelect={importer.select}
+              onRemove={(w) => removeWithUndo(settings, w)}
             />
           </Section>
 
           {activeWorkflow && (
-            <Section
-              title="Roles"
-              labelledBy={ids.roles}
-              action={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowGraph((v) => !v)}
-                  onPointerEnter={() => void loadViewer()}
-                  onFocus={() => void loadViewer()}
-                  aria-expanded={showGraph}
-                  className="h-8 px-3 text-xs"
-                >
-                  {showGraph ? "Hide graph" : "Change in graph"}
-                </Button>
-              }
-            >
-              <p className="-mt-1 text-xs leading-relaxed text-muted-foreground">
-                Where the site writes into {activeWorkflow.name}. Everything else stays as you set it in ComfyUI.
-              </p>
-              {showGraph ? (
-                <>
-                  <ComfyUIWorkflowViewer key={activeWorkflow.id} workflow={activeWorkflow} objectInfo={objectInfo} onRolesChange={onRolesChange} />
-                  {missingNodes.length > 0 && <RoleSummary workflow={activeWorkflow} missingNodes={missingNodes} />}
-                </>
-              ) : (
-                <RoleSummary workflow={activeWorkflow} missingNodes={missingNodes} />
-              )}
-            </Section>
+            <RolesSection
+              workflow={activeWorkflow}
+              objectInfo={objectInfo}
+              missingNodes={missingNodes}
+              showGraph={showGraph}
+              onToggleGraph={() => setShowGraph((v) => !v)}
+              onRolesChange={onRolesChange}
+              focusPromptRequest={reasonHint && reason === "prompt-role" ? requestId : undefined}
+            />
           )}
 
           <Section title="Options" labelledBy={ids.options}>
-            <div className="flex flex-col">
-              {OPTION_ROWS.map((row) => (
-                <div key={row.key} className="flex min-h-[52px] items-center justify-between gap-3 border-b border-border/50 py-2 last:border-b-0">
-                  <label htmlFor={`comfy-${row.key}`} className="flex min-w-0 cursor-pointer flex-col gap-0.5">
-                    <span className="text-sm text-foreground">{row.label}</span>
-                    <span className="text-xs text-muted-foreground">{row.hint}</span>
-                  </label>
-                  <Switch
-                    id={`comfy-${row.key}`}
-                    checked={options[row.key]}
-                    onCheckedChange={(v) => settings.setOptions({ [row.key]: v })}
-                    className="shrink-0"
-                  />
-                </div>
-              ))}
-            </div>
+            <OptionList options={options} onChange={(patch) => settings.setOptions(patch)} />
           </Section>
 
           <Section title="Test" labelledBy={ids.test}>
-            <TestRun url={url} workflow={activeWorkflow} options={options} ready={ready} notReadyReason={notReadyReason} />
+            <TestRun url={url} workflow={activeWorkflow} options={options} ready={ready} notReadyReason={notReadyReasonFor(connected, activeWorkflow)} />
           </Section>
         </div>
       </DialogContent>
