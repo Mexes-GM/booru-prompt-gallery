@@ -951,7 +951,8 @@ function isSavedComfyWorkflow(value: unknown): value is SavedComfyWorkflow {
     (value.ui === null || isRecord(value.ui)) &&
     isRoles(value.roles) &&
     typeof value.savedAt === 'number' &&
-    Number.isFinite(value.savedAt)
+    Number.isFinite(value.savedAt) &&
+    (value.testedAt === undefined || (typeof value.testedAt === 'number' && Number.isFinite(value.testedAt)))
   )
 }
 
@@ -1047,12 +1048,31 @@ export function removeComfyWorkflow(id: string): boolean {
   return ok
 }
 
-/** Returns false when the workflow does not exist or the write fails. */
+/**
+ * Returns false when the workflow does not exist or the write fails. New roles
+ * clear the workflow's passed test; the same roles keep it.
+ */
 export function updateComfyWorkflowRoles(id: string, roles: Roles): boolean {
+  const current = readComfyWorkflows()
+  const target = current.find((w) => w.id === id)
+  if (!target) return false
+  if (JSON.stringify(target.roles) === JSON.stringify(roles)) return true
+  return writeChecked(
+    STORAGE_KEYS.COMFYUI_WORKFLOWS,
+    current.map((w) => {
+      if (w.id !== id) return w
+      const { testedAt: _cleared, ...rest } = w
+      return { ...rest, roles }
+    }),
+  )
+}
+
+/** Records that a test with this workflow, as saved now, finished. Returns false when it does not exist or the write fails. */
+export function markComfyWorkflowTested(id: string, at: number = Date.now()): boolean {
   const current = readComfyWorkflows()
   if (!current.some((w) => w.id === id)) return false
   return writeChecked(
     STORAGE_KEYS.COMFYUI_WORKFLOWS,
-    current.map((w) => (w.id === id ? { ...w, roles } : w)),
+    current.map((w) => (w.id === id ? { ...w, testedAt: at } : w)),
   )
 }

@@ -128,6 +128,8 @@ export interface SavedComfyWorkflow {
   ui: object | null
   roles: Roles
   savedAt: number
+  /** When a test with this workflow and these roles last finished. Cleared when the roles change. */
+  testedAt?: number
 }
 
 /** Behaviour switches for sending. */

@@ -144,6 +144,19 @@ assert(storage.updateComfyWorkflowRoles("c", roles) === true, "roles updated")
 assert(storage.getComfyWorkflows()[0].roles.output === "9" && storage.getComfyWorkflows()[0].roles.prompt?.nodeId === "6", "roles persisted")
 assert(storage.updateComfyWorkflowRoles("zzz", roles) === false, "roles update on unknown id fails")
 
+// A passed test is kept with the workflow until its roles change
+assert(storage.markComfyWorkflowTested("c", 42) === true, "test recorded")
+assert(storage.getComfyWorkflows()[0].testedAt === 42, "test date stored")
+assert(storage.updateComfyWorkflowRoles("c", { ...roles }) === true, "same roles saved")
+assert(storage.getComfyWorkflows()[0].testedAt === 42, "same roles keep the test")
+assert(storage.updateComfyWorkflowRoles("c", { ...roles, seed: { nodeId: "6", input: "seed" } }) === true, "new roles saved")
+assert(storage.getComfyWorkflows()[0].testedAt === undefined, "new roles clear the test")
+assert(storage.markComfyWorkflowTested("zzz") === false, "test on unknown id fails")
+assert(storage.updateComfyWorkflowRoles("c", roles) === true, "roles restored")
+data.set(STORAGE_KEYS.COMFYUI_WORKFLOWS, JSON.stringify([{ ...wf("bad"), testedAt: "yesterday" }]))
+assert(storage.getComfyWorkflows().length === 0, "a non-numeric test date is rejected")
+data.set(STORAGE_KEYS.COMFYUI_WORKFLOWS, JSON.stringify([wf("c", { roles })]))
+
 // Quota
 const before = data.get(STORAGE_KEYS.COMFYUI_WORKFLOWS)
 quotaFull = true

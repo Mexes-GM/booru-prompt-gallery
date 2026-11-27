@@ -9,6 +9,7 @@ import {
   getComfyOptions,
   getComfyUrl,
   getComfyWorkflows,
+  markComfyWorkflowTested,
   removeComfyWorkflow,
   saveComfyWorkflow,
   setComfyActiveWorkflow,
@@ -105,6 +106,7 @@ const actions = {
   removeWorkflow: removeComfyWorkflow,
   setActiveWorkflow: setComfyActiveWorkflow,
   updateRoles: updateComfyWorkflowRoles,
+  markTested: markComfyWorkflowTested,
   setOptions: setComfyOptions,
 }
 
