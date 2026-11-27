@@ -1,4 +1,4 @@
-import { useEffect, useState, memo, useRef } from 'react'
+import { useCallback, useEffect, useState, memo, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet"
@@ -110,6 +110,8 @@ const AiConvertStickyFooterComponent = ({
   const [error, setError] = useState<string | null>(null)
   const [isCopied, triggerCopyFeedback, resetCopyFeedback] = useCopyFeedback()
   const comfy = useComfySend()
+  const sendRef = useRef<HTMLButtonElement>(null)
+  const focusSend = useCallback(() => sendRef.current?.focus(), [])
   const [isPulseActive, setIsPulseActive] = useState(false)
   const [dailyRemaining, setDailyRemaining] = useState<number | null>(null)
   // Turnstile token for the free AI tier. Stays null
@@ -702,6 +704,7 @@ const AiConvertStickyFooterComponent = ({
                       jobId={comfy.job.jobId}
                       api={comfy.job.api}
                       onDismiss={comfy.dismiss}
+                      returnFocus={focusSend}
                       className="mr-auto"
                     />
                   )}
@@ -718,6 +721,7 @@ const AiConvertStickyFooterComponent = ({
                   </Button>
                   {!error && comfy.enabled && (
                     <Button
+                      ref={sendRef}
                       size="sm"
                       onClick={() => void comfy.send(result, handleCopy)}
                       disabled={!result}

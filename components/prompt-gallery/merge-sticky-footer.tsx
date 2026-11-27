@@ -118,6 +118,8 @@ const MergeStickyFooterComponent = ({
     const [isCopied, triggerCopyFeedback] = useCopyFeedback()
     const [isCleared, setIsCleared] = useState(false)
     const comfy = useComfySend()
+    const sendRef = useRef<HTMLButtonElement>(null)
+    const focusSend = useCallback(() => sendRef.current?.focus(), [])
 
     const trackUse = () => {
         if (mergeModeType === 'variations') {
@@ -527,24 +529,27 @@ const MergeStickyFooterComponent = ({
                                 )}
                             </div>
 
-                            <div className={comfy.enabled ? "absolute bottom-2 right-2 left-2 flex items-center justify-end gap-2 z-10 pointer-events-none" : "absolute bottom-2 right-2 flex gap-2 z-10"}>
+                            {/* ComfyUI mode: the job's status and Send sit in a row under the tags, so neither covers them. */}
+                            <div className={comfy.enabled ? "mt-2 flex min-h-8 items-center justify-end gap-2" : "absolute bottom-2 right-2 flex gap-2 z-10"}>
                                 {comfy.enabled && comfy.job && (
                                     <ComfyInlineJob
                                         key={comfy.job.jobId}
                                         jobId={comfy.job.jobId}
                                         api={comfy.job.api}
                                         onDismiss={comfy.dismiss}
-                                        className="pointer-events-auto h-8 rounded-md border border-border/60 bg-background/95 pl-1 pr-1 shadow-sm"
+                                        returnFocus={focusSend}
+                                        className="mr-auto"
                                     />
                                 )}
                                 {comfy.enabled ? (
                                     <Button
+                                        ref={sendRef}
                                         size="sm"
                                         onClick={() => void handleSend(mergedPrompt)}
                                         disabled={!mergedPrompt}
                                         aria-busy={comfy.sending || undefined}
                                         aria-label="Send prompt to ComfyUI"
-                                        className="pointer-events-auto shrink-0 shadow-sm opacity-90 hover:opacity-100"
+                                        className="shrink-0 shadow-sm"
                                     >
                                         {comfy.sending ? (
                                             <Loader2 className="w-4 h-4 mr-2 motion-safe:animate-spin" aria-hidden="true" />

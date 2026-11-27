@@ -4,7 +4,7 @@
  * One ComfyUI job in a single compact row, for footers: the queue spot, the
  * steps, then a small thumbnail of the result that opens it full size.
  */
-import { memo, useEffect, useState } from "react"
+import { memo, useEffect, useRef, useState } from "react"
 import { AlertCircle, X } from "lucide-react"
 import { useComfyJob } from "@/hooks/use-comfyui-job"
 import { useLowMotion } from "@/hooks/use-low-motion"
@@ -18,13 +18,15 @@ export interface ComfyInlineJobProps {
   jobId: string
   api: ApiWorkflow
   onDismiss: () => void
+  /** Moves focus to the Send button when the focused control goes away. */
+  returnFocus?: () => void
   className?: string
 }
 
 const ICON_BUTTON =
   "relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-ring pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5"
 
-function ComfyInlineJobInner({ jobId, api, onDismiss, className }: ComfyInlineJobProps) {
+function ComfyInlineJobInner({ jobId, api, onDismiss, returnFocus, className }: ComfyInlineJobProps) {
   const job = useComfyJob(jobId)
   const lowMotion = useLowMotion()
   const [spoken, setSpoken] = useState("")
@@ -37,7 +39,13 @@ function ComfyInlineJobInner({ jobId, api, onDismiss, className }: ComfyInlineJo
     setSpoken(announcement(job))
   }
 
+  const rootRef = useRef<HTMLDivElement>(null)
+  const keepFocus = () => {
+    if (rootRef.current?.contains(document.activeElement)) returnFocus?.()
+  }
+
   const close = () => {
+    keepFocus()
     getComfySession(getComfyUISettings().url).forget(jobId)
     onDismiss()
   }
@@ -50,12 +58,13 @@ function ComfyInlineJobInner({ jobId, api, onDismiss, className }: ComfyInlineJo
   if (!job || status === "cancelled") return null
 
   const cancel = () => {
+    keepFocus()
     void getComfySession(getComfyUISettings().url).cancel(jobId).catch(() => {})
   }
   const progress = stepProgress(job)
 
   return (
-    <div className={cn("flex min-w-0 items-center gap-2 text-xs text-muted-foreground", className)}>
+    <div ref={rootRef} className={cn("flex min-w-0 items-center gap-2 text-xs text-muted-foreground", className)}>
       {job.status === "queued" && <span className="whitespace-nowrap tabular-nums">{queueLabel(job)}</span>}
 
       {job.status === "running" && (
@@ -99,7 +108,7 @@ function ComfyInlineJobInner({ jobId, api, onDismiss, className }: ComfyInlineJo
             <img src={job.imageUrl} crossOrigin="anonymous" alt="" className="h-full w-full object-cover object-top" />
           </a>
           <span className="whitespace-nowrap text-foreground">Done</span>
-          <button type="button" onClick={close} aria-label="Remove the generated image" title="Remove" className={ICON_BUTTON}>
+          <button type="button" onClick={close} aria-label="Close the generated image" title="Close" className={ICON_BUTTON}>
             <X aria-hidden className="h-3.5 w-3.5" />
           </button>
         </>
