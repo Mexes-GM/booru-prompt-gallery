@@ -708,11 +708,12 @@ function BriefWorkspace({
     [originOf, donorKey]
   )
 
-  // The pack's own prompt format: the gallery's until one is picked here, and picking one here
-  // never changes the gallery's cards (it is a preference of the builder).
+  // The pack's own prompt format: the gallery's until one is picked in this pack, and picking one
+  // here never changes the gallery's cards. Kept with this pack only: the next pack starts from
+  // the gallery's format again.
   const { format: galleryFormat, fullDetail } = usePromptFormat()
-  const promptFormat = packPromptFormat(preferences, galleryFormat)
-  const { setPromptFormat: setFormat } = pack
+  const [ownFormat, setFormat] = useState<PromptFormat | undefined>(undefined)
+  const promptFormat = packPromptFormat({ promptFormat: ownFormat }, galleryFormat)
   const copy = useCallback((text: string, format: PromptFormat) => copyPackText(text, format, provider), [provider])
   // The app's prompt settings (Tags to add and exclude, Find & Replace, weights, outfits…), the
   // same ones the gallery uses: read and edited here, never passed in.
