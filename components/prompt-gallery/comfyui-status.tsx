@@ -43,10 +43,11 @@ function turnComfyOffWithUndo(setEnabled: (enabled: boolean) => boolean) {
   })
 }
 
-type ChipPlacement = "toolbar" | "sticky"
+/** "section": the Customize prompt header. "sticky": the sticky bar. */
+type ChipPlacement = "section" | "sticky"
 
 /** The chip, only while the mode is on. */
-export function ComfyStatusChip({ placement = "toolbar", className }: { placement?: ChipPlacement; className?: string }) {
+export function ComfyStatusChip({ placement = "section", className }: { placement?: ChipPlacement; className?: string }) {
   const enabled = useComfyEnabled()
   if (!enabled) return null
   return <StatusChip placement={placement} className={className} />
@@ -80,7 +81,7 @@ function StatusChip({ placement, className }: { placement: ChipPlacement; classN
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen} closeOnScroll={placement === "toolbar"}>
+    <Popover open={open} onOpenChange={setOpen} closeOnScroll={placement === "section"}>
       <PopoverTrigger asChild>
         <button
           ref={triggerRef}
@@ -99,19 +100,20 @@ function StatusChip({ placement, className }: { placement: ChipPlacement; classN
             <Send aria-hidden className="h-3.5 w-3.5" />
             <ComfyStatusDot tone={tone} className="absolute -bottom-0.5 -right-1 ring-2 ring-background" />
           </span>
-          <span className={cn(placement === "sticky" && "hidden sm:inline")}>ComfyUI</span>
-          {activeWorkflow && placement === "toolbar" && (
-            <span className="hidden max-w-[11rem] truncate font-normal text-muted-foreground xl:inline">{activeWorkflow.name}</span>
+          {/* Narrow screens keep the icon and its dot; the label carries the rest. */}
+          <span className="hidden sm:inline">ComfyUI</span>
+          {activeWorkflow && placement === "section" && (
+            <span className="hidden max-w-[9rem] truncate font-normal text-muted-foreground xl:inline">{activeWorkflow.name}</span>
           )}
           {busy > 0 && (
-            <span className="flex items-center gap-1 font-normal tabular-nums text-muted-foreground">
+            <span className={cn("items-center gap-1 font-normal tabular-nums text-muted-foreground", placement === "section" ? "hidden sm:flex" : "flex")}>
               <Loader2 aria-hidden className="h-3 w-3 motion-safe:animate-spin" />
               {busy}
             </span>
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align={placement === "sticky" ? "end" : "start"} collisionPadding={12} className="w-[min(20rem,calc(100vw-2rem))] p-0">
+      <PopoverContent align="end" collisionPadding={12} className="w-[min(20rem,calc(100vw-2rem))] p-0">
         <div className="flex flex-col gap-3 p-4">
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-semibold text-foreground">Send to ComfyUI is on</p>

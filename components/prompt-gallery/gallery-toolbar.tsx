@@ -15,7 +15,6 @@ import { SEGMENT_PILL_SPRING } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { CardScaleControl } from "@/components/prompt-gallery/card-scale-control"
 import { preloadToolDialogs } from "@/components/prompt-gallery/gallery-modals-loader"
-import { ComfyStatusChip } from "@/components/prompt-gallery/comfyui-status"
 import { useComfyEnabled } from "@/hooks/use-comfyui-settings"
 
 type Mode = "browse" | "merge" | "pack"
@@ -160,10 +159,7 @@ export function GalleryToolbar({
             )
           })}
         </div>
-        <div className="flex min-w-0 items-center justify-center gap-2.5 sm:justify-start">
-          <span className="text-center text-xs text-muted-foreground sm:whitespace-nowrap sm:text-left">{modeHint}</span>
-          <ComfyStatusChip placement="toolbar" />
-        </div>
+        <span className="text-center text-xs text-muted-foreground sm:text-left">{modeHint}</span>
       </div>
 
       <div className="grid grid-cols-3 items-center gap-1 sm:flex">

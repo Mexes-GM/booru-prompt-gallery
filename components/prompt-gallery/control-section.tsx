@@ -34,6 +34,9 @@ interface ControlSectionProps {
   /** Called when the header is hovered, focused or pressed: a chance to fetch
    *  the section's code before it opens. */
   onIntent?: () => void
+  /** A control of its own at the header's right, before the chevron (e.g. a
+   *  status chip). Clicking it doesn't open or close the section. */
+  accessory?: React.ReactNode
   "data-tour"?: string
 }
 
@@ -68,6 +71,7 @@ export function ControlSection({
   resetLabel,
   children,
   onIntent,
+  accessory,
   "data-tour": dataTour,
 }: ControlSectionProps) {
   const isMobile = useIsMobile()
@@ -156,38 +160,45 @@ export function ControlSection({
     if (isMobile) void loadDrawer()
   }
 
+  // The whole row toggles the section: the button's ::after covers it, chevron
+  // included. An accessory sits above that layer, so its clicks stay its own.
   const header = (
-    <button
-      type="button"
-      onClick={() => onOpenChange(!open)}
-      onPointerEnter={handleIntent}
-      onPointerDown={handleIntent}
-      onFocus={handleIntent}
-      aria-expanded={isMobile ? undefined : open}
-      aria-controls={isMobile ? undefined : panelId}
-      aria-haspopup={isMobile ? "dialog" : undefined}
-      className="flex w-full min-h-[60px] items-center gap-3 px-4 py-3 text-left rounded-xl transition-[background-color,transform] duration-150 ease-out active:scale-[0.99] motion-reduce:active:scale-100 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <span
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg [&>svg]:h-[18px] [&>svg]:w-[18px]",
-          accent ? "bg-primary/15 text-primary-text" : "bg-muted text-foreground/80"
-        )}
+    <div className="relative flex w-full min-h-[60px] items-center gap-3 rounded-xl px-4 py-3 transition-[background-color,transform] duration-150 ease-out has-[[data-section-toggle]:hover]:bg-muted/40 has-[[data-section-toggle]:active]:scale-[0.99] motion-reduce:has-[[data-section-toggle]:active]:scale-100 has-[[data-section-toggle]:focus-visible]:ring-2 has-[[data-section-toggle]:focus-visible]:ring-ring">
+      <button
+        type="button"
+        data-section-toggle
+        onClick={() => onOpenChange(!open)}
+        onPointerEnter={handleIntent}
+        onPointerDown={handleIntent}
+        onFocus={handleIntent}
+        aria-expanded={isMobile ? undefined : open}
+        aria-controls={isMobile ? undefined : panelId}
+        aria-haspopup={isMobile ? "dialog" : undefined}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none after:absolute after:inset-0 after:rounded-xl"
       >
-        {icon}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-sm font-semibold text-foreground">{title}</span>
-        <span className="truncate text-xs text-muted-foreground">{summary}</span>
-      </span>
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg [&>svg]:h-[18px] [&>svg]:w-[18px]",
+            accent ? "bg-primary/15 text-primary-text" : "bg-muted text-foreground/80"
+          )}
+        >
+          {icon}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-sm font-semibold text-foreground">{title}</span>
+          <span className="truncate text-xs text-muted-foreground">{summary}</span>
+        </span>
+      </button>
+      {accessory && <div className="relative z-10 flex min-w-0 shrink-0 items-center">{accessory}</div>}
       {isMobile ? (
-        <ChevronRight className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+        <ChevronRight aria-hidden className="pointer-events-none h-[18px] w-[18px] shrink-0 text-muted-foreground" />
       ) : (
         <ChevronDown
-          className={cn("h-[18px] w-[18px] shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180")}
+          aria-hidden
+          className={cn("pointer-events-none h-[18px] w-[18px] shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180")}
         />
       )}
-    </button>
+    </div>
   )
 
   if (isMobile) {

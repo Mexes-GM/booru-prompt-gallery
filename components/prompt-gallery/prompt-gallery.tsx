@@ -166,6 +166,7 @@ const PackBuilderStickyFooter = dynamic(() => loadPackBuilderStickyFooter().then
 import { StickyMiniControlPanel } from "./sticky-mini-control-panel"
 import { FileCheck2, PenLine, SlidersHorizontal } from "lucide-react"
 import { ControlSection } from "@/components/prompt-gallery/control-section"
+import { ComfyStatusChip } from "@/components/prompt-gallery/comfyui-status"
 import { ProviderSelect } from "@/components/prompt-gallery/provider-select"
 import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll-trigger"
 import { SaveFavoriteButton } from "./save-favorite-button"
@@ -1933,6 +1934,7 @@ export function PromptGallery() {
                           open={promptOptionsOpen}
                           onOpenChange={setPromptOptionsOpen}
                           onIntent={preloadPromptSection}
+                          accessory={<ComfyStatusChip placement="section" />}
                           data-tour="customize-prompt"
                         >
                           {/* Two columns on desktop (Tags | Output) so the whole
