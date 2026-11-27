@@ -50,7 +50,7 @@ export function FeatureIntroDialog({
   const closeMethod = useRef<CloseMethod>("outside")
   // Furthest chapter reached in each video, and the videos opened, for the close event.
   const furthest = useRef<Partial<Record<FeatureVideoId, number>>>({})
-  const viewed = useRef(new Set<FeatureVideoId>([FEATURE_VIDEOS[0].id]))
+  const [viewed] = useState(() => new Set<FeatureVideoId>([FEATURE_VIDEOS[0].id]))
   const [active, setActive] = useState(0)
   const [chapter, setChapter] = useState(0)
   const [state, setState] = useState<"idle" | "playing" | "paused" | "ended">("idle")
@@ -101,7 +101,7 @@ export function FeatureIntroDialog({
   const select = (index: number) => {
     if (index === active) return
     videoRef.current?.pause()
-    viewed.current.add(FEATURE_VIDEOS[index].id)
+    viewed.add(FEATURE_VIDEOS[index].id)
     setActive(index)
     setSwitched(true)
     setChapter(0)
@@ -129,7 +129,7 @@ export function FeatureIntroDialog({
         method: closeMethod.current,
         video: video.id,
         chapters_seen: (furthest.current[video.id] ?? 0) + 1,
-        videos_viewed: viewed.current.size,
+        videos_viewed: viewed.size,
       })
     }
     onOpenChange(next)
