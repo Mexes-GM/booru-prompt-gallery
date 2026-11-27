@@ -24,7 +24,9 @@ export interface ComfyClientOptions {
   timeoutMs?: number
 }
 
-const LOCAL_URL = /^(?:http:\/\/)?(localhost|127\.0\.0\.1|\[::1\])(?::(\d{1,5}))?\/?$/i
+// IPv6 ([::1]) is left out: CSP host sources cannot name an IPv6 address, so
+// browsers would block it anyway.
+const LOCAL_URL = /^(?:http:\/\/)?(localhost|127\.0\.0\.1)(?::(\d{1,5}))?\/?$/i
 
 /**
  * Accepts only loopback addresses over plain http, because the site's CSP can

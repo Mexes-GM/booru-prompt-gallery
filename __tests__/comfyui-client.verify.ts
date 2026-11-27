@@ -62,7 +62,9 @@ async function main() {
   {
     same(normalizeComfyUrl("http://127.0.0.1:8188"), "http://127.0.0.1:8188", "plain 127.0.0.1")
     same(normalizeComfyUrl("http://localhost:8188/"), "http://localhost:8188", "trailing slash is dropped")
-    same(normalizeComfyUrl("  http://[::1]:9000  "), "http://[::1]:9000", "IPv6 loopback, trimmed")
+    same(normalizeComfyUrl("  http://localhost:9000  "), "http://localhost:9000", "trimmed")
+    // The CSP cannot allow an IPv6 host, so [::1] is refused.
+    same(normalizeComfyUrl("http://[::1]:9000"), null, "IPv6 loopback is refused")
     same(normalizeComfyUrl("127.0.0.1:8190"), "http://127.0.0.1:8190", "scheme is optional")
     same(normalizeComfyUrl("HTTP://LOCALHOST:3000"), "http://localhost:3000", "case-insensitive, lowercased")
     // A missing port means ComfyUI's default, 8188 (not http's 80).
