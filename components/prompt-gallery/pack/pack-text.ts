@@ -56,9 +56,11 @@ export const BUILDER_TEXT = {
   },
   loadFailed: "Couldn't load the scenes. Check your connection and try again.",
   retry: "Try again",
-  sheetHint: "Select a scene to leave it out",
   rerollFailed: "No other scene is left for this prompt.",
   findMore: "Find more scenes",
+  /** On the fit line of a pack saved with scenes left out: puts them all back (Undo takes it back). */
+  putBack: (n: number) => `Put back ${n} left-out ${n === 1 ? "scene" : "scenes"}`,
+  putBackDone: (n: number) => `Put back ${n} ${n === 1 ? "scene" : "scenes"}`,
   howItSearches: "How it searches",
   generatingSpoken: "Making the prompts",
   busySource: "Generate again first: the pack was made with another site or rating",
@@ -67,20 +69,6 @@ export const BUILDER_TEXT = {
   resultsLabel: "Prompts",
   convertFailed: "Couldn't load the prompt converter, so the prompts were copied as tags. Check your connection and try again.",
   convertFailedSend: "Couldn't load the prompt converter, so the prompts were sent as tags. Check your connection and try again.",
-} as const
-
-/** The contact sheet of a one-part pack: one scene repeats, the others lend it a part. */
-export const SHEET_TEXT = {
-  fixedBadge: "Repeats",
-  changeFixed: "Select to choose another scene to repeat.",
-  keepFixed: "Select to keep this one.",
-  pickThis: "Repeat this scene in every prompt",
-  picking: "Select the scene to repeat in every prompt.",
-  helpFixed:
-    "Use the arrow keys to move between scenes. The first scene repeats in every prompt; select it to choose another. Space on any other scene leaves its part out or puts it back.",
-  hint: (axis: string) => `The first scene repeats; the others lend their ${axis}. Select one to leave it out`,
-  outfitChanges: "Each prompt takes its outfit from another scene",
-  fixedLocked: "Unlock the locked prompts to choose another scene to repeat",
 } as const
 
 /** What a correction from the results did, for the notice with Undo. */
@@ -124,6 +112,8 @@ export const WEARING_TEXT = {
   anyKind: "Each prompt gets its own kind of it, in place of the usual outfit",
   exact: "Replaces the usual outfit",
   styles: "Each prompt wears a different outfit from the library",
+  /** A one-part pack where only the outfit changes. */
+  changes: "Each prompt takes its outfit from another scene",
 } as const
 
 /** The outfit library's styles as Wearing offers them (not tags: a whole outfit of the style per prompt). */
@@ -150,10 +140,7 @@ export const EXAMPLES_HEADING = "Not sure where to start? Try one of these"
 
 /** One-time tips, shown the first time each one is useful. */
 export const TIP_TEXT = {
-  sheet: "These are the scenes the pack will use. Select one to leave it out; select it again to put it back.",
   results: "Select a tag in a prompt to put it in every prompt (Always) or keep it out of all of them (Never).",
-  axis: (axis: string) =>
-    `One scene repeats in every prompt, marked Repeats. Only its ${axis} changes, taken from the other scenes. Select the marked scene to choose another.`,
   dismiss: "Dismiss tip",
 } as const
 
