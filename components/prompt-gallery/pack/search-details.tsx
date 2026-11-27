@@ -2,14 +2,16 @@
 
 /**
  * What the pack searches, opened from the fit line: one row per search of the source
- * plan (whose posts, the tags as the site gets them, the posts it has brought), the
- * ratings, any tag the site's limit left out, and the rule that only Doing is searched.
+ * plan (whose posts, the tags as the site gets them, the posts it has brought), where
+ * each character's look comes from, the ratings, any tag the site's limit left out, and
+ * the rule that only Doing is searched.
  */
 import { memo } from "react"
 import type { PackSourceProgress } from "@/hooks/use-pack-sources"
 import type { SourcePlan } from "@/lib/pack/source-plan"
 import { cn } from "@/lib/utils"
-import { DONOR_ROLE, SEARCH_RULE, donorDescription, leftOutSentence, noPostsSentence, ratingsSentence, searchCount, searchDescription, searchTagsText } from "./search-text"
+import { showTag } from "./slots"
+import { DONOR_ROLE, SEARCH_RULE, donorDescription, leftOutSentence, lookDescription, noPostsSentence, ratingsSentence, searchCount, searchDescription, searchTagsText } from "./search-text"
 
 export interface SearchDetailsProps {
   id: string
@@ -64,6 +66,12 @@ export const SearchDetails = memo(function SearchDetails({ id, plan, progress, c
             </li>
           )
         })}
+        {plan.appearance.map((search) => (
+          <li key={search.id} className="min-w-0">
+            <span className="font-medium text-foreground">{lookDescription(characterNames?.[search.character] ?? showTag(search.character))}</span>
+            <code className="block break-all font-mono text-[11px] text-muted-foreground">{searchTagsText(search)}</code>
+          </li>
+        ))}
       </ul>
       <p className="text-muted-foreground">{ratingsSentence(plan.ratings)}</p>
       {leftOut && <p className="text-warning-text">{leftOut}</p>}
