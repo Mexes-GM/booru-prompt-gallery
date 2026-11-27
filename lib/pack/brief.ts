@@ -10,8 +10,9 @@ import { normalizeTagForPack } from './pack-generator'
 import { COUNT_TAG_RE, createPermanence, type Permanence } from './scene/permanence'
 import { briefRouteOf, tagRole, type TagRole, type TagRoleContext } from './tag-role'
 import { loadedTagRelations, type TagRelations } from '../tag-relations'
-import { MAX_CAST, type CastRole } from './scene/cast'
+import { MAX_CAST, MAX_TURNS_CAST, type CastRole } from './scene/cast'
 import type { PackPeople } from './scene/scene-pool'
+import type { CastGender, CastSource } from './cast-picker'
 
 /** What a requested tag is about. Decides how the engine treats it. */
 export type RequestRole = 'wearing' | 'doing' | 'where' | 'also'
@@ -45,7 +46,7 @@ export interface BriefCharacter {
 }
 
 export interface PackBrief {
-  who: BriefCharacter[]        // 1 to MAX_CAST
+  who: BriefCharacter[]        // 1 to castLimit(brief): MAX_CAST together, MAX_TURNS_CAST one per prompt
   requests: PackRequest[]      // in every prompt
   never: string[]              // in none
   /** The Style row: style, meta, artist and copyright tags, and tags the taxonomy doesn't know (LoRA triggers). First in every prompt, as typed. */
@@ -74,6 +75,23 @@ export interface PackBrief {
    * prompt; 'turns' gives each prompt one of them, in turn (castTurns, lib/pack/cast-turns.ts).
    */
   castMode?: CastMode
+  /**
+   * Who has no named character and each prompt gets a different known character, drawn from the
+   * most posted ones or a series (lib/pack/random-cast.ts). Ends when a character is named.
+   */
+  randomCast?: RandomCast
+}
+
+/** Random known characters, one per prompt. */
+export interface RandomCast {
+  source: CastSource
+  /** 'auto': the gender the People line leaves room for (randomCastGender). */
+  gender: CastGender | 'auto'
+  /**
+   * The characters drawn for the pack, in prompt order, as the pack's site names them. Generate
+   * again draws others (the rows that are locked keep theirs). Stored, so a reload shows the same.
+   */
+  drawn: CastMember[]
 }
 
 /** How the named characters share a pack: all in every prompt, or one per prompt in turn. */
@@ -305,6 +323,7 @@ function cloneBrief(brief: PackBrief): PackBrief {
     ...(brief.leftOutVariants ? { leftOutVariants: [...brief.leftOutVariants] } : {}),
     ...(brief.outfitStyles ? { outfitStyles: [...brief.outfitStyles] } : {}),
     ...(brief.peopleMix ? { peopleMix: brief.peopleMix.map((p) => ({ ...p })) } : {}),
+    ...(brief.randomCast ? { randomCast: { ...brief.randomCast, drawn: brief.randomCast.drawn.map((m) => ({ ...m })) } } : {}),
   }
 }
 
@@ -315,9 +334,19 @@ function cloneBrief(brief: PackBrief): PackBrief {
 export const castTurns = (brief: Pick<PackBrief, 'who' | 'castMode'>): boolean =>
   brief.castMode === 'turns' && brief.who.filter((c) => c.tag !== null).length >= 2
 
-/** Sets how the named characters share the pack ('together' is the default and is not stored). */
+/** Most characters the brief can name: MAX_CAST together, MAX_TURNS_CAST one per prompt. */
+export const castLimit = (brief: Pick<PackBrief, 'castMode'>): number => (brief.castMode === 'turns' ? MAX_TURNS_CAST : MAX_CAST)
+
+/** Named characters of the brief. */
+const namedCount = (brief: Pick<PackBrief, 'who'>) => brief.who.filter((c) => c.tag !== null).length
+
+/**
+ * Sets how the named characters share the pack ('together' is the default and is not stored).
+ * Together holds at most MAX_CAST characters: with more, the brief stays as it is.
+ */
 export function setCastMode(brief: PackBrief, mode: CastMode): PackBrief {
   if ((brief.castMode ?? 'together') === mode) return brief
+  if (mode === 'together' && namedCount(brief) > MAX_CAST) return brief
   const next = cloneBrief(brief)
   if (mode === 'turns') next.castMode = 'turns'
   else delete next.castMode
@@ -387,20 +416,54 @@ export function addTag(
 /**
  * Adds a character by name, without asking the taxonomy (a name from a character search
  * may not be in the overrides yet). It is normalized, never repeated and capped at
- * MAX_CAST. The first named character takes over the unnamed one with its look and role:
+ * castLimit. The first named character takes over the unnamed one with its look and role:
  * a pasted single-character prompt must not become a group.
  */
 export function addCharacter(brief: PackBrief, name: string): PackBrief {
   const tag = normalizeTagForPack(name)
   if (!tag) return brief
   const next = cloneBrief(brief)
+  // A named character ends random characters.
+  delete next.randomCast
   if (next.who.some((c) => c.tag !== null && same(c.tag, tag))) return next
   const [first] = next.who
   if (next.who.length === 1 && first.tag === null) {
     next.who = [{ ...first, tag }]
-  } else if (next.who.length < MAX_CAST) {
+  } else if (next.who.length < castLimit(next)) {
     next.who.push({ tag, addedLook: [], removedLook: [] })
   }
+  return next
+}
+
+/** A character a quick cast adds (lib/pack/cast-picker.ts): their name and, when the data knows it, their gender. */
+export interface CastMember {
+  tag: string
+  role?: CastRole | null
+}
+
+/**
+ * Adds several characters at once (a quick cast), each with their gender, as addCharacter adds one:
+ * names already in Who are skipped. With two or more named characters after it, the pack is one per
+ * prompt (castMode 'turns'), which is what a cast picked at once is for, and can hold up to
+ * MAX_TURNS_CAST of them; characters past that are left out. The user can still choose Together
+ * while the pack has no more than MAX_CAST.
+ */
+export function addCast(brief: PackBrief, members: readonly CastMember[]): PackBrief {
+  const fresh = members.filter((m) => normalizeTagForPack(m.tag))
+  if (fresh.length === 0) return brief
+  let next = cloneBrief(brief)
+  const wasTurns = next.castMode === 'turns'
+  next.castMode = 'turns'
+  for (const member of fresh) {
+    const tag = normalizeTagForPack(member.tag)
+    const had = namedCount(next)
+    next = addCharacter(next, tag)
+    if (namedCount(next) === had || !member.role) continue
+    const added = next.who.find((c) => c.tag !== null && same(c.tag, tag))
+    if (added && !added.role) added.role = member.role
+  }
+  // One character alone has no one to take turns with: the pack stays as it was.
+  if (namedCount(next) < 2 && !wasTurns) delete next.castMode
   return next
 }
 

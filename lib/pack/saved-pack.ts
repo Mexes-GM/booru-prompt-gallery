@@ -156,6 +156,16 @@ function isBrief(v: unknown): v is PackBrief {
     && optional(v.outfitDetail, (d) => d === 'simple' || d === 'full')
     && optional(v.peopleMix, (m) => Array.isArray(m) && m.every(isPeople))
     && optional(v.castMode, (m) => m === 'together' || m === 'turns')
+    && optional(v.randomCast, isRandomCast)
+}
+
+const GENDERS: readonly string[] = ['girls', 'boys', 'any', 'auto']
+
+function isRandomCast(v: unknown): boolean {
+  if (!isObj(v) || !GENDERS.includes(v.gender as string) || !Array.isArray(v.drawn)) return false
+  const source = v.source
+  const sourceOk = isObj(source) && (source.kind === 'popular' || (source.kind === 'series' && typeof source.series === 'string'))
+  return sourceOk && v.drawn.every((m) => isObj(m) && typeof m.tag === 'string' && optional(m.role, (r) => r === null || r === 'girl' || r === 'boy'))
 }
 
 function isOutfit(v: unknown): v is BriefOutfit {

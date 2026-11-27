@@ -13,8 +13,17 @@ import { isCompositionPattern } from './permanence'
 
 export type CastRole = 'girl' | 'boy'
 
-/** Most characters a pack names. */
+/** Most characters a pack names together, all of them in every prompt. */
 export const MAX_CAST = 3
+
+/**
+ * Most characters a pack names one per prompt (PackBrief.castMode 'turns'). Each prompt has one of
+ * them, so the scenes don't limit it; what does: every character past the first few without a trait
+ * profile costs a search for their look (source-plan.ts MAX_LOOK_SEARCHES), a run of the engine,
+ * and room in Who. 15 keeps the worst case at 15 look searches, and gives each character 3 or more
+ * prompts of a 50-prompt pack.
+ */
+export const MAX_TURNS_CAST = 15
 
 /** People the cast names, by gender. Unknown roles are not counted. */
 export function castPeople(roles: ReadonlyArray<CastRole | null>): PackPeople {

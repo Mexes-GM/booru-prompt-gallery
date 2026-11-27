@@ -31,6 +31,8 @@ export interface BriefSlotProps {
   placeholder?: string
   /** Controls after the field (a menu, a picker button). */
   actions?: ReactNode
+  /** A line of quiet controls under the field (Who's ways to add several characters). */
+  after?: ReactNode
   /** Lines under the row: conflicts, what a choice does. */
   notes?: ReactNode
   /** Changes each time a tag typed elsewhere lands in this row: the row lights up once. */
@@ -78,6 +80,7 @@ export const BriefSlot = memo(function BriefSlot({
   entry,
   placeholder,
   actions,
+  after,
   notes,
   flashKey,
   className,
@@ -133,6 +136,7 @@ export const BriefSlot = memo(function BriefSlot({
             placeholder={placeholder ?? (filled ? meta.moreText : meta.emptyText)}
           />
         </div>
+        {after && <div className="-ml-2.5 mt-1 flex flex-wrap items-center gap-0.5">{after}</div>}
         {(help || notes) && (
           // The hint waits for the field (it is the field's description meanwhile); notes always show.
           <div className={cn("mt-2 space-y-1 text-xs leading-relaxed text-muted-foreground", !notes && "hidden group-focus-within/slot:block")}>

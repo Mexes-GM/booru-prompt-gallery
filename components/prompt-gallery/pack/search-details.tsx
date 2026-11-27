@@ -11,7 +11,7 @@ import type { PackSourceProgress } from "@/hooks/use-pack-sources"
 import type { SourcePlan } from "@/lib/pack/source-plan"
 import { cn } from "@/lib/utils"
 import { showTag } from "./slots"
-import { DONOR_ROLE, SEARCH_RULE, donorDescription, leftOutSentence, lookDescription, noPostsSentence, ratingsSentence, searchCount, searchDescription, searchTagsText } from "./search-text"
+import { DONOR_ROLE, SEARCH_RULE, donorDescription, leftOutSentence, lookDescription, noPostsSentence, profileLookDescription, ratingsSentence, searchCount, searchDescription, searchTagsText } from "./search-text"
 
 export interface SearchDetailsProps {
   id: string
@@ -72,6 +72,13 @@ export const SearchDetails = memo(function SearchDetails({ id, plan, progress, c
             <code className="block break-all font-mono text-[11px] text-muted-foreground">{searchTagsText(search)}</code>
           </li>
         ))}
+        {plan.lookFromProfile && (
+          <li className="min-w-0">
+            <span className="font-medium text-foreground">
+              {profileLookDescription(plan.lookFromProfile.map((c) => characterNames?.[c] ?? showTag(c)))}
+            </span>
+          </li>
+        )}
       </ul>
       <p className="text-muted-foreground">{ratingsSentence(plan.ratings)}</p>
       {leftOut && <p className="text-warning-text">{leftOut}</p>}

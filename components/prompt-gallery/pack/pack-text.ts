@@ -434,3 +434,86 @@ export const CAST_MODE_TEXT = {
   /** Before a result row's character, for screen readers. */
   rowLabel: "Character",
 } as const
+
+/** Who: several characters picked at once, the most posted overall or the ones of a series. */
+export const CAST_PICKER_TEXT = {
+  /** The button in Who that opens the picker. */
+  open: "Add several",
+  openSpoken: "Add several characters at once",
+  title: "Add several characters",
+  sourceLabel: "Where they come from",
+  popular: "Popular",
+  series: "From a series",
+  seriesLabel: "Series",
+  seriesPlaceholder: "Type a series, like Genshin Impact",
+  seriesCount: (n: number) => (n === 1 ? "1 character" : `${n} characters`),
+  seriesNone: "No series by that name.",
+  genderLabel: "Gender",
+  girls: "Girls",
+  boys: "Boys",
+  any: "Any",
+  countLabel: "How many",
+  fewer: "One fewer character",
+  more: "One more character",
+  orderLabel: "Order",
+  random: "Random",
+  mostPopular: "Most popular",
+  randomHint: "Picked from the most popular, different each time.",
+  popularHint: "The most posted ones, in order.",
+  /** The names that will be added. */
+  previewLabel: "Will add",
+  shuffle: "Shuffle",
+  shuffleSpoken: "Pick other characters",
+  add: (n: number) => (n === 1 ? "Add 1 character" : `Add ${n} characters`),
+  /** Under the button: what adding does to the pack. */
+  addsTurns: "Each prompt shows one of them.",
+  room: (n: number) => (n === 1 ? "Who has room for 1 more." : `Who has room for ${n} more.`),
+  full: (max: number) => `Who is full. One per prompt takes up to ${max} characters.`,
+  pickSeries: "Type a series to see its characters.",
+  none: (gender: "girls" | "boys" | "any", series: string | null) =>
+    `No ${gender === "any" ? "characters" : gender} found${series ? ` in ${series}` : ""}. Try another gender.`,
+  loading: "Loading characters…",
+  failed: "Couldn't load the character list.",
+  retry: "Try again",
+  /** The entry dialog's way into the picker, and its view. */
+  entryLink: "Add several at once: popular ones or from a series",
+  entryTitle: "Several characters",
+  entryDescription: "Pick them by popularity or by series.",
+  start: (n: number) => (n === 1 ? "Start with 1 character" : `Start with ${n} characters`),
+} as const
+
+/** Who: a different known character in each prompt, drawn from the popular ones or a series. */
+export const RANDOM_CAST_TEXT = {
+  /** The button in an empty Who. */
+  open: "Random characters",
+  openSpoken: "Use a different random character in each prompt",
+  title: "Random characters",
+  intro: "Each prompt gets a different known character. Generate again draws new ones.",
+  auto: "Auto",
+  /** What Auto picks, from People. */
+  autoHint: (gender: "girls" | "boys" | "any") =>
+    gender === "any" ? "Auto: any gender, to fit People." : `Auto: ${gender}, to fit People.`,
+  use: "Use random characters",
+  update: "Update",
+  /** The chip in Who, and where they come from after it. */
+  chip: "Random characters",
+  detail: (source: string, gender: string) => `${source}, ${gender}`,
+  popular: "Popular",
+  change: "Change",
+  note: "Each prompt gets a different known character. Generate again draws new ones.",
+  few: (n: number) => `Only ${n} ${n === 1 ? "character fits" : "characters fit"} these choices, so some prompts repeat them.`,
+} as const
+
+/** Who with more characters than fit on a line each. */
+export const WHO_MANY_TEXT = {
+  showLooks: "Show their looks",
+  hideLooks: "Hide their looks",
+  /** Together isn't offered with more than it holds. */
+  togetherLimit: (max: number) => `Together takes up to ${max} characters.`,
+  /** Together and full. */
+  togetherFull: (max: number) => `Together takes up to ${max} characters. For more, choose One per prompt.`,
+  turnsFull: (max: number) => `One per prompt takes up to ${max} characters.`,
+  /** More characters than prompts. */
+  fewPrompts: (prompts: number, left: number) =>
+    `With ${prompts} ${prompts === 1 ? "prompt" : "prompts"}, ${left} of the characters won't appear. Raise the number of prompts to include everyone.`,
+} as const

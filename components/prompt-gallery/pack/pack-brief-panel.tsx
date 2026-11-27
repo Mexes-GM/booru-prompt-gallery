@@ -9,8 +9,10 @@
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AlertTriangle, MapPin, Repeat2 } from "lucide-react"
-import type { BriefCharacter, CastMode, ChangesAxis, PackBrief, RequestRole } from "@/lib/pack/brief"
-import type { CastRole } from "@/lib/pack/scene/cast"
+import { castLimit, type BriefCharacter, type CastMember, type CastMode, type ChangesAxis, type PackBrief, type RandomCast, type RequestRole } from "@/lib/pack/brief"
+import type { CastGender } from "@/lib/pack/cast-picker"
+import type { BooruProvider } from "@/lib/booru/types"
+import { MAX_CAST, MAX_TURNS_CAST, type CastRole } from "@/lib/pack/scene/cast"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { BriefSlot, SlotNote, type SlotEntryProps } from "./brief-slot"
@@ -21,7 +23,8 @@ import { RequestChip, type RequestChipTone } from "./request-chip"
 import type { EntryOption } from "./tag-entry"
 import { SLOTS, characterName, showTag, slotTags, type CharacterInfo, type SlotId, type SuggestionStatus, type TagSuggestion } from "./slots"
 import { OutfitDetailMenu, WearingSourceMenu } from "./wearing-source-menu"
-import { CAST_MODE_TEXT, DEFAULTS_TEXT, OTHERS_UNUSED, WEARING_TEXT, outfitSourceLabel } from "./pack-text"
+import { CastPickerButton, RandomCastButton, seriesName } from "./cast-picker"
+import { CAST_MODE_TEXT, DEFAULTS_TEXT, OTHERS_UNUSED, RANDOM_CAST_TEXT, WEARING_TEXT, WHO_MANY_TEXT, outfitSourceLabel } from "./pack-text"
 import type { OutfitSource } from "./pack-text"
 import type { OutfitDetail } from "@/lib/outfit-swap"
 
@@ -41,8 +44,20 @@ export interface PackBriefPanelProps {
   brief: PackBrief
   /** Keyed by character tag. */
   characterInfo?: Readonly<Record<string, CharacterInfo>>
-  /** Most characters a pack can have. */
+  /** Most characters a pack can have; by default the brief's own limit (castLimit). */
   maxCharacters?: number
+  /**
+   * "Add several" in Who: characters picked at once (popular, or of a series), named as the pack's
+   * site names them. Without it Who has no such button.
+   */
+  castPicker?: { provider: BooruProvider; onAdd: (members: CastMember[]) => void } | null
+  /** Prompts the pack makes: with one character per prompt and fewer prompts than characters, Who says so. */
+  promptCount?: number
+  /**
+   * Random characters in an empty Who (lib/pack/random-cast.ts): the brief's choice, what Auto
+   * means with the pack's People, and the change (null takes it off). Without it Who doesn't offer them.
+   */
+  randomCast?: { autoGender: CastGender; onChange: (randomCast: RandomCast | null) => void } | null
 
   /** `picked`: the autocomplete suggestion the tag came from, if any. */
   onAddTags: (tags: string[], slot: SlotId, picked?: TagSuggestion) => void
@@ -154,7 +169,7 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
   const {
     brief,
     characterInfo = {},
-    maxCharacters = 3,
+    maxCharacters: maxCharactersProp,
     onAddTags,
     onRemoveTag,
     onRemoveNever,
@@ -186,8 +201,12 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
     onQueryChange,
     routed,
     autoFocus = false,
+    castPicker,
+    promptCount,
+    randomCast,
     className,
   } = props
+  const maxCharacters = maxCharactersProp ?? castLimit(brief)
 
   const sectionRef = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -319,6 +338,9 @@ export const PackBriefPanel = memo(function PackBriefPanel(props: PackBriefPanel
           assumedRoles={assumedRoles}
           castMode={brief.castMode ?? "together"}
           onCastModeChange={onCastModeChange}
+          castPicker={castPicker}
+          promptCount={promptCount}
+          random={randomCast && castPicker ? { ...randomCast, value: brief.randomCast ?? null, provider: castPicker.provider } : null}
           flashKey={flashFor("who")}
         />
         {requestRow("wearing", {
@@ -483,8 +505,18 @@ interface WhoRowProps {
   assumedRoles?: Readonly<Record<string, CastRole | null | undefined>>
   castMode: CastMode
   onCastModeChange?: (mode: CastMode) => void
+  castPicker?: PackBriefPanelProps["castPicker"]
+  promptCount?: number
+  random?: (NonNullable<PackBriefPanelProps["randomCast"]> & { value: RandomCast | null; provider: CastPickerProvider }) | null
   flashKey?: number
 }
+
+type CastPickerProvider = NonNullable<PackBriefPanelProps["castPicker"]>["provider"]
+
+const GENDER_WORD: Record<RandomCast["gender"], string> = { auto: "auto", girls: "girls", boys: "boys", any: "any gender" }
+
+/** With more characters than Together holds, Together can't be chosen. */
+const CAST_MODE_CHOICES_MANY: Choice<CastMode>[] = CAST_MODE_CHOICES.map((c) => (c.value === "together" ? { ...c, disabled: true } : c))
 
 /** Who: each character on its own line with its usual look; a role picker once there are two. */
 function WhoRow({
@@ -502,6 +534,9 @@ function WhoRow({
   assumedRoles = {},
   castMode,
   onCastModeChange,
+  castPicker,
+  promptCount,
+  random,
   flashKey,
 }: WhoRowProps) {
   const named = who.filter((c) => c.tag !== null)
@@ -510,6 +545,11 @@ function WhoRow({
   // Two or more characters: together in every prompt, or one per prompt in turn.
   const castChoice = named.length >= 2 && onCastModeChange
   const turns = castChoice && castMode === "turns"
+  // More than Together holds: a line of names, each character's look on request.
+  const many = named.length > MAX_CAST
+  const [looksShown, setLooksShown] = useState(false)
+  const compact = many && !looksShown
+  const unseen = turns && promptCount !== undefined && promptCount < named.length ? named.length - promptCount : 0
 
   const lines = useMemo(
     () =>
@@ -529,7 +569,8 @@ function WhoRow({
   const lastLine = lines[lines.length - 1]
   let last: LastChip | null = null
   let lastKey: string | null = null
-  if (lastLine) {
+  // In the line of names the looks are hidden: Backspace has nothing of theirs to take.
+  if (lastLine && !compact) {
     const lastAdded = lastLine.added[lastLine.added.length - 1]
     const lastTrait = [...lastLine.usual].reverse().find((t) => !lastLine.removed.has(t.toLowerCase()) && !lastLine.replaced.has(t.toLowerCase()))
     if (lastAdded) {
@@ -541,7 +582,9 @@ function WhoRow({
     }
   }
 
-  const filled = lines.some((l) => l.name || l.usual.length > 0 || l.added.length > 0)
+  // Random characters: Who names nobody, a chip says where they come from.
+  const drawing = !!random?.value && named.length === 0
+  const filled = drawing || lines.some((l) => l.name || l.usual.length > 0 || l.added.length > 0)
 
   return (
     <BriefSlot
@@ -550,20 +593,59 @@ function WhoRow({
       entry={entryFor("who", last)}
       placeholder={!filled ? undefined : full ? "Add a look tag" : undefined}
       actions={castChoice ? (
-        <ChoiceGroup size="sm" choices={CAST_MODE_CHOICES} value={castMode} onChange={onCastModeChange} label={CAST_MODE_TEXT.label} />
+        <ChoiceGroup size="sm" choices={many ? CAST_MODE_CHOICES_MANY : CAST_MODE_CHOICES} value={castMode} onChange={onCastModeChange} label={CAST_MODE_TEXT.label} />
       ) : undefined}
-      notes={full || turns ? (
+      notes={full || turns || many ? (
         <>
-          {turns && <SlotNote>{CAST_MODE_TEXT.turnsNote}</SlotNote>}
-          {full && <SlotNote>A pack can have up to {maxCharacters} characters.</SlotNote>}
+          {turns && <SlotNote>{CAST_MODE_TEXT.turnsNote}{many && !full ? ` ${WHO_MANY_TEXT.togetherLimit(MAX_CAST)}` : ""}</SlotNote>}
+          {full && <SlotNote>{castMode === "turns" ? WHO_MANY_TEXT.turnsFull(maxCharacters) : maxCharacters < MAX_TURNS_CAST && onCastModeChange ? WHO_MANY_TEXT.togetherFull(maxCharacters) : `A pack can have up to ${maxCharacters} characters.`}</SlotNote>}
+          {unseen > 0 && promptCount !== undefined && <SlotNote tone="warning">{WHO_MANY_TEXT.fewPrompts(promptCount, unseen)}</SlotNote>}
+          {many && (
+            <button
+              type="button"
+              aria-expanded={looksShown}
+              onClick={() => setLooksShown((v) => !v)}
+              className="-mx-1 rounded px-1 font-medium text-foreground underline decoration-border underline-offset-[3px] transition-[text-decoration-color] duration-150 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+            >
+              {looksShown ? WHO_MANY_TEXT.hideLooks : WHO_MANY_TEXT.showLooks}
+            </button>
+          )}
+        </>
+      ) : undefined}
+      after={(castPicker && named.length < MAX_TURNS_CAST) || (random && named.length === 0 && !drawing) ? (
+        <>
+          {castPicker && named.length < MAX_TURNS_CAST && (
+            <CastPickerButton provider={castPicker.provider} onAdd={castPicker.onAdd} exclude={named.map((c) => c.tag!)} room={MAX_TURNS_CAST - named.length} />
+          )}
+          {random && named.length === 0 && !drawing && (
+            <RandomCastButton provider={random.provider} autoGender={random.autoGender} promptCount={promptCount ?? 10} onSubmit={random.onChange} />
+          )}
         </>
       ) : undefined}
       flashKey={flashKey}
     >
+      {compact && (
+        <div className="flex basis-full flex-wrap items-center gap-1.5">
+          {lines.map(({ c, name }) => name && (
+            <RequestChip key={c.tag ?? "unnamed"} strong label={name} onRemove={() => onRemoveCharacter(c.tag)} />
+          ))}
+        </div>
+      )}
       {lines.map(({ c, name, usual, added, removed, replaced }, i) => {
         const isLast = i === lines.length - 1
         const empty = !name && usual.length === 0 && added.length === 0
         if (empty) return null
+        // In the line of names, only a character whose gender nobody knows gets a line of their own: they need the choice.
+        if (compact && (c.role || (c.tag && assumedRoles[c.tag]))) return null
+        if (compact && name) {
+          return (
+            <div key={c.tag ?? `unnamed-${i}`} className="flex basis-full flex-wrap items-center gap-1.5">
+              <span className="text-xs font-medium text-foreground">{name}</span>
+              <ChoiceGroup size="sm" choices={ROLE_CHOICES} value={null} onChange={(role) => onSetRole(c.tag, role)} label={`${name} is a`} />
+              <span className="text-xs text-muted-foreground">Pick one so the pack knows who is who</span>
+            </div>
+          )
+        }
         return (
           <div key={c.tag ?? `unnamed-${i}`} className="flex basis-full flex-wrap items-center gap-1.5">
             {name && (
@@ -610,6 +692,26 @@ function WhoRow({
           </div>
         )
       })}
+      {drawing && random?.value && (
+        <div className="flex basis-full flex-wrap items-center gap-1.5">
+          <RequestChip strong label={RANDOM_CAST_TEXT.chip} onRemove={() => random.onChange(null)} />
+          <span className="min-w-0 text-xs text-muted-foreground">
+            {RANDOM_CAST_TEXT.detail(
+              random.value.source.kind === "series" ? seriesName(random.value.source.series) : RANDOM_CAST_TEXT.popular,
+              random.value.gender === "auto" ? GENDER_WORD[random.autoGender] : GENDER_WORD[random.value.gender],
+            )}
+          </span>
+          <RandomCastButton
+            label={RANDOM_CAST_TEXT.change}
+            value={random.value}
+            provider={random.provider}
+            autoGender={random.autoGender}
+            promptCount={promptCount ?? 10}
+            onSubmit={random.onChange}
+          />
+          <p className="basis-full text-xs text-muted-foreground text-pretty">{RANDOM_CAST_TEXT.note}</p>
+        </div>
+      )}
       {offers}
     </BriefSlot>
   )

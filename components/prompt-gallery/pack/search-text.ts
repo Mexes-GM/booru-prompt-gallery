@@ -28,7 +28,7 @@ const listWords = (tags: readonly string[]) =>
  * gallery search". `character` is the name the card shows.
  */
 export function searchDescription(
-  search: Pick<SceneSearch, "kind" | "poses"> & { tags?: readonly string[]; people?: PackPeople; concept?: SceneSearch["concept"] },
+  search: Pick<SceneSearch, "kind" | "poses"> & { tags?: readonly string[]; people?: PackPeople; concept?: SceneSearch["concept"]; everyone?: true },
   character: string | null,
   planPeople: PackPeople | null
 ): string {
@@ -48,6 +48,8 @@ export function searchDescription(
     case "anchor":
       // One character per prompt with clothes or a place asked for: the search is of them.
       if (!doing && search.concept) return `${donorDescription(search.concept.role, search.concept.tags)}${withPeople}`
+      // One per prompt with many characters: the one search all their scenes come from.
+      if (!doing && search.everyone) return search.tags?.includes("solo") ? "Anyone alone, for every character" : `Anyone${withPeople}, for every character`
       return `Anyone${doing}${withPeople}`
   }
 }
@@ -113,6 +115,17 @@ export const DONOR_ROLE: Record<"wearing" | "where", string> = {
  * own posts.
  */
 export const lookDescription = (character: string) => `${character}'s look: from their own pictures`
+
+/**
+ * The characters whose look comes from the app's own data on them, with no search (a pack of one
+ * per prompt with many characters): "Looks of Ningguang and Beidou: from what the app already knows
+ * about them, no search needed".
+ */
+export const profileLookDescription = (characters: readonly string[]) =>
+  `${characters.length === 1 ? `${characters[0]}'s look` : `Looks of ${listNames(characters)}`}: from what the app already knows about them, no search needed`
+
+const listNames = (names: readonly string[]) =>
+  names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 
 /** The tags of a search as the site gets them: "sui-feng double_penetration". */
 export const searchTagsText = (search: Pick<SceneSearch, "tags">) => search.tags.join(" ")

@@ -57,6 +57,11 @@ export interface SceneSearch extends PlannedSearch {
    * this theme search looks for (brief spelling), so its posts are of that concept.
    */
   concept?: { role: 'wearing' | 'where'; tags: string[] }
+  /**
+   * One per prompt in turn with more characters than scene searches and nothing asked for: the one
+   * search every character's scenes come from (anyone, alone when the pack has a one-person make-up).
+   */
+  everyone?: true
 }
 
 export interface AppearanceSearch extends PlannedSearch {
@@ -110,8 +115,14 @@ export interface SourcePlan {
   sensitive: 'included' | 'excluded' | 'unavailable' | null
   /** Scene searches, preferred first. Never empty, at most MAX_SCENE_SEARCHES. */
   scenes: SceneSearch[]
-  /** One per named character whose look can't come from the pool: every one unless `baseLookFromPool`. */
+  /**
+   * One per named character whose look can't come from the pool (every one unless `baseLookFromPool`),
+   * but past the first MAX_LOOK_SEARCHES of them, those with a trait profile (env.profiled): their
+   * look comes from it, with no search.
+   */
   appearance: AppearanceSearch[]
+  /** The named characters (brief spelling) whose look comes from their trait profile, with no search. Missing when none. */
+  lookFromProfile?: string[]
   /**
    * Whether the pool can give the base character's look: only when every scene search brings posts
    * of them alone. A search by name brings them with company too (other people's hair and eyes in
@@ -165,7 +176,20 @@ export interface SourcePlanEnv {
    * them in that order and reports the rest in `leftOutSearches`. One or missing: the plan as before.
    */
   compositions?: ReadonlyArray<PackPeople>
+  /**
+   * Whether each named character, in brief order, has a trait profile their look can be drawn from.
+   * Past the first MAX_LOOK_SEARCHES characters, one with a profile gets no appearance search. A
+   * missing entry counts as no profile.
+   */
+  profiled?: ReadonlyArray<boolean>
 }
+
+/**
+ * Most characters whose look a plan reads from their own posts when the rest have a trait profile.
+ * Every pack of up to MAX_CAST characters searches all of them, as before; past them (a pack of one
+ * per prompt) a character's look comes from their profile, and only those without one are searched.
+ */
+export const MAX_LOOK_SEARCHES = 3
 
 /** Most scene searches a plan has (own, theme, anchor). */
 export const MAX_SCENE_SEARCHES = 3
@@ -447,9 +471,12 @@ function finishPlan(brief: PackBrief, env: SourcePlanEnv, p: {
   // The pool gives the base character's look only when all of it shows them alone; everyone
   // else (a cast waiting for its roles) still has their look read apart.
   const baseLookFromPool = !!base && scenes.every((s) => showsAlone(s, base))
+  // Random characters (PackBrief.randomCast) are all drawn from their profile: no look search at all.
+  const fromProfile = (i: number) => !!brief.randomCast || (i >= MAX_LOOK_SEARCHES && !!env.profiled?.[i])
   const appearance = p.named
-    .filter((_, i) => !(baseLookFromPool && i === 0))
+    .filter((_, i) => !(baseLookFromPool && i === 0) && !fromProfile(i))
     .map((tag) => appearanceSearch(tag, provider, ratings[0]))
+  const lookFromProfile = p.named.filter((_, i) => fromProfile(i))
 
   const allDonors = donorSearches(brief, env, ratings[0], limit, leftOut)
   const donors = p.dedupeDonors ? allDonors.filter((d) => !scenes.some((s) => s.query === d.query)) : allDonors
@@ -463,6 +490,7 @@ function finishPlan(brief: PackBrief, env: SourcePlanEnv, p: {
     sensitive,
     scenes,
     appearance,
+    ...(lookFromProfile.length > 0 ? { lookFromProfile } : {}),
     baseLookFromPool,
     donors,
     leftOut,
@@ -485,9 +513,12 @@ function finishPlan(brief: PackBrief, env: SourcePlanEnv, p: {
  *    first place of Where), with the same head count; the conditions keep their donor searches, but
  *    one that asks the same as that search (its posts are already scenes);
  *  - nothing asked: each character's own search, alone ("name, solo") when the pack has a one-person
- *    make-up, else by name, in brief order (a pack has at most MAX_CAST characters, as many as
- *    MAX_SCENE_SEARCHES, so none is left out).
- * Every character's look is read from their own appearance search.
+ *    make-up, else by name, in brief order; with more characters than MAX_SCENE_SEARCHES, one search
+ *    for all of them instead (`everyone`: "solo", or the head count of People), so no character's
+ *    scenes come from another's posts and the searches don't grow with the cast; the same for
+ *    random characters (PackBrief.randomCast), which get no search of their own at all.
+ * Every character's look is read from their own appearance search, but past MAX_LOOK_SEARCHES
+ * (finishPlan).
  */
 function planTurns(brief: PackBrief, env: SourcePlanEnv, named: string[]): SourcePlan {
   const { provider, rating } = env
@@ -542,9 +573,17 @@ function planTurns(brief: PackBrief, env: SourcePlanEnv, named: string[]): Sourc
   }
   if (wanted.length === 0) {
     // Nothing to search the scenes by: each character's own posts.
-    const alone = limit >= 2 && (mixed ? (env.compositions ?? []).some((g) => g.girls + g.boys === 1) : !people)
-    for (const tag of named) {
-      wanted.push({ search: { ...sceneSearch(provider, 'own', alone ? [toBooru(tag), 'solo'] : [toBooru(tag)], []), character: tag } })
+    const onePerson = mixed ? (env.compositions ?? []).some((g) => g.girls + g.boys === 1) : !people
+    const alone = limit >= 2 && onePerson
+    if (named.length > MAX_SCENE_SEARCHES || brief.randomCast) {
+      // More characters than searches, or random ones: one search the scenes of all of them come from.
+      for (const group of mixGroups) wanted.push({ search: { ...forGroup(sceneSearch(provider, 'theme', groupLead(group, provider, rating, null), []), group), everyone: true } })
+      const lead = people ? groupLead(people, provider, rating, null) : onePerson ? ['solo'] : []
+      if (lead.length > 0 || wanted.length === 0) wanted.push({ search: { ...sceneSearch(provider, 'theme', lead, []), everyone: true } })
+    } else {
+      for (const tag of named) {
+        wanted.push({ search: { ...sceneSearch(provider, 'own', alone ? [toBooru(tag), 'solo'] : [toBooru(tag)], []), character: tag } })
+      }
     }
   }
   return finishPlan(brief, env, { wanted, poses, people, rolesPending: false, ratings, sensitive, limit, base: null, named, dedupeDonors: true })

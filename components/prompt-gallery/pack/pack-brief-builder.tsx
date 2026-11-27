@@ -57,6 +57,9 @@ import {
   type SuggestedKind,
   setPeople as setPeopleInBrief,
   castTurns,
+  addCast,
+  emptyBrief,
+  type CastMember,
   type PackBrief,
 } from "@/lib/pack/brief"
 import { DEFAULT_ROWS, briefFromCharacters, rowDefaults, rowMatchesDefaults, type DefaultRow } from "@/lib/pack/brief-history"
@@ -122,12 +125,14 @@ import { ContactSheet, type ContactSheetStatus, type SceneThumb } from "./contac
 import { FitLine } from "./fit-line"
 import { GenerateBar, ResultsToolbar } from "./generate-bar"
 import { PackBriefPanel } from "./pack-brief-panel"
-import { BLOCKED, BUILDER_TEXT, CAST_MODE_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState } from "./pack-text"
+import { BLOCKED, BUILDER_TEXT, CAST_MODE_TEXT, RANDOM_CAST_TEXT, CHANGES_OPTIONS, COPY_FAILED, EXAMPLES_HEADING, EXAMPLE_TEXT, TIP_TEXT, fitText, CORRECTION_TEXT, SHEET_TEXT, copyNoteText, DEFAULTS_TEXT, SIZE_TEXT, STYLE_TEXT, PEOPLE_TEXT, COMPOSITION_TEXT, RATING_OPTIONS, START_TEXT, missingText, type FitState } from "./pack-text"
 import type { BriefPackResult } from "@/hooks/use-pack-brief-scenes"
 import type { BriefOffer } from "./pack-brief-panel"
 import { ResultRow } from "./result-row"
 import { SLOTS, briefSummaryParts, characterName, companionsLabel, showTag, type CharacterInfo, type SlotId, type TagSuggestion } from "./slots"
 import { UndoNotice } from "./undo-notice"
+import { useCharacterIndex } from "./cast-picker"
+import { castBrief, drawKey, drawRandomCast, drawsCast, needsRedraw, randomCastGender } from "@/lib/pack/random-cast"
 import { PackEmptyState, type ExampleBrief } from "./pack-empty-state"
 import { PackTip } from "./pack-tip"
 import { userPreferences } from "@/lib/storage"
@@ -136,7 +141,8 @@ import { userPreferences } from "@/lib/storage"
 export type PackBriefStart =
   /** The pack kept across a reload (lib/pack/saved-pack.ts). */
   | { kind: "restored"; saved: SavedPack }
-  | { kind: "characters"; names: readonly string[] }
+  /** `cast`: several characters picked at once (lib/pack/brief.ts addCast), each with their gender; the pack is one per prompt. */
+  | { kind: "characters"; names: readonly string[]; cast?: readonly CastMember[] }
   | { kind: "card"; post: BooruPost }
   | { kind: "prompt"; text: string }
   | { kind: "search"; search: string; character: string | null }
@@ -200,7 +206,7 @@ function begin(
     case "restored":
       return { brief: start.saved.brief, note: { kind: "restored", dropped: !!start.saved.resultsDropped } }
     case "characters":
-      return { brief: briefFromCharacters([...start.names]), note: { kind: "characters" } }
+      return { brief: start.cast ? addCast(emptyBrief(), start.cast) : briefFromCharacters([...start.names]), note: { kind: "characters" } }
     case "card": {
       // The card's characters come from the post's own character field, known to the taxonomy or not.
       const characters = splitTags(start.post.tag_string_character ?? "")
@@ -776,6 +782,8 @@ function BriefWorkspace({
   startNote,
 }: PackBriefBuilderProps & WorkspaceEnv & { pack: UsePackBriefResult; startNote: StartNote }) {
   const { brief, preferences } = pack
+  // Random characters: the engine works from the brief with the drawn ones in Who (castBrief).
+  const engineBrief = useMemo(() => castBrief(brief), [brief])
   const count = preferences.promptCount
   const restored = start.kind === "restored" ? start.saved : null
   // A new pack starts with the characters' usual outfit. A pack saved with the library as its
@@ -816,7 +824,7 @@ function BriefWorkspace({
   const { settings: promptSettings, cleanOptions, globalWeights, isGlobalWeightsEnabled } = usePackPromptSettings()
 
   const engine = usePackBriefScenes({
-    brief,
+    brief: engineBrief,
     posts,
     preferredPosts,
     donorPosts,
@@ -957,7 +965,7 @@ function BriefWorkspace({
   // while it runs. A pack made from another source (booru, rating, characters) is out of date.
   const [correction, setCorrection] = useState<Correction | null>(null)
   const correcting = !!correction && correction.status !== "done"
-  const stale = !!result && (engine.sourceChanged || (!correcting && (result.brief !== brief || result.count !== count || result.outfit !== outfit)))
+  const stale = !!result && (engine.sourceChanged || (!correcting && (result.brief !== engineBrief || result.count !== count || result.outfit !== outfit)))
   const notes: FitNote[] = useMemo(() => {
     const castNote = castPeopleNote(brief.people, identity.cast)
     const lead = [peopleNote, castNote].filter((n): n is FitNote => !!n)
@@ -1189,7 +1197,7 @@ function BriefWorkspace({
     } else if (route.kind === "look" && (identity.castSize >= 2 || !!identity.turns)) {
       // With several characters a look tag goes to the one it came from, never to a guess.
       const owner = lookOwner(tag, identity.blocks)
-      const ownerTag = owner ? brief.who.find((c) => c.tag && normalizeTagForPack(c.tag) === owner)?.tag ?? null : null
+      const ownerTag = owner ? engineBrief.who.find((c) => c.tag && normalizeTagForPack(c.tag) === owner)?.tag ?? null : null
       if (!ownerTag) {
         toast({ description: CORRECTION_TEXT.lookWhose(showTag(tag)), duration: 5000 })
         return
@@ -1209,7 +1217,7 @@ function BriefWorkspace({
       briefBefore: brief, briefAfter: null, status: "waiting", message: null,
     })
     apply()
-  }, [result, engine.busy, engine.sourceChanged, engine.poolPending, overrides, brief, cast, identity.castSize, identity.turns, identity.blocks, promptFormat, never, setPeople, addLook, addExactly, othersTag, addOther])
+  }, [result, engine.busy, engine.sourceChanged, engine.poolPending, overrides, brief, engineBrief.who, cast, identity.castSize, identity.turns, identity.blocks, promptFormat, never, setPeople, addLook, addExactly, othersTag, addOther])
   // Stable: `correct` follows the brief, the slots and the engine, which change with every page of
   // posts, and the rows would all render again for it.
   const onAlways = useStableCallback((tag: string) => correct("always", tag))
@@ -1268,11 +1276,47 @@ function BriefWorkspace({
   })
   // Generate is another operation: a correction's notice goes.
   const { generate } = engine
+  // Random characters: the first Generate uses the draw made when they were chosen; Generate again
+  // (or a draw too short for the prompts) draws others, keeping the locked rows' characters, and
+  // generates once the engine has them and their looks.
+  const castIndex = useCharacterIndex(drawsCast(brief))
+  const [pendingDraw, setPendingDraw] = useState<string | null>(null)
+  const { redrawCast } = pack
   const onGenerate = useCallback(() => {
     setCorrection(null)
+    if (castIndex && brief.randomCast && needsRedraw(brief, count, !!result?.prompts.length)) {
+      const lockedCharacters = new Set((result?.locked ?? []).flatMap((i) => (result?.prompts[i]?.character ? [result.prompts[i].character!] : [])))
+      const keep = brief.randomCast.drawn.filter((m) => lockedCharacters.has(normalizeTagForPack(m.tag)))
+      const drawn = drawRandomCast(castIndex, {
+        source: brief.randomCast.source,
+        gender: randomCastGender(brief.randomCast.gender, brief),
+        count,
+        seed: Math.floor(Math.random() * 0x7fffffff),
+        provider,
+        keep,
+      })
+      redrawCast(drawn)
+      setPendingDraw(drawKey(drawn))
+      return
+    }
     generate()
-  }, [generate])
+  }, [generate, castIndex, brief, count, result, provider, redrawCast])
+  const drawing = pendingDraw !== null
+  // The new draw's characters are the engine's, with their looks and a pool: now it generates.
+  const engineDraw = drawKey(identity.members.map((m) => ({ tag: m.character })))
+  useEffect(() => {
+    if (pendingDraw === null || engineDraw !== pendingDraw || !engine.looksReady || !engine.pool || engine.busy) return
+    // The engine has the draw (its state, worked out over renders): the wait ends and the run starts.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPendingDraw(null)
+    generate()
+  }, [pendingDraw, engineDraw, engine.looksReady, engine.pool, engine.busy, generate])
   const onRemoveCharacter = useCallback((tag: string | null) => { if (tag) removeCharacter(tag) }, [removeCharacter])
+  const addCast = pack.addCast
+  const castPicker = useMemo(() => ({ provider, onAdd: addCast }), [provider, addCast])
+  const { setRandomCast } = pack
+  const autoGender = randomCastGender("auto", brief)
+  const randomCastControl = useMemo(() => ({ autoGender, onChange: setRandomCast }), [autoGender, setRandomCast])
   const onToggleScene = useCallback(
     (id: string) => {
       if (axis) return leftOut.has(id) ? restoreVariant(id) : leaveOutVariant(id)
@@ -1330,7 +1374,7 @@ function BriefWorkspace({
   useEffect(() => {
     const write = () => {
       try {
-        userPreferences.setSavedPack({ brief, outfit, provider, gallerySearch, result: result ? savedResultOf(result, brief, outfit) : null })
+        userPreferences.setSavedPack({ brief, outfit, provider, gallerySearch, result: result ? savedResultOf(result, engineBrief, outfit) : null })
       } catch {
         // Storage unavailable: the pack lasts this visit.
       }
@@ -1341,7 +1385,7 @@ function BriefWorkspace({
       write()
     }, SAVE_DELAY_MS)
     return () => clearTimeout(timer)
-  }, [brief, outfit, provider, gallerySearch, result])
+  }, [brief, engineBrief, outfit, provider, gallerySearch, result])
   useEffect(() => {
     const flush = () => {
       const write = pendingSave.current
@@ -1427,7 +1471,9 @@ function BriefWorkspace({
   const summary = useMemo(() => {
     // Several make-ups: "with 2 boys or with 3 boys".
     const label = brief.people ? briefCompositions(brief).map((p) => companionsLabel(p, identity.cast)).join(" or ") : null
-    const parts = briefSummaryParts(brief, label, characterInfo)
+    const own = briefSummaryParts(brief, label, characterInfo)
+    // Random characters: said first, as a character's name would be.
+    const parts = drawsCast(brief) ? [RANDOM_CAST_TEXT.open.toLowerCase(), ...own] : own
     // The folded line says when only one part changes.
     const changes = CHANGES_OPTIONS.find((o) => o.value === brief.changes)
     // And when each prompt has one of the characters.
@@ -1437,9 +1483,9 @@ function BriefWorkspace({
   // Each character's name as the card shows it, by brief tag (their own searches say it).
   const characterNames = useMemo(() => {
     const out: Record<string, string> = {}
-    for (const c of brief.who) if (c.tag) out[c.tag] = characterName(c.tag, characterInfo[c.tag])
+    for (const c of engineBrief.who) if (c.tag) out[c.tag] = characterName(c.tag, characterInfo[c.tag])
     return out
-  }, [brief.who, characterInfo])
+  }, [engineBrief.who, characterInfo])
 
   // ── The contact sheet ───────────────────────────────────────────────────────────
   const thumbs = useMemo<SceneThumb[]>(
@@ -1492,9 +1538,11 @@ function BriefWorkspace({
   const closeTip = useCallback((id: string) => setTipsClosed((prev) => new Set(prev).add(id)), [])
 
   // ── Generate ────────────────────────────────────────────────────────────────────
-  const named = brief.who.some((c) => c.tag)
+  const named = engineBrief.who.some((c) => c.tag)
   const blockedReason = !named
     ? BLOCKED.noCharacter
+    : drawing || (drawsCast(brief) && !engine.looksReady)
+      ? BLOCKED.waiting
     : identity.missingRoles.length > 0
       ? BLOCKED.roles
       : noPosts
@@ -1556,6 +1604,9 @@ function BriefWorkspace({
               outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}
               assumedRoles={assumedRoles}
               onCastModeChange={pack.setCastMode}
+              castPicker={castPicker}
+              promptCount={count}
+              randomCast={randomCastControl}
               changes={changesControl}
               people={people}
               others={othersRow}
