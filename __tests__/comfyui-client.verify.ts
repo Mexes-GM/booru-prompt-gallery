@@ -107,7 +107,8 @@ async function main() {
       "/object_info": () => json({ KSampler: {} }),
       "/prompt": (_u, init) => json({ prompt_id: "p1", number: 3, node_errors: {}, echo: JSON.parse(String(init?.body)) }),
       "/interrupt": () => new Response(null, { status: 200 }),
-      "/queue": () => new Response(null, { status: 200 }),
+      "/queue": (_u, init) =>
+        init?.method === "POST" ? new Response(null, { status: 200 }) : json({ queue_running: [[1, "p1"]], queue_pending: [[2, "p2"]] }),
       "/booru_bridge/workflows": () => json({ workflows: [{ id: "a", name: "A", updated: 1 }] }),
       "/booru_bridge/workflows/a%20b": () => json({ id: "a b", name: "A", updated: 1, ui: null, api: {} }),
     })

@@ -160,6 +160,9 @@ export function createComfyClient(baseUrl: string, options: ComfyClientOptions =
       return `${base}/view?${params.toString()}`
     },
 
+    /** Running and pending jobs. Entries are `[number, prompt_id, ...]`. */
+    queue: () => readJson<{ queue_running?: unknown[][]; queue_pending?: unknown[][] }>("/queue"),
+
     async interrupt(): Promise<void> {
       const res = await send("/interrupt", { method: "POST" })
       if (!res.ok) throw new ComfyError("http", `HTTP ${res.status} for /interrupt`, { status: res.status })
