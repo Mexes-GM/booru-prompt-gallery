@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, toggleComposition, addOutfitStyle, removeOutfitStyle, setOutfitDetail, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
+  addCast, addCharacter, addLook, addNever, addOther, addTag, addTagExactly, setRequestExact, toggleComposition, addOutfitStyle, removeOutfitStyle, setOutfitDetail, briefFromCard, chooseChanges, leaveOutVariant, restoreVariant, setBaseScene, briefFromPrompt, emptyBrief, leaveOutScene, removeCharacter, removeLook, removeNever,
   removeTag, restoreLook, restoreScene, setCastMode, setCharacterRole, setPeople, settleStart, toSceneRequests,
-  type CastMode, type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
+  type CastMember, type CastMode, type ChangesAxis, type PackBrief, type RequestRole, type SceneRequests,
 } from '@/lib/pack/brief'
 import {
   briefFromCharacters, commit, lastChange, seedDefaults, startHistory, undo as undoHistory,
@@ -27,6 +27,7 @@ export const BRIEF_LABELS = {
   unnever: (tag: string) => `Allowed ${tag} again`,
   removeCharacter: (name: string) => `Removed ${name}`,
   addCharacter: (name: string) => `Added ${name}`,
+  addCast: (count: number) => (count === 1 ? 'Added 1 character' : `Added ${count} characters`),
   addLook: (tag: string) => `Added ${tag}`,
   removeLook: (tag: string) => `Removed ${tag}`,
   restoreLook: (tag: string) => `Put ${tag} back`,
@@ -72,6 +73,8 @@ export interface UsePackBriefResult {
   removeCharacter: (tag: string) => void
   /** Adds a character by name; the name needn't be in the overrides yet. */
   addCharacter: (name: string) => void
+  /** Adds several characters as one change (one Undo); with two or more, one per prompt (addCast). */
+  addCast: (members: readonly CastMember[]) => void
   /** `character` null picks the unnamed character. */
   addLook: (character: string | null, tag: string) => void
   removeLook: (character: string | null, tag: string) => void
@@ -92,6 +95,8 @@ export interface UsePackBriefResult {
   /** Starts of a pack: they replace the whole brief, clear the history and seed "never" with the defaults. */
   startEmpty: () => void
   startFromCharacters: (names: string[]) => void
+  /** A pack of several characters picked at once, one per prompt (addCast). */
+  startFromCast: (members: readonly CastMember[]) => void
   startFromPrompt: (text: string) => { peopleTags: string[] }
   /** Starts from a brief built elsewhere (a gallery search). */
   startWith: (brief: PackBrief) => void
@@ -258,6 +263,16 @@ export function usePackBrief(
     (name: string) => change(BRIEF_LABELS.addCharacter(name.trim()), (b) => addCharacter(b, name)),
     [change]
   )
+  const addCastAction = useCallback(
+    (members: readonly CastMember[]) => {
+      const before = historyRef.current.present
+      const next = addCast(before, members)
+      const added = next.who.filter((c) => c.tag !== null).length - before.who.filter((c) => c.tag !== null).length
+      if (added <= 0) return
+      change(BRIEF_LABELS.addCast(added), () => next)
+    },
+    [change]
+  )
   const addLookAction = useCallback(
     (character: string | null, tag: string) => change(BRIEF_LABELS.addLook(tag.trim()), (b) => addLook(b, character, tag)),
     [change]
@@ -311,6 +326,7 @@ export function usePackBrief(
   const startEmpty = useCallback(() => start(emptyBrief()), [start])
   const startWith = useCallback((brief: PackBrief) => start(brief), [start])
   const startFromCharacters = useCallback((names: string[]) => start(briefFromCharacters(names)), [start])
+  const startFromCast = useCallback((members: readonly CastMember[]) => start(addCast(emptyBrief(), members)), [start])
   const startFromPrompt = useCallback((text: string) => {
     const overrides = overridesRef.current
     const { brief, peopleTags } = briefFromPrompt(text, overrides, permanenceRef.current ?? undefined)
@@ -372,11 +388,11 @@ export function usePackBrief(
   return {
     brief, requests, canUndo: history.past.length > 0, lastChange: lastChange(history), undo,
     add, addOther: addOtherAction, addExactly, setExact, addStyle, removeStyle, setOutfitDetail: setOutfitDetailAction, toggleComposition: toggleCompositionAction, addTags, changeTo, remove, never, unnever, removeCharacter: removeCharacterAction, setRole,
-    addCharacter: addCharacterAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
+    addCharacter: addCharacterAction, addCast: addCastAction, addLook: addLookAction, removeLook: removeLookAction, restoreLook: restoreLookAction,
     setPeople: setPeopleAction, setChanges: setChangesAction, setCastMode: setCastModeAction,
     leaveOutScene: leaveOutSceneAction, restoreScene: restoreSceneAction,
     setBaseScene: setBaseSceneAction, leaveOutVariant: leaveOutVariantAction, restoreVariant: restoreVariantAction,
-    startEmpty, startWith, startFromCharacters, startFromPrompt, startFromCard, placeWith,
+    startEmpty, startWith, startFromCharacters, startFromCast, startFromPrompt, startFromCard, placeWith,
     preferences, setPromptCount, setIncludeSensitive, setPromptFormat, addNeverDefault, removeNeverDefault,
     rowDefaults: getRowDefaults, setRowDefaults, removeRowDefault,
   }

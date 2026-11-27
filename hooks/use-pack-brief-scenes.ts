@@ -52,7 +52,7 @@ import { packNaturalSource } from "@/lib/pack/pack-natural"
 import type { SavedResult } from "@/lib/pack/saved-pack"
 import { loadPackVocabulary, loadedTagBaseline, tagBaselineOf } from "@/lib/pack/pack-vocabulary"
 import { resolutionForAspect } from "@/lib/pack/prompt-resolution"
-import { planSources, type AppearanceSearch, type SourcePlan } from "@/lib/pack/source-plan"
+import { MAX_LOOK_SEARCHES, planSources, type AppearanceSearch, type SourcePlan } from "@/lib/pack/source-plan"
 import { holdsCast, roleFromProfile, roleFromSubject, type CastRole } from "@/lib/pack/scene/cast"
 import { createPermanence, type Permanence, type PermanenceData } from "@/lib/pack/scene/permanence"
 import type { TagKind } from "@/lib/pack/scene/scene"
@@ -340,8 +340,14 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   /** Where the posts come from: a pack made from another one can't be corrected on it. */
   const sourceKey = `${provider}|${rating}|${rating === "sfw" ? includeSensitive : ""}|${namedKey}`
   const traitData = useSyncExternalStore(subscribeCharacterTraits, getCharacterTraits, getNoCharacterTraits)
+  // The names whose trait profile has been looked for (found or not): until then a character past
+  // MAX_LOOK_SEARCHES gets no look search, so a profile that arrives a moment later costs none.
+  const [traitsLooked, setTraitsLooked] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => {
-    if (namedKey) void loadCharacterTraits(namedKey.split("|")).catch(() => {})
+    if (!namedKey) return
+    const names = namedKey.split("|")
+    const done = () => setTraitsLooked((prev) => (names.every((n) => prev.has(n)) ? prev : new Set([...prev, ...names])))
+    void loadCharacterTraits(names).then(done, done)
   }, [namedKey])
   const [baseline, setBaseline] = useState(loadedTagBaseline)
   useEffect(() => {
@@ -378,13 +384,17 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
   const plannedBrief = useDebounce(brief, PLAN_DELAY_MS)
   const env = useMemo(() => ({ provider, rating, includeSensitive, gallerySearch }), [provider, rating, includeSensitive, gallerySearch])
   const plannedNamed = useMemo(() => plannedBrief.who.flatMap((c) => (c.tag ? [c] : [])), [plannedBrief])
+  // Who has a trait profile, in brief order (SourcePlanEnv.profiled); one not looked for yet past the
+  // first MAX_LOOK_SEARCHES counts as having one.
+  const profiledKey = plannedNamed.map((c, i) => (profileOf(c.tag!) || (i >= MAX_LOOK_SEARCHES && !traitsLooked.has(c.tag!)) ? "1" : "0")).join("")
+  const profiled = useMemo(() => profiledKey.split("").map((x) => x === "1"), [profiledKey])
   // The appearance searches don't depend on the roles but for whether the pool is the
   // base character's: ask for both plans' searches, so a role that arrives later finds them.
   const lookSearches = useMemo(() => {
-    const known = planSources(plannedBrief, { ...env, roles: plannedNamed.map((c) => c.role ?? profileRoles[c.tag!] ?? null) })
-    const asGroup = plannedNamed.length >= 2 ? planSources(plannedBrief, { ...env, roles: plannedNamed.map(() => "girl" as const) }).appearance : []
+    const known = planSources(plannedBrief, { ...env, profiled, roles: plannedNamed.map((c) => c.role ?? profileRoles[c.tag!] ?? null) })
+    const asGroup = plannedNamed.length >= 2 ? planSources(plannedBrief, { ...env, profiled, roles: plannedNamed.map(() => "girl" as const) }).appearance : []
     return mergeSearches(known.appearance, asGroup)
-  }, [plannedBrief, plannedNamed, env, profileRoles])
+  }, [plannedBrief, plannedNamed, env, profileRoles, profiled])
   const soloLooks = useCharacterLooks({ searches: lookSearches, provider, overrides, enrichTagSlots })
   const soloOf = useCallback((character: string) => {
     const key = normalizeTagForPack(character)
@@ -399,8 +409,8 @@ export function usePackBriefScenes(args: UsePackBriefScenesArgs): UsePackBriefSc
     })
     // A pack mixing make-ups searches with no head count (one-part packs never mix).
     const mix = plannedBrief.changes === "scene" ? briefCompositions(plannedBrief) : []
-    return planSources(plannedBrief, { ...env, roles, conditions: briefConditions(plannedBrief, overrides), ...(mix.length >= 2 ? { compositions: mix } : {}) })
-  }, [plannedBrief, plannedNamed, env, soloOf, profileRoles, overrides])
+    return planSources(plannedBrief, { ...env, roles, profiled, conditions: briefConditions(plannedBrief, overrides), ...(mix.length >= 2 ? { compositions: mix } : {}) })
+  }, [plannedBrief, plannedNamed, env, soloOf, profileRoles, overrides, profiled])
 
   // ── Looks ─────────────────────────────────────────────────────────────────────
   const base = named[0] ?? null
