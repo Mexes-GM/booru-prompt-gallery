@@ -102,7 +102,7 @@ import {
   type FitNote,
 } from "@/lib/pack/brief-pack"
 import type { PackPrompt } from "@/lib/pack/pack-generator"
-import type { SourcePlan } from "@/lib/pack/source-plan"
+import { preferredSearchIds, type SourcePlan } from "@/lib/pack/source-plan"
 import type { OutfitStyle } from "@/lib/outfit-swap"
 import type { NaturalPromptSource } from "@/lib/prompt/natural-format"
 import { convertPromptOnce, preloadNaturalPrompt } from "@/lib/prompt/natural-prompt-loader"
@@ -841,9 +841,9 @@ function BriefWorkspace({
   useEffect(() => {
     if (permanence) placeWith(permanence)
   }, [permanence, placeWith])
-  // The searches of the character's own posts: their posts' scenes go first. Read
-  // from the plan of the previous render (the plan needs the posts to settle).
-  const planOwnKey = plan.scenes.filter((s) => s.kind === "own").map((s) => s.id).join("||")
+  // The searches of the character's own posts (and of a mixed pack's compositions): their posts'
+  // scenes go first. Read from the plan of the previous render (the plan needs the posts to settle).
+  const planOwnKey = preferredSearchIds(plan).join("||")
   if (planOwnKey !== ownKey) setOwnKey(planOwnKey)
   const planDonorKey = plan.donors.map((s) => s.id).join("||")
   if (planDonorKey !== donorKey) setDonorKey(planDonorKey)

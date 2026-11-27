@@ -59,7 +59,7 @@ check(() => {
   assert.ok(kept(soloPosts, ownPlan(["frieren"])).every((k) => k.search === "own"))
   // A mix without her alone: the plan searches her by name only, and keeps them too.
   const withCompany = planSources(solo, { ...env, compositions: COMPANY })
-  assert.deepEqual(withCompany.scenes.map((s) => s.tags), [["frieren"]])
+  assert.deepEqual(withCompany.scenes.map((s) => s.tags), [["1girl", "1boy"], ["2girls", "-1boy"], ["frieren"]])
   assert.deepEqual(kept(soloPosts, withCompany).map((k) => k.id), [1, 2, 3])
 })
 
@@ -67,12 +67,12 @@ check(() => {
   // Both own searches at once ("frieren, solo" to fill, "frieren" for the make-ups): a post of
   // her alone fits both and counts for the first; one with company fits "frieren" only.
   const both = planSources(solo, { ...env, compositions: MIX })
-  assert.deepEqual(both.scenes.map((s) => s.tags), [["frieren", "solo"], ["frieren"]])
+  assert.deepEqual(both.scenes.map((s) => s.tags), [["frieren", "solo"], ["1girl", "1boy"], ["frieren"]])
   const fits = (p: LoadedPost) => both.scenes.map((s) => postFitsSearch(p, s, { provider: both.provider, ratings: both.ratings }))
-  assert.deepEqual(fits(soloPosts[0]), [true, true])
-  assert.deepEqual(fits(withOthers[0]), [false, true])
+  assert.deepEqual(fits(soloPosts[0]), [true, false, true])
+  assert.deepEqual(fits(withOthers[0]), [false, true, true])
   const firsts = [...soloPosts, ...withOthers].map((p) => firstFittingSearch(p, both.scenes, { provider: both.provider, ratings: both.ratings }))
-  assert.deepEqual(firsts, [0, 0, 0, 1, 1])
+  assert.deepEqual(firsts, [0, 0, 0, 1, 2])
   // The same with no make-up marked.
   assert.deepEqual(planSources(solo, env).scenes.map((s) => s.tags), [["frieren", "solo"], ["frieren"]])
 })

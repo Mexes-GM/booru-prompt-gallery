@@ -268,13 +268,13 @@ check(() => {
   const one = planSources(set, env({ provider: "gelbooru" }))
   assert(one.scenes.some((s) => s.tags.includes("2boys")), "one composition: the theme search asks for its count")
   const many = planSources(set, env({ provider: "gelbooru", compositions: mix }))
-  assert(many.scenes.every((s) => !s.tags.some((t) => /^\d+(girl|boy)s?$/.test(t) || /^-/.test(t))), "two compositions: no search asks for a count")
+  assert.deepEqual(many.scenes.map((s) => `${s.kind}: ${s.query}`), ["own: tifa_lockhart, hug", "theme: 1girl, 2boys, hug", "theme: 1girl, 3boys, hug"], "two compositions: each asks for its own count")
   assert(many.scenes.some((s) => s.kind === "theme" && s.tags.includes("hug")), "the pose is still searched")
   assert.equal(many.people, null)
   invariants(many, set, "mixed with a pose")
   // No pose: the character's own posts by name, not only those alone.
   const plain = planSources(tifa(), env({ compositions: mix }))
-  assert.deepEqual(plain.scenes.map((s) => s.tags), [["tifa_lockhart"]], "no pose: the name alone")
+  assert.deepEqual(plain.scenes.map((s) => s.tags), [["1girl", "2boys"], ["1girl", "3boys"], ["tifa_lockhart"]], "no pose: each composition, then the name alone")
   assert.deepEqual(planSources(tifa(), env({ compositions: [mix[0]] })), planSources(tifa(), env()), "one composition in the list: the plan as before")
 })
 
@@ -303,23 +303,23 @@ check(() => {
     { scenes: ["group: 1girl, 2boys"], appearance: ["tifa_lockhart"], fromPool: false }, "People set: the composition's search")
   assert.deepEqual(show(planSources(setPeople(tifa(), { girls: 1, boys: 1 }), env({ provider: "gelbooru" }))),
     { scenes: ["group: 1girl, 1boy"], appearance: ["tifa_lockhart, solo"], fromPool: false }, "People set on Gelbooru")
-  // Mixed compositions with the character alone: "name, solo" and "name"; without it, "name" only.
+  // Mixed compositions with the character alone: "name, solo", the composition's search and "name"; without it, each composition's search and "name".
   const withAlone = [{ girls: 1, boys: 0 }, { girls: 1, boys: 1 }]
   assert.deepEqual(show(planSources(tifa(), env({ compositions: withAlone }))),
-    { scenes: both, appearance: ["tifa_lockhart"], fromPool: false }, "mixed with alone: both searches, the look read apart")
+    { scenes: ["own: tifa_lockhart, solo", "group: 1girl, 1boy", "own: tifa_lockhart"], appearance: ["tifa_lockhart"], fromPool: false }, "mixed with alone: alone, the composition and by name, the look read apart")
   assert.deepEqual(show(planSources(tifa(), env({ provider: "gelbooru", compositions: withAlone }))),
-    { scenes: both, appearance: ["tifa_lockhart, solo"], fromPool: false }, "mixed with alone on Gelbooru")
+    { scenes: ["own: tifa_lockhart, solo", "group: 1girl, 1boy", "own: tifa_lockhart"], appearance: ["tifa_lockhart, solo"], fromPool: false }, "mixed with alone on Gelbooru")
   assert.deepEqual(show(planSources(tifa(), env({ compositions: [{ girls: 1, boys: 1 }, { girls: 1, boys: 2 }] }))),
-    { scenes: ["own: tifa_lockhart"], appearance: ["tifa_lockhart"], fromPool: false }, "mixed without alone: the name only")
+    { scenes: ["group: 1girl, 1boy", "group: 1girl, 2boys", "own: tifa_lockhart"], appearance: ["tifa_lockhart"], fromPool: false }, "mixed without alone: each composition and the name, no solo search")
   // With a pose, a cast, the gallery: unchanged.
   assert.deepEqual(show(planSources(withTags(tifa(), "hug"), env())).scenes, ["own: tifa_lockhart, hug", "theme: hug"])
-  assert.deepEqual(show(planSources(withTags(tifa(), "hug"), env({ compositions: withAlone }))).scenes, ["own: tifa_lockhart, hug", "theme: hug"], "mixed with a pose: unchanged")
+  assert.deepEqual(show(planSources(withTags(tifa(), "hug"), env({ compositions: withAlone }))).scenes, ["own: tifa_lockhart, hug", "theme: hetero, hug", "theme: hug"], "mixed with a pose: the composition's pose search between the own and the anyone searches")
   assert.deepEqual(show(planSources(pair(), env({ roles: ["girl", null] }))).scenes, ["own: tifa_lockhart"], "a cast waiting for its roles: the name only")
   assert.deepEqual(show(planSources(emptyBrief(), env({ gallerySearch: "solo, beach" }))),
     { scenes: ["gallery: solo, beach"], appearance: [], fromPool: false }, "unnamed: the gallery search, no look search")
   // The busiest no-pose plan (mixed with alone, two ratings, donors) fits the feed slots.
   const busy = planSources(withTags(tifa(), "bikini", "beach"), env({ provider: "gelbooru", rating: "both", compositions: withAlone, conditions: ["bikini", "beach"] }))
-  assert.equal(planFeeds(busy, 1).length, 4, "two scene searches at two ratings")
+  assert.equal(planFeeds(busy, 1).length, 6, "three scene searches at two ratings")
   assert(planFeeds(busy, 1).length <= MAX_FEEDS && planDonorFeeds(busy, 1).length === 2 && planDonorFeeds(busy, 1).length <= MAX_DONOR_FEEDS)
   // A booru that takes one tag: the name only.
   const saved = PROVIDER_TAG_LIMITS.danbooru
