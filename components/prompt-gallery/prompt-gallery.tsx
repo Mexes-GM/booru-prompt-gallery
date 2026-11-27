@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy } from "react"
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy, Activity as ReactActivity } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -176,6 +176,7 @@ const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBr
 import type { PackBriefStart } from "./pack/pack-brief-builder"
 import { savedPackPromptCount, type SavedPack } from "@/lib/pack/saved-pack"
 import { useStableCallback } from "@/hooks/use-stable-callback"
+import { useWindowScrollWhileHidden } from "@/hooks/use-window-scroll-while-hidden"
 import {
   AlertDialog as PackReplaceDialog,
   AlertDialogAction as PackReplaceAction,
@@ -832,6 +833,11 @@ export function PromptGallery() {
   // "Open in the classic builder" in the entry dialog, for the next start only.
   const [packEntryClassic, setPackEntryClassic] = useState(false)
   const packBriefOpen = !!packBrief && packModeIsPackMode && !packPickingCard && packBuilderKind === 'brief'
+  // The pack builder is a screen of its own: while it is open the gallery is hidden behind it
+  // (<Activity mode="hidden">: its effects stop and it keeps its state), and its scroll position
+  // comes back when the pack closes.
+  const galleryHidden = packBriefOpen
+  useWindowScrollWhileHidden(galleryHidden)
   // The pack saved on the last visit (lib/pack/saved-pack.ts) comes back the first time Pack Mode
   // opens the new builder with no pack, in place of the entry dialog. Read once per visit.
   const savedPackReadRef = useRef(false)
@@ -2122,6 +2128,7 @@ export function PromptGallery() {
       {search.searchTags?.trim() ? (
         <title>{`${search.searchTags.trim()} | Booru Prompt Gallery`}</title>
       ) : null}
+      <ReactActivity mode={galleryHidden ? 'hidden' : 'visible'}>
       <div className="relative min-h-screen bg-background">
         <SiteCornerMenu
           scaleValue={scaleValue}
@@ -2648,6 +2655,7 @@ export function PromptGallery() {
         />
 
       </div>
+      </ReactActivity>
 
       <GalleryModals
         onTeachSuccess={refreshOverrides}
@@ -2676,6 +2684,7 @@ export function PromptGallery() {
           }
         }}
       />
+      <ReactActivity mode={galleryHidden ? 'hidden' : 'visible'}>
       <StickyMiniControlPanel
         // Hidden while a control section is open, so it never sits on top of
         // the dropdown the user is working in.
@@ -2694,6 +2703,7 @@ export function PromptGallery() {
           }
         }}
       />
+      </ReactActivity>
       {mergeFooterMounted && <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}

@@ -8,11 +8,12 @@
  * it the environment (taxonomy, booru, prompt settings, copy, exit) and the characters
  * it starts with.
  *
- * Anchored at the bottom over the gallery, with its own scroll. Before generating it
- * shows the brief, the sheet, the fit line and Generate; after, the prompts, with the
- * brief folded into one line that opens it again.
+ * A full screen of its own: while it is open the gallery is hidden behind it and does no work
+ * (PromptGallery), and focus stays inside until it closes. Before generating it shows the brief,
+ * the sheet, the fit line and Generate; after, the prompts, with the brief folded into one line
+ * that opens it again.
  */
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react"
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { AlertTriangle, ChevronDown, Info, Package, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -220,9 +221,10 @@ function begin(
 }
 
 /**
- * Shell: the panel and its header. Closed, it stays mounted (the pack and its posts wait
- * here) but inert: not shown, not focusable, and the environment it works from is held as
- * it was when it closed, so nothing is fetched, timed or worked out until it opens again.
+ * Shell: the screen and its header, a modal dialog over the whole app. Closed, it stays mounted
+ * (the pack and its posts wait here) but inert: not shown, not focusable, and the environment it
+ * works from is held as it was when it closed, so nothing is fetched, timed or worked out until
+ * it opens again.
  */
 export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefBuilderProps) {
   const { start, open, tagOverrides, onExit, onNewPack, onOpenClassic } = props
@@ -274,12 +276,17 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
   }
   const env = { ...(open || !held ? props : held), ...startSource, onProviderChange, overrides, enrichTagSlots: slots.enrich, rating }
 
-  // Focus goes into the panel when it opens and back where it was when it closes.
+  // Focus goes into the screen when it opens and back where it was when it closes. The element
+  // that opened it is read before the gallery is hidden (a layout effect runs before the browser
+  // moves focus off hidden elements).
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const screenRef = useRef<HTMLDivElement>(null)
   const returnRef = useRef<Element | null>(null)
+  useLayoutEffect(() => {
+    if (open) returnRef.current = document.activeElement
+  }, [open])
   useEffect(() => {
     if (open) {
-      returnRef.current = document.activeElement
       headingRef.current?.focus()
       return
     }
@@ -287,30 +294,45 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
     if (back instanceof HTMLElement && back.isConnected && back !== document.body) back.focus()
     else document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="Mode"] [data-mode="pack"]')?.focus()
   }, [open])
+  // Tab and Shift+Tab go round inside the screen: the guards at each end send focus to the other end.
+  const focusEdge = useCallback((edge: "first" | "last") => {
+    const items = tabbablesIn(screenRef.current)
+    const item = edge === "first" ? items[0] : items[items.length - 1]
+    ;(item ?? headingRef.current)?.focus()
+  }, [])
+  const titleId = useId()
 
   return (
     <TooltipProvider delayDuration={300}>
-      <section
-        aria-label={BUILDER_TEXT.title}
+      <div
+        ref={screenRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         inert={!open}
         onKeyDown={(e) => {
-          // Lists, menus, a marked chip and the scene picker close first (they stop the key or own it).
+          // Lists, menus, a marked chip, the scene picker and dialogs over the pack close first
+          // (they stop the key or own it).
           if (e.key !== "Escape" || e.defaultPrevented || e.isPropagationStopped()) return
           const target = e.target instanceof Element ? e.target : null
-          if (target?.closest("[role='menu'], [role='listbox'], [role='dialog'], [data-radix-popper-content-wrapper]")) return
+          const owner = target?.closest("[role='menu'], [role='listbox'], [role='dialog'], [data-radix-popper-content-wrapper]")
+          if (owner && owner !== e.currentTarget) return
           onExit()
         }}
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-clip",
-          "rounded-t-2xl border border-border bg-background shadow-2xl sm:bottom-4 sm:w-[calc(100%-2rem)] sm:rounded-2xl",
-          "animate-in fade-in-0 slide-in-from-bottom-4 duration-200 ease-out-strong motion-reduce:animate-none",
+          // The whole app's area: nothing of the gallery shows or can be reached behind it.
+          "fixed inset-0 z-50 flex flex-col overflow-clip bg-background",
+          "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]",
+          "animate-in fade-in-0 duration-200 ease-out-strong motion-reduce:animate-none",
           // Last, so it wins over "flex": closed is not shown.
           !open && "hidden",
         )}
       >
-        <header className="flex flex-shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
+        <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("last")} />
+        <header className="flex-shrink-0 border-b border-border/60">
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-3 py-2">
           <Package className="size-5 shrink-0 text-mode-pack-text" aria-hidden />
-          <h2 ref={headingRef} tabIndex={-1} className="text-base font-semibold leading-tight text-foreground focus-visible:outline-none">
+          <h2 id={titleId} ref={headingRef} tabIndex={-1} className="text-base font-semibold leading-tight text-foreground focus-visible:outline-none">
             {BUILDER_TEXT.title}
           </h2>
           <div className="ml-auto flex items-center gap-1">
@@ -352,14 +374,28 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
               <X className="size-4" aria-hidden />
             </Button>
           </div>
+          </div>
         </header>
-        <div data-pack-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-2">
-          <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
+        <div data-pack-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="mx-auto w-full max-w-3xl px-3 pt-3">
+            <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
+          </div>
         </div>
-      </section>
+        <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("first")} />
+      </div>
     </TooltipProvider>
   )
 })
+
+const TABBABLE = "a[href], button:not([disabled]), input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+
+/** What Tab can reach inside `root`, in order: shown, not inert, and not the focus guards. */
+function tabbablesIn(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return []
+  return Array.from(root.querySelectorAll<HTMLElement>(TABBABLE)).filter(
+    (el) => !el.hasAttribute("data-focus-guard") && !el.closest("[inert]") && el.getClientRects().length > 0
+  )
+}
 
 const MENU_TRIGGER = cn(
   "inline-flex h-8 max-w-[12rem] items-center gap-1 rounded-md border border-border bg-background px-2 text-xs pointer-coarse:h-11",
