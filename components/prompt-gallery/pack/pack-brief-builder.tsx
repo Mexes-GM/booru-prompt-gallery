@@ -32,17 +32,19 @@ import { usePackSources, type UsePackSourcesResult } from "@/hooks/use-pack-sour
 import { useTagSuggestions } from "@/hooks/use-tag-suggestions"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useStableCallback } from "@/hooks/use-stable-callback"
+import { usePackComfySend, type PackSendRow } from "@/hooks/use-pack-comfy-send"
+import { packSendRequest } from "@/lib/pack/pack-comfy-send"
 import { useNaturalPrompt, usePromptFormat } from "@/hooks/use-natural-prompt"
 import { useTagSlotEnrichment } from "@/hooks/use-tag-slot-enrichment"
 import { usePackPromptSettings } from "@/hooks/use-pack-prompt-settings"
 import { PackPromptOptions } from "./prompt-options"
 import { packPromptFormat } from "@/lib/pack/pack-config-migration"
 import { storedPackRating, withPackRating } from "@/lib/pack/pack-rating"
-import { track } from "@/lib/analytics"
+import { safeTrack, track } from "@/lib/analytics"
 import { recordPromptCopy } from "@/lib/support-prompt"
-import { toastError } from "@/lib/toast-error"
 import { copyText } from "@/lib/clipboard"
 import type { PackRatingMode } from "@/hooks/use-pack-seed-search"
+import type { ComfySent } from "../comfyui-send"
 import type { BooruPost, BooruProvider } from "@/lib/booru/types"
 import {
   addLook as addLookInBrief,
@@ -441,9 +443,11 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
         />
         <div
           ref={screenRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
+          // A dialog only while open: closed, it stays mounted (inert, then hidden), and the page's
+          // checks for an open dialog (the option dropdowns, the release dialog) would find it.
+          role={open ? "dialog" : undefined}
+          aria-modal={open ? true : undefined}
+          aria-labelledby={open ? titleId : undefined}
           inert={!open}
           // A click on an empty part of the panel gives focus to the panel itself, as a dialog does:
           // with nowhere to go, focus would fall to the page and be brought back to the last control,
@@ -1791,18 +1795,14 @@ function startNoteText(note: StartNote, poolPending: boolean): string | null {
 
 /**
  * Copies a pack's text without the gallery: no card is marked copied and no gallery state changes.
- * The rows and the toolbar say it was copied; a failure says so here.
+ * The rows and the toolbar say whether it was copied, a failure included (COPY_FAILED), so this
+ * shows nothing of its own.
  */
 async function copyPackText(text: string, format: PromptFormat, provider: BooruProvider): Promise<boolean> {
   try {
     await copyText(text)
   } catch {
-    toastError({
-      title: "Couldn't copy the prompt",
-      description: "The browser didn't allow clipboard access. Try again.",
-      errorSource: "copy_to_clipboard",
-      context: { provider, postId: 0, isPrompt: true },
-    })
+    safeTrack("error_shown", { error_source: "copy_to_clipboard", provider, postId: 0, isPrompt: true })
     return false
   }
   track("prompt_copied", {
@@ -1816,6 +1816,7 @@ async function copyPackText(text: string, format: PromptFormat, provider: BooruP
 }
 
 const warnTagsCopied = () => toast({ description: BUILDER_TEXT.convertFailed, variant: "destructive", duration: 3000 })
+const warnTagsSent = () => toast({ description: BUILDER_TEXT.convertFailedSend, variant: "destructive", duration: 3000 })
 
 function Results({
   containerRef,
@@ -1938,6 +1939,43 @@ function Results({
   }, [prompts, bodyOf, onCopy, format, withSize])
   const allCopyNote = [copyNote, unsizedCopied > 0 ? SIZE_TEXT.unsized(unsizedCopied) : null].filter(Boolean).join(" ") || undefined
 
+  // ComfyUI mode: each row sends what its Copy copies, in the pack's format, without the
+  // "[WIDTHxHEIGHT] " prefix; the suggested size goes as the image size (packSendRequest).
+  const comfy = usePackComfySend()
+  const { sendOne, sendAll: sendRows, dismiss: dismissSend } = comfy
+  const sendRowOf = useCallback((index: number, warn: () => void, copyInstead: () => void): PackSendRow | null => {
+    const p = prompts[index]
+    if (!p) return null
+    return {
+      key: index,
+      forPrompt: p.prompt,
+      build: async () => {
+        const body = await bodyOf(p, shownRef.current.get(index))
+        if (body.failed) warn()
+        return packSendRequest(p, body.text)
+      },
+      onCopyInstead: copyInstead,
+    }
+  }, [prompts, bodyOf])
+  const sendRow = useStableCallback((index: number) => {
+    const row = sendRowOf(index, warnTagsSent, () => void copyOne(index))
+    if (row) sendOne(row)
+  })
+  const sendAll = useCallback(() => {
+    // One warning for the whole pack when the converter can't load.
+    let warned = false
+    const warnOnce = () => {
+      if (!warned) warnTagsSent()
+      warned = true
+    }
+    const copyInstead = () => void copyAll()
+    void sendRows(prompts.flatMap((_, i) => sendRowOf(i, warnOnce, copyInstead) ?? []))
+  }, [prompts, sendRowOf, sendRows, copyAll])
+  const sendOption = useMemo(
+    () => (comfy.enabled ? { state: comfy.all, onSendAll: sendAll } : undefined),
+    [comfy.enabled, comfy.all, sendAll],
+  )
+
   const reroll = useStableCallback((index: number) => {
     if (!onReroll(index)) toast({ description: BUILDER_TEXT.rerollFailed, duration: 3000 })
   })
@@ -1958,6 +1996,7 @@ function Results({
         onCopyAll={copyAll}
         copyNote={allCopyNote}
         withSize={sizeOption}
+        send={sendOption}
       >
         {missing > 0 && <span className="text-xs tabular-nums text-warning-text">{missingText(missing)}</span>}
       </ResultsToolbar>
@@ -1982,6 +2021,10 @@ function Results({
             onAlways={onAlways}
             onNever={onNever}
             postProvider={postProvider}
+            onSend={comfy.enabled ? sendRow : undefined}
+            sendJob={comfy.enabled ? comfy.jobOf(i, p.prompt) : null}
+            sending={comfy.enabled && comfy.sending.has(i)}
+            onDismissSend={dismissSend}
           />
         ))}
       </div>
@@ -2007,8 +2050,16 @@ const BriefResultRow = memo(function BriefResultRow({
   onAlways,
   onNever,
   postProvider,
+  onSend,
+  sendJob,
+  sending,
+  onDismissSend,
 }: {
   postProvider?: BooruProvider
+  onSend?: (index: number) => void
+  sendJob: ComfySent | null
+  sending: boolean
+  onDismissSend: (index: number) => void
   locked: boolean
   busy: boolean
   busyReason: string
@@ -2055,6 +2106,10 @@ const BriefResultRow = memo(function BriefResultRow({
       onReroll={onReroll}
       onAlways={onAlways}
       onNever={onNever}
+      onSend={onSend}
+      sendJob={sendJob}
+      sending={sending}
+      onDismissSend={onDismissSend}
     />
   )
 })

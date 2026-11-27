@@ -8,11 +8,15 @@
 /** Set once the welcome tour has started (it never auto-starts again). */
 export const MAIN_TOUR_STORAGE_KEY = "booru_main_tour_done"
 
-/** A dialog, menu, popover, list or tour is on screen. */
+const OVERLAY_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-expanded="true"], .react-joyride__overlay'
+
+/**
+ * A dialog, menu, popover, list or tour is on screen. Parts of the page that are
+ * mounted but inert (a closed screen kept for its state) don't count.
+ */
 export function isOverlayOpen(): boolean {
-  return !!document.querySelector(
-    '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-expanded="true"], .react-joyride__overlay'
-  )
+  return Array.from(document.querySelectorAll(OVERLAY_SELECTOR)).some((el) => !el.closest("[inert]"))
 }
 
 /** Dev-only `/?feature-intro`: shows the release dialog right away and nothing else. */

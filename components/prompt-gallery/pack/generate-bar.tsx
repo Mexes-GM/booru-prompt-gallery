@@ -3,15 +3,18 @@
 /**
  * Generating and handling the results: how many prompts (a number field with
  * steps, 1 to 100), the Generate button, and above the results the format and
- * Copy all, which confirms the copy where it happened.
+ * Copy all, which confirms the copy where it happened; in ComfyUI mode, Send all
+ * beside it, which counts the prompts as they go.
  */
 import { memo, useId, useState, type ReactNode } from "react"
 import { AlertTriangle, Check, ChevronDown, Copy, Info, Minus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import type { SendAllState } from "@/lib/pack/pack-comfy-send"
 import { cn } from "@/lib/utils"
+import { SendGlyph } from "../comfyui-motion"
 import { ChoiceGroup, type Choice } from "./choice-group"
-import { COPY_FAILED, MAX_PROMPTS, MIN_PROMPTS, SIZE_TEXT, generateLabel } from "./pack-text"
+import { COPY_FAILED, MAX_PROMPTS, MIN_PROMPTS, SEND_TEXT, SIZE_TEXT, generateLabel, sendAllAnnouncement, sendAllLabel, sendAllNote } from "./pack-text"
 import { useCopyResult } from "./use-copy-result"
 
 const clamp = (n: number) => Math.min(MAX_PROMPTS, Math.max(MIN_PROMPTS, Math.round(n)))
@@ -180,6 +183,8 @@ export interface ResultsToolbarProps<F extends string> {
   copyNote?: string
   /** "Add size as [WIDTHxHEIGHT]": a menu beside Copy all; Copy all says when the size goes with the prompts. */
   withSize?: { value: boolean; onChange: (value: boolean) => void }
+  /** ComfyUI mode: Send all, before Copy all. Without it, no Send all. */
+  send?: { state: SendAllState; onSendAll: () => void }
   /** Extra controls on the right. */
   children?: ReactNode
   className?: string
@@ -193,6 +198,7 @@ function ResultsToolbarInner<F extends string>({
   onCopyAll,
   copyNote,
   withSize,
+  send,
   children,
   className,
 }: ResultsToolbarProps<F>) {
@@ -213,6 +219,7 @@ function ResultsToolbarInner<F extends string>({
       <ChoiceGroup size="sm" choices={formats} value={format} onChange={onFormatChange} label="Prompt format" />
       <div className="flex items-center gap-1.5">
         {children}
+        {send && <SendAllButton count={count} state={send.state} onSendAll={send.onSendAll} />}
         <div className="flex items-center">
           <Button
             type="button"
@@ -281,7 +288,49 @@ function ResultsToolbarInner<F extends string>({
           {COPY_FAILED}
         </p>
       )}
+      {send && sendAllNote(send.state) && (
+        <p className="flex basis-full items-start gap-1.5 text-xs text-warning-text" aria-hidden>
+          <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+          {sendAllNote(send.state)}
+        </p>
+      )}
     </div>
+  )
+}
+
+/**
+ * Send all: queues every prompt in ComfyUI, one after another. The button counts them as
+ * they go and says how it ended; each row shows its own job.
+ */
+function SendAllButton({ count, state, onSendAll }: { count: number; state: SendAllState; onSendAll: () => void }) {
+  const busy = state.kind === "sending"
+  const allSent = state.kind === "ended" && state.sent === state.total
+  const stopped = state.kind === "ended" && state.sent < state.total
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        onClick={busy ? undefined : onSendAll}
+        disabled={count === 0}
+        aria-disabled={busy || undefined}
+        aria-busy={busy || undefined}
+        aria-label={state.kind === "idle" ? SEND_TEXT.allLabel : undefined}
+        className={cn(
+          "h-8 gap-1.5 tabular-nums pointer-coarse:h-11",
+          busy && "cursor-progress",
+          allSent && "bg-primary text-primary-foreground hover:bg-primary",
+          stopped && "text-warning-text",
+        )}
+      >
+        {allSent ? <Check aria-hidden /> : stopped ? <AlertTriangle aria-hidden /> : <SendGlyph sending={busy} className="size-4 [&_svg]:size-full!" />}
+        {sendAllLabel(state)}
+      </Button>
+      <span className="sr-only" role="status" aria-live="polite">
+        {sendAllAnnouncement(state)}
+      </span>
+    </>
   )
 }
 
