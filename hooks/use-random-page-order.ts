@@ -29,10 +29,10 @@ import type { PackRequestBudget } from "@/lib/pack/request-budget"
 const PER_PAGE: Partial<Record<BooruProvider, number>> = { danbooru: 30, aibooru: 60 }
 const SITE_URL: Partial<Record<BooruProvider, string>> = { danbooru: PROVIDER_URLS.DANBOORU, aibooru: PROVIDER_URLS.AIBOORU }
 
-/** One paced request, counted in the pack's budget. */
+/** One paced page-range request, counted in the pack's budget (as a range request: lib/pack/request-budget.ts). */
 async function getJson(url: string, provider: BooruProvider, budget: PackRequestBudget | null): Promise<unknown> {
   await sitePacer(provider).acquire()
-  budget?.record(1)
+  budget?.record(1, "range")
   const res = await fetch(url, { headers: { Accept: "application/json" } })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()

@@ -10,7 +10,11 @@
  *  - Automatic: what the pack loads by itself. The page cap was 15 pages, plus the
  *    page-range probes it didn't count (8 or 9 per search and rating). A typical pack stops
  *    well before: its first pages and one or two more are enough.
- *  - Session: past it, "Find more scenes" stops too. The session cap was 35 pages.
+ *    The page-range requests (Danbooru/Aibooru page counts, and the binary search when a count
+ *    is missing) are left out of it: the page caps never counted them either, and counting
+ *    them would leave a one-rating pack fewer pages than before.
+ *  - Session: past it, "Find more scenes" stops too. The session cap was 35 pages. Every
+ *    request counts in it, page-range requests included.
  *
  * Pure: a small store with subscribe/getSnapshot for useSyncExternalStore.
  */
@@ -38,6 +42,7 @@ export const SESSION_REQUEST_CAP = requestCaps(MAX_RATINGS).session
 
 export class PackRequestBudget {
   private spentCount = 0
+  private rangeCount = 0
   private readonly listeners = new Set<() => void>()
 
   /** Requests sent so far. */
@@ -45,10 +50,16 @@ export class PackRequestBudget {
     return this.spentCount
   }
 
-  /** Counts `n` requests sent. */
-  record(n = 1): void {
+  /** Of `spent`, the page-range requests (page counts, or the binary search without one). */
+  get rangeRequests(): number {
+    return this.rangeCount
+  }
+
+  /** Counts `n` requests sent; `range` for page-range requests. */
+  record(n = 1, kind: "page" | "range" = "page"): void {
     if (n <= 0) return
     this.spentCount += n
+    if (kind === "range") this.rangeCount += n
     this.listeners.forEach((listener) => listener())
   }
 
@@ -63,4 +74,6 @@ export class PackRequestBudget {
   }
 
   getSnapshot = (): number => this.spentCount
+
+  getRangeSnapshot = (): number => this.rangeCount
 }

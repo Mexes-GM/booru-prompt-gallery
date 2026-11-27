@@ -95,7 +95,10 @@ export interface UsePackSourcesResult extends UsePackSeedSearchResult {
   pages: number
   /** Requests the pack's source has sent, all searches and ratings together (its budget so far). */
   requests: number
-  /** Requests the pack may send by itself (requestCaps for the plan's ratings): past them, only by hand. */
+  /**
+   * Requests the pack may send by itself, compared with `requests`: requestCaps for the plan's
+   * ratings plus the page-range requests sent, which the automatic cap leaves out. Past it, only by hand.
+   */
   autoRequestCap: number
 }
 
@@ -194,9 +197,12 @@ export function usePackSources({ plan, shortConditions = NO_SHORT, onSessionCapR
     return { budget, record: (n: number) => budget.record(n) }
   })
   const spent = useSyncExternalStore(budget.subscribe, budget.getSnapshot, budget.getSnapshot)
+  const rangeSpent = useSyncExternalStore(budget.subscribe, budget.getRangeSnapshot, budget.getRangeSnapshot)
   const feedOptions = useMemo(() => ({ budget }), [budget])
   // Its caps follow the plan's ratings: a page is one request per rating (lib/pack/request-budget.ts).
-  const { auto: autoRequestCap, session: sessionRequestCap } = requestCaps(plan.ratings.length)
+  // The automatic cap leaves the page-range requests out: it grows by as many as were sent.
+  const { auto: autoPageCap, session: sessionRequestCap } = requestCaps(plan.ratings.length)
+  const autoRequestCap = autoPageCap + rangeSpent
 
   // The plan's feeds change only with its scene key.
   const wanted = useMemo(
