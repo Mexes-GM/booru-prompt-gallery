@@ -198,10 +198,10 @@ export function useBooruFavorites(
           core.setFolders(prevFolders)
           core.setFolderMap(prevMap)
           toastError({
-            title: "Error deleting category",
-            description: e?.message || "Failed to delete the category. Please try again.",
+            title: "Couldn't delete the folder",
+            description: "Try again in a moment.",
             errorSource: "delete_favorite_folder",
-            context: { folderId },
+            context: { folderId, message: e?.message ?? "unknown error" },
           })
           return
         }
@@ -392,9 +392,10 @@ export function useBooruFavorites(
         } catch (dbError: any) {
           console.error("[toggleFavorite] DB operation failed, rolling back:", dbError)
           toastError({
-            title: "Error saving favorite",
-            description: `Failed to save your changes to the cloud. (${dbError?.message || "Unknown error"})`,
+            title: "Couldn't save the favorite",
+            description: "Try again in a moment.",
             errorSource: "toggle_favorite",
+            context: { message: dbError?.message ?? "unknown error" },
           })
           // Rollback
           core.setFavorites(currentFavorites)
