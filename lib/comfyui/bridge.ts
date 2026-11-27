@@ -15,4 +15,4 @@ export const BRIDGE_INSTALL_URL: string | null = null
 export const BRIDGE_INSTALL_STEP = `Install the ${BRIDGE_NAME} node in ComfyUI and restart ComfyUI.`
 
 /** Where the publish command lives in ComfyUI. */
-export const BRIDGE_PUBLISH_STEP = "In ComfyUI, open the Workflow menu and choose Use in Booru Prompt Gallery."
+export const BRIDGE_PUBLISH_STEP = "In ComfyUI, open the File menu and choose Use in Booru Prompt Gallery."

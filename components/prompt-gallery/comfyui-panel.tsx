@@ -98,7 +98,7 @@ function statusCopy(d: Diagnosis): { tone: "ok" | "problem"; text: string } {
 }
 
 const IMPORT_ERRORS: Record<ImportError, string> = {
-  "ui-format": "This is an editor workflow. Publish it from ComfyUI's Workflow menu with Use in Booru Prompt Gallery, or save it with Export (API).",
+  "ui-format": "This is an editor workflow. Publish it from ComfyUI's File menu with Use in Booru Prompt Gallery, or save it with Export (API).",
   "no-workflow": "No workflow found in this file. Use a .png saved by ComfyUI or a .json from Export (API).",
   "invalid-json": "This file couldn't be read as a workflow. Save it again from ComfyUI and retry.",
   "unsupported-file": "Only .png and .json files work here.",
