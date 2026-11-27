@@ -9,18 +9,19 @@ import { safeTrack } from "@/lib/analytics"
 import { cn } from "@/lib/utils"
 import { FEATURE_INTRO_POSTER, FEATURE_INTRO_RELEASE } from "@/components/prompt-gallery/feature-intro"
 
-const VIDEO = "/whats-new/10.7.0-random-outfit"
+const VIDEO = "/whats-new/10.9.0-send-to-comfyui"
 
 /**
  * What the video shows, chapter by chapter. `at` is where each chapter starts
- * (seconds); keep it in step with video/src/outfit-chapters.ts (frames / 30).
+ * (seconds); keep it in step with video/src/send-to-comfy-chapters.ts (frames / 30).
  * The list doubles as the text version of the video, which has no audio.
  */
 const CHAPTERS = [
-  { at: 0, title: "Dress her in a new outfit", body: "In Customize prompt, set Outfit to Random outfit. Posts with one girl change clothes." },
-  { at: 7.5, title: "Pick the styles and detail", body: "Turn styles on or off. Full outfit also adds legwear, bag and jewelry." },
-  { at: 15, title: "Written out in full", body: "Anima, FLUX.2 and MOSS-Image describe the outfit in whole sentences." },
-  { at: 23, title: "Outfits in Pack Mode", body: "Set a pack's Clothing pool to Outfit library to vary whole outfits." },
+  { at: 0, title: "Install the node", body: "In ComfyUI Manager, search for Booru Prompt Gallery and install it. Then restart ComfyUI." },
+  { at: 6.5, title: "Publish your workflow", body: "In ComfyUI, click Use in Booru Prompt Gallery next to Run. The workflow shows up in the setup guide." },
+  { at: 14, title: "Turn on Send to ComfyUI", body: "It's in Customize prompt. Copy buttons on the cards become Send." },
+  { at: 18, title: "Send from any card", body: "The card shows the queue, the steps and a live preview. The post moves to a corner thumbnail you can switch to." },
+  { at: 28, title: "Send as another format", body: "The ▾ menu next to Send sends the card once in another prompt format." },
 ] as const
 
 type CloseMethod = "close_button" | "x_button" | "escape" | "outside" | "try"
@@ -139,7 +140,7 @@ export function FeatureIntroDialog({
           contentRef.current?.focus({ preventScroll: true })
         }}
         onCloseAutoFocus={(e) => {
-          // "Try Random outfit" moves focus to the setting instead.
+          // "Set up ComfyUI" opens the ComfyUI dialog, which takes focus.
           if (closeMethod.current === "try") {
             e.preventDefault()
             onTry()
@@ -166,7 +167,7 @@ export function FeatureIntroDialog({
             muted
             playsInline
             disablePictureInPicture
-            aria-label="Demo of Random outfit, described in the chapter list"
+            aria-label="Demo of Send to ComfyUI, described in the chapter list"
             onPlay={() => setState("playing")}
             onTimeUpdate={syncChapter}
             onPause={(e) => setState(e.currentTarget.ended ? "ended" : "paused")}
@@ -211,11 +212,11 @@ export function FeatureIntroDialog({
             New in v{FEATURE_INTRO_RELEASE}
           </p>
           <DialogTitle className={cn(RISE, "mt-1.5 pr-10 text-lg text-balance")} style={delay(1)}>
-            Random outfit
+            Send to ComfyUI
           </DialogTitle>
           <DialogDescription id="feature-intro-description" className={cn(RISE, "mt-2 text-pretty")} style={delay(2)}>
-            Give the character on each card a new outfit, picked from more than 1,300 in the styles you choose. It works in
-            every prompt format and in Pack Mode.
+            Send a card&apos;s prompt straight to ComfyUI on your computer and watch the image generate on the card. It needs a
+            free node for ComfyUI, and the setup guide shows how to add it.
           </DialogDescription>
 
           <ol aria-label="Video chapters" className={cn(RISE, "-mx-2 mt-4 flex flex-col gap-0.5")} style={delay(3)}>
@@ -266,7 +267,7 @@ export function FeatureIntroDialog({
               Close
             </Button>
             <Button type="button" onClick={tryIt}>
-              Try Random outfit
+              Set up ComfyUI
             </Button>
           </div>
         </div>

@@ -13,9 +13,9 @@ const FeatureIntroDialog = dynamic(() => loadDialog().then((m) => m.FeatureIntro
  * this minor version or the next one (FEATURE_INTRO_EXTRA_MINORS), so a release
  * that follows soon after doesn't hide it before people see it.
  */
-export const FEATURE_INTRO_RELEASE = "10.7"
+export const FEATURE_INTRO_RELEASE = "10.9"
 const FEATURE_INTRO_EXTRA_MINORS = 1
-export const FEATURE_INTRO_POSTER = "/whats-new/10.7.0-random-outfit-poster.jpg"
+export const FEATURE_INTRO_POSTER = "/whats-new/10.9.0-send-to-comfyui-poster.jpg"
 
 const SEEN_KEY = "feature_intro_seen"
 
@@ -34,7 +34,7 @@ function isBusy(): boolean {
   return el instanceof HTMLElement && (el.isContentEditable || el.matches("input, textarea, select"))
 }
 
-/** "10.8.2" is within reach of release "10.7" when the major matches and the minor is 7 or 8. */
+/** "10.10.2" is within reach of release "10.9" when the major matches and the minor is 9 or 10. */
 function isIntroVersion(version: string): boolean {
   const [major, minor] = version.split(".").map(Number)
   const [relMajor, relMinor] = FEATURE_INTRO_RELEASE.split(".").map(Number)

@@ -73,8 +73,9 @@ export function ComfyUIDialog({ open, onOpenChange, reason = null, requestId, re
 const getServerRequest = () => null
 
 /**
- * Renders the ComfyUI dialog when a Send button asks for it. Mounted once; the
- * dialog's code loads on the first request.
+ * Renders the ComfyUI dialog when something asks for it (a Send button, the
+ * status chip, the release dialog). Mounted once; the dialog's code loads on
+ * the first request.
  */
 export function ComfyUIPanelHost() {
   const request = useSyncExternalStore(subscribeComfyPanel, getComfyPanelRequest, getServerRequest)

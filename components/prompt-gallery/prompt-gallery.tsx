@@ -227,6 +227,7 @@ import { useFilteredPosts } from "@/hooks/use-filtered-posts"
 import { usePromptFormat } from "@/hooks/use-natural-prompt"
 import { useComfyEnabled } from "@/hooks/use-comfyui-settings"
 import { ComfyUIPanelHost } from "@/components/prompt-gallery/comfyui-panel-host"
+import { openComfyPanel } from "@/lib/comfyui/panel-request"
 import { PROMPT_FORMAT_INFO, hasWordBudget, type PromptFormat } from "@/lib/prompt/prompt-format"
 import { NaturalPromptStatus } from "@/components/prompt-gallery/prompt-format-setting"
 
@@ -687,27 +688,9 @@ export function PromptGallery() {
   const [showStickyPanel, setShowStickyPanel] = useState(false)
   const controlPanelRef = useRef<HTMLDivElement>(null)
 
-  // "Try Random outfit" in the release dialog: open Customize prompt and put
-  // focus on its Outfit setting.
-  const openOutfitSetting = useCallback(() => {
-    // Bring the control panel to the top so the section drops down below it.
-    // A jump, not the page's smooth scroll: the section measures where to
-    // open as it renders, so the panel must already be in place.
-    const top = controlPanelRef.current?.getBoundingClientRect().top
-    if (top !== undefined && Math.abs(top - 16) > 8) {
-      window.scrollTo({ top: window.scrollY + top - 16, behavior: "instant" })
-    }
-    // Opened once its content has loaded; the setting renders when the
-    // section (or the mobile sheet) has opened.
-    void Promise.all([loadTagsManagementPanel(), loadPromptGenerationOptionsPanel()]).finally(() => {
-      setPromptOptionsOpen(true)
-      window.setTimeout(() => {
-        const select = document.getElementById("outfit-mode-select-embedded")
-        select?.focus({ preventScroll: true })
-        select?.scrollIntoView({ block: "nearest" })
-      }, 350)
-    })
-  }, [])
+  // "Set up ComfyUI" in the release dialog: the ComfyUI dialog, which opens
+  // on the setup guide until setup is done.
+  const openComfySetup = useCallback(() => openComfyPanel(null, null), [])
 
   // Folder Delete State
   const [folderToDelete, setFolderToDelete] = useState<{ id: string, name: string } | null>(null)
@@ -1727,7 +1710,7 @@ export function PromptGallery() {
         {/* Tour steps point at the section headers, which are always visible. */}
         <MainTour runSignal={tourRunSignal} />
 
-        <FeatureIntro version={pkg.version} onTry={openOutfitSetting} />
+        <FeatureIntro version={pkg.version} onTry={openComfySetup} />
 
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
@@ -2287,7 +2270,8 @@ export function PromptGallery() {
           }
         }}
       />
-      {comfyMode && <ComfyUIPanelHost />}
+      {/* Mounted with the mode off too: the release dialog's "Set up ComfyUI" opens it. */}
+      <ComfyUIPanelHost />
       {mergeFooterMounted && <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}
