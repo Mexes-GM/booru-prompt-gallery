@@ -9,7 +9,7 @@
 import { ToastAction } from "@/components/ui/toast"
 import { toast } from "@/hooks/use-toast"
 import { getComfyUISettings } from "@/hooks/use-comfyui-settings"
-import { BRIDGE_NAME } from "@/lib/comfyui/bridge"
+import { BRIDGE_INSTALL_STEP, BRIDGE_NAME } from "@/lib/comfyui/bridge"
 import { openComfyPanel } from "@/lib/comfyui/panel-request"
 import { randomSeed } from "@/lib/comfyui/roles"
 import { getComfyJobSnapshot, getComfySession, type ComfySession } from "@/lib/comfyui/session"
@@ -51,7 +51,7 @@ function reasonFor(d: Diagnosis): string {
     case "unreachable":
       return "ComfyUI isn't answering. Check that it's running."
     case "bridge-missing":
-      return `ComfyUI blocks this site. Install ${BRIDGE_NAME} and restart ComfyUI.`
+      return `ComfyUI blocks this site. ${BRIDGE_INSTALL_STEP}`
     case "bridge-outdated":
     case "bridge-inactive":
       return `${BRIDGE_NAME} needs an update.`

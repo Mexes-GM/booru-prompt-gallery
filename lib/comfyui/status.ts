@@ -6,7 +6,7 @@
  * ComfyUI client loads with the first check, so pages that never check skip it.
  */
 import { useCallback, useEffect, useSyncExternalStore } from "react"
-import { BRIDGE_INSTALL_STEP, BRIDGE_NAME, MIN_BRIDGE_VERSION } from "./bridge"
+import { BRIDGE_INSTALL_STEP, BRIDGE_MANAGER_NAME, BRIDGE_NAME, MIN_BRIDGE_VERSION } from "./bridge"
 import type { Diagnosis } from "./types"
 
 /** How long a result counts as current. */
@@ -146,7 +146,7 @@ export function shortStatusLine(d: Diagnosis | null): { tone: StatusTone; text: 
     case "unreachable":
       return { tone: "problem", text: "ComfyUI isn't answering. Check that it's running" }
     case "bridge-missing":
-      return { tone: "problem", text: `ComfyUI blocks this site. Install ${BRIDGE_NAME}` }
+      return { tone: "problem", text: `ComfyUI blocks this site. Install ${BRIDGE_MANAGER_NAME} from ComfyUI Manager` }
     case "bridge-outdated":
     case "bridge-inactive":
       return { tone: "problem", text: `${BRIDGE_NAME} needs an update` }
