@@ -208,6 +208,7 @@ import { loadGlobalWeightsModal } from "@/components/prompt-gallery/gallery-moda
 import { SiteCornerMenu } from "@/components/prompt-gallery/site-corner-menu"
 import { MainTour } from "@/components/prompt-gallery/main-tour"
 import { FeatureIntro } from "@/components/prompt-gallery/feature-intro"
+import type { FeatureVideoId } from "@/lib/feature-intro-videos"
 import { recordPromptCopy } from "@/lib/support-prompt"
 import { GalleryHero } from "@/components/prompt-gallery/gallery-hero"
 // The two option sections' content loads when a section header is hovered,
@@ -1606,6 +1607,26 @@ export function PromptGallery() {
     handleSetAsPackBase(post)
   }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packMode, handleSetAsPackBase])
 
+  // The Pack button, and "Open Pack Mode" in the release dialog: always the pack screen (the classic
+  // builder is reached from there). Its pack comes back as it was; with none, the entry dialog.
+  const openPackScreen = useCallback(() => {
+    setIsAiConvertMode(false)
+    if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
+    packMode.enablePackMode()
+    packClassicFromBriefRef.current = false
+    setPackBuilderKind('brief')
+    setPackPickingCard(false)
+    if (!packBrief && !restoreSavedPackBrief()) {
+      setPackEntryStartInPrompt(false)
+      setPackEntryOpen(true)
+    }
+  }, [mergeModeIsMergeMode, mergeModeDisableMergeMode, packMode, packBrief, restoreSavedPackBrief])
+  // "Open Pack Mode" or "Set up ComfyUI", after the release dialog has closed.
+  const handleFeatureIntroTry = useCallback(
+    (video: FeatureVideoId) => (video === 'pack' ? openPackScreen() : openComfySetup()),
+    [openPackScreen, openComfySetup]
+  )
+
   const effectiveScale = useMemo(() => {
     if (isMobile) {
       if (cardScale === 'small') return 'large'
@@ -2159,7 +2180,7 @@ export function PromptGallery() {
         {/* Tour steps point at the section headers, which are always visible. */}
         <MainTour runSignal={tourRunSignal} />
 
-        <FeatureIntro version={pkg.version} onTry={openComfySetup} />
+        <FeatureIntro version={pkg.version} onTry={handleFeatureIntroTry} />
 
         <main id="main-content" className={`container mx-auto px-4 py-4 sm:py-8 ${mergeMode.isMergeMode ? 'pb-[340px] sm:pb-[220px]' : isAiConvertMode ? 'pb-[220px] sm:pb-[200px]' : ''}`}>
           {/* Hero */}
@@ -2248,20 +2269,7 @@ export function PromptGallery() {
                     }}
                     isPackMode={packModeIsPackMode}
                     disablePackMode={packMode.disablePackMode}
-                    enablePackMode={() => {
-                      setIsAiConvertMode(false)
-                      if (mergeModeIsMergeMode) mergeModeDisableMergeMode()
-                      packMode.enablePackMode()
-                      // The Pack button always opens the pack screen (the classic builder is reached
-                      // from there): its pack comes back as it was; with none, the entry dialog.
-                      packClassicFromBriefRef.current = false
-                      setPackBuilderKind('brief')
-                      setPackPickingCard(false)
-                      if (!packBrief && !restoreSavedPackBrief()) {
-                        setPackEntryStartInPrompt(false)
-                        setPackEntryOpen(true)
-                      }
-                    }}
+                    enablePackMode={openPackScreen}
                     onOpenReverseParser={() => setIsReverseParserModalOpen(true)}
                     onOpenQuickTeach={() => setIsQuickTeachOpen(true)}
                     onModeIntent={preloadMode}
