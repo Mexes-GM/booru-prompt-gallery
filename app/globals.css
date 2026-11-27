@@ -657,6 +657,15 @@ html.extension-mode {
   content-visibility: auto;
 }
 
+/* The gallery behind a modal layer (the pack builder) is paused: its looping animations (the
+   mascot, spinners, loading bars) hold still, so nothing under the layer's blurred backdrop has to
+   be painted again while it is open. */
+[data-gallery-paused] *,
+[data-gallery-paused] *::before,
+[data-gallery-paused] *::after {
+  animation-play-state: paused !important;
+}
+
 /* Pixel-art mascot idle bob: two discrete frames (steps) instead of a smooth
    tween, so it moves like a sprite — one sprite pixel (2px) at a time. */
 @keyframes mascot-bob {

@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy, Activity as ReactActivity } from "react"
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -176,7 +176,8 @@ const PackBriefBuilder = dynamic(() => loadPackBriefBuilder().then(m => m.PackBr
 import type { PackBriefStart } from "./pack/pack-brief-builder"
 import { savedPackPromptCount, type SavedPack } from "@/lib/pack/saved-pack"
 import { useStableCallback } from "@/hooks/use-stable-callback"
-import { useWindowScrollWhileHidden } from "@/hooks/use-window-scroll-while-hidden"
+import { usePageScrollLock } from "@/hooks/use-page-scroll-lock"
+import { GalleryPausedContext } from "@/components/prompt-gallery/gallery-paused"
 import {
   AlertDialog as PackReplaceDialog,
   AlertDialogAction as PackReplaceAction,
@@ -557,7 +558,6 @@ export function PromptGallery() {
   const [activeFavoriteFolder, setActiveFavoriteFolder] = useState<string | null | 'all' | 'artists'>('all')
   const favs = useBooruFavorites(search.booruProvider)
   const savedArtists = useSavedArtists()
-  const tagCounts = useTagCounts(search.allPosts, search.booruProvider)
   const { toast } = useToast()
   const isMobile = useIsMobile()
 
@@ -833,11 +833,14 @@ export function PromptGallery() {
   // "Open in the classic builder" in the entry dialog, for the next start only.
   const [packEntryClassic, setPackEntryClassic] = useState(false)
   const packBriefOpen = !!packBrief && packModeIsPackMode && !packPickingCard && packBuilderKind === 'brief'
-  // The pack builder is a screen of its own: while it is open the gallery is hidden behind it
-  // (<Activity mode="hidden">: its effects stop and it keeps its state), and its scroll position
-  // comes back when the pack closes.
-  const galleryHidden = packBriefOpen
-  useWindowScrollWhileHidden(galleryHidden)
+  // The pack builder is a modal layer over the gallery: while it is open the gallery stays on
+  // screen behind it, dimmed, but paused. It is inert (no pointer, keyboard or screen reader), the
+  // page doesn't scroll and keeps its position, its animations stop (data-gallery-paused,
+  // globals.css) and the parts that run on a timer wait (GalleryPausedContext).
+  const galleryPaused = packBriefOpen
+  usePageScrollLock(galleryPaused)
+  // Pages of posts the pack loads bring tag counts too: the cards take them once the pack closes.
+  const tagCounts = useTagCounts(search.allPosts, search.booruProvider, galleryPaused)
   // The pack saved on the last visit (lib/pack/saved-pack.ts) comes back the first time Pack Mode
   // opens the new builder with no pack, in place of the entry dialog. Read once per visit.
   const savedPackReadRef = useRef(false)
@@ -2139,8 +2142,8 @@ export function PromptGallery() {
       {search.searchTags?.trim() ? (
         <title>{`${search.searchTags.trim()} | Booru Prompt Gallery`}</title>
       ) : null}
-      <ReactActivity mode={galleryHidden ? 'hidden' : 'visible'}>
-      <div className="relative min-h-screen bg-background">
+      <GalleryPausedContext value={galleryPaused}>
+      <div className="relative min-h-screen bg-background" inert={galleryPaused} data-gallery-paused={galleryPaused ? "" : undefined}>
         <SiteCornerMenu
           scaleValue={scaleValue}
           setScaleValue={setScaleValue}
@@ -2670,7 +2673,7 @@ export function PromptGallery() {
         />
 
       </div>
-      </ReactActivity>
+      </GalleryPausedContext>
 
       <GalleryModals
         onTeachSuccess={refreshOverrides}
@@ -2699,7 +2702,7 @@ export function PromptGallery() {
           }
         }}
       />
-      <ReactActivity mode={galleryHidden ? 'hidden' : 'visible'}>
+      <div className="contents" inert={galleryPaused} data-gallery-paused={galleryPaused ? "" : undefined}>
       <StickyMiniControlPanel
         // Hidden while a control section is open, so it never sits on top of
         // the dropdown the user is working in.
@@ -2718,7 +2721,7 @@ export function PromptGallery() {
           }
         }}
       />
-      </ReactActivity>
+      </div>
       {mergeFooterMounted && <MergeStickyFooter
         isOpen={mergeMode.isMergeMode}
         selectedPosts={mergeMode.selectedPosts}

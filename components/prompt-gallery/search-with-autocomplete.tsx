@@ -6,6 +6,7 @@ import { PlaceholdersAndVanishInput } from "@/components/ui/placeholders-and-van
 import { searchTagsOrThrow, TagResult } from "@/lib/supabase/client-queries"
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
+import { useGalleryPaused } from "@/components/prompt-gallery/gallery-paused"
 
 interface SearchWithAutocompleteProps {
   value: string
@@ -26,6 +27,8 @@ export function SearchWithAutocomplete({
   className,
   "aria-label": ariaLabel
 }: SearchWithAutocompleteProps) {
+  // Its placeholder stops rotating while a layer over the gallery (the pack builder) has it paused.
+  const galleryPaused = useGalleryPaused()
   const [suggestions, setSuggestions] = useState<TagResult[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -193,6 +196,7 @@ export function SearchWithAutocomplete({
     <div ref={containerRef} className="relative w-full" onKeyDown={handleKeyDown}>
       <PlaceholdersAndVanishInput
         placeholders={placeholders}
+        paused={galleryPaused}
         value={value}
         setValue={setValue}
         onChange={handleInputChange}
