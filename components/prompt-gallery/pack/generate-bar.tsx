@@ -17,7 +17,7 @@ import { useCopyResult } from "./use-copy-result"
 const clamp = (n: number) => Math.min(MAX_PROMPTS, Math.max(MIN_PROMPTS, Math.round(n)))
 
 const STEP =
-  "grid size-8 shrink-0 place-items-center text-muted-foreground pointer-coarse:size-11 " +
+  "grid h-full w-9 shrink-0 place-items-center text-muted-foreground pointer-coarse:w-11 " +
   "transition-[color,background-color] duration-150 ease-out-strong hover:bg-muted hover:text-foreground " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring " +
   "disabled:pointer-events-none disabled:opacity-40"
@@ -49,12 +49,12 @@ export const CountStepper = memo(function CountStepper({ value, onChange, label 
 
   return (
     <div className="flex items-center gap-2">
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+      <label htmlFor={id} className="text-[13px] font-medium text-muted-foreground max-sm:sr-only">
         {label}
       </label>
       <div
         className={cn(
-          "flex h-8 items-center overflow-hidden rounded-md border border-border bg-background pointer-coarse:h-[46px]",
+          "flex h-10 items-center overflow-hidden rounded-lg border border-border/80 bg-background pointer-coarse:h-[46px]",
           "focus-within:ring-2 focus-within:ring-ring/40",
           disabled && "opacity-50",
         )}
@@ -135,15 +135,15 @@ export const GenerateBar = memo(function GenerateBar({
   const reasonId = useId()
   const blocked = !!blockedReason && !generating
   return (
-    <div className={cn("flex flex-wrap items-center justify-end gap-x-3 gap-y-2", className)}>
+    <div className={cn("flex flex-wrap items-center justify-end gap-x-3 gap-y-2 max-sm:gap-x-2", className)}>
       {blocked ? (
-        <p id={reasonId} className="mr-auto flex min-w-0 items-start gap-1.5 text-xs text-foreground text-pretty">
-          <Info className="mt-px size-3.5 shrink-0 text-info-text" aria-hidden />
+        <p id={reasonId} className="mr-auto flex min-w-0 items-start gap-2 text-[13px] text-foreground text-pretty max-sm:basis-full">
+          <Info className="mt-0.5 size-3.5 shrink-0 text-info-text" aria-hidden />
           {blockedReason}
         </p>
       ) : (
         locked > 0 && (
-          <p className="mr-auto min-w-0 text-xs text-muted-foreground text-pretty">
+          <p className="mr-auto min-w-0 text-[13px] text-muted-foreground text-pretty max-sm:basis-full">
             {`${locked} locked ${locked === 1 ? "prompt stays" : "prompts stay"} as ${locked === 1 ? "it is" : "they are"}`}
           </p>
         )
@@ -160,7 +160,7 @@ export const GenerateBar = memo(function GenerateBar({
         aria-disabled={generating || undefined}
         aria-busy={generating}
         aria-describedby={blocked ? reasonId : undefined}
-        className={cn("h-10 tabular-nums pointer-coarse:h-11", generating && "cursor-progress hover:bg-primary")}
+        className={cn("h-10 rounded-lg px-5 font-semibold tabular-nums shadow-sm pointer-coarse:h-11 max-sm:flex-1", generating && "cursor-progress hover:bg-primary")}
       >
         {generateLabel(count, generating, done)}
       </Button>

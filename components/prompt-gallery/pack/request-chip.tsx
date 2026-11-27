@@ -22,10 +22,14 @@
 import { memo } from "react"
 import { AlertTriangle, Ban, Plus, Repeat2, RotateCcw, X } from "lucide-react"
 import { DEFAULTS_TEXT } from "./pack-text"
+import { CATEGORY_CHIP_CLASS } from "../category-chip-styles"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 export type RequestChipVariant = "request" | "never" | "trait" | "offered"
+
+/** The colour of a request: its row's prompt category (Wearing, Doing, Where), or plain. */
+export type RequestChipTone = "plain" | "appearance" | "clothing" | "pose" | "scenery"
 
 export interface RequestChipProps {
   label: string
@@ -50,8 +54,10 @@ export interface RequestChipProps {
   conflict?: string
   /** Picked by a first Backspace in the field; a second one removes it. */
   selected?: boolean
-  /** Bolder, for a character's name. */
+  /** Bolder, in the pack's colour, for a character's name. */
   strong?: boolean
+  /** For `request`: the row's category colour. */
+  tone?: RequestChipTone
   className?: string
 }
 
@@ -61,8 +67,18 @@ const BASE =
 const SURFACE: Record<Exclude<RequestChipVariant, "offered">, string> = {
   request: "border-transparent bg-secondary text-foreground",
   never: "border-destructive-border bg-destructive-soft text-destructive-text",
-  trait: "border-border text-muted-foreground",
+  trait: "border-border bg-background/40 text-muted-foreground",
 }
+
+// The gallery's category chips (category-chip-styles), so a garment reads the same here and on a card.
+const TONE: Record<Exclude<RequestChipTone, "plain">, string> = {
+  appearance: CATEGORY_CHIP_CLASS.appearance,
+  clothing: CATEGORY_CHIP_CLASS.clothing,
+  pose: CATEGORY_CHIP_CLASS.pose,
+  scenery: CATEGORY_CHIP_CLASS.scenery,
+}
+
+const STRONG = "border-mode-pack-border bg-mode-pack-soft text-mode-pack-text"
 
 // Small to look at, 44 px to touch: the touch area grows past the chip (pointer-coarse),
 // so chips keep flowing several to a line on a phone.
@@ -70,7 +86,7 @@ const ICON_BUTTON =
   "relative grid size-6 shrink-0 place-items-center rounded-[6px] " +
   "pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5 pointer-coarse:after:content-[''] " +
   "transition-[color,background-color] duration-150 ease-out-strong " +
-  "hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+  "hover:bg-current/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 function ConflictMark({ note }: { note: string }) {
   return (
@@ -140,6 +156,7 @@ function RequestChipInner({
   conflict,
   selected = false,
   strong = false,
+  tone = "plain",
   className,
 }: RequestChipProps) {
   if (variant === "offered") return <OfferedChip label={label} detail={detail} onAccept={onAccept} className={className} />
@@ -152,7 +169,7 @@ function RequestChipInner({
       title={inactive}
       className={cn(
         BASE,
-        SURFACE[variant],
+        variant === "request" && strong ? STRONG : variant === "request" && tone !== "plain" && !inactive ? TONE[tone] : SURFACE[variant],
         mode ? "pl-0.5" : "pl-2",
         action ? "pr-0.5" : "pr-2",
         conflict && "border-warning-border",
@@ -173,7 +190,8 @@ function RequestChipInner({
             "relative h-6 shrink-0 rounded-[6px] px-1.5 text-[11px] font-medium",
             "pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5 pointer-coarse:after:content-['']",
             "transition-[color,background-color] duration-150 ease-out-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            mode.exact ? "bg-foreground/10 text-foreground hover:bg-foreground/15" : "text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
+            // In the chip's own colour: Exactly is filled, Any is plain text.
+            mode.exact ? "bg-current/15 hover:bg-current/20" : "hover:bg-current/10",
           )}
         >
           {mode.exact ? "Exactly" : "Any"}

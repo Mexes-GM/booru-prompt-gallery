@@ -5,6 +5,7 @@ import { useReducedMotion } from "framer-motion"
 import { ChevronDown, Pause, Play } from "lucide-react"
 import { trackExternalLink } from "@/lib/analytics"
 import { HeroText } from "@/components/prompt-gallery/hero-text"
+import { useGalleryPaused } from "@/components/prompt-gallery/gallery-paused"
 import { HERO_GRID_CLASS } from "@/components/prompt-gallery/hero-layout"
 import { cn } from "@/lib/utils"
 import { derivePostPrompt, type DerivePostPromptOptions } from "@/lib/prompt/derive-post-prompt"
@@ -194,12 +195,14 @@ function Specimen() {
   const [active, setActive] = useState(0)
   const [paused, setPaused] = useState(false)
   const [userPaused, setUserPaused] = useState(false)
+  // A layer over the gallery (the pack builder) pauses the rotation while it is open.
+  const galleryPaused = useGalleryPaused()
 
   useEffect(() => {
-    if (reduceMotion || paused || userPaused) return
+    if (reduceMotion || paused || userPaused || galleryPaused) return
     const id = window.setInterval(() => setActive((i) => (i + 1) % EXAMPLES.length), ROTATE_MS)
     return () => window.clearInterval(id)
-  }, [reduceMotion, paused, userPaused, active])
+  }, [reduceMotion, paused, userPaused, galleryPaused, active])
 
   return (
     <div

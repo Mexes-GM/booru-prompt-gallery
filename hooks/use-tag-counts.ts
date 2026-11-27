@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { BooruPost, type BooruProvider } from '@/lib/booru/types'
 import { fetchBatchTagCounts } from '@/lib/api-client'
 import { chunkArray } from '@/lib/utils'
@@ -110,21 +110,36 @@ export function prefetchTagCounts(posts: BooruPost[], provider: BooruProvider) {
 
 /**
  * Custom hook to subscribe to the global background-fetched tag counts context.
+ *
+ * `paused`: counts that arrive meanwhile (fetched for posts loaded by another part of the app, such
+ * as the pack builder over a paused gallery) wait and land in one update once it is false again.
  */
-export function useTagCounts(posts: BooruPost[], provider: BooruProvider) {
+export function useTagCounts(posts: BooruPost[], provider: BooruProvider, paused = false) {
   const [counts, setCounts] = useState<Record<string, number>>({})
+  const pausedRef = useRef(paused)
+  const waitingRef = useRef<Record<string, number> | null>(null)
 
   useEffect(() => {
     const cache = loadGlobalCache()
     setCounts({ ...cache })
     
-    const listener = (newCounts: Record<string, number>) => setCounts(newCounts)
+    const listener = (newCounts: Record<string, number>) => {
+      if (pausedRef.current) waitingRef.current = newCounts
+      else setCounts(newCounts)
+    }
     listeners.add(listener)
     
     return () => {
       listeners.delete(listener)
     }
   }, [])
+
+  useEffect(() => {
+    pausedRef.current = paused
+    if (paused || !waitingRef.current) return
+    setCounts(waitingRef.current)
+    waitingRef.current = null
+  }, [paused])
 
   // Trigger prefetch passively, usually already triggered sooner by api-client.ts 
   useEffect(() => {

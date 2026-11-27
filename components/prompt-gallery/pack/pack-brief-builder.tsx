@@ -388,79 +388,77 @@ export const PackBriefBuilder = memo(function PackBriefBuilder(props: PackBriefB
     }
   }, [open])
 
+  // Shown while open, and for the moment the closing animation takes; inert from the moment it closes.
+  const [shown, setShown] = useState(open)
+  if (open && !shown) setShown(true)
+  useEffect(() => {
+    if (open || !shown) return
+    const timer = setTimeout(() => setShown(false), EXIT_MS)
+    return () => clearTimeout(timer)
+  }, [open, shown])
+  // A click on the backdrop closes, as Escape does; one that started inside the panel (selecting
+  // text and letting go outside) doesn't.
+  const pressedBackdropRef = useRef(false)
+
   return (
     <TooltipProvider delayDuration={300}>
       <div
-        ref={screenRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        inert={!open}
+        data-state={open ? "open" : "closed"}
         className={cn(
-          // The whole app's area: nothing of the gallery shows or can be reached behind it.
-          "fixed inset-0 z-50 flex flex-col overflow-clip bg-background",
-          "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]",
-          "animate-in fade-in-0 duration-200 ease-out-strong motion-reduce:animate-none",
-          // Last, so it wins over "flex": closed is not shown.
-          !open && "hidden",
+          "group/pack fixed inset-0 z-50",
+          !open && "pointer-events-none motion-reduce:hidden",
+          // Last, so it wins over the rest: closed and done animating is not shown.
+          !shown && "hidden",
         )}
       >
-        <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("last")} />
-        <header className="flex-shrink-0 border-b border-border/60">
-          {/* On a phone the title and the close button share the first line and the rest wraps
-              below them, so the close button is always in view; from sm up, one line. */}
-          <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2">
-          <Package className="size-5 shrink-0 text-mode-pack-text" aria-hidden />
-          <h2 id={titleId} ref={headingRef} tabIndex={-1} className="text-base font-semibold leading-tight text-foreground focus-visible:outline-none">
-            {BUILDER_TEXT.title}
-          </h2>
-          <div className="order-3 flex w-full min-w-0 flex-wrap items-center gap-1 sm:order-none sm:ml-auto sm:w-auto sm:flex-nowrap">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onNewPack}
-              title={BUILDER_TEXT.newPackHint}
-              className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground pointer-coarse:h-11"
-            >
-              {BUILDER_TEXT.newPack}
-            </Button>
-            {onOpenClassic && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={openClassic}
-                title={BUILDER_SWITCH_TEXT.classicHint}
-                aria-label={BUILDER_SWITCH_TEXT.classic}
-                className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground pointer-coarse:h-11"
-              >
-                <span className="sm:hidden">{BUILDER_SWITCH_TEXT.classicShort}</span>
-                <span className="max-sm:hidden">{BUILDER_SWITCH_TEXT.classic}</span>
-              </Button>
-            )}
-            <ProviderMenu value={startSource.provider} rating={rating} onChange={onProviderChange} />
-            <RatingMenu value={rating} onChange={changeRating} />
-          </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onExit}
-              aria-label={BUILDER_TEXT.close}
-              title={BUILDER_TEXT.closeHint}
-              className="ml-auto size-9 shrink-0 text-muted-foreground hover:text-foreground pointer-coarse:size-11 sm:ml-0"
-            >
-              <X className="size-4" aria-hidden />
-            </Button>
-          </div>
-        </header>
-        <div data-pack-scroll="" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <div className="mx-auto w-full max-w-3xl px-3 pt-3">
-            <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
-          </div>
+        {/* The gallery shows through, dimmed and blurred; on a phone the sheet covers it whole. */}
+        <div
+          aria-hidden
+          onPointerDown={(e) => { pressedBackdropRef.current = e.target === e.currentTarget }}
+          onClick={(e) => {
+            if (pressedBackdropRef.current && e.target === e.currentTarget) onExit()
+            pressedBackdropRef.current = false
+          }}
+          className={cn(
+            "absolute inset-0 bg-overlay/40 backdrop-blur-[6px] dark:bg-overlay/60 max-sm:hidden",
+            "group-data-[state=open]/pack:animate-in group-data-[state=open]/pack:fade-in-0 group-data-[state=open]/pack:duration-300",
+            "group-data-[state=closed]/pack:animate-out group-data-[state=closed]/pack:fade-out-0 group-data-[state=closed]/pack:duration-150 group-data-[state=closed]/pack:fill-mode-forwards",
+            "ease-out-strong motion-reduce:animate-none",
+          )}
+        />
+        <div
+          ref={screenRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          inert={!open}
+          className={cn(
+            // Phone: a sheet over the whole screen, clear of the notch and the home indicator.
+            "absolute inset-0 flex flex-col overflow-clip bg-background",
+            "max-sm:pt-[env(safe-area-inset-top)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)]",
+            // Wider: a panel over the app, with the dimmed gallery showing on every side.
+            "sm:inset-4 sm:rounded-2xl sm:shadow-2xl sm:ring-1 sm:ring-foreground/10",
+            "lg:inset-x-[max(3rem,calc(50vw-39rem))] lg:inset-y-[max(2rem,calc(50dvh-31rem))]",
+            "group-data-[state=open]/pack:animate-in group-data-[state=open]/pack:fade-in-0 group-data-[state=open]/pack:slide-in-from-bottom-6 sm:group-data-[state=open]/pack:slide-in-from-bottom-3 sm:group-data-[state=open]/pack:zoom-in-[0.98] group-data-[state=open]/pack:duration-300",
+            "group-data-[state=closed]/pack:animate-out group-data-[state=closed]/pack:fade-out-0 group-data-[state=closed]/pack:slide-out-to-bottom-3 sm:group-data-[state=closed]/pack:zoom-out-[0.98] group-data-[state=closed]/pack:duration-150 group-data-[state=closed]/pack:fill-mode-forwards",
+            "ease-out-strong motion-reduce:animate-none",
+          )}
+        >
+          <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("last")} />
+          <PackHeader
+            titleId={titleId}
+            headingRef={headingRef}
+            provider={startSource.provider}
+            rating={rating}
+            onProviderChange={onProviderChange}
+            onRatingChange={changeRating}
+            onNewPack={onNewPack}
+            onOpenClassic={onOpenClassic ? openClassic : undefined}
+            onExit={onExit}
+          />
+          <BriefWorkspace {...env} open={open} pack={pack} startNote={begun.note} />
+          <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("first")} />
         </div>
-        <span tabIndex={open ? 0 : -1} aria-hidden="true" data-focus-guard="" className="sr-only" onFocus={() => focusEdge("first")} />
       </div>
     </TooltipProvider>
   )
@@ -506,9 +504,96 @@ function tabbablesIn(root: HTMLElement | null): HTMLElement[] {
   )
 }
 
+/** How long the panel takes to go when it closes (its exit animation). */
+const EXIT_MS = 160
+
+/**
+ * The panel's header: what it is, where its scenes come from (site and rating, one control), a
+ * new pack, the classic builder, and Close. On a phone the title and Close share the first line
+ * and the rest wraps below them, so Close is always in view.
+ */
+const PackHeader = memo(function PackHeader({
+  titleId,
+  headingRef,
+  provider,
+  rating,
+  onProviderChange,
+  onRatingChange,
+  onNewPack,
+  onOpenClassic,
+  onExit,
+}: {
+  titleId: string
+  headingRef: RefObject<HTMLHeadingElement | null>
+  provider: BooruProvider
+  rating: PackRatingMode
+  onProviderChange: (provider: BooruProvider) => void
+  onRatingChange: (rating: PackRatingMode) => void
+  onNewPack: () => void
+  onOpenClassic?: () => void
+  onExit: () => void
+}) {
+  return (
+    <header className="flex-shrink-0 border-b border-border/60">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-mode-pack-soft text-mode-pack-text" aria-hidden>
+          <Package className="size-[18px]" />
+        </span>
+        <h2 id={titleId} ref={headingRef} tabIndex={-1} className="text-base font-semibold leading-none tracking-[-0.01em] text-foreground focus-visible:outline-none">
+          {BUILDER_TEXT.title}
+        </h2>
+        <div className="order-3 flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:order-none sm:ml-auto sm:w-auto sm:flex-nowrap">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onNewPack}
+            title={BUILDER_TEXT.newPackHint}
+            className="h-8 px-2.5 text-[13px] text-muted-foreground hover:text-foreground pointer-coarse:h-11"
+          >
+            {BUILDER_TEXT.newPack}
+          </Button>
+          {onOpenClassic && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onOpenClassic}
+              title={BUILDER_SWITCH_TEXT.classicHint}
+              aria-label={BUILDER_SWITCH_TEXT.classic}
+              className="h-8 px-2.5 text-[13px] text-muted-foreground hover:text-foreground pointer-coarse:h-11"
+            >
+              <span className="sm:hidden">{BUILDER_SWITCH_TEXT.classicShort}</span>
+              <span className="max-sm:hidden">{BUILDER_SWITCH_TEXT.classic}</span>
+            </Button>
+          )}
+          {/* Where the scenes come from: the site and the rating, read together. */}
+          <div className="flex h-8 items-stretch rounded-lg bg-muted/70 p-0.5 pointer-coarse:h-11 pointer-coarse:p-0">
+            <ProviderMenu value={provider} rating={rating} onChange={onProviderChange} />
+            <span aria-hidden className="my-1.5 w-px bg-border" />
+            <RatingMenu value={rating} onChange={onRatingChange} />
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onExit}
+          aria-label={BUILDER_TEXT.close}
+          title={BUILDER_TEXT.closeHint}
+          className="ml-auto size-9 shrink-0 rounded-lg text-muted-foreground hover:text-foreground pointer-coarse:size-11 sm:ml-0"
+        >
+          <X className="size-[18px]" aria-hidden />
+        </Button>
+      </div>
+    </header>
+  )
+})
+
 const MENU_TRIGGER = cn(
-  "inline-flex h-8 max-w-[12rem] items-center gap-1 rounded-md border border-border bg-background px-2 text-xs pointer-coarse:h-11",
-  "transition-[border-color,background-color] duration-150 ease-out-strong hover:border-foreground/30 data-[state=open]:border-foreground/30",
+  "inline-flex max-w-[12rem] items-center gap-1 rounded-md px-2.5 text-[13px] font-medium text-foreground",
+  "transition-[background-color,box-shadow] duration-150 ease-out-strong",
+  "hover:bg-background/70 data-[state=open]:bg-background data-[state=open]:shadow-sm",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 )
 
@@ -534,7 +619,7 @@ const ProviderMenu = memo(function ProviderMenu({
       }}
     >
       <DropdownMenuTrigger aria-label={`${BUILDER_TEXT.providerMenu}: ${label}`} className={MENU_TRIGGER}>
-        <span className="truncate font-medium text-foreground">{label}</span>
+        <span className="truncate">{label}</span>
         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
@@ -565,7 +650,7 @@ const RatingMenu = memo(function RatingMenu({ value, onChange }: { value: PackRa
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger aria-label={`${BUILDER_TEXT.ratingMenu}: ${label}`} className={MENU_TRIGGER}>
-        <span className="truncate font-medium text-foreground">{label}</span>
+        <span className="truncate">{label}</span>
         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
@@ -933,7 +1018,7 @@ function BriefWorkspace({
   useEffect(() => {
     if (wasGeneratingRef.current && !isGenerating) {
       // The brief is folded by now: the top of the panel is the summary, the fit line and the results.
-      resultsRef.current?.closest("[data-pack-scroll]")?.scrollTo({ top: 0 })
+      scrollerOf(resultsRef.current)?.scrollTo({ top: 0 })
       resultsRef.current?.focus({ preventScroll: true })
     }
     wasGeneratingRef.current = isGenerating
@@ -1401,139 +1486,169 @@ function BriefWorkspace({
           ? BLOCKED.noScenes
           : undefined
 
+  // Before generating, on a wide panel, the brief and the scenes sit side by side, each scrolling on
+  // its own: what changes in the brief shows on the sheet at once. Folded after generating (and on
+  // a phone, tablet or narrow window), one column: the brief's line, the fit line, the prompts.
+  const split = showBrief && !narrow
   return (
-    <div className="space-y-3">
-      {loadError && (
-        <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive-text">
-          <AlertTriangle className="size-4 shrink-0" aria-hidden />
-          {BUILDER_TEXT.loadFailed}
-          <Button type="button" variant="outline" size="sm" onClick={retryAll} className="h-7 px-2.5 text-xs pointer-coarse:h-11">
-            {BUILDER_TEXT.retry}
-          </Button>
-        </p>
-      )}
+    <>
+      <div
+        data-pack-scroll=""
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+          split && "lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:overflow-hidden",
+        )}
+      >
+        <div
+          className={cn(
+            "space-y-4 px-4 pt-4 sm:px-6",
+            split
+              ? "mx-auto max-w-4xl lg:mx-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:border-r lg:border-border/60 lg:bg-card/60 lg:pb-6 lg:pt-5"
+              : "mx-auto max-w-4xl",
+          )}
+        >
+          {showStartText && (
+            <p className="flex items-start gap-2 text-[13px] leading-snug text-muted-foreground text-pretty">
+              <Info className="mt-0.5 size-3.5 shrink-0 text-info-text" aria-hidden />
+              {startText}
+            </p>
+          )}
+          {narrow ? (
+            <BriefSummary parts={summary} onExpand={toggleBriefNarrow} expanded={briefOpenNarrow} />
+          ) : folded ? (
+            <BriefSummary parts={summary} onExpand={expand} />
+          ) : null}
+          {showBrief && (
+            <PackBriefPanel
+              brief={brief}
+              characterInfo={characterInfo}
+              autoFocus={openedFromSummary && !narrow}
+              routed={routed}
+              onAddTags={onAddTags}
+              onRemoveTag={remove}
+              onRemoveNever={unnever}
+              onRemoveCharacter={onRemoveCharacter}
+              onSetRole={setRole}
+              onRemoveTrait={removeLook}
+              onRestoreTrait={restoreLook}
+              outfitSource={outfit as OutfitSource}
+              onOutfitSourceChange={setOutfit}
+              officialOutfits={engine.officialOutfits}
+              outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}
+              assumedRoles={assumedRoles}
+              changes={changesControl}
+              people={people}
+              others={othersRow}
+              exactness={exactness}
+              onSetExact={pack.setExact}
+              styleOptions={styleOptions}
+              styleChips={styleChips}
+              styleNote={styleNote}
+              rowDefaults={rowDefaultsProps}
+              offers={offers}
+              suggestions={suggestions.suggestions}
+              suggestionStatus={suggestions.status}
+              onQueryChange={suggestions.onQueryChange}
+            />
+          )}
+          {showBrief && <PackPromptOptions settings={promptSettings} safeOnly={rating === "sfw"} />}
+        </div>
 
-      {showStartText && (
-        <p className="flex items-start gap-1.5 text-xs text-muted-foreground text-pretty">
-          <Info className="mt-px size-3.5 shrink-0 text-info-text" aria-hidden />
-          {startText}
-        </p>
-      )}
-      {narrow ? (
-        <BriefSummary parts={summary} onExpand={toggleBriefNarrow} expanded={briefOpenNarrow} />
-      ) : folded ? (
-        <BriefSummary parts={summary} onExpand={expand} />
-      ) : null}
-      {showBrief && (
-        <PackBriefPanel
-          brief={brief}
-          characterInfo={characterInfo}
-          autoFocus={openedFromSummary && !narrow}
-          routed={routed}
-          onAddTags={onAddTags}
-          onRemoveTag={remove}
-          onRemoveNever={unnever}
-          onRemoveCharacter={onRemoveCharacter}
-          onSetRole={setRole}
-          onRemoveTrait={removeLook}
-          onRestoreTrait={restoreLook}
-          outfitSource={outfit as OutfitSource}
-          onOutfitSourceChange={setOutfit}
-          officialOutfits={engine.officialOutfits}
-          outfitNote={axis === "outfit" ? SHEET_TEXT.outfitChanges : undefined}
-          assumedRoles={assumedRoles}
-          changes={changesControl}
-          people={people}
-          others={othersRow}
-          exactness={exactness}
-          onSetExact={pack.setExact}
-          styleOptions={styleOptions}
-          styleChips={styleChips}
-          styleNote={styleNote}
-          rowDefaults={rowDefaultsProps}
-          offers={offers}
-          suggestions={suggestions.suggestions}
-          suggestionStatus={suggestions.status}
-          onQueryChange={suggestions.onQueryChange}
-        />
-      )}
-      {showBrief && <PackPromptOptions settings={promptSettings} safeOnly={rating === "sfw"} />}
+        <div
+          className={cn(
+            "space-y-4 px-4 pb-6 pt-4 sm:px-6",
+            split ? "mx-auto max-w-4xl lg:mx-0 lg:max-w-none lg:overflow-y-auto lg:overscroll-contain lg:pt-5" : "mx-auto max-w-4xl",
+          )}
+        >
+          {loadError && (
+            <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-destructive-border bg-destructive-soft px-3.5 py-3 text-sm text-destructive-text">
+              <AlertTriangle className="size-4 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1 text-pretty">{BUILDER_TEXT.loadFailed}</span>
+              <Button type="button" variant="outline" size="sm" onClick={retryAll} className="h-8 bg-background px-3 text-xs pointer-coarse:h-11">
+                {BUILDER_TEXT.retry}
+              </Button>
+            </div>
+          )}
 
-      {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
-      <p className="sr-only" role="status" aria-live="polite">
-        {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => sentence(fitText(st).spoken)).join(" ")}
-      </p>
-      <div className="space-y-1">
-        {fitStates.map((state, i) => (
-          <FitLine
-            // Several notes of one kind (one per tag) need their own key.
-            key={`${state.kind}:${"tag" in state ? state.tag : i}`}
-            announce={false}
-            state={state}
-            onIncludeSensitive={includeSensitive}
-            hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
-            loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
-            searches={i === fitStates.length - 1 && searchesToggle ? searchesToggle : undefined}
-          />
-        ))}
+          {/* One live region for the fit line and the run: the lines themselves stay quiet. */}
+          <p className="sr-only" role="status" aria-live="polite">
+            {isGenerating ? BUILDER_TEXT.generatingSpoken : fitStates.map((st) => sentence(fitText(st).spoken)).join(" ")}
+          </p>
+          {fitStates.length > 0 && (
+            <div className="space-y-1.5">
+              {fitStates.map((state, i) => (
+                <FitLine
+                  // Several notes of one kind (one per tag) need their own key.
+                  key={`${state.kind}:${"tag" in state ? state.tag : i}`}
+                  lead={i === 0}
+                  announce={false}
+                  state={state}
+                  onIncludeSensitive={includeSensitive}
+                  hint={i === 0 && showBrief && thumbs.length > 0 && !result ? (axis ? SHEET_TEXT.hint(axis) : BUILDER_TEXT.sheetHint) : undefined}
+                  loaded={i === fitStates.length - 1 && !isGenerating ? loaded ?? undefined : undefined}
+                  searches={i === fitStates.length - 1 && searchesToggle ? searchesToggle : undefined}
+                />
+              ))}
+            </div>
+          )}
+          {searchesToggle?.open && (
+            <SearchDetails
+              id={searchesId}
+              plan={plan}
+              progress={source?.searches ?? NO_PROGRESS}
+              character={firstName}
+              site={PROVIDER_LABELS[provider]}
+              limit={getProviderTagLimit(provider)}
+            />
+          )}
+          {showExamples && (
+            <PackEmptyState heading={EXAMPLES_HEADING} examples={examples} onPick={pickExample} />
+          )}
+          {sheetTip && <PackTip text={TIP_TEXT.sheet} onDismiss={() => closeTip("sheet")} />}
+          {axisTip && axis && <PackTip text={TIP_TEXT.axis(axis)} onDismiss={() => closeTip("axis")} />}
+          {/* With no character yet the examples are where to start; an empty sheet would only say nothing fits. */}
+          {showBrief && !(loadError && thumbs.length === 0) && !(showExamples && !named) && (
+            <ContactSheet
+              scenes={thumbs}
+              leftOut={leftOutList}
+              emptyTitle={rolesMissing ? BLOCKED.roles : undefined}
+              emptyHint={rolesMissing ? "" : undefined}
+              onToggle={onToggleScene}
+              fixed={fixed}
+              status={sheetStatus}
+              expected={count}
+            />
+          )}
+
+          {resultsTip && <PackTip text={TIP_TEXT.results} onDismiss={() => closeTip("results")} />}
+          {result && result.prompts.length > 0 && (
+            <Results
+              containerRef={resultsRef}
+              prompts={result.prompts}
+              locked={result.locked}
+              missing={result.shortBy}
+              copyNote={copyNoteText({ missing: result.shortBy, stale })}
+              onToggleLock={onToggleLock}
+              busy={engine.busy || engine.sourceChanged || engine.poolPending}
+              busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : engine.poolPending ? BUILDER_TEXT.busyReloading : BUILDER_TEXT.busyRunning}
+              naturalSourceOf={engine.naturalSourceOf}
+              overrides={overrides}
+              format={promptFormat}
+              fullDetail={fullDetail}
+              onFormatChange={setFormat}
+              onCopy={copy}
+              onReroll={onReroll}
+              onAlways={onAlways}
+              onNever={onNever}
+            />
+          )}
+        </div>
       </div>
-      {searchesToggle?.open && (
-        <SearchDetails
-          id={searchesId}
-          className="mt-1"
-          plan={plan}
-          progress={source?.searches ?? NO_PROGRESS}
-          character={firstName}
-          site={PROVIDER_LABELS[provider]}
-          limit={getProviderTagLimit(provider)}
-        />
-      )}
-      {showExamples && (
-        <PackEmptyState heading={EXAMPLES_HEADING} examples={examples} onPick={pickExample} />
-      )}
-      {sheetTip && <PackTip text={TIP_TEXT.sheet} onDismiss={() => closeTip("sheet")} />}
-      {axisTip && axis && <PackTip text={TIP_TEXT.axis(axis)} onDismiss={() => closeTip("axis")} />}
-      {showBrief && !(loadError && thumbs.length === 0) && (
-        <ContactSheet
-          scenes={thumbs}
-          leftOut={leftOutList}
-          emptyTitle={rolesMissing ? BLOCKED.roles : undefined}
-          emptyHint={rolesMissing ? "" : undefined}
-          onToggle={onToggleScene}
-          fixed={fixed}
-          status={sheetStatus}
-          expected={count}
-        />
-      )}
 
-
-      {resultsTip && <PackTip text={TIP_TEXT.results} onDismiss={() => closeTip("results")} />}
-      {result && result.prompts.length > 0 && (
-        <Results
-          containerRef={resultsRef}
-          prompts={result.prompts}
-          locked={result.locked}
-          missing={result.shortBy}
-          copyNote={copyNoteText({ missing: result.shortBy, stale })}
-          onToggleLock={onToggleLock}
-          busy={engine.busy || engine.sourceChanged || engine.poolPending}
-          busyReason={engine.sourceChanged ? BUILDER_TEXT.busySource : engine.poolPending ? BUILDER_TEXT.busyReloading : BUILDER_TEXT.busyRunning}
-          naturalSourceOf={engine.naturalSourceOf}
-          overrides={overrides}
-          format={promptFormat}
-          fullDetail={fullDetail}
-          onFormatChange={setFormat}
-          onCopy={copy}
-          onReroll={onReroll}
-          onAlways={onAlways}
-          onNever={onNever}
-        />
-      )}
-
-      {/* Generate stays at the bottom edge of the panel, above the home indicator, whatever is scrolled. */}
-      <div className="sticky bottom-0 z-10 -mx-3 border-t border-border/60 bg-background px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      {/* Generate stays at the panel's bottom edge, above the home indicator, whatever is scrolled. */}
+      <footer className="flex-shrink-0 border-t border-border/60 bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-3">
         {/* Notices with Undo sit with Generate: always in view, whatever the brief or the list shows. */}
-        <div className="mb-2 empty:hidden">
+        <div className="mb-3 empty:hidden">
           {correction?.status === "done" && correction.message ? (
             <UndoNotice message={correction.message} onUndo={undoCorrection} onDismiss={() => setCorrection(null)} />
           ) : correcting ? (
@@ -1554,13 +1669,22 @@ function BriefWorkspace({
           blockedReason={blockedReason}
           locked={result?.locked.length ?? 0}
         />
-      </div>
+      </footer>
 
       {searching && (
         <BriefSource plan={plan} conditions={engine.conditionSupply} count={count} onResult={setSource} />
       )}
-    </div>
+    </>
   )
+}
+
+/** What scrolls `el` into view: its nearest ancestor that scrolls (a column, or the panel's body). */
+function scrollerOf(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node)
+    if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) return node
+  }
+  return null
 }
 
 function startNoteText(note: StartNote, poolPending: boolean): string | null {

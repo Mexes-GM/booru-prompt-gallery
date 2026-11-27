@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { SLOT_ROW, SlotLabel } from "./brief-slot"
+import { SLOT_LABEL_CELL, SLOT_ROW, SlotLabel, slotContentCell } from "./brief-slot"
 import { CHANGES_OPTIONS } from "./pack-text"
 
 export interface ChangesSelectProps {
@@ -28,15 +28,15 @@ export const ChangesSelect = memo(function ChangesSelect({ value, onChange, unav
   const triggerId = useId()
   const current = CHANGES_OPTIONS.find((o) => o.value === value) ?? CHANGES_OPTIONS[0]
   return (
-    <div className={`${SLOT_ROW} py-1`}>
-      <SlotLabel id={labelId} label="Changes" icon={<Shuffle className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />} />
-      <div className="min-w-0">
+    <div className={`${SLOT_ROW} py-2`}>
+      <SlotLabel id={labelId} label="Changes" className={SLOT_LABEL_CELL} icon={<Shuffle className="size-4 shrink-0 text-muted-foreground" aria-hidden />} />
+      <div className={slotContentCell()}>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger
             aria-labelledby={`${labelId} ${triggerId}`}
             aria-describedby={explainId}
             className={cn(
-              "inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[13px] font-medium text-foreground pointer-coarse:h-11",
+              "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/80 bg-background px-2.5 text-[13px] font-medium text-foreground shadow-xs pointer-coarse:h-11",
               "transition-[border-color,background-color] duration-150 ease-out-strong",
               "hover:border-foreground/30 data-[state=open]:border-foreground/30",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -55,7 +55,7 @@ export const ChangesSelect = memo(function ChangesSelect({ value, onChange, unav
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        <p id={explainId} className="mt-1 text-xs text-muted-foreground text-pretty">
+        <p id={explainId} className="mt-1.5 text-xs leading-relaxed text-muted-foreground text-pretty">
           {current.explain}
         </p>
       </div>

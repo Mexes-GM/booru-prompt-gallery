@@ -15,7 +15,7 @@ import { Check, Users } from "lucide-react"
 import type { PackPeople } from "@/lib/pack/scene/scene-pool"
 import { cn } from "@/lib/utils"
 import { ChoiceGroup, type Choice } from "./choice-group"
-import { SLOT_ROW, SlotLabel } from "./brief-slot"
+import { RowFlash, SLOT_LABEL_CELL, SLOT_ROW, SlotLabel, slotContentCell } from "./brief-slot"
 import { companionsLabel } from "./slots"
 import { PEOPLE_TEXT, peopleKey, poseNeedsText } from "./pack-text"
 
@@ -77,16 +77,10 @@ export const PeopleLine = memo(function PeopleLine({
 
   const byKey = (key: string) => options.find((o) => peopleKey(o.people) === key)?.people
   return (
-    <div className={`${SLOT_ROW} relative py-1`}>
-      {flashKey ? (
-        <span
-          key={flashKey}
-          aria-hidden
-          className="pointer-events-none absolute -inset-x-1.5 inset-y-0 rounded-md bg-mode-pack-soft animate-out fade-out-0 fill-mode-forwards duration-1000 ease-out-strong motion-reduce:hidden"
-        />
-      ) : null}
-      <SlotLabel id={labelId} label="People" icon={<Users className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />} />
-      <div className="min-w-0 space-y-1">
+    <div className={`${SLOT_ROW} relative py-2`}>
+      {flashKey ? <RowFlash key={flashKey} /> : null}
+      <SlotLabel id={labelId} label="People" className={SLOT_LABEL_CELL} icon={<Users className="size-4 shrink-0 text-muted-foreground" aria-hidden />} />
+      <div className={cn(slotContentCell(), "space-y-2")}>
         {onToggle && selected ? (
           <div role="group" aria-labelledby={labelId} aria-describedby={described} className="flex flex-wrap items-center gap-1.5">
             {options.map((o) => {
@@ -166,13 +160,13 @@ function ToggleOption({
       title={title}
       onClick={onClick}
       className={cn(
-        "inline-flex h-6 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-xs font-medium pointer-coarse:h-11 pointer-coarse:min-w-11",
+        "inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-xs font-medium pointer-coarse:h-11 pointer-coarse:min-w-11",
         "transition-[color,background-color,border-color] duration-150 ease-out-strong",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         "disabled:cursor-not-allowed",
         on
           ? "border-mode-pack-border bg-mode-pack-soft text-mode-pack-text"
-          : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground disabled:opacity-50 disabled:hover:border-border disabled:hover:text-muted-foreground",
+          : "border-border/70 text-muted-foreground hover:border-foreground/30 hover:text-foreground disabled:opacity-50 disabled:hover:border-border/70 disabled:hover:text-muted-foreground",
       )}
     >
       <span
