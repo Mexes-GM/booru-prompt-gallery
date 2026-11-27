@@ -1,5 +1,7 @@
 "use client"
 
+import { copyText } from "@/lib/clipboard"
+import { toast } from "@/hooks/use-toast"
 import { useState, useMemo } from "react"
 import { useCopyFeedback } from "@/hooks/use-copy-feedback"
 import {
@@ -159,10 +161,14 @@ export function ReversePromptParserModal({
     return reconstructPrompt(parsed.classified, parsed.quality, selectedCategories)
   }, [parsed.classified, parsed.quality, selectedCategories])
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!outputPrompt) return
-    navigator.clipboard.writeText(outputPrompt)
-    triggerCopyFeedback()
+    try {
+      await copyText(outputPrompt)
+      triggerCopyFeedback()
+    } catch {
+      toast({ title: "Couldn't copy", description: "Your browser blocked clipboard access. Select the text and copy it by hand.", variant: "destructive" })
+    }
   }
 
   const handleImport = () => {

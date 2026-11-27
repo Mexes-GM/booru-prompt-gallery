@@ -1,3 +1,4 @@
+import { copyText } from "@/lib/clipboard"
 import { useEffect, useState, memo, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -154,12 +155,16 @@ const AiConvertStickyFooterComponent = ({
     localStorage.removeItem('ai-convert-history')
   }
 
-  const copyHistoryItem = (text: string) => {
-    navigator.clipboard.writeText(text)
-    toast({
-      title: 'Copied!',
-      description: 'The natural language prompt has been copied to your clipboard.',
-    })
+  const copyHistoryItem = async (text: string) => {
+    try {
+      await copyText(text)
+      toast({
+        title: 'Copied!',
+        description: 'The natural language prompt has been copied to your clipboard.',
+      })
+    } catch {
+      toast({ title: "Couldn't copy", description: 'Your browser blocked clipboard access. Select the text and copy it by hand.', variant: 'destructive' })
+    }
   }
 
   // Local state for settings form
@@ -294,14 +299,18 @@ const AiConvertStickyFooterComponent = ({
     setSettingsOpen(false)
   }
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!result) return
-    navigator.clipboard.writeText(result)
-    triggerCopyFeedback()
-    toast({
-      title: 'Copied!',
-      description: 'The natural language prompt has been copied to your clipboard.',
-    })
+    try {
+      await copyText(result)
+      triggerCopyFeedback()
+      toast({
+        title: 'Copied!',
+        description: 'The natural language prompt has been copied to your clipboard.',
+      })
+    } catch {
+      toast({ title: "Couldn't copy", description: 'Your browser blocked clipboard access. Select the text and copy it by hand.', variant: 'destructive' })
+    }
   }
 
   return (

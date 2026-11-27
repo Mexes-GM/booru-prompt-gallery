@@ -1,5 +1,6 @@
 "use client"
 
+import { copyText } from "@/lib/clipboard"
 import type React from "react"
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, startTransition, useDeferredValue, lazy } from "react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -1332,7 +1333,7 @@ export function PromptGallery() {
 
   const copyToClipboard = useCallback(async (content: string, postId: number, isPrompt: boolean = false, thumbnailUrl?: string, format: PromptFormat = 'tags') => {
     try {
-      await navigator.clipboard.writeText(content)
+      await copyText(content)
 
       // PostHog Tracking
       track('prompt_copied', {
