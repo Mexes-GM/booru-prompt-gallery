@@ -15,6 +15,8 @@ import { SEGMENT_PILL_SPRING } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { CardScaleControl } from "@/components/prompt-gallery/card-scale-control"
 import { preloadToolDialogs } from "@/components/prompt-gallery/gallery-modals-loader"
+import { ComfyStatusChip } from "@/components/prompt-gallery/comfyui-status"
+import { useComfyEnabled } from "@/hooks/use-comfyui-settings"
 
 type Mode = "browse" | "merge" | "pack"
 
@@ -81,6 +83,9 @@ export function GalleryToolbar({
   // as a transition, so React yields frames and the pill's spring isn't frozen.
   const [mode, setOptimisticMode] = useOptimistic(committedMode)
   const activeMode = MODES.find((m) => m.id === mode)!
+  const comfyMode = useComfyEnabled()
+  // With Send to ComfyUI on, Browse's buttons send instead of copying.
+  const modeHint = comfyMode && activeMode.id === "browse" ? "Send prompts one by one" : activeMode.hint
 
   const selectMode = (next: Mode) => {
     if (next === mode) return
@@ -155,7 +160,10 @@ export function GalleryToolbar({
             )
           })}
         </div>
-        <span className="text-center text-xs text-muted-foreground sm:text-left">{activeMode.hint}</span>
+        <div className="flex min-w-0 items-center justify-center gap-2.5 sm:justify-start">
+          <span className="text-center text-xs text-muted-foreground sm:whitespace-nowrap sm:text-left">{modeHint}</span>
+          <ComfyStatusChip placement="toolbar" />
+        </div>
       </div>
 
       <div className="grid grid-cols-3 items-center gap-1 sm:flex">
